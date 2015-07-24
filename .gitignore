@@ -1,0 +1,17 @@
+*.ipch
+*.la
+*.lo
+*.o
+*.pyc
+*.sdf
+*.suo
+*.swp
+*.swo
+*.user
+*~
+.DS_Store
+
+/.lock*
+/waf*-*-*
+/.waf*
+/_build_
