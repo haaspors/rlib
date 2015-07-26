@@ -1,0 +1,66 @@
+/* RLIB - Convenience library for useful things
+ * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the MIT License.
+ * See the COPYING file at the root of the source repository.
+ */
+#ifndef __R_CONFIG_H__
+#define __R_CONFIG_H__
+
+#if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
+#error "#include <rlib.h> only pelase."
+#endif
+
+typedef signed char             rint8;
+typedef signed @RINT16_TYPE@    rint16;
+typedef signed @RINT32_TYPE@    rint32;
+typedef signed @RINT64_TYPE@    rint64;
+typedef signed @RINTMAX_TYPE@   rintmax;
+
+typedef unsigned char           ruint8;
+typedef unsigned @RINT16_TYPE@  ruint16;
+typedef unsigned @RINT32_TYPE@  ruint32;
+typedef unsigned @RINT64_TYPE@  ruint64;
+typedef unsigned @RINTMAX_TYPE@ ruintmax;
+
+#define RINT16_MODIFIER         @RINT16_MODIFIER@
+#define RINT16_FMT              @RINT16_FMT@
+#define RUINT16_FMT             @RUINT16_FMT@
+#define RINT32_MODIFIER         @RINT32_MODIFIER@
+#define RINT32_FMT              @RINT32_FMT@
+#define RUINT32_FMT             @RUINT32_FMT@
+#define RINT64_MODIFIER         @RINT64_MODIFIER@
+#define RINT64_FMT              @RINT64_FMT@
+#define RUINT64_FMT             @RUINT64_FMT@
+#define RINTMAX_MODIFIER        @RINTMAX_MODIFIER@
+#define RINTMAX_FMT             @RINTMAX_FMT@
+#define RUINTMAX_FMT            @RUINTMAX_FMT@
+
+#define RINT64_CONSTANT(val)    (@RINT64_CONST@)
+#define RUINT64_CONSTANT(val)   (@RUINT64_CONST@)
+
+typedef signed @RSIZE_TYPE@     rssize;
+typedef unsigned @RSIZE_TYPE@   rsize;
+#define RSIZE_MODIFIER          @RSIZE_MODIFIER@
+#define RSSIZE_MODIFIER         @RSIZE_MODIFIER@
+#define RSIZE_FMT               @RSIZE_FMT@
+#define RSSIZE_FMT              @RSSIZE_FMT@
+
+#define RSIZE_MAX               @RLIB_SIZE_TYPE@_MAX
+#define RSSIZE_MIN              @RLIB_SSIZE_TYPE@_MIN
+#define RSSIZE_MAX              @RLIB_SSIZE_TYPE@_MAX
+
+typedef signed @RINTPTR_TYPE@   rintptr;
+typedef unsigned @RINTPTR_TYPE@ ruintptr;
+
+#define RINTPTR_MODIFIER        @RINTPTR_MODIFIER@
+#define RINTPTR_FMT             @RINTPTR_FMT@
+#define RUINTPTR_FMT            @RUINTPTR_FMT@
+
+#define RLIB_SIZEOF_VOID_P      @RLIB_SIZEOF_VOID_P@
+#define RLIB_SIZEOF_LONG        @RLIB_SIZEOF_LONG@
+#define RLIB_SIZEOF_SIZE_T      @RLIB_SIZEOF_SIZE_T@
+
+#endif /* __R_CONFIG_H__ */
+
