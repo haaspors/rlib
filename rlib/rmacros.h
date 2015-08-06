@@ -102,6 +102,24 @@
     __pragma(warning(pop))
 #endif
 
+#if defined(__GNUC__)
+#define R_INITIALIZER(f)   static void __attribute__((constructor)) f (void)
+#define R_DEINITIALIZER(f) static void __attribute__((destructor))  f (void)
+#elif defined(_MSC_VER)
+#define R_INITIALIZER(f)                                                    \
+  static void __cdecl f (void);                                             \
+  __pragma(section(".CRT$XCU",read))                                        \
+  __declspec(allocate(".CRT$XCU")) void (__cdecl*f##_)(void) = f;           \
+  static void __cdecl f (void)
+#define R_DEINITIALIZER(f)                                                  \
+  static void __cdecl f (void);                                             \
+  static void __cdecl f##_atexit (void) { atexit (f); }                     \
+  __pragma(section(".CRT$XCU",read))                                        \
+  __declspec(allocate(".CRT$XCU")) void (__cdecl*f##_)(void) = f##_atexit;  \
+  static void __cdecl f (void)
+#else
+#error Your compiler does not support initializers/deinitializers
+#endif
 
 #if defined(__GNUC__) && defined(__OPTIMIZE__)
 #define R_LIKELY(expr)      __builtin_expect(!!(expr), 1)
