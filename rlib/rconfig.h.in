@@ -62,5 +62,7 @@ typedef unsigned @RINTPTR_TYPE@ ruintptr;
 #define RLIB_SIZEOF_LONG        @RLIB_SIZEOF_LONG@
 #define RLIB_SIZEOF_SIZE_T      @RLIB_SIZEOF_SIZE_T@
 
+@RLIB_DEFINE_HAVE_ALLOCA_H@
+
 #endif /* __R_CONFIG_H__ */
 

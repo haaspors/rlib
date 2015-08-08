@@ -93,6 +93,9 @@ typedef const void*             rconstpointer;
 #define R_LITTLE_ENDIAN         1234
 #define R_BIG_ENDIAN            4321
 
+/* Function prototypes */
+typedef void (*RDestroyNotify) (rpointer ptr);
+
 R_END_DECLS
 
 #endif /* __R_TYPES_H__ */

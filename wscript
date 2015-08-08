@@ -31,6 +31,7 @@ def configure(cfg):
     ##################################
     # COMMON (for all variants)
     ##################################
+    configure_headers(cfg)
     configure_sizeof(cfg)
     configure_printf(cfg)
 
@@ -99,6 +100,20 @@ def init(ctx):
             class tmp(y):
                 cmd = name + '_' + var
                 variant = var
+
+def configure_headers(cfg):
+    cfg.multicheck(
+            {'header_name':'stdio.h'},
+            {'header_name':'stdlib.h'},
+            {'header_name':'stdarg.h'},
+            {'header_name':'limits.h'},
+            {'header_name':'float.h'},
+            msg = 'Checking for standard headers')
+
+    if cfg.check(header_name='alloca.h', mandatory=False):
+        cfg.env.RLIB_DEFINE_HAVE_ALLOCA_H = '#define RLIB_HAVE_ALLOCA_H      1'
+    else:
+        cfg.env.RLIB_DEFINE_HAVE_ALLOCA_H = '/* #undef RLIB_HAVE_ALLOCA_H */'
 
 def configure_printf(cfg):
     funcs = ['printf', 'fprintf', 'sprintf',

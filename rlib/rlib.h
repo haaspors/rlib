@@ -11,6 +11,7 @@
 
 #define __RLIB_H_INCLUDE_GUARD__
 
+#include <rlib/ralloc.h>
 #include <rlib/rclr.h>
 #include <rlib/rmacros.h>
 #include <rlib/rtty.h>

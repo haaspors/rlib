@@ -18,6 +18,13 @@
 
 #include <stddef.h>
 
+#ifdef __GNUC__
+#define R_GNUC_PREREQ(x, y) \
+  ((__GNUC__ == (x) && __GNUC_MINOR__ >= (y)) || (__GNUC__ > (x)))
+#else
+#define R_GNUC_PREREQ(x, y) 0
+#endif
+
 #if defined(_WIN32) || defined(__CYGWIN__)
 #define R_API_EXPORT __declspec(dllexport)
 #define R_API_IMPORT __declspec(dllimport)
@@ -155,6 +162,7 @@
 #define R_ATTR_UNUSED                 __attribute__((__unused__))
 #define R_ATTR_CONST                  __attribute__((__const__))
 #define R_ATTR_PURE                   __attribute__((__pure__))
+#define R_ATTR_MALLOC                 __attribute__((__malloc__))
 #define R_ATTR_FORMAT_ARG(arg_idx)    __attribute__((__format_arg__ (arg_idx)))
 #define R_ATTR_PRINTF(fmt_idx, arg_idx) \
   __attribute__((__format__ (__printf__, fmt_idx, arg_idx)))
@@ -164,9 +172,26 @@
 #define R_ATTR_UNUSED
 #define R_ATTR_CONST
 #define R_ATTR_PURE
+#define R_ATTR_MALLOC
 #define R_ATTR_FORMAT_ARG(arg_idx)
 #define R_ATTR_PRINTF(fmt_idx, arg_idx)
 #define R_ATTR_SCANF(fmt_idx, arg_idx)
+#endif
+
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+#ifndef __has_extension
+#define __has_extension __has_feature
+#endif
+
+#if  (defined(__clang__) && __has_feature(__alloc_size__)) || \
+    (!defined(__clang__) && R_GNUC_PREREQ(4, 3))
+#define R_ATTR_ALLOC_SIZE_ARG(x)    __attribute__((__alloc_size__(x)))
+#define R_ATTR_ALLOC_SIZE_ARGS(x,y) __attribute__((__alloc_size__(x,y)))
+#else
+#define R_ATTR_ALLOC_SIZE_ARG(x)
+#define R_ATTR_ALLOC_SIZE_ARGS(x,y)
 #endif
 
 #endif /* __R_MACROS_H__ */
