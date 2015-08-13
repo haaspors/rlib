@@ -31,6 +31,7 @@ def configure(cfg):
     ##################################
     # COMMON (for all variants)
     ##################################
+    configure_os_arch(cfg)
     configure_headers(cfg)
     configure_string(cfg)
     configure_sizeof(cfg)
@@ -102,6 +103,47 @@ def init(ctx):
             class tmp(y):
                 cmd = name + '_' + var
                 variant = var
+
+def configure_os_arch(cfg):
+    cfg.start_msg('Checking dest/host OS')
+    cfg.env.RLIB_OS = 'R_OS_WIN32' if cfg.env.DEST_OS == 'win32' else 'R_OS_UNIX'
+    if cfg.env.DEST_OS == 'linux':
+        cfg.env.RLIB_OS_EXTRA = '#define R_OS_LINUX              1'
+    elif cfg.env.DEST_OS == 'darwin':
+        cfg.env.RLIB_OS_EXTRA = '#define R_OS_DARWIN             1'
+    elif cfg.env.DEST_OS == 'freebsd':
+        cfg.env.RLIB_OS_EXTRA = '#define R_OS_FREEBSD            1'
+    elif cfg.env.DEST_OS == 'netbsd':
+        cfg.env.RLIB_OS_EXTRA = '#define R_OS_NETBSD             1'
+    elif cfg.env.DEST_OS == 'openbsd':
+        cfg.env.RLIB_OS_EXTRA = '#define R_OS_OPENBSD            1'
+    cfg.end_msg(cfg.env.DEST_OS, 'CYAN')
+    cfg.start_msg('Checking dest/host CPU/ARCH')
+    archcolor = 'CYAN'
+    if cfg.env.DEST_CPU in ['x86_64', 'amd64', 'x64']:
+        cfg.env.RLIB_ARCH = 'R_ARCH_X86_64'
+    elif cfg.env.DEST_CPU == 'x86':
+        cfg.env.RLIB_ARCH = 'R_ARCH_X86'
+    elif cfg.env.DEST_CPU == 'ia':
+        cfg.env.RLIB_ARCH = 'R_ARCH_IA64'
+    elif cfg.env.DEST_CPU == 'arm':
+        cfg.env.RLIB_ARCH = 'R_ARCH_ARM'
+    elif cfg.env.DEST_CPU == 'thumb':
+        cfg.env.RLIB_ARCH = 'R_ARCH_THUMB'
+    elif cfg.env.DEST_CPU == 'aarch64':
+        cfg.env.RLIB_ARCH = 'R_ARCH_AARCH64'
+    elif cfg.env.DEST_CPU == 'mips':
+        cfg.env.RLIB_ARCH = 'R_ARCH_MIPS'
+    elif cfg.env.DEST_CPU == 'sparc':
+        cfg.env.RLIB_ARCH = 'R_ARCH_SPARC'
+    elif cfg.env.DEST_CPU == 'alpha':
+        cfg.env.RLIB_ARCH = 'R_ARCH_ALPHA'
+    elif cfg.env.DEST_CPU == 'powerpc':
+        cfg.env.RLIB_ARCH = 'R_ARCH_POWERPC'
+    else:
+        cfg.env.RLIB_ARCH = 'R_ARCH_UNKNOWN'
+        archcolor = 'RED'
+    cfg.end_msg(cfg.env.DEST_CPU, archcolor)
 
 def configure_headers(cfg):
     cfg.multicheck(
