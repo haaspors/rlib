@@ -14,6 +14,7 @@
 #include <rlib/ralloc.h>
 #include <rlib/ratomic.h>
 #include <rlib/rclr.h>
+#include <rlib/renv.h>
 #include <rlib/rlist.h>
 #include <rlib/rmacros.h>
 #include <rlib/rmath.h>
