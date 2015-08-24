@@ -95,6 +95,8 @@ typedef const void*             rconstpointer;
 
 /* Function prototypes */
 typedef void (*RDestroyNotify) (rpointer ptr);
+typedef void (*RFunc) (rpointer data, rpointer user);
+typedef rboolean (*RFuncReturn) (rpointer data, rpointer user);
 
 R_END_DECLS
 

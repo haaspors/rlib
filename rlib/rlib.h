@@ -13,6 +13,7 @@
 
 #include <rlib/ralloc.h>
 #include <rlib/rclr.h>
+#include <rlib/rlist.h>
 #include <rlib/rmacros.h>
 #include <rlib/rtty.h>
 #include <rlib/rtypes.h>
