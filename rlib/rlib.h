@@ -16,6 +16,7 @@
 #include <rlib/rlist.h>
 #include <rlib/rmacros.h>
 #include <rlib/rmath.h>
+#include <rlib/rmodule.h>
 #include <rlib/rstr.h>
 #include <rlib/rtty.h>
 #include <rlib/rtypes.h>

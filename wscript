@@ -83,7 +83,8 @@ def build(bld):
             target      = APPNAME,
             vnum        = APIVERSION,
             includes    = [ '.' ],
-            defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ])
+            defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
+            use         = 'DL')
 
     bld.recurse('example')
 
@@ -116,6 +117,10 @@ def configure_headers(cfg):
         cfg.env.RLIB_DEFINE_HAVE_ALLOCA_H = '#define RLIB_HAVE_ALLOCA_H      1'
     else:
         cfg.env.RLIB_DEFINE_HAVE_ALLOCA_H = '/* #undef RLIB_HAVE_ALLOCA_H */'
+
+    if not cfg.env.DEST_OS == 'win32':
+        cfg.check(header_name='dlfcn.h')
+        cfg.check(lib='dl')
 
 def configure_string(cfg):
     cfg.check_cc(function_name='stpcpy',
