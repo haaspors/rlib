@@ -137,6 +137,23 @@
 #endif
 
 #if defined(__GNUC__)
+#if __MACH__
+#define R_ATTR_DATA_SECTION(sec)   __attribute__((section("__DATA,"sec)))
+#define R_ATTR_CODE_SECTION(sec)   __attribute__((section("__TEXT,"sec)))
+#else
+#define R_ATTR_DATA_SECTION(sec)   __attribute__((section(sec)))
+#define R_ATTR_CODE_SECTION(sec)   __attribute__((section(sec)))
+#endif
+#elif defined(_MSC_VER)
+#define R_ATTR_DATA_SECTION(sec)            \
+  __pragma(section(sec,read,write))         \
+  __declspec(allocate(sec))
+#define R_ATTR_CODE_SECTION(sec)   __declspec(code_seg(sec))
+#else
+#error Your compiler does not support data/code/text section attributes
+#endif
+
+#if defined(__GNUC__)
 #define R_ATTR_WARN_UNUSED_RESULT     __attribute__((warn_unused_result))
 #elif defined(_MSC_VER) && (_MSC_VER >= 1700)
 #define R_ATTR_WARN_UNUSED_RESULT     _Check_return_
