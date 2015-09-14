@@ -38,6 +38,7 @@ def configure(cfg):
     configure_printf(cfg)
     configure_time(cfg)
     configure_threads(cfg)
+    configure_signal(cfg)
 
     if cfg.env['CC_NAME'] == 'msvc':
         cfg.env.CPPFLAGS += ['/Zi', '/FS'] #, '/Wall']
@@ -87,7 +88,7 @@ def build(bld):
             vnum        = APIVERSION,
             includes    = [ '.' ],
             defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
-            use         = 'DL PTHREAD')
+            use         = 'DL PTHREAD RT')
 
     bld.recurse('example')
 
@@ -225,6 +226,16 @@ def configure_threads(cfg):
                 header_name="pthread.h", lib='pthread', mandatory=False)
         cfg.check_cc(function_name='pthread_threadid_np', defines=['_GNU_SOURCE=1'],
                 header_name="pthread.h", lib='pthread', mandatory=False)
+
+def configure_signal(cfg):
+    if not cfg.env.DEST_OS == 'win32':
+        cfg.check(lib='rt', mandatory=False)
+        cfg.check_cc(function_name='timer_create', lib='rt',
+                header_name="time.h", mandatory=False)
+        cfg.check_cc(function_name='setitimer',
+                header_name="sys/time.h", mandatory=False)
+        cfg.check_cc(function_name='alarm',
+                header_name="unistd.h", mandatory=False)
 
 def configure_sizeof(cfg):
     sizeof_short = cfg.check_sizeof('short', guess=2)
