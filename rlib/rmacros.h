@@ -137,10 +137,18 @@
 #define R_ATTR_UNUSED                 __attribute__((__unused__))
 #define R_ATTR_CONST                  __attribute__((__const__))
 #define R_ATTR_PURE                   __attribute__((__pure__))
+#define R_ATTR_FORMAT_ARG(arg_idx)    __attribute__((__format_arg__ (arg_idx)))
+#define R_ATTR_PRINTF(fmt_idx, arg_idx) \
+  __attribute__((__format__ (__printf__, fmt_idx, arg_idx)))
+#define R_ATTR_SCANF(fmt_idx, arg_idx)  \
+  __attribute__((__format__ (__scanf__, fmt_idx, arg_idx)))
 #else
 #define R_ATTR_UNUSED
 #define R_ATTR_CONST
 #define R_ATTR_PURE
+#define R_ATTR_FORMAT_ARG(arg_idx)
+#define R_ATTR_PRINTF(fmt_idx, arg_idx)
+#define R_ATTR_SCANF(fmt_idx, arg_idx)
 #endif
 
 #endif /* __R_MACROS_H__ */

@@ -32,6 +32,7 @@ def configure(cfg):
     # COMMON (for all variants)
     ##################################
     configure_sizeof(cfg)
+    configure_printf(cfg)
 
     if cfg.env['CC_NAME'] == 'msvc':
         cfg.env.CPPFLAGS += ['/Zi', '/FS'] #, '/Wall']
@@ -75,6 +76,15 @@ def build(bld):
             source      = 'rlib/rconfig.h.in',
             target      = 'rlib/rconfig.h')
 
+    bld.shlib(
+            source      = bld.path.ant_glob('rlib/*.c'),
+            target      = APPNAME,
+            vnum        = APIVERSION,
+            includes    = [ '.' ],
+            defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ])
+
+    bld.recurse('example')
+
 def init(ctx):
     from waflib.Build import BuildContext, CleanContext, InstallContext, UninstallContext
     from waflib.Options import options
@@ -89,6 +99,15 @@ def init(ctx):
             class tmp(y):
                 cmd = name + '_' + var
                 variant = var
+
+def configure_printf(cfg):
+    funcs = ['printf', 'fprintf', 'sprintf',
+             'vprintf', 'vfprintf', 'vsprintf',
+             'snprintf', 'vsnprintf',
+             'asprintf', 'vasprintf',
+             '_vscprintf']
+    for f in funcs:
+        cfg.check_cc(function_name=f,header_name="stdio.h", mandatory=False)
 
 def configure_sizeof(cfg):
     sizeof_short = cfg.check_sizeof('short', guess=2)
