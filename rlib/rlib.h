@@ -16,6 +16,7 @@
 #include <rlib/ratomic.h>
 #include <rlib/rclr.h>
 #include <rlib/renv.h>
+#include <rlib/rhzrptr.h>
 #include <rlib/rlist.h>
 #include <rlib/rlog.h>
 #include <rlib/rmacros.h>
