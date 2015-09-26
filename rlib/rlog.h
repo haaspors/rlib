@@ -88,6 +88,7 @@ R_API void r_log_msg (RLogCategory * cat, RLogLevel lvl,
     const rchar * msg);
 
 #define R_LOG_CAT_LEVEL(cat,lvl,...) R_STMT_START {                           \
+  _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE);               \
   if (R_UNLIKELY (lvl <= R_LOG_LEVEL_MAX && lvl <= _r_log_level_min))         \
     r_log ((cat), (lvl), __FILE__, __LINE__, R_STRFUNC, __VA_ARGS__);         \
 } R_STMT_END
@@ -108,7 +109,6 @@ R_API void r_log_msg (RLogCategory * cat, RLogLevel lvl,
 #define R_LOG_DEBUG(...)    R_LOG_CAT_LEVEL (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_DEBUG,    __VA_ARGS__)
 #define R_LOG_TRACE(...)    R_LOG_CAT_LEVEL (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_TRACE,    __VA_ARGS__)
 
-
 R_API void r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,
     const rchar * msg, rpointer user_data);
@@ -122,6 +122,10 @@ R_API void r_log_add_handler_full (RLogFunc func, rpointer data, RDestroyNotify 
 void r_log_remove_handler (RLogFunc func);
 void r_log_remove_handler_by_data (rpointer data);
 #endif
+
+/* Internal API used for marking last position for rtests */
+R_API rboolean _r_test_mark_position (const rchar * file, ruint line,
+    const rchar * func, rboolean assrt);
 
 R_END_DECLS
 

@@ -12,6 +12,7 @@
 #define __RLIB_H_INCLUDE_GUARD__
 
 #include <rlib/ralloc.h>
+#include <rlib/rassert.h>
 #include <rlib/ratomic.h>
 #include <rlib/rclr.h>
 #include <rlib/renv.h>
@@ -23,6 +24,7 @@
 #include <rlib/rproc.h>
 #include <rlib/rsignal.h>
 #include <rlib/rstr.h>
+#include <rlib/rtest.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>
 #include <rlib/rtty.h>

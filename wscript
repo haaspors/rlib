@@ -3,6 +3,7 @@
 
 # Bring in waf tools
 import tools.waf.conf
+import tools.waf.test
 
 APPNAME = 'rlib'
 VERSION = '0.0.1'
@@ -45,6 +46,11 @@ def configure(cfg):
     else:
         cfg.env.CPPFLAGS += ['-Wall', '-Werror', '-Wextra']
         cfg.env.CFLAGS += ['-fvisibility=hidden']
+
+    # This is probably wrong, but works for now.
+    # Read: There are probably elf based systmes which doesn't support dynamic linking
+    if cfg.env.DEST_BINFMT == 'elf':
+        cfg.env.LINKFLAGS_RTEST = ['-Wl,--export-dynamic']
 
     common_env = cfg.env
 
@@ -90,13 +96,14 @@ def build(bld):
             defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
             use         = 'DL PTHREAD RT')
 
-    bld.recurse('example')
+    bld.recurse('example test')
 
 def init(ctx):
-    from waflib.Build import BuildContext, CleanContext, InstallContext, UninstallContext
+    from waflib.Build import BuildContext, CleanContext, ListContext, InstallContext, UninstallContext, StepContext
+    from tools.waf.test import TestContext
     from waflib.Options import options
 
-    for y in (BuildContext, CleanContext, InstallContext, UninstallContext):
+    for y in (BuildContext, CleanContext, ListContext, InstallContext, UninstallContext, StepContext, TestContext):
         name = y.__name__.replace('Context','').lower()
         class tmp(y):
             cmd = name

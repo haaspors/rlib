@@ -19,6 +19,7 @@ R_INITIALIZER (rlib_init)
   r_log_init ();
   r_time_init ();
   r_thread_init ();
+  r_test_init ();
 }
 
 R_DEINITIALIZER (rlib_deinit)
