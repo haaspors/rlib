@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "rlib-internal.h"
+#include <rlib/rthreads.h>
 
 #ifdef R_OS_WIN32
 #include <windows.h>
@@ -16,10 +17,12 @@
 R_INITIALIZER (rlib_init)
 {
   r_time_init ();
+  r_thread_init ();
 }
 
 R_DEINITIALIZER (rlib_deinit)
 {
+  r_thread_deinit ();
 }
 
 #ifdef R_OS_WIN32
@@ -29,6 +32,9 @@ DllMain (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
   (void)hinstDLL;
   (void)fdwReason;
   (void)lpvReserved;
+
+  if (fdwReason == DLL_THREAD_DETACH)
+    r_thread_win32_dll_thread_detach ();
 
   return TRUE;
 }

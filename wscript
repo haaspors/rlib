@@ -37,6 +37,7 @@ def configure(cfg):
     configure_sizeof(cfg)
     configure_printf(cfg)
     configure_time(cfg)
+    configure_threads(cfg)
 
     if cfg.env['CC_NAME'] == 'msvc':
         cfg.env.CPPFLAGS += ['/Zi', '/FS'] #, '/Wall']
@@ -86,7 +87,7 @@ def build(bld):
             vnum        = APIVERSION,
             includes    = [ '.' ],
             defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
-            use         = 'DL')
+            use         = 'DL PTHREAD')
 
     bld.recurse('example')
 
@@ -165,8 +166,10 @@ def configure_headers(cfg):
         cfg.check(header_name='dlfcn.h')
         cfg.check(lib='dl')
 
+    cfg.check(header_name='sched.h', mandatory=False)
     cfg.check(header_name='sys/sysctl.h', mandatory=False)
     if cfg.env.DEST_OS == 'linux':
+        cfg.check(header_name='sys/prctl.h')
         cfg.check(header_name='sys/sysinfo.h')
 
     cfg.check(header_name='sys/time.h', mandatory=False)
@@ -191,6 +194,37 @@ def configure_time(cfg):
     if cfg.env.DEST_OS not in [ 'darwin', 'win32']:
         cfg.check_cc(function_name='clock_gettime',
                 header_name="time.h", mandatory=False)
+
+
+SNIP_PTHREAD_CALL = '''
+#include <pthread.h>
+
+int main(int argc, char **argv) {
+  (void)argc; (void)argv;
+  %s;
+  return 0;
+}
+'''
+def configure_threads(cfg):
+    cfg.check_cc(function_name='gettid',
+            header_name="sys/types.h", mandatory=False)
+    if cfg.check(header_name='pthread.h', mandatory=False):
+        cfg.check_cc(function_name='pthread_getname_np', defines=['_GNU_SOURCE=1'],
+                header_name="pthread.h", lib='pthread', mandatory=False)
+        cfg.check_cc(
+                fragment=SNIP_PTHREAD_CALL % 'pthread_setname_np (0, "test")',
+                define_name="HAVE_PTHREAD_SETNAME_NP_WITH_TID",
+                msg='Checking for pthread_setname_np (pthread_t, const char*)',
+                defines=['_GNU_SOURCE=1'], lib='pthread', mandatory=False)
+        cfg.check_cc(
+                fragment=SNIP_PTHREAD_CALL % 'pthread_setname_np ("test")',
+                msg='Checking for pthread_setname_np (const char*)',
+                define_name="HAVE_PTHREAD_SETNAME_NP_WITHOUT_TID",
+                defines=['_GNU_SOURCE=1'], lib='pthread', mandatory=False)
+        cfg.check_cc(function_name='pthread_getthreadid_np', defines=['_GNU_SOURCE=1'],
+                header_name="pthread.h", lib='pthread', mandatory=False)
+        cfg.check_cc(function_name='pthread_threadid_np', defines=['_GNU_SOURCE=1'],
+                header_name="pthread.h", lib='pthread', mandatory=False)
 
 def configure_sizeof(cfg):
     sizeof_short = cfg.check_sizeof('short', guess=2)

@@ -19,6 +19,7 @@
 #include <rlib/rmath.h>
 #include <rlib/rmodule.h>
 #include <rlib/rstr.h>
+#include <rlib/rthreads.h>
 #include <rlib/rtime.h>
 #include <rlib/rtty.h>
 #include <rlib/rtypes.h>
