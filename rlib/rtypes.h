@@ -90,6 +90,11 @@ typedef const void*             rconstpointer;
 #define RUINT_TO_POINTER(u)     ((rpointer) (ruintptr) (u))
 #define RSIZE_TO_POINTER(s)     ((rpointer) (rsize) (s))
 
+/* Clock and time related */
+typedef ruint64                 RClockTime;
+typedef rint64                  RClockTimeDiff;
+#define R_CLOCK_TIME_NONE       ((RClockTime) -1)
+
 #define R_LITTLE_ENDIAN         1234
 #define R_BIG_ENDIAN            4321
 

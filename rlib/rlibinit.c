@@ -15,6 +15,7 @@
 
 R_INITIALIZER (rlib_init)
 {
+  r_time_init ();
 }
 
 R_DEINITIALIZER (rlib_deinit)

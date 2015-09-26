@@ -14,5 +14,6 @@
 
 #include <rlib/rtypes.h>
 
+R_API_HIDDEN void r_time_init (void);
 
 #endif /* __RLIB_INTERNAL_H__ */

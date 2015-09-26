@@ -36,6 +36,7 @@ def configure(cfg):
     configure_string(cfg)
     configure_sizeof(cfg)
     configure_printf(cfg)
+    configure_time(cfg)
 
     if cfg.env['CC_NAME'] == 'msvc':
         cfg.env.CPPFLAGS += ['/Zi', '/FS'] #, '/Wall']
@@ -164,6 +165,15 @@ def configure_headers(cfg):
         cfg.check(header_name='dlfcn.h')
         cfg.check(lib='dl')
 
+    cfg.check(header_name='sys/sysctl.h', mandatory=False)
+    if cfg.env.DEST_OS == 'linux':
+        cfg.check(header_name='sys/sysinfo.h')
+
+    cfg.check(header_name='sys/time.h', mandatory=False)
+    if cfg.env.DEST_OS == 'darwin':
+        cfg.check(header_name='mach/clock.h')
+        cfg.check(header_name='mach/mach_time.h')
+
 def configure_string(cfg):
     cfg.check_cc(function_name='stpcpy',
             header_name="string.h", mandatory=False)
@@ -176,6 +186,11 @@ def configure_printf(cfg):
              '_vscprintf']
     for f in funcs:
         cfg.check_cc(function_name=f,header_name="stdio.h", mandatory=False)
+
+def configure_time(cfg):
+    if cfg.env.DEST_OS not in [ 'darwin', 'win32']:
+        cfg.check_cc(function_name='clock_gettime',
+                header_name="time.h", mandatory=False)
 
 def configure_sizeof(cfg):
     sizeof_short = cfg.check_sizeof('short', guess=2)
