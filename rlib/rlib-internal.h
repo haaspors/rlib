@@ -14,6 +14,8 @@
 
 #include <rlib/rtypes.h>
 
+R_API_HIDDEN void r_log_init (void);
+
 R_API_HIDDEN void r_thread_init (void);
 R_API_HIDDEN void r_thread_deinit (void);
 

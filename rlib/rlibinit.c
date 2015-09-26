@@ -16,6 +16,7 @@
 
 R_INITIALIZER (rlib_init)
 {
+  r_log_init ();
   r_time_init ();
   r_thread_init ();
 }
