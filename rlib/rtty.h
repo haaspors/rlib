@@ -65,10 +65,6 @@ rchar * r_tty_clr_to_str (RColorFlags clr, rchar str[R_TTY_MAX_CC]);
 #define r_vprintf     vprintf
 #define r_fprintf     fprintf
 #define r_vfprintf    vfprintf
-#define r_sprintf     sprintf
-#define r_vsprintf    vsprintf
-#define r_snprintf    snprintf
-#define r_vsnprintf   vsnprintf
 
 R_API int r_print (const rchar * fmt, ...) R_ATTR_PRINTF (1, 2);
 R_API int r_printerr (const rchar * fmt, ...) R_ATTR_PRINTF (1, 2);

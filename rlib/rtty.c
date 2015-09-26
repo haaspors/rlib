@@ -7,7 +7,8 @@
  */
 
 #include "config.h"
-#include <rlib/rlib.h>
+#include <rlib/rtty.h>
+#include <rlib/rstr.h>
 
 static RPrintFunc printfunc         = NULL;
 static rpointer   printfuncdata     = NULL;
@@ -40,38 +41,6 @@ r_override_printerr_handler (RPrintFunc func, rpointer data,
   printerrfuncdata = data;
 }
 
-/* TODO: This should be implemented as a c-str function at some point! */
-static int
-_r_vasprintf (rchar ** str, const rchar * fmt, va_list ap)
-{
-  int ret;
-#if defined(HAVE_VASPRINTF)
-  ret = vasprintf (str, fmt, ap);
-#elif defined(HAVE_VSPRINTF)
-  valist ap_copy;
-  va_copy (ap_copy, ap);
-#ifdef HAVE__VSCPRINTF
-  ret = _vscprintf (fmt, ap_copy);
-#else
-  ret = vsprintf (NULL, fmt, ap_copy);
-#endif
-  va_end (ap_copy);
-  if (R_LIKELY (ret >= 0)) {
-    *str = malloc (ret + 1);
-    if (R_LIKELY (*str != NULL)) {
-      ret = vsprintf (*str, fmt, ap);
-      if (R_UNLIKELY (ret < 0)) {
-        free (*str);
-        *str = NULL;
-      }
-    }
-  }
-#else
-#error r_str_vprintf not implemented
-#endif
-  return ret;
-}
-
 int
 r_print (const rchar * fmt, ...)
 {
@@ -82,7 +51,7 @@ r_print (const rchar * fmt, ...)
   /* TODO: Prevent re-etnry? use TLS */
 
   va_start (args, fmt);
-  ret = _r_vasprintf (&str, fmt, args);
+  ret = r_vasprintf (&str, fmt, args);
   va_end (args);
 
   if (R_LIKELY (ret > 0 && str != NULL)) {
@@ -114,7 +83,7 @@ r_printerr (const rchar * fmt, ...)
   /* TODO: Prevent re-etnry? use TLS */
 
   va_start (args, fmt);
-  ret = _r_vasprintf (&str, fmt, args);
+  ret = r_vasprintf (&str, fmt, args);
   va_end (args);
 
   if (R_LIKELY (ret > 0 && str != NULL)) {
