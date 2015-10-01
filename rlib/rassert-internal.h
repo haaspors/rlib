@@ -16,9 +16,13 @@
 
 /* Assert helper macros */
 #define R_ASSERT_VA(...) r_test_assertion (R_LOG_CAT_ASSERT, __FILE__, __LINE__, R_STRFUNC, __VA_ARGS__)
+#if defined(RLIB_COMPILATION)
+#define R_ASSERT_STMT(CMPEXPR, REPR, REAL, ...) if (!(CMPEXPR)) abort ()
+#else
 #define R_ASSERT_STMT(CMPEXPR, REPR, REAL, ...)                               \
   if (CMPEXPR) R_LOG_CAT_TRACE (R_LOG_CAT_ASSERT, "%s ("REPR"): ("REAL")", "passed", __VA_ARGS__); \
   else R_ASSERT_VA ("%s ("REPR"): ("REAL")", "*** assertion", __VA_ARGS__)
+#endif
 #define R_ASSERT_CMP(a1, cmp, a2, TYPE, FMT, r1, r2) R_STMT_START {           \
   TYPE __a1 = (TYPE)(a1), __a2 = (TYPE)(a2);                                  \
   R_ASSERT_STMT (__a1 cmp __a2, "%s %s %s", FMT" %s "FMT,                     \
