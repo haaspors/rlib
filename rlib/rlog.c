@@ -210,6 +210,33 @@ r_log_msg (RLogCategory * cat, RLogLevel lvl,
       g__r_log_default_handler_data);
 }
 
+void
+r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
+    const rchar * file, ruint line, const rchar * func,
+    const ruint8 * ptr, rsize size, rsize bytesperline)
+{
+  rchar * msg = r_alloca (R_STR_MEM_DUMP_SIZE (bytesperline));
+
+  if (R_UNLIKELY (cat == NULL))
+    abort ();
+  if (lvl > cat->threshold)
+    return;
+
+  while (size > bytesperline) {
+    r_str_mem_dump (msg, ptr, bytesperline, bytesperline);
+    g__r_log_default_handler (cat, lvl, file, line, func, msg,
+        g__r_log_default_handler_data);
+    size -= bytesperline;
+    ptr  += bytesperline;
+  }
+
+  if (size > 0) {
+    r_str_mem_dump (msg, ptr, size, bytesperline);
+    g__r_log_default_handler (cat, lvl, file, line, func, msg,
+        g__r_log_default_handler_data);
+  }
+}
+
 RLogFunc
 r_log_override_default_handler (RLogFunc func, rpointer * data)
 {

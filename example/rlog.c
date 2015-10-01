@@ -25,6 +25,17 @@ main (int argc, char ** argv)
         uptime, days, hours, mins, seconds);
   }
 
+  {
+    rchar * tmp = "TEST \x15 10101";
+    ruint8  mem[160+7];
+    rsize i;
+    for (i = 0; i < sizeof (mem); i++)
+      mem[i] = (ruint8)(rand () % 0xFF);
+
+    R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG, (rpointer)tmp, 12);
+    R_LOG_MEM_DUMP (R_LOG_LEVEL_INFO, mem, sizeof (mem));
+  }
+
   return 0;
 }
 
