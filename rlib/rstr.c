@@ -9,8 +9,29 @@
 #include "config.h"
 #include <rlib/rstr.h>
 #include <rlib/ralloc.h>
+#include <rlib/rascii.h>
 #include <string.h>
 #include <ctype.h>
+
+const ruint16 r_ascii_table[256] = {
+  0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004,
+  0x0004, 0x0104, 0x0104, 0x0004, 0x0104, 0x0104, 0x0004, 0x0004,
+  0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004,
+  0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004,
+  0x0140, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0,
+  0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0,
+  0x0459, 0x0459, 0x0459, 0x0459, 0x0459, 0x0459, 0x0459, 0x0459,
+  0x0459, 0x0459, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0,
+  0x00d0, 0x0653, 0x0653, 0x0653, 0x0653, 0x0653, 0x0653, 0x0253,
+  0x0253, 0x0253, 0x0253, 0x0253, 0x0253, 0x0253, 0x0253, 0x0253,
+  0x0253, 0x0253, 0x0253, 0x0253, 0x0253, 0x0253, 0x0253, 0x0253,
+  0x0253, 0x0253, 0x0253, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x00d0,
+  0x00d0, 0x0473, 0x0473, 0x0473, 0x0473, 0x0473, 0x0473, 0x0073,
+  0x0073, 0x0073, 0x0073, 0x0073, 0x0073, 0x0073, 0x0073, 0x0073,
+  0x0073, 0x0073, 0x0073, 0x0073, 0x0073, 0x0073, 0x0073, 0x0073,
+  0x0073, 0x0073, 0x0073, 0x00d0, 0x00d0, 0x00d0, 0x00d0, 0x0004
+  /* rest is 0x0000 */
+};
 
 int
 r_strcmp (const rchar * a, const rchar * b)
@@ -355,5 +376,72 @@ r_strtwstrip (rchar * str)
   }
 
   return str;
+}
+
+rboolean
+r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
+{
+  rsize i;
+
+  if (R_UNLIKELY (size > align))
+    return FALSE;
+  if (R_UNLIKELY (str == NULL))
+    return FALSE;
+  if (R_UNLIKELY (ptr == NULL))
+    return FALSE;
+
+#if RLIB_SIZEOF_VOID_P == 8
+#define _PTR_FMT  "%14p: "
+#elif RLIB_SIZEOF_VOID_P == 4
+#define _PTR_FMT  "%8p: "
+#else
+#define _PTR_FMT  "%p: "
+#endif
+
+  if (size > 0) {
+    rsize pad = (align - size);
+    rsize pad_extra = (align - size) / 8;
+
+    str += r_sprintf (str, _PTR_FMT, ptr);
+    for (i = 0; i < size; i++) {
+      str += r_sprintf (str, "%02x ", ptr[i]);
+      if ((i+1) % 8 == 0 && (i+1) < size) *str++ = ' ';
+    }
+
+    memset (str, (int)' ', pad * 3 + pad_extra + 1);
+    str += pad * 3 + pad_extra + 1;
+
+    *str++ = '"';
+    for (i = 0; i < size; i++) {
+      *str++ = r_ascii_isprint (ptr[i]) ? ptr[i] : '.';
+      if ((i+1) % 8 == 0 && (i+1) < size) *str++ = ' ';
+    }
+    memset (str, (int)' ', pad + pad_extra);
+    str += pad + pad_extra;
+    *str++ = '"';
+  }
+
+#undef _PTR_FMT
+
+  *str = 0;
+  return TRUE;
+}
+
+rchar *
+r_str_mem_dump_dup (const ruint8 * ptr, rsize size, rsize align)
+{
+  rchar * ret;
+
+  if (R_UNLIKELY (size > align))
+    return NULL;
+
+  if ((ret = r_malloc (R_STR_MEM_DUMP_SIZE (align))) != NULL) {
+    if (R_UNLIKELY (!r_str_mem_dump (ret, ptr, size, align))) {
+      r_free (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
 }
 

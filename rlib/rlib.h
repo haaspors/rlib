@@ -12,6 +12,7 @@
 #define __RLIB_H_INCLUDE_GUARD__
 
 #include <rlib/ralloc.h>
+#include <rlib/rascii.h>
 #include <rlib/rassert.h>
 #include <rlib/ratomic.h>
 #include <rlib/rclr.h>

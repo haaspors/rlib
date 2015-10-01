@@ -54,6 +54,13 @@ R_API rchar ** r_strsplit (const rchar * str, const rchar * delim, rsize max);
 R_API rchar * r_strjoin (const rchar * delim, ...);
 R_API rchar * r_strjoinv (const rchar * delim, va_list args);
 
+#define R_STR_MEM_DUMP_SIZE(align) \
+  ((align * 4) + (align / 4) + (RLIB_SIZEOF_VOID_P * 2) + 8)
+R_API rboolean r_str_mem_dump (rchar * str, const ruint8 * ptr,
+    rsize size, rsize align);
+R_API rchar * r_str_mem_dump_dup (const ruint8 * ptr,
+    rsize size, rsize align);
+
 R_END_DECLS
 
 #endif /* __R_STR_H__ */
