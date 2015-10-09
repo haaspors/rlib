@@ -31,5 +31,6 @@
 #include <rlib/rtime.h>
 #include <rlib/rtty.h>
 #include <rlib/rtypes.h>
+#include <rlib/runicode.h>
 
 #endif /* __R_LIB_H__ */
