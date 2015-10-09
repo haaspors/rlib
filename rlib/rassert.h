@@ -28,6 +28,7 @@ R_BEGIN_DECLS
 #define r_assert_cmpfloat(n1, cmp, n2)  R_ASSERT_CMP (n1,cmp,n2,rfloat,"%.9f",#n1,#n2)
 #define r_assert_cmpdouble(n1, cmp, n2) R_ASSERT_CMP (n1,cmp,n2,rdouble,"%.9f",#n1,#n2)
 #define r_assert_cmpstr(s1, cmp, s2)    R_ASSERT_CMPSTR (s1, cmp, s2, #s1, #s2)
+#define r_assert_cmpmem(m1, cmp, m2, s) R_ASSERT_CMPMEM (m1, cmp, m2, s, #m1, #m2)
 
 
 R_API R_ATTR_NORETURN void r_test_assertion (RLogCategory * cat,
