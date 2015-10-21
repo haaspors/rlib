@@ -6,6 +6,7 @@ compiler:
   - gcc
 
 script:
-  - ./waf --variant=debug configure build test
-  - ./waf --variant=release configure build test
+  - python waf configure
+  - python waf --variant=debug build test
+  - python waf --variant=release build test
 
