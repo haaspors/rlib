@@ -1,4 +1,4 @@
-rlib [![Build Status](https://travis-ci.org/ieei/rlib.svg?branch=master)](https://travis-ci.org/ieei/rlib)
+rlib [![Build Status](https://travis-ci.org/ieei/rlib.svg?branch=master)](https://travis-ci.org/ieei/rlib) [![Coverity Status](https://scan.coverity.com/projects/6732/badge.svg)](https://scan.coverity.com/projects/ieei-rlib)
 ========
 rlib is a c library and contains abstractions for OS, platform and CPU architecture.
 It's a convenience library for useful things. :-)
