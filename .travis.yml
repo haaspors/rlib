@@ -10,3 +10,17 @@ script:
   - python waf --variant=debug build test
   - python waf --variant=release build test
 
+env:
+  global:
+    - secure: "fKqQXaILVkLVxGKZImTZtCUGr8YXdmNU2VRl+tPBJE866pt1X6FXJ4IVnbE32NTsWiBvkmgy0Y690wF9Lt5L4DatIrINLBTVnHsWjsO8F1kpfTYsK00umXdbj0W0Paba9JH/6erYsEKWrfoR38Hpxt8X+rgZlEO/E+0DDzq8gITdslh3jVp+6wxML5krCQ3KvGQs4KNKHVWhJNVuNYF/DyQmzfBJ98djijL9foC1QrxsuB6KOo93bBiHCYv8Cx0GYFhXFmqDlTqeiioBvu0NMnNBlMm9HXRN6H46RW6L+BnV8trYtuFppXKEquihoGs2wN27FNFs5+N+b/tsSc8lhgEMJcOaDIMPvBEHkcLjpiVDyV9tbsqW9EAWe6vhjlF5CKYxNiEpI1rSSD0dzLdeRV7nDRa1YZDr+v9AbBkrBZSLnQxQBx67B9paNDl+rAOHpl2GbOJaZ7WSdABZWH26LDv9Tav1mIKkKS2McdnYkWajyJH+IIlgtdwATXYlFtwCj51QBLgyd20YuLOFu7oso2bpXJ9pBg1nqCOFCpSfOxhAhEDR2Hv9PCkCJWch20+fLHUqwG62dUHkpsoPKh3Vlxs9bQ1MU5XdkAtIbnbVlKgdcP7jL0GYGZG+WR3s8L2cbToNYtlM2ii1ZvYQe5UCt+PBRqqa9kTBOLzHi64Nd/4="
+
+addons:
+  coverity_scan:
+    project:
+      name: "ieei/rlib"
+      description: "Build submitted via Travis CI"
+    notification_email: haakon.sporsheim@gmail.com
+    build_command_prepend: "python waf distclean configure"
+    build_command:   "python waf build"
+    branch_pattern: coverity_scan
+
