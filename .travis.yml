@@ -1,0 +1,11 @@
+language: c
+sudo: false
+
+compiler:
+  - clang
+  - gcc
+
+script:
+  - ./waf --variant=debug configure build test
+  - ./waf --variant=release configure build test
+
