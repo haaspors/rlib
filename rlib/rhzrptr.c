@@ -14,8 +14,8 @@
 
 #define R_HZR_PTR_R g__r_hzrptr_count
 
-static RHzrPtrRec * g__r_hzrptr = NULL;
-static ruint        g__r_hzrptr_count = 0;
+static raptr        g__r_hzrptr; /* (RHzrPtrRec *) */
+static ruint        g__r_hzrptr_count;
 static RTss         g__r_hzrptr_tss = R_TSS_INIT (r_hzr_ptr_rec_free);
 
 struct _RHzrPtrRec {
@@ -78,7 +78,7 @@ r_hzr_ptr_rec_scan (RHzrPtrRec * rec)
   RHzrPtrRec * it;
 
   /* FIXME: Optimize by using a sorted data structure and binary search? */
-  for (it = g__r_hzrptr; it != NULL; it = it->next) {
+  for (it = r_atomic_ptr_load (&g__r_hzrptr); it != NULL; it = it->next) {
     if (it->ptr != NULL)
       plist = r_slist_prepend (plist, it->ptr);
   }
@@ -108,9 +108,10 @@ r_hzr_ptr_replace (rhzrptr * hzrptr, rpointer ptr)
 RHzrPtrRec *
 r_hzr_ptr_rec_new (void)
 {
-  RHzrPtrRec * rec, * old;
+  RHzrPtrRec * rec;
+  rpointer old;
 
-  for (rec = g__r_hzrptr; rec != NULL; rec = rec->next) {
+  for (rec = r_atomic_ptr_load (&g__r_hzrptr); rec != NULL; rec = rec->next) {
     int oa = FALSE;
     if (r_atomic_int_cmp_xchg_strong (&rec->active, &oa, TRUE))
       goto done;
@@ -119,8 +120,8 @@ r_hzr_ptr_rec_new (void)
   rec = r_malloc0 (sizeof (RHzrPtrRec));
   rec->active = TRUE;
 
-  old = g__r_hzrptr;
-  while (!r_atomic_ptr_cmp_xchg_weak ((raptr*)&g__r_hzrptr, &old, rec));
+  old = r_atomic_ptr_load (&g__r_hzrptr);
+  while (!r_atomic_ptr_cmp_xchg_weak (&g__r_hzrptr, &old, rec));
 
 done:
   return rec;
