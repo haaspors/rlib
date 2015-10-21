@@ -201,7 +201,7 @@ def configure_printf(cfg):
 def configure_time(cfg):
     if cfg.env.DEST_OS not in [ 'darwin', 'win32']:
         cfg.check_cc(function_name='clock_gettime',
-                header_name="time.h", mandatory=False)
+                header_name="time.h", lib='rt', mandatory=False)
 
 
 SNIP_PTHREAD_CALL = '''
