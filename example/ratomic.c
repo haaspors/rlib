@@ -3,9 +3,10 @@
 int
 main (int argc, char ** argv)
 {
-  raptr a = (ruintptr) RINT_TO_POINTER (argc);
+  raptr a;
   rpointer b;
 
+  (void)argc;
   (void)argv;
 
   r_atomic_ptr_store (&a, (ruintptr) (100));

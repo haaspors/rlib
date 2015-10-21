@@ -173,7 +173,7 @@ r_tss_ensure_allocated (RTss * tss)
 #else
   if (R_UNLIKELY (tss->impl.ptr == NULL)) {
     pthread_key_t key;
-    ruintptr old = 0;
+    rpointer old = NULL;
     if (pthread_key_create (&key, tss->notify) != 0)
       abort ();
 

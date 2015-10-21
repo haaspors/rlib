@@ -39,7 +39,7 @@ typedef ruintptr volatile   raptr;
 #else
 typedef int                 raint;
 typedef ruint               rauint;
-typedef ruintptr            raptr;
+typedef rpointer            raptr;
 #endif
 
 R_API int       r_atomic_int_load             (raint * a);
@@ -159,7 +159,7 @@ __extension__ ({                                              \
 __extension__ ({                                              \
   __typeof__(o) __op = (o);                                   \
   __typeof__(*o) __o = *__op;                                 \
-  ((*__op = __sync_val_compare_and_swap(a, __o, v)) == __o);  \
+  (rboolean)((*__op = __sync_val_compare_and_swap(a, __o, v)) == __o);  \
 })
 
 #define r_atomic_int_load(a)                    __sync_fetch_and_add(a, 0)
@@ -185,15 +185,15 @@ __extension__ ({                                              \
 #define r_atomic_uint_fetch_xor(a, v)           __sync_fetch_and_xor (a, v)
 
 #define r_atomic_ptr_load(a)                    (rpointer)__sync_fetch_and_add(a, 0)
-#define r_atomic_ptr_store(a, v)                r_atomic_exchange (a, (ruintptr)v)
-#define r_atomic_ptr_exchange(a, v)             (rpointer)r_atomic_exchange (a, (ruintptr)v)
-#define r_atomic_ptr_cmp_xchg_weak(a, o, v)     r_atomic_cmp_xchg (a, (ruintptr*)o, (ruintptr)v)
-#define r_atomic_ptr_cmp_xchg_strong(a, o, v)   r_atomic_cmp_xchg (a, (ruintptr*)o, (ruintptr)v)
-#define r_atomic_ptr_fetch_add(a, v)            (rpointer)__sync_fetch_and_add (a, (ruintptr)v)
-#define r_atomic_ptr_fetch_sub(a, v)            (rpointer)__sync_fetch_and_sub (a, (ruintptr)v)
-#define r_atomic_ptr_fetch_and(a, v)            (rpointer)__sync_fetch_and_and (a, (ruintptr)v)
-#define r_atomic_ptr_fetch_or(a, v)             (rpointer)__sync_fetch_and_or  (a, (ruintptr)v)
-#define r_atomic_ptr_fetch_xor(a, v)            (rpointer)__sync_fetch_and_xor (a, (ruintptr)v)
+#define r_atomic_ptr_store(a, v)                r_atomic_exchange (a, v)
+#define r_atomic_ptr_exchange(a, v)             (rpointer)r_atomic_exchange (a, v)
+#define r_atomic_ptr_cmp_xchg_weak(a, o, v)     r_atomic_cmp_xchg (a, o, v)
+#define r_atomic_ptr_cmp_xchg_strong(a, o, v)   r_atomic_cmp_xchg (a, o, v)
+#define r_atomic_ptr_fetch_add(a, v)            (rpointer)__sync_fetch_and_add (a, v)
+#define r_atomic_ptr_fetch_sub(a, v)            (rpointer)__sync_fetch_and_sub (a, v)
+#define r_atomic_ptr_fetch_and(a, v)            (rpointer)__sync_fetch_and_and (a, v)
+#define r_atomic_ptr_fetch_or(a, v)             (rpointer)__sync_fetch_and_or  (a, v)
+#define r_atomic_ptr_fetch_xor(a, v)            (rpointer)__sync_fetch_and_xor (a, v)
 #elif USE_MSC_ATOMICS
 #include <intrin.h>
 
