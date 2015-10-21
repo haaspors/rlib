@@ -92,7 +92,7 @@ R_API void r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
 
 #define R_LOG_CAT_LEVEL(cat,lvl,...) R_STMT_START {                           \
   _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE);               \
-  if (R_UNLIKELY (lvl <= R_LOG_LEVEL_MAX && lvl <= _r_log_level_min))         \
+  if (R_UNLIKELY (lvl <= R_LOG_LEVEL_MAX && (int)lvl<=(int)_r_log_level_min)) \
     r_log ((cat), (lvl), __FILE__, __LINE__, R_STRFUNC, __VA_ARGS__);         \
 } R_STMT_END
 
@@ -115,7 +115,7 @@ R_API void r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
 
 #define R_LOG_CAT_LEVEL_MEM_DUMP(cat,lvl,ptr,size) R_STMT_START {             \
   _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE);               \
-  if (R_UNLIKELY (lvl <= R_LOG_LEVEL_MAX && lvl <= _r_log_level_min))         \
+  if (R_UNLIKELY (lvl <= R_LOG_LEVEL_MAX && (int)lvl<=(int)_r_log_level_min)) \
     r_log_mem_dump ((cat), (lvl), __FILE__, __LINE__, R_STRFUNC, ptr, size, 16);\
 } R_STMT_END
 #define R_LOG_MEM_DUMP(lvl,ptr,size)  R_LOG_CAT_LEVEL_MEM_DUMP (R_LOG_CAT_DEFAULT, lvl, ptr, size)
