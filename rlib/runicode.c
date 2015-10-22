@@ -49,7 +49,7 @@ r_unichar_to_utf8 (runichar c, rchar * str)
   str[3] = ((c >> 12) & 0x3f) | 0x80;
   str[2] = ((c >> 18) & 0x3f) | 0x80;
   str[1] = ((c >> 24) & 0x3f) | 0x80;
-  str[0] = ((c >> 30) &         0xfc);
+  str[0] = ((c >> 30)         | 0xfc);
   return 6;
 }
 
