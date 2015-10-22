@@ -42,9 +42,9 @@ r_proc_is_debugger_attached (void)
     int fd;
 
     if ((fd = open ("/proc/self/status", O_RDONLY)) >= 0) {
-      ssize_t num_read = read (fd, buf, sizeof (buf));
+      ssize_t num_read = read (fd, buf, sizeof (buf) - 1);
 
-      if (num_read > 0) {
+      if (num_read > 0 && num_read < (ssize_t)sizeof (buf)) {
           rchar * tracer_pid;
 
           buf[num_read] = 0;
