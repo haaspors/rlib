@@ -41,7 +41,7 @@ r_proc_is_debugger_attached (void)
     rchar buf[1024];
     int fd;
 
-    if ((fd = open ("/proc/self/status", O_RDONLY)) > 0) {
+    if ((fd = open ("/proc/self/status", O_RDONLY)) >= 0) {
       ssize_t num_read = read (fd, buf, sizeof (buf));
 
       if (num_read > 0) {
