@@ -48,7 +48,7 @@ r_log_configure (const rchar * cfg)
 
   /* FIXME: Parse list with string functions */
   lvl = strtoul (cfg, &end, 10);
-  if (end > cfg && *end == 0) {
+  if (end > cfg && *end == 0 && lvl < R_LOG_LEVEL_MAX) {
     r_log_set_default_level (lvl);
     return TRUE;
   }
