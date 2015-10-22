@@ -355,6 +355,7 @@ r_strjoinv (const rchar * delim, va_list args)
     ret = r_strdup ("");
   }
 
+  va_end (args_dup);
   return ret;
 }
 
