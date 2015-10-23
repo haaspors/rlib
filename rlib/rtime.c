@@ -8,7 +8,6 @@
 
 #include "config.h"
 #include <rlib/rtime.h>
-#include <rlib/ratomic.h>
 #include <rlib/rmodule.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,21 +29,20 @@
 #include <sys/sysinfo.h>
 #endif
 
-#ifdef HAVE_MACH_MACH_TIME_H
-static rauint g__r_time_ts_monotonic_denom = 0;
-#endif
 
-#ifdef R_OS_WIN32
+#if defined(R_OS_WIN32)
 typedef void (WINAPI * r_win32_get_system_time) (LPFILETIME ft);
 static r_win32_get_system_time  g__r_timer_win32GetSystemTime = GetSystemTimeAsFileTime;
 static ruint                    g__r_time_ts_monotonic_num    = 100;
+static ruint                    g__r_time_ts_monotonic_denom  = 1;
+#elif defined(HAVE_MACH_MACH_TIME_H)
 static ruint                    g__r_time_ts_monotonic_denom  = 1;
 #endif
 
 void
 r_time_init (void)
 {
-#ifdef R_OS_WIN32
+#if defined(R_OS_WIN32)
   LARGE_INTEGER frequency;
   RMODULE mod;
   if (r_module_open (&mod, "kernel32.dll")) {
@@ -59,6 +57,12 @@ r_time_init (void)
     g__r_time_ts_monotonic_num = R_SECOND / d;
     g__r_time_ts_monotonic_denom = frequency.QuadPart / d;
   }
+#elif defined(HAVE_MACH_MACH_TIME_H)
+  mach_timebase_info_data_t mtbi;
+  mach_timebase_info (&mtbi);
+  if ((mtbi.denom % mtbi.numer) != 0)
+    abort ();
+  g__r_time_ts_monotonic_denom = mtbi.denom / mtbi.numer;
 #endif
 }
 
@@ -90,13 +94,6 @@ r_time_get_ts_monotonic (void)
   QueryPerformanceCounter (&counter);
   return (counter.QuadPart * g__r_time_ts_monotonic_num) / g__r_time_ts_monotonic_denom;
 #elif defined(HAVE_MACH_MACH_TIME_H)
-  if (R_UNLIKELY (!g__r_time_ts_monotonic_denom == 0)) {
-    mach_timebase_info_data_t mtbi;
-    mach_timebase_info (&mtbi);
-    if ((mtbi.denom % mtbi.numer) != 0)
-      abort ();
-    r_atomic_uint_store (&g__r_time_ts_monotonic_denom, mtbi.denom / mtbi.numer);
-  }
   return mach_absolute_time () / g__r_time_ts_monotonic_denom;
 #elif defined(HAVE_CLOCK_GETTIME) && defined(CLOCK_MONOTONIC)
   struct timespec tspec;
