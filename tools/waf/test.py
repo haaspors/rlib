@@ -4,7 +4,7 @@
 """test.py: Waf Test tools - inspired from waf_unit_test"""
 
 __copyright__       = "Copyright 2015 Haakon Sporsheim <haakon.sporsheim@gmail.com>"
-__license__         = "MIT"
+__license__         = "LGPL"
 __author__          = "Haakon Sporsheim"
 __email__           = "haakon.sporsheim@gmail.com"
 
