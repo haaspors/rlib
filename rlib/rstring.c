@@ -34,11 +34,16 @@ struct RString
 RString *
 r_string_new (const rchar * cstr)
 {
-  RString * str = r_malloc (sizeof (RString));
-  str->len = strlen (cstr);
-  str->size = (str->len + 1) | R_STRING_ALLOC_MASK;
-  str->cstr = r_malloc (str->size);
-  memcpy (str->cstr, cstr, str->len + 1);
+  RString * str;
+  rsize len;
+
+  if (R_UNLIKELY (cstr == NULL))
+    return r_string_new_sized (0);
+
+  len = strlen (cstr);
+  str = r_string_new_sized (len + 1);
+  memcpy (str->cstr, cstr, len + 1);
+  str->len = len;
 
   return str;
 }
@@ -50,6 +55,7 @@ r_string_new_sized (rsize size)
   str->len = 0;
   str->size = size | R_STRING_ALLOC_MASK;
   str->cstr = r_malloc (str->size);
+  str->cstr[0] = 0;
 
   return str;
 }
@@ -110,7 +116,11 @@ r_string_ensure_size (RString * str, rsize size)
 rsize
 r_string_reset (RString * str, const rchar * cstr)
 {
-  rsize ret = strlen (cstr);
+  rsize ret;
+
+  if (R_UNLIKELY (cstr == NULL))
+    return 0;
+  ret = strlen (cstr);
   if (R_UNLIKELY (!r_string_ensure_size (str, ret)))
     return 0;
 
@@ -122,12 +132,17 @@ r_string_reset (RString * str, const rchar * cstr)
 rsize
 r_string_append (RString * str, const rchar * cstr)
 {
+  if (R_UNLIKELY (cstr == NULL))
+    return 0;
+
   return r_string_append_len (str, cstr, strlen (cstr));
 }
 
 rsize
 r_string_append_len (RString * str, const rchar * cstr, rsize len)
 {
+  if (R_UNLIKELY (cstr == NULL || len == 0))
+    return 0;
   if (R_UNLIKELY (!r_string_ensure_additional_size (str, len)))
     return 0;
 
@@ -163,12 +178,17 @@ r_string_append_vprintf (RString * str, const rchar * fmt, va_list ap)
 rsize
 r_string_prepend (RString * str, const rchar * cstr)
 {
+  if (R_UNLIKELY (cstr == NULL))
+    return 0;
+
   return r_string_prepend_len (str, cstr, strlen (cstr));
 }
 
 rsize
 r_string_prepend_len (RString * str, const rchar * cstr, rsize len)
 {
+  if (R_UNLIKELY (cstr == NULL || len == 0))
+    return 0;
   if (R_UNLIKELY (!r_string_ensure_additional_size (str, len)))
     return 0;
 
@@ -204,15 +224,18 @@ r_string_prepend_vprintf (RString * str, const rchar * fmt, va_list ap)
 rsize
 r_string_insert (RString * str, rsize pos, const rchar * cstr)
 {
-  if (R_LIKELY (pos < str->len))
-    return r_string_insert_len (str, pos, cstr, strlen (cstr));
+  if (R_UNLIKELY (cstr == NULL))
+    return 0;
 
-  return r_string_append (str, cstr);
+  return r_string_insert_len (str, pos, cstr, strlen (cstr));
 }
 
 rsize
 r_string_insert_len (RString * str, rsize pos, const rchar * cstr, rsize len)
 {
+  if (R_UNLIKELY (cstr == NULL))
+    return 0;
+
   if (R_UNLIKELY (pos >= str->len))
     return r_string_append (str, cstr);
 
@@ -228,15 +251,18 @@ r_string_insert_len (RString * str, rsize pos, const rchar * cstr, rsize len)
 rsize
 r_string_overwrite (RString * str, rsize pos, const rchar * cstr)
 {
-  if (R_LIKELY (pos < str->len))
-    return r_string_overwrite_len (str, pos, cstr, strlen (cstr));
+  if (R_UNLIKELY (cstr == NULL))
+    return 0;
 
-  return r_string_append (str, cstr);
+  return r_string_overwrite_len (str, pos, cstr, strlen (cstr));
 }
 
 rsize
 r_string_overwrite_len (RString * str, rsize pos, const rchar * cstr, rsize len)
 {
+  if (R_UNLIKELY (cstr == NULL))
+    return 0;
+
   if (R_UNLIKELY (pos >= str->len))
     return r_string_append (str, cstr);
 

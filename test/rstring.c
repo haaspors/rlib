@@ -198,3 +198,25 @@ RTEST (rstring, erase, RTEST_FAST)
   r_free (cstr);
 }
 RTEST_END;
+
+RTEST (rstring, check_for_null, RTEST_FAST)
+{
+  RString * str = r_string_new (NULL);
+
+  r_assert_cmpuint (r_string_length (str), ==, 0);
+
+  r_assert_cmpuint (r_string_append (str, NULL), ==, 0);
+  r_assert_cmpuint (r_string_append_len (str, NULL, 2), ==, 0);
+  r_assert_cmpuint (r_string_prepend (str, NULL), ==, 0);
+  r_assert_cmpuint (r_string_prepend_len (str, NULL, 2), ==, 0);
+  r_assert_cmpuint (r_string_reset (str, "foobar"), ==, 6);
+  r_assert_cmpuint (r_string_insert (str, 0, NULL), ==, 0);
+  r_assert_cmpuint (r_string_insert_len (str, 0, NULL, 3), ==, 0);
+  r_assert_cmpuint (r_string_overwrite (str, 0, NULL), ==, 0);
+  r_assert_cmpuint (r_string_overwrite_len (str, 0, NULL, 3), ==, 0);
+  r_assert_cmpuint (r_string_reset (str, NULL), ==, 0);
+
+  r_assert_cmpuint (r_string_length (str), ==, 0);
+  r_string_free (str);
+}
+RTEST_END;
