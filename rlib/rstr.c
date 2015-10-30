@@ -184,6 +184,31 @@ r_strdup_strip (const rchar * str)
   return ret;
 }
 
+rboolean
+r_str_has_prefix (const rchar * str, const rchar * prefix)
+{
+  if (str == NULL || prefix == NULL)
+    return FALSE;
+
+  return strncmp (str, prefix, strlen (prefix)) == 0;
+}
+
+rboolean
+r_str_has_suffix (const rchar * str, const rchar * suffix)
+{
+  rsize len, suffixlen;
+
+  if (str == NULL || suffix == NULL)
+    return FALSE;
+
+  len = strlen (str);
+  suffixlen = strlen (suffix);
+
+  if (len < suffixlen)
+    return FALSE;
+  return strcmp (str + len - suffixlen, suffix) == 0;
+}
+
 RSList *
 r_str_list_new (const rchar * str0, ...)
 {

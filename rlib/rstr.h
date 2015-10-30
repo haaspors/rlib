@@ -50,6 +50,9 @@ R_API rchar * r_strdup (const rchar * str);
 R_API rchar * r_strndup (const rchar * str, rsize n);
 R_API rchar * r_strdup_strip (const rchar * str);
 
+R_API rboolean r_str_has_prefix (const rchar * str, const rchar * prefix);
+R_API rboolean r_str_has_suffix (const rchar * str, const rchar * suffix);
+
 R_API RSList * r_str_list_new (const rchar * str0, ...);
 R_API RSList * r_str_list_newv (const rchar * str0, va_list args);
 R_API RSList * r_str_list_new_from_strv (rchar ** strv, rboolean take);
