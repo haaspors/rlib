@@ -1,11 +1,17 @@
 #include <rlib/rlib.h>
 
-RTEST (rproc, get_exe_path, RTEST_FAST | RTEST_SYSTEM)
-{
-  rchar * exename = r_proc_get_exe_path ();
-  r_assert_cmpptr (exename, !=, NULL);
+#define TEST_BINARY "rlibtest"
 
-  r_assert (r_str_has_suffix (exename, "rlibtest"));
-  r_free (exename);
+RTEST (rproc, get_exe, RTEST_FAST | RTEST_SYSTEM)
+{
+  rchar * exe;
+
+  r_assert_cmpptr ((exe = r_proc_get_exe_path ()), !=, NULL);
+  r_assert (r_str_has_suffix (exe, TEST_BINARY));
+  r_free (exe);
+
+  r_assert_cmpstr ((exe = r_proc_get_exe_name ()), ==, TEST_BINARY);
+  r_free (exe);
 }
 RTEST_END;
+

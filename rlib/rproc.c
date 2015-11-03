@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/rproc.h>
 #include <rlib/ralloc.h>
+#include <rlib/rfs.h>
 #include <rlib/rstr.h>
 #include <stdlib.h>
 #include <string.h>
@@ -109,6 +110,16 @@ r_proc_get_exe_path (void)
     size *= 2;
   }
 #endif
+  return ret;
+}
+
+rchar *
+r_proc_get_exe_name (void)
+{
+  rchar * path = r_proc_get_exe_path ();
+  rchar * ret = r_fs_path_basename (path);
+
+  r_free (path);
   return ret;
 }
 
