@@ -23,6 +23,7 @@
 R_BEGIN_DECLS
 
 R_API rboolean r_proc_is_debugger_attached (void);
+R_API rchar * r_proc_get_exe_path (void) R_ATTR_MALLOC;
 
 R_END_DECLS
 

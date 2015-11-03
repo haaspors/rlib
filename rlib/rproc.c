@@ -18,13 +18,19 @@
 
 #include "config.h"
 #include <rlib/rproc.h>
+#include <rlib/ralloc.h>
+#include <rlib/rstr.h>
 #include <stdlib.h>
 #include <string.h>
 #ifdef R_OS_WIN32
 #include <windows.h>
 #else
+#ifdef R_OS_DARWIN
+#include <mach-o/dyld.h>
+#endif
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 #endif
 #ifdef HAVE_SYS_SYSCTL_H
 #include <sys/sysctl.h>
@@ -66,6 +72,43 @@ r_proc_is_debugger_attached (void)
 
 #endif
 
+  return ret;
+}
+
+rchar *
+r_proc_get_exe_path (void)
+{
+  rchar * ret = NULL;
+#if defined(R_OS_WIN32)
+  rchar tmp[MAX_PATH + 1];
+  if (GetModuleFileNameA (NULL, tmp, MAX_PATH) != 0)
+    ret = r_strdup (tmp);
+#elif defined(R_OS_DARWIN)
+  uint32_t size = 0;
+  _NSGetExecutablePath (NULL, &size);
+  if (size > 0) {
+    rchar * tmp = r_alloca (size + 1);
+    if (_NSGetExecutablePath (tmp, &size) == 0)
+      ret = realpath (tmp, NULL);
+  }
+#elif defined(R_OS_SOLARIS)
+  ret = r_strdup (getexename ());
+#else
+  rsize size = 64;
+  while (TRUE) {
+    rssize linksize;
+    ret = r_malloc (size + 1);
+    if ((linksize = readlink ("/proc/self/exe", ret, size)) >= 0) {
+      ret[linksize] = 0;
+      break;
+    } else if (errno != ENAMETOOLONG) {
+      r_free (ret);
+      ret = NULL;
+      break;
+    }
+    size *= 2;
+  }
+#endif
   return ret;
 }
 

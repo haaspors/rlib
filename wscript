@@ -127,6 +127,8 @@ def configure_os_arch(cfg):
         cfg.env.RLIB_OS_EXTRA = '#define R_OS_NETBSD             1'
     elif cfg.env.DEST_OS == 'openbsd':
         cfg.env.RLIB_OS_EXTRA = '#define R_OS_OPENBSD            1'
+    elif cfg.env.DEST_OS == 'sunos':
+        cfg.env.RLIB_OS_EXTRA = '#define R_OS_SOLARIS            1'
     cfg.end_msg(cfg.env.DEST_OS, 'CYAN')
     cfg.start_msg('Checking dest/host CPU/ARCH')
     archcolor = 'CYAN'
