@@ -228,6 +228,9 @@ r_str_list_newv (const rchar * str0, va_list args)
   RSList * cur, * ret;
   const rchar * arg;
 
+  if (R_UNLIKELY (str0 == NULL))
+    return NULL;
+
   ret = cur = r_slist_alloc (r_strdup (str0));
   for (arg = va_arg (args, const rchar *); arg != NULL;
       arg = va_arg (args, const rchar *), cur = cur->next) {
@@ -253,10 +256,14 @@ r_strv_new (const rchar * str0, ...)
 rchar **
 r_strv_newv (const rchar * str0, va_list args)
 {
-  RSList * cur, * lst = r_str_list_newv (str0, args);
-  rchar ** ret = r_malloc (sizeof (rchar *) * r_slist_len (lst));
+  RSList * cur, * lst;
+  rchar ** ret;
   rsize i = 0;
 
+  if (R_UNLIKELY ((lst = r_str_list_newv (str0, args)) == NULL))
+    return NULL;
+
+  ret = r_malloc (sizeof (rchar *) * (r_slist_len (lst) + 1));
   while (lst) {
     cur = lst;
     lst = r_slist_next (cur);
@@ -264,6 +271,8 @@ r_strv_newv (const rchar * str0, va_list args)
     ret[i++] = r_slist_data (cur);
     r_slist_free1 (cur);
   }
+
+  ret[i] = NULL;
 
   return ret;
 }
@@ -295,7 +304,7 @@ r_strv_contains (rchar * const * strv, const rchar * str)
 {
   rsize i;
   for (i = 0; strv[i] != NULL; i++) {
-    if (r_str_equals (*strv, str))
+    if (r_str_equals (strv[i], str))
       return TRUE;
   }
   return FALSE;
