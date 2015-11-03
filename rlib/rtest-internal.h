@@ -36,9 +36,10 @@
 #define __RTEST(suite, test, skip, type, timeout, start, end, setup, teardown, fdata)\
   R_ATTR_UNUSED R_ATTR_DATA_SECTION (".rtest")                                \
   const RTest _RTEST_DATA_NAME (suite, test) = { _RTEST_MAGIC, skip,          \
-    #suite, #test, type, timeout, _RTEST_FUNC_NAME(suite, test), start, end,  \
-    fdata, (RTestFixtureFunc)setup, (RTestFixtureFunc)teardown };  \
-  R_API_EXPORT R_ATTR_WEAK \
+    #suite, #test, (type), (timeout),                                         \
+    _RTEST_FUNC_NAME(suite, test), start, end,                                \
+    fdata, (RTestFixtureFunc)setup, (RTestFixtureFunc)teardown };             \
+  R_API_EXPORT R_ATTR_WEAK                                                    \
   const RTest * R_PASTE (_RTEST_SYM_, __COUNTER__) = &_RTEST_DATA_NAME (suite, test)
 
 #define RTEST_DEFINE_TEST(suite, test, skip, type, timeout, start, end)       \

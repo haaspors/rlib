@@ -32,7 +32,7 @@ R_BEGIN_DECLS
 #ifndef RTEST_TIMEOUT
 #define RTEST_TIMEOUT   (4*R_SECOND)
 #endif
-#define RTEST_TYPE_TIMEOUT(type)    ((type & R_TEST_TYPE_MASK) * RTEST_TIMEOUT)
+#define RTEST_TYPE_TIMEOUT(type)    (((type) & R_TEST_TYPE_MASK) * RTEST_TIMEOUT)
 
 typedef struct _RTest RTest;
 typedef void (*RTestFunc) (); /* YES - non-void argument list */
