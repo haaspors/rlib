@@ -49,6 +49,10 @@ R_BEGIN_DECLS
 R_API rchar * r_fs_path_basename (const rchar * file) R_ATTR_MALLOC;
 R_API rchar * r_fs_path_dirname  (const rchar * file) R_ATTR_MALLOC;
 
+R_API rchar * r_fs_path_build      (const rchar * first, ...) R_ATTR_MALLOC;
+R_API rchar * r_fs_path_buildv     (const rchar * first, va_list ap) R_ATTR_MALLOC;
+R_API rchar * r_fs_path_build_strv (rchar * const * strv) R_ATTR_MALLOC;
+
 R_END_DECLS
 
 #endif /* __R_FS_H__ */

@@ -60,3 +60,38 @@ r_fs_path_dirname (const rchar * file)
   return r_strndup (file, idx);
 }
 
+rchar *
+r_fs_path_build (const rchar * first, ...)
+{
+  rchar * ret;
+  va_list args;
+
+  va_start (args, first);
+  ret = r_fs_path_buildv (first, args);
+  va_end (args);
+
+  return ret;
+}
+
+rchar *
+r_fs_path_buildv (const rchar * first, va_list args)
+{
+  rchar * ret;
+  rchar ** strv;
+
+  if (R_UNLIKELY (first == NULL))
+    return NULL;
+
+  strv = r_strv_newv (first, args);
+  ret = r_fs_path_build_strv (strv);
+  r_strv_free (strv);
+
+  return ret;
+}
+
+rchar *
+r_fs_path_build_strv (rchar * const * strv)
+{
+  return r_strv_join (strv, R_DIR_SEP_STR);
+}
+

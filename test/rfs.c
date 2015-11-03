@@ -35,3 +35,17 @@ RTEST (rfs, dirname, RTEST_FAST)
   r_assert_cmpstr ((tmp = r_fs_path_dirname ("tmp/.")), ==, "tmp"); r_free (tmp);
 }
 RTEST_END;
+
+RTEST (rfs, path_build, RTEST_FAST)
+{
+  rchar * tmp;
+
+  r_assert_cmpptr (r_fs_path_build (NULL), ==, NULL);
+  r_assert_cmpstr ((tmp = r_fs_path_build ("", NULL)), ==, ""); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_fs_path_build (R_DIR_SEP_STR, NULL)), ==,
+      R_DIR_SEP_STR); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_fs_path_build ("foo", "bar", NULL)), ==,
+      "foo"R_DIR_SEP_STR"bar"); r_free (tmp);
+}
+RTEST_END;
+
