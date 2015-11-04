@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include "rlib-internal.h"
+#include "rlib-private.h"
 #include <rlib/runicode.h>
 #include <rlib/ralloc.h>
 #include <string.h>

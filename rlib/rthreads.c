@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include "rlib-internal.h"
+#include "rlib-private.h"
 #include <rlib/rthreads.h>
 #include <rlib/ralloc.h>
 #include <rlib/rlist.h>

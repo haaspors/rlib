@@ -15,11 +15,11 @@
  * License along with this library.
  * See the COPYING file at the root of the source repository.
  */
-#ifndef __RLIB_INTERNAL_H__
-#define __RLIB_INTERNAL_H__
+#ifndef __RLIB_PRIVATE_H__
+#define __RLIB_PRIVATE_H__
 
 #if !defined(RLIB_COMPILATION)
-#error "rlib-internal.h should only be used internally in rlib!"
+#error "rlib-private.h should only be used internally in rlib!"
 #endif
 
 #include <rlib/rtypes.h>
@@ -33,4 +33,4 @@ R_API_HIDDEN void r_thread_deinit (void);
 
 R_API_HIDDEN void r_time_init (void);
 
-#endif /* __RLIB_INTERNAL_H__ */
+#endif /* __RLIB_PRIVATE_H__ */

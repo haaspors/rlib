@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include "rlib-internal.h"
+#include "rlib-private.h"
 #include <rlib/rtest.h>
 #include <rlib/ratomic.h>
 #include <rlib/rassert.h>
