@@ -209,6 +209,26 @@ static inline rboolean r_slist_contains (RSList * head, rpointer data)
   return FALSE;
 }
 
+static inline RSList * r_slist_remove (RSList * head, rpointer data)
+{
+  RSList * ret = head, * prev;
+
+  for (prev = NULL; head != NULL; head = head->next) {
+    if (head->data == data) {
+      if (ret == head)
+        ret = head->next;
+      if (prev != NULL)
+        prev->next = head->next;
+      r_slist_free1 (head);
+      break;
+    }
+
+    prev = head;
+  }
+
+  return ret;
+}
+
 R_END_DECLS
 
 #endif /* __R_LIST_H__ */
