@@ -20,11 +20,12 @@
 #include "rlib-private.h"
 #include <rlib/rlog.h>
 #include <rlib/ralloc.h>
-#include <rlib/rtty.h>
 #include <rlib/renv.h>
+#include <rlib/rlist.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>
+#include <rlib/rtty.h>
 #include <stdio.h>
 #ifdef R_OS_WIN32
 #include <process.h>
@@ -43,11 +44,7 @@ static rboolean g__r_log_color = TRUE;
 static RLogFunc g__r_log_default_handler = r_log_default_handler;
 static rpointer g__r_log_default_handler_data = NULL;
 static RClockTime g__r_log_ts_start = R_CLOCK_TIME_NONE;
-
-#if 0
-R_LOG_CATEGORY_DEFINE_STATIC (g__r_log_cat_defualt,
-    "none", "Default fallback log category", 0);
-#endif
+static RSList * g__r_log_cats = NULL;
 
 
 static rboolean
@@ -91,8 +88,7 @@ r_log_init (void)
 
   r_log_category_register (R_LOG_CAT_ASSERT);
   /* Make sure assertions are always going through the log system */
-  if (r_log_category_get_threshold (R_LOG_CAT_ASSERT) < R_LOG_LEVEL_ERROR)
-    r_log_category_set_threshold (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR);
+  r_log_category_set_threshold (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR);
 
   g__r_log_ts_start = r_time_get_ts_monotonic ();
 }
@@ -157,8 +153,9 @@ r_log_get_default_level (void)
 rboolean
 r_log_category_register (RLogCategory * cat)
 {
-  (void)cat;
-  /* TODO: Add category to list of categories */
+  if (R_UNLIKELY (r_slist_contains (g__r_log_cats, cat)))
+    return FALSE;
+  g__r_log_cats = r_slist_prepend (g__r_log_cats, cat);
   cat->threshold = g__r_log_level_default;
   return TRUE;
 }
@@ -166,17 +163,41 @@ r_log_category_register (RLogCategory * cat)
 rboolean
 r_log_category_unregister (RLogCategory * cat)
 {
-  (void)cat;
-  /* TODO: Remove category from list of categories */
+  if (R_UNLIKELY (!r_slist_contains (g__r_log_cats, cat)))
+    return FALSE;
+
+  g__r_log_cats = r_slist_remove (g__r_log_cats, cat);
   return TRUE;
 }
 
 RLogCategory *
-_r_log_find_category (const rchar * name)
+r_log_category_find (const rchar * name)
 {
-  (void)name;
-  /* TODO: Implement, dependent on register/unregister */
+  RSList * it;
+
+  for (it = g__r_log_cats; it != NULL; it = r_slist_next (it)) {
+    RLogCategory * cat = r_slist_data (it);
+    if (r_str_equals (cat->name, name))
+      return cat;
+  }
+
   return NULL;
+}
+
+void
+r_log_category_set_threshold (RLogCategory * cat, RLogLevel lvl)
+{
+  cat->threshold = lvl;
+  r_log_update_level_min (lvl);
+}
+
+static inline void
+r_log_it (RLogCategory * cat, RLogLevel lvl, const rchar * file, ruint line,
+    const rchar * func, const rchar * msg)
+{
+  /* TODO: Should this call handle just one handler or multiple registered? */
+  g__r_log_default_handler (cat, lvl, file, line, func, msg,
+      g__r_log_default_handler_data);
 }
 
 void
@@ -202,8 +223,7 @@ r_logv (RLogCategory * cat, RLogLevel lvl, const rchar * file, ruint line,
     return;
 
   msg = r_strvprintf (fmt, args);
-  g__r_log_default_handler (cat, lvl, file, line, func, msg,
-      g__r_log_default_handler_data);
+  r_log_it (cat, lvl, file, line, func, msg);
   r_free (msg);
 }
 
@@ -216,8 +236,7 @@ r_log_msg (RLogCategory * cat, RLogLevel lvl,
   if (lvl > cat->threshold)
     return;
 
-  g__r_log_default_handler (cat, lvl, file, line, func, msg,
-      g__r_log_default_handler_data);
+  r_log_it (cat, lvl, file, line, func, msg);
 }
 
 void
@@ -234,22 +253,21 @@ r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
 
   while (size > bytesperline) {
     r_str_mem_dump (msg, ptr, bytesperline, bytesperline);
-    g__r_log_default_handler (cat, lvl, file, line, func, msg,
-        g__r_log_default_handler_data);
+    r_log_it (cat, lvl, file, line, func, msg);
     size -= bytesperline;
     ptr  += bytesperline;
   }
 
   if (size > 0) {
     r_str_mem_dump (msg, ptr, size, bytesperline);
-    g__r_log_default_handler (cat, lvl, file, line, func, msg,
-        g__r_log_default_handler_data);
+    r_log_it (cat, lvl, file, line, func, msg);
   }
 }
 
 RLogFunc
 r_log_override_default_handler (RLogFunc func, rpointer * data)
 {
+  /* FIXME: Should this be done thread safe? */
   RLogFunc oldfunc = g__r_log_default_handler;
   g__r_log_default_handler = func;
 

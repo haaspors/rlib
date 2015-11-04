@@ -65,7 +65,7 @@ typedef struct
 
 R_API rboolean r_log_category_register (RLogCategory * cat);
 R_API rboolean r_log_category_unregister (RLogCategory * cat);
-R_API RLogCategory * _r_log_find_category (const rchar * name);
+R_API RLogCategory * r_log_category_find (const rchar * name);
 
 #define R_LOG_CATEGORY_DEFINE(cat, name, desc, clr)                         \
   RLogCategory cat = { R_LOG_LEVEL_DEFAULT, (name), (desc), (clr) }
@@ -73,11 +73,7 @@ R_API RLogCategory * _r_log_find_category (const rchar * name);
   static R_LOG_CATEGORY_DEFINE (cat, name, desc, clr)
 #define R_LOG_CATEGORY_DEFINE_EXTERN(cat) extern RLogCategory cat
 
-#define R_LOG_CATEGORY_FIND(cat, name)  R_STMT_START {                      \
-  if ((cat = _r_log_find_category (name)) == NULL)                          \
-    cat = R_LOG_CAT_DEFAULT;                                                \
-} R_STMT_END
-#define r_log_category_set_threshold(cat, lvl)  (cat)->threshold = lvl
+R_API void r_log_category_set_threshold (RLogCategory * cat, RLogLevel lvl);
 #define r_log_category_get_threshold(cat)       (cat)->threshold
 
 R_API R_LOG_CATEGORY_DEFINE_EXTERN (_r_log_cat_assert);
