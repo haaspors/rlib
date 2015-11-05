@@ -168,8 +168,7 @@ rsize
 r_string_append_vprintf (RString * str, const rchar * fmt, va_list ap)
 {
   rchar * cstr = r_strvprintf (fmt, ap);
-  rsize ret = strlen (cstr) + 1;
-  r_string_append (str, cstr);
+  rsize ret = r_string_append (str, cstr);
   r_free (cstr);
 
   return ret;

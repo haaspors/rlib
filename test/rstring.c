@@ -82,7 +82,8 @@ RTEST (rstring, append_printf, RTEST_FAST)
   RString * str = r_string_new_sized (64);
   rchar * cstr;
 
-  r_string_append_printf (str, "%u: %s %u", 0, "foobar", 42);
+  r_assert_cmpuint (12, ==,
+      r_string_append_printf (str, "%u: %s %u", 0, "foobar", 42));
   cstr = r_string_free_keep (str);
   r_assert_cmpstr (cstr, ==, "0: foobar 42");
   r_free (cstr);
