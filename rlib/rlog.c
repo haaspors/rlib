@@ -98,13 +98,13 @@ r_log_level_get_name (RLogLevel lvl)
 {
   static const rchar * lvlname[R_LOG_LEVEL_COUNT] = {
     "",
-    "ERROR   ",
+    "ERROR",
     "CRITICAL",
-    "WARNING ",
-    "FIXME   ",
-    "INFO    ",
-    "DEBUG   ",
-    "TRACE   "
+    "WARNING",
+    "FIXME",
+    "INFO",
+    "DEBUG",
+    "TRACE"
   };
 
   return lvlname[lvl];
@@ -296,7 +296,7 @@ r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
 #else
 #define THR_FMT "%10p"
 #endif
-#define LVL_FMT "%s"
+#define LVL_FMT "%-8s"
 #define CAT_FMT "%16s %s:%d:%s ()"
 #define MSG_FMT "%s"
 
