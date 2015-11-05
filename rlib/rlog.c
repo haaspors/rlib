@@ -27,6 +27,7 @@
 #include <rlib/rtime.h>
 #include <rlib/rtty.h>
 #include <stdio.h>
+#include <string.h>
 #ifdef R_OS_WIN32
 #include <process.h>
 #define pid_t int
@@ -40,6 +41,7 @@ R_LOG_CATEGORY_DEFINE (_r_log_cat_assert, "*** assert ***", "Assertions logger",
     R_CLR_FMT_BOLD | R_CLR_BG_RED);
 
 static ruint g__r_log_level_default = R_LOG_LEVEL_DEFAULT;
+static rboolean g__r_log_ignore_threshold = FALSE;
 static rboolean g__r_log_color = TRUE;
 static RLogFunc g__r_log_default_handler = r_log_default_handler;
 static rpointer g__r_log_default_handler_data = NULL;
@@ -216,7 +218,7 @@ r_logv (RLogCategory * cat, RLogLevel lvl, const rchar * file, ruint line,
 
   if (R_UNLIKELY (cat == NULL))
     abort ();
-  if (lvl > cat->threshold)
+  if (lvl > cat->threshold && !g__r_log_ignore_threshold)
     return;
 
   msg = r_strvprintf (fmt, args);
@@ -230,7 +232,7 @@ r_log_msg (RLogCategory * cat, RLogLevel lvl,
 {
   if (R_UNLIKELY (cat == NULL))
     abort ();
-  if (lvl > cat->threshold)
+  if (lvl > cat->threshold && !g__r_log_ignore_threshold)
     return;
 
   r_log_it (cat, lvl, file, line, func, msg);
@@ -245,7 +247,7 @@ r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
 
   if (R_UNLIKELY (cat == NULL))
     abort ();
-  if (lvl > cat->threshold)
+  if (lvl > cat->threshold && !g__r_log_ignore_threshold)
     return;
 
   while (size > bytesperline) {
@@ -319,5 +321,56 @@ r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
         cat->name, file, line, func, msg);
   }
   fflush (f);
+}
+
+static void
+r_log_keep_last_handler (RLogCategory * cat, RLogLevel lvl,
+    const rchar * file, ruint line, const rchar * func,
+    const rchar * msg, rpointer user_data)
+{
+  RLogKeepLastCtx * ctx = user_data;
+
+  ctx->last.cat = cat;
+  ctx->last.lvl = lvl;
+  ctx->last.line = line;
+  ctx->last.file = file;
+  ctx->last.func = func;
+  r_free (ctx->last.msg);
+  ctx->last.msg = r_strdup (msg);
+
+  if (lvl > cat->threshold)
+    return;
+
+  if (ctx->oldfunc != NULL && cat != ctx->cat)
+    ctx->oldfunc (cat, lvl, file, line, func, msg, ctx->olddata);
+}
+
+void
+r_log_keep_last_begin_full (RLogKeepLastCtx * ctx, RLogCategory * cat,
+    rboolean ignore_threshold)
+{
+  r_log_update_level_min (R_LOG_LEVEL_MAX);
+  g__r_log_ignore_threshold = ignore_threshold;
+
+  memset (ctx, 0, sizeof (RLogKeepLastCtx));
+  ctx->oldfunc = r_log_override_default_handler (r_log_keep_last_handler,
+      ctx, &ctx->olddata);
+  ctx->cat = cat;
+}
+
+void
+r_log_keep_last_end (RLogKeepLastCtx * ctx, rboolean reset)
+{
+  g__r_log_ignore_threshold = FALSE;
+  r_log_override_default_handler (ctx->oldfunc, ctx->olddata, NULL);
+
+  if (reset)
+    r_log_keep_last_reset (ctx);
+}
+
+void
+r_log_keep_last_reset (RLogKeepLastCtx * ctx)
+{
+  r_free (ctx->last.msg);
 }
 

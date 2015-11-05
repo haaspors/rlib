@@ -133,6 +133,35 @@ R_API void r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
 R_API RLogFunc r_log_override_default_handler (RLogFunc func, rpointer data,
     rpointer * old);
 
+/* RLogKeepLast API uses r_log_override_default_handler() so be careful with
+ * what you do between begin() and end().
+ *
+ * RLogKeepLast API also opts in for logging all, which might mean that more
+ * logging will flow through the RLog framework. Be aware and careful.
+ */
+typedef struct {
+  RLogFunc oldfunc;
+  rpointer olddata;
+
+  RLogCategory * cat;
+
+  struct {
+    RLogCategory * cat;
+    RLogLevel lvl;
+    ruint line;
+    const rchar * file;
+    const rchar * func;
+    rchar * msg;
+  } last;
+} RLogKeepLastCtx;
+
+#define r_log_keep_last_begin(ctx, cat)                                       \
+  r_log_keep_last_begin_full (ctx, cat, TRUE)
+R_API void r_log_keep_last_begin_full (RLogKeepLastCtx * ctx, RLogCategory * cat,
+    rboolean ignore_threshold);
+R_API void r_log_keep_last_end (RLogKeepLastCtx * ctx, rboolean reset);
+R_API void r_log_keep_last_reset (RLogKeepLastCtx * ctx);
+
 /* Internal API used for marking last position for rtests */
 R_API rboolean _r_test_mark_position (const rchar * file, ruint line,
     const rchar * func, rboolean assrt);
