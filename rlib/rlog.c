@@ -68,7 +68,6 @@ r_log_init (void)
 {
   const rchar * env;
   FILE * file = NULL; /* NULL means stderr */
-  rpointer data;
 
   if ((env = r_getenv ("R_DEBUG_FILE")) != NULL) {
     if (r_str_equals (env, "-"))
@@ -76,12 +75,10 @@ r_log_init (void)
     else
       file = fopen (env, "w"); /* FIXME: Add file API */
   }
+  r_log_override_default_handler (r_log_default_handler, file, NULL);
 
   if (r_getenv ("R_DEBUG_NO_COLOR") != NULL)
     g__r_log_color = FALSE;
-
-  data = file;
-  r_log_override_default_handler (r_log_default_handler, &data);
 
   if ((env = r_getenv ("R_DEBUG")) != NULL)
     r_log_configure (env);
@@ -265,17 +262,17 @@ r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
 }
 
 RLogFunc
-r_log_override_default_handler (RLogFunc func, rpointer * data)
+r_log_override_default_handler (RLogFunc func, rpointer data, rpointer * old)
 {
   /* FIXME: Should this be done thread safe? */
   RLogFunc oldfunc = g__r_log_default_handler;
-  g__r_log_default_handler = func;
+  rpointer olddata = g__r_log_default_handler_data;
 
-  if (data) {
-    rpointer olddata = g__r_log_default_handler_data;
-    g__r_log_default_handler_data = *data;
-    *data = olddata;
-  }
+  g__r_log_default_handler = func;
+  g__r_log_default_handler_data = data;
+
+  if (old != NULL)
+    *old = olddata;
 
   return oldfunc;
 }

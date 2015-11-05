@@ -130,15 +130,8 @@ R_API void r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,
     const rchar * msg, rpointer user_data);
 
-#if 1
-R_API RLogFunc r_log_override_default_handler (RLogFunc func, rpointer * data);
-#else
-R_API void r_log_add_handler_full (RLogFunc func, rpointer data, RDestroyNotify notify);
-#define r_log_add_handler_full(func, data)        \
-  r_log_add_handler_full (func, data, NULL);
-void r_log_remove_handler (RLogFunc func);
-void r_log_remove_handler_by_data (rpointer data);
-#endif
+R_API RLogFunc r_log_override_default_handler (RLogFunc func, rpointer data,
+    rpointer * old);
 
 /* Internal API used for marking last position for rtests */
 R_API rboolean _r_test_mark_position (const rchar * file, ruint line,
