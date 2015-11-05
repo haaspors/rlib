@@ -40,6 +40,12 @@ R_BEGIN_DECLS
 #define r_assert_cmpstr(s1, cmp, s2)    R_ASSERT_CMPSTR (s1, cmp, s2, #s1, #s2)
 #define r_assert_cmpmem(m1, cmp, m2, s) R_ASSERT_CMPMEM (m1, cmp, m2, s, #m1, #m2)
 
+/* NOTE that r_assert_log* uses the RLogKeepLast framework which could affect performance */
+#define r_assert_logs_cat(expr, cat)          R_ASSERT_LOG (expr,  cat, 0, NULL)
+#define r_assert_logs_level(expr, l)          R_ASSERT_LOG (expr, NULL, l, NULL)
+#define r_assert_logs_msg(expr, msg)          R_ASSERT_LOG (expr, NULL, 0,  msg)
+#define r_assert_logs_full(expr, cat, l, msg) R_ASSERT_LOG (expr,  cat, l,  msg)
+
 
 R_API R_ATTR_NORETURN void r_test_assertion (RLogCategory * cat,
     const rchar * file, ruint line, const rchar * func,

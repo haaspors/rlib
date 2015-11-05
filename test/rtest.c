@@ -46,6 +46,20 @@ RTEST (rtest, sym_spacing, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtest, assert_logs, RTEST_FAST)
+{
+  R_LOG_CATEGORY_DEFINE (tmpcat, "foobar", "foobar category", R_CLR_BG_RED);
+  r_log_category_register (&tmpcat);
+
+  r_assert_logs_cat (R_LOG_CAT_LEVEL (&tmpcat, R_LOG_LEVEL_TRACE, "foobar"), &tmpcat);
+  r_assert_logs_level (R_LOG_CAT_LEVEL (&tmpcat, R_LOG_LEVEL_INFO, "foobar"), R_LOG_LEVEL_INFO);
+  r_assert_logs_msg (R_LOG_CAT_LEVEL (&tmpcat, R_LOG_LEVEL_DEBUG, "foobar"), "foobar");
+  r_assert_logs_full (R_LOG_CAT_LEVEL (&tmpcat, R_LOG_LEVEL_FIXME, "foobar"), &tmpcat, R_LOG_LEVEL_FIXME, "foobar");
+
+  r_log_category_unregister (&tmpcat);
+}
+RTEST_END;
+
 /********************************************************/
 /* Main entry point and test runner                     */
 /********************************************************/
