@@ -65,6 +65,10 @@
   }                                                                           \
   __R_GCC_DISABLE_WARN_ADDRESS_END
 #endif
+#define R_ASSERT(expr) R_STMT_START {                                         \
+  rboolean __res = (rboolean)(expr);                                          \
+  R_ASSERT_STMT (__res, "%s", "%u", #expr, __res)                             \
+} R_STMT_END
 #define R_ASSERT_CMP(a1, cmp, a2, TYPE, FMT, r1, r2) R_STMT_START {           \
   TYPE __a1 = (TYPE)(a1), __a2 = (TYPE)(a2);                                  \
   R_ASSERT_STMT (__a1 cmp __a2, "%s %s %s", FMT" %s "FMT,                     \

@@ -29,7 +29,7 @@
 
 R_BEGIN_DECLS
 
-#define r_assert(expr)                  R_ASSERT_STMT (expr, "%s", "%u", #expr, (rboolean)(expr))
+#define r_assert(expr)                  R_ASSERT (expr)
 #define r_assert_not_reached()          R_ASSERT_VA ("<-- should not be reached")
 #define r_assert_cmpint(n1, cmp, n2)    R_ASSERT_CMP (n1,cmp,n2,rintmax,"%"RINTMAX_FMT,#n1,#n2)
 #define r_assert_cmpuint(n1, cmp, n2)   R_ASSERT_CMP (n1,cmp,n2,ruintmax,"%"RUINTMAX_FMT,#n1,#n2)
