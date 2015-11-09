@@ -229,6 +229,15 @@ static inline RSList * r_slist_remove (RSList * head, rpointer data)
   return ret;
 }
 
+static inline void r_slist_foreach (RSList * head,
+    RFunc func, rpointer user)
+{
+  RSList * it;
+
+  for (it = head; it != NULL; it = r_slist_next (it))
+    func (r_slist_data (it), user);
+}
+
 R_END_DECLS
 
 #endif /* __R_LIST_H__ */
