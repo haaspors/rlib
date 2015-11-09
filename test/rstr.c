@@ -1,5 +1,28 @@
 #include <rlib/rlib.h>
 
+RTEST (rstr, cmp, RTEST_FAST)
+{
+  r_assert_cmpint (r_strcmp ("foobar", "foobar"), ==, 0);
+  r_assert_cmpint (r_strcmp ("foobar", "bar"), >, 0);
+  r_assert_cmpint (r_strcmp ("bar", "foobar"), <, 0);
+  r_assert_cmpint (r_strcmp ("foobar", "foo"), >, 0);
+  r_assert_cmpint (r_strcmp (NULL, "foobar"), <, 0);
+  r_assert_cmpint (r_strcmp ("foobar", NULL), >, 0);
+  r_assert_cmpint (r_strcmp (NULL, NULL), ==, 0);
+
+  r_assert ( r_str_equals ("foobar", "foobar"));
+  r_assert (!r_str_equals ("foobar", "foo"));
+
+  r_assert_cmpint (r_strncmp ("foobar", "foobar", 6), ==, 0);
+  r_assert_cmpint (r_strncmp ("foobar", "foobar", 9), ==, 0);
+  r_assert_cmpint (r_strncmp ("foobar", "foo", 3), ==, 0);
+  r_assert_cmpint (r_strncmp ("foobar", "foo", 6), >, 0);
+  r_assert_cmpint (r_strncmp (NULL, "foobar", 6), <, 0);
+  r_assert_cmpint (r_strncmp ("foobar", NULL, 6), >, 0);
+  r_assert_cmpint (r_strncmp (NULL, NULL, 0), ==, 0);
+}
+RTEST_END;
+
 RTEST (rstr, prefix_suffix, RTEST_FAST)
 {
   r_assert ( r_str_has_prefix ("foobar", "foo"));

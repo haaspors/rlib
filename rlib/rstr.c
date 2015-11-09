@@ -51,6 +51,14 @@ r_strcmp (const rchar * a, const rchar * b)
   return strcmp (a, b);
 }
 
+int
+r_strncmp (const rchar * a, const rchar * b, rsize len)
+{
+  if (R_UNLIKELY (a == NULL)) return -(a != b);
+  if (R_UNLIKELY (b == NULL)) return a != b;
+  return strncmp (a, b, len);
+}
+
 rchar *
 r_stpcpy (rchar * dst, const rchar * src)
 {

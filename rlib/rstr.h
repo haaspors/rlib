@@ -30,8 +30,17 @@
 R_BEGIN_DECLS
 
 R_API int r_strcmp (const rchar * a, const rchar * b);
+R_API int r_strncmp (const rchar * a, const rchar * b, rsize len);
 #define r_str_equals(a,b) (r_strcmp (a, b) == 0)
+
+R_API rboolean r_str_has_prefix (const rchar * str, const rchar * prefix);
+R_API rboolean r_str_has_suffix (const rchar * str, const rchar * suffix);
+
 R_API rchar * r_stpcpy (rchar * dst, const rchar * src);
+
+R_API rchar * r_strdup (const rchar * str);
+R_API rchar * r_strndup (const rchar * str, rsize n);
+R_API rchar * r_strdup_strip (const rchar * str);
 
 R_API const rchar * r_strlwstrip (const rchar * str);
 R_API rchar * r_strtwstrip (rchar * str);
@@ -45,13 +54,6 @@ R_API int     r_asprintf (rchar ** str, const rchar * fmt, ...) R_ATTR_PRINTF (2
 R_API int     r_vasprintf (rchar ** str, const rchar * fmt, va_list args) R_ATTR_PRINTF (2, 0);
 R_API rchar * r_strprintf (const rchar * fmt, ...) R_ATTR_PRINTF (1, 2);
 R_API rchar * r_strvprintf (const rchar * fmt, va_list args) R_ATTR_PRINTF (1, 0);
-
-R_API rchar * r_strdup (const rchar * str);
-R_API rchar * r_strndup (const rchar * str, rsize n);
-R_API rchar * r_strdup_strip (const rchar * str);
-
-R_API rboolean r_str_has_prefix (const rchar * str, const rchar * prefix);
-R_API rboolean r_str_has_suffix (const rchar * str, const rchar * suffix);
 
 R_API RSList * r_str_list_new (const rchar * str0, ...);
 R_API RSList * r_str_list_newv (const rchar * str0, va_list args);
