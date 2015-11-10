@@ -153,6 +153,95 @@ r_stpncpy (rchar * dst, const rchar * src, rsize len)
 #endif
 }
 
+rchar *
+r_strdup (const rchar * str)
+{
+  rchar * ret;
+
+  if (R_LIKELY (str != NULL)) {
+    rsize size = strlen (str) + 1;
+    ret = r_malloc (size);
+    memcpy (ret, str, size);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+rchar *
+r_strndup (const rchar * str, rsize n)
+{
+  rchar * ret;
+
+  if (R_LIKELY (str != NULL)) {
+    rsize size = strlen (str);
+    if (n < size)
+      size = n;
+
+    ret = r_malloc (size + 1);
+    memcpy (ret, str, size);
+    ret[size] = 0;
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+rchar *
+r_strdup_strip (const rchar * str)
+{
+  rchar * ret;
+
+  if (R_LIKELY (str != NULL)) {
+    rsize size;
+    str = r_strlwstrip (str);
+    size = strlen (str);
+    while (size > 0 && isspace (str[size - 1])) size--;
+    ret = r_malloc (size + 1);
+    memcpy (ret, str, size);
+    ret[size] = 0;
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+const rchar *
+r_strlwstrip (const rchar * str)
+{
+  if (R_LIKELY (str != NULL))
+    while (isspace (*str)) str++;
+  return str;
+}
+
+rchar *
+r_strtwstrip (rchar * str)
+{
+  if (R_LIKELY (str != NULL)) {
+    rsize size = strlen (str);
+    while (size > 0 && isspace (str[size - 1])) size--;
+    str[size] = 0;
+  }
+
+  return str;
+}
+
+rchar *
+r_strstrip (rchar * str)
+{
+  if (R_LIKELY (str != NULL)) {
+    rsize size;
+    while (isspace (*str)) str++;
+    size = strlen (str);
+    while (size > 0 && isspace (str[size - 1])) size--;
+    str[size] = 0;
+  }
+  return str;
+}
+
 int
 r_asprintf (rchar ** str, const rchar * fmt, ...)
 {
@@ -213,62 +302,6 @@ r_strvprintf (const rchar * fmt, va_list args)
 {
   rchar * ret;
   r_vasprintf (&ret, fmt, args);
-  return ret;
-}
-
-rchar *
-r_strdup (const rchar * str)
-{
-  rchar * ret;
-
-  if (R_LIKELY (str != NULL)) {
-    rsize size = strlen (str) + 1;
-    ret = r_malloc (size);
-    memcpy (ret, str, size);
-  } else {
-    ret = NULL;
-  }
-
-  return ret;
-}
-
-rchar *
-r_strndup (const rchar * str, rsize n)
-{
-  rchar * ret;
-
-  if (R_LIKELY (str != NULL)) {
-    rsize size = strlen (str);
-    if (n < size)
-      size = n;
-
-    ret = r_malloc (size + 1);
-    memcpy (ret, str, size);
-    ret[size] = 0;
-  } else {
-    ret = NULL;
-  }
-
-  return ret;
-}
-
-rchar *
-r_strdup_strip (const rchar * str)
-{
-  rchar * ret;
-
-  if (R_LIKELY (str != NULL)) {
-    rsize size;
-    str = r_strlwstrip (str);
-    size = strlen (str);
-    while (isspace (str[size]) && size > 0) size--;
-    ret = r_malloc (size + 1);
-    memcpy (ret, str, size);
-    ret[size] = 0;
-  } else {
-    ret = NULL;
-  }
-
   return ret;
 }
 
@@ -464,26 +497,6 @@ r_strjoinv (const rchar * delim, va_list args)
 
   va_end (args_dup);
   return ret;
-}
-
-const rchar *
-r_strlwstrip (const rchar * str)
-{
-  if (R_LIKELY (str != NULL))
-    while (isspace (*str)) str++;
-  return str;
-}
-
-rchar *
-r_strtwstrip (rchar * str)
-{
-  if (R_LIKELY (str != NULL)) {
-    rsize len = strlen (str);
-    while (isspace (str[len]) && len > 0) len--;
-    str[len] = 0;
-  }
-
-  return str;
 }
 
 rboolean

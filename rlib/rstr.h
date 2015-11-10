@@ -47,7 +47,7 @@ R_API rchar * r_strdup_strip (const rchar * str);
 
 R_API const rchar * r_strlwstrip (const rchar * str);
 R_API rchar * r_strtwstrip (rchar * str);
-#define r_strstrip(str) r_strtstrip (r_strlstrip (str))
+R_API rchar * r_strstrip (rchar * str);
 
 #define r_sprintf       sprintf
 #define r_vsprintf      vsprintf
