@@ -29,6 +29,8 @@
 
 R_BEGIN_DECLS
 
+R_API rsize r_strlen (const rchar * str);
+
 R_API int r_strcmp (const rchar * a, const rchar * b);
 R_API int r_strncmp (const rchar * a, const rchar * b, rsize len);
 #define r_str_equals(a,b) (r_strcmp (a, b) == 0)

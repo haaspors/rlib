@@ -5,6 +5,15 @@ static const rchar foo[] = "foo";
 static const rchar bar[] = "bar";
 static const rchar foobar_padding[] = "\t\n \rfoobar\r \t\n";
 
+RTEST (rstr, len, RTEST_FAST)
+{
+  r_assert_cmpuint (r_strlen (NULL), ==, 0);
+  r_assert_cmpuint (r_strlen (""), ==, 0);
+  r_assert_cmpuint (r_strlen (foo), ==, 3);
+  r_assert_cmpuint (r_strlen (foobar), ==, 6);
+}
+RTEST_END;
+
 RTEST (rstr, cmp, RTEST_FAST)
 {
   r_assert_cmpint (r_strcmp (foobar, foobar), ==, 0);

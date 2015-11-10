@@ -43,6 +43,13 @@ const ruint16 r_ascii_table[256] = {
   /* rest is 0x0000 */
 };
 
+rsize
+r_strlen (const rchar * str)
+{
+  if (R_UNLIKELY (str == NULL)) return 0;
+  return strlen (str);
+}
+
 int
 r_strcmp (const rchar * a, const rchar * b)
 {
