@@ -60,7 +60,7 @@ R_API rchar * r_strvprintf (const rchar * fmt, va_list args) R_ATTR_PRINTF (1, 0
 
 R_API RSList * r_str_list_new (const rchar * str0, ...);
 R_API RSList * r_str_list_newv (const rchar * str0, va_list args);
-R_API RSList * r_str_list_new_from_strv (rchar ** strv, rboolean take);
+
 R_API rchar ** r_strv_new (const rchar * str0, ...);
 R_API rchar ** r_strv_newv (const rchar * str0, va_list args);
 R_API void r_strv_free (rchar ** strv);

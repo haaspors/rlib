@@ -198,7 +198,19 @@ RTEST (rstr, printf, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rstr, strv, RTEST_FAST)
+RTEST (rstr_list, new, RTEST_FAST)
+{
+  RSList * lst;
+
+  r_assert_cmpptr ((lst = r_str_list_new (foo, bar, NULL)), !=, NULL);
+  r_assert_cmpuint (r_slist_len (lst), ==, 2);
+  r_assert_cmpstr (r_slist_data (lst), ==, foo);
+  r_assert_cmpstr (r_slist_data (r_slist_next (lst)), ==, bar);
+  r_slist_destroy_full (lst, r_free);
+}
+RTEST_END;
+
+RTEST (rstrv, basic, RTEST_FAST)
 {
   rchar ** strv;
 
@@ -211,7 +223,7 @@ RTEST (rstr, strv, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rstr, strv_join, RTEST_FAST)
+RTEST (rstrv, join, RTEST_FAST)
 {
   rchar ** strv;
   rchar * join;
@@ -226,13 +238,14 @@ RTEST (rstr, strv_join, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rstr, strv_contains, RTEST_FAST)
+RTEST (rstrv, contains, RTEST_FAST)
 {
   rchar ** strv;
 
   r_assert_cmpptr ((strv = r_strv_new (foo, bar, NULL)), !=, NULL);
   r_assert ( r_strv_contains (strv, foo));
   r_assert (!r_strv_contains (strv, foobar));
+  r_assert (!r_strv_contains (strv, NULL));
   r_assert ( r_strv_contains (strv, bar));
   r_strv_free (strv);
 }
