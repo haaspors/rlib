@@ -47,6 +47,10 @@ typedef unsigned @RINTMAX_TYPE@ ruintmax;
 #define RINTMAX_FMT             @RINTMAX_FMT@
 #define RUINTMAX_FMT            @RUINTMAX_FMT@
 
+#define RUINTMAX_MAX            @RLIB_UINTMAX_TYPE@_MAX
+#define RINTMAX_MIN             @RLIB_INTMAX_TYPE@_MIN
+#define RINTMAX_MAX             @RLIB_INTMAX_TYPE@_MAX
+
 #define RINT64_CONSTANT(val)    (@RINT64_CONST@)
 #define RUINT64_CONSTANT(val)   (@RUINT64_CONST@)
 
@@ -70,6 +74,7 @@ typedef unsigned @RINTPTR_TYPE@ ruintptr;
 
 #define RLIB_SIZEOF_VOID_P      @RLIB_SIZEOF_VOID_P@
 #define RLIB_SIZEOF_LONG        @RLIB_SIZEOF_LONG@
+#define RLIB_SIZEOF_INTMAX      @RLIB_SIZEOF_INTMAX@
 #define RLIB_SIZEOF_SIZE_T      @RLIB_SIZEOF_SIZE_T@
 
 #define @RLIB_OS@               1

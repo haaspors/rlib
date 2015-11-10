@@ -341,6 +341,8 @@ def configure_sizeof(cfg):
         cfg.env.RINTMAX_MODIFIER = '""'
         cfg.env.RINTMAX_FMT = '"i"'
         cfg.env.RUINTMAX_FMT = '"u"'
+        cfg.env.RLIB_UINTMAX_TYPE = 'RUINT'
+        cfg.env.RLIB_INTMAX_TYPE = 'RINT'
     elif sizeof_void_p == sizeof_long:
         cfg.env.RINTPTR_TYPE = 'long'
         cfg.env.RINTPTR_MODIFIER = '"l"'
@@ -350,6 +352,8 @@ def configure_sizeof(cfg):
         cfg.env.RINTMAX_MODIFIER = '"l"'
         cfg.env.RINTMAX_FMT = '"li"'
         cfg.env.RUINTMAX_FMT = '"lu"'
+        cfg.env.RLIB_UINTMAX_TYPE = 'RULONG'
+        cfg.env.RLIB_INTMAX_TYPE = 'RLONG'
     elif sizeof_void_p == sizeof_longlong:
         cfg.env.RINTPTR_TYPE = 'long long'
         cfg.env.RINTPTR_MODIFIER = '"I64"'
@@ -359,8 +363,11 @@ def configure_sizeof(cfg):
         cfg.env.RINTMAX_MODIFIER = '"I64"'
         cfg.env.RINTMAX_FMT = '"I64i"'
         cfg.env.RUINTMAX_FMT = '"I64u"'
+        cfg.env.RLIB_UINTMAX_TYPE = 'RUINT64'
+        cfg.env.RLIB_INTMAX_TYPE = 'RINT64'
 
     cfg.env.RLIB_SIZEOF_VOID_P = sizeof_void_p
     cfg.env.RLIB_SIZEOF_LONG = sizeof_long
+    cfg.env.RLIB_SIZEOF_INTMAX = sizeof_void_p
     cfg.env.RLIB_SIZEOF_SIZE_T = sizeof_size_t
 
