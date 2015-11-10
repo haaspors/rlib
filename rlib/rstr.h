@@ -68,9 +68,9 @@ R_API rsize r_strv_len (rchar * const * strv);
 R_API rboolean r_strv_contains (rchar * const * strv, const rchar * str);
 R_API rchar * r_strv_join (rchar * const * strv, const rchar * delim);
 
-R_API rchar ** r_strsplit (const rchar * str, const rchar * delim, rsize max);
 R_API rchar * r_strjoin (const rchar * delim, ...);
 R_API rchar * r_strjoinv (const rchar * delim, va_list args);
+R_API rchar ** r_strsplit (const rchar * str, const rchar * delim, rsize max);
 
 #define R_STR_MEM_DUMP_SIZE(align) \
   ((align * 4) + (align / 4) + (RLIB_SIZEOF_VOID_P * 2) + 8)

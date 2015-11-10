@@ -251,3 +251,40 @@ RTEST (rstrv, contains, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, join, RTEST_FAST)
+{
+  rchar * join;
+
+  r_assert_cmpstr ((join = r_strjoin ("", foo, bar, NULL)), ==, foobar); r_free (join);
+  r_assert_cmpstr ((join = r_strjoin ("", foobar, NULL)), ==, foobar); r_free (join);
+  r_assert_cmpstr ((join = r_strjoin ("-", foo, bar, NULL)), ==, "foo-bar"); r_free (join);
+  r_assert_cmpstr (r_strjoin (NULL, foo, bar, NULL), ==, NULL);
+}
+RTEST_END;
+
+RTEST (rstr, split, RTEST_FAST)
+{
+  const rchar str[] = "foo bar bar foo foobar";
+  rchar ** strv;
+
+  r_assert_cmpptr ((strv = r_strsplit (str, " ", 42)), !=, NULL);
+  r_assert_cmpuint (r_strv_len (strv), ==, 5);
+  r_assert_cmpstr (strv[0], ==, foo);
+  r_assert_cmpstr (strv[2], ==, bar);
+  r_assert_cmpstr (strv[4], ==, foobar);
+  r_strv_free (strv);
+  r_assert_cmpptr ((strv = r_strsplit (str, " ", 4)), !=, NULL);
+  r_assert_cmpuint (r_strv_len (strv), ==, 4);
+  r_assert_cmpstr (strv[0], ==, foo);
+  r_assert_cmpstr (strv[1], ==, bar);
+  r_assert_cmpstr (strv[2], ==, bar);
+  r_assert_cmpstr (strv[3], ==, "foo foobar");
+  r_strv_free (strv);
+
+  r_assert_cmpptr (r_strsplit (NULL, " ", 42), ==, NULL);
+  r_assert_cmpptr (r_strsplit (foobar, "", 42), ==, NULL);
+  r_assert_cmpptr (r_strsplit (foobar, NULL, 42), ==, NULL);
+  r_assert_cmpptr (r_strsplit (foobar, "", 0), ==, NULL);
+}
+RTEST_END;
+

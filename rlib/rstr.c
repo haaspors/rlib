@@ -484,6 +484,9 @@ r_strjoinv (const rchar * delim, va_list args)
   rsize len, dlen;
   va_list args_dup;
 
+  if (R_UNLIKELY (delim == NULL))
+    return NULL;
+
   va_copy (args_dup, args);
 
   cur = va_arg (args_dup, const rchar *);
