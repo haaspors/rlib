@@ -1,41 +1,45 @@
 #include <rlib/rlib.h>
 
+static const rchar foobar[] = "foobar";
+static const rchar foo[] = "foo";
+static const rchar bar[] = "bar";
+
 RTEST (rstr, cmp, RTEST_FAST)
 {
-  r_assert_cmpint (r_strcmp ("foobar", "foobar"), ==, 0);
-  r_assert_cmpint (r_strcmp ("foobar", "bar"), >, 0);
-  r_assert_cmpint (r_strcmp ("bar", "foobar"), <, 0);
-  r_assert_cmpint (r_strcmp ("foobar", "foo"), >, 0);
-  r_assert_cmpint (r_strcmp (NULL, "foobar"), <, 0);
-  r_assert_cmpint (r_strcmp ("foobar", NULL), >, 0);
+  r_assert_cmpint (r_strcmp (foobar, foobar), ==, 0);
+  r_assert_cmpint (r_strcmp (foobar, bar), >, 0);
+  r_assert_cmpint (r_strcmp (bar, foobar), <, 0);
+  r_assert_cmpint (r_strcmp (foobar, foo), >, 0);
+  r_assert_cmpint (r_strcmp (NULL, foobar), <, 0);
+  r_assert_cmpint (r_strcmp (foobar, NULL), >, 0);
   r_assert_cmpint (r_strcmp (NULL, NULL), ==, 0);
 
-  r_assert ( r_str_equals ("foobar", "foobar"));
-  r_assert (!r_str_equals ("foobar", "foo"));
+  r_assert ( r_str_equals (foobar, foobar));
+  r_assert (!r_str_equals (foobar, foo));
 
-  r_assert_cmpint (r_strncmp ("foobar", "foobar", 6), ==, 0);
-  r_assert_cmpint (r_strncmp ("foobar", "foobar", 9), ==, 0);
-  r_assert_cmpint (r_strncmp ("foobar", "foo", 3), ==, 0);
-  r_assert_cmpint (r_strncmp ("foobar", "foo", 6), >, 0);
-  r_assert_cmpint (r_strncmp (NULL, "foobar", 6), <, 0);
-  r_assert_cmpint (r_strncmp ("foobar", NULL, 6), >, 0);
+  r_assert_cmpint (r_strncmp (foobar, foobar, 6), ==, 0);
+  r_assert_cmpint (r_strncmp (foobar, foobar, 9), ==, 0);
+  r_assert_cmpint (r_strncmp (foobar, foo, 3), ==, 0);
+  r_assert_cmpint (r_strncmp (foobar, foo, 6), >, 0);
+  r_assert_cmpint (r_strncmp (NULL, foobar, 6), <, 0);
+  r_assert_cmpint (r_strncmp (foobar, NULL, 6), >, 0);
   r_assert_cmpint (r_strncmp (NULL, NULL, 0), ==, 0);
 }
 RTEST_END;
 
 RTEST (rstr, prefix_suffix, RTEST_FAST)
 {
-  r_assert ( r_str_has_prefix ("foobar", "foo"));
-  r_assert (!r_str_has_prefix ("foobar", "bar"));
-  r_assert (!r_str_has_prefix ("foobar", NULL));
-  r_assert (!r_str_has_prefix (NULL, "bar"));
-  r_assert (!r_str_has_prefix ("foo", "foobar"));
+  r_assert ( r_str_has_prefix (foobar, foo));
+  r_assert (!r_str_has_prefix (foobar, bar));
+  r_assert (!r_str_has_prefix (foobar, NULL));
+  r_assert (!r_str_has_prefix (NULL, bar));
+  r_assert (!r_str_has_prefix (foo, foobar));
 
-  r_assert (!r_str_has_suffix ("foobar", "foo"));
-  r_assert ( r_str_has_suffix ("foobar", "bar"));
-  r_assert (!r_str_has_suffix ("foobar", NULL));
-  r_assert (!r_str_has_suffix (NULL, "bar"));
-  r_assert (!r_str_has_suffix ("foo", "foobar"));
+  r_assert (!r_str_has_suffix (foobar, foo));
+  r_assert ( r_str_has_suffix (foobar, bar));
+  r_assert (!r_str_has_suffix (foobar, NULL));
+  r_assert (!r_str_has_suffix (NULL, bar));
+  r_assert (!r_str_has_suffix (foo, foobar));
 }
 RTEST_END;
 
@@ -44,48 +48,48 @@ RTEST (rstr, cpy, RTEST_FAST)
   rchar dst[100];
 
   /* strcpy */
-  r_assert_cmpptr (r_strcpy (&dst[50], "foobar"), ==, &dst[50]);
-  r_assert_cmpstr (&dst[50], ==, "foobar");
+  r_assert_cmpptr (r_strcpy (&dst[50], foobar), ==, &dst[50]);
+  r_assert_cmpstr (&dst[50], ==, foobar);
   r_assert_cmpptr (r_strcpy (dst, &dst[50]), ==, dst);
-  r_assert_cmpstr (dst, ==, "foobar");
-  r_assert_cmpptr (r_strcpy (NULL, "foobar"), ==, NULL);
+  r_assert_cmpstr (dst, ==, foobar);
+  r_assert_cmpptr (r_strcpy (NULL, foobar), ==, NULL);
   r_assert_cmpptr (r_strcpy (dst, NULL), ==, dst);
 
   /* strncpy */
   memset (dst, 0, sizeof (dst));
-  r_assert_cmpptr (r_strncpy (dst, "foo", 6), ==, dst);
-  r_assert_cmpstr (dst, ==, "foo");
-  r_assert_cmpptr (r_strncpy (dst, "foobar", 6), ==, dst);
-  r_assert_cmpstr (dst, ==, "foobar");
-  r_assert_cmpptr (r_strncpy (dst, "bar", 3), ==, dst);
+  r_assert_cmpptr (r_strncpy (dst, foo, 6), ==, dst);
+  r_assert_cmpstr (dst, ==, foo);
+  r_assert_cmpptr (r_strncpy (dst, foobar, 6), ==, dst);
+  r_assert_cmpstr (dst, ==, foobar);
+  r_assert_cmpptr (r_strncpy (dst, bar, 3), ==, dst);
   r_assert_cmpstr (dst, ==, "barbar");
-  r_assert_cmpptr (r_strncpy (dst, "foo", 6), ==, dst);
+  r_assert_cmpptr (r_strncpy (dst, foo, 6), ==, dst);
   r_assert_cmpmem (dst, ==, "foo\0\0\0", 6);
-  r_assert_cmpptr (r_strncpy (NULL, "foobar", 6), ==, NULL);
+  r_assert_cmpptr (r_strncpy (NULL, foobar, 6), ==, NULL);
   r_assert_cmpptr (r_strncpy (dst, NULL, 0), ==, dst);
   r_assert_cmpptr (r_strncpy (dst, NULL, 6), ==, dst);
   r_assert_cmpmem (dst, ==, "\0\0\0\0\0\0", 6);
 
   /* stpcpy */
   memset (dst, 0, sizeof (dst));
-  r_assert_cmpptr (r_stpcpy (&dst[50], "foobar"), ==, &dst[50] + 6);
-  r_assert_cmpstr (&dst[50], ==, "foobar");
+  r_assert_cmpptr (r_stpcpy (&dst[50], foobar), ==, &dst[50] + 6);
+  r_assert_cmpstr (&dst[50], ==, foobar);
   r_assert_cmpptr (r_stpcpy (dst, &dst[50]), ==, dst + 6);
-  r_assert_cmpstr (dst, ==, "foobar");
-  r_assert_cmpptr (r_stpcpy (NULL, "foobar"), ==, NULL);
+  r_assert_cmpstr (dst, ==, foobar);
+  r_assert_cmpptr (r_stpcpy (NULL, foobar), ==, NULL);
   r_assert_cmpptr (r_stpcpy (dst, NULL), ==, dst);
 
   /* stpncpy */
   memset (dst, 0, sizeof (dst));
-  r_assert_cmpptr (r_stpncpy (dst, "foo", 6), ==, dst + 3);
-  r_assert_cmpstr (dst, ==, "foo");
-  r_assert_cmpptr (r_stpncpy (dst, "foobar", 6), ==, dst + 6);
-  r_assert_cmpstr (dst, ==, "foobar");
-  r_assert_cmpptr (r_stpncpy (dst, "bar", 3), ==, dst + 3);
+  r_assert_cmpptr (r_stpncpy (dst, foo, 6), ==, dst + 3);
+  r_assert_cmpstr (dst, ==, foo);
+  r_assert_cmpptr (r_stpncpy (dst, foobar, 6), ==, dst + 6);
+  r_assert_cmpstr (dst, ==, foobar);
+  r_assert_cmpptr (r_stpncpy (dst, bar, 3), ==, dst + 3);
   r_assert_cmpstr (dst, ==, "barbar");
-  r_assert_cmpptr (r_stpncpy (dst, "foo", 6), ==, dst + 3);
+  r_assert_cmpptr (r_stpncpy (dst, foo, 6), ==, dst + 3);
   r_assert_cmpmem (dst, ==, "foo\0\0\0", 6);
-  r_assert_cmpptr (r_stpncpy (NULL, "foobar", 6), ==, NULL);
+  r_assert_cmpptr (r_stpncpy (NULL, foobar, 6), ==, NULL);
   r_assert_cmpptr (r_stpncpy (dst, NULL, 0), ==, dst);
   r_assert_cmpptr (r_stpncpy (dst, NULL, 6), ==, dst);
   r_assert_cmpmem (dst, ==, "\0\0\0\0\0\0", 6);
@@ -97,9 +101,9 @@ RTEST (rstr, strv, RTEST_FAST)
   rchar ** strv;
 
   r_assert_cmpptr (r_strv_new (NULL), ==, NULL);
-  r_assert_cmpptr ((strv = r_strv_new ("foobar", NULL)), !=, NULL);
+  r_assert_cmpptr ((strv = r_strv_new (foobar, NULL)), !=, NULL);
   r_assert_cmpuint (r_strv_len (strv), ==, 1);
-  r_assert_cmpstr (strv[0], ==, "foobar");
+  r_assert_cmpstr (strv[0], ==, foobar);
   r_assert_cmpptr (strv[1], ==, NULL);
   r_strv_free (strv);
 }
@@ -110,11 +114,11 @@ RTEST (rstr, strv_join, RTEST_FAST)
   rchar ** strv;
   rchar * join;
 
-  r_assert_cmpptr ((strv = r_strv_new ("foobar", NULL)), !=, NULL);
-  r_assert_cmpstr ((join = r_strv_join (strv, "")), ==, "foobar"); r_free (join);
+  r_assert_cmpptr ((strv = r_strv_new (foobar, NULL)), !=, NULL);
+  r_assert_cmpstr ((join = r_strv_join (strv, "")), ==, foobar); r_free (join);
   r_strv_free (strv);
-  r_assert_cmpptr ((strv = r_strv_new ("foo", "bar", NULL)), !=, NULL);
-  r_assert_cmpstr ((join = r_strv_join (strv, "")), ==, "foobar"); r_free (join);
+  r_assert_cmpptr ((strv = r_strv_new (foo, bar, NULL)), !=, NULL);
+  r_assert_cmpstr ((join = r_strv_join (strv, "")), ==, foobar); r_free (join);
   r_assert_cmpstr ((join = r_strv_join (strv, "-")), ==, "foo-bar"); r_free (join);
   r_strv_free (strv);
 }
@@ -124,10 +128,10 @@ RTEST (rstr, strv_contains, RTEST_FAST)
 {
   rchar ** strv;
 
-  r_assert_cmpptr ((strv = r_strv_new ("foo", "bar", NULL)), !=, NULL);
-  r_assert ( r_strv_contains (strv, "foo"));
-  r_assert (!r_strv_contains (strv, "foobar"));
-  r_assert ( r_strv_contains (strv, "bar"));
+  r_assert_cmpptr ((strv = r_strv_new (foo, bar, NULL)), !=, NULL);
+  r_assert ( r_strv_contains (strv, foo));
+  r_assert (!r_strv_contains (strv, foobar));
+  r_assert ( r_strv_contains (strv, bar));
   r_strv_free (strv);
 }
 RTEST_END;
