@@ -166,6 +166,38 @@ RTEST (rstr, strip, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, asprintf, RTEST_FAST)
+{
+  rchar * str = NULL;
+
+  r_assert_cmpint (r_asprintf (&str, "%s: %u", foobar, 42), ==, 10);
+  r_assert_cmpptr (str, !=, NULL);
+  r_assert_cmpstr (str, ==, "foobar: 42");
+  r_free (str);
+  r_assert_cmpint (r_asprintf (NULL, "%s: %u", foobar, 42), ==, 0);
+  r_assert_cmpint (r_asprintf (&str, NULL), ==, 0);
+  r_assert_cmpptr (str, ==, NULL);
+  /*r_assert_cmpint (r_asprintf (&str, ""), ==, 0); * Compiler complains */
+  /*r_assert_cmpptr (str, !=, NULL);*/
+  /*r_assert_cmpstr (str, ==, "");*/
+  /*r_free (str);*/
+}
+RTEST_END;
+
+RTEST (rstr, printf, RTEST_FAST)
+{
+  rchar * str = NULL;
+
+  r_assert_cmpint ((str = r_strprintf ("%s: %u", foobar, 42)), !=, NULL);
+  r_assert_cmpstr (str, ==, "foobar: 42");
+  r_free (str);
+  r_assert_cmpptr (r_strprintf (NULL), ==, NULL);
+  /*r_assert_cmpptr ((str = r_strprintf ("")), !=, NULL); * compiler complains */
+  /*r_assert_cmpstr (str, ==, "");*/
+  /*r_free (str);*/
+}
+RTEST_END;
+
 RTEST (rstr, strv, RTEST_FAST)
 {
   rchar ** strv;

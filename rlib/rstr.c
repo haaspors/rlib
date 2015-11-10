@@ -257,6 +257,14 @@ int
 r_vasprintf (rchar ** str, const rchar * fmt, va_list args)
 {
   int ret;
+
+  if (R_UNLIKELY (str == NULL))
+    return 0;
+  if (R_UNLIKELY (fmt == NULL)) {
+    *str = NULL;
+    return 0;
+  }
+
 #if defined(HAVE_VASPRINTF)
   ret = vasprintf (str, fmt, args);
 #elif defined(HAVE_VSPRINTF)
