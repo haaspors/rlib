@@ -79,7 +79,7 @@ typedef unsigned int            ruint;
 #define RUINT32_MAX             ((ruint32) 0xffffffff)
 #define RINT64_MIN              ((rint64) RINT64_CONSTANT(0x8000000000000000))
 #define RINT64_MAX              RINT64_CONSTANT(0x7fffffffffffffff)
-#define RUINT64_MAX             RUINT64_CONSTANT(0xffffffffffffffffU)
+#define RUINT64_MAX             RUINT64_CONSTANT(0xffffffffffffffff)
 
 /* r[s]size typedefs in rconfig.h */
 typedef rint64                  roffset;
