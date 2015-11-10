@@ -297,3 +297,37 @@ RTEST (rstr, split, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, mem_dump, RTEST_FAST)
+{
+  const ruint8 data[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  const rsize size = R_N_ELEMENTS (data);
+  const ruint8 str[] = "abcdefgh";
+  rchar * tmp;
+#if RLIB_SIZEOF_VOID_P == 8
+  ruint offset = 16;
+#else
+  ruint offset = 10;
+#endif
+
+  r_assert_cmpptr (r_str_mem_dump_dup (NULL, 0, 0), ==, NULL);
+  r_assert_cmpptr (r_str_mem_dump_dup (data, 0, 0), ==, NULL);
+  r_assert_cmpptr (r_str_mem_dump_dup (data, size, 0), ==, NULL);
+  r_assert_cmpptr (r_str_mem_dump_dup (data, 0, size), ==, NULL);
+
+  r_assert_cmpptr ((tmp = r_str_mem_dump_dup (data, size, size)), !=, NULL);
+  r_assert_cmpstr (tmp + offset, ==,
+      "00 01 02 03 04 05 06 07 08 09  \"........ ..\"");
+  r_free (tmp);
+
+  r_assert_cmpptr ((tmp = r_str_mem_dump_dup (str, 4, 4)), !=, NULL);
+  r_assert_cmpstr (tmp + offset, ==, "61 62 63 64  \"abcd\"");
+  r_free (tmp);
+
+  r_assert_cmpptr ((tmp = r_str_mem_dump_dup (str, 6, 16)), !=, NULL);
+  r_assert_cmpstr (tmp + offset, ==,
+      "61 62 63 64 65 66                               "
+      " \"abcdef           \"");
+  r_free (tmp);
+}
+RTEST_END;
+

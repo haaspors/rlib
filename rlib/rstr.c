@@ -522,7 +522,7 @@ r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
 {
   rsize i;
 
-  if (R_UNLIKELY (size > align))
+  if (R_UNLIKELY (size == 0 || size > align))
     return FALSE;
   if (R_UNLIKELY (str == NULL))
     return FALSE;
@@ -531,10 +531,8 @@ r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
 
 #if RLIB_SIZEOF_VOID_P == 8
 #define _PTR_FMT  "%14p: "
-#elif RLIB_SIZEOF_VOID_P == 4
-#define _PTR_FMT  "%8p: "
 #else
-#define _PTR_FMT  "%p: "
+#define _PTR_FMT  "%8p: "
 #endif
 
   if (size > 0) {
@@ -544,11 +542,10 @@ r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
     str += r_sprintf (str, _PTR_FMT, ptr);
     for (i = 0; i < size; i++) {
       str += r_sprintf (str, "%02x ", ptr[i]);
-      if ((i+1) % 8 == 0 && (i+1) < size) *str++ = ' ';
     }
 
-    memset (str, (int)' ', pad * 3 + pad_extra + 1);
-    str += pad * 3 + pad_extra + 1;
+    memset (str, (int)' ', pad * 3 + 1);
+    str += pad * 3 + 1;
 
     *str++ = '"';
     for (i = 0; i < size; i++) {
@@ -571,7 +568,7 @@ r_str_mem_dump_dup (const ruint8 * ptr, rsize size, rsize align)
 {
   rchar * ret;
 
-  if (R_UNLIKELY (size > align))
+  if (R_UNLIKELY (size == 0 || size > align))
     return NULL;
 
   if ((ret = r_malloc (R_STR_MEM_DUMP_SIZE (align))) != NULL) {
