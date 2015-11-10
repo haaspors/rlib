@@ -36,7 +36,10 @@ R_API int r_strncmp (const rchar * a, const rchar * b, rsize len);
 R_API rboolean r_str_has_prefix (const rchar * str, const rchar * prefix);
 R_API rboolean r_str_has_suffix (const rchar * str, const rchar * suffix);
 
+R_API rchar * r_strcpy (rchar * dst, const rchar * src);
+R_API rchar * r_strncpy (rchar * dst, const rchar * src, rsize len);
 R_API rchar * r_stpcpy (rchar * dst, const rchar * src);
+R_API rchar * r_stpncpy (rchar * dst, const rchar * src, rsize len);
 
 R_API rchar * r_strdup (const rchar * str);
 R_API rchar * r_strndup (const rchar * str, rsize n);

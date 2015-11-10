@@ -39,6 +39,59 @@ RTEST (rstr, prefix_suffix, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, cpy, RTEST_FAST)
+{
+  rchar dst[100];
+
+  /* strcpy */
+  r_assert_cmpptr (r_strcpy (&dst[50], "foobar"), ==, &dst[50]);
+  r_assert_cmpstr (&dst[50], ==, "foobar");
+  r_assert_cmpptr (r_strcpy (dst, &dst[50]), ==, dst);
+  r_assert_cmpstr (dst, ==, "foobar");
+  r_assert_cmpptr (r_strcpy (NULL, "foobar"), ==, NULL);
+  r_assert_cmpptr (r_strcpy (dst, NULL), ==, dst);
+
+  /* strncpy */
+  memset (dst, 0, sizeof (dst));
+  r_assert_cmpptr (r_strncpy (dst, "foo", 6), ==, dst);
+  r_assert_cmpstr (dst, ==, "foo");
+  r_assert_cmpptr (r_strncpy (dst, "foobar", 6), ==, dst);
+  r_assert_cmpstr (dst, ==, "foobar");
+  r_assert_cmpptr (r_strncpy (dst, "bar", 3), ==, dst);
+  r_assert_cmpstr (dst, ==, "barbar");
+  r_assert_cmpptr (r_strncpy (dst, "foo", 6), ==, dst);
+  r_assert_cmpmem (dst, ==, "foo\0\0\0", 6);
+  r_assert_cmpptr (r_strncpy (NULL, "foobar", 6), ==, NULL);
+  r_assert_cmpptr (r_strncpy (dst, NULL, 0), ==, dst);
+  r_assert_cmpptr (r_strncpy (dst, NULL, 6), ==, dst);
+  r_assert_cmpmem (dst, ==, "\0\0\0\0\0\0", 6);
+
+  /* stpcpy */
+  memset (dst, 0, sizeof (dst));
+  r_assert_cmpptr (r_stpcpy (&dst[50], "foobar"), ==, &dst[50] + 6);
+  r_assert_cmpstr (&dst[50], ==, "foobar");
+  r_assert_cmpptr (r_stpcpy (dst, &dst[50]), ==, dst + 6);
+  r_assert_cmpstr (dst, ==, "foobar");
+  r_assert_cmpptr (r_stpcpy (NULL, "foobar"), ==, NULL);
+  r_assert_cmpptr (r_stpcpy (dst, NULL), ==, dst);
+
+  /* stpncpy */
+  memset (dst, 0, sizeof (dst));
+  r_assert_cmpptr (r_stpncpy (dst, "foo", 6), ==, dst + 3);
+  r_assert_cmpstr (dst, ==, "foo");
+  r_assert_cmpptr (r_stpncpy (dst, "foobar", 6), ==, dst + 6);
+  r_assert_cmpstr (dst, ==, "foobar");
+  r_assert_cmpptr (r_stpncpy (dst, "bar", 3), ==, dst + 3);
+  r_assert_cmpstr (dst, ==, "barbar");
+  r_assert_cmpptr (r_stpncpy (dst, "foo", 6), ==, dst + 3);
+  r_assert_cmpmem (dst, ==, "foo\0\0\0", 6);
+  r_assert_cmpptr (r_stpncpy (NULL, "foobar", 6), ==, NULL);
+  r_assert_cmpptr (r_stpncpy (dst, NULL, 0), ==, dst);
+  r_assert_cmpptr (r_stpncpy (dst, NULL, 6), ==, dst);
+  r_assert_cmpmem (dst, ==, "\0\0\0\0\0\0", 6);
+}
+RTEST_END;
+
 RTEST (rstr, strv, RTEST_FAST)
 {
   rchar ** strv;

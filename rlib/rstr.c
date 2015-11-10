@@ -59,15 +59,95 @@ r_strncmp (const rchar * a, const rchar * b, rsize len)
   return strncmp (a, b, len);
 }
 
+rboolean
+r_str_has_prefix (const rchar * str, const rchar * prefix)
+{
+  if (str == NULL || prefix == NULL)
+    return FALSE;
+
+  return strncmp (str, prefix, strlen (prefix)) == 0;
+}
+
+rboolean
+r_str_has_suffix (const rchar * str, const rchar * suffix)
+{
+  rsize len, suffixlen;
+
+  if (str == NULL || suffix == NULL)
+    return FALSE;
+
+  len = strlen (str);
+  suffixlen = strlen (suffix);
+
+  if (len < suffixlen)
+    return FALSE;
+  return strcmp (str + len - suffixlen, suffix) == 0;
+}
+
+rchar *
+r_strcpy (rchar * dst, const rchar * src)
+{
+  if (R_UNLIKELY (dst == NULL))
+    return NULL;
+  if (R_UNLIKELY (src == NULL))
+    return dst;
+  return strcpy (dst, src);
+}
+
+rchar *
+r_strncpy (rchar * dst, const rchar * src, rsize len)
+{
+  if (R_UNLIKELY (dst == NULL))
+    return NULL;
+  if (R_UNLIKELY (src == NULL)) {
+    memset (dst, 0, len);
+    return dst;
+  }
+  return strncpy (dst, src, len);
+}
+
 rchar *
 r_stpcpy (rchar * dst, const rchar * src)
 {
+  if (R_UNLIKELY (dst == NULL))
+    return NULL;
+  if (R_UNLIKELY (src == NULL))
+    return dst;
 #ifdef HAVE_STPCPY
   return stpcpy (dst, src);
 #else
   do {
     *dst++ = *src;
   } while (*src++ != '\0');
+
+  return dst - 1;
+#endif
+}
+
+rchar *
+r_stpncpy (rchar * dst, const rchar * src, rsize len)
+{
+  if (R_UNLIKELY (dst == NULL))
+    return NULL;
+  if (R_UNLIKELY (src == NULL)) {
+    memset (dst, 0, len);
+    return dst;
+  }
+#ifdef HAVE_STPNCPY
+  return stpncpy (dst, src, len);
+#else
+  do {
+    if (len > 0) {
+      len--;
+      *dst++ = *src;
+    } else {
+      dst++;
+      break;
+    }
+  } while (*src++ != '\0');
+
+  if (len > 0)
+    memset (dst, 0, len);
 
   return dst - 1;
 #endif
@@ -190,31 +270,6 @@ r_strdup_strip (const rchar * str)
   }
 
   return ret;
-}
-
-rboolean
-r_str_has_prefix (const rchar * str, const rchar * prefix)
-{
-  if (str == NULL || prefix == NULL)
-    return FALSE;
-
-  return strncmp (str, prefix, strlen (prefix)) == 0;
-}
-
-rboolean
-r_str_has_suffix (const rchar * str, const rchar * suffix)
-{
-  rsize len, suffixlen;
-
-  if (str == NULL || suffix == NULL)
-    return FALSE;
-
-  len = strlen (str);
-  suffixlen = strlen (suffix);
-
-  if (len < suffixlen)
-    return FALSE;
-  return strcmp (str + len - suffixlen, suffix) == 0;
 }
 
 RSList *
