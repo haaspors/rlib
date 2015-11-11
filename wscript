@@ -34,6 +34,7 @@ def configure(cfg):
     ##################################
     configure_os_arch(cfg)
     configure_headers(cfg)
+    configure_libs(cfg)
     configure_string(cfg)
     configure_sizeof(cfg)
     configure_printf(cfg)
@@ -94,7 +95,7 @@ def build(bld):
             vnum        = APIVERSION,
             includes    = [ '.' ],
             defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
-            use         = 'DL PTHREAD RT')
+            use         = 'M DL PTHREAD RT')
 
     bld.recurse('example test')
 
@@ -187,6 +188,11 @@ def configure_headers(cfg):
         cfg.check(header_name='mach/clock.h')
         cfg.check(header_name='mach/mach_time.h')
 
+def configure_libs(cfg):
+    if not cfg.env.DEST_OS == 'win32':
+        cfg.check(lib='m', mandatory=False)
+        cfg.check(lib='rt', mandatory=False)
+
 def configure_string(cfg):
     cfg.check_cc(function_name='stpcpy',
             header_name="string.h", mandatory=False)
@@ -240,7 +246,6 @@ def configure_threads(cfg):
 
 def configure_signal(cfg):
     if not cfg.env.DEST_OS == 'win32':
-        cfg.check(lib='rt', mandatory=False)
         cfg.check_cc(function_name='timer_create', lib='rt',
                 header_name="time.h", mandatory=False)
         cfg.check_cc(function_name='setitimer',

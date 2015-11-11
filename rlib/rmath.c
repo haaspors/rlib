@@ -18,6 +18,10 @@
 
 #include "config.h"
 #include <rlib/rmath.h>
+#include <rlib/rassert.h>
+#include <math.h>
+
+/* FIXME: Fix float/double classify/signbit if not C99 compiler */
 
 #define GCD_DEFINE(func, type)      \
   type func (type a, type b) {      \
@@ -32,4 +36,56 @@ R_API GCD_DEFINE (r_int_gcd,    int);
 R_API GCD_DEFINE (r_uint_gcd,   ruint);
 R_API GCD_DEFINE (r_int64_gcd,  rint64);
 R_API GCD_DEFINE (r_uint64_gcd, ruint64);
+
+RFpClass
+r_float_classify (rfloat v)
+{
+  switch (fpclassify (v)) {
+    case FP_INFINITE:
+      return R_FP_CLASS_INFINITE;
+    case FP_NAN:
+      return R_FP_CLASS_NAN;
+    case FP_ZERO:
+      return R_FP_CLASS_ZERO;
+    case FP_SUBNORMAL:
+      return R_FP_CLASS_SUBNORMAL;
+    case FP_NORMAL:
+      return R_FP_CLASS_NORMAL;
+    default:
+      r_assert_not_reached ();
+      break;
+  }
+}
+
+rboolean
+r_float_signbit (rfloat v)
+{
+  return signbit (v) != 0;
+}
+
+RFpClass
+r_double_classify (rdouble v)
+{
+  switch (fpclassify (v)) {
+    case FP_INFINITE:
+      return R_FP_CLASS_INFINITE;
+    case FP_NAN:
+      return R_FP_CLASS_NAN;
+    case FP_ZERO:
+      return R_FP_CLASS_ZERO;
+    case FP_SUBNORMAL:
+      return R_FP_CLASS_SUBNORMAL;
+    case FP_NORMAL:
+      return R_FP_CLASS_NORMAL;
+    default:
+      r_assert_not_reached ();
+      break;
+  }
+}
+
+rboolean
+r_double_signbit (rdouble v)
+{
+  return signbit (v) != 0;
+}
 
