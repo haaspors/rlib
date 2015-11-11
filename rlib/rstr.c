@@ -21,6 +21,7 @@
 #include <rlib/ralloc.h>
 #include <rlib/rascii.h>
 #include <string.h>
+#include <errno.h>
 #include <ctype.h>
 
 const ruint16 r_ascii_table[256] = {
@@ -390,6 +391,44 @@ r_str_to_uint64 (const rchar * str, const rchar ** endptr, ruint base, RStrParse
   if (res != NULL)
     *res = r;
   return (ruint64)ret;
+}
+
+rfloat
+r_str_to_float (const rchar * str, const rchar ** endptr, RStrParse * res)
+{
+  rfloat ret;
+  errno = 0;
+  if (str != NULL) {
+    ret = strtof (str, (rchar **)endptr);
+    if (res != NULL)
+      *res = errno == 0 ? R_STR_PARSE_OK : R_STR_PARSE_INVAL;
+  } else {
+    errno = EINVAL;
+    ret = 0.0f;
+    if (res)
+      *res = R_STR_PARSE_INVAL;
+  }
+
+  return ret;
+}
+
+rdouble
+r_str_to_double (const rchar * str, const rchar ** endptr, RStrParse * res)
+{
+  rdouble ret;
+  errno = 0;
+  if (str != NULL) {
+    ret = strtod (str, (rchar **)endptr);
+    if (res != NULL)
+      *res = errno == 0 ? R_STR_PARSE_OK : R_STR_PARSE_INVAL;
+  } else {
+    errno = EINVAL;
+    ret = 0.0;
+    if (res)
+      *res = R_STR_PARSE_INVAL;
+  }
+
+  return ret;
 }
 
 rchar *

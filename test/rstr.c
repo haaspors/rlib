@@ -409,6 +409,76 @@ RTEST (rstr, to_int_base_error, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, to_float, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+  rfloat v;
+
+  r_assert_cmpfloat (r_str_to_float (NULL, &e, &res), ==, .0);
+  r_assert_cmpint   (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpfloat (r_str_to_float ("0", &e, &res), ==, .0);
+  r_assert_cmpint   (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr   (e, ==, "");
+  r_assert_cmpfloat ((v = r_str_to_float ("-3.1415pi", &e, &res)), ==, -3.1415);
+  r_assert_cmpint   (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr   (e, ==, "pi");
+  r_assert          (!r_float_isinf (v));
+  r_assert          (r_float_isfinite (v));
+  r_assert          (r_float_signbit (v));
+  r_assert_cmpfloat ((v = r_str_to_float ("1e+20pi", &e, &res)), ==, 1e20);
+  r_assert_cmpint   (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr   (e, ==, "pi");
+  r_assert          (!r_float_isinf (v));
+  r_assert          (r_float_isfinite (v));
+  r_assert          (!r_float_signbit (v));
+  r_assert_cmpfloat ((v = r_str_to_float ("-INFINITYpi", &e, &res)), ==, -RFLOAT_INFINITY);
+  r_assert_cmpint   (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr   (e, ==, "pi");
+  r_assert          (r_float_isinf (v));
+  r_assert          (r_float_signbit (v));
+  r_assert_cmpfloat ((v = r_str_to_float ("NaNpi", &e, &res)), !=, 0.0);
+  r_assert_cmpint   (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr   (e, ==, "pi");
+  r_assert          (r_float_isnan (v));
+}
+RTEST_END;
+
+RTEST (rstr, to_double, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+  rdouble v;
+
+  r_assert_cmpdouble (r_str_to_double (NULL, &e, &res), ==, .0);
+  r_assert_cmpint    (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpdouble (r_str_to_double ("0", &e, &res), ==, .0);
+  r_assert_cmpint    (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr    (e, ==, "");
+  r_assert_cmpdouble ((v = r_str_to_double ("-3.1415pi", &e, &res)), ==, -3.1415);
+  r_assert_cmpint    (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr    (e, ==, "pi");
+  r_assert           (!r_double_isinf (v));
+  r_assert           (r_double_isfinite (v));
+  r_assert           (r_double_signbit (v));
+  r_assert_cmpdouble ((v = r_str_to_double ("1e+21pi", &e, &res)), ==, 1e21);
+  r_assert_cmpint    (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr    (e, ==, "pi");
+  r_assert           (!r_double_isinf (v));
+  r_assert           (r_double_isfinite (v));
+  r_assert           (!r_double_signbit (v));
+  r_assert_cmpdouble ((v = r_str_to_double ("-INFINITYpi", &e, &res)), ==, -RDOUBLE_INFINITY);
+  r_assert_cmpint    (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr    (e, ==, "pi");
+  r_assert           (r_double_isinf (v));
+  r_assert           (r_double_signbit (v));
+  r_assert_cmpdouble ((v = r_str_to_double ("NaNpi", &e, &res)), !=, 0.0);
+  r_assert_cmpint    (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr    (e, ==, "pi");
+  r_assert           (r_double_isnan (v));
+}
+RTEST_END;
+
 RTEST (rstr, dup, RTEST_FAST)
 {
   rchar * tmp;

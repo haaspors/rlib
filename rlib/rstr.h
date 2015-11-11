@@ -93,6 +93,11 @@ R_API ruint64 r_str_to_uint64 (const rchar * str, const rchar ** endptr,
 #define r_strtoll(str, endptr, base)  r_str_to_int64 (str, endptr, base, NULL)
 #define r_strtoull(str, endptr, base) r_str_to_uint64 (str, endptr, base, NULL)
 
+R_API rfloat r_str_to_float (const rchar * str, const rchar ** endptr, RStrParse * res);
+R_API rdouble r_str_to_double (const rchar * str, const rchar ** endptr, RStrParse * res);
+#define r_strtof(str, endptr) r_str_to_float  (str, endptr, NULL)
+#define r_strtod(str, endptr) r_str_to_double (str, endptr, NULL)
+
 R_API rchar * r_strdup (const rchar * str);
 R_API rchar * r_strndup (const rchar * str, rsize n);
 R_API rchar * r_strdup_strip (const rchar * str);
