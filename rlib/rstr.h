@@ -64,8 +64,19 @@ R_API rint64  r_str_to_int64  (const rchar * str, const rchar ** endptr,
     ruint base, RStrParse * res);
 R_API ruint64 r_str_to_uint64 (const rchar * str, const rchar ** endptr,
     ruint base, RStrParse * res);
-#define r_strtoll(str, endptr, base)  r_str_to_int64 (str, endptr, base, NULL)
-#define r_strtoull(str, endptr, base) r_str_to_uint64 (str, endptr, base, NULL)
+#if RLIB_SIZEOF_INT == 8
+#define r_str_to_int   r_str_to_int64
+#define r_str_to_uint  r_str_to_uint64
+#elif RLIB_SIZEOF_INT == 4
+#define r_str_to_int   r_str_to_int32
+#define r_str_to_uint  r_str_to_uint32
+#elif RLIB_SIZEOF_INT == 2
+#define r_str_to_int   r_str_to_int16
+#define r_str_to_uint  r_str_to_uint16
+#elif RLIB_SIZEOF_INT == 1
+#define r_str_to_int   r_str_to_int8
+#define r_str_to_uint  r_str_to_uint8
+#endif
 #if RLIB_SIZEOF_LONG == 8
 #define r_strtol(str, endptr, base)   r_str_to_int64 (str, endptr, base, NULL)
 #define r_strtoul(str, endptr, base)  r_str_to_uint64 (str, endptr, base, NULL)
@@ -79,6 +90,8 @@ R_API ruint64 r_str_to_uint64 (const rchar * str, const rchar ** endptr,
 #define r_strtol(str, endptr, base)   r_str_to_int8 (str, endptr, base, NULL)
 #define r_strtoul(str, endptr, base)  r_str_to_uint8 (str, endptr, base, NULL)
 #endif
+#define r_strtoll(str, endptr, base)  r_str_to_int64 (str, endptr, base, NULL)
+#define r_strtoull(str, endptr, base) r_str_to_uint64 (str, endptr, base, NULL)
 
 R_API rchar * r_strdup (const rchar * str);
 R_API rchar * r_strndup (const rchar * str, rsize n);
