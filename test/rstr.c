@@ -106,6 +106,309 @@ RTEST (rstr, cpy, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, to_int8_base0, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  /* int8 */
+  r_assert_cmpint (r_str_to_int8 (NULL, &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpptr (e, ==, NULL);
+  r_assert_cmpint (r_str_to_int8 ("", &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int8 ("e", &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int8 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int8 ("-42e", &e, 0, &res), ==, -42);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int8 ("127e", &e, 0, &res), ==, RINT8_MAX);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int8 ("-128", &e, 0, &res), ==, RINT8_MIN);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int8 ("128", &e, 0, &res), ==, RINT8_MAX);
+  r_assert_cmpint (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int8 ("-129", &e, 0, &res), ==, RINT8_MIN);
+  r_assert_cmpint (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr (e, ==, "");
+
+  /* uint8 */
+  r_assert_cmpuint (r_str_to_uint8 (NULL, &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpptr  (e, ==, NULL);
+  r_assert_cmpuint (r_str_to_uint8 ("e", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "e");
+  r_assert_cmpuint (r_str_to_uint8 ("-42", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "-42");
+  r_assert_cmpuint (r_str_to_uint8 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint8 ("255", &e, 0, &res), ==, RUINT8_MAX);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint8 ("256e", &e, 0, &res), ==, RUINT8_MAX);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr  (e, ==, "e");
+}
+RTEST_END;
+
+RTEST (rstr, to_int16_base0, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  /* int16 */
+  r_assert_cmpint (r_str_to_int16 (NULL, &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpptr (e, ==, NULL);
+  r_assert_cmpint (r_str_to_int16 ("", &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int16 ("e", &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int16 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int16 ("-4200e", &e, 0, &res), ==, -4200);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int16 ("32767e", &e, 0, &res), ==, RINT16_MAX);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int16 ("-32768", &e, 0, &res), ==, RINT16_MIN);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int16 ("32768", &e, 0, &res), ==, RINT16_MAX);
+  r_assert_cmpint (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int16 ("-32769", &e, 0, &res), ==, RINT16_MIN);
+  r_assert_cmpint (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr (e, ==, "");
+
+  /* uint16 */
+  r_assert_cmpuint (r_str_to_uint16 (NULL, &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpptr  (e, ==, NULL);
+  r_assert_cmpuint (r_str_to_uint16 ("e", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "e");
+  r_assert_cmpuint (r_str_to_uint16 ("-42", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "-42");
+  r_assert_cmpuint (r_str_to_uint16 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint16 ("65535", &e, 0, &res), ==, RUINT16_MAX);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint16 ("65536e", &e, 0, &res), ==, RUINT16_MAX);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr  (e, ==, "e");
+}
+RTEST_END;
+
+RTEST (rstr, to_int32_base0, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  /* int32 */
+  r_assert_cmpint (r_str_to_int32 (NULL, &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpptr (e, ==, NULL);
+  r_assert_cmpint (r_str_to_int32 ("", &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int32 ("e", &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int32 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int32 ("-4200000e", &e, 0, &res), ==, -4200000);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int32 ("2147483647e", &e, 0, &res), ==, RINT32_MAX);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int32 ("-2147483648", &e, 0, &res), ==, RINT32_MIN);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int32 ("2147483648", &e, 0, &res), ==, RINT32_MAX);
+  r_assert_cmpint (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int32 ("-2147483649", &e, 0, &res), ==, RINT32_MIN);
+  r_assert_cmpint (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr (e, ==, "");
+
+  /* uint32 */
+  r_assert_cmpuint (r_str_to_uint32 (NULL, &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpptr  (e, ==, NULL);
+  r_assert_cmpuint (r_str_to_uint32 ("e", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "e");
+  r_assert_cmpuint (r_str_to_uint32 ("-42", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "-42");
+  r_assert_cmpuint (r_str_to_uint32 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint32 ("4294967295", &e, 0, &res), ==, RUINT32_MAX);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint32 ("4294967296e", &e, 0, &res), ==, RUINT32_MAX);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr  (e, ==, "e");
+}
+RTEST_END;
+
+RTEST (rstr, to_int64_base0, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  /* int64 */
+  r_assert_cmpint (r_str_to_int64 (NULL, &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpptr (e, ==, NULL);
+  r_assert_cmpint (r_str_to_int64 ("", &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int64 ("e", &e, 0, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int64 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int64 ("-4200000000000000e", &e, 0, &res), ==,
+      RUINT64_CONSTANT (-4200000000000000));
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int64 ("9223372036854775807e", &e, 0, &res), ==, RINT64_MAX);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "e");
+  r_assert_cmpint (r_str_to_int64 ("-9223372036854775808", &e, 0, &res), ==, RINT64_MIN);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int64 ("9223372036854775808", &e, 0, &res), ==, RINT64_MAX);
+  r_assert_cmpint (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int64 ("-9223372036854775809", &e, 0, &res), ==, RINT64_MIN);
+  r_assert_cmpint (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr (e, ==, "");
+
+  /* uint64 */
+  r_assert_cmpuint (r_str_to_uint64 (NULL, &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpptr  (e, ==, NULL);
+  r_assert_cmpuint (r_str_to_uint64 ("e", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "e");
+  r_assert_cmpuint (r_str_to_uint64 ("-42", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "-42");
+  r_assert_cmpuint (r_str_to_uint64 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint64 ("18446744073709551615", &e, 0, &res), ==, RUINT64_MAX);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint64 ("18446744073709551616e", &e, 0, &res), ==, RUINT64_MAX);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_RANGE);
+  r_assert_cmpstr  (e, ==, "e");
+}
+RTEST_END;
+
+RTEST (rstr, to_int_base16, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  /* int */
+  r_assert_cmpint (r_str_to_int64 ("-0xFfG", &e, 0, &res), ==, -0xFF);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "G");
+  r_assert_cmpint (r_str_to_int64 ("-Ffg", &e, 16, &res), ==, -0xFF);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "g");
+
+  /* uint */
+  r_assert_cmpuint (r_str_to_uint64 ("0xfFH", &e, 0, &res), ==, 0xFF);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "H");
+  r_assert_cmpuint (r_str_to_uint64 ("AAbbCCdDEefF12", &e, 16, &res), ==,
+      0xAABBCCDDEEFF12);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+}
+RTEST_END;
+
+RTEST (rstr, to_int_base8, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  /* int */
+  r_assert_cmpint (r_str_to_int64 ("-0778", &e, 0, &res), ==, -077);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "8");
+  r_assert_cmpint (r_str_to_int64 ("-0778", &e, 8, &res), ==, -077);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "8");
+
+  /* uint */
+  r_assert_cmpuint (r_str_to_uint64 ("0778", &e, 0, &res), ==, 077);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "8");
+  r_assert_cmpuint (r_str_to_uint64 ("0778", &e, 8, &res), ==, 077);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "8");
+}
+RTEST_END;
+
+RTEST (rstr, to_int_base2, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  /* int */
+  r_assert_cmpint (r_str_to_int64 ("-01102", &e, 2, &res), ==, -0x6);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "2");
+
+  /* uint */
+  r_assert_cmpuint (r_str_to_uint64 ("01112", &e, 2, &res), ==, 0x7);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "2");
+}
+RTEST_END;
+
+RTEST (rstr, to_int_base_error, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  r_assert_cmpuint (r_str_to_uint64 ("1", &e, 1, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "1");
+  r_assert_cmpuint (r_str_to_uint64 ("1", &e, 37, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpstr  (e, ==, "1");
+}
+RTEST_END;
+
 RTEST (rstr, dup, RTEST_FAST)
 {
   rchar * tmp;

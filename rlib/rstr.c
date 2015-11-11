@@ -160,6 +160,234 @@ r_stpncpy (rchar * dst, const rchar * src, rsize len)
 #endif
 }
 
+static inline RStrParse
+r_str_to_int_parse (const rchar * str, const rchar ** endptr, ruint base,
+    ruint bits, rintmax * val)
+{
+  RStrParse ret = R_STR_PARSE_INVAL;
+  const rchar * ptr, * start;
+  rboolean neg = FALSE;
+  ruintmax v = 0, m = RUINTMAX_MAX >> (RLIB_SIZEOF_INTMAX * 8 - (bits - 1));
+
+  *val = 0;
+  if (endptr != NULL)
+    *endptr = str;
+
+  if (R_UNLIKELY (str == NULL || *str == 0))
+    return R_STR_PARSE_INVAL;
+  if (R_UNLIKELY (base == 1 || base > 36))
+    return R_STR_PARSE_INVAL;
+
+  ptr = r_strlwstrip (str);
+  if (R_UNLIKELY (*ptr == 0))
+    goto beach;
+
+  ret = R_STR_PARSE_OK;
+  if ((neg = (*ptr == '-')) || *ptr == '+') {
+    ptr++;
+    m++;
+  }
+
+  if (*ptr == '0') {
+    ptr++;
+    if ((base == 0 || base == 16) && (*ptr == 'X' || *ptr == 'x')) {
+      if (!r_ascii_isxdigit (ptr[1]))
+        goto beach;
+      base = 16;
+      ptr++;
+    } else if (base == 0) {
+      base = 8;
+    }
+  } else if (base == 0) {
+    base = 10;
+  }
+
+  for (start = ptr; *ptr != 0;) {
+    rchar c;
+    ruintmax nv;
+
+    if (r_ascii_isdigit (*ptr))       c = *ptr - '0';
+    else if (r_ascii_islower (*ptr))  c = 10 + *ptr - 'a';
+    else if (r_ascii_isupper (*ptr))  c = 10 + *ptr - 'A';
+    else break;
+
+    if ((ruint)c >= base)
+      break;
+
+    ptr++;
+    nv = v * base + c;
+    if (nv <= m && nv > v) {
+      v = nv;
+    } else {
+      v = m;
+      ret = R_STR_PARSE_RANGE;
+      break;
+    }
+  }
+
+  if (start != ptr)
+    *val = !neg ? v : -v;
+  else
+    ret = R_STR_PARSE_INVAL;
+
+beach:
+  if (endptr != NULL)
+    *endptr = ptr;
+
+  return ret;
+}
+
+static inline RStrParse
+r_str_to_uint_parse (const rchar * str, const rchar ** endptr, ruint base,
+    ruint bits, ruintmax * val)
+{
+  RStrParse ret = R_STR_PARSE_INVAL;
+  const rchar * ptr, * start;
+  ruintmax v = 0, m = RUINTMAX_MAX >> (RLIB_SIZEOF_INTMAX * 8 - bits);
+
+  *val = 0;
+  if (endptr != NULL)
+    *endptr = str;
+
+  if (R_UNLIKELY (str == NULL || *str == 0))
+    return R_STR_PARSE_INVAL;
+  if (R_UNLIKELY (base == 1 || base > 36))
+    return R_STR_PARSE_INVAL;
+
+  ptr = r_strlwstrip (str);
+  if (R_UNLIKELY (*ptr == 0))
+    goto beach;
+
+  ret = R_STR_PARSE_OK;
+  if (*ptr == '0') {
+    ptr++;
+    if ((base == 0 || base == 16) && (*ptr == 'X' || *ptr == 'x')) {
+      if (!r_ascii_isxdigit (ptr[1]))
+        goto beach;
+      base = 16;
+      ptr++;
+    } else if (base == 0) {
+      base = 8;
+    }
+  } else if (base == 0) {
+    base = 10;
+  }
+
+  for (start = ptr; *ptr != 0;) {
+    rchar c;
+    ruintmax nv;
+
+    if (r_ascii_isdigit (*ptr))       c = *ptr - '0';
+    else if (r_ascii_islower (*ptr))  c = 10 + *ptr - 'a';
+    else if (r_ascii_isupper (*ptr))  c = 10 + *ptr - 'A';
+    else break;
+
+    if ((ruint)c >= base)
+      break;
+
+    ptr++;
+    nv = v * base + c;
+    if (nv <= m && nv > v) {
+      v = nv;
+    } else {
+      v = m;
+      ret = R_STR_PARSE_RANGE;
+      break;
+    }
+  }
+
+  if (start != ptr)
+    *val = v;
+  else
+    ret = R_STR_PARSE_INVAL;
+
+beach:
+  if (endptr != NULL)
+    *endptr = ptr;
+
+  return ret;
+}
+
+rint8
+r_str_to_int8 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
+{
+  rintmax ret;
+  RStrParse r = r_str_to_int_parse (str, endptr, base, 8, &ret);
+  if (res != NULL)
+    *res = r;
+  return (rint8)ret;
+}
+
+ruint8
+r_str_to_uint8 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
+{
+  ruintmax ret;
+  RStrParse r = r_str_to_uint_parse (str, endptr, base, 8, &ret);
+  if (res != NULL)
+    *res = r;
+  return (ruint8)ret;
+}
+
+rint16
+r_str_to_int16 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
+{
+  rintmax ret;
+  RStrParse r = r_str_to_int_parse (str, endptr, base, 16, &ret);
+  if (res != NULL)
+    *res = r;
+  return (rint16)ret;
+}
+
+ruint16
+r_str_to_uint16 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
+{
+  ruintmax ret;
+  RStrParse r = r_str_to_uint_parse (str, endptr, base, 16, &ret);
+  if (res != NULL)
+    *res = r;
+  return (ruint16)ret;
+}
+
+rint32
+r_str_to_int32 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
+{
+  rintmax ret;
+  RStrParse r = r_str_to_int_parse (str, endptr, base, 32, &ret);
+  if (res != NULL)
+    *res = r;
+  return (rint32)ret;
+}
+
+ruint32
+r_str_to_uint32 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
+{
+  ruintmax ret;
+  RStrParse r = r_str_to_uint_parse (str, endptr, base, 32, &ret);
+  if (res != NULL)
+    *res = r;
+  return (ruint32)ret;
+}
+
+rint64
+r_str_to_int64 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
+{
+  rintmax ret;
+  RStrParse r = r_str_to_int_parse (str, endptr, base, 64, &ret);
+  if (res != NULL)
+    *res = r;
+  return (rint64)ret;
+}
+
+ruint64
+r_str_to_uint64 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
+{
+  ruintmax ret;
+  RStrParse r = r_str_to_uint_parse (str, endptr, base, 64, &ret);
+  if (res != NULL)
+    *res = r;
+  return (ruint64)ret;
+}
+
 rchar *
 r_strdup (const rchar * str)
 {

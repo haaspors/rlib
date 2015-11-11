@@ -43,6 +43,43 @@ R_API rchar * r_strncpy (rchar * dst, const rchar * src, rsize len);
 R_API rchar * r_stpcpy (rchar * dst, const rchar * src);
 R_API rchar * r_stpncpy (rchar * dst, const rchar * src, rsize len);
 
+typedef enum {
+  R_STR_PARSE_OK,
+  R_STR_PARSE_RANGE,
+  R_STR_PARSE_INVAL,
+} RStrParse;
+R_API rint8   r_str_to_int8   (const rchar * str, const rchar ** endptr,
+    ruint base, RStrParse * res);
+R_API ruint8  r_str_to_uint8  (const rchar * str, const rchar ** endptr,
+    ruint base, RStrParse * res);
+R_API rint16  r_str_to_int16  (const rchar * str, const rchar ** endptr,
+    ruint base, RStrParse * res);
+R_API ruint16 r_str_to_uint16 (const rchar * str, const rchar ** endptr,
+    ruint base, RStrParse * res);
+R_API rint32  r_str_to_int32  (const rchar * str, const rchar ** endptr,
+    ruint base, RStrParse * res);
+R_API ruint32 r_str_to_uint32 (const rchar * str, const rchar ** endptr,
+    ruint base, RStrParse * res);
+R_API rint64  r_str_to_int64  (const rchar * str, const rchar ** endptr,
+    ruint base, RStrParse * res);
+R_API ruint64 r_str_to_uint64 (const rchar * str, const rchar ** endptr,
+    ruint base, RStrParse * res);
+#define r_strtoll(str, endptr, base)  r_str_to_int64 (str, endptr, base, NULL)
+#define r_strtoull(str, endptr, base) r_str_to_uint64 (str, endptr, base, NULL)
+#if RLIB_SIZEOF_LONG == 8
+#define r_strtol(str, endptr, base)   r_str_to_int64 (str, endptr, base, NULL)
+#define r_strtoul(str, endptr, base)  r_str_to_uint64 (str, endptr, base, NULL)
+#elif RLIB_SIZEOF_LONG == 4
+#define r_strtol(str, endptr, base)   r_str_to_int32 (str, endptr, base, NULL)
+#define r_strtoul(str, endptr, base)  r_str_to_uint32 (str, endptr, base, NULL)
+#elif RLIB_SIZEOF_LONG == 2
+#define r_strtol(str, endptr, base)   r_str_to_int16 (str, endptr, base, NULL)
+#define r_strtoul(str, endptr, base)  r_str_to_uint16 (str, endptr, base, NULL)
+#elif RLIB_SIZEOF_LONG == 1
+#define r_strtol(str, endptr, base)   r_str_to_int8 (str, endptr, base, NULL)
+#define r_strtoul(str, endptr, base)  r_str_to_uint8 (str, endptr, base, NULL)
+#endif
+
 R_API rchar * r_strdup (const rchar * str);
 R_API rchar * r_strndup (const rchar * str, rsize n);
 R_API rchar * r_strdup_strip (const rchar * str);
