@@ -367,6 +367,7 @@ def configure_sizeof(cfg):
         cfg.env.RLIB_INTMAX_TYPE = 'RINT64'
 
     cfg.env.RLIB_SIZEOF_VOID_P = sizeof_void_p
+    cfg.env.RLIB_SIZEOF_INT = sizeof_int
     cfg.env.RLIB_SIZEOF_LONG = sizeof_long
     cfg.env.RLIB_SIZEOF_INTMAX = sizeof_void_p
     cfg.env.RLIB_SIZEOF_SIZE_T = sizeof_size_t

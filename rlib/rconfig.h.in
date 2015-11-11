@@ -73,6 +73,7 @@ typedef unsigned @RINTPTR_TYPE@ ruintptr;
 #define RUINTPTR_FMT            @RUINTPTR_FMT@
 
 #define RLIB_SIZEOF_VOID_P      @RLIB_SIZEOF_VOID_P@
+#define RLIB_SIZEOF_INT         @RLIB_SIZEOF_INT@
 #define RLIB_SIZEOF_LONG        @RLIB_SIZEOF_LONG@
 #define RLIB_SIZEOF_INTMAX      @RLIB_SIZEOF_INTMAX@
 #define RLIB_SIZEOF_SIZE_T      @RLIB_SIZEOF_SIZE_T@
