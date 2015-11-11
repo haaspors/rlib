@@ -196,6 +196,8 @@ r_str_to_int_parse (const rchar * str, const rchar ** endptr, ruint base,
       base = 16;
       ptr++;
     } else if (base == 0) {
+      if (*ptr < '0' || *ptr > '7')
+        goto beach;
       base = 8;
     }
   } else if (base == 0) {
@@ -267,6 +269,8 @@ r_str_to_uint_parse (const rchar * str, const rchar ** endptr, ruint base,
       base = 16;
       ptr++;
     } else if (base == 0) {
+      if (*ptr < '0' || *ptr > '7')
+        goto beach;
       base = 8;
     }
   } else if (base == 0) {

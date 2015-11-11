@@ -233,7 +233,7 @@ RTEST (rstr, to_int32_base0, RTEST_FAST)
   r_assert_cmpint (r_str_to_int32 ("e", &e, 0, &res), ==, 0);
   r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
   r_assert_cmpstr (e, ==, "e");
-  r_assert_cmpint (r_str_to_int32 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpint (r_str_to_int32 ("0", &e, 0, &res), ==, 0);
   r_assert_cmpint (res, ==, R_STR_PARSE_OK);
   r_assert_cmpstr (e, ==, "");
   r_assert_cmpint (r_str_to_int32 ("-4200000e", &e, 0, &res), ==, -4200000);
@@ -262,7 +262,7 @@ RTEST (rstr, to_int32_base0, RTEST_FAST)
   r_assert_cmpuint (r_str_to_uint32 ("-42", &e, 0, &res), ==, 0);
   r_assert_cmpint  (res, ==, R_STR_PARSE_INVAL);
   r_assert_cmpstr  (e, ==, "-42");
-  r_assert_cmpuint (r_str_to_uint32 ("42", &e, 0, &res), ==, 42);
+  r_assert_cmpuint (r_str_to_uint32 ("0", &e, 0, &res), ==, 0);
   r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
   r_assert_cmpstr  (e, ==, "");
   r_assert_cmpuint (r_str_to_uint32 ("4294967295", &e, 0, &res), ==, RUINT32_MAX);
