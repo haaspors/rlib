@@ -23,6 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rlog.h>
 
 R_API_HIDDEN void r_log_init (void);
 
@@ -32,5 +33,7 @@ R_API_HIDDEN void r_thread_init (void);
 R_API_HIDDEN void r_thread_deinit (void);
 
 R_API_HIDDEN void r_time_init (void);
+
+R_API_HIDDEN R_LOG_CATEGORY_DEFINE_EXTERN (rlib_logcat);
 
 #endif /* __RLIB_PRIVATE_H__ */

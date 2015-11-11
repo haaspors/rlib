@@ -33,6 +33,7 @@
 #include <rlib/rmacros.h>
 #include <rlib/rmath.h>
 #include <rlib/rmodule.h>
+#include <rlib/roptparse.h>
 #include <rlib/rproc.h>
 #include <rlib/rsignal.h>
 #include <rlib/rstr.h>

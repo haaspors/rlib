@@ -24,12 +24,18 @@
 #include <windows.h>
 #endif
 
+R_LOG_CATEGORY_DEFINE (rlib_logcat, "*** rlib   ***", "Internal RLib logger",
+    R_CLR_BG_CYAN | R_CLR_FMT_BOLD);
+
 R_INITIALIZER (rlib_init)
 {
   r_log_init ();
   r_time_init ();
   r_thread_init ();
   r_test_init ();
+
+  r_log_category_register (&rlib_logcat);
+  r_log_category_set_threshold (&rlib_logcat, R_LOG_LEVEL_WARNING);
 }
 
 R_DEINITIALIZER (rlib_deinit)

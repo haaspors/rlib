@@ -23,6 +23,7 @@ Features
   * Detects crashes (`SIGSEGV ++`)
   * Detects timeouts
   * Forks tests on platforms where `fork()` is supported
+* Command line option parser
 * more to come ...
 
 Getting the code
