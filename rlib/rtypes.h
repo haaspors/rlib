@@ -34,6 +34,27 @@ typedef int                     rboolean;
 typedef float                   rfloat;
 typedef double                  rdouble;
 
+#define RFLOAT_MIN              FLT_MIN
+#define RFLOAT_MAX              FLT_MAX
+#define RDOUBLE_MIN             DBL_MIN
+#define RDOUBLE_MAX             DBL_MAX
+#if defined(_MSC_VER)
+#define RFLOAT_INFINITY         ((rfloat)(1e+300 * 1e+300))
+#define RFLOAT_NAN              (RFLOAT_INFINITY * 0.0f)
+#define RDOUBLE_INFINITY        ((rdouble)(1e+300 * 1e+300))
+#define RDOUBLE_NAN             (RDOUBLE_INFINITY * 0.0)
+#elif defined(__GNUC__)
+#define RFLOAT_INFINITY         (__builtin_huge_valf())
+#define RFLOAT_NAN              (__builtin_nanf("0x7fc00000"))
+#define RDOUBLE_INFINITY        (__builtin_huge_val())
+#define RDOUBLE_NAN             ((rdouble)RFLOAT_NAN)
+#else
+#define RFLOAT_INFINITY         ((rfloat)1e500)
+#define RFLOAT_NAN              (__nan())
+#define RDOUBLE_INFINITY        ((rdouble)1e500)
+#define RDOUBLE_NAN             ((rdouble)RFLOAT_NAN)
+#endif
+
 #define R_E                 2.718281828459045235360287471352662497757247093700
 #define R_LN2               0.693147180559945309417232121458176568075500134360
 #define R_LN10              2.302585092994045684017991454684364207601101488629
@@ -53,10 +74,6 @@ typedef unsigned short          rushort;
 typedef unsigned long           rulong;
 typedef unsigned int            ruint;
 
-#define RFLOAT_MIN              FLT_MIN
-#define RFLOAT_MAX              FLT_MAX
-#define RDOUBLE_MIN             DBL_MIN
-#define RDOUBLE_MAX             DBL_MAX
 #define RSHORT_MIN              SHRT_MIN
 #define RSHORT_MAX              SHRT_MAX
 #define RUSHORT_MAX             USHRT_MAX
