@@ -570,6 +570,7 @@ r_option_argument_parse_string (ROptionArgument * arg, const rchar ** str)
   if (str == NULL || **str == 0)
     return R_OPTION_PARSE_ERROR;
 
+  r_free (*(rpointer *)arg->variable);
   *(rchar **)arg->variable = r_strdup (*str);
   *str += strlen (*str);
   return R_OPTION_PARSE_OK;
