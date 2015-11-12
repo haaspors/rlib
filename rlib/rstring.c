@@ -268,10 +268,12 @@ r_string_overwrite_len (RString * str, rsize pos, const rchar * cstr, rsize len)
   if (pos + len > str->len) {
     if (R_UNLIKELY (!r_string_ensure_additional_size (str, pos + len - str->len)))
       return 0;
+    memcpy (str->cstr + pos, cstr, len);
     str->len = pos + len;
+    str->cstr[str->len] = 0;
+  } else {
+    memcpy (str->cstr + pos, cstr, len);
   }
-
-  memcpy (str->cstr + pos, cstr, len);
 
   return len;
 }
