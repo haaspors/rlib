@@ -153,20 +153,56 @@ typedef struct {
 
 /* Instead of defining main() yourself, just use RTEST_MAIN()
  * Usually at the bottom of your main test runner .c file.
- * TODO: Parse arguments
  */
-#define RTEST_MAIN()                                                          \
-  int main (int argc, rchar ** argv) {                                      \
-  int ret;                                                                   \
+#define RTEST_MAIN(version_str)                                               \
+int main (int argc, rchar ** argv) {                                          \
+  ROptionParser * parser = r_option_parser_new (NULL, version_str);           \
   RTestReport * report;                                                       \
-  (void) argc; (void) argv;                                                   \
+  int ret = -1;                                                               \
                                                                               \
-  report = r_test_run_local_tests (R_TEST_ALL_MASK, FALSE);                   \
-  if (report == NULL)                                                         \
-    return -1;                                                                \
-  ret = report->fail + report->error;                                         \
-  r_test_report_print (report, FALSE, stdout);                                \
-  r_test_report_free (report);                                                \
+  rboolean verbose, igskip;                                                   \
+  rchar * output;                                                             \
+  const ROptionArgument args[] = {                                            \
+    R_OPT_ARG ("verbose",     'v', R_OPTION_TYPE_NONE,      &verbose,         \
+        R_OPTION_FLAG_NONE, "Print verbose info", NULL),                      \
+    R_OPT_ARG ("ignore-skip", 'i', R_OPTION_TYPE_NONE,      &igskip,          \
+        R_OPTION_FLAG_NONE, "Run tests that default would be skipped", NULL), \
+    R_OPT_ARG ("output",      'o', R_OPTION_TYPE_FILENAME,  &output,          \
+        R_OPTION_FLAG_NONE,                                                   \
+        "File to print results to, use - for stdout [default]", NULL),        \
+  };                                                                          \
+  r_option_parser_add_arguments (parser, args, R_N_ELEMENTS (args));          \
+                                                                              \
+  switch (r_option_parser_parse (parser, &argc, &argv)) {                     \
+    case R_OPTION_PARSE_VERSION:                                              \
+      {                                                                       \
+        rchar * verstr = r_option_parser_get_version_output (parser);         \
+        r_print ("%s", verstr);                                               \
+        r_free (verstr);                                                      \
+      }                                                                       \
+      break;                                                                  \
+    case R_OPTION_PARSE_OK:                                                   \
+      if ((report = r_test_run_local_tests (R_TEST_ALL_MASK, igskip)) != NULL) {\
+        FILE * f = stdout;                                                    \
+        if (output != NULL && !r_str_equals (output, "-"))                    \
+          f = fopen (output, "w");                                            \
+        r_test_report_print (report, verbose, f);                             \
+        if (f != stdout)                                                      \
+          fclose (f);                                                         \
+        ret = report->fail + report->error;                                   \
+        r_test_report_free (report);                                          \
+      }                                                                       \
+      break;                                                                  \
+    default:                                                                  \
+      {                                                                       \
+        rchar * help = r_option_parser_get_help_output (parser);              \
+        r_print ("%s", help);                                                 \
+        r_free (help);                                                        \
+      }                                                                       \
+      break;                                                                  \
+  }                                                                           \
+  r_option_parser_free (parser);                                              \
+  r_free (output);                                                            \
   return ret;                                                                 \
 }
 
