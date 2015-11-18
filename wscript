@@ -104,6 +104,9 @@ def build(bld):
             defines     = [ 'RLIB_COMPILATION', 'RLIB_STLIB' ],
             use         = 'M DL PTHREAD RT')
 
+    bld.install_files('${PREFIX}/include',
+            bld.path.ant_glob('rlib/*.h', excl = [ 'rlib/*private.h' ]))
+
     bld.recurse('example test')
 
 def init(ctx):
