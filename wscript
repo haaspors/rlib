@@ -107,6 +107,13 @@ def build(bld):
     bld.install_files('${PREFIX}/include',
             bld.path.ant_glob('rlib/*.h', excl = [ 'rlib/*private.h' ]))
 
+    bld(    features    = 'subst',
+            source      = APPNAME + '.pc.in',
+            target      = APPNAME + '.pc',
+            APPNAME     = APPNAME,
+            VERSION     = VERSION,
+            install_path= '${LIBDIR}/pkgconfig')
+
     bld.recurse('example test')
 
 def init(ctx):
@@ -185,7 +192,8 @@ def configure_headers(cfg):
 
     if not cfg.env.DEST_OS == 'win32':
         cfg.check(header_name='dlfcn.h')
-        cfg.check(lib='dl')
+        if cfg.check(lib='dl'):
+            cfg.env.RLIB_DL_LIBS = '-ldl'
 
     cfg.check(header_name='sched.h', mandatory=False)
     cfg.check(header_name='sys/sysctl.h', mandatory=False)
@@ -200,8 +208,10 @@ def configure_headers(cfg):
 
 def configure_libs(cfg):
     if not cfg.env.DEST_OS == 'win32':
-        cfg.check(lib='m', mandatory=False)
-        cfg.check(lib='rt', mandatory=False)
+        if cfg.check(lib='m', mandatory=False):
+            cfg.env.RLIB_MATH_LIBS = '-lm'
+        if cfg.check(lib='rt', mandatory=False):
+            cfg.env.RLIB_MATH_LIBS = '-lrt'
 
 def configure_string(cfg):
     cfg.check_cc(function_name='stpcpy',
@@ -237,6 +247,7 @@ def configure_threads(cfg):
     cfg.check_cc(function_name='gettid',
             header_name="sys/types.h", mandatory=False)
     if cfg.check(header_name='pthread.h', mandatory=False):
+        cfg.env.RLIB_THREAD_LIBS = '-pthread'
         cfg.check_cc(function_name='pthread_getname_np', defines=['_GNU_SOURCE=1'],
                 header_name="pthread.h", lib='pthread', mandatory=False)
         cfg.check_cc(
