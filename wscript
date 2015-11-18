@@ -96,6 +96,13 @@ def build(bld):
             includes    = [ '.' ],
             defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
             use         = 'M DL PTHREAD RT')
+    bld.stlib(
+            source      = bld.path.ant_glob('rlib/*.c'),
+            target      = APPNAME + 'st',
+            install_path= '${LIBDIR}',
+            includes    = [ '.' ],
+            defines     = [ 'RLIB_COMPILATION', 'RLIB_STLIB' ],
+            use         = 'M DL PTHREAD RT')
 
     bld.recurse('example test')
 
