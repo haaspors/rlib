@@ -5,9 +5,12 @@
 import tools.waf.conf
 import tools.waf.test
 
-APPNAME = 'rlib'
+LIBNAME = 'rlib'
 VERSION = '0.0.1'
 APIVERSION = '0.1'
+
+SHLIBNAME = LIBNAME
+STLIBNAME = LIBNAME + 'st'
 
 top = '.'
 out = '_build_'
@@ -91,14 +94,14 @@ def build(bld):
 
     bld.shlib(
             source      = bld.path.ant_glob('rlib/*.c'),
-            target      = APPNAME,
+            target      = SHLIBNAME,
             vnum        = APIVERSION,
             includes    = [ '.' ],
             defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
             use         = 'M DL PTHREAD RT')
     bld.stlib(
             source      = bld.path.ant_glob('rlib/*.c'),
-            target      = APPNAME + 'st',
+            target      = STLIBNAME,
             install_path= '${LIBDIR}',
             includes    = [ '.' ],
             defines     = [ 'RLIB_COMPILATION', 'RLIB_STLIB' ],
@@ -116,15 +119,15 @@ def build(bld):
         privlibs.append(bld.env.RLIB_THREAD_LIBS)
 
     bld(    features    = 'subst',
-            source      = APPNAME + '.pc.in',
-            target      = APPNAME + '.pc',
-            APPNAME     = APPNAME,
+            source      = LIBNAME + '.pc.in',
+            target      = SHLIBNAME + '.pc',
+            NAME        = SHLIBNAME,
             VERSION     = VERSION,
             install_path= '${LIBDIR}/pkgconfig')
     bld(    features    = 'subst',
-            source      = APPNAME + '.pc.in',
-            target      = APPNAME + 'st.pc',
-            APPNAME     = APPNAME + 'st',
+            source      = LIBNAME + '.pc.in',
+            target      = STLIBNAME + 'st.pc',
+            NAME        = STLIBNAME,
             VERSION     = VERSION,
             RLIB_EXTRA_LIBS = ' '.join(privlibs),
             install_path= '${LIBDIR}/pkgconfig')

@@ -3,8 +3,8 @@ exec_prefix=@prefix@
 libdir=@libdir@
 includedir=@prefix@/include
 
-Name: @APPNAME@
+Name: @NAME@
 Description: Convenience library for useful things
 Version: @VERSION@
-Libs: -L${libdir} -l@APPNAME@ @RLIB_DL_LIBS@ @RLIB_EXTRA_LIBS@
+Libs: -L${libdir} -l@NAME@ @RLIB_DL_LIBS@ @RLIB_EXTRA_LIBS@
 Cflags: -I${includedir} @RLIB_THREAD_CFLAGS@ @RLIB_EXTRA_CFLAGS@
