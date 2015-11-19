@@ -52,6 +52,7 @@ testlock = threading.Lock()
 class test(Task.Task):
     """Execute a test"""
     color = 'PINK'
+    after = ['vnum', 'inst']
 
     def keyword(self):
         return 'Running test'
