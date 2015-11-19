@@ -6,8 +6,8 @@ import tools.waf.conf
 import tools.waf.test
 
 LIBNAME = 'rlib'
-VERSION = '0.0.1'
-APIVERSION = '0.1'
+VERSION = '1.0.0'
+APIVERSION = '1.0'
 
 SHLIBNAME = LIBNAME
 STLIBNAME = LIBNAME + 'st'
