@@ -6,6 +6,5 @@ includedir=@prefix@/include
 Name: @APPNAME@
 Description: Convenience library for useful things
 Version: @VERSION@
-Libs: -L${libdir} -l@APPNAME@
-Libs.private: @RLIB_MATH_LIBS@ @RLIB_DL_LIBS@ @RLIB_RT_LIBS@ @RLIB_THREAD_LIBS@
+Libs: -L${libdir} -l@APPNAME@ @RLIB_DL_LIBS@ @RLIB_EXTRA_LIBS@
 Cflags: -I${includedir} @RLIB_THREAD_CFLAGS@ @RLIB_EXTRA_CFLAGS@

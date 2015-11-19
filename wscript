@@ -107,11 +107,26 @@ def build(bld):
     bld.install_files('${PREFIX}/include',
             bld.path.ant_glob('rlib/*.h', excl = [ 'rlib/*private.h' ]))
 
+    privlibs = []
+    if bld.env.RLIB_MATH_LIBS:
+        privlibs.append(bld.env.RLIB_MATH_LIBS)
+    if bld.env.RLIB_RT_LIBS:
+        privlibs.append(bld.env.RLIB_RT_LIBS)
+    if bld.env.RLIB_THREAD_LIBS:
+        privlibs.append(bld.env.RLIB_THREAD_LIBS)
+
     bld(    features    = 'subst',
             source      = APPNAME + '.pc.in',
             target      = APPNAME + '.pc',
             APPNAME     = APPNAME,
             VERSION     = VERSION,
+            install_path= '${LIBDIR}/pkgconfig')
+    bld(    features    = 'subst',
+            source      = APPNAME + '.pc.in',
+            target      = APPNAME + 'st.pc',
+            APPNAME     = APPNAME + 'st',
+            VERSION     = VERSION,
+            RLIB_EXTRA_LIBS = ' '.join(privlibs),
             install_path= '${LIBDIR}/pkgconfig')
 
     bld.recurse('example test')
@@ -211,7 +226,7 @@ def configure_libs(cfg):
         if cfg.check(lib='m', mandatory=False):
             cfg.env.RLIB_MATH_LIBS = '-lm'
         if cfg.check(lib='rt', mandatory=False):
-            cfg.env.RLIB_MATH_LIBS = '-lrt'
+            cfg.env.RLIB_RT_LIBS = '-lrt'
 
 def configure_string(cfg):
     cfg.check_cc(function_name='stpcpy',
