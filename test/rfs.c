@@ -49,3 +49,16 @@ RTEST (rfs, path_build, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rfs, get_tmp_dir, RTEST_FAST | RTEST_SYSTEM)
+{
+  const rchar * tmpdir;
+
+  r_assert_cmpptr ((tmpdir = r_fs_get_tmp_dir ()), !=, NULL);
+  r_assert_cmpptr (tmpdir, ==, r_fs_get_tmp_dir ());
+#ifdef R_OS_UNIX
+  /* FIXME: Change to is absolute path */
+  r_assert_cmpint (*tmpdir, ==, R_DIR_SEP);
+#endif
+}
+RTEST_END;
+
