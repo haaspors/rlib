@@ -26,7 +26,7 @@
 
 #if __has_extension(c_atomic)
 #define USE_CLANG_ATOMICS         1
-#elif R_GNUC_PREREQ(4, 7)
+#elif R_GNUC_PREREQ(4, 9) && !defined(__STDC_NO_ATOMICS__)
 #define USE_GNUC_ATOMICS          1
 #elif defined(__GNUC__)
 #define USE_SYNC_ATOMICS          1
