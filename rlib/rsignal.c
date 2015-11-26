@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include <rlib/rsignal.h>
-#include <rlib/ralloc.h>
+#include <rlib/rmem.h>
 #include <signal.h>
 #include <time.h>
 #ifdef HAVE_SYS_TIME_H

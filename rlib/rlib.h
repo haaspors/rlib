@@ -20,7 +20,6 @@
 
 #define __RLIB_H_INCLUDE_GUARD__
 
-#include <rlib/ralloc.h>
 #include <rlib/rascii.h>
 #include <rlib/rassert.h>
 #include <rlib/ratomic.h>
@@ -33,6 +32,7 @@
 #include <rlib/rlog.h>
 #include <rlib/rmacros.h>
 #include <rlib/rmath.h>
+#include <rlib/rmem.h>
 #include <rlib/rmemfile.h>
 #include <rlib/rmodule.h>
 #include <rlib/roptparse.h>

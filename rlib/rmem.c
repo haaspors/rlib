@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/ralloc.h>
+#include <rlib/rmem.h>
 #include <string.h>
 
 static const RMemVTable r_memsysvtable  = { malloc, calloc, realloc, free };

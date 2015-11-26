@@ -18,8 +18,8 @@
 
 #include "config.h"
 #include <rlib/rproc.h>
-#include <rlib/ralloc.h>
 #include <rlib/rfs.h>
+#include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <stdlib.h>
 #include <string.h>

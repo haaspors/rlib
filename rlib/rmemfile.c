@@ -18,9 +18,9 @@
 
 #include "config.h"
 #include <rlib/rmemfile.h>
-#include <rlib/ralloc.h>
 #include <rlib/ratomic.h>
 #include <rlib/rfd.h>
+#include <rlib/rmem.h>
 
 #include <sys/stat.h>
 #if defined (R_OS_WIN32)

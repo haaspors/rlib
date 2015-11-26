@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include <rlib/rstring.h>
-#include <rlib/ralloc.h>
+#include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <string.h>
 

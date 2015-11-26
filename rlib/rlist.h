@@ -23,7 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
-#include <rlib/ralloc.h>
+#include <rlib/rmem.h>
 
 R_BEGIN_DECLS
 

@@ -18,8 +18,8 @@
 
 #include "config.h"
 #include <rlib/rstr.h>
-#include <rlib/ralloc.h>
 #include <rlib/rascii.h>
+#include <rlib/rmem.h>
 #include <string.h>
 #include <errno.h>
 #include <ctype.h>

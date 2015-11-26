@@ -19,9 +19,9 @@
 #include "config.h"
 #include "rlib-private.h"
 #include <rlib/rlog.h>
-#include <rlib/ralloc.h>
 #include <rlib/renv.h>
 #include <rlib/rlist.h>
+#include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>

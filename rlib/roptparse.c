@@ -19,12 +19,12 @@
 #include "config.h"
 #include "rlib-private.h"
 #include <rlib/roptparse.h>
-#include <rlib/ralloc.h>
 #include <rlib/rascii.h>
 #include <rlib/rassert.h>
 #include <rlib/ratomic.h>
 #include <rlib/rlist.h>
 #include <rlib/rlog.h>
+#include <rlib/rmem.h>
 #include <rlib/rproc.h>
 #include <rlib/rstr.h>
 #include <rlib/rstring.h>

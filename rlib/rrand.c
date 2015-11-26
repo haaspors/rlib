@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include <rlib/rrand.h>
-#include <rlib/ralloc.h>
+#include <rlib/rmem.h>
 #include <rlib/rtime.h>
 
 struct _RPrng {

@@ -15,8 +15,8 @@
  * License along with this library.
  * See the COPYING file at the root of the source repository.
  */
-#ifndef __R_ALLOC_H__
-#define __R_ALLOC_H__
+#ifndef __R_MEM_H__
+#define __R_MEM_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
 #error "#include <rlib.h> only pelase."
@@ -67,5 +67,5 @@ R_API rboolean r_mem_using_system_default (void);
 
 R_END_DECLS
 
-#endif /* __R_ALLOC_H__ */
+#endif /* __R_MEM_H__ */
 
