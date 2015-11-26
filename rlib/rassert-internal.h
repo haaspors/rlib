@@ -23,7 +23,6 @@
 #endif
 
 #include <rlib/rlog.h>
-#include <string.h>
 
 #if defined(__GNUC__)
 #define __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                    \
@@ -44,7 +43,7 @@
   __R_GCC_DISABLE_WARN_ADDRESS_END
 #define R_ASSERT_STMT_CMPMEM(m1, cmp, m2, s, REPR, REAL, ...)                 \
   __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                          \
-  if (!(__m1 && __m2 && memcmp (__m1, __m2, s) cmp 0)) abort ();              \
+  if (!(__m1 && __m2 && r_memcmp (__m1, __m2, s) cmp 0)) abort ();              \
   __R_GCC_DISABLE_WARN_ADDRESS_END
 #else
 #define R_ASSERT_STMT(CMPEXPR, REPR, REAL, ...)                               \
@@ -54,7 +53,7 @@
   __R_GCC_DISABLE_WARN_ADDRESS_END
 #define R_ASSERT_STMT_CMPMEM(m1, cmp, m2, size, REPR, REAL, ...)              \
   __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                          \
-  if (m1 && m2 && memcmp (m1, m2, size) cmp 0) {                              \
+  if (m1 && m2 && r_memcmp (m1, m2, size) cmp 0) {                              \
     R_LOG_CAT_TRACE (R_LOG_CAT_ASSERT, "%s ("REPR"): ("REAL")", "passed", __VA_ARGS__);\
   } else {                                                                    \
     if (m1) r_log_mem_dump (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR,              \
