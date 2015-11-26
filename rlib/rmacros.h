@@ -205,6 +205,16 @@
 #define R_ATTR_SCANF(fmt_idx, arg_idx)
 #endif
 
+#if defined(__clang__)
+#define R_ATTR_RESTRICT __restrict__
+#elif defined(__GNUC__)
+#define R_ATTR_RESTRICT __restrict__
+#elif defined(_MSC_VER)
+#define R_ATTR_RESTRICT __restrict
+#else
+#define R_ATTR_RESTRICT
+#endif
+
 #ifndef __has_feature
 #define __has_feature(x) 0
 #endif

@@ -82,3 +82,52 @@ r_mem_using_system_default (void)
   return memcmp (&r_memvtable, &r_memsysvtable, sizeof (RMemVTable)) == 0;
 }
 
+int
+r_memcmp (rconstpointer a, rconstpointer b, rsize size)
+{
+  if (R_UNLIKELY (a == NULL)) return -(a != b);
+  if (R_UNLIKELY (b == NULL)) return a != b;
+  return memcmp (a, b, size);
+}
+
+rpointer
+r_memset (rpointer a, int v, rsize size)
+{
+  if (a != NULL)
+    memset (a, v, size);
+  return a;
+}
+
+rpointer
+r_memcpy (rpointer R_ATTR_RESTRICT dst, rconstpointer
+    R_ATTR_RESTRICT src, rsize size)
+{
+  if (dst != NULL && src != NULL)
+    return memcpy (dst, src, size);
+
+  return NULL;
+}
+
+rpointer
+r_memmove (rpointer dst, rconstpointer src, rsize size)
+{
+  if (dst != NULL && src != NULL)
+    return memmove (dst, src, size);
+
+  return NULL;
+}
+
+rpointer
+r_memdup (rconstpointer src, rsize size)
+{
+  rpointer ret;
+  if (src != NULL && size > 0) {
+    if ((ret = r_malloc (size)) != NULL)
+      memcpy (ret, src, size);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+

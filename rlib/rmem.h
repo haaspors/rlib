@@ -65,6 +65,15 @@ typedef struct {
 R_API void r_mem_set_vtable (RMemVTable * vtable);
 R_API rboolean r_mem_using_system_default (void);
 
+
+R_API int       r_memcmp (rconstpointer a, rconstpointer b, rsize size);
+R_API rpointer  r_memset (rpointer a, int v, rsize size);
+#define r_memclear(ptr, size)   r_memset (ptr, 0, size)
+R_API rpointer  r_memcpy (rpointer R_ATTR_RESTRICT dst,
+    rconstpointer R_ATTR_RESTRICT src, rsize size);
+R_API rpointer  r_memmove (rpointer dst, rconstpointer src, rsize size);
+R_API rpointer  r_memdup (rconstpointer src, rsize size) R_ATTR_MALLOC;
+
 R_END_DECLS
 
 #endif /* __R_MEM_H__ */
