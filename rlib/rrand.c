@@ -41,7 +41,7 @@ r_rand_prng_new_with_seed (ruint64 x, ruint64 y, ruint64 z, ruint64 c)
 {
   RPrng * ret = NULL;
 
-  if ((ret = r_malloc (sizeof (RPrng))) != NULL) {
+  if ((ret = r_mem_new (RPrng)) != NULL) {
     ret->x = x;
     ret->y = y;
     ret->z = z;

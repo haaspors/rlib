@@ -127,7 +127,7 @@ r_hzr_ptr_rec_new (void)
       goto done;
   }
 
-  rec = r_malloc0 (sizeof (RHzrPtrRec));
+  rec = r_mem_new0 (RHzrPtrRec);
   rec->active = TRUE;
 
   old = r_atomic_ptr_load (&g__r_hzrptr);

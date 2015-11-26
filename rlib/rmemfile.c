@@ -70,7 +70,7 @@ r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
   struct stat st;
 
   if (fstat (fd, &st) == 0) {
-    if (R_LIKELY ((ret = r_malloc (sizeof (RMemFile))) != NULL)) {
+    if (R_LIKELY ((ret = r_mem_new (RMemFile)) != NULL)) {
       r_atomic_uint_store (&ret->refcount, 1);
       ret->size = (rsize)st.st_size;
 #if defined (R_OS_WIN32)

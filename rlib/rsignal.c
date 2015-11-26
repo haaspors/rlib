@@ -78,7 +78,7 @@ r_sig_alrm_timer_new_oneshot (RClockTime timeout, RSignalFunc func)
     return NULL;
 
 #if defined (R_OS_WIN32)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = func;
   if (!CreateTimerQueueTimer (&ret->timer, NULL, _r_sig_alrm_win32_cb, ret,
         R_TIME_AS_MSECONDS (timeout), 0,
@@ -87,7 +87,7 @@ r_sig_alrm_timer_new_oneshot (RClockTime timeout, RSignalFunc func)
     ret = NULL;
   }
 #elif defined (HAVE_TIMER_CREATE)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = signal (SIGALRM, func);
   if (timer_create (CLOCK_MONOTONIC, NULL, &ret->timer) == 0) {
     R_TIME_TO_TIMESPEC (timeout, ret->its.it_value);
@@ -101,13 +101,13 @@ r_sig_alrm_timer_new_oneshot (RClockTime timeout, RSignalFunc func)
     ret = NULL;
   }
 #elif defined (HAVE_SETITIMER)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = signal (SIGALRM, func);
   g__r_sig_alrm_in_use = TRUE;
   R_TIME_TO_TIMEVAL (timeout, ret->itv.it_value);
   setitimer (ITIMER_REAL, &ret->itv, NULL);
 #elif defined (HAVE_ALARM)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = signal (SIGALRM, func);
   g__r_sig_alrm_in_use = TRUE;
   ret->secs = R_TIME_AS_SECONDS (timeout) + ((timeout % R_SECOND) > 0 ? 1 : 0);
@@ -130,7 +130,7 @@ r_sig_alrm_timer_new_interval (RClockTime interval, RSignalFunc func)
     return NULL;
 
 #if defined (R_OS_WIN32)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = func;
   if (!CreateTimerQueueTimer (&ret->timer, NULL, _r_sig_alrm_win32_cb, ret,
         R_TIME_AS_MSECONDS (interval), R_TIME_AS_MSECONDS (interval),
@@ -139,7 +139,7 @@ r_sig_alrm_timer_new_interval (RClockTime interval, RSignalFunc func)
     ret = NULL;
   }
 #elif defined (HAVE_TIMER_CREATE)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = signal (SIGALRM, func);
   if (timer_create (CLOCK_MONOTONIC, NULL, &ret->timer) == 0) {
     R_TIME_TO_TIMESPEC (interval, ret->its.it_value);
@@ -154,7 +154,7 @@ r_sig_alrm_timer_new_interval (RClockTime interval, RSignalFunc func)
     ret = NULL;
   }
 #elif defined (HAVE_SETITIMER)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = signal (SIGALRM, func);
   g__r_sig_alrm_in_use = TRUE;
   R_TIME_TO_TIMEVAL (interval, ret->itv.it_value);
@@ -181,7 +181,7 @@ r_sig_alrm_timer_new_interval_delayed (RClockTime timeout,
     return NULL;
 
 #if defined (R_OS_WIN32)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = func;
   if (!CreateTimerQueueTimer (&ret->timer, NULL, _r_sig_alrm_win32_cb, ret,
         R_TIME_AS_MSECONDS (timeout), R_TIME_AS_MSECONDS (interval),
@@ -190,7 +190,7 @@ r_sig_alrm_timer_new_interval_delayed (RClockTime timeout,
     ret = NULL;
   }
 #elif defined (HAVE_TIMER_CREATE)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = signal (SIGALRM, func);
   if (timer_create (CLOCK_MONOTONIC, NULL, &ret->timer) == 0) {
     R_TIME_TO_TIMESPEC (timeout, ret->its.it_value);
@@ -205,7 +205,7 @@ r_sig_alrm_timer_new_interval_delayed (RClockTime timeout,
     ret = NULL;
   }
 #elif defined (HAVE_SETITIMER)
-  ret = r_malloc0 (sizeof (RSigAlrmTimer));
+  ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = signal (SIGALRM, func);
   g__r_sig_alrm_in_use = TRUE;
   R_TIME_TO_TIMEVAL (timeout, ret->itv.it_value);

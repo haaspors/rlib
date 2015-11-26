@@ -181,7 +181,7 @@ r_utf8_to_utf16 (const rchar * str, rlong len,
   if (retlen != NULL) *retlen = 0;
   if (inlen != NULL) *inlen = 0;
 
-  if (R_UNLIKELY ((ret = r_malloc ((len+1) * sizeof (runichar2))) == NULL))
+  if (R_UNLIKELY ((ret = r_mem_new_n (runichar2, len+1)) == NULL))
     return NULL;
 
   for (i = 0, pos = ret; i < len && str[i] != 0; i+=r) {

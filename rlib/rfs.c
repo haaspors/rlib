@@ -130,10 +130,10 @@ r_fs_get_cur_dir (void)
   rchar * ret = NULL;
 
 #ifdef R_OS_WIN32
-  wchar_t dummy[2], * curdir;
+  runichar2 dummy[2], * curdir;
   int len = GetCurrentDirectoryW (2, dummy);
 
-  curdir = r_malloc (sizeof (wchar_t) * len);
+  curdir = r_mem_new_n (runichar2, len);
   if (GetCurrentDirectoryW (len, curdir) == len - 1)
     ret = r_utf16_to_utf8 (curdir, -1, NULL, NULL, NULL);
   r_free (curdir);
@@ -142,7 +142,7 @@ r_fs_get_cur_dir (void)
   rchar * curdir, * tmp;
 
   do {
-    curdir = r_malloc (maxlen);
+    curdir = r_mem_new_n (rchar, maxlen);
     *curdir = 0;
 
     if ((tmp = getcwd (curdir, maxlen - 1)) != NULL) {

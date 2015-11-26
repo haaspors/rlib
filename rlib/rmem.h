@@ -46,14 +46,24 @@ R_END_DECLS
 
 R_BEGIN_DECLS
 
-#define r_alloca(size)    alloca (size)
-#define r_newa(type, n)   ((type*) r_alloca (sizeof (type) * (rsize) (n)))
+/* Stack allocations */
+#define r_alloca(size)        alloca (size)
+#define r_alloca0(size)       r_memclear (r_alloca (size), size)
+#define r_mem_newa_n(type, n) ((type*) r_alloca (sizeof (type) * (rsize) (n)))
+#define r_mem_newa0_n(type, n)((type*) (r_alloca0 (sizeof (type) * (rsize) (n)))
+#define r_mem_newa(type)      r_mem_newa_n (type, 1)
+#define r_mem_newa0(type)     r_mem_newa_n0 (type, 1)
 
+/* Heap allocations */
 R_API void     r_free     (rpointer ptr);
 R_API rpointer r_malloc   (rsize size) R_ATTR_MALLOC R_ATTR_ALLOC_SIZE_ARG(1);
 R_API rpointer r_malloc0  (rsize size) R_ATTR_MALLOC R_ATTR_ALLOC_SIZE_ARG(1);
 R_API rpointer r_calloc   (rsize count, rsize size) R_ATTR_ALLOC_SIZE_ARGS(1, 2);
 R_API rpointer r_realloc  (rpointer ptr, rsize size) R_ATTR_WARN_UNUSED_RESULT;
+#define r_mem_new_n(type, n)  ((type*) r_malloc (sizeof (type) * (rsize) (n)))
+#define r_mem_new0_n(type, n) ((type*) r_malloc0 (sizeof (type) * (rsize) (n)))
+#define r_mem_new(type)       r_mem_new_n (type, 1)
+#define r_mem_new0(type)      r_mem_new0_n (type, 1)
 
 typedef struct {
   rpointer (*malloc)  (rsize size);
@@ -66,6 +76,7 @@ R_API void r_mem_set_vtable (RMemVTable * vtable);
 R_API rboolean r_mem_using_system_default (void);
 
 
+/* Common memory operations */
 R_API int       r_memcmp (rconstpointer a, rconstpointer b, rsize size);
 R_API rpointer  r_memset (rpointer a, int v, rsize size);
 #define r_memclear(ptr, size)   r_memset (ptr, 0, size)

@@ -223,10 +223,10 @@ void
 r_mutex_init (RMutex * mutex)
 {
 #ifdef R_OS_WIN32
-  LPCRITICAL_SECTION cs = *mutex = r_malloc (sizeof (CRITICAL_SECTION));
+  LPCRITICAL_SECTION cs = *mutex = r_mem_new (CRITICAL_SECTION);
   InitializeCriticalSection (cs);
 #else
-  pthread_mutex_t * ptm = *mutex = r_malloc (sizeof (pthread_mutex_t));
+  pthread_mutex_t * ptm = *mutex = r_mem_new (pthread_mutex_t);
   pthread_mutex_init (ptm, NULL);
 #endif
 }
@@ -279,11 +279,11 @@ void
 r_rmutex_init (RRMutex * mutex)
 {
 #ifdef R_OS_WIN32
-  LPCRITICAL_SECTION cs = *mutex = r_malloc (sizeof (CRITICAL_SECTION));
+  LPCRITICAL_SECTION cs = *mutex = r_mem_new (CRITICAL_SECTION);
   InitializeCriticalSection (cs);
 #else
   pthread_mutexattr_t attr;
-  pthread_mutex_t * ptm = *mutex = r_malloc (sizeof (pthread_mutex_t));
+  pthread_mutex_t * ptm = *mutex = r_mem_new (pthread_mutex_t);
 
   pthread_mutexattr_init (&attr);
   pthread_mutexattr_settype (&attr, PTHREAD_MUTEX_RECURSIVE);
@@ -340,14 +340,14 @@ void
 r_cond_init (RCond * cond)
 {
 #ifdef R_OS_WIN32
-  PCONDITION_VARIABLE pc = *cond = r_malloc (sizeof (CONDITION_VARIABLE));
+  PCONDITION_VARIABLE pc = *cond = r_mem_new (CONDITION_VARIABLE);
   InitializeConditionVariable (pc);
 #else
   pthread_condattr_t attr;
   pthread_cond_t * pc;
 
   pthread_condattr_init (&attr);
-  pc = *cond = r_malloc (sizeof (pthread_cond_t));
+  pc = *cond = r_mem_new (pthread_cond_t);
 
   pthread_cond_init (pc, &attr);
   pthread_condattr_destroy (&attr);
@@ -480,7 +480,7 @@ r_thread_trampoline (rpointer data)
 RThread *
 r_thread_new (const rchar * name, RThreadFunc func, rpointer data)
 {
-  RThread * ret = r_malloc (sizeof (RThread));
+  RThread * ret = r_mem_new (RThread);
 #ifndef R_OS_WIN32
   pthread_attr_t attr;
 #endif
@@ -580,7 +580,7 @@ r_thread_current (void)
   RThread * thread = r_tss_get (&g__r_thread_self);
 
   if (R_UNLIKELY (!thread)) {
-    thread = r_malloc0 (sizeof (RThread));
+    thread = r_mem_new0 (RThread);
     thread->ref_count = 1;
 #ifdef R_OS_WIN32
     thread->thread_id = GetCurrentThreadId ();

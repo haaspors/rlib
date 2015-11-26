@@ -51,7 +51,7 @@ r_string_new (const rchar * cstr)
 RString *
 r_string_new_sized (rsize size)
 {
-  RString * str = r_malloc (sizeof (RString));
+  RString * str = r_mem_new (RString);
   str->len = 0;
   str->size = size | R_STRING_ALLOC_MASK;
   str->cstr = r_malloc (str->size);

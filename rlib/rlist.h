@@ -40,10 +40,12 @@ struct _RFreeList {
 
 static inline RFreeList * r_free_list_alloc (rpointer ptr, RDestroyNotify notify)
 {
-  RFreeList * ret = r_malloc (sizeof (RFreeList));
-  ret->ptr = ptr;
-  ret->notify = notify;
-  ret->next = NULL;
+  RFreeList * ret;
+  if ((ret = r_mem_new (RFreeList)) != NULL) {
+    ret->ptr = ptr;
+    ret->notify = notify;
+    ret->next = NULL;
+  }
   return ret;
 }
 static inline RFreeList * r_free_list_prepend (RFreeList * entry,
@@ -141,9 +143,11 @@ struct _RSList {
 
 static inline RSList * r_slist_alloc (rpointer data)
 {
-  RSList * ret = r_malloc (sizeof (RSList));
-  ret->data = data;
-  ret->next = NULL;
+  RSList * ret;
+  if ((ret = r_mem_new (RSList)) != NULL) {
+    ret->data = data;
+    ret->next = NULL;
+  }
   return ret;
 }
 

@@ -72,7 +72,7 @@ static inline ROptionGroup *
 r_option_group_new_internal (const rchar * name, const rchar * desc,
     const rchar * summary, rpointer user, RDestroyNotify notify)
 {
-  ROptionGroup * ret = r_malloc (sizeof (ROptionGroup));
+  ROptionGroup * ret = r_mem_new (ROptionGroup);
   if (R_LIKELY (ret != NULL)) {
     ret->name = r_strdup (name);
     ret->desc = r_strdup (desc);
@@ -281,7 +281,7 @@ r_option_group_add_arguments (ROptionGroup * group,
 ROptionParser *
 r_option_parser_new (const rchar * app, const rchar * version)
 {
-  ROptionParser * ret = r_malloc0 (sizeof (ROptionParser));
+  ROptionParser * ret = r_mem_new0 (ROptionParser);
   const ROptionArgument r_op_help_args[] = {
     R_OPT_ARG ("version",  0, R_OPTION_TYPE_NONE, &ret->optver,
         R_OPTION_FLAG_NONE, "Show application version number and exit", NULL),

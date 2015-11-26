@@ -645,7 +645,7 @@ r_strv_newv (const rchar * str0, va_list args)
   if (R_UNLIKELY ((lst = r_str_list_newv (str0, args)) == NULL))
     return NULL;
 
-  ret = r_malloc (sizeof (rchar *) * (r_slist_len (lst) + 1));
+  ret = r_mem_new_n (rchar *, r_slist_len (lst) + 1);
   while (lst) {
     cur = lst;
     lst = r_slist_next (cur);
@@ -729,7 +729,7 @@ r_strsplit (const rchar * str, const rchar * delim, rsize max)
 
     while ((ptr = strstr (ptr + dlen, delim)) != NULL && count < max) count++;
 
-    ret = r_malloc (sizeof (rchar *) * (count + 1));
+    ret = r_mem_new_n (rchar *, count + 1);
     for (i = 0, prev = str; i < count - 1; i++, prev = ptr + dlen) {
       ptr = strstr (prev, delim);
       ret[i] = r_strndup (prev, ptr - prev);

@@ -46,7 +46,7 @@ RTEST (rhzrptr, read_replace, RTEST_FAST)
   rhzrptr hp = R_HZR_PTR_INIT (r_free);
   TestHP * ptr;
 
-  r_hzr_ptr_replace (&hp, r_malloc0 (sizeof (TestHP)));
+  r_hzr_ptr_replace (&hp, r_mem_new0 (TestHP));
 
   ptr = r_hzr_ptr_aqcuire (&hp, NULL);
   r_assert_cmpptr (ptr, !=, NULL);
