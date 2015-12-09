@@ -25,6 +25,7 @@ RTEST (rmemfile, read, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpuint (r_mem_file_get_size (f), ==, 6*2 + 1);
   r_assert_cmpstr ((rchar *)r_mem_file_get_mem (f), ==, "foobarfoobar");
 
+  r_free (tmpfile);
   r_mem_file_unref (f);
 }
 RTEST_END;
