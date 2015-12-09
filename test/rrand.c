@@ -1,6 +1,6 @@
 #include <rlib/rlib.h>
 
-RTEST (rrand, prng, RTEST_FAST)
+RTEST_STRESS (rrand, prng, RTEST_SLOW)
 {
   RPrng * prng = r_rand_prng_new_with_seed (
       RUINT64_CONSTANT (1234567890987654321),   /* x */
