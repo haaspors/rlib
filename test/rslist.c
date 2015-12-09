@@ -86,6 +86,8 @@ RTEST (rslist, contains, RTEST_FAST)
   r_assert (r_slist_contains (head, PTR_BAADFOOD));
   r_assert (!r_slist_contains (head, NULL));
 
+  r_assert (!r_slist_contains (r_slist_next (head), PTR_BAADFOOD));
+
   r_slist_destroy (head);
 }
 RTEST_END;

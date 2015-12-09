@@ -465,7 +465,7 @@ static inline void r_slist_free1_full (RSList * entry, RDestroyNotify notify)
 {
   if (R_LIKELY (entry != NULL)) {
     if (notify != NULL)
-      notify (entry->data);
+      notify (r_slist_data (entry));
     r_free (entry);
   }
 }
@@ -474,7 +474,7 @@ static inline void r_slist_destroy_full (RSList * head, RDestroyNotify notify)
 {
   RSList * next;
   while (head != NULL) {
-    next = head->next;
+    next = r_slist_next (head);
     r_slist_free1_full (head, notify);
     head = next;
   }
@@ -503,8 +503,8 @@ static inline RSList * r_slist_last (RSList * head)
 
 static inline rboolean r_slist_contains (RSList * head, rpointer data)
 {
-  for (; head != NULL; head = head->next) {
-    if (head->data == data)
+  for (; head != NULL; head = r_slist_next (head)) {
+    if (r_slist_data (head) == data)
       return TRUE;
   }
 
@@ -515,12 +515,12 @@ static inline RSList * r_slist_remove (RSList * head, rpointer data)
 {
   RSList * ret = head, * prev;
 
-  for (prev = NULL; head != NULL; head = head->next) {
-    if (head->data == data) {
+  for (prev = NULL; head != NULL; head = r_slist_next (head)) {
+    if (r_slist_data (head) == data) {
       if (ret == head)
-        ret = head->next;
+        ret = r_slist_next (head);
       if (prev != NULL)
-        prev->next = head->next;
+        prev->next = r_slist_next (head);
       r_slist_free1 (head);
       break;
     }
