@@ -80,6 +80,7 @@ r_print (const rchar * fmt, ...)
       ret = -1;
   }
 
+  r_free (str);
   return ret;
 }
 
@@ -112,6 +113,7 @@ r_printerr (const rchar * fmt, ...)
       ret = -1;
   }
 
+  r_free (str);
   return ret;
 }
 
