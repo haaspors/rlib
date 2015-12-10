@@ -791,9 +791,9 @@ r_strjoinv (const rchar * delim, va_list args)
 rboolean
 r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
 {
-  rsize i;
+  rsize i, itsize, pad, pad_extra;
 
-  if (R_UNLIKELY (size == 0 || size > align))
+  if (R_UNLIKELY (size == 0 || align == 0))
     return FALSE;
   if (R_UNLIKELY (str == NULL))
     return FALSE;
@@ -806,12 +806,13 @@ r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
 #define _PTR_FMT  "%8p: "
 #endif
 
-  if (size > 0) {
-    rsize pad = (align - size);
-    rsize pad_extra = (align - size) / 8;
+  for (; size > 0; size -= itsize, ptr += itsize) {
+    itsize = size > align ? align : size;
+    pad = (align - itsize);
+    pad_extra = (align - itsize) / 8;
 
     str += r_sprintf (str, _PTR_FMT, ptr);
-    for (i = 0; i < size; i++) {
+    for (i = 0; i < itsize; i++) {
       str += r_sprintf (str, "%02x ", ptr[i]);
     }
 
@@ -819,13 +820,15 @@ r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
     str += pad * 3 + 1;
 
     *str++ = '"';
-    for (i = 0; i < size; i++) {
+    for (i = 0; i < itsize; i++) {
       *str++ = r_ascii_isprint (ptr[i]) ? ptr[i] : '.';
-      if ((i+1) % 8 == 0 && (i+1) < size) *str++ = ' ';
+      if ((i+1) % 8 == 0 && (i+1) < itsize) *str++ = ' ';
     }
     memset (str, (int)' ', pad + pad_extra);
     str += pad + pad_extra;
     *str++ = '"';
+    if (size > align)
+      *str++ = '\n';
   }
 
 #undef _PTR_FMT
@@ -838,11 +841,14 @@ rchar *
 r_str_mem_dump_dup (const ruint8 * ptr, rsize size, rsize align)
 {
   rchar * ret;
+  rsize memsize;
 
-  if (R_UNLIKELY (size == 0 || size > align))
+  if (R_UNLIKELY (size == 0 || align == 0))
     return NULL;
 
-  if ((ret = r_malloc (R_STR_MEM_DUMP_SIZE (align))) != NULL) {
+  memsize = R_STR_MEM_DUMP_SIZE (align) * ((size / align) + 1);
+
+  if ((ret = r_malloc (memsize)) != NULL) {
     if (R_UNLIKELY (!r_str_mem_dump (ret, ptr, size, align))) {
       r_free (ret);
       ret = NULL;

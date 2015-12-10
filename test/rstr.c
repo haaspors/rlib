@@ -701,6 +701,20 @@ RTEST (rstr, mem_dump, RTEST_FAST)
       "61 62 63 64 65 66                               "
       " \"abcdef           \"");
   r_free (tmp);
+
+  {
+    rchar * r = r_strprintf (
+#if RLIB_SIZEOF_VOID_P == 8
+        "%14p: 00 01 02 03 04  \".....\"\n%14p: 05 06 07 08 09  \".....\"",
+#else
+        "%8p: 00 01 02 03 04  \".....\"\n%8p: 05 06 07 08 09  \".....\"",
+#endif
+        data, data + 5);
+    r_assert_cmpptr ((tmp = r_str_mem_dump_dup (data, size, 5)), !=, NULL);
+    r_assert_cmpstr (tmp, ==, r);
+    r_free (r);
+    r_free (tmp);
+  }
 }
 RTEST_END;
 
