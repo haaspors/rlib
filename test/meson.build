@@ -22,6 +22,7 @@ rlibtest_sources = [
   'rcryptosrtpciphersuite.c',
   'rcryptotlsciphersuite.c',
   'rdirtree.c',
+  'relf.c',
   'rendianness.c',
   'revloop.c',
   'revtcp.c',

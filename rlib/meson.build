@@ -8,6 +8,7 @@ rlib_sources = [
   'rclock.c',
   'rcrc.c',
   'rdirtree.c',
+  'relfparser.c',
   'renv.c',
   'rfd.c',
   'rfile.c',

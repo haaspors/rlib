@@ -43,6 +43,7 @@ Features
   * KQueue on BSD/Darwin
   * Epoll on Linux
   * IOCP on Windows
+* ELF parser
 * more to come ...
 
 Getting the code
