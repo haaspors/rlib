@@ -24,6 +24,7 @@
 
 #include <rlib/rconfig.h>
 #include <rlib/rmacros.h>
+#include <rlib/rendianness.h>
 
 #include <limits.h>
 #include <float.h>
@@ -121,9 +122,6 @@ typedef const void*             rconstpointer;
 typedef ruint64                 RClockTime;
 typedef rint64                  RClockTimeDiff;
 #define R_CLOCK_TIME_NONE       ((RClockTime) -1)
-
-#define R_LITTLE_ENDIAN         1234
-#define R_BIG_ENDIAN            4321
 
 /* Function prototypes */
 typedef void (*RDestroyNotify) (rpointer ptr);
