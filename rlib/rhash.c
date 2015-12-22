@@ -27,6 +27,10 @@
 #define RUINT32_SHR(x, n)       (((x) & RUINT32_MAX) >> (n))
 #define RUINT32_ROTL(x, n)      (RUINT32_SHL (x, n) | RUINT32_SHR (x, 32-(n)))
 #define RUINT32_ROTR(x, n)      (RUINT32_SHR (x, n) | RUINT32_SHL (x, 32-(n)))
+#define RUINT64_SHL(x, n)       (((x) & RUINT64_MAX) << (n))
+#define RUINT64_SHR(x, n)       (((x) & RUINT64_MAX) >> (n))
+#define RUINT64_ROTL(x, n)      (RUINT64_SHL (x, n) | RUINT64_SHR (x, 64-(n)))
+#define RUINT64_ROTR(x, n)      (RUINT64_SHR (x, n) | RUINT64_SHL (x, 64-(n)))
 
 /* MD5 */
 #define R_HASH_MD5_SIZE         (128 / 8)
@@ -76,6 +80,22 @@ static void r_sha256_hash_final (RSha256Hash * sha256);
 static rboolean r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size);
 static rboolean r_sha256_hash_get (RSha256Hash * sha256, ruint8 * data, rsize * size);
 
+/* SHA-512 */
+#define R_HASH_SHA512_SIZE          (512 / 8)
+#define R_HASH_SHA512_WORD_SIZE     (R_HASH_SHA512_SIZE / sizeof (ruint64))
+#define R_HASH_SHA512_BLOCK_SIZE    (1024 / 8)
+typedef struct {
+  ruint64 data[R_HASH_SHA512_WORD_SIZE];
+  ruint64 len[2];
+
+  ruint8 buffer[R_HASH_SHA512_BLOCK_SIZE];
+  rsize bufsize;
+} RSha512Hash;
+static void r_sha512_hash_init (RSha512Hash * sha512);
+static void r_sha512_hash_final (RSha512Hash * sha512);
+static rboolean r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size);
+static rboolean r_sha512_hash_get (RSha512Hash * sha512, ruint8 * data, rsize * size);
+
 struct _RHash {
   RHashType type;
   rboolean is_final;
@@ -84,7 +104,7 @@ struct _RHash {
     RMd5Hash md5;
     RSha1Hash sha1;
     RSha256Hash sha256;
-    /*RSha512Hash sha512;*/
+    RSha512Hash sha512;
   } hash;
 };
 
@@ -116,7 +136,7 @@ r_hash_size (RHash * hash)
     case R_HASH_TYPE_SHA256:
       return sizeof (hash->hash.sha256.data);
     case R_HASH_TYPE_SHA512:
-      break;
+      return sizeof (hash->hash.sha512.data);
   }
 
   return 0;
@@ -133,7 +153,7 @@ r_hash_blocksize (RHash * hash)
     case R_HASH_TYPE_SHA256:
       return sizeof (hash->hash.sha256.buffer);
     case R_HASH_TYPE_SHA512:
-      break;
+      return sizeof (hash->hash.sha512.buffer);
   }
 
   return 0;
@@ -155,6 +175,7 @@ r_hash_reset (RHash * hash)
       r_sha256_hash_init (&hash->hash.sha256);
       break;
     case R_HASH_TYPE_SHA512:
+      r_sha512_hash_init (&hash->hash.sha512);
       break;
   }
 }
@@ -171,7 +192,7 @@ r_hash_update (RHash * hash, rconstpointer data, rsize size)
       case R_HASH_TYPE_SHA256:
         return r_sha256_hash_update (&hash->hash.sha256, data, size);
       case R_HASH_TYPE_SHA512:
-        break;
+        return r_sha512_hash_update (&hash->hash.sha512, data, size);
     }
   }
 
@@ -201,7 +222,11 @@ r_hash_get_data (RHash * hash, ruint8 * data, rsize * size)
       }
       return r_sha256_hash_get (&hash->hash.sha256, data, size);
     case R_HASH_TYPE_SHA512:
-      break;
+      if (!hash->is_final) {
+        r_sha512_hash_final (&hash->hash.sha512);
+        hash->is_final = TRUE;
+      }
+      return r_sha512_hash_get (&hash->hash.sha512, data, size);
   }
 
   return FALSE;
@@ -845,6 +870,233 @@ r_sha256_hash_get (RSha256Hash * sha256, ruint8 * data, rsize * size)
   for (i = 0; i < R_HASH_SHA256_SIZE / sizeof (ruint32); i++)
     ((ruint32 *)data)[i] = RUINT32_TO_BE (sha256->data[i]);
   *size = R_HASH_SHA256_SIZE;
+
+  return TRUE;
+}
+
+/**************************************/
+/*              SHA-512               */
+/**************************************/
+static void
+r_sha512_hash_init (RSha512Hash * sha512)
+{
+  sha512->bufsize = 0;
+  sha512->len[0] = sha512->len[1] = 0;
+  sha512->data[0] = RUINT64_CONSTANT (0x6a09e667f3bcc908);
+  sha512->data[1] = RUINT64_CONSTANT (0xbb67ae8584caa73b);
+  sha512->data[2] = RUINT64_CONSTANT (0x3c6ef372fe94f82b);
+  sha512->data[3] = RUINT64_CONSTANT (0xa54ff53a5f1d36f1);
+  sha512->data[4] = RUINT64_CONSTANT (0x510e527fade682d1);
+  sha512->data[5] = RUINT64_CONSTANT (0x9b05688c2b3e6c1f);
+  sha512->data[6] = RUINT64_CONSTANT (0x1f83d9abfb41bd6b);
+  sha512->data[7] = RUINT64_CONSTANT (0x5be0cd19137e2179);
+}
+
+static void
+r_sha512_hash_update_block (RSha512Hash * sha512, const ruint8 * data)
+{
+  ruint64 a, b, c, d, e, f, g, h;
+  ruint64 x[R_HASH_SHA512_BLOCK_SIZE / sizeof (ruint64)];
+  rsize i;
+
+  for (i = 0; i < R_HASH_SHA512_BLOCK_SIZE / sizeof (ruint64); i++)
+    x[i] = RUINT64_FROM_BE (((ruint64 *)data)[i]);
+
+  a = sha512->data[0];
+  b = sha512->data[1];
+  c = sha512->data[2];
+  d = sha512->data[3];
+  e = sha512->data[4];
+  f = sha512->data[5];
+  g = sha512->data[6];
+  h = sha512->data[7];
+
+#define SHA512_SIG0(x) (RUINT64_ROTR (x, 1) ^ RUINT64_ROTR (x, 8) ^ RUINT64_SHR  (x, 7))
+#define SHA512_SIG1(x) (RUINT64_ROTR (x,19) ^ RUINT64_ROTR (x,61) ^ RUINT64_SHR  (x, 6))
+#define SHA512_W(x, t) (x[(t) & 15] = \
+  SHA512_SIG1(x[((t) -  2) & 15]) + x[((t) - 7) & 15] + \
+  SHA512_SIG0(x[((t) - 15) & 15]) + x[(t) & 15])
+#define SHA512_CORE(a, b, c, d, e, f, g, h, x, K)                             \
+  (h) += RUINT64_ROTR (e, 14) ^ RUINT64_ROTR (e, 18) ^ RUINT64_ROTR (e, 41);  \
+  (h) += ((g) ^ ((e) & ((f) ^ (g)))) + (K) + (x);                             \
+  (d) += (h);                                                                 \
+  (h) += RUINT64_ROTR (a, 28) ^ RUINT64_ROTR (a, 34) ^ RUINT64_ROTR (a, 39);  \
+  (h) += (((a) & (b)) | ((c) & ((a) | (b))))
+
+  SHA512_CORE (a, b, c, d, e, f, g, h, x[ 0], RUINT64_CONSTANT (0x428a2f98d728ae22));
+  SHA512_CORE (h, a, b, c, d, e, f, g, x[ 1], RUINT64_CONSTANT (0x7137449123ef65cd));
+  SHA512_CORE (g, h, a, b, c, d, e, f, x[ 2], RUINT64_CONSTANT (0xb5c0fbcfec4d3b2f));
+  SHA512_CORE (f, g, h, a, b, c, d, e, x[ 3], RUINT64_CONSTANT (0xe9b5dba58189dbbc));
+  SHA512_CORE (e, f, g, h, a, b, c, d, x[ 4], RUINT64_CONSTANT (0x3956c25bf348b538));
+  SHA512_CORE (d, e, f, g, h, a, b, c, x[ 5], RUINT64_CONSTANT (0x59f111f1b605d019));
+  SHA512_CORE (c, d, e, f, g, h, a, b, x[ 6], RUINT64_CONSTANT (0x923f82a4af194f9b));
+  SHA512_CORE (b, c, d, e, f, g, h, a, x[ 7], RUINT64_CONSTANT (0xab1c5ed5da6d8118));
+  SHA512_CORE (a, b, c, d, e, f, g, h, x[ 8], RUINT64_CONSTANT (0xd807aa98a3030242));
+  SHA512_CORE (h, a, b, c, d, e, f, g, x[ 9], RUINT64_CONSTANT (0x12835b0145706fbe));
+  SHA512_CORE (g, h, a, b, c, d, e, f, x[10], RUINT64_CONSTANT (0x243185be4ee4b28c));
+  SHA512_CORE (f, g, h, a, b, c, d, e, x[11], RUINT64_CONSTANT (0x550c7dc3d5ffb4e2));
+  SHA512_CORE (e, f, g, h, a, b, c, d, x[12], RUINT64_CONSTANT (0x72be5d74f27b896f));
+  SHA512_CORE (d, e, f, g, h, a, b, c, x[13], RUINT64_CONSTANT (0x80deb1fe3b1696b1));
+  SHA512_CORE (c, d, e, f, g, h, a, b, x[14], RUINT64_CONSTANT (0x9bdc06a725c71235));
+  SHA512_CORE (b, c, d, e, f, g, h, a, x[15], RUINT64_CONSTANT (0xc19bf174cf692694));
+  SHA512_CORE (a, b, c, d, e, f, g, h, SHA512_W (x, 16), RUINT64_CONSTANT (0xe49b69c19ef14ad2));
+  SHA512_CORE (h, a, b, c, d, e, f, g, SHA512_W (x, 17), RUINT64_CONSTANT (0xefbe4786384f25e3));
+  SHA512_CORE (g, h, a, b, c, d, e, f, SHA512_W (x, 18), RUINT64_CONSTANT (0x0fc19dc68b8cd5b5));
+  SHA512_CORE (f, g, h, a, b, c, d, e, SHA512_W (x, 19), RUINT64_CONSTANT (0x240ca1cc77ac9c65));
+  SHA512_CORE (e, f, g, h, a, b, c, d, SHA512_W (x, 20), RUINT64_CONSTANT (0x2de92c6f592b0275));
+  SHA512_CORE (d, e, f, g, h, a, b, c, SHA512_W (x, 21), RUINT64_CONSTANT (0x4a7484aa6ea6e483));
+  SHA512_CORE (c, d, e, f, g, h, a, b, SHA512_W (x, 22), RUINT64_CONSTANT (0x5cb0a9dcbd41fbd4));
+  SHA512_CORE (b, c, d, e, f, g, h, a, SHA512_W (x, 23), RUINT64_CONSTANT (0x76f988da831153b5));
+  SHA512_CORE (a, b, c, d, e, f, g, h, SHA512_W (x, 24), RUINT64_CONSTANT (0x983e5152ee66dfab));
+  SHA512_CORE (h, a, b, c, d, e, f, g, SHA512_W (x, 25), RUINT64_CONSTANT (0xa831c66d2db43210));
+  SHA512_CORE (g, h, a, b, c, d, e, f, SHA512_W (x, 26), RUINT64_CONSTANT (0xb00327c898fb213f));
+  SHA512_CORE (f, g, h, a, b, c, d, e, SHA512_W (x, 27), RUINT64_CONSTANT (0xbf597fc7beef0ee4));
+  SHA512_CORE (e, f, g, h, a, b, c, d, SHA512_W (x, 28), RUINT64_CONSTANT (0xc6e00bf33da88fc2));
+  SHA512_CORE (d, e, f, g, h, a, b, c, SHA512_W (x, 29), RUINT64_CONSTANT (0xd5a79147930aa725));
+  SHA512_CORE (c, d, e, f, g, h, a, b, SHA512_W (x, 30), RUINT64_CONSTANT (0x06ca6351e003826f));
+  SHA512_CORE (b, c, d, e, f, g, h, a, SHA512_W (x, 31), RUINT64_CONSTANT (0x142929670a0e6e70));
+  SHA512_CORE (a, b, c, d, e, f, g, h, SHA512_W (x, 32), RUINT64_CONSTANT (0x27b70a8546d22ffc));
+  SHA512_CORE (h, a, b, c, d, e, f, g, SHA512_W (x, 33), RUINT64_CONSTANT (0x2e1b21385c26c926));
+  SHA512_CORE (g, h, a, b, c, d, e, f, SHA512_W (x, 34), RUINT64_CONSTANT (0x4d2c6dfc5ac42aed));
+  SHA512_CORE (f, g, h, a, b, c, d, e, SHA512_W (x, 35), RUINT64_CONSTANT (0x53380d139d95b3df));
+  SHA512_CORE (e, f, g, h, a, b, c, d, SHA512_W (x, 36), RUINT64_CONSTANT (0x650a73548baf63de));
+  SHA512_CORE (d, e, f, g, h, a, b, c, SHA512_W (x, 37), RUINT64_CONSTANT (0x766a0abb3c77b2a8));
+  SHA512_CORE (c, d, e, f, g, h, a, b, SHA512_W (x, 38), RUINT64_CONSTANT (0x81c2c92e47edaee6));
+  SHA512_CORE (b, c, d, e, f, g, h, a, SHA512_W (x, 39), RUINT64_CONSTANT (0x92722c851482353b));
+  SHA512_CORE (a, b, c, d, e, f, g, h, SHA512_W (x, 40), RUINT64_CONSTANT (0xa2bfe8a14cf10364));
+  SHA512_CORE (h, a, b, c, d, e, f, g, SHA512_W (x, 41), RUINT64_CONSTANT (0xa81a664bbc423001));
+  SHA512_CORE (g, h, a, b, c, d, e, f, SHA512_W (x, 42), RUINT64_CONSTANT (0xc24b8b70d0f89791));
+  SHA512_CORE (f, g, h, a, b, c, d, e, SHA512_W (x, 43), RUINT64_CONSTANT (0xc76c51a30654be30));
+  SHA512_CORE (e, f, g, h, a, b, c, d, SHA512_W (x, 44), RUINT64_CONSTANT (0xd192e819d6ef5218));
+  SHA512_CORE (d, e, f, g, h, a, b, c, SHA512_W (x, 45), RUINT64_CONSTANT (0xd69906245565a910));
+  SHA512_CORE (c, d, e, f, g, h, a, b, SHA512_W (x, 46), RUINT64_CONSTANT (0xf40e35855771202a));
+  SHA512_CORE (b, c, d, e, f, g, h, a, SHA512_W (x, 47), RUINT64_CONSTANT (0x106aa07032bbd1b8));
+  SHA512_CORE (a, b, c, d, e, f, g, h, SHA512_W (x, 48), RUINT64_CONSTANT (0x19a4c116b8d2d0c8));
+  SHA512_CORE (h, a, b, c, d, e, f, g, SHA512_W (x, 49), RUINT64_CONSTANT (0x1e376c085141ab53));
+  SHA512_CORE (g, h, a, b, c, d, e, f, SHA512_W (x, 50), RUINT64_CONSTANT (0x2748774cdf8eeb99));
+  SHA512_CORE (f, g, h, a, b, c, d, e, SHA512_W (x, 51), RUINT64_CONSTANT (0x34b0bcb5e19b48a8));
+  SHA512_CORE (e, f, g, h, a, b, c, d, SHA512_W (x, 52), RUINT64_CONSTANT (0x391c0cb3c5c95a63));
+  SHA512_CORE (d, e, f, g, h, a, b, c, SHA512_W (x, 53), RUINT64_CONSTANT (0x4ed8aa4ae3418acb));
+  SHA512_CORE (c, d, e, f, g, h, a, b, SHA512_W (x, 54), RUINT64_CONSTANT (0x5b9cca4f7763e373));
+  SHA512_CORE (b, c, d, e, f, g, h, a, SHA512_W (x, 55), RUINT64_CONSTANT (0x682e6ff3d6b2b8a3));
+  SHA512_CORE (a, b, c, d, e, f, g, h, SHA512_W (x, 56), RUINT64_CONSTANT (0x748f82ee5defb2fc));
+  SHA512_CORE (h, a, b, c, d, e, f, g, SHA512_W (x, 57), RUINT64_CONSTANT (0x78a5636f43172f60));
+  SHA512_CORE (g, h, a, b, c, d, e, f, SHA512_W (x, 58), RUINT64_CONSTANT (0x84c87814a1f0ab72));
+  SHA512_CORE (f, g, h, a, b, c, d, e, SHA512_W (x, 59), RUINT64_CONSTANT (0x8cc702081a6439ec));
+  SHA512_CORE (e, f, g, h, a, b, c, d, SHA512_W (x, 60), RUINT64_CONSTANT (0x90befffa23631e28));
+  SHA512_CORE (d, e, f, g, h, a, b, c, SHA512_W (x, 61), RUINT64_CONSTANT (0xa4506cebde82bde9));
+  SHA512_CORE (c, d, e, f, g, h, a, b, SHA512_W (x, 62), RUINT64_CONSTANT (0xbef9a3f7b2c67915));
+  SHA512_CORE (b, c, d, e, f, g, h, a, SHA512_W (x, 63), RUINT64_CONSTANT (0xc67178f2e372532b));
+  SHA512_CORE (a, b, c, d, e, f, g, h, SHA512_W (x, 64), RUINT64_CONSTANT (0xca273eceea26619c));
+  SHA512_CORE (h, a, b, c, d, e, f, g, SHA512_W (x, 65), RUINT64_CONSTANT (0xd186b8c721c0c207));
+  SHA512_CORE (g, h, a, b, c, d, e, f, SHA512_W (x, 66), RUINT64_CONSTANT (0xeada7dd6cde0eb1e));
+  SHA512_CORE (f, g, h, a, b, c, d, e, SHA512_W (x, 67), RUINT64_CONSTANT (0xf57d4f7fee6ed178));
+  SHA512_CORE (e, f, g, h, a, b, c, d, SHA512_W (x, 68), RUINT64_CONSTANT (0x06f067aa72176fba));
+  SHA512_CORE (d, e, f, g, h, a, b, c, SHA512_W (x, 69), RUINT64_CONSTANT (0x0a637dc5a2c898a6));
+  SHA512_CORE (c, d, e, f, g, h, a, b, SHA512_W (x, 70), RUINT64_CONSTANT (0x113f9804bef90dae));
+  SHA512_CORE (b, c, d, e, f, g, h, a, SHA512_W (x, 71), RUINT64_CONSTANT (0x1b710b35131c471b));
+  SHA512_CORE (a, b, c, d, e, f, g, h, SHA512_W (x, 72), RUINT64_CONSTANT (0x28db77f523047d84));
+  SHA512_CORE (h, a, b, c, d, e, f, g, SHA512_W (x, 73), RUINT64_CONSTANT (0x32caab7b40c72493));
+  SHA512_CORE (g, h, a, b, c, d, e, f, SHA512_W (x, 74), RUINT64_CONSTANT (0x3c9ebe0a15c9bebc));
+  SHA512_CORE (f, g, h, a, b, c, d, e, SHA512_W (x, 75), RUINT64_CONSTANT (0x431d67c49c100d4c));
+  SHA512_CORE (e, f, g, h, a, b, c, d, SHA512_W (x, 76), RUINT64_CONSTANT (0x4cc5d4becb3e42b6));
+  SHA512_CORE (d, e, f, g, h, a, b, c, SHA512_W (x, 77), RUINT64_CONSTANT (0x597f299cfc657e2a));
+  SHA512_CORE (c, d, e, f, g, h, a, b, SHA512_W (x, 78), RUINT64_CONSTANT (0x5fcb6fab3ad6faec));
+  SHA512_CORE (b, c, d, e, f, g, h, a, SHA512_W (x, 79), RUINT64_CONSTANT (0x6c44198c4a475817));
+
+#undef SHA512_CORE
+#undef SHA512_W
+#undef SHA512_SIG1
+#undef SHA512_SIG0
+
+  sha512->data[0] += a;
+  sha512->data[1] += b;
+  sha512->data[2] += c;
+  sha512->data[3] += d;
+  sha512->data[4] += e;
+  sha512->data[5] += f;
+  sha512->data[6] += g;
+  sha512->data[7] += h;
+}
+
+static void
+r_sha512_hash_final (RSha512Hash * sha512)
+{
+  rsize bufsize = sha512->bufsize;
+  ruint8 * ptr;
+
+  sha512->buffer[bufsize++] = 0x80;
+  ptr = sha512->buffer;
+  if (bufsize <= sizeof (sha512->buffer) - sizeof (ruint64)) {
+    rsize s = sizeof (sha512->buffer) - sizeof (ruint64) - bufsize;
+    r_memset (&ptr[bufsize], 0, s);
+  } else {
+    rsize s = sizeof (sha512->buffer) - bufsize;
+    r_memset (&ptr[bufsize], 0, s);
+
+    r_sha512_hash_update_block (sha512, sha512->buffer);
+    r_memset (sha512->buffer, 0, sizeof (sha512->buffer));
+    ptr = r_alloca0 (R_HASH_SHA512_BLOCK_SIZE);
+  }
+
+  *(ruint64 *)(&ptr[R_HASH_SHA512_BLOCK_SIZE - 1*sizeof (ruint64)]) =
+    RUINT64_TO_BE (sha512->len[0] << 3);
+  *(ruint64 *)(&ptr[R_HASH_SHA512_BLOCK_SIZE - 2*sizeof (ruint64)]) =
+    RUINT64_TO_BE ((sha512->len[1] << 3) | (sha512->len[0] >> 61));
+  r_sha512_hash_update_block (sha512, ptr);
+}
+
+static rboolean
+r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size)
+{
+  const ruint8 * ptr;
+
+  if (R_UNLIKELY (sha512 == NULL || data == NULL))
+    return FALSE;
+
+  ptr = data;
+  sha512->len[0] += size;
+  if (R_UNLIKELY (sha512->len[0] < size))
+    sha512->len[1]++;
+
+  if (sha512->bufsize > 0) {
+    rsize s = sizeof (sha512->buffer) - sha512->bufsize;
+    if (s < size) {
+      r_memcpy (&sha512->buffer[sha512->bufsize], ptr, s);
+      ptr += s;
+      size -= s;
+      sha512->bufsize = 0;
+      r_sha512_hash_update_block (sha512, sha512->buffer);
+      r_memset (sha512->buffer, 0, sizeof (sha512->buffer));
+    } else {
+      r_memcpy (&sha512->buffer[sha512->bufsize], ptr, size);
+      sha512->bufsize += size;
+      return TRUE;
+    }
+  }
+
+  for (; size >= R_HASH_SHA512_BLOCK_SIZE; size -= R_HASH_SHA512_BLOCK_SIZE) {
+    r_sha512_hash_update_block (sha512, ptr);
+    ptr += R_HASH_SHA512_BLOCK_SIZE;
+  }
+
+  if ((sha512->bufsize = size) > 0)
+    r_memcpy (sha512->buffer, ptr, sha512->bufsize);
+
+  return TRUE;
+}
+
+static rboolean
+r_sha512_hash_get (RSha512Hash * sha512, ruint8 * data, rsize * size)
+{
+  rsize i;
+
+  if (R_UNLIKELY (data == NULL || size == NULL || *size < R_HASH_SHA512_SIZE))
+    return FALSE;
+
+  for (i = 0; i < R_HASH_SHA512_SIZE / sizeof (ruint64); i++)
+    ((ruint64 *)data)[i] = RUINT64_TO_BE (sha512->data[i]);
+  *size = R_HASH_SHA512_SIZE;
 
   return TRUE;
 }
