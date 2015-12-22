@@ -15,40 +15,28 @@
  * License along with this library.
  * See the COPYING file at the root of the source repository.
  */
-#ifndef __R_LIB_H__
-#define __R_LIB_H__
+#ifndef __R_CRYPTO_MAC_H__
+#define __R_CRYPTO_MAC_H__
 
-#define __RLIB_H_INCLUDE_GUARD__
+#if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
+#error "#include <rlib.h> only pelase."
+#endif
 
-#include <rlib/rascii.h>
-#include <rlib/rassert.h>
-#include <rlib/ratomic.h>
-#include <rlib/rclr.h>
-#include <rlib/renv.h>
-#include <rlib/rfd.h>
-#include <rlib/rfs.h>
-#include <rlib/rhash.h>
-#include <rlib/rhzrptr.h>
-#include <rlib/rlist.h>
-#include <rlib/rlog.h>
-#include <rlib/rmacros.h>
-#include <rlib/rmath.h>
-#include <rlib/rmem.h>
-#include <rlib/rmemfile.h>
-#include <rlib/rmodule.h>
-#include <rlib/roptparse.h>
-#include <rlib/rproc.h>
-#include <rlib/rrand.h>
-#include <rlib/rsignal.h>
-#include <rlib/rstr.h>
-#include <rlib/rstring.h>
-#include <rlib/rtest.h>
-#include <rlib/rthreads.h>
-#include <rlib/rtime.h>
-#include <rlib/rtty.h>
 #include <rlib/rtypes.h>
-#include <rlib/runicode.h>
+#include <rlib/rhash.h>
 
-#include <rlib/crypto/rmac.h>
+R_BEGIN_DECLS
 
-#endif /* __R_LIB_H__ */
+typedef struct _RHmac       RHmac;
+
+R_API RHmac * r_hmac_new (RHashType type, rconstpointer key, rsize keysize) R_ATTR_MALLOC;
+R_API void r_hmac_free (RHmac * hmac);
+
+R_API rboolean r_hmac_update (RHmac * hmac, rconstpointer data, rsize size);
+R_API rboolean r_hmac_get_data (RHmac * hmac, ruint8 * data, rsize * size);
+R_API rchar * r_hmac_get_hex (RHmac * hmac);
+
+R_END_DECLS
+
+#endif /* __R_CRYPTO_MAC_H__ */
+
