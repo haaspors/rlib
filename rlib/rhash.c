@@ -22,6 +22,7 @@
 #include <rlib/rstr.h>
 
 #define R_HASH_MAX_SIZE         (1024 / 8)
+#define RUINT32_ROTL(x, n)      (((x) << (n)) | ((x) >> (32-(n))))
 
 /* MD5 */
 #define R_HASH_MD5_SIZE         (128 / 8)
@@ -40,9 +41,20 @@ static rboolean r_md5_hash_update (RMd5Hash * md5, rconstpointer data, rsize siz
 static rboolean r_md5_hash_get (RMd5Hash * md5, ruint8 * data, rsize * size);
 
 /* SHA-1 */
+#define R_HASH_SHA1_SIZE          (160 / 8)
+#define R_HASH_SHA1_WORD_SIZE     (R_HASH_SHA1_SIZE / sizeof (ruint32))
+#define R_HASH_SHA1_BLOCK_SIZE    (512 / 8)
 typedef struct {
+  ruint32 data[R_HASH_SHA1_WORD_SIZE];
+  ruint64 len;
 
+  ruint8 buffer[R_HASH_SHA1_BLOCK_SIZE];
+  rsize bufsize;
 } RSha1Hash;
+static void r_sha1_hash_init (RSha1Hash * sha1);
+static void r_sha1_hash_final (RSha1Hash * sha1);
+static rboolean r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size);
+static rboolean r_sha1_hash_get (RSha1Hash * sha1, ruint8 * data, rsize * size);
 
 struct _RHash {
   RHashType type;
@@ -50,7 +62,7 @@ struct _RHash {
 
   union {
     RMd5Hash md5;
-    /*RSha1Hash sha1;*/
+    RSha1Hash sha1;
     /*RSha256Hash sha256;*/
     /*RSha512Hash sha512;*/
   } hash;
@@ -80,6 +92,7 @@ r_hash_size (RHash * hash)
     case R_HASH_TYPE_MD5:
       return sizeof (hash->hash.md5.data);
     case R_HASH_TYPE_SHA1:
+      return sizeof (hash->hash.sha1.data);
     case R_HASH_TYPE_SHA256:
     case R_HASH_TYPE_SHA512:
       break;
@@ -95,6 +108,7 @@ r_hash_blocksize (RHash * hash)
     case R_HASH_TYPE_MD5:
       return sizeof (hash->hash.md5.buffer);
     case R_HASH_TYPE_SHA1:
+      return sizeof (hash->hash.sha1.buffer);
     case R_HASH_TYPE_SHA256:
     case R_HASH_TYPE_SHA512:
       break;
@@ -113,6 +127,8 @@ r_hash_reset (RHash * hash)
       r_md5_hash_init (&hash->hash.md5);
       break;
     case R_HASH_TYPE_SHA1:
+      r_sha1_hash_init (&hash->hash.sha1);
+      break;
     case R_HASH_TYPE_SHA256:
     case R_HASH_TYPE_SHA512:
       break;
@@ -127,6 +143,7 @@ r_hash_update (RHash * hash, rconstpointer data, rsize size)
       case R_HASH_TYPE_MD5:
         return r_md5_hash_update (&hash->hash.md5, data, size);
       case R_HASH_TYPE_SHA1:
+        return r_sha1_hash_update (&hash->hash.sha1, data, size);
       case R_HASH_TYPE_SHA256:
       case R_HASH_TYPE_SHA512:
         break;
@@ -147,6 +164,11 @@ r_hash_get_data (RHash * hash, ruint8 * data, rsize * size)
       }
       return r_md5_hash_get (&hash->hash.md5, data, size);
     case R_HASH_TYPE_SHA1:
+      if (!hash->is_final) {
+        r_sha1_hash_final (&hash->hash.sha1);
+        hash->is_final = TRUE;
+      }
+      return r_sha1_hash_get (&hash->hash.sha1, data, size);
     case R_HASH_TYPE_SHA256:
     case R_HASH_TYPE_SHA512:
       break;
@@ -367,6 +389,226 @@ r_md5_hash_get (RMd5Hash * md5, ruint8 * data, rsize * size)
   for (i = 0; i < R_HASH_MD5_SIZE / sizeof (ruint32); i++)
     ((ruint32 *)data)[i] = RUINT32_TO_LE (md5->data[i]);
   *size = R_HASH_MD5_SIZE;
+
+  return TRUE;
+}
+
+/**************************************/
+/*               SHA1                 */
+/**************************************/
+static void
+r_sha1_hash_init (RSha1Hash * sha1)
+{
+  sha1->bufsize = 0;
+  sha1->len = 0;
+  sha1->data[0] = 0x67452301;
+  sha1->data[1] = 0xefcdab89;
+  sha1->data[2] = 0x98badcfe;
+  sha1->data[3] = 0x10325476;
+  sha1->data[4] = 0xc3d2e1f0;
+}
+
+static void
+r_sha1_hash_update_block (RSha1Hash * sha1, const ruint8 * data)
+{
+  ruint32 a, b, c, d, e, x[R_HASH_SHA1_BLOCK_SIZE / sizeof (ruint32)];
+  rsize i;
+
+  for (i = 0; i < R_HASH_SHA1_BLOCK_SIZE / sizeof (ruint32); i++)
+    x[i] = RUINT32_FROM_BE (((ruint32 *)data)[i]);
+
+  a = sha1->data[0];
+  b = sha1->data[1];
+  c = sha1->data[2];
+  d = sha1->data[3];
+  e = sha1->data[4];
+
+#define SHA1_W(w, t) \
+  ((w)[(t) & 15] = RUINT32_ROTL ( \
+    w[((t) - 3) & 15] ^ w[((t) - 8) & 15] ^ w[((t) - 14) & 15] ^ w[(t) & 15], 1))
+
+#define SHA1_CORE(a, b, c, d, e, x) \
+  (e) += RUINT32_ROTL ((a), 5) + ((d) ^ ((b) & ((c) ^ (d)))) + 0x5a827999 + (x); \
+  (b) = RUINT32_ROTL ((b), 30)
+  SHA1_CORE (a, b, c, d, e, x[ 0]);
+  SHA1_CORE (e, a, b, c, d, x[ 1]);
+  SHA1_CORE (d, e, a, b, c, x[ 2]);
+  SHA1_CORE (c, d, e, a, b, x[ 3]);
+  SHA1_CORE (b, c, d, e, a, x[ 4]);
+  SHA1_CORE (a, b, c, d, e, x[ 5]);
+  SHA1_CORE (e, a, b, c, d, x[ 6]);
+  SHA1_CORE (d, e, a, b, c, x[ 7]);
+  SHA1_CORE (c, d, e, a, b, x[ 8]);
+  SHA1_CORE (b, c, d, e, a, x[ 9]);
+  SHA1_CORE (a, b, c, d, e, x[10]);
+  SHA1_CORE (e, a, b, c, d, x[11]);
+  SHA1_CORE (d, e, a, b, c, x[12]);
+  SHA1_CORE (c, d, e, a, b, x[13]);
+  SHA1_CORE (b, c, d, e, a, x[14]);
+  SHA1_CORE (a, b, c, d, e, x[15]);
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 16));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 17));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 18));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 19));
+#undef SHA1_CORE
+
+#define SHA1_CORE(a, b, c, d, e, x) \
+  (e) += RUINT32_ROTL ((a), 5) + ((b) ^ (c) ^ (d)) + 0x6ed9eba1 + (x); \
+  (b) = RUINT32_ROTL ((b), 30)
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 20));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 21));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 22));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 23));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 24));
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 25));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 26));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 27));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 28));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 29));
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 30));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 31));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 32));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 33));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 34));
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 35));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 36));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 37));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 38));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 39));
+#undef SHA1_CORE
+
+#define SHA1_CORE(a, b, c, d, e, x) \
+  (e) += RUINT32_ROTL ((a), 5) + (((b) & (c)) | ((d) & ((b) | (c)))) + 0x8f1bbcdc + (x); \
+  (b) = RUINT32_ROTL ((b), 30)
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 40));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 41));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 42));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 43));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 44));
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 45));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 46));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 47));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 48));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 49));
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 50));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 51));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 52));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 53));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 54));
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 55));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 56));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 57));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 58));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 59));
+#undef SHA1_CORE
+
+#define SHA1_CORE(a, b, c, d, e, x) \
+  (e) += RUINT32_ROTL ((a), 5) + ((b) ^ (c) ^ (d)) + 0xca62c1d6 + (x); \
+  (b) = RUINT32_ROTL ((b), 30)
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 60));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 61));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 62));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 63));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 64));
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 65));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 66));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 67));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 68));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 69));
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 70));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 71));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 72));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 73));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 74));
+  SHA1_CORE (a, b, c, d, e, SHA1_W (x, 75));
+  SHA1_CORE (e, a, b, c, d, SHA1_W (x, 76));
+  SHA1_CORE (d, e, a, b, c, SHA1_W (x, 77));
+  SHA1_CORE (c, d, e, a, b, SHA1_W (x, 78));
+  SHA1_CORE (b, c, d, e, a, SHA1_W (x, 79));
+#undef SHA1_CORE
+
+#undef SHA1_W
+
+  sha1->data[0] += a;
+  sha1->data[1] += b;
+  sha1->data[2] += c;
+  sha1->data[3] += d;
+  sha1->data[4] += e;
+}
+
+static rboolean
+r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size)
+{
+  const ruint8 * ptr;
+
+  if (R_UNLIKELY (sha1 == NULL || data == NULL))
+    return FALSE;
+
+  ptr = data;
+  sha1->len += size;
+  if (sha1->bufsize > 0) {
+    rsize s = sizeof (sha1->buffer) - sha1->bufsize;
+    if (s < size) {
+      r_memcpy (&sha1->buffer[sha1->bufsize], ptr, s);
+      ptr += s;
+      size -= s;
+      sha1->bufsize = 0;
+      r_sha1_hash_update_block (sha1, sha1->buffer);
+      r_memset (sha1->buffer, 0, sizeof (sha1->buffer));
+    } else {
+      r_memcpy (&sha1->buffer[sha1->bufsize], ptr, size);
+      sha1->bufsize += size;
+      return TRUE;
+    }
+  }
+
+  for (; size >= R_HASH_SHA1_BLOCK_SIZE; size -= R_HASH_SHA1_BLOCK_SIZE) {
+    r_sha1_hash_update_block (sha1, ptr);
+    ptr += R_HASH_SHA1_BLOCK_SIZE;
+  }
+
+  if ((sha1->bufsize = size) > 0)
+    r_memcpy (sha1->buffer, ptr, sha1->bufsize);
+
+  return TRUE;
+}
+
+static void
+r_sha1_hash_final (RSha1Hash * sha1)
+{
+  rsize bufsize = sha1->bufsize;
+  ruint8 * ptr;
+
+  sha1->buffer[bufsize++] = 0x80;
+  ptr = sha1->buffer;
+  if (bufsize <= sizeof (sha1->buffer) - sizeof (ruint64)) {
+    rsize s = sizeof (sha1->buffer) - sizeof (ruint64) - bufsize;
+    r_memset (&ptr[bufsize], 0, s);
+  } else {
+    rsize s = sizeof (sha1->buffer) - bufsize;
+    r_memset (&ptr[bufsize], 0, s);
+
+    r_sha1_hash_update_block (sha1, sha1->buffer);
+    r_memset (sha1->buffer, 0, sizeof (sha1->buffer));
+    ptr = r_alloca0 (R_HASH_SHA1_BLOCK_SIZE);
+  }
+
+  *(ruint64 *)(&ptr[R_HASH_SHA1_BLOCK_SIZE - sizeof (ruint64)]) =
+    RUINT64_TO_BE (sha1->len << 3);
+  r_sha1_hash_update_block (sha1, ptr);
+}
+
+static rboolean
+r_sha1_hash_get (RSha1Hash * sha1, ruint8 * data, rsize * size)
+{
+  rsize i;
+
+  if (R_UNLIKELY (data == NULL || size == NULL || *size < R_HASH_SHA1_SIZE))
+    return FALSE;
+
+  for (i = 0; i < R_HASH_SHA1_SIZE / sizeof (ruint32); i++)
+    ((ruint32 *)data)[i] = RUINT32_TO_BE (sha1->data[i]);
+  *size = R_HASH_SHA1_SIZE;
 
   return TRUE;
 }
