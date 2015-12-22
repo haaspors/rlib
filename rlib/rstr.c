@@ -858,3 +858,26 @@ r_str_mem_dump_dup (const ruint8 * ptr, rsize size, rsize align)
   return ret;
 }
 
+rchar *
+r_str_mem_hex (const ruint8 * ptr, rsize size)
+{
+  rchar * ret;
+
+  if (ptr != NULL && size > 0 && (ret = r_malloc (size * 2 + 1)) != NULL) {
+    static const rchar hex[] = "0123456789abcdef";
+    rchar * dst = ret;
+    rsize i;
+
+    for (i = 0; i < size; i++, ptr++) {
+      *(dst++) = hex[*ptr >> 4];
+      *(dst++) = hex[*ptr & 0xf];
+    }
+
+    *dst = 0;
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+

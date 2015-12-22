@@ -718,3 +718,15 @@ RTEST (rstr, mem_dump, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, mem_hex, RTEST_FAST)
+{
+  const ruint8 data[] = { 250, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  rchar * tmp;
+
+  r_assert_cmpptr (r_str_mem_hex (NULL, 0), ==, NULL);
+  r_assert_cmpptr (r_str_mem_hex (data, 0), ==, NULL);
+  r_assert_cmpstr ((tmp = r_str_mem_hex (data, 6)), ==, "fa0102030405");
+  r_free (tmp);
+}
+RTEST_END;
+

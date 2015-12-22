@@ -135,6 +135,7 @@ R_API rboolean r_str_mem_dump (rchar * str, const ruint8 * ptr,
     rsize size, rsize align);
 R_API rchar * r_str_mem_dump_dup (const ruint8 * ptr,
     rsize size, rsize align);
+R_API rchar * r_str_mem_hex (const ruint8 * ptr, rsize size);
 
 R_END_DECLS
 
