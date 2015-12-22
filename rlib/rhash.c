@@ -22,7 +22,11 @@
 #include <rlib/rstr.h>
 
 #define R_HASH_MAX_SIZE         (1024 / 8)
-#define RUINT32_ROTL(x, n)      (((x) << (n)) | ((x) >> (32-(n))))
+
+#define RUINT32_SHL(x, n)       (((x) & RUINT32_MAX) << (n))
+#define RUINT32_SHR(x, n)       (((x) & RUINT32_MAX) >> (n))
+#define RUINT32_ROTL(x, n)      (RUINT32_SHL (x, n) | RUINT32_SHR (x, 32-(n)))
+#define RUINT32_ROTR(x, n)      (RUINT32_SHR (x, n) | RUINT32_SHL (x, 32-(n)))
 
 /* MD5 */
 #define R_HASH_MD5_SIZE         (128 / 8)
@@ -56,6 +60,22 @@ static void r_sha1_hash_final (RSha1Hash * sha1);
 static rboolean r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size);
 static rboolean r_sha1_hash_get (RSha1Hash * sha1, ruint8 * data, rsize * size);
 
+/* SHA-256 */
+#define R_HASH_SHA256_SIZE          (256 / 8)
+#define R_HASH_SHA256_WORD_SIZE     (R_HASH_SHA256_SIZE / sizeof (ruint32))
+#define R_HASH_SHA256_BLOCK_SIZE    (512 / 8)
+typedef struct {
+  ruint32 data[R_HASH_SHA256_WORD_SIZE];
+  ruint64 len;
+
+  ruint8 buffer[R_HASH_SHA256_BLOCK_SIZE];
+  rsize bufsize;
+} RSha256Hash;
+static void r_sha256_hash_init (RSha256Hash * sha256);
+static void r_sha256_hash_final (RSha256Hash * sha256);
+static rboolean r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size);
+static rboolean r_sha256_hash_get (RSha256Hash * sha256, ruint8 * data, rsize * size);
+
 struct _RHash {
   RHashType type;
   rboolean is_final;
@@ -63,7 +83,7 @@ struct _RHash {
   union {
     RMd5Hash md5;
     RSha1Hash sha1;
-    /*RSha256Hash sha256;*/
+    RSha256Hash sha256;
     /*RSha512Hash sha512;*/
   } hash;
 };
@@ -94,6 +114,7 @@ r_hash_size (RHash * hash)
     case R_HASH_TYPE_SHA1:
       return sizeof (hash->hash.sha1.data);
     case R_HASH_TYPE_SHA256:
+      return sizeof (hash->hash.sha256.data);
     case R_HASH_TYPE_SHA512:
       break;
   }
@@ -110,6 +131,7 @@ r_hash_blocksize (RHash * hash)
     case R_HASH_TYPE_SHA1:
       return sizeof (hash->hash.sha1.buffer);
     case R_HASH_TYPE_SHA256:
+      return sizeof (hash->hash.sha256.buffer);
     case R_HASH_TYPE_SHA512:
       break;
   }
@@ -130,6 +152,8 @@ r_hash_reset (RHash * hash)
       r_sha1_hash_init (&hash->hash.sha1);
       break;
     case R_HASH_TYPE_SHA256:
+      r_sha256_hash_init (&hash->hash.sha256);
+      break;
     case R_HASH_TYPE_SHA512:
       break;
   }
@@ -145,6 +169,7 @@ r_hash_update (RHash * hash, rconstpointer data, rsize size)
       case R_HASH_TYPE_SHA1:
         return r_sha1_hash_update (&hash->hash.sha1, data, size);
       case R_HASH_TYPE_SHA256:
+        return r_sha256_hash_update (&hash->hash.sha256, data, size);
       case R_HASH_TYPE_SHA512:
         break;
     }
@@ -170,6 +195,11 @@ r_hash_get_data (RHash * hash, ruint8 * data, rsize * size)
       }
       return r_sha1_hash_get (&hash->hash.sha1, data, size);
     case R_HASH_TYPE_SHA256:
+      if (!hash->is_final) {
+        r_sha256_hash_final (&hash->hash.sha256);
+        hash->is_final = TRUE;
+      }
+      return r_sha256_hash_get (&hash->hash.sha256, data, size);
     case R_HASH_TYPE_SHA512:
       break;
   }
@@ -609,6 +639,212 @@ r_sha1_hash_get (RSha1Hash * sha1, ruint8 * data, rsize * size)
   for (i = 0; i < R_HASH_SHA1_SIZE / sizeof (ruint32); i++)
     ((ruint32 *)data)[i] = RUINT32_TO_BE (sha1->data[i]);
   *size = R_HASH_SHA1_SIZE;
+
+  return TRUE;
+}
+
+/**************************************/
+/*              SHA-256               */
+/**************************************/
+static void
+r_sha256_hash_init (RSha256Hash * sha256)
+{
+  sha256->bufsize = 0;
+  sha256->len = 0;
+  sha256->data[0] = 0x6a09e667;
+  sha256->data[1] = 0xbb67ae85;
+  sha256->data[2] = 0x3c6ef372;
+  sha256->data[3] = 0xa54ff53a;
+  sha256->data[4] = 0x510e527f;
+  sha256->data[5] = 0x9b05688c;
+  sha256->data[6] = 0x1f83d9ab;
+  sha256->data[7] = 0x5be0cd19;
+}
+
+static void
+r_sha256_hash_update_block (RSha256Hash * sha256, const ruint8 * data)
+{
+  ruint32 a, b, c, d, e, f, g, h;
+  ruint32 x[R_HASH_SHA256_BLOCK_SIZE / sizeof (ruint32)];
+  rsize i;
+
+  for (i = 0; i < R_HASH_SHA256_BLOCK_SIZE / sizeof (ruint32); i++)
+    x[i] = RUINT32_FROM_BE (((ruint32 *)data)[i]);
+
+  a = sha256->data[0];
+  b = sha256->data[1];
+  c = sha256->data[2];
+  d = sha256->data[3];
+  e = sha256->data[4];
+  f = sha256->data[5];
+  g = sha256->data[6];
+  h = sha256->data[7];
+
+#define SHA256_SIG0(x) (RUINT32_ROTR (x, 7) ^ RUINT32_ROTR (x,18) ^ RUINT32_SHR  (x, 3))
+#define SHA256_SIG1(x) (RUINT32_ROTR (x,17) ^ RUINT32_ROTR (x,19) ^ RUINT32_SHR  (x,10))
+#define SHA256_W(x, t) (x[(t) & 15] = \
+  SHA256_SIG1(x[((t) -  2) & 15]) + x[((t) - 7) & 15] + \
+  SHA256_SIG0(x[((t) - 15) & 15]) + x[(t) & 15])
+#define SHA256_CORE(a, b, c, d, e, f, g, h, x, K)                           \
+  (h) += RUINT32_ROTR (e, 6) ^ RUINT32_ROTR (e, 11) ^ RUINT32_ROTR (e, 25); \
+  (h) += ((g) ^ ((e) & ((f) ^ (g)))) + (K) + (x);                           \
+  (d) += (h);                                                               \
+  (h) += RUINT32_ROTR (a, 2) ^ RUINT32_ROTR (a, 13) ^ RUINT32_ROTR (a, 22); \
+  (h) += (((a) & (b)) | ((c) & ((a) | (b))))
+
+  SHA256_CORE (a, b, c, d, e, f, g, h, x[ 0], 0x428a2f98);
+  SHA256_CORE (h, a, b, c, d, e, f, g, x[ 1], 0x71374491);
+  SHA256_CORE (g, h, a, b, c, d, e, f, x[ 2], 0xb5c0fbcf);
+  SHA256_CORE (f, g, h, a, b, c, d, e, x[ 3], 0xe9b5dba5);
+  SHA256_CORE (e, f, g, h, a, b, c, d, x[ 4], 0x3956c25b);
+  SHA256_CORE (d, e, f, g, h, a, b, c, x[ 5], 0x59f111f1);
+  SHA256_CORE (c, d, e, f, g, h, a, b, x[ 6], 0x923f82a4);
+  SHA256_CORE (b, c, d, e, f, g, h, a, x[ 7], 0xab1c5ed5);
+  SHA256_CORE (a, b, c, d, e, f, g, h, x[ 8], 0xd807aa98);
+  SHA256_CORE (h, a, b, c, d, e, f, g, x[ 9], 0x12835b01);
+  SHA256_CORE (g, h, a, b, c, d, e, f, x[10], 0x243185be);
+  SHA256_CORE (f, g, h, a, b, c, d, e, x[11], 0x550c7dc3);
+  SHA256_CORE (e, f, g, h, a, b, c, d, x[12], 0x72be5d74);
+  SHA256_CORE (d, e, f, g, h, a, b, c, x[13], 0x80deb1fe);
+  SHA256_CORE (c, d, e, f, g, h, a, b, x[14], 0x9bdc06a7);
+  SHA256_CORE (b, c, d, e, f, g, h, a, x[15], 0xc19bf174);
+  SHA256_CORE (a, b, c, d, e, f, g, h, SHA256_W (x, 16), 0xe49b69c1);
+  SHA256_CORE (h, a, b, c, d, e, f, g, SHA256_W (x, 17), 0xefbe4786);
+  SHA256_CORE (g, h, a, b, c, d, e, f, SHA256_W (x, 18), 0x0fc19dc6);
+  SHA256_CORE (f, g, h, a, b, c, d, e, SHA256_W (x, 19), 0x240ca1cc);
+  SHA256_CORE (e, f, g, h, a, b, c, d, SHA256_W (x, 20), 0x2de92c6f);
+  SHA256_CORE (d, e, f, g, h, a, b, c, SHA256_W (x, 21), 0x4a7484aa);
+  SHA256_CORE (c, d, e, f, g, h, a, b, SHA256_W (x, 22), 0x5cb0a9dc);
+  SHA256_CORE (b, c, d, e, f, g, h, a, SHA256_W (x, 23), 0x76f988da);
+  SHA256_CORE (a, b, c, d, e, f, g, h, SHA256_W (x, 24), 0x983e5152);
+  SHA256_CORE (h, a, b, c, d, e, f, g, SHA256_W (x, 25), 0xa831c66d);
+  SHA256_CORE (g, h, a, b, c, d, e, f, SHA256_W (x, 26), 0xb00327c8);
+  SHA256_CORE (f, g, h, a, b, c, d, e, SHA256_W (x, 27), 0xbf597fc7);
+  SHA256_CORE (e, f, g, h, a, b, c, d, SHA256_W (x, 28), 0xc6e00bf3);
+  SHA256_CORE (d, e, f, g, h, a, b, c, SHA256_W (x, 29), 0xd5a79147);
+  SHA256_CORE (c, d, e, f, g, h, a, b, SHA256_W (x, 30), 0x06ca6351);
+  SHA256_CORE (b, c, d, e, f, g, h, a, SHA256_W (x, 31), 0x14292967);
+  SHA256_CORE (a, b, c, d, e, f, g, h, SHA256_W (x, 32), 0x27b70a85);
+  SHA256_CORE (h, a, b, c, d, e, f, g, SHA256_W (x, 33), 0x2e1b2138);
+  SHA256_CORE (g, h, a, b, c, d, e, f, SHA256_W (x, 34), 0x4d2c6dfc);
+  SHA256_CORE (f, g, h, a, b, c, d, e, SHA256_W (x, 35), 0x53380d13);
+  SHA256_CORE (e, f, g, h, a, b, c, d, SHA256_W (x, 36), 0x650a7354);
+  SHA256_CORE (d, e, f, g, h, a, b, c, SHA256_W (x, 37), 0x766a0abb);
+  SHA256_CORE (c, d, e, f, g, h, a, b, SHA256_W (x, 38), 0x81c2c92e);
+  SHA256_CORE (b, c, d, e, f, g, h, a, SHA256_W (x, 39), 0x92722c85);
+  SHA256_CORE (a, b, c, d, e, f, g, h, SHA256_W (x, 40), 0xa2bfe8a1);
+  SHA256_CORE (h, a, b, c, d, e, f, g, SHA256_W (x, 41), 0xa81a664b);
+  SHA256_CORE (g, h, a, b, c, d, e, f, SHA256_W (x, 42), 0xc24b8b70);
+  SHA256_CORE (f, g, h, a, b, c, d, e, SHA256_W (x, 43), 0xc76c51a3);
+  SHA256_CORE (e, f, g, h, a, b, c, d, SHA256_W (x, 44), 0xd192e819);
+  SHA256_CORE (d, e, f, g, h, a, b, c, SHA256_W (x, 45), 0xd6990624);
+  SHA256_CORE (c, d, e, f, g, h, a, b, SHA256_W (x, 46), 0xf40e3585);
+  SHA256_CORE (b, c, d, e, f, g, h, a, SHA256_W (x, 47), 0x106aa070);
+  SHA256_CORE (a, b, c, d, e, f, g, h, SHA256_W (x, 48), 0x19a4c116);
+  SHA256_CORE (h, a, b, c, d, e, f, g, SHA256_W (x, 49), 0x1e376c08);
+  SHA256_CORE (g, h, a, b, c, d, e, f, SHA256_W (x, 50), 0x2748774c);
+  SHA256_CORE (f, g, h, a, b, c, d, e, SHA256_W (x, 51), 0x34b0bcb5);
+  SHA256_CORE (e, f, g, h, a, b, c, d, SHA256_W (x, 52), 0x391c0cb3);
+  SHA256_CORE (d, e, f, g, h, a, b, c, SHA256_W (x, 53), 0x4ed8aa4a);
+  SHA256_CORE (c, d, e, f, g, h, a, b, SHA256_W (x, 54), 0x5b9cca4f);
+  SHA256_CORE (b, c, d, e, f, g, h, a, SHA256_W (x, 55), 0x682e6ff3);
+  SHA256_CORE (a, b, c, d, e, f, g, h, SHA256_W (x, 56), 0x748f82ee);
+  SHA256_CORE (h, a, b, c, d, e, f, g, SHA256_W (x, 57), 0x78a5636f);
+  SHA256_CORE (g, h, a, b, c, d, e, f, SHA256_W (x, 58), 0x84c87814);
+  SHA256_CORE (f, g, h, a, b, c, d, e, SHA256_W (x, 59), 0x8cc70208);
+  SHA256_CORE (e, f, g, h, a, b, c, d, SHA256_W (x, 60), 0x90befffa);
+  SHA256_CORE (d, e, f, g, h, a, b, c, SHA256_W (x, 61), 0xa4506ceb);
+  SHA256_CORE (c, d, e, f, g, h, a, b, SHA256_W (x, 62), 0xbef9a3f7);
+  SHA256_CORE (b, c, d, e, f, g, h, a, SHA256_W (x, 63), 0xc67178f2);
+
+#undef SHA256_CORE
+#undef SHA256_W
+#undef SHA256_SIG1
+#undef SHA256_SIG0
+
+  sha256->data[0] += a;
+  sha256->data[1] += b;
+  sha256->data[2] += c;
+  sha256->data[3] += d;
+  sha256->data[4] += e;
+  sha256->data[5] += f;
+  sha256->data[6] += g;
+  sha256->data[7] += h;
+}
+
+static void
+r_sha256_hash_final (RSha256Hash * sha256)
+{
+  rsize bufsize = sha256->bufsize;
+  ruint8 * ptr;
+
+  sha256->buffer[bufsize++] = 0x80;
+  ptr = sha256->buffer;
+  if (bufsize <= sizeof (sha256->buffer) - sizeof (ruint64)) {
+    rsize s = sizeof (sha256->buffer) - sizeof (ruint64) - bufsize;
+    r_memset (&ptr[bufsize], 0, s);
+  } else {
+    rsize s = sizeof (sha256->buffer) - bufsize;
+    r_memset (&ptr[bufsize], 0, s);
+
+    r_sha256_hash_update_block (sha256, sha256->buffer);
+    r_memset (sha256->buffer, 0, sizeof (sha256->buffer));
+    ptr = r_alloca0 (R_HASH_SHA256_BLOCK_SIZE);
+  }
+
+  *(ruint64 *)(&ptr[R_HASH_SHA256_BLOCK_SIZE - sizeof (ruint64)]) =
+    RUINT64_TO_BE (sha256->len << 3);
+  r_sha256_hash_update_block (sha256, ptr);
+}
+
+static rboolean
+r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size)
+{
+  const ruint8 * ptr;
+
+  if (R_UNLIKELY (sha256 == NULL || data == NULL))
+    return FALSE;
+
+  ptr = data;
+  sha256->len += size;
+  if (sha256->bufsize > 0) {
+    rsize s = sizeof (sha256->buffer) - sha256->bufsize;
+    if (s < size) {
+      r_memcpy (&sha256->buffer[sha256->bufsize], ptr, s);
+      ptr += s;
+      size -= s;
+      sha256->bufsize = 0;
+      r_sha256_hash_update_block (sha256, sha256->buffer);
+      r_memset (sha256->buffer, 0, sizeof (sha256->buffer));
+    } else {
+      r_memcpy (&sha256->buffer[sha256->bufsize], ptr, size);
+      sha256->bufsize += size;
+      return TRUE;
+    }
+  }
+
+  for (; size >= R_HASH_SHA256_BLOCK_SIZE; size -= R_HASH_SHA256_BLOCK_SIZE) {
+    r_sha256_hash_update_block (sha256, ptr);
+    ptr += R_HASH_SHA256_BLOCK_SIZE;
+  }
+
+  if ((sha256->bufsize = size) > 0)
+    r_memcpy (sha256->buffer, ptr, sha256->bufsize);
+
+  return TRUE;
+}
+
+static rboolean
+r_sha256_hash_get (RSha256Hash * sha256, ruint8 * data, rsize * size)
+{
+  rsize i;
+
+  if (R_UNLIKELY (data == NULL || size == NULL || *size < R_HASH_SHA256_SIZE))
+    return FALSE;
+
+  for (i = 0; i < R_HASH_SHA256_SIZE / sizeof (ruint32); i++)
+    ((ruint32 *)data)[i] = RUINT32_TO_BE (sha256->data[i]);
+  *size = R_HASH_SHA256_SIZE;
 
   return TRUE;
 }

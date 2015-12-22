@@ -46,3 +46,27 @@ RTEST (rhash, sha1, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rhash, sha256, R_TEST_TYPE_FAST)
+{
+  RHash * hash = r_hash_new_sha256 ();
+  ruint8 data[32];
+  rsize size = sizeof (data);
+  rchar * hex;
+
+  r_assert_cmpuint (r_hash_size (hash),       ==, 256 / 8);
+  r_assert_cmpuint (r_hash_blocksize (hash),  ==, 512 / 8);
+  r_assert (r_hash_update (hash, "foobar", 6));
+  r_assert (r_hash_get_data (hash, data, &size));
+  r_assert_cmpuint (size, ==, r_hash_size (hash));
+  r_assert_cmpmem (data, ==,
+      "\xc3\xab\x8f\xf1\x37\x20\xe8\xad\x90\x47\xdd\x39\x46\x6b\x3c\x89"
+      "\x74\xe5\x92\xc2\xfa\x38\x3d\x4a\x39\x60\x71\x4c\xae\xf0\xc4\xf2", size);
+  r_assert_cmpstr ((hex = r_hash_get_hex (hash)), ==,
+      "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2");
+  r_assert (!r_hash_update (hash, "foobar", 6));
+
+  r_free (hex);
+  r_hash_free (hash);
+}
+RTEST_END;
+
