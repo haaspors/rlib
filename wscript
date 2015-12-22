@@ -93,14 +93,14 @@ def build(bld):
             target      = 'rlib/rconfig.h')
 
     bld.shlib(
-            source      = bld.path.ant_glob('rlib/*.c'),
+            source      = bld.path.ant_glob('rlib/**/*.c'),
             target      = SHLIBNAME,
             vnum        = APIVERSION,
             includes    = [ '.' ],
             defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
             use         = 'M DL PTHREAD RT')
     bld.stlib(
-            source      = bld.path.ant_glob('rlib/*.c'),
+            source      = bld.path.ant_glob('rlib/**/*.c'),
             target      = STLIBNAME,
             install_path= '${LIBDIR}',
             includes    = [ '.' ],
@@ -108,7 +108,7 @@ def build(bld):
             use         = 'M DL PTHREAD RT')
 
     bld.install_files('${PREFIX}/include',
-            bld.path.ant_glob('rlib/*.h', excl = [ 'rlib/*private.h' ]))
+            bld.path.ant_glob('rlib/**/*.h', excl = [ 'rlib/**/*private.h' ]))
 
     privlibs = []
     if bld.env.RLIB_MATH_LIBS:
