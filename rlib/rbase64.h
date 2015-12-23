@@ -15,41 +15,21 @@
  * License along with this library.
  * See the COPYING file at the root of the source repository.
  */
-#ifndef __R_LIB_H__
-#define __R_LIB_H__
+#ifndef __R_BASE64_H__
+#define __R_BASE64_H__
 
-#define __RLIB_H_INCLUDE_GUARD__
+#if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
+#error "#include <rlib.h> only pelase."
+#endif
 
-#include <rlib/rascii.h>
-#include <rlib/rassert.h>
-#include <rlib/ratomic.h>
-#include <rlib/rbase64.h>
-#include <rlib/rclr.h>
-#include <rlib/renv.h>
-#include <rlib/rfd.h>
-#include <rlib/rfs.h>
-#include <rlib/rhash.h>
-#include <rlib/rhzrptr.h>
-#include <rlib/rlist.h>
-#include <rlib/rlog.h>
-#include <rlib/rmacros.h>
-#include <rlib/rmath.h>
-#include <rlib/rmem.h>
-#include <rlib/rmemfile.h>
-#include <rlib/rmodule.h>
-#include <rlib/roptparse.h>
-#include <rlib/rproc.h>
-#include <rlib/rrand.h>
-#include <rlib/rsignal.h>
-#include <rlib/rstr.h>
-#include <rlib/rstring.h>
-#include <rlib/rtest.h>
-#include <rlib/rthreads.h>
-#include <rlib/rtime.h>
-#include <rlib/rtty.h>
 #include <rlib/rtypes.h>
-#include <rlib/runicode.h>
 
-#include <rlib/crypto/rmac.h>
+R_BEGIN_DECLS
 
-#endif /* __R_LIB_H__ */
+R_API rchar * r_base64_encode (rconstpointer data, rsize size, rsize * outsize) R_ATTR_MALLOC;
+R_API ruint8 * r_base64_decode (const rchar * data, rssize size, rsize * outsize) R_ATTR_MALLOC;
+
+R_END_DECLS
+
+#endif /* __R_BASE64_H__ */
+
