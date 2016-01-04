@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -265,5 +265,86 @@
       (((ruint64)(val) & RUINT64_CONSTANT (0x00FF000000000000)) >> 40) | \
       (((ruint64)(val) & RUINT64_CONSTANT (0xFF00000000000000)) >> 56)))
 #endif
+
+#if defined(_MSC_VER)
+#include <intrin.h>
+ruint __inline RUINT_CLZ (ruint x)
+{
+  ruint lz;
+  return (_BitScanReverse (&lz, x)) ? 31 - lz : 32;
+}
+
+ruint __inline RUINT_CTZ (ruint x)
+{
+  ruint tz;
+  return (_BitScanForward (&tz, x)) ? tz : 32;
+}
+
+rulong __inline RULONG_CLZ (rulong x)
+{
+  rulong lz;
+  return (_BitScanReverse64 (&lz, x)) ? 63 - lz : 64;
+}
+
+rulong __inline RULONG_CTZ (rulong x)
+{
+  rulong tz;
+  return (_BitScanForward64 (&tz, x)) ? tz : 64;
+}
+#define RUINT_POPCOUNT(x)       (ruint)__popcnt (x)
+#define RUINT_PARITY(x)         (__popcnt (x) & 1)
+#define RULONG_POPCOUNT(x)      (ruint)__popcnt64 (x)
+#define RULONG_PARITY(x)        (__popcnt64 (x) & 1)
+#define RULONGLONG_CLZ(x)       RULONG_CLZ (x)
+#define RULONGLONG_CTZ(x)       RULONG_CTZ (x)
+#define RULONGLONG_POPCOUNT(x)  RULONG_POPCOUNT (x)
+#define RULONGLONG_PARITY(x)    RULONG_PARITY (x)
+#elif defined(__GNUC__)
+#define RUINT_CLZ(x)            ((x) ? (ruint)__builtin_clz (x) : sizeof (ruint) * 8)
+#define RUINT_CTZ(x)            ((x) ? (ruint)__builtin_ctz (x) : sizeof (ruint) * 8)
+#define RUINT_POPCOUNT(x)       (ruint)__builtin_popcount (x)
+#define RUINT_PARITY(x)         __builtin_parity (x)
+#define RULONG_CLZ(x)           ((x) ? (ruint)__builtin_clzl (x) : sizeof (rulong) * 8)
+#define RULONG_CTZ(x)           ((x) ? (ruint)__builtin_ctzl (x) : sizeof (rulong) * 8)
+#define RULONG_POPCOUNT(x)      (ruint)__builtin_popcountl (x)
+#define RULONG_PARITY(x)        __builtin_parityl (x)
+#define RULONGLONG_CLZ(x)       ((x) ? (ruint)__builtin_clzll (x) : sizeof (long long) * 8)
+#define RULONGLONG_CTZ(x)       ((x) ? (ruint)__builtin_ctzll (x) : sizeof (long long) * 8)
+#define RULONGLONG_POPCOUNT(x)  (ruint)__builtin_popcountll (x)
+#define RULONGLONG_PARITY(x)    __builtin_parityll (x)
+#endif
+
+#if RLIB_SIZEOF_LONG == 8
+#define RUINT64_CLZ(x)          RULONG_CLZ (x)
+#define RUINT64_CTZ(x)          RULONG_CTZ (x)
+#else
+#define RUINT64_CLZ(x)          RULONGLONG_CLZ (x)
+#define RUINT64_CTZ(x)          RULONGLONG_CTZ (x)
+#endif
+
+#if RLIB_SIZEOF_INT == 4
+#define RUINT32_CLZ(x)          RUINT_CLZ (x)
+#define RUINT32_CTZ(x)          RUINT_CTZ (x)
+#elif RLIB_SIZEOF_LONG == 4
+#define RUINT32_CLZ(x)          RULONG_CLZ (x)
+#define RUINT32_CTZ(x)          RULONG_CTZ (x)
+#else
+#define RUINT32_CLZ(x)          (RUINT64_CLZ (x & RUINT32_MAX) - 32)
+#define RUINT32_CTZ(x)          RUINT64_CTZ (x & RUINT32_MAX)
+#endif
+
+#if RLIB_SIZEOF_INT == 2
+#define RUINT16_CLZ(x)          RUINT_CLZ (x)
+#define RUINT16_CTZ(x)          RUINT_CTZ (x)
+#elif RLIB_SIZEOF_LONG == 2
+#define RUINT16_CLZ(x)          RULONG_CLZ (x)
+#define RUINT16_CTZ(x)          RULONG_CTZ (x)
+#else
+#define RUINT16_CLZ(x)          (RUINT32_CLZ (x & RUINT16_MAX) - 16)
+#define RUINT16_CTZ(x)          RUINT32_CTZ (x & RUINT16_MAX)
+#endif
+
+#define RUINT8_CLZ(x)          (RUINT32_CLZ (x & RUINT16_MAX) - 24)
+#define RUINT8_CTZ(x)          RUINT32_CTZ (x & RUINT16_MAX)
 
 #endif /* __R_MACROS_H__ */
