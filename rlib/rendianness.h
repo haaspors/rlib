@@ -123,12 +123,12 @@ R_BEGIN_DECLS
 #define RINT_TO_LE(val)       ((rlong)  RINT64_TO_LE  (val))
 #define RUINT_TO_BE(val)      ((rulong) RUINT64_TO_BE (val))
 #define RINT_TO_BE(val)       ((rlong)  RINT64_TO_BE  (val))
-#elif RLIB_UINTOF_INT == 4
+#elif RLIB_SIZEOF_INT == 4
 #define RUINT_TO_LE(val)      ((rulong) RUINT32_TO_LE (val))
 #define RINT_TO_LE(val)       ((rlong)  RINT32_TO_LE  (val))
 #define RUINT_TO_BE(val)      ((rulong) RUINT32_TO_BE (val))
 #define RINT_TO_BE(val)       ((rlong)  RINT32_TO_BE  (val))
-#elif RLIB_UINTOF_INT == 2
+#elif RLIB_SIZEOF_INT == 2
 #define RUINT_TO_LE(val)      ((rulong) RUINT16_TO_LE (val))
 #define RINT_TO_LE(val)       ((rlong)  RINT16_TO_LE  (val))
 #define RUINT_TO_BE(val)      ((rulong) RUINT16_TO_BE (val))
