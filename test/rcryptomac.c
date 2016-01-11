@@ -18,6 +18,7 @@ RTEST (rcryptomac, hmac_md5, R_TEST_TYPE_FAST)
   r_assert_cmpstr ((tmp = r_hmac_get_hex (hmac)), ==,
       "750c783e6ab0b503eaa86e310a5db738");
   r_hmac_free (hmac);
+  r_free (tmp);
 
   r_assert_cmpptr ((hmac = r_hmac_new (R_HASH_TYPE_MD5, key, sizeof (key))), !=, NULL);
   r_assert (r_hmac_update (hmac, "Hi There", 8));
