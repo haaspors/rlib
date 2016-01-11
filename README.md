@@ -24,6 +24,7 @@ Features
   * Detects timeouts
   * Forks tests on platforms where `fork()` is supported
 * Command line option parser
+* Multiple/Arbitrary precision integer (bignum, BIGINT, big integer) math
 * more to come ...
 
 Getting the code

@@ -37,6 +37,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rmemfile.h>
 #include <rlib/rmodule.h>
+#include <rlib/rmpint.h>
 #include <rlib/roptparse.h>
 #include <rlib/rproc.h>
 #include <rlib/rrand.h>
