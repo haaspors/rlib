@@ -73,7 +73,7 @@ r_base64_encode (rconstpointer data, rsize size, rsize * outsize)
           *dst++ = '=';
         }
 
-        ret[s--] = 0;
+        ret[--s] = 0;
         if (outsize != NULL)
           *outsize = s;
         return ret;
