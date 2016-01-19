@@ -51,6 +51,13 @@ RTEST (rmpint, init_binary, RTEST_FAST)
     0x34, 0xf2, 0xf4, 0xd3, 0x61, 0xa4, 0x3f, 0xed,
     0x28, 0x55, 0x52, 0x39, 0x47, 0x14, 0x20, 0xe4,
     0x1a, 0x82, 0xe7, 0x4d, 0x57, 0x69, 0x82, 0xcf };
+  static const ruint8 leading0[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x99, 0x26, 0x07, 0x44, 0x68, 0x1b, 0xfe, 0x8c,
+    0xc7, 0x0b, 0x67, 0x7d, 0x15, 0xd1, 0x54, 0x6a,
+    0x34, 0xf2, 0xf4, 0xd3, 0x61, 0xa4, 0x3f, 0xed,
+    0x28, 0x55, 0x52, 0x39, 0x47, 0x14, 0x20, 0xe4,
+    0x1a, 0x82, 0xe7, 0x4d, 0x57, 0x69, 0x82, 0xcf };
   rmpint a;
 
   r_mpint_init_binary (&a, small, sizeof (small));
@@ -66,6 +73,12 @@ RTEST (rmpint, init_binary, RTEST_FAST)
   r_assert_cmpuint (r_mpint_get_digit (&a,  1), ==, 0x1a82e74d);
   r_assert_cmpuint (r_mpint_get_digit (&a, 31), ==, 0xe603bcf9);
   r_mpint_clear (&a);
+
+  r_mpint_init_binary (&a, leading0, sizeof (leading0));
+  r_assert_cmpuint (r_mpint_digits_used (&a), ==,
+      (sizeof (leading0) - 8) / sizeof (rmpint_digit));
+  r_mpint_clear (&a);
+
 }
 RTEST_END;
 
@@ -88,6 +101,13 @@ RTEST (rmpint, init_str, RTEST_FAST)
   r_assert_cmpuint (r_mpint_get_digit (&a, 2), ==, 0x76543210);
   r_assert_cmpuint (r_mpint_get_digit (&a, 1), ==, 0x01234567);
   r_assert_cmpuint (r_mpint_get_digit (&a, 0), ==, 0x89abcdef);
+  r_mpint_clear (&a);
+
+  /* hexadecimal number with leading zeros */
+  r_mpint_init_str (&a, "0x000000000000000099260744681bfe8cc70b677d15d1546a"
+      "34f2f4d361a43fed28555239471420e41a82e74d576982cf", NULL, 0);
+  r_assert_cmpuint (a.dig_alloc, >=, RMPINT_DEF_DIGITS);
+  r_assert_cmpuint (a.dig_used, ==, 10);
   r_mpint_clear (&a);
 
   /* Small decimal number */
@@ -120,6 +140,13 @@ RTEST (rmpint, init_str, RTEST_FAST)
   r_assert_cmpuint (r_mpint_get_digit (&a,  2), ==, 0x7b05335f);
   r_assert_cmpuint (r_mpint_get_digit (&a,  1), ==, 0xf5816af9);
   r_assert_cmpuint (r_mpint_get_digit (&a,  0), ==, 0xc865c765);
+  r_mpint_clear (&a);
+
+  /* decimal number with leading zeros */
+  r_mpint_init_str (&a, "0000000000000000"
+      "1314413183426951221926094199371466960500662574317200", NULL, 10);
+  r_assert_cmpuint (a.dig_alloc, >=, RMPINT_DEF_DIGITS);
+  r_assert_cmpuint (a.dig_used, ==, 6);
   r_mpint_clear (&a);
 
   {

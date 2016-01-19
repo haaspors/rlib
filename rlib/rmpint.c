@@ -79,6 +79,7 @@ r_mpint_init_binary (rmpint * mpi, rconstpointer data, rsize size)
     dst -= sizeof (rmpint_digit);
   }
 #endif
+  r_mpint_clamp (mpi);
 }
 
 void
