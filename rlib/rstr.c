@@ -476,7 +476,7 @@ r_strdup_strip (const rchar * str)
     rsize size;
     str = r_strlwstrip (str);
     size = strlen (str);
-    while (size > 0 && isspace (str[size - 1])) size--;
+    while (size > 0 && r_ascii_isspace (str[size - 1])) size--;
     ret = r_malloc (size + 1);
     memcpy (ret, str, size);
     ret[size] = 0;
@@ -491,7 +491,7 @@ const rchar *
 r_strlwstrip (const rchar * str)
 {
   if (R_LIKELY (str != NULL))
-    while (isspace (*str)) str++;
+    while (r_ascii_isspace (*str)) str++;
   return str;
 }
 
@@ -500,7 +500,7 @@ r_strtwstrip (rchar * str)
 {
   if (R_LIKELY (str != NULL)) {
     rsize size = strlen (str);
-    while (size > 0 && isspace (str[size - 1])) size--;
+    while (size > 0 && r_ascii_isspace (str[size - 1])) size--;
     str[size] = 0;
   }
 
@@ -512,9 +512,9 @@ r_strstrip (rchar * str)
 {
   if (R_LIKELY (str != NULL)) {
     rsize size;
-    while (isspace (*str)) str++;
+    while (r_ascii_isspace (*str)) str++;
     size = strlen (str);
-    while (size > 0 && isspace (str[size - 1])) size--;
+    while (size > 0 && r_ascii_isspace (str[size - 1])) size--;
     str[size] = 0;
   }
   return str;
