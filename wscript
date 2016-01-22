@@ -208,8 +208,7 @@ def configure_headers(cfg):
     else:
         cfg.env.RLIB_DEFINE_HAVE_ALLOCA_H = '/* #undef RLIB_HAVE_ALLOCA_H */'
 
-    if not cfg.env.DEST_OS == 'win32':
-        cfg.check(header_name='dlfcn.h')
+    if cfg.check(header_name='dlfcn.h', mandatory=False):
         if cfg.check(lib='dl'):
             cfg.env.RLIB_DL_LIBS = '-ldl'
 

@@ -38,7 +38,7 @@ static inline void r_module_close (RMODULE mod)
 {
   FreeLibrary (mod);
 }
-#else
+#elif HAVE_DLFCN_H
 #include <dlfcn.h>
 
 typedef rpointer RMODULE;
@@ -54,6 +54,24 @@ static inline rpointer r_module_lookup (RMODULE mod, const rchar * sym)
 static inline void r_module_close (RMODULE mod)
 {
   dlclose (mod);
+}
+#else
+typedef rpointer RMODULE;
+static inline rboolean r_module_open (RMODULE * mod, const rchar * path)
+{
+  (void) mod;
+  (void) path;
+  return FALSE;
+}
+static inline rpointer r_module_lookup (RMODULE mod, const rchar * sym)
+{
+  (void) mod;
+  (void) sym;
+  return NULL;
+}
+static inline void r_module_close (RMODULE mod)
+{
+  (void) mod;
 }
 #endif
 
