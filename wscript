@@ -213,6 +213,7 @@ def configure_headers(cfg):
             cfg.env.RLIB_DL_LIBS = '-ldl'
 
     cfg.check(header_name='sched.h', mandatory=False)
+    cfg.check(header_name='fcntl.h', mandatory=False)
     cfg.check(header_name='sys/sysctl.h', mandatory=False)
     if cfg.env.DEST_OS == 'linux':
         cfg.check(header_name='sys/prctl.h')

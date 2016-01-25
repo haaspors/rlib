@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include <rlib/rproc.h>
+#include <rlib/rfd.h>
 #include <rlib/rfs.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
@@ -30,14 +31,13 @@
 #include <mach-o/dyld.h>
 #endif
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
 #endif
 #ifdef HAVE_SYS_SYSCTL_H
 #include <sys/sysctl.h>
 #endif
 
-/* FIXME: Swapout /proc/self/status file stuff with rfile */
+/* FIXME: Swapout readlink with something more rlibish */
 
 rboolean
 r_proc_is_debugger_attached (void)
@@ -58,17 +58,17 @@ r_proc_is_debugger_attached (void)
     rchar buf[1024];
     int fd;
 
-    if ((fd = open ("/proc/self/status", O_RDONLY)) >= 0) {
-      ssize_t num_read = read (fd, buf, sizeof (buf) - 1);
+    if ((fd = r_fd_open ("/proc/self/status", O_RDONLY, 0)) >= 0) {
+      rssize num_read = r_fd_read (fd, buf, sizeof (buf) - 1);
 
-      if (num_read > 0 && num_read < (ssize_t)sizeof (buf)) {
+      if (num_read > 0 && num_read < (rssize)sizeof (buf)) {
           rchar * tracer_pid;
 
           buf[num_read] = 0;
           if ((tracer_pid = strstr (buf, "TracerPid:")) != NULL)
             ret = atoi (tracer_pid + sizeof ("TracerPid:") - 1) != 0;
       }
-      close (fd);
+      r_fd_close (fd);
     }
 
 #endif

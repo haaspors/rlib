@@ -25,10 +25,10 @@
 #include <rlib/rtypes.h>
 #if defined (R_OS_WIN32)
 #include <io.h>
-#elif defined (R_OS_UNIX)
+#else
 #include <fcntl.h>
 #endif
-/* FIXME: Do something cleve with flags and mode? */
+/* FIXME: Do something clever with flags and mode instead of including headers? */
 
 R_API int r_fd_open (const rchar * file, int flags, int mode);
 R_API int r_fd_open_tmp (const rchar * dir, const rchar * pre, rchar ** path);
