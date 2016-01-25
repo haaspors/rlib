@@ -3,7 +3,6 @@
 
 # Bring in waf tools
 import tools.waf.conf
-import tools.waf.test
 
 LIBNAME = 'rlib'
 VERSION = '1.0.0'
@@ -22,6 +21,7 @@ VARIANTS = [ DBGVAR, RELVAR ]
 
 def options(opt):
     opt.load('compiler_c')
+    opt.load('test', tooldir='tools/waf')
     opt.add_option('--variant',
             action='store', dest='variant', default=DEFVAR,
             help='use variant %r (defualt: %s)' % (VARIANTS, DEFVAR))
@@ -31,6 +31,7 @@ def options(opt):
 
 def configure(cfg):
     cfg.load('compiler_c')
+    cfg.load('test', tooldir='tools/waf')
 
     ##################################
     # COMMON (for all variants)

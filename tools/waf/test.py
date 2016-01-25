@@ -12,7 +12,7 @@ import os
 from waflib.Build import BuildContext
 from waflib.TaskGen import feature, after_method, taskgen_method
 from waflib.Utils import threading, subprocess
-from waflib import Context, Errors, Logs, Utils, Task
+from waflib import Context, Errors, Logs, Utils, Task, Options
 
 class TestContext(BuildContext):
     '''extecutes tests'''
@@ -55,7 +55,10 @@ class test(Task.Task):
     after = ['vnum', 'inst']
 
     def keyword(self):
-        return 'Running test'
+        if getattr(Options.options, 'valgrind', False) and self.generator.bld.env.VALGRIND:
+            return 'Running test under valgrind'
+        else:
+            return 'Running test'
 
     def runnable_status(self):
         if not self.generator.bld.cmd == 'test' and not getattr(self.generator, 'test_partofbuild', False):
@@ -92,10 +95,16 @@ class test(Task.Task):
         return fu
 
     def run(self):
-        self.last_cmd = [self.inputs[0].abspath()]
         cwd = self.inputs[0].parent.abspath()
         env = self.get_test_env()
         bld = self.generator.bld
+
+        self.last_cmd = []
+        if getattr(Options.options, 'valgrind', False) and bld.env.VALGRIND:
+            self.last_cmd += bld.env.VALGRIND
+            self.last_cmd += ['--tool=memcheck', '--leak-check=full', '-q']
+
+        self.last_cmd += [self.inputs[0].abspath()]
 
         try:
             stdout, stderr = bld.cmd_and_log(self.last_cmd, env=env, cwd=cwd,
@@ -113,3 +122,13 @@ class test(Task.Task):
             testlock.release()
 
         return output[1] if getattr(self.generator, 'test_mandatory', True) else None
+
+def options(opt):
+    """Provide ``--valgrind`` command-line option"""
+    gr = opt.add_option_group('Test options')
+    gr.add_option('--valgrind', action='store_true', default=False, dest='valgrind',
+            help = 'Run the tests using the valgrind')
+
+def configure(cfg):
+    cfg.find_program('valgrind', var='VALGRIND', mandatory=False)
+
