@@ -51,6 +51,9 @@
 #include <rlib/rtypes.h>
 #include <rlib/runicode.h>
 
+#include <rlib/asn1/rasn1.h>
+#include <rlib/asn1/rber.h>
+
 #include <rlib/crypto/rmac.h>
 
 #endif /* __R_LIB_H__ */

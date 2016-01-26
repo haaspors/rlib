@@ -25,6 +25,8 @@ Features
   * Forks tests on platforms where `fork()` is supported
 * Command line option parser
 * Multiple/Arbitrary precision integer (bignum, BIGINT, big integer) math
+* ASN.1
+  * BER and DER decoder
 * more to come ...
 
 Getting the code
