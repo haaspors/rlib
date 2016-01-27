@@ -102,7 +102,8 @@ class test(Task.Task):
         self.last_cmd = []
         if getattr(Options.options, 'valgrind', False) and bld.env.VALGRIND:
             self.last_cmd += bld.env.VALGRIND
-            self.last_cmd += ['--tool=memcheck', '--leak-check=full', '-q']
+            self.last_cmd += [ '-q', '--error-exitcode=42']
+            self.last_cmd += ['--tool=memcheck', '--leak-check=full']
 
         self.last_cmd += [self.inputs[0].abspath()]
 
