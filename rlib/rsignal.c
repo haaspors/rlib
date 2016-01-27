@@ -40,6 +40,7 @@ struct _RSigAlrmTimer {
   HANDLE timer;
 #elif defined (HAVE_TIMER_CREATE)
   timer_t timer;
+  struct sigevent sigev;
   struct itimerspec its;
 #elif defined (HAVE_SETITIMER)
   struct itimerval itv;
@@ -89,7 +90,10 @@ r_sig_alrm_timer_new_oneshot (RClockTime timeout, RSignalFunc func)
 #elif defined (HAVE_TIMER_CREATE)
   ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = signal (SIGALRM, func);
-  if (timer_create (CLOCK_MONOTONIC, NULL, &ret->timer) == 0) {
+  ret->sigev.sigev_notify = SIGEV_SIGNAL;
+  ret->sigev.sigev_signo = SIGALRM;
+  ret->sigev.sigev_value.sival_ptr = &ret->timer;
+  if (timer_create (CLOCK_MONOTONIC, &ret->sigev, &ret->timer) == 0) {
     R_TIME_TO_TIMESPEC (timeout, ret->its.it_value);
     if (timer_settime (ret->timer, 0, &ret->its, NULL) != 0) {
       timer_delete (ret->timer);
@@ -141,7 +145,10 @@ r_sig_alrm_timer_new_interval (RClockTime interval, RSignalFunc func)
 #elif defined (HAVE_TIMER_CREATE)
   ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = signal (SIGALRM, func);
-  if (timer_create (CLOCK_MONOTONIC, NULL, &ret->timer) == 0) {
+  ret->sigev.sigev_notify = SIGEV_SIGNAL;
+  ret->sigev.sigev_signo = SIGALRM;
+  ret->sigev.sigev_value.sival_ptr = &ret->timer;
+  if (timer_create (CLOCK_MONOTONIC, &ret->sigev, &ret->timer) == 0) {
     R_TIME_TO_TIMESPEC (interval, ret->its.it_value);
     R_TIME_TO_TIMESPEC (interval, ret->its.it_interval);
     if (timer_settime (ret->timer, 0, &ret->its, NULL) != 0) {
