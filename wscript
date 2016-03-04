@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #encoding: utf-8
 
+import os
+
 # Bring in waf tools
 import tools.waf.conf
 
@@ -33,6 +35,12 @@ def configure(cfg):
     cfg.load('compiler_c')
     cfg.load('test', tooldir='tools/waf')
 
+    environ = getattr(cfg, 'environ', os.environ)
+    cfg.env.BUILD_SHLIB = str2bool(environ.get('BUILD_SHLIB', str(cfg.env.DEST_OS != 'none')))
+    cfg.env.BUILD_STLIB = str2bool(environ.get('BUILD_STLIB', 'True'))
+    if not cfg.env.BUILD_SHLIB and not cfg.env.BUILD_STLIB:
+        cfg.fatal('not building static nor dynamic linked library')
+
     ##################################
     # COMMON (for all variants)
     ##################################
@@ -53,8 +61,6 @@ def configure(cfg):
         cfg.env.CPPFLAGS += ['-Wall', '-Werror', '-Wextra']
         cfg.env.CFLAGS += ['-fvisibility=hidden']
 
-    # This is probably wrong, but works for now.
-    # Read: There are probably elf based systmes which doesn't support dynamic linking
     if cfg.env.DEST_BINFMT == 'elf':
         cfg.env.LINKFLAGS_RTEST = ['-Wl,--export-dynamic']
 
@@ -81,6 +87,8 @@ def configure(cfg):
     cfg.define('NDEBUG', 1)
     cfg.write_config_header(RELVAR+'/config.h')
 
+    build_summary(cfg)
+
 def buildall(ctx):
     from waflib.Options import commands
     for var in VARIANTS:
@@ -94,24 +102,6 @@ def build(bld):
             source      = 'rlib/rconfig.h.in',
             target      = 'rlib/rconfig.h')
 
-    bld.shlib(
-            source      = bld.path.ant_glob('rlib/**/*.c'),
-            target      = SHLIBNAME,
-            vnum        = APIVERSION,
-            includes    = [ '.' ],
-            defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
-            use         = 'M DL PTHREAD RT KERNEL32 ADVAPI32')
-    bld.stlib(
-            source      = bld.path.ant_glob('rlib/**/*.c'),
-            target      = STLIBNAME,
-            install_path= '${LIBDIR}',
-            includes    = [ '.' ],
-            defines     = [ 'RLIB_COMPILATION', 'RLIB_STLIB' ],
-            use         = 'M DL PTHREAD RT')
-
-    bld.install_files('${PREFIX}/include',
-            bld.path.ant_glob('rlib/**/*.h', excl = [ 'rlib/**/*private.h' ]))
-
     privlibs = []
     if bld.env.RLIB_MATH_LIBS:
         privlibs.append(bld.env.RLIB_MATH_LIBS)
@@ -120,19 +110,38 @@ def build(bld):
     if bld.env.RLIB_THREAD_LIBS:
         privlibs.append(bld.env.RLIB_THREAD_LIBS)
 
-    bld(    features    = 'subst',
-            source      = LIBNAME + '.pc.in',
-            target      = SHLIBNAME + '.pc',
-            NAME        = SHLIBNAME,
-            VERSION     = VERSION,
-            install_path= '${LIBDIR}/pkgconfig')
-    bld(    features    = 'subst',
-            source      = LIBNAME + '.pc.in',
-            target      = STLIBNAME + 'st.pc',
-            NAME        = STLIBNAME,
-            VERSION     = VERSION,
-            RLIB_EXTRA_LIBS = ' '.join(privlibs),
-            install_path= '${LIBDIR}/pkgconfig')
+    if bld.env.BUILD_SHLIB:
+        bld.shlib(
+                source      = bld.path.ant_glob('rlib/**/*.c'),
+                target      = SHLIBNAME,
+                vnum        = APIVERSION,
+                includes    = [ '.' ],
+                defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
+                use         = 'M DL PTHREAD RT KERNEL32 ADVAPI32')
+        bld(    features    = 'subst',
+                source      = LIBNAME + '.pc.in',
+                target      = SHLIBNAME + '.pc',
+                NAME        = SHLIBNAME,
+                VERSION     = VERSION,
+                install_path= '${LIBDIR}/pkgconfig')
+    if bld.env.BUILD_STLIB:
+        bld.stlib(
+                source      = bld.path.ant_glob('rlib/**/*.c'),
+                target      = STLIBNAME,
+                install_path= '${LIBDIR}',
+                includes    = [ '.' ],
+                defines     = [ 'RLIB_COMPILATION', 'RLIB_STLIB' ],
+                use         = 'M DL PTHREAD RT')
+        bld(    features    = 'subst',
+                source      = LIBNAME + '.pc.in',
+                target      = STLIBNAME + 'st.pc',
+                NAME        = STLIBNAME,
+                VERSION     = VERSION,
+                RLIB_EXTRA_LIBS = ' '.join(privlibs),
+                install_path= '${LIBDIR}/pkgconfig')
+
+    bld.install_files('${PREFIX}/include',
+            bld.path.ant_glob('rlib/**/*.h', excl = [ 'rlib/**/*private.h' ]))
 
     bld.recurse('example test')
 
@@ -154,7 +163,12 @@ def init(ctx):
 
 def configure_os_arch(cfg):
     cfg.start_msg('Checking dest/host OS')
-    cfg.env.RLIB_OS = 'R_OS_WIN32' if cfg.env.DEST_OS == 'win32' else 'R_OS_UNIX'
+    if cfg.env.DEST_OS == 'win32':
+        cfg.env.RLIB_OS = 'R_OS_WIN32'
+    elif cfg.env.DEST_OS == 'none':
+        cfg.env.RLIB_OS = 'R_OS_NONE'
+    else:
+        cfg.env.RLIB_OS = 'R_OS_UNIX'
     if cfg.env.DEST_OS == 'linux':
         cfg.env.RLIB_OS_EXTRA = '#define R_OS_LINUX              1'
     elif cfg.env.DEST_OS == 'darwin':
@@ -430,4 +444,21 @@ def configure_sizeof(cfg):
     cfg.env.RLIB_SIZEOF_LONG = sizeof_long
     cfg.env.RLIB_SIZEOF_INTMAX = sizeof_void_p
     cfg.env.RLIB_SIZEOF_SIZE_T = sizeof_size_t
+
+def str2bool(s):
+    return not s.lower() in [ 'false', '0', 'n', 'no', 'not']
+
+def build_summary(cfg):
+    print('\nBuild summary')
+    cfg.msg('Building for dest/host arch', cfg.env.DEST_CPU, color='CYAN')
+    cfg.msg('Building for dest/host OS', cfg.env.DEST_OS, color='CYAN')
+    build_summary_item(cfg, 'Building shared library', cfg.env.BUILD_SHLIB)
+    build_summary_item(cfg, 'Building static library', cfg.env.BUILD_STLIB)
+
+def build_summary_item(cfg, msg, cond):
+    cfg.start_msg(msg)
+    if cond:
+        cfg.end_msg('yes', 'BOLD')
+    else:
+        cfg.end_msg('no', 'YELLOW')
 
