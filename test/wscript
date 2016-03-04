@@ -2,6 +2,7 @@
 #encoding: utf-8
 
 def build(bld):
-    bld.program(features='test', source=bld.path.ant_glob('*.c'),
-            target='rlibtest', use='rlib RTEST', includes='..')
+    if bld.env.BUILD_BIN:
+        bld.program(features='test', source=bld.path.ant_glob('*.c'),
+                target='rlibtest', use=bld.env.RLIB_INTERNAL_USE, includes='..')
 

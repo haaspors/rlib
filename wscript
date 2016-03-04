@@ -40,6 +40,7 @@ def configure(cfg):
     cfg.env.BUILD_STLIB = str2bool(environ.get('BUILD_STLIB', 'True'))
     if not cfg.env.BUILD_SHLIB and not cfg.env.BUILD_STLIB:
         cfg.fatal('not building static nor dynamic linked library')
+    cfg.env.BUILD_BIN = str2bool(environ.get('BUILD_BIN', str(cfg.env.DEST_OS != 'none')))
 
     ##################################
     # COMMON (for all variants)
@@ -54,6 +55,11 @@ def configure(cfg):
     configure_time(cfg)
     configure_threads(cfg)
     configure_signal(cfg)
+
+    if cfg.env.BUILD_SHLIB:
+        cfg.env.RLIB_INTERNAL_USE = SHLIBNAME + ' RTEST'
+    else:
+        cfg.env.RLIB_INTERNAL_USE = STLIBNAME + ' RTEST'
 
     if cfg.env['CC_NAME'] == 'msvc':
         cfg.env.CPPFLAGS += ['/Zi', '/FS'] #, '/Wall']
@@ -454,6 +460,7 @@ def build_summary(cfg):
     cfg.msg('Building for dest/host OS', cfg.env.DEST_OS, color='CYAN')
     build_summary_item(cfg, 'Building shared library', cfg.env.BUILD_SHLIB)
     build_summary_item(cfg, 'Building static library', cfg.env.BUILD_STLIB)
+    build_summary_item(cfg, 'Building binaries', cfg.env.BUILD_BIN)
 
 def build_summary_item(cfg, msg, cond):
     cfg.start_msg(msg)

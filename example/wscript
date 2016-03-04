@@ -2,11 +2,12 @@
 #encoding: utf-8
 
 def build(bld):
-    for f in bld.path.ant_glob('*.c'):
-        bld.program(
-                source      = str(f),
-                target      = str(f)[:-2],
-                use         = 'rlib RTEST',
-                includes    = '..',
-                install_path= None)
+    if bld.env.BUILD_BIN:
+        for f in bld.path.ant_glob('*.c'):
+            bld.program(
+                    source      = str(f),
+                    target      = str(f)[:-2],
+                    use         = bld.env.RLIB_INTERNAL_USE,
+                    includes    = '..',
+                    install_path= None)
 
