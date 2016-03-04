@@ -190,6 +190,8 @@ def configure_os_arch(cfg):
         cfg.env.RLIB_ARCH = 'R_ARCH_ALPHA'
     elif cfg.env.DEST_CPU == 'powerpc':
         cfg.env.RLIB_ARCH = 'R_ARCH_POWERPC'
+    elif cfg.env.DEST_CPU == 'xtensa':
+        cfg.env.RLIB_ARCH = 'R_ARCH_XTENSA'
     else:
         cfg.env.RLIB_ARCH = 'R_ARCH_UNKNOWN'
         archcolor = 'RED'
