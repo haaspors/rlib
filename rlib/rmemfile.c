@@ -126,6 +126,10 @@ r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
 #elif defined (R_OS_UNIX)
       ret->mem = mmap (NULL, ret->size, prot,
           writeback ? MAP_SHARED : MAP_PRIVATE, fd, 0);
+#else
+      (void) prot;
+      (void) writeback;
+      ret->mem = NULL;
 #endif
     }
   }

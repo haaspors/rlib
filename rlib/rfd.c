@@ -21,12 +21,16 @@
 #include <rlib/rfd.h>
 #include <rlib/rfs.h>
 #include <rlib/rstr.h>
+#ifdef RLIB_HAVE_FILES
 #if defined (R_OS_WIN32)
 #include <rlib/runicode.h>
 #define WIN32_LEAN_AND_MEAN 1
 #include <windows.h>
 #elif defined (R_OS_UNIX)
 #include <unistd.h>
+#else
+#error "Not Implemented"
+#endif
 #endif
 #include <errno.h>
 
@@ -41,14 +45,19 @@ r_fd_open (const rchar * file, int flags, int mode)
   if (R_UNLIKELY (file == NULL || *file == 0))
     return fd;
 
-#ifdef R_OS_WIN32
+#ifdef RLIB_HAVE_FILES
+#if defined (R_OS_WIN32)
   wchar_t * utf16file = r_utf8_to_utf16 (file, -1, NULL, NULL, NULL);
   fd = _wopen (utf16file, flags, mode);
   r_free (utf16file);
-#else
+#elif defined (R_OS_UNIX)
   do {
     fd = open (file, flags, mode);
   } while (R_UNLIKELY (fd == -1 && errno == EINTR));
+#endif
+#else
+  (void) flags;
+  (void) mode;
 #endif
 
   return fd;
@@ -83,10 +92,15 @@ rboolean
 r_fd_close (int fd)
 {
   int res;
-#ifdef R_OS_WIN32
+#ifdef RLIB_HAVE_FILES
+#if defined (R_OS_WIN32)
   res = _close (fd);
-#else
+#elif defined (R_OS_UNIX)
   res = close (fd);
+#endif
+#else
+  (void) fd;
+  res = -1;
 #endif
   return res == 0;
 }
@@ -95,10 +109,17 @@ rssize
 r_fd_write (int fd, rconstpointer buf, rsize size)
 {
   rssize res;
-#ifdef R_OS_WIN32
+#ifdef RLIB_HAVE_FILES
+#if defined (R_OS_WIN32)
   res = (rssize)_write (fd, buf, (unsigned int)size);
-#else
+#elif defined (R_OS_UNIX)
   res = write (fd, buf, size);
+#endif
+#else
+  (void) fd;
+  (void) buf;
+  (void) size;
+  res = -1;
 #endif
   return res;
 }
@@ -107,10 +128,17 @@ rssize
 r_fd_read (int fd, rpointer buf, rsize size)
 {
   rssize res;
-#ifdef R_OS_WIN32
+#ifdef RLIB_HAVE_FILES
+#if defined (R_OS_WIN32)
   res = (rssize)_read (fd, buf, (unsigned int)size);
-#else
+#elif defined (R_OS_UNIX)
   res = read (fd, buf, size);
+#endif
+#else
+  (void) fd;
+  (void) buf;
+  (void) size;
+  res = -1;
 #endif
   return res;
 }
@@ -119,10 +147,15 @@ rssize
 r_fd_tell (int fd)
 {
   rssize res;
-#ifdef R_OS_WIN32
+#ifdef RLIB_HAVE_FILES
+#if defined (R_OS_WIN32)
   res = (rssize)_telli64 (fd);
-#else
+#elif defined (R_OS_UNIX)
   res = lseek64 (fd, 0, SEEK_CUR);
+#endif
+#else
+  (void) fd;
+  res = -1;
 #endif
   return res;
 }
@@ -131,10 +164,17 @@ rssize
 r_fd_seek (int fd, rssize offset, int mode)
 {
   rssize res;
-#ifdef R_OS_WIN32
+#ifdef RLIB_HAVE_FILES
+#if defined (R_OS_WIN32)
   res = (rssize)_lseeki64 (fd, (__int64)offset, mode);
-#else
+#elif defined (R_OS_UNIX)
   res = lseek64 (fd, offset, mode);
+#endif
+#else
+  (void) fd;
+  (void) offset;
+  (void) mode;
+  res = 0;
 #endif
   return res;
 }
@@ -143,16 +183,23 @@ rboolean
 r_fd_truncate (int fd, rsize size)
 {
   int res;
-#ifdef R_OS_WIN32
+#ifdef RLIB_HAVE_FILES
+#if defined (R_OS_WIN32)
   res = (int)_chsize_s (fd, (__int64)size);
-#else
+#elif defined (R_OS_UNIX)
   res = ftruncate (fd, size);
+#endif
+#else
+  (void) fd;
+  (void) size;
+  res = -1;
 #endif
 
   return res == 0;
 }
 
-#ifdef R_OS_WIN32
+#ifdef RLIB_HAVE_FILES
+#if defined (R_OS_WIN32)
 static int
 fsync (int fd)
 {
@@ -179,10 +226,16 @@ fsync (int fd)
   return -1;
 }
 #endif
+#endif
 
 rboolean
 r_fd_flush (int fd)
 {
+#if defined (RLIB_HAVE_FILES)
   return fsync (fd) == 0;
+#else
+  (void) fd;
+  return FALSE;
+#endif
 }
 

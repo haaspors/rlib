@@ -51,6 +51,7 @@ RTEST (rfs, path_build, RTEST_FAST)
 }
 RTEST_END;
 
+#ifdef RLIB_HAVE_FILES
 RTEST (rfs, get_tmp_dir, RTEST_FAST | RTEST_SYSTEM)
 {
   const rchar * tmpdir;
@@ -63,6 +64,7 @@ RTEST (rfs, get_tmp_dir, RTEST_FAST | RTEST_SYSTEM)
 #endif
 }
 RTEST_END;
+#endif
 
 RTEST (rfs, test, RTEST_FAST | RTEST_SYSTEM)
 {

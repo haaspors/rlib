@@ -29,6 +29,9 @@ def options(opt):
     grp.add_option('--no-thread',
             action='store_true', dest='nothread',
             help='Don\'t support threads')
+    grp.add_option('--no-fs',
+            action='store_true', dest='nofs',
+            help='Don\'t support files/file system')
 
     grp = opt.add_option_group('build and install options')
     grp.add_option('--variant',
@@ -63,6 +66,7 @@ def configure(cfg):
     configure_time(cfg)
     configure_threads(cfg)
     configure_signal(cfg)
+    configure_fs(cfg)
 
     if cfg.env.BUILD_SHLIB:
         cfg.env.RLIB_INTERNAL_USE = SHLIBNAME + ' RTEST'
@@ -184,6 +188,8 @@ def configure_options(cfg):
         cfg.env.BUILD_BIN = False
     if getattr(cfg.options, 'nothread'):
         cfg.env.NOTHREAD = True
+    if getattr(cfg.options, 'nofs'):
+        cfg.env.NOFS = True
 
 def configure_os_arch(cfg):
     cfg.start_msg('Checking dest/host OS')
@@ -350,6 +356,13 @@ def configure_signal(cfg):
         cfg.check_cc(function_name='alarm',
                 header_name="unistd.h", mandatory=False)
 
+def configure_fs(cfg):
+    if cfg.env.NOFS:
+        cfg.env.RLIB_DEFINE_HAVE_FILES = '/* #undef RLIB_HAVE_FILES */'
+    else:
+        cfg.env.RLIB_DEFINE_HAVE_FILES = '#define RLIB_HAVE_FILES     1'
+
+
 def configure_sizeof(cfg):
     sizeof_short = cfg.check_sizeof('short', guess=2)
     sizeof_int = cfg.check_sizeof('int', guess=4)
@@ -482,6 +495,7 @@ def build_summary(cfg):
     cfg.msg('Building for dest/host arch', cfg.env.DEST_CPU, color='CYAN')
     cfg.msg('Building for dest/host OS', cfg.env.DEST_OS, color='CYAN')
     build_summary_item(cfg, 'Support threads', not cfg.env.NOTHREAD, 'GREEN', 'RED')
+    build_summary_item(cfg, 'Support file system', not cfg.env.NOFS, 'GREEN', 'RED')
     build_summary_item(cfg, 'Building shared library', cfg.env.BUILD_SHLIB)
     build_summary_item(cfg, 'Building static library', cfg.env.BUILD_STLIB)
     build_summary_item(cfg, 'Building binaries', cfg.env.BUILD_BIN)

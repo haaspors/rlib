@@ -2,7 +2,12 @@
 #encoding: utf-8
 
 def build(bld):
+    excl = []
+    if bld.env.NOFS:
+        excl.append('rfd.c')
+        excl.append('*file*.c')
+
     if bld.env.BUILD_BIN:
-        bld.program(features='test', source=bld.path.ant_glob('*.c'),
+        bld.program(features='test', source=bld.path.ant_glob('*.c', excl=excl),
                 target='rlibtest', use=bld.env.RLIB_INTERNAL_USE, includes='..')
 

@@ -174,6 +174,7 @@ r_fs_path_new_tmpname_full (const rchar * dir,
 static const rchar *
 r_fs_find_tmp_dir (void)
 {
+#ifdef RLIB_HAVE_FILES
   const rchar * ret;
 
   if ((ret = getenv ("TEMP")) != NULL)        return ret;
@@ -184,6 +185,9 @@ r_fs_find_tmp_dir (void)
 #endif
 
   return "/tmp";
+#else
+  return NULL;
+#endif
 }
 
 const rchar *
@@ -198,6 +202,7 @@ r_fs_get_cur_dir (void)
 {
   rchar * ret = NULL;
 
+#ifdef RLIB_HAVE_FILES
 #if defined (R_OS_WIN32)
   runichar2 dummy[2], * curdir;
   int len = GetCurrentDirectoryW (2, dummy);
@@ -223,6 +228,9 @@ r_fs_get_cur_dir (void)
     r_free (curdir);
     maxlen *= 2;
   } while (errno == ERANGE && maxlen < RINT16_MAX);
+#else
+#error "OS not supported"
+#endif
 #endif
 
   return ret;
