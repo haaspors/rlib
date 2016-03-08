@@ -83,6 +83,7 @@ typedef unsigned @RINTPTR_TYPE@ ruintptr;
 #define @RLIB_ARCH@             1
 
 @RLIB_DEFINE_HAVE_ALLOCA_H@
+@RLIB_DEFINE_HAVE_THREADS@
 
 #endif /* __R_CONFIG_H__ */
 

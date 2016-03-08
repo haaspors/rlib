@@ -25,6 +25,11 @@ def options(opt):
     opt.load('compiler_c')
     opt.load('test', tooldir='tools/waf')
 
+    grp = opt.add_option_group('configure options')
+    grp.add_option('--no-thread',
+            action='store_true', dest='nothread',
+            help='Don\'t support threads')
+
     grp = opt.add_option_group('build and install options')
     grp.add_option('--variant',
             action='store', dest='variant', default=DEFVAR,
@@ -177,6 +182,8 @@ def configure_options(cfg):
     cfg.env.BUILD_BIN = str2bool(environ.get('BUILD_BIN', str(cfg.env.DEST_OS != 'none')))
     if getattr(cfg.options, 'nobin'):
         cfg.env.BUILD_BIN = False
+    if getattr(cfg.options, 'nothread'):
+        cfg.env.NOTHREAD = True
 
 def configure_os_arch(cfg):
     cfg.start_msg('Checking dest/host OS')
@@ -304,6 +311,11 @@ int main(int argc, char **argv) {
 }
 '''
 def configure_threads(cfg):
+    if cfg.env.NOTHREAD:
+        cfg.env.RLIB_DEFINE_HAVE_THREADS = '/* #undef RLIB_HAVE_THREADS */'
+        return
+
+    cfg.env.RLIB_DEFINE_HAVE_THREADS = '#define RLIB_HAVE_THREADS     1'
     cfg.check_cc(function_name='gettid',
             header_name="sys/types.h", mandatory=False)
     if cfg.check(header_name='pthread.h', mandatory=False):
@@ -469,14 +481,15 @@ def build_summary(cfg):
     print('\nBuild summary')
     cfg.msg('Building for dest/host arch', cfg.env.DEST_CPU, color='CYAN')
     cfg.msg('Building for dest/host OS', cfg.env.DEST_OS, color='CYAN')
+    build_summary_item(cfg, 'Support threads', not cfg.env.NOTHREAD, 'GREEN', 'RED')
     build_summary_item(cfg, 'Building shared library', cfg.env.BUILD_SHLIB)
     build_summary_item(cfg, 'Building static library', cfg.env.BUILD_STLIB)
     build_summary_item(cfg, 'Building binaries', cfg.env.BUILD_BIN)
 
-def build_summary_item(cfg, msg, cond):
+def build_summary_item(cfg, msg, cond, clryes='BOLD', clrno='YELLOW'):
     cfg.start_msg(msg)
     if cond:
-        cfg.end_msg('yes', 'BOLD')
+        cfg.end_msg('yes', clryes)
     else:
-        cfg.end_msg('no', 'YELLOW')
+        cfg.end_msg('no', clrno)
 
