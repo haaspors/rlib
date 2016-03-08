@@ -92,7 +92,8 @@ r_time_get_ts_wallclock (void)
   clock_gettime (CLOCK_REALTIME, &tspec);
   return R_TIMESPEC_TO_TIME (tspec);
 #else
-#error Unsupported platform for wallclock timestamps
+#pragma message ("Unsupported platform for wallclock timestamps")
+  return R_CLOCK_TIME_NONE;
 #endif
 }
 
@@ -110,7 +111,8 @@ r_time_get_ts_monotonic (void)
   clock_gettime (CLOCK_MONOTONIC, &tspec);
   return R_TIMESPEC_TO_TIME (tspec);
 #else
-#error Unsupported platform for monotonic timestamps
+#pragma message ("Unsupported platform for monotonic timestamps")
+  return R_CLOCK_TIME_NONE;
 #endif
 }
 
