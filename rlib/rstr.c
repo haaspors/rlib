@@ -743,14 +743,14 @@ r_vasprintf (rchar ** str, const rchar * fmt, va_list args)
     return 0;
   }
 
-#if defined(HAVE_VASPRINTF)
+#if defined (HAVE_VASPRINTF)
   ret = vasprintf (str, fmt, args);
-#elif defined(HAVE_VSPRINTF)
+#elif defined (HAVE_VSPRINTF)
   va_list args_copy;
   va_copy (args_copy, args);
-#if defined(HAVE__VSCPRINTF)
+#if defined (HAVE__VSCPRINTF)
   ret = _vscprintf (fmt, args_copy);
-#elif defined(HAVE_VSNPRINTF)
+#elif defined (HAVE_VSNPRINTF)
   ret = vsnprintf (NULL, 0, fmt, args_copy);
 #else
 #error vsprintf cant calculate size...
@@ -767,7 +767,11 @@ r_vasprintf (rchar ** str, const rchar * fmt, va_list args)
     }
   }
 #else
-#error r_str_vprintf not implemented
+#pragma message ("r_str_vprintf not implemented")
+  (void) fmt;
+  (void) args;
+  *str = NULL;
+  ret = 0;
 #endif
   return ret;
 }
