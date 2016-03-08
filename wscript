@@ -24,10 +24,12 @@ VARIANTS = [ DBGVAR, RELVAR ]
 def options(opt):
     opt.load('compiler_c')
     opt.load('test', tooldir='tools/waf')
-    opt.add_option('--variant',
+
+    grp = opt.add_option_group('build and install options')
+    grp.add_option('--variant',
             action='store', dest='variant', default=DEFVAR,
             help='use variant %r (defualt: %s)' % (VARIANTS, DEFVAR))
-    opt.add_option('-d', '--debug',
+    grp.add_option('-d', '--debug',
             action='store_const', const=DBGVAR, dest='variant',
             help='use the debug variant')
 
