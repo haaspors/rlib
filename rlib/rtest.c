@@ -34,7 +34,7 @@
 #include <setjmp.h>
 #include <signal.h>
 #include <string.h>
-#ifndef R_OS_WIN32
+#ifdef R_OS_UNIX
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -49,11 +49,11 @@
 
 static RTss                         g__r_test_last_pos_tss = R_TSS_INIT (NULL);
 
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
 static const int g__r_test_sigs[] = {
   SIGABRT, SIGFPE, SIGSEGV, SIGILL
 };
-#else
+#elif defined (R_OS_UNIX)
 static const int g__r_test_sigs[] = {
   SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
 #ifdef SIGSTKFLT
@@ -75,14 +75,16 @@ typedef struct {
   RThread * thread;
   RSigAlrmTimer * timer;
 
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
   RTestLastPos * lastpos;
   RTestLastPos * failpos;
-#else
+#elif defined (R_OS_UNIX)
   pid_t pid;
 #endif
 } RTestRunForkCtx;
+#if defined (R_OS_WIN32) || defined (R_OS_UNIX)
 static RTestRunForkCtx *    g__r_test_fork_ctx = NULL;
+#endif
 
 typedef struct {
   RThread * thread;
@@ -91,10 +93,10 @@ typedef struct {
   jmp_buf jb;
 
   /* <private> */
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
   LPTOP_LEVEL_EXCEPTION_FILTER ouef;
   void (*osigabrt) (int);
-#else
+#elif defined (R_OS_UNIX)
   stack_t ss;
   stack_t oss;
   struct sigaction sa, osa[R_N_ELEMENTS (g__r_test_sigs)];
@@ -270,7 +272,7 @@ r_test_get_local_tests (rsize * tests, rsize * runs)
   return begin;
 }
 
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
 typedef struct {
   const RTest * test;
   rsize __i;
@@ -322,7 +324,7 @@ r_test_run_fork (const RTest * test, rsize __i, RClockTime timeout,
 
   return (RTestRunState)RPOINTER_TO_INT (res);
 }
-#else
+#elif defined (R_OS_UNIX)
 static void
 _r_test_fork_timeout_handler (int sig)
 {
@@ -472,9 +474,11 @@ _r_test_nofork_win32_kill_test_thread (RTestRunState state)
 static void
 _r_test_nofork_timeout_handler (int sig)
 {
-#ifndef R_OS_WIN32
+#ifdef R_OS_UNIX
   if (R_UNLIKELY (sig != SIGALRM))
     return;
+#else
+    (void) sig;
 #endif
   if (R_UNLIKELY (g__r_test_nofork_ctx == NULL))
     return;
@@ -485,15 +489,15 @@ _r_test_nofork_timeout_handler (int sig)
   } else {
     /* SIGALRM could be raised in any thread, so marshal it over! */
     R_LOG_WARNING ("SIGALRM - Kill test thread %p", g__r_test_nofork_ctx->thread);
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
     _r_test_nofork_win32_kill_test_thread (R_TEST_RUN_STATE_TIMEOUT);
-#else
+#elif defined (R_OS_UNIX)
     r_thread_kill (g__r_test_nofork_ctx->thread, sig);
 #endif
   }
 }
 
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
 static void
 _r_test_win32_err_handler (int sig)
 {
@@ -524,7 +528,7 @@ _r_test_win32_exception_filter (PEXCEPTION_POINTERS ep)
 
   return EXCEPTION_CONTINUE_SEARCH;
 }
-#else
+#elif defined (R_OS_UNIX)
 static void
 _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
 {
@@ -574,21 +578,21 @@ _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
 static void
 r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 {
-#ifndef R_OS_WIN32
+#ifdef R_OS_UNIX
+  rsize i;
   static ruint8 _r_test_sigstack[SIGSTKSZ];
 #endif
   static RTestLastPos _r_test_lastpos[R_TEST_THREADS];
-  rsize i;
 
   if (g__r_test_nofork_ctx != NULL) abort (); /* Can't use r_assert* here */
 
   ctx->thread = r_thread_ref (r_thread_current ());
 
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
   ctx->ouef = SetUnhandledExceptionFilter (_r_test_win32_exception_filter);
   _set_abort_behavior (0, _CALL_REPORTFAULT | _WRITE_ABORT_MSG);
   ctx->osigabrt = signal (SIGABRT, _r_test_win32_err_handler);
-#else
+#elif defined (R_OS_UNIX)
   ctx->ss.ss_size = sizeof (_r_test_sigstack);
   ctx->ss.ss_sp = _r_test_sigstack;
   ctx->ss.ss_flags = 0;
@@ -621,7 +625,9 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 static void
 r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
 {
+#if defined (R_OS_UNIX)
   rsize i;
+#endif
 
   if (R_UNLIKELY (ctx == NULL))
     return;
@@ -632,10 +638,10 @@ r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
   if (ctx->timer != NULL)
     r_sig_alrm_timer_cancel (ctx->timer);
 
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
   signal (SIGABRT, ctx->osigabrt);
   SetUnhandledExceptionFilter (ctx->ouef);
-#else
+#elif defined (R_OS_UNIX)
   for (i = R_N_ELEMENTS (g__r_test_sigs); i > 0; i--)
     sigaction (g__r_test_sigs[i-1], &ctx->osa[i-1], NULL);
 
@@ -796,7 +802,7 @@ r_test_report_print (RTestReport * report, rboolean verbose, FILE * f)
   RClockTime elapsed;
   const rchar * runresclr;
 
-#ifndef R_OS_WIN32
+#ifdef R_OS_UNIX
 #define _DO_CLR(SGR)  (r_isatty (r_fileno (f))) ? SGR : ""
 #else
 #define _DO_CLR(SGR) ""
