@@ -32,17 +32,18 @@ def options(opt):
     grp.add_option('-d', '--debug',
             action='store_const', const=DBGVAR, dest='variant',
             help='use the debug variant')
+    grp.add_option('--no-bin',
+            action='store_true', dest='nobin',
+            help='Turn of all building of binaries (examples/tests)')
 
 def configure(cfg):
     cfg.load('compiler_c')
     cfg.load('test', tooldir='tools/waf')
 
-    environ = getattr(cfg, 'environ', os.environ)
-    cfg.env.BUILD_SHLIB = str2bool(environ.get('BUILD_SHLIB', str(cfg.env.DEST_OS != 'none')))
-    cfg.env.BUILD_STLIB = str2bool(environ.get('BUILD_STLIB', 'True'))
+    configure_options(cfg)
+
     if not cfg.env.BUILD_SHLIB and not cfg.env.BUILD_STLIB:
         cfg.fatal('not building static nor dynamic linked library')
-    cfg.env.BUILD_BIN = str2bool(environ.get('BUILD_BIN', str(cfg.env.DEST_OS != 'none')))
 
     ##################################
     # COMMON (for all variants)
@@ -168,6 +169,14 @@ def init(ctx):
             class tmp(y):
                 cmd = name + '_' + var
                 variant = var
+
+def configure_options(cfg):
+    environ = getattr(cfg, 'environ', os.environ)
+    cfg.env.BUILD_SHLIB = str2bool(environ.get('BUILD_SHLIB', str(cfg.env.DEST_OS != 'none')))
+    cfg.env.BUILD_STLIB = str2bool(environ.get('BUILD_STLIB', 'True'))
+    cfg.env.BUILD_BIN = str2bool(environ.get('BUILD_BIN', str(cfg.env.DEST_OS != 'none')))
+    if getattr(cfg.options, 'nobin'):
+        cfg.env.BUILD_BIN = False
 
 def configure_os_arch(cfg):
     cfg.start_msg('Checking dest/host OS')
