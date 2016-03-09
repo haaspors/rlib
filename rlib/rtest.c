@@ -93,6 +93,7 @@ typedef struct {
   jmp_buf jb;
 
   /* <private> */
+#ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_WIN32)
   LPTOP_LEVEL_EXCEPTION_FILTER ouef;
   void (*osigabrt) (int);
@@ -100,6 +101,7 @@ typedef struct {
   stack_t ss;
   stack_t oss;
   struct sigaction sa, osa[R_N_ELEMENTS (g__r_test_sigs)];
+#endif
 #endif
 
   rsize maxposcount;
@@ -529,6 +531,7 @@ _r_test_win32_exception_filter (PEXCEPTION_POINTERS ep)
   return EXCEPTION_CONTINUE_SEARCH;
 }
 #elif defined (R_OS_UNIX)
+#ifdef RLIB_HAVE_SIGNALS
 static void
 _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
 {
@@ -574,13 +577,16 @@ _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
   }
 }
 #endif
+#endif
 
 static void
 r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 {
-#ifdef R_OS_UNIX
+#ifdef RLIB_HAVE_SIGNALS
+#if defined (R_OS_UNIX)
   rsize i;
   static ruint8 _r_test_sigstack[SIGSTKSZ];
+#endif
 #endif
   static RTestLastPos _r_test_lastpos[R_TEST_THREADS];
 
@@ -588,6 +594,7 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 
   ctx->thread = r_thread_ref (r_thread_current ());
 
+#ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_WIN32)
   ctx->ouef = SetUnhandledExceptionFilter (_r_test_win32_exception_filter);
   _set_abort_behavior (0, _CALL_REPORTFAULT | _WRITE_ABORT_MSG);
@@ -604,6 +611,7 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 
   for (i = 0; i < R_N_ELEMENTS (g__r_test_sigs); i++)
     sigaction (g__r_test_sigs[i], &ctx->sa, &ctx->osa[i]);
+#endif
 #endif
 
   ctx->timer = r_sig_alrm_timer_new_oneshot (timeout,
@@ -625,8 +633,10 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 static void
 r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
 {
+#ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_UNIX)
   rsize i;
+#endif
 #endif
 
   if (R_UNLIKELY (ctx == NULL))
@@ -638,6 +648,7 @@ r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
   if (ctx->timer != NULL)
     r_sig_alrm_timer_cancel (ctx->timer);
 
+#ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_WIN32)
   signal (SIGABRT, ctx->osigabrt);
   SetUnhandledExceptionFilter (ctx->ouef);
@@ -646,6 +657,7 @@ r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
     sigaction (g__r_test_sigs[i-1], &ctx->osa[i-1], NULL);
 
   sigaltstack (&ctx->oss, NULL);
+#endif
 #endif
 
   r_thread_unref (ctx->thread);

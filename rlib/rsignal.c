@@ -19,23 +19,25 @@
 #include "config.h"
 #include <rlib/rsignal.h>
 #include <rlib/rmem.h>
+#ifdef RLIB_HAVE_SIGNALS
 #include <signal.h>
 #include <time.h>
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
 #include <windows.h>
 #ifndef SIGALRM
 #define SIGALRM 14
 #endif
-#else
+#elif defined (R_OS_UNIX)
 #include <unistd.h>
 #endif
 
 
 struct _RSigAlrmTimer {
   RSignalFunc ofunc;
+#ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_WIN32)
   HANDLE timer;
 #elif defined (HAVE_TIMER_CREATE)
@@ -46,12 +48,9 @@ struct _RSigAlrmTimer {
   struct itimerval itv;
 #elif defined (HAVE_ALARM)
   ruint secs;
-#elif defined (R_OS_WIN32)
-  /* FIXME: Do something smart*/
-  int a;
-#pragma message ("Implement fallback or something clever for windows")
 #else
-#error No suitable SIGALRM timer backend
+#error "Not implemented"
+#endif
 #endif
 };
 
@@ -117,6 +116,7 @@ r_sig_alrm_timer_new_oneshot (RClockTime timeout, RSignalFunc func)
   ret->secs = R_TIME_AS_SECONDS (timeout) + ((timeout % R_SECOND) > 0 ? 1 : 0);
   alarm (secs);
 #else
+  (void) func;
   ret = NULL;
 #endif
 
@@ -168,6 +168,7 @@ r_sig_alrm_timer_new_interval (RClockTime interval, RSignalFunc func)
   R_TIME_TO_TIMEVAL (interval, ret->itv.it_interval);
   setitimer (ITIMER_REAL, &ret->itv, NULL);
 #else
+  (void) func;
   ret = NULL;
 #endif
 
@@ -263,4 +264,46 @@ r_sig_alrm_timer_delete (RSigAlrmTimer * timer)
 #endif
   r_free (timer);
 }
+
+#else
+
+RSigAlrmTimer *
+r_sig_alrm_timer_new_oneshot (RClockTime timeout, RSignalFunc func)
+{
+  (void) timeout;
+  (void) func;
+  return NULL;
+}
+
+RSigAlrmTimer *
+r_sig_alrm_timer_new_interval (RClockTime interval, RSignalFunc func)
+{
+  (void) interval;
+  (void) func;
+  return NULL;
+}
+
+RSigAlrmTimer *
+r_sig_alrm_timer_new_interval_delayed (RClockTime timeout,
+    RClockTime interval, RSignalFunc func)
+{
+  (void) timeout;
+  (void) interval;
+  (void) func;
+  return NULL;
+}
+
+void
+r_sig_alrm_timer_cancel (RSigAlrmTimer * timer)
+{
+  (void) timer;
+}
+
+void
+r_sig_alrm_timer_delete (RSigAlrmTimer * timer)
+{
+  (void) timer;
+}
+
+#endif
 
