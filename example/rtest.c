@@ -101,7 +101,11 @@ RTEST (rtest, thread_sigsegv, RTEST_FAST)
 RTEST_END;
 /********************************************************/
 
-static void
+#if defined(__clang__) && (__clang_major__ > 3 || (__clang_major__ == 3 && __clang_minor__ > 6))
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winfinite-recursion"
+#endif
+R_ATTR_NORETURN static void
 _recurse_forever (int v)
 {
   volatile int dummy[128];
@@ -110,6 +114,9 @@ _recurse_forever (int v)
   v = dummy[64] / 2;
   _recurse_forever (v+1);
 }
+#if defined(__clang__) && (__clang_major__ > 3 || (__clang_major__ == 3 && __clang_minor__ > 6))
+#pragma clang diagnostic pop
+#endif
 /********************************************************/
 /* Generate a stack overflow                            */
 /********************************************************/
