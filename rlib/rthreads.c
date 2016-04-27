@@ -55,7 +55,7 @@ static RTss g__r_thread_self = R_TSS_INIT ((RDestroyNotify)r_thread_unref);
 
 struct _RThread
 {
-  rauint ref_count;
+  RRef ref;
   ruint thread_id;
   rchar * name;
   RThreadFunc func;
@@ -425,6 +425,22 @@ r_cond_broadcast (RCond * cond)
 /******************************************************************************/
 /*  RThread                                                                   */
 /******************************************************************************/
+static void
+r_thread_free (RThread * thread)
+{
+  if (R_LIKELY (thread != NULL)) {
+#ifdef R_OS_WIN32
+    CloseHandle ((HANDLE)thread->thread);
+#else
+    if (R_UNLIKELY (!thread->joined))
+      pthread_detach (thread->thread);
+    r_mutex_clear (&thread->join_mutex);
+#endif
+    r_free (thread->name);
+    r_free (thread);
+  }
+}
+
 #ifdef R_OS_WIN32
 static ruint __stdcall
 #else
@@ -480,65 +496,39 @@ r_thread_trampoline (rpointer data)
 RThread *
 r_thread_new (const rchar * name, RThreadFunc func, rpointer data)
 {
-  RThread * ret = r_mem_new (RThread);
+  RThread * ret;
+
+  if ((ret = r_mem_new (RThread)) != NULL) {
 #ifndef R_OS_WIN32
-  pthread_attr_t attr;
+    pthread_attr_t attr;
 #endif
 
-  ret->ref_count = 1;
-  ret->thread_id = 0;
-  ret->name = r_strdup (name);
-  ret->func = func;
-  ret->data = data;
-  ret->retval = NULL;
-  ret->joined = FALSE;
-  ret->is_rthread = TRUE;
+    r_ref_init (ret, r_thread_free);
+    ret->thread_id = 0;
+    ret->name = r_strdup (name);
+    ret->func = func;
+    ret->data = data;
+    ret->retval = NULL;
+    ret->joined = FALSE;
+    ret->is_rthread = TRUE;
 #ifdef R_OS_WIN32
-  if ((ret->thread = (HANDLE)_beginthreadex (NULL, 0, r_thread_trampoline, ret,
-      0, &ret->thread_id)) == NULL) {
-    r_thread_unref (ret);
-    ret = NULL;
-  }
+    if ((ret->thread = (HANDLE)_beginthreadex (NULL, 0, r_thread_trampoline, ret,
+        0, &ret->thread_id)) == NULL) {
+      r_thread_unref (ret);
+      ret = NULL;
+    }
 #else
-  r_mutex_init (&ret->join_mutex);
-  pthread_attr_init (&attr);
-  if (pthread_create (&ret->thread, &attr, r_thread_trampoline, ret) != 0) {
-    r_thread_unref (ret);
-    ret = NULL;
-  }
-  pthread_attr_destroy (&attr);
+    r_mutex_init (&ret->join_mutex);
+    pthread_attr_init (&attr);
+    if (pthread_create (&ret->thread, &attr, r_thread_trampoline, ret) != 0) {
+      r_thread_unref (ret);
+      ret = NULL;
+    }
+    pthread_attr_destroy (&attr);
 #endif
+  }
+
   return ret;
-}
-
-static void
-r_thread_free (RThread * thread)
-{
-  if (R_LIKELY (thread != NULL)) {
-#ifdef R_OS_WIN32
-    CloseHandle ((HANDLE)thread->thread);
-#else
-    if (R_UNLIKELY (!thread->joined))
-      pthread_detach (thread->thread);
-    r_mutex_clear (&thread->join_mutex);
-#endif
-    r_free (thread->name);
-    r_free (thread);
-  }
-}
-
-RThread *
-r_thread_ref (RThread * thread)
-{
-  r_atomic_uint_fetch_add (&thread->ref_count, 1);
-  return thread;
-}
-
-void
-r_thread_unref (RThread * thread)
-{
-  if (r_atomic_uint_fetch_sub (&thread->ref_count, 1) == 1)
-    r_thread_free (thread);
 }
 
 rpointer
@@ -580,16 +570,17 @@ r_thread_current (void)
   RThread * thread = r_tss_get (&g__r_thread_self);
 
   if (R_UNLIKELY (!thread)) {
-    thread = r_mem_new0 (RThread);
-    thread->ref_count = 1;
+    if ((thread = r_mem_new0 (RThread)) != NULL) {
+      r_ref_init (thread, r_thread_free);
 #ifdef R_OS_WIN32
-    thread->thread_id = GetCurrentThreadId ();
-    thread->thread = OpenThread (THREAD_ALL_ACCESS, FALSE, thread->thread_id);
+      thread->thread_id = GetCurrentThreadId ();
+      thread->thread = OpenThread (THREAD_ALL_ACCESS, FALSE, thread->thread_id);
 #else
-    thread->thread = pthread_self ();
+      thread->thread = pthread_self ();
 #endif
 
-    r_tss_set (&g__r_thread_self, thread);
+      r_tss_set (&g__r_thread_self, thread);
+    }
   }
 
   return thread;

@@ -71,8 +71,9 @@ typedef enum {
 
 R_API ROptionGroup * r_option_group_new (const rchar * name, const rchar * desc,
     const rchar * summary, rpointer user, RDestroyNotify notify);
-R_API void r_option_group_ref (ROptionGroup * group);
-R_API void r_option_group_unref (ROptionGroup * group);
+#define r_option_group_ref r_ref_ref
+#define r_option_group_unref r_ref_unref
+
 R_API rboolean r_option_group_add_arguments (ROptionGroup * group,
     const ROptionArgument * args, rsize count);
 

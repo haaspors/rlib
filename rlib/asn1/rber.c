@@ -33,18 +33,6 @@ r_asn1_ber_decoder_new (const ruint8 * data, rsize size)
   return r_asn1_bin_decoder_new (data, size);
 }
 
-RAsn1BerDecoder *
-r_asn1_ber_decoder_ref (RAsn1BerDecoder * dec)
-{
-  return r_asn1_bin_decoder_ref (dec);
-}
-
-void
-r_asn1_ber_decoder_unref (RAsn1BerDecoder * dec)
-{
-  r_asn1_bin_decoder_unref (dec);
-}
-
 static RAsn1DecoderStatus
 r_asn1_ber_parse_length (const ruint8 * ptr, rsize * lensize, rsize * ret)
 {

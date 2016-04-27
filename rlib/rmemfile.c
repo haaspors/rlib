@@ -18,7 +18,6 @@
 
 #include "config.h"
 #include <rlib/rmemfile.h>
-#include <rlib/ratomic.h>
 #include <rlib/rfd.h>
 #include <rlib/rmem.h>
 
@@ -40,13 +39,28 @@
 #endif
 
 struct _RMemFile {
-  rauint refcount;
+  RRef ref;
   rpointer mem;
   rsize size;
 #ifdef R_OS_WIN32
   HANDLE handle;
 #endif
 };
+
+static void
+r_mem_file_free (RMemFile * file)
+{
+  if (file != NULL) {
+#if defined (R_OS_WIN32)
+    UnmapViewOfFile (file->mem);
+    CloseHandle (file->handle);
+#elif defined (R_OS_UNIX)
+    munmap (file->mem, file->size);
+#endif
+
+    r_free (file);
+  }
+}
 
 RMemFile *
 r_mem_file_new (const rchar * file, RMemProt prot, rboolean writeback)
@@ -71,7 +85,7 @@ r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
 
   if (fstat (fd, &st) == 0) {
     if (R_LIKELY ((ret = r_mem_new (RMemFile)) != NULL)) {
-      r_atomic_uint_store (&ret->refcount, 1);
+      r_ref_init (ret, r_mem_file_free);
       ret->size = (rsize)st.st_size;
 #if defined (R_OS_WIN32)
       if ((ret->handle = CreateFileMapping ((HANDLE) _get_osfhandle (fd), NULL,
@@ -94,35 +108,6 @@ r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
   }
 
   return ret;
-}
-
-static void
-r_mem_file_free (RMemFile * file)
-{
-  if (file != NULL) {
-#if defined (R_OS_WIN32)
-    UnmapViewOfFile (file->mem);
-    CloseHandle (file->handle);
-#elif defined (R_OS_UNIX)
-    munmap (file->mem, file->size);
-#endif
-
-    r_free (file);
-  }
-}
-
-RMemFile *
-r_mem_file_ref (RMemFile * file)
-{
-  r_atomic_uint_fetch_add (&file->refcount, 1);
-  return file;
-}
-
-void
-r_mem_file_unref (RMemFile * file)
-{
-  if (r_atomic_uint_fetch_sub (&file->refcount, 1) == 1)
-    r_mem_file_free (file);
 }
 
 rsize

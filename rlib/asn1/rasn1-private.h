@@ -24,7 +24,6 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/asn1/rasn1.h>
-#include <rlib/ratomic.h>
 #include <rlib/rlist.h>
 #include <rlib/rmemfile.h>
 
@@ -35,7 +34,7 @@ R_BEGIN_DECLS
 
 typedef struct _RAsn1BinDecoder
 {
-  rauint refcount;
+  RRef ref;
 
   const ruint8 * data;
   rsize size;
@@ -44,17 +43,25 @@ typedef struct _RAsn1BinDecoder
 } RAsn1BinDecoder;
 
 
+static void
+r_asn1_bin_decoder_free (RAsn1BinDecoder * dec)
+{
+  r_slist_destroy_full (dec->stack, r_free);
+  r_free (dec);
+}
+
 static inline RAsn1BinDecoder *
 r_asn1_bin_decoder_new (const ruint8 * data, rsize size)
 {
   RAsn1BinDecoder * ret;
 
   if (data != NULL && size > 0) {
-    ret = r_mem_new (RAsn1BinDecoder);
-    r_atomic_uint_store (&ret->refcount, 1);
-    ret->data = data;
-    ret->size = size;
-    ret->stack = NULL;
+    if ((ret = r_mem_new (RAsn1BinDecoder)) != NULL) {
+      r_ref_init (ret, r_asn1_bin_decoder_free);
+      ret->data = data;
+      ret->size = size;
+      ret->stack = NULL;
+    }
   } else {
     ret = NULL;
   }
@@ -77,27 +84,6 @@ r_asn1_bin_decoder_new_file (const rchar * file)
   }
 
   return ret;
-}
-
-static void
-r_asn1_bin_decoder_free (RAsn1BinDecoder * dec)
-{
-  r_slist_destroy_full (dec->stack, r_free);
-  r_free (dec);
-}
-
-static inline RAsn1BinDecoder *
-r_asn1_bin_decoder_ref (RAsn1BinDecoder * dec)
-{
-  r_atomic_uint_fetch_add (&dec->refcount, 1);
-  return dec;
-}
-
-static inline void
-r_asn1_bin_decoder_unref (RAsn1BinDecoder * dec)
-{
-  if (r_atomic_uint_fetch_sub (&dec->refcount, 1) == 1)
-    r_asn1_bin_decoder_free (dec);
 }
 
 R_END_DECLS

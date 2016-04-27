@@ -41,6 +41,7 @@
 #include <rlib/roptparse.h>
 #include <rlib/rproc.h>
 #include <rlib/rrand.h>
+#include <rlib/rref.h>
 #include <rlib/rsignal.h>
 #include <rlib/rstr.h>
 #include <rlib/rstring.h>

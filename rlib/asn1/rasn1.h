@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/rmpint.h>
+#include <rlib/rref.h>
 
 R_BEGIN_DECLS
 

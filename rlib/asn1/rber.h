@@ -23,6 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rref.h>
 #include <rlib/asn1/rasn1.h>
 
 R_BEGIN_DECLS
@@ -31,8 +32,8 @@ typedef struct _RAsn1BinDecoder RAsn1BerDecoder;
 
 R_API RAsn1BerDecoder * r_asn1_ber_decoder_new_file (const rchar * file);
 R_API RAsn1BerDecoder * r_asn1_ber_decoder_new (const ruint8 * data, rsize size);
-R_API RAsn1BerDecoder * r_asn1_ber_decoder_ref (RAsn1BerDecoder * dec);
-R_API void r_asn1_ber_decoder_unref (RAsn1BerDecoder * dec);
+#define r_asn1_ber_decoder_ref r_ref_ref
+#define r_asn1_ber_decoder_unref r_ref_unref
 
 R_API RAsn1DecoderStatus r_asn1_ber_decoder_next (RAsn1BerDecoder * dec, RAsn1BinTLV * tlv);
 R_API RAsn1DecoderStatus r_asn1_ber_decoder_into (RAsn1BerDecoder * dec, RAsn1BinTLV * tlv);

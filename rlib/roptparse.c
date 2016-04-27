@@ -21,7 +21,7 @@
 #include <rlib/roptparse.h>
 #include <rlib/rascii.h>
 #include <rlib/rassert.h>
-#include <rlib/ratomic.h>
+#include <rlib/rref.h>
 #include <rlib/rlist.h>
 #include <rlib/rlog.h>
 #include <rlib/rmem.h>
@@ -56,17 +56,20 @@ struct _ROptionParser
 
 struct _ROptionGroup
 {
+  RRef ref;
+
   rchar * name;
   rchar * desc;
   rchar * summary;
   rpointer user;
   RDestroyNotify notify;
 
-  rauint refcount;
   ROptionArgument * args;
   rsize count;
 };
 
+
+static void r_option_group_free (ROptionGroup * group);
 
 static inline ROptionGroup *
 r_option_group_new_internal (const rchar * name, const rchar * desc,
@@ -74,6 +77,8 @@ r_option_group_new_internal (const rchar * name, const rchar * desc,
 {
   ROptionGroup * ret = r_mem_new (ROptionGroup);
   if (R_LIKELY (ret != NULL)) {
+    r_ref_init (ret, r_option_group_free);
+
     ret->name = r_strdup (name);
     ret->desc = r_strdup (desc);
     ret->summary = r_strdup (summary);
@@ -81,7 +86,6 @@ r_option_group_new_internal (const rchar * name, const rchar * desc,
     ret->user = user;
     ret->notify = notify;
 
-    r_atomic_uint_store (&ret->refcount, 1);
     ret->args = NULL;
     ret->count = 0;
   }
@@ -112,19 +116,6 @@ r_option_group_free (ROptionGroup * group)
   r_free (group->args);
 
   r_free (group);
-}
-
-void
-r_option_group_ref (ROptionGroup * group)
-{
-  r_atomic_uint_fetch_add (&group->refcount, 1);
-}
-
-void
-r_option_group_unref (ROptionGroup * group)
-{
-  if (r_atomic_uint_fetch_sub (&group->refcount, 1) == 1)
-    r_option_group_free (group);
 }
 
 static rboolean

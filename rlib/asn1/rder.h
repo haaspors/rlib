@@ -31,8 +31,8 @@ typedef struct _RAsn1BinDecoder RAsn1DerDecoder;
 
 R_API RAsn1DerDecoder * r_asn1_der_decoder_new_file (const rchar * file);
 R_API RAsn1DerDecoder * r_asn1_der_decoder_new (const ruint8 * data, rsize size);
-R_API RAsn1DerDecoder * r_asn1_der_decoder_ref (RAsn1DerDecoder * dec);
-R_API void r_asn1_der_decoder_unref (RAsn1DerDecoder * dec);
+#define r_asn1_der_decoder_ref r_ref_ref
+#define r_asn1_der_decoder_unref r_ref_unref
 
 R_API RAsn1DecoderStatus r_asn1_der_decoder_next (RAsn1DerDecoder * dec, RAsn1BinTLV * tlv);
 R_API RAsn1DecoderStatus r_asn1_der_decoder_into (RAsn1DerDecoder * dec, RAsn1BinTLV * tlv);

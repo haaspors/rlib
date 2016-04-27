@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/ratomic.h>
+#include <rlib/rref.h>
 
 R_BEGIN_DECLS
 
@@ -96,8 +97,8 @@ R_API void      r_cond_broadcast    (RCond * cond);
 /* Threads */
 R_API RThread * r_thread_new        (const rchar * name,
     RThreadFunc func, rpointer data);
-R_API RThread * r_thread_ref        (RThread * thread);
-R_API void      r_thread_unref      (RThread * thread);
+#define r_thread_ref        r_ref_ref
+#define r_thread_unref      r_ref_unref
 R_API rpointer  r_thread_join       (RThread * thread);
 R_API int       r_thread_kill       (RThread * thread, int sig);
 R_API const rchar * r_thread_get_name (RThread * thread);
