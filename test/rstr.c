@@ -605,6 +605,23 @@ RTEST (rstrv, basic, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstrv, copy, RTEST_FAST)
+{
+  rchar ** strv, ** copy;
+  r_assert_cmpptr ((strv = r_strv_new (foo, bar, foobar, NULL)), !=, NULL);
+  r_assert_cmpuint (r_strv_len (strv), ==, 3);
+  r_assert_cmpptr ((copy = r_strv_copy (strv)), !=, NULL);
+  r_strv_free (strv);
+  r_assert_cmpuint (r_strv_len (copy), ==, 3);
+
+  r_assert_cmpstr (copy[0], ==, foo);
+  r_assert_cmpstr (copy[1], ==, bar);
+  r_assert_cmpstr (copy[2], ==, foobar);
+  r_assert_cmpptr (copy[3], ==, NULL);
+  r_strv_free (copy);
+}
+RTEST_END;
+
 RTEST (rstrv, join, RTEST_FAST)
 {
   rchar ** strv;

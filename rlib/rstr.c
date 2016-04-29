@@ -659,6 +659,22 @@ r_strv_newv (const rchar * str0, va_list args)
   return ret;
 }
 
+rchar **
+r_strv_copy (rchar * const * strv)
+{
+  rchar ** ret;
+
+  if (R_LIKELY ((ret = r_mem_new_n (rchar *, r_strv_len (strv) + 1)) != NULL)) {
+    rsize i;
+    for (i = 0; strv[i] != NULL; i++)
+      ret[i] = r_strdup (strv[i]);
+
+    ret[i] = NULL;
+  }
+
+  return ret;
+}
+
 void
 r_strv_free (rchar ** strv)
 {
