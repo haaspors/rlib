@@ -100,11 +100,11 @@ R_API rdouble r_str_to_double (const rchar * str, const rchar ** endptr, RStrPar
 
 R_API rchar * r_strdup (const rchar * str);
 R_API rchar * r_strndup (const rchar * str, rsize n);
-R_API rchar * r_strdup_strip (const rchar * str);
+R_API rchar * r_strdup_wstrip (const rchar * str);
 
-R_API const rchar * r_strlwstrip (const rchar * str);
-R_API rchar * r_strtwstrip (rchar * str);
-R_API rchar * r_strstrip (rchar * str);
+R_API rchar * r_str_wstrip (rchar * str);
+R_API const rchar * r_str_lwstrip (const rchar * str);
+R_API rchar * r_str_twstrip (rchar * str);
 
 #define r_sprintf       sprintf
 #define r_vsprintf      vsprintf

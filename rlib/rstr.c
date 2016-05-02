@@ -179,7 +179,7 @@ r_str_to_int_parse (const rchar * str, const rchar ** endptr, ruint base,
   if (R_UNLIKELY (base == 1 || base > 36))
     return R_STR_PARSE_INVAL;
 
-  ptr = r_strlwstrip (str);
+  ptr = r_str_lwstrip (str);
   if (R_UNLIKELY (*ptr == 0))
     goto beach;
 
@@ -257,7 +257,7 @@ r_str_to_uint_parse (const rchar * str, const rchar ** endptr, ruint base,
   if (R_UNLIKELY (base == 1 || base > 36))
     return R_STR_PARSE_INVAL;
 
-  ptr = r_strlwstrip (str);
+  ptr = r_str_lwstrip (str);
   if (R_UNLIKELY (*ptr == 0))
     goto beach;
 
@@ -468,13 +468,13 @@ r_strndup (const rchar * str, rsize n)
 }
 
 rchar *
-r_strdup_strip (const rchar * str)
+r_strdup_wstrip (const rchar * str)
 {
   rchar * ret;
 
   if (R_LIKELY (str != NULL)) {
     rsize size;
-    str = r_strlwstrip (str);
+    str = r_str_lwstrip (str);
     size = strlen (str);
     while (size > 0 && r_ascii_isspace (str[size - 1])) size--;
     ret = r_malloc (size + 1);
@@ -487,28 +487,8 @@ r_strdup_strip (const rchar * str)
   return ret;
 }
 
-const rchar *
-r_strlwstrip (const rchar * str)
-{
-  if (R_LIKELY (str != NULL))
-    while (r_ascii_isspace (*str)) str++;
-  return str;
-}
-
 rchar *
-r_strtwstrip (rchar * str)
-{
-  if (R_LIKELY (str != NULL)) {
-    rsize size = strlen (str);
-    while (size > 0 && r_ascii_isspace (str[size - 1])) size--;
-    str[size] = 0;
-  }
-
-  return str;
-}
-
-rchar *
-r_strstrip (rchar * str)
+r_str_wstrip (rchar * str)
 {
   if (R_LIKELY (str != NULL)) {
     rsize size;
@@ -517,6 +497,26 @@ r_strstrip (rchar * str)
     while (size > 0 && r_ascii_isspace (str[size - 1])) size--;
     str[size] = 0;
   }
+  return str;
+}
+
+const rchar *
+r_str_lwstrip (const rchar * str)
+{
+  if (R_LIKELY (str != NULL))
+    while (r_ascii_isspace (*str)) str++;
+  return str;
+}
+
+rchar *
+r_str_twstrip (rchar * str)
+{
+  if (R_LIKELY (str != NULL)) {
+    rsize size = strlen (str);
+    while (size > 0 && r_ascii_isspace (str[size - 1])) size--;
+    str[size] = 0;
+  }
+
   return str;
 }
 

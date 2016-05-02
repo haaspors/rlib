@@ -93,7 +93,7 @@ r_mpint_init_str (rmpint * mpi, const rchar * str, const rchar ** endptr,
   if (endptr != NULL)
     *endptr = str;
 
-  ptr = r_strlwstrip (str);
+  ptr = r_str_lwstrip (str);
   if (R_UNLIKELY (*ptr == 0))
     goto beach;
 

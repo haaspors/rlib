@@ -504,45 +504,45 @@ RTEST (rstr, dup, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rstr, dup_strip, RTEST_FAST)
+RTEST (rstr, dup_wstrip, RTEST_FAST)
 {
   rchar * tmp;
 
-  r_assert_cmpptr (r_strdup_strip (NULL), ==, NULL);
-  r_assert_cmpptr ((tmp = r_strdup_strip (foobar)), !=, NULL);
+  r_assert_cmpptr (r_strdup_wstrip (NULL), ==, NULL);
+  r_assert_cmpptr ((tmp = r_strdup_wstrip (foobar)), !=, NULL);
   r_assert_cmpptr (tmp, !=, foobar);
   r_assert_cmpstr (tmp, ==, foobar);
   r_free (tmp);
 
-  r_assert_cmpptr ((tmp = r_strdup_strip (foobar_padding)), !=, NULL);
+  r_assert_cmpptr ((tmp = r_strdup_wstrip (foobar_padding)), !=, NULL);
   r_assert_cmpstr (tmp, ==, foobar);
   r_free (tmp);
-  r_assert_cmpptr ((tmp = r_strdup_strip ("  foobar  ")), !=, NULL);
+  r_assert_cmpptr ((tmp = r_strdup_wstrip ("  foobar  ")), !=, NULL);
   r_assert_cmpstr (tmp, ==, foobar);
   r_free (tmp);
 }
 RTEST_END;
 
-RTEST (rstr, strip, RTEST_FAST)
+RTEST (rstr, wstrip, RTEST_FAST)
 {
   rchar tmp[24], * ret;
 
-  /* strlwstrip */
-  r_assert_cmpptr (r_strlwstrip (NULL), ==, NULL);
-  r_assert_cmpptr (r_strlwstrip (foobar_padding), ==, foobar_padding + 4);
-  r_assert_cmpstr (r_strlwstrip (foobar_padding), ==, "foobar\r \t\n");
+  /* str_lwstrip */
+  r_assert_cmpptr (r_str_lwstrip (NULL), ==, NULL);
+  r_assert_cmpptr (r_str_lwstrip (foobar_padding), ==, foobar_padding + 4);
+  r_assert_cmpstr (r_str_lwstrip (foobar_padding), ==, "foobar\r \t\n");
 
-  /* strtwstrip */
-  r_assert_cmpptr (r_strtwstrip (NULL), ==, NULL);
+  /* str_twstrip */
+  r_assert_cmpptr (r_str_twstrip (NULL), ==, NULL);
   r_strcpy (tmp, foobar_padding);
-  r_assert_cmpptr (r_strtwstrip (tmp), ==, tmp);
+  r_assert_cmpptr (r_str_twstrip (tmp), ==, tmp);
   r_assert_cmpstr (tmp, !=, foobar_padding);
   r_assert_cmpstr (tmp, ==, "\t\n \rfoobar");
 
-  /* strstrip */
-  r_assert_cmpptr (r_strtwstrip (NULL), ==, NULL);
+  /* str_wstrip */
+  r_assert_cmpptr (r_str_wstrip (NULL), ==, NULL);
   r_strcpy (tmp, foobar_padding);
-  r_assert_cmpptr ((ret = r_strstrip (tmp)), ==, tmp + 4);
+  r_assert_cmpptr ((ret = r_str_wstrip (tmp)), ==, tmp + 4);
   r_assert_cmpstr (ret, !=, foobar_padding);
   r_assert_cmpstr (ret, ==, foobar);
 }
