@@ -523,6 +523,26 @@ RTEST (rstr, dup_wstrip, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, dup_strip, RTEST_FAST)
+{
+  rchar * tmp;
+
+  r_assert_cmpptr (r_strdup_strip (NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_strdup_strip (NULL, foo), ==, NULL);
+  r_assert_cmpptr ((tmp = r_strdup_strip (foobar, "xy")), !=, NULL);
+  r_assert_cmpptr (tmp, !=, foobar);
+  r_assert_cmpstr (tmp, ==, foobar);
+  r_free (tmp);
+
+  r_assert_cmpptr ((tmp = r_strdup_strip (foobar_padding, "\t \r\n")), !=, NULL);
+  r_assert_cmpstr (tmp, ==, foobar);
+  r_free (tmp);
+  r_assert_cmpptr ((tmp = r_strdup_strip ("x foobar x", "x ")), !=, NULL);
+  r_assert_cmpstr (tmp, ==, foobar);
+  r_free (tmp);
+}
+RTEST_END;
+
 RTEST (rstr, wstrip, RTEST_FAST)
 {
   rchar tmp[24], * ret;
@@ -545,6 +565,32 @@ RTEST (rstr, wstrip, RTEST_FAST)
   r_assert_cmpptr ((ret = r_str_wstrip (tmp)), ==, tmp + 4);
   r_assert_cmpstr (ret, !=, foobar_padding);
   r_assert_cmpstr (ret, ==, foobar);
+}
+RTEST_END;
+
+RTEST (rstr, strip, RTEST_FAST)
+{
+  rchar tmp[24], * ret;
+
+  /* str_lstrip */
+  r_assert_cmpptr (r_str_lstrip (NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_str_lstrip (NULL, foo), ==, NULL);
+  r_assert_cmpptr (r_str_lstrip (foobar, "fo"), ==, foobar + 3);
+  r_assert_cmpstr (r_str_lstrip (foobar, "fo"), ==, bar);
+
+  /* str_tstrip */
+  r_assert_cmpptr (r_str_tstrip (NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_str_tstrip (NULL, foo), ==, NULL);
+  r_strcpy (tmp, foobar);
+  r_assert_cmpptr (r_str_tstrip (tmp, "rba"), ==, tmp);
+  r_assert_cmpstr (tmp, ==, foo);
+
+  /* str_strip */
+  r_assert_cmpptr (r_str_strip (NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_str_strip (NULL, foo), ==, NULL);
+  r_strcpy (tmp, foobar);
+  r_assert_cmpptr ((ret = r_str_strip (tmp, "fra")), ==, tmp + 1);
+  r_assert_cmpstr (ret, ==, "oob");
 }
 RTEST_END;
 
