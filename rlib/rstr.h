@@ -123,6 +123,7 @@ R_API rchar ** r_strv_newv (const rchar * str0, va_list args);
 R_API rchar ** r_strv_copy (rchar * const * strv);
 R_API void r_strv_free (rchar ** strv);
 R_API rsize r_strv_len (rchar * const * strv);
+R_API void r_strv_foreach (rchar ** strv, RFunc func, rpointer user);
 R_API rboolean r_strv_contains (rchar * const * strv, const rchar * str);
 R_API rchar * r_strv_join (rchar * const * strv, const rchar * delim);
 

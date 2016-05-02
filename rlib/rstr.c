@@ -697,6 +697,16 @@ r_strv_len (rchar * const * strv)
   return i;
 }
 
+void
+r_strv_foreach (rchar ** strv, RFunc func, rpointer user)
+{
+  if (strv != NULL) {
+    rsize i;
+    for (i = 0; strv[i] != NULL; i++)
+      func (strv[i], user);
+  }
+}
+
 rboolean
 r_strv_contains (rchar * const * strv, const rchar * str)
 {

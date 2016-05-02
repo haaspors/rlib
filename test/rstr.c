@@ -637,6 +637,33 @@ RTEST (rstrv, join, RTEST_FAST)
 }
 RTEST_END;
 
+static void
+charwise_add (rpointer data, rpointer user)
+{
+  rchar * str, * add = user;
+  for (str = data; *str != 0; str++)
+    *str += *add;
+}
+
+RTEST (rstrv, foreach, RTEST_FAST)
+{
+  rchar ** strv;
+  rchar add = 2;
+
+  r_assert_cmpptr ((strv = r_strv_new (foo, bar, NULL)), !=, NULL);
+  r_assert ( r_strv_contains (strv, foo));
+  r_assert ( r_strv_contains (strv, bar));
+  r_assert (!r_strv_contains (strv, "hqq"));
+  r_assert (!r_strv_contains (strv, "dct"));
+  r_strv_foreach (strv, charwise_add, &add);
+  r_assert (!r_strv_contains (strv, foo));
+  r_assert (!r_strv_contains (strv, bar));
+  r_assert ( r_strv_contains (strv, "hqq"));
+  r_assert ( r_strv_contains (strv, "dct"));
+  r_strv_free (strv);
+}
+RTEST_END;
+
 RTEST (rstrv, contains, RTEST_FAST)
 {
   rchar ** strv;
