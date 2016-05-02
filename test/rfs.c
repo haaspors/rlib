@@ -46,6 +46,8 @@ RTEST (rfs, path_build, RTEST_FAST)
       R_DIR_SEP_STR); r_free (tmp);
   r_assert_cmpstr ((tmp = r_fs_path_build ("foo", "bar", NULL)), ==,
       "foo"R_DIR_SEP_STR"bar"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_fs_path_build ("foo/", "/bar", NULL)), ==,
+      "foo"R_DIR_SEP_STR"bar"); r_free (tmp);
 }
 RTEST_END;
 

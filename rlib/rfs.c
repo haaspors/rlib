@@ -80,6 +80,29 @@ r_fs_path_build (const rchar * first, ...)
   return ret;
 }
 
+static void
+r_fs_path_strip_dirsep (rpointer data, rpointer user)
+{
+  rchar * str = data;
+  rsize end;
+
+  if (R_UNLIKELY (str == NULL || *str == 0))
+    return;
+
+  end = r_strlen (str) - 1;
+  while (end > 0 && R_IS_DIR_SEP (str[end]))
+    str[end--] = 0;
+
+  /* user == first entry, which may have a leading dirsep! */
+  if (data != user) {
+    rsize beg = 0;
+
+    while (beg < end && R_IS_DIR_SEP (str[beg])) beg++;
+    if (beg > 0)
+      r_memmove (str, &str[beg], end - beg + 2);
+  }
+}
+
 rchar *
 r_fs_path_buildv (const rchar * first, va_list args)
 {
@@ -90,7 +113,8 @@ r_fs_path_buildv (const rchar * first, va_list args)
     return NULL;
 
   strv = r_strv_newv (first, args);
-  ret = r_fs_path_build_strv (strv);
+  r_strv_foreach (strv, r_fs_path_strip_dirsep, strv[0]);
+  ret = r_strv_join (strv, R_DIR_SEP_STR);
   r_strv_free (strv);
 
   return ret;
@@ -99,7 +123,14 @@ r_fs_path_buildv (const rchar * first, va_list args)
 rchar *
 r_fs_path_build_strv (rchar * const * strv)
 {
-  return r_strv_join (strv, R_DIR_SEP_STR);
+  rchar * ret;
+  rchar ** cpy = r_strv_copy (strv);
+  r_strv_foreach (cpy, r_fs_path_strip_dirsep, strv[0]);
+
+  ret = r_strv_join (cpy, R_DIR_SEP_STR);
+  r_strv_free (cpy);
+
+  return ret;
 }
 
 static const rchar *
