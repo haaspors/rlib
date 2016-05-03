@@ -45,6 +45,7 @@ R_API void r_mpint_init_copy (rmpint * dst, const rmpint * src);
 R_API void r_mpint_clear (rmpint * mpi);
 
 R_API ruint8 * r_mpint_to_binary (const rmpint * mpi, rsize * size);
+R_API rchar * r_mpint_to_str (const rmpint * mpi);
 
 #define r_mpint_iszero(mpi)       ((mpi)->dig_used == 0)
 #define r_mpint_iseven(mpi)       ((mpi)->dig_used > 0 && (((mpi)->data[0] & 1) == 0))

@@ -132,6 +132,27 @@ RTEST (rmpint, to_binary, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmpint, to_str, RTEST_FAST)
+{
+  rmpint a;
+  rchar * str;
+
+  r_assert_cmpptr (r_mpint_to_str (NULL), ==, NULL);
+
+  r_mpint_init (&a);
+  r_assert_cmpptr ((str = r_mpint_to_str (&a)), !=, NULL);
+  r_assert_cmpstr (str, ==, "");
+  r_mpint_clear (&a);
+  r_free (str);
+
+  r_mpint_init_str (&a, "0xfedcba98765432100123456789abcdef", NULL, 0);
+  r_assert_cmpptr ((str = r_mpint_to_str (&a)), !=, NULL);
+  r_assert_cmpstr (str, ==, "0xfedcba98765432100123456789abcdef");
+  r_mpint_clear (&a);
+  r_free (str);
+}
+RTEST_END;
+
 RTEST (rmpint, init_str, RTEST_FAST)
 {
   rmpint a;

@@ -197,6 +197,43 @@ r_mpint_to_binary (const rmpint * mpi, rsize * size)
   return ret;
 }
 
+rchar *
+r_mpint_to_str (const rmpint * mpi)
+{
+  rchar * ret;
+  const int base = 16;
+  const int bc = 4;
+  const rchar prefix[] = "0x";
+
+  /* This only supports base with power of two */
+  if (mpi != NULL) {
+    if ((ret = r_mem_new_n (rchar, 4 + mpi->dig_used * sizeof (rmpint_digit) * 2)) != NULL) {
+      rchar * ptr = ret;
+      if (R_LIKELY (mpi->dig_used > 0)) {
+        rsize j, i = mpi->dig_used;
+
+        ptr = r_stpcpy (ptr, prefix);
+        while (i-- > 0) {
+          rmpint_digit digit = r_mpint_get_digit (mpi, i);
+          for (j = sizeof (rmpint_digit) * 8; j > 0; j -= bc) {
+            ruint8 bits = (digit >> (j - bc)) & (base - 1);
+
+            if (bits <= 9)
+              *ptr++ = '0' + bits;
+            else
+              *ptr++ = 'a' - 10 + bits;
+          }
+        }
+      }
+      *ptr++ = 0;
+    }
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
 void
 r_mpint_zero (rmpint * mpi)
 {
