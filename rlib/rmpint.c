@@ -61,21 +61,21 @@ r_mpint_init_binary (rmpint * mpi, rconstpointer data, rsize size)
   dst = (ruint8 *)(rpointer)&mpi->data[digits - 1];
   switch (size % sizeof (rmpint_digit)) {
 #if 0 /*sizeof (rmpint_digit) >= 8*/
-    case 7: dst[sizeof (rmpint_digit) - 7] = *src++, size--;
-    case 6: dst[sizeof (rmpint_digit) - 6] = *src++, size--;
-    case 5: dst[sizeof (rmpint_digit) - 5] = *src++, size--;
-    case 4: dst[sizeof (rmpint_digit) - 4] = *src++, size--;
+    case 7: dst[sizeof (rmpint_digit) - 7] = *src++;
+    case 6: dst[sizeof (rmpint_digit) - 6] = *src++;
+    case 5: dst[sizeof (rmpint_digit) - 5] = *src++;
+    case 4: dst[sizeof (rmpint_digit) - 4] = *src++;
 #endif
 #if 1 /*sizeof (rmpint_digit) >= 4*/
-    case 3: dst[sizeof (rmpint_digit) - 3] = *src++, size--;
-    case 2: dst[sizeof (rmpint_digit) - 2] = *src++, size--;
+    case 3: dst[sizeof (rmpint_digit) - 3] = *src++;
+    case 2: dst[sizeof (rmpint_digit) - 2] = *src++;
 #endif
-    case 1: dst[sizeof (rmpint_digit) - 1] = *src++, size--;
+    case 1: dst[sizeof (rmpint_digit) - 1] = *src++;
   };
   dst -= sizeof (rmpint_digit);
-  while (size > 0) {
+  while (dst >= (ruint8 *)(rpointer)mpi->data) {
     r_memcpy (dst, src, sizeof (rmpint_digit));
-    size -= sizeof (rmpint_digit);
+    src -= sizeof (rmpint_digit);
     dst -= sizeof (rmpint_digit);
   }
 #endif
@@ -150,6 +150,51 @@ r_mpint_clear (rmpint * mpi)
 {
   r_free (mpi->data);
   r_memset (mpi, 0, sizeof (rmpint));
+}
+
+ruint8 *
+r_mpint_to_binary (const rmpint * mpi, rsize * size)
+{
+  ruint8 * ret;
+
+  if (R_LIKELY (mpi != NULL)) {
+    rsize len = mpi->dig_used * sizeof (rmpint_digit);
+
+    if ((ret = r_malloc (len)) != NULL) {
+      ruint8 * src, * dst = ret;
+
+#if R_BYTE_ORDER == R_LITTLE_ENDIAN
+      src = (ruint8 *)(rpointer)mpi->data;
+
+      while (len > 0 && src[len - 1] == 0)
+        len--;
+      while (len-- > 0)
+        *dst++ = src[len];
+#else
+      if (mpi->dig_used > 0) {
+        rsize i = 0;
+        src = (ruint8 *)(rpointer)&mpi->data[mpi->dig_used - 1];
+
+        while (i < sizeof (rmpint_digit) && src[i] == 0)
+          i++;
+        for (; i < sizeof (rmpint_digit); i++)
+          *dst++ = src[i];
+
+        if (mpi->dig_used > 1) {
+          for (i = mpi->dig_used - 2; i > 0; i--, dst += sizeof (rmpint_digit))
+            r_memcpy (dst, &mpi->data[i], sizeof (rmpint_digit));
+        }
+      }
+#endif
+
+      if (size != NULL)
+        *size = dst - ret;
+    }
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
 }
 
 void
