@@ -69,6 +69,9 @@ R_API void r_mpint_set_i64 (rmpint * mpi, rint64 value);
 R_API void r_mpint_set_u64 (rmpint * mpi, ruint64 value);
 #define r_mpint_get_digit(mpi, d) (mpi)->data[d]
 
+//R_API ruint32 r_mpint_clz (const rmpint * mpi);
+R_API ruint32 r_mpint_ctz (const rmpint * mpi);
+
 R_API int r_mpint_cmp (const rmpint * a, const rmpint * b);
 R_API int r_mpint_ucmp (const rmpint * a, const rmpint * b);
 

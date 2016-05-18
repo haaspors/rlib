@@ -770,3 +770,26 @@ RTEST (rmpint, expmod, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmpint, ctz, RTEST_FAST)
+{
+  rmpint a;
+  r_mpint_init (&a);
+
+  r_assert_cmpuint (r_mpint_ctz (&a), ==, 32);
+
+  r_mpint_set_u32 (&a, 1);
+  r_assert_cmpuint (r_mpint_ctz (&a), ==, 0);
+
+  r_mpint_set_u32 (&a, 65537);
+  r_assert_cmpuint (r_mpint_ctz (&a), ==, 0);
+
+  r_mpint_sub_u32 (&a, &a, 1);
+  r_assert_cmpuint (r_mpint_ctz (&a), ==, 16);
+
+  r_mpint_shl (&a, &a, 2 * sizeof (rmpint_digit) * 8);
+  r_assert_cmpuint (r_mpint_ctz (&a), ==, 16 + 2 * sizeof (rmpint_digit) * 8);
+
+  r_mpint_clear (&a);
+}
+RTEST_END;
+

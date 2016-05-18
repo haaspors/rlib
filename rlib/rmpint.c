@@ -271,6 +271,15 @@ r_mpint_set_u32 (rmpint * mpi, ruint32 value)
   mpi->sign = 0;
 }
 
+ruint32
+r_mpint_ctz (const rmpint * mpi)
+{
+  ruint16 i;
+
+  for (i = 0; i < mpi->dig_used && r_mpint_get_digit (mpi, i) == 0; i++);
+  return i * sizeof (rmpint_digit) * 8 + RUINT32_CTZ (r_mpint_get_digit (mpi, i));
+}
+
 int
 r_mpint_cmp (const rmpint * a, const rmpint * b)
 {
