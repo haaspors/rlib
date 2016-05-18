@@ -50,6 +50,7 @@ R_API rchar * r_mpint_to_str (const rmpint * mpi);
 #define r_mpint_iszero(mpi)       ((mpi)->dig_used == 0)
 #define r_mpint_iseven(mpi)       ((mpi)->dig_used > 0 && (((mpi)->data[0] & 1) == 0))
 #define r_mpint_isodd(mpi)        ((mpi)->dig_used > 0 && (((mpi)->data[0] & 1) == 1))
+#define r_mpint_isneg(mpi)        ((mpi)->dig_used > 0 && (mpi)->sign)
 #define r_mpint_digits_used(mpi)  (mpi)->dig_used
 #define r_mpint_bits_used(mpi)    ((ruint)((mpi)->dig_used > 0 ?              \
     (ruint)(((ruint)(mpi)->dig_used * sizeof (rmpint_digit) * 8) -            \
@@ -74,6 +75,8 @@ R_API ruint32 r_mpint_ctz (const rmpint * mpi);
 
 R_API int r_mpint_cmp (const rmpint * a, const rmpint * b);
 R_API int r_mpint_ucmp (const rmpint * a, const rmpint * b);
+R_API int r_mpint_cmp_i32 (const rmpint * a, rint32 b);
+R_API int r_mpint_ucmp_u32 (const rmpint * a, ruint32 b);
 
 R_API rboolean r_mpint_add (rmpint * dst, const rmpint * a, const rmpint * b);
 R_API rboolean r_mpint_add_i32 (rmpint * dst, const rmpint * a, rint32 b);

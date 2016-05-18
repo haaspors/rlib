@@ -283,18 +283,19 @@ r_mpint_ctz (const rmpint * mpi)
 int
 r_mpint_cmp (const rmpint * a, const rmpint * b)
 {
+  int sa, sb;
+
   if (R_UNLIKELY (a == b)) return 0;
   if (R_UNLIKELY (a == NULL)) return -1;
-  if (R_UNLIKELY (b == NULL)) return -1;
+  if (R_UNLIKELY (b == NULL)) return 1;
 
+  if ((sa = r_mpint_isneg (a)) != (sb = r_mpint_isneg (b)))
+    return sb - sa;
   if (a->dig_used != b->dig_used)
     return (int)a->dig_used - (int)b->dig_used;
 
   if (a->dig_used > 0) {
     ruint16 i;
-
-    if (a->sign != b->sign)
-      return (int)a->sign - (int)b->sign;
 
     for (i = a->dig_used; i > 0; i--) {
       rint64 c = (rint64)a->data[i - 1] - (rint64)b->data[i - 1];
@@ -310,7 +311,7 @@ r_mpint_ucmp (const rmpint * a, const rmpint * b)
 {
   if (R_UNLIKELY (a == b)) return 0;
   if (R_UNLIKELY (a == NULL)) return -1;
-  if (R_UNLIKELY (b == NULL)) return -1;
+  if (R_UNLIKELY (b == NULL)) return 1;
 
   if (a->dig_used != b->dig_used)
     return (int)a->dig_used - (int)b->dig_used;
@@ -323,6 +324,47 @@ r_mpint_ucmp (const rmpint * a, const rmpint * b)
         return c > 0 ? 1 : -1;
     }
   }
+  return 0;
+}
+
+int
+r_mpint_cmp_i32 (const rmpint * a, rint32 b)
+{
+  rmpint mpi;
+  rmpint_digit digit;
+
+  mpi.dig_alloc = 0;
+  mpi.data = &digit;
+  if (b > 0) {
+    mpi.sign = 0;
+    mpi.dig_used = 1;
+    digit = (rmpint_digit)b;
+  } else if (b < 0) {
+    mpi.sign = 1;
+    mpi.dig_used = 1;
+    digit = (rmpint_digit)-b;
+  } else {
+    mpi.sign = 0;
+    mpi.dig_used = 0;
+    digit = (rmpint_digit)b;
+  }
+
+  return r_mpint_cmp (a, &mpi);
+}
+
+int
+r_mpint_ucmp_u32 (const rmpint * a, ruint32 b)
+{
+  rint64 c;
+
+  if (R_UNLIKELY (a == NULL)) return -1;
+
+  if (b == 0)
+    return (int)a->dig_used;
+  if (a->dig_used != 1)
+    return (int)a->dig_used - 1;
+  if ((c = (rint64)a->data[0] - (rint64)b) != 0)
+    return c > 0 ? 1 : -1;
   return 0;
 }
 

@@ -243,6 +243,97 @@ RTEST (rmpint, init_str, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmpint, cmp, RTEST_FAST)
+{
+  rmpint a, b;
+
+  r_assert_cmpint (r_mpint_cmp (NULL, NULL), ==, 0);
+  r_assert_cmpint (r_mpint_cmp (NULL, &b), <, 0);
+  r_assert_cmpint (r_mpint_cmp (&a, NULL), >, 0);
+  r_assert_cmpint (r_mpint_ucmp (NULL, NULL), ==, 0);
+  r_assert_cmpint (r_mpint_ucmp (NULL, &b), <, 0);
+  r_assert_cmpint (r_mpint_ucmp (&a, NULL), >, 0);
+
+  r_mpint_init (&a);
+  r_mpint_init (&b);
+
+  r_assert_cmpint (r_mpint_cmp (&a, &b), ==, 0);
+  r_assert_cmpint (r_mpint_ucmp (&a, &b), ==, 0);
+
+  r_mpint_set_u32 (&a, 1);
+  r_assert_cmpint (r_mpint_cmp (&a, &b), >, 0);
+  r_assert_cmpint (r_mpint_ucmp (&a, &b), >, 0);
+
+  r_mpint_set_i32 (&b, -1);
+  r_assert_cmpint (r_mpint_cmp (&a, &b), >, 0);
+  r_assert_cmpint (r_mpint_ucmp (&a, &b), ==, 0);
+
+  r_mpint_set_i32 (&b, -2);
+  r_assert_cmpint (r_mpint_cmp (&a, &b), >, 0);
+  r_assert_cmpint (r_mpint_ucmp (&a, &b), <, 0);
+
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+
+  r_mpint_init_str (&a, "0xfedcba98765432100123456789abcdef", NULL, 0);
+  r_mpint_init_copy (&b, &a);
+  r_assert_cmpint (r_mpint_cmp (&a, &b), ==, 0);
+  r_assert_cmpint (r_mpint_ucmp (&a, &b), ==, 0);
+
+  b.sign = 1;
+  r_assert (r_mpint_isneg (&b));
+  r_assert_cmpint (r_mpint_cmp (&a, &b), >, 0);
+  r_assert_cmpint (r_mpint_ucmp (&a, &b), ==, 0);
+
+  r_mpint_clear (&b);
+  r_mpint_init_str (&b, "0xedcba987542013589abcde", NULL, 0);
+  r_assert_cmpint (r_mpint_cmp (&a, &b), >, 0);
+  r_assert_cmpint (r_mpint_ucmp (&a, &b), >, 0);
+
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+}
+RTEST_END;
+
+RTEST (rmpint, cmp_x32, RTEST_FAST)
+{
+  rmpint a;
+
+  r_assert_cmpint (r_mpint_cmp_i32 (NULL, 0), <, 0);
+  r_assert_cmpint (r_mpint_ucmp_u32 (NULL, 0), <, 0);
+
+  r_mpint_init (&a);
+  r_assert_cmpint (r_mpint_cmp_i32 (&a, 0), ==, 0);
+  r_assert_cmpint (r_mpint_ucmp_u32 (&a, 0), ==, 0);
+
+  r_mpint_set_u32 (&a, 1);
+  r_assert_cmpint (r_mpint_cmp_i32 (&a, 0), >, 0);
+  r_assert_cmpint (r_mpint_cmp_i32 (&a, -1), >, 0);
+  r_assert_cmpint (r_mpint_cmp_i32 (&a, 1), ==, 0);
+  r_assert_cmpint (r_mpint_ucmp_u32 (&a, 0), >, 0);
+
+  r_mpint_set_i32 (&a, -1);
+  r_assert_cmpint (r_mpint_cmp_i32 (&a, 0), <, 0);
+  r_assert_cmpint (r_mpint_cmp_i32 (&a, 1), <, 0);
+  r_assert_cmpint (r_mpint_cmp_i32 (&a, -1), ==, 0);
+  r_assert_cmpint (r_mpint_ucmp_u32 (&a, 0), >, 0);
+  r_assert_cmpint (r_mpint_ucmp_u32 (&a, 1), ==, 0);
+
+  r_mpint_clear (&a);
+
+  r_mpint_init_str (&a, "0xfedcba98765432100123456789abcdef", NULL, 0);
+  r_assert_cmpint (r_mpint_cmp_i32 (&a, 45653456), >, 0);
+  r_assert_cmpint (r_mpint_ucmp_u32 (&a, 45653456), >, 0);
+
+  a.sign = 1;
+  r_assert (r_mpint_isneg (&a));
+  r_assert_cmpint (r_mpint_cmp_i32 (&a, 45653456), <, 0);
+  r_assert_cmpint (r_mpint_ucmp_u32 (&a, 45653456), >, 0);
+
+  r_mpint_clear (&a);
+}
+RTEST_END;
+
 RTEST (rmpint, add, RTEST_FAST)
 {
   rmpint a, b, sum;
