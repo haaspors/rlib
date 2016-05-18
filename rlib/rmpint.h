@@ -27,6 +27,7 @@
 R_BEGIN_DECLS
 
 #define RMPINT_DEF_DIGITS     64
+#define RMPINT_DEF_ISPRIME_T  8
 
 typedef ruint32         rmpint_digit;
 typedef ruint64         rmpint_word;
@@ -51,6 +52,10 @@ R_API rchar * r_mpint_to_str (const rmpint * mpi);
 #define r_mpint_iseven(mpi)       ((mpi)->dig_used > 0 && (((mpi)->data[0] & 1) == 0))
 #define r_mpint_isodd(mpi)        ((mpi)->dig_used > 0 && (((mpi)->data[0] & 1) == 1))
 #define r_mpint_isneg(mpi)        ((mpi)->dig_used > 0 && (mpi)->sign)
+
+#define r_mpint_isprime(mpi)      r_mpint_isprime_t (mpi, RMPINT_DEF_ISPRIME_T)
+R_API rboolean r_mpint_isprime_t (const rmpint * mpi, ruint t);
+
 #define r_mpint_digits_used(mpi)  (mpi)->dig_used
 #define r_mpint_bits_used(mpi)    ((ruint)((mpi)->dig_used > 0 ?              \
     (ruint)(((ruint)(mpi)->dig_used * sizeof (rmpint_digit) * 8) -            \

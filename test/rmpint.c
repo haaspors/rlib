@@ -886,3 +886,44 @@ RTEST (rmpint, ctz, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmpint, isprime, RTEST_FAST)
+{
+  rmpint a;
+
+  r_mpint_init (&a);
+  r_assert (!r_mpint_isprime (&a));
+
+  r_mpint_set_u32 (&a, 1);
+  r_assert (!r_mpint_isprime (&a));
+
+  r_mpint_set_u32 (&a, 2);
+  r_assert (r_mpint_isprime (&a));
+
+  r_mpint_set_u32 (&a, 42);
+  r_assert (!r_mpint_isprime (&a));
+
+  r_mpint_set_u32 (&a, 1201);
+  r_assert (r_mpint_isprime (&a));
+
+  r_mpint_set_u32 (&a, 65537);
+  r_assert (r_mpint_isprime (&a));
+
+  r_assert (r_mpint_mul (&a, &a, &a));
+  r_assert (!r_mpint_isprime (&a));
+  r_mpint_clear (&a);
+
+  /* Fibonacci prime */
+  r_mpint_init_str (&a, "19134702400093278081449423917", NULL, 10);
+  r_assert (r_mpint_isprime (&a));
+  r_mpint_clear (&a);
+
+  r_mpint_init_str (&a, "9134702400093278081449423917", NULL, 10);
+  r_assert (!r_mpint_isprime (&a));
+  r_mpint_clear (&a);
+
+  r_mpint_init_str (&a, "22584751787583336797527561822649328254745329", NULL, 10);
+  r_assert (r_mpint_isprime (&a));
+  r_mpint_clear (&a);
+}
+RTEST_END;
+
