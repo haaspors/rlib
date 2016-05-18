@@ -468,7 +468,7 @@ r_mpint_sub_u32 (rmpint * dst, const rmpint * a, ruint32 b)
   rmpint mpi;
   mpi.dig_alloc = 0;
   mpi.dig_used = 1;
-  mpi.sign = 1;
+  mpi.sign = 0;
   mpi.data = &b;
 
   return r_mpint_sub (dst, a, &mpi);

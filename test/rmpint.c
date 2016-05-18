@@ -303,6 +303,12 @@ RTEST (rmpint, sub, RTEST_FAST)
 
   r_mpint_init_str (&diff, "0x3560356035603560", NULL, 16);
   r_assert_cmpint (r_mpint_cmp (&a, &diff), ==, 0);
+  r_mpint_clear (&diff);
+
+  r_assert (r_mpint_sub_u32 (&a, &a, 1));
+  r_mpint_init_str (&diff, "0x356035603560355f", NULL, 16);
+  r_assert_cmpint (r_mpint_cmp (&a, &diff), ==, 0);
+  r_mpint_clear (&diff);
 
   r_mpint_clear (&a);
   r_mpint_clear (&b);
