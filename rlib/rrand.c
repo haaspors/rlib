@@ -19,6 +19,77 @@
 #include "config.h"
 #include <rlib/rprng-private.h>
 #include <rlib/rmem.h>
+#include <rlib/rtime.h>
+#ifdef R_OS_UNIX
+#include <stdio.h>
+#include <errno.h>
+#endif
+
+ruint64
+r_rand_entropy_u64 (void)
+{
+  ruint64 ret;
+#if defined (R_OS_WIN32)
+  HCRYPTPROV hCryptProv = NULL;
+
+  if (CryptAcquireContext (&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0)) {
+    BOOL res = CryptGenRandom (hCryptProv, sizeof (ret), (BYTE *)&ret);
+
+    CryptReleaseContext (hCryptProv, 0);
+    if (res)
+      return ret;
+  }
+#elif defined (R_OS_UNIX)
+  FILE * devuranad;
+  size_t res;
+
+  do {
+    devuranad = fopen ("/dev/urandom", "rb");
+  } while (R_UNLIKELY (devuranad == NULL && errno == EINTR));
+
+  do {
+    res = fread (&ret, sizeof (ret), 1, devuranad);
+  } while (R_UNLIKELY (errno == EINTR));
+
+  if (res == 1)
+    return ret;
+#endif
+
+  return r_time_get_ts_monotonic ();
+}
+
+ruint32
+r_rand_entropy_u32 (void)
+{
+  ruint32 ret;
+#if defined (R_OS_WIN32)
+  HCRYPTPROV hCryptProv = NULL;
+
+  if (CryptAcquireContext (&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0)) {
+    BOOL res = CryptGenRandom (hCryptProv, sizeof (ret), (BYTE *)&ret);
+
+    CryptReleaseContext (hCryptProv, 0);
+    if (res)
+      return ret;
+  }
+#elif defined (R_OS_UNIX)
+  FILE * devuranad;
+  size_t res;
+
+  do {
+    devuranad = fopen ("/dev/urandom", "rb");
+  } while (R_UNLIKELY (devuranad == NULL && errno == EINTR));
+
+  do {
+    res = fread (&ret, sizeof (ret), 1, devuranad);
+  } while (R_UNLIKELY (errno == EINTR));
+
+  if (res == 1)
+    return ret;
+#endif
+
+  return (ruint32)(r_time_get_ts_monotonic () & RUINT32_MAX);
+}
 
 RPrng *
 r_prng_new (RPrngGetFunc func, rsize size)

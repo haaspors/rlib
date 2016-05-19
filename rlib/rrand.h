@@ -28,6 +28,9 @@
 
 R_BEGIN_DECLS
 
+R_API ruint64 r_rand_entropy_u64 (void);
+R_API ruint32 r_rand_entropy_u32 (void);
+
 #define r_rand_std_srand(seed)    srand (seed)
 #define r_rand_std_rand()         rand ()
 

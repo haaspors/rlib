@@ -18,7 +18,6 @@
 
 #include "config.h"
 #include <rlib/rprng-private.h>
-#include <rlib/rtime.h>
 
 #define R_PRNG_KISS_X(prng) (prng)->data.u64[0]
 #define R_PRNG_KISS_Y(prng) (prng)->data.u64[1]
@@ -57,10 +56,10 @@ r_prng_kiss_get (RPrng * prng)
 RPrng *
 r_prng_new_kiss (void)
 {
-  ruint64 x = r_time_get_ts_monotonic ();
-  ruint64 y = r_time_get_ts_monotonic () * 69069;
-  ruint64 c = r_time_get_uptime ();
-  ruint64 z = r_time_get_ts_monotonic ();
+  ruint64 x = r_rand_entropy_u64 ();
+  ruint64 y = r_rand_entropy_u64 () * 69069;
+  ruint64 c = r_rand_entropy_u64 ();
+  ruint64 z = r_rand_entropy_u64 ();
 
   return r_prng_new_kiss_with_seed (x, y, (z * z), (c * c));
 }
