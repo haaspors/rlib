@@ -47,6 +47,10 @@ R_API ruint64 r_rand_prng_get (RPrng * prng);
 R_API RPrng * r_prng_new_kiss (void) R_ATTR_MALLOC;
 R_API RPrng * r_prng_new_kiss_with_seed (ruint64 x, ruint64 y, ruint64 z,
     ruint64 c) R_ATTR_MALLOC;
+R_API RPrng * r_prng_new_mt (void) R_ATTR_MALLOC;
+R_API RPrng * r_prng_new_mt_with_seed (ruint64 seed) R_ATTR_MALLOC;
+R_API RPrng * r_prng_new_mt_with_seed_array (const ruint64 * array,
+    rsize size) R_ATTR_MALLOC;
 
 R_END_DECLS
 
