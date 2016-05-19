@@ -245,6 +245,8 @@ r_mpint_zero (rmpint * mpi)
 void
 r_mpint_set (rmpint * mpi, const rmpint * b)
 {
+  if (R_UNLIKELY (mpi == b)) return;
+
   mpi->sign = b->sign;
   mpi->dig_used = b->dig_used;
   r_mpint_ensure_digits (mpi, b->dig_used);

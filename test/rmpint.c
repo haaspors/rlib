@@ -27,6 +27,8 @@ RTEST (rmpint, init_and_set, RTEST_FAST)
   r_mpint_set (&a, &b);
   r_assert_cmpint (r_mpint_cmp (&a, &b), ==, 0);
   r_mpint_clear (&a);
+
+  r_mpint_set (&b, &b);
   r_mpint_clear (&b);
 }
 RTEST_END;
