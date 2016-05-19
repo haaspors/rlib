@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -23,20 +23,27 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rref.h>
 #include <stdlib.h>
 
 R_BEGIN_DECLS
 
-#define r_rand_std_srand(time)    srand (time)
+#define r_rand_std_srand(seed)    srand (seed)
 #define r_rand_std_rand()         rand ()
 
 typedef struct _RPrng RPrng;
 
-R_API RPrng * r_rand_prng_new (void) R_ATTR_MALLOC;
-R_API RPrng * r_rand_prng_new_with_seed (ruint64 x, ruint64 y, ruint64 z,
-    ruint64 c) R_ATTR_MALLOC;
-R_API void r_rand_prng_free (RPrng * prng);
+#define r_rand_prng_new           r_prng_new_kiss
+#define r_rand_prng_ref           r_ref_ref
+#define r_rand_prng_unref         r_ref_unref
+
 R_API ruint64 r_rand_prng_get (RPrng * prng);
+
+
+/* Spesific PRNG implementations */
+R_API RPrng * r_prng_new_kiss (void) R_ATTR_MALLOC;
+R_API RPrng * r_prng_new_kiss_with_seed (ruint64 x, ruint64 y, ruint64 z,
+    ruint64 c) R_ATTR_MALLOC;
 
 R_END_DECLS
 

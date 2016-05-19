@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015-2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -15,27 +15,33 @@
  * License along with this library.
  * See the COPYING file at the root of the source repository.
  */
+#ifndef __R_PRNG_PRIV_H__
+#define __R_PRNG_PRIV_H__
 
-#include "config.h"
-#include <rlib/rprng-private.h>
-#include <rlib/rmem.h>
+#if !defined(RLIB_COMPILATION)
+#error "rprng-private.h should only be used internally in rlib!"
+#endif
 
-RPrng *
-r_prng_new (RPrngGetFunc func, rsize size)
-{
-  RPrng * ret;
+#include <rlib/rrand.h>
 
-  if ((ret = r_malloc (sizeof (RPrng) + size)) != NULL) {
-    r_ref_init (ret, r_free);
-    ret->get = func;
-  }
+R_BEGIN_DECLS
 
-  return ret;
-}
+typedef ruint64 (*RPrngGetFunc) (RPrng * prng);
 
-ruint64
-r_rand_prng_get (RPrng * prng)
-{
-  return prng->get (prng);
-}
+struct _RPrng {
+  RRef ref;
+  RPrngGetFunc get;
+  union {
+    ruint8    u8 [0];
+    ruint16   u16[0];
+    ruint32   u32[0];
+    ruint64   u64[0];
+  } data;
+};
+
+R_API_HIDDEN RPrng * r_prng_new (RPrngGetFunc get, rsize size);
+
+R_END_DECLS
+
+#endif /* __R_PRNG_PRIV_H__ */
 

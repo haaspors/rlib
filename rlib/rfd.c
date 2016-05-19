@@ -70,7 +70,7 @@ r_fd_create_rand_filname (const rchar * dir,
     r[i] = candidates[r_rand_prng_get (prng) % cands];
   r[6] = 0;
 
-  r_rand_prng_free (prng);
+  r_rand_prng_unref (prng);
 
   name = r_strprintf ("%s%s%s", prefix, r, suffix);
   file = r_fs_path_build (dir, name, NULL);
