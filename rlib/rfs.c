@@ -401,3 +401,49 @@ r_fs_test_exec_access (const rchar * path)
 #endif
 }
 
+rboolean
+r_fs_mkdir (const rchar * path, int mode)
+{
+#if defined (R_OS_WIN32)
+  rboolean ret;
+  runichar2 * upath;
+
+  (void) mode;
+
+  if ((upath = r_utf8_to_utf16 (path, -1, NULL, NULL, NULL)) != NULL) {
+    ret = _wmkdir (upath) == 0;
+    r_free (upath);
+  } else {
+    ret = FALSE;
+  }
+
+  return ret;
+#elif defined (R_OS_UNIX)
+  return mkdir (path, mode) == 0;
+#else
+  (void) path;
+  (void) mode;
+  return FALSE;
+#endif
+}
+
+rboolean
+r_fs_mkdir_full (const rchar * path, int mode)
+{
+  rchar * parent;
+  rboolean ret;
+
+  if (R_UNLIKELY (path == NULL))
+    return FALSE;
+  if ((path[0] == '.' || R_IS_DIR_SEP (path[0])) && path[1] == 0)
+    return TRUE;
+  if (r_fs_test_is_directory (path))
+    return TRUE;
+
+  parent = r_fs_path_dirname (path);
+  ret = r_fs_mkdir_full (parent, mode);
+  r_free (parent);
+
+  return ret ? r_fs_mkdir (path, mode) : FALSE;
+}
+

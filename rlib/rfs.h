@@ -71,6 +71,9 @@ R_API rboolean r_fs_test_read_access (const rchar * path);
 R_API rboolean r_fs_test_write_access (const rchar * path);
 R_API rboolean r_fs_test_exec_access (const rchar * path);
 
+R_API rboolean r_fs_mkdir (const rchar * path, int mode);
+R_API rboolean r_fs_mkdir_full (const rchar * path, int mode);
+
 R_END_DECLS
 
 #endif /* __R_FS_H__ */

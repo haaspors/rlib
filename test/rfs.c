@@ -96,3 +96,28 @@ RTEST (rfs, test, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rfs, mkdir, RTEST_FAST | RTEST_SYSTEM)
+{
+  rchar * tmpdir, * subdir;
+  r_assert_cmpptr ((tmpdir = r_fs_path_new_tmpfile ()), !=, NULL);
+
+  r_assert (!r_fs_test_exists (tmpdir));
+  r_assert ( r_fs_mkdir (tmpdir, 0777));
+  r_assert ( r_fs_test_exists (tmpdir));
+  r_assert ( r_fs_test_is_directory (tmpdir));
+
+  r_free (tmpdir);
+  r_assert_cmpptr ((tmpdir = r_fs_path_new_tmpfile ()), !=, NULL);
+
+  r_assert_cmpptr ((subdir = r_fs_path_build (tmpdir, "foo", "bar", NULL)), !=, NULL);
+  r_assert (!r_fs_mkdir (subdir, 0777));
+  r_assert (!r_fs_test_exists (tmpdir));
+  r_assert (!r_fs_test_exists (subdir));
+  r_assert ( r_fs_mkdir_full (subdir, 0777));
+  r_assert ( r_fs_test_exists (tmpdir));
+  r_assert ( r_fs_test_exists (subdir));
+  r_free (tmpdir);
+  r_free (subdir);
+}
+RTEST_END;
+
