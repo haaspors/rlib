@@ -64,3 +64,35 @@ RTEST (rfs, get_tmp_dir, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rfs, test, RTEST_FAST | RTEST_SYSTEM)
+{
+  rchar * exe;
+
+  r_assert_cmpptr ((exe = r_proc_get_exe_path ()), !=, NULL);
+
+  r_assert ( r_fs_test_exists (exe));
+  r_assert ( r_fs_test_is_regular (exe));
+  r_assert (!r_fs_test_is_directory (exe));
+  r_assert (!r_fs_test_is_device (exe));
+  r_assert (!r_fs_test_is_symlink (exe));
+
+  r_assert ( r_fs_test_read_access (exe));
+  r_assert ( r_fs_test_write_access (exe));
+  r_assert ( r_fs_test_exec_access (exe));
+
+  r_free (exe);
+
+#ifdef R_OS_UNIX
+  r_assert ( r_fs_test_exists ("/dev/random"));
+  r_assert (!r_fs_test_is_regular ("/dev/random"));
+  r_assert (!r_fs_test_is_directory ("/dev/random"));
+  r_assert ( r_fs_test_is_device ("/dev/random"));
+  r_assert (!r_fs_test_is_symlink ("/dev/random"));
+
+  r_assert ( r_fs_test_read_access ("/dev/random"));
+  r_assert ( r_fs_test_write_access ("/dev/random"));
+  r_assert (!r_fs_test_exec_access ("/dev/random"));
+#endif
+}
+RTEST_END;
+

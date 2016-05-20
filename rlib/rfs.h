@@ -56,6 +56,17 @@ R_API rchar * r_fs_path_build_strv (rchar * const * strv) R_ATTR_MALLOC;
 R_API const rchar * r_fs_get_tmp_dir (void);
 R_API rchar * r_fs_get_cur_dir (void) R_ATTR_MALLOC;
 
+R_API rboolean r_fs_test_exists (const rchar * path);
+
+R_API rboolean r_fs_test_is_directory (const rchar * path);
+R_API rboolean r_fs_test_is_regular (const rchar * path);
+R_API rboolean r_fs_test_is_device (const rchar * path);
+R_API rboolean r_fs_test_is_symlink (const rchar * path);
+
+R_API rboolean r_fs_test_read_access (const rchar * path);
+R_API rboolean r_fs_test_write_access (const rchar * path);
+R_API rboolean r_fs_test_exec_access (const rchar * path);
+
 R_END_DECLS
 
 #endif /* __R_FS_H__ */

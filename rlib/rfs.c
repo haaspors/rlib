@@ -20,11 +20,12 @@
 #include <rlib/rfs.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
 #include <rlib/runicode.h>
 #include <windows.h>
-#else
+#elif defined (R_OS_UNIX)
 #include <unistd.h>
+#include <sys/stat.h>
 #include <errno.h>
 #endif
 
@@ -160,7 +161,7 @@ r_fs_get_cur_dir (void)
 {
   rchar * ret = NULL;
 
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
   runichar2 dummy[2], * curdir;
   int len = GetCurrentDirectoryW (2, dummy);
 
@@ -168,7 +169,7 @@ r_fs_get_cur_dir (void)
   if (GetCurrentDirectoryW (len, curdir) == len - 1)
     ret = r_utf16_to_utf8 (curdir, -1, NULL, NULL, NULL);
   r_free (curdir);
-#else
+#elif defined (R_OS_UNIX)
   rsize maxlen = 1024;
   rchar * curdir, * tmp;
 
@@ -188,5 +189,179 @@ r_fs_get_cur_dir (void)
 #endif
 
   return ret;
+}
+
+#ifdef R_OS_WIN32
+static DWORD
+r_fs_get_file_attributes (const rchar * path)
+{
+  DWORD ret;
+  runichar2 * upath;
+
+  if ((upath = r_utf8_to_utf16 (path, -1, NULL, NULL, NULL)) != NULL) {
+    ret = GetFileAttributesW (upath);
+    r_free (upath);
+  } else {
+    ret = INVALID_FILE_ATTRIBUTES;
+  }
+
+  return ret;
+}
+
+/* FIXME: this is not tested manually nor compiled at all */
+static DWORD
+r_fs_get_file_access (const rchar * path, DWORD req)
+{
+  DWORD ret = 0;
+  runichar2 * upath;
+
+  if ((upath = r_utf8_to_utf16 (path, -1, NULL, NULL, NULL)) != NULL) {
+    DWORD len = 0;
+    HANDLE token = NULL;
+
+    if (OpenThreadToken (GetCurrentThread (), TOKEN_QUERY, TRUE, token)) {
+      PSECURITY_DESCRIPTOR secdesc;
+      if (GetFileSecurityW (upath,
+            OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            NULL, len, &len) &&
+          (secdesc = r_mem_new (SECURITY_DESCRIPTOR)) != NULL) {
+        GENERIC_MAPPING mapping = { 0xFFFFFFFF };
+        PRIVILEGE_SET privset = { 0 };
+        DWORD privsetlen = sizeof (PRIVILEGE_SET);
+        BOOL result = FALSE;
+
+        mapping.GenericRead = FILE_GENERIC_READ;
+        mapping.GenericWrite = FILE_GENERIC_WRITE;
+        mapping.GenericExecute = FILE_GENERIC_EXECUTE;
+        mapping.GenericAll = FILE_ALL_ACCESS;
+
+        MapGenericMask (&req, &mapping);
+        AccessCheck (secdesc, token, req, &mapping, &privset, &privsetlen,
+            &ret, &result);
+
+        r_free (secdesc);
+      }
+
+      CloseHandle (token);
+    }
+
+    r_free (upath);
+  }
+
+  return ret;
+}
+#endif
+
+rboolean
+r_fs_test_exists (const rchar * path)
+{
+#if defined (R_OS_WIN32)
+  return r_fs_get_file_attributes (path) != INVALID_FILE_ATTRIBUTES;
+#elif defined (R_OS_UNIX)
+  return access (path, F_OK) == 0;
+#else
+  (void) path;
+  return FALSE;
+#endif
+}
+
+rboolean
+r_fs_test_is_directory (const rchar * path)
+{
+#if defined (R_OS_WIN32)
+  DWORD a = r_fs_get_file_attributes (path);
+  return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
+#elif defined (R_OS_UNIX)
+  struct stat s;
+  return (stat (path, &s) == 0) && S_ISDIR (s.st_mode);
+#else
+  (void) path;
+  return FALSE;
+#endif
+}
+
+rboolean
+r_fs_test_is_regular (const rchar * path)
+{
+#if defined (R_OS_WIN32)
+  DWORD a = r_fs_get_file_attributes (path);
+  return (a & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_DEVICE)) == 0;
+#elif defined (R_OS_UNIX)
+  struct stat s;
+  return (stat (path, &s) == 0) && S_ISREG (s.st_mode);
+#else
+  (void) path;
+  return FALSE;
+#endif
+}
+
+rboolean
+r_fs_test_is_device (const rchar * path)
+{
+#if defined (R_OS_WIN32)
+  DWORD a = r_fs_get_file_attributes (path);
+  return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DEVICE);
+#elif defined (R_OS_UNIX)
+  struct stat s;
+  return (stat (path, &s) == 0) && (S_ISCHR (s.st_mode) || S_ISBLK (s.st_mode));
+#else
+  (void) path;
+  return FALSE;
+#endif
+}
+
+rboolean
+r_fs_test_is_symlink (const rchar * path)
+{
+#if defined (R_OS_WIN32)
+  /* FIXME: Symlinks on windows? */
+  (void) path;
+  return FALSE;
+#elif defined (R_OS_UNIX)
+  struct stat s;
+  return (lstat (path, &s) == 0) && S_ISLNK (s.st_mode);
+#else
+  (void) path;
+  return FALSE;
+#endif
+}
+
+rboolean
+r_fs_test_read_access (const rchar * path)
+{
+#if defined (R_OS_WIN32)
+  return r_fs_get_file_access (path, GENERIC_READ) != 0;
+#elif defined (R_OS_UNIX)
+  return access (path, R_OK) == 0;
+#else
+  (void) path;
+  return FALSE;
+#endif
+}
+
+rboolean
+r_fs_test_write_access (const rchar * path)
+{
+#if defined (R_OS_WIN32)
+  return r_fs_get_file_access (path, GENERIC_WRITE) != 0;
+#elif defined (R_OS_UNIX)
+  return access (path, W_OK) == 0;
+#else
+  (void) path;
+  return FALSE;
+#endif
+}
+
+rboolean
+r_fs_test_exec_access (const rchar * path)
+{
+#if defined (R_OS_WIN32)
+  return r_fs_get_file_access (path, GENERIC_EXECUTE) != 0;
+#elif defined (R_OS_UNIX)
+  return access (path, X_OK) == 0;
+#else
+  (void) path;
+  return FALSE;
+#endif
 }
 
