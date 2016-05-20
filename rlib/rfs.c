@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/rfs.h>
 #include <rlib/rstr.h>
+#include <rlib/rrand.h>
 #include <rlib/rthreads.h>
 #if defined (R_OS_WIN32)
 #include <rlib/runicode.h>
@@ -28,6 +29,8 @@
 #include <sys/stat.h>
 #include <errno.h>
 #endif
+
+#define RFS_PATH_RAND_MAX_TRIES    1024
 
 rchar *
 r_fs_path_basename (const rchar * file)
@@ -132,6 +135,39 @@ r_fs_path_build_strv (rchar * const * strv)
   r_strv_free (cpy);
 
   return ret;
+}
+
+rchar *
+r_fs_path_new_tmpname_full (const rchar * dir,
+    const rchar * prefix, const rchar * suffix)
+{
+  static const rchar candidates[] =
+    "0123456789abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  static const rsize cands = sizeof (candidates) - 1;
+  rchar * name, * file, * r = r_alloca (7);
+  RPrng * prng = r_rand_prng_new ();
+  int tries = 0;
+
+  if (dir == NULL) dir = r_fs_get_tmp_dir ();
+  if (prefix == NULL) prefix = "";
+  if (suffix == NULL) suffix = "";
+
+  r[6] = 0;
+  file = NULL;
+
+  do {
+    int i;
+    for (i = 0; i < 6; i++)
+      r[i] = candidates[r_rand_prng_get (prng) % cands];
+
+    r_free (file);
+    name = r_strprintf ("%s%s%s", prefix, r, suffix);
+    file = r_fs_path_build (dir, name, NULL);
+    r_free (name);
+  } while (r_fs_test_exists (file) && ++tries < RFS_PATH_RAND_MAX_TRIES);
+
+  r_rand_prng_unref (prng);
+  return file;
 }
 
 static const rchar *

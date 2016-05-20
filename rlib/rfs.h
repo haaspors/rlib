@@ -53,6 +53,10 @@ R_API rchar * r_fs_path_build      (const rchar * first, ...) R_ATTR_MALLOC;
 R_API rchar * r_fs_path_buildv     (const rchar * first, va_list ap) R_ATTR_MALLOC;
 R_API rchar * r_fs_path_build_strv (rchar * const * strv) R_ATTR_MALLOC;
 
+#define r_fs_path_new_tmpfile() r_fs_path_new_tmpname_full (NULL, NULL, NULL)
+R_API rchar * r_fs_path_new_tmpname_full (const rchar * dir,
+    const rchar * prefix, const rchar * suffix) R_ATTR_MALLOC;
+
 R_API const rchar * r_fs_get_tmp_dir (void);
 R_API rchar * r_fs_get_cur_dir (void) R_ATTR_MALLOC;
 

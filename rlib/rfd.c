@@ -20,7 +20,6 @@
 #define _LARGEFILE64_SOURCE
 #include <rlib/rfd.h>
 #include <rlib/rfs.h>
-#include <rlib/rrand.h>
 #include <rlib/rstr.h>
 #if defined (R_OS_WIN32)
 #include <rlib/runicode.h>
@@ -55,30 +54,6 @@ r_fd_open (const rchar * file, int flags, int mode)
   return fd;
 }
 
-static rchar *
-r_fd_create_rand_filname (const rchar * dir,
-    const rchar * prefix, const rchar * suffix)
-{
-  static const rchar candidates[] =
-    "0123456789abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  static const rsize cands = sizeof (candidates) - 1;
-  rchar * name, * file, * r = r_alloca (7);
-  int i;
-  RPrng * prng = r_rand_prng_new ();
-
-  for (i = 0; i < 6; i++)
-    r[i] = candidates[r_rand_prng_get (prng) % cands];
-  r[6] = 0;
-
-  r_rand_prng_unref (prng);
-
-  name = r_strprintf ("%s%s%s", prefix, r, suffix);
-  file = r_fs_path_build (dir, name, NULL);
-  r_free (name);
-
-  return file;
-}
-
 int
 r_fd_open_tmp (const rchar * dir, const rchar * pre, rchar ** path)
 {
@@ -89,25 +64,17 @@ int
 r_fd_open_tmp_full (const rchar * dir, const rchar * fileprefix,
     int flags, int mode, rchar ** path)
 {
-  rchar * file = NULL;
-  int fd, tries = 0;
+  rchar * file;
+  int fd = -1;
 
-  if (dir == NULL)
-    dir = r_fs_get_tmp_dir ();
-  if (fileprefix == NULL)
-    fileprefix = "";
-  flags |= O_CREAT|O_EXCL;
+  if ((file = r_fs_path_new_tmpname_full (dir, fileprefix, "")) != NULL) {
+    fd = r_fd_open (file, flags | O_CREAT | O_EXCL, mode);
 
-  do {
-    r_free (file);
-    file = r_fd_create_rand_filname (dir, fileprefix, "");
-    fd = r_fd_open (file, flags, mode);
-  } while (fd < 0 && errno == EEXIST && ++tries < 16);
-
-  if (path != NULL && fd >= 0)
-    *path = file;
-  else
-    r_free (file);
+    if (path != NULL && fd >= 0)
+      *path = file;
+    else
+      r_free (file);
+  }
 
   return fd;
 }
