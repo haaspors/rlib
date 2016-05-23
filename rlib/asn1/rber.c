@@ -165,7 +165,8 @@ r_asn1_ber_decoder_into (RAsn1BerDecoder * dec, RAsn1BinTLV * tlv)
 
   if (R_UNLIKELY (dec == NULL || tlv == NULL || tlv->value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
-  if (R_UNLIKELY (R_ASN1_BIN_TLV_ID_PC (tlv) != R_ASN1_ID_CONSTRUCTED))
+  if (R_UNLIKELY (R_ASN1_BIN_TLV_ID_PC (tlv) != R_ASN1_ID_CONSTRUCTED &&
+        !R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING)))
     return R_ASN1_DECODER_NOT_CONSTRUCTED;
 
   dec->stack = r_slist_prepend (dec->stack,
