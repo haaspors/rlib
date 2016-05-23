@@ -37,6 +37,20 @@ R_API int r_strncmp (const rchar * a, const rchar * b, rsize len);
 
 R_API rboolean r_str_has_prefix (const rchar * str, const rchar * prefix);
 R_API rboolean r_str_has_suffix (const rchar * str, const rchar * suffix);
+#define r_str_has_substring(str, sub) (r_str_idx_of_str (str, -1, sub, -1) >= 0)
+
+R_API rchar * r_strchr (const rchar * str, int c);
+R_API rchar * r_strstr (const rchar * str, const rchar * sub);
+R_API rchar * r_str_ptr_of_c (const rchar * str, rssize strsize, rchar c);
+R_API rchar * r_str_ptr_of_c_any (const rchar * str, rssize strsize,
+    const rchar * c, rssize chars);
+R_API rchar * r_str_ptr_of_str (const rchar * str, rssize strsize,
+    const rchar * sub, rssize subsize);
+R_API rssize r_str_idx_of_c (const rchar * str, rssize strsize, rchar c);
+R_API rssize r_str_idx_of_c_any (const rchar * str, rssize strsize,
+    const rchar * c, rssize chars);
+R_API rssize r_str_idx_of_str (const rchar * str, rssize strsize,
+    const rchar * sub, rssize subsize);
 
 R_API rchar * r_strcpy (rchar * dst, const rchar * src);
 R_API rchar * r_strncpy (rchar * dst, const rchar * src, rsize len);

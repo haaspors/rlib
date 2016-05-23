@@ -93,6 +93,121 @@ r_str_has_suffix (const rchar * str, const rchar * suffix)
 }
 
 rchar *
+r_strchr (const rchar * str, int c)
+{
+  if (R_UNLIKELY (str == NULL)) return NULL;
+  return strchr (str, c);
+}
+
+rchar *
+r_strstr (const rchar * str, const rchar * sub)
+{
+  if (R_UNLIKELY (str == NULL)) return NULL;
+  if (R_UNLIKELY (sub == NULL)) return NULL;
+  return strstr (str, sub);
+}
+
+rchar *
+r_str_ptr_of_c (const rchar * str, rssize strsize, rchar c)
+{
+  rssize idx;
+
+  if ((idx = r_str_idx_of_c (str, strsize, c)) >= 0)
+    return (rchar *)str + idx;
+
+  return NULL;
+}
+
+rchar *
+r_str_ptr_of_c_any (const rchar * str, rssize strsize,
+    const rchar * c, rssize chars)
+{
+  rssize idx;
+
+  if ((idx = r_str_idx_of_c_any (str, strsize, c, chars)) >= 0)
+    return (rchar *)str + idx;
+
+  return NULL;
+}
+
+rchar *
+r_str_ptr_of_str (const rchar * str, rssize strsize,
+    const rchar * sub, rssize subsize)
+{
+  rssize idx;
+
+  if ((idx = r_str_idx_of_str (str, strsize, sub, subsize)) >= 0)
+    return (rchar *)str + idx;
+
+  return NULL;
+}
+
+rssize
+r_str_idx_of_c (const rchar * str, rssize strsize, rchar c)
+{
+  rsize i, size;
+
+  if (R_UNLIKELY (str == NULL || strsize == 0))
+    return -1;
+
+  size = strsize > 0 ? (rsize)strsize : r_strlen (str);
+  for (i = 0; i < size; i++) {
+    if (str[i] == c)
+      return (rssize)i;
+  }
+
+  return -1;
+}
+
+rssize
+r_str_idx_of_c_any (const rchar * str, rssize strsize,
+    const rchar * c, rssize chars)
+{
+  rsize i, size;
+
+  if (R_UNLIKELY (str == NULL || strsize == 0 ||
+      c == NULL || chars == 0))
+    return -1;
+
+  if (chars == 1)
+    return r_str_idx_of_c (str, strsize, *c);
+
+  size = strsize > 0 ? (rsize)strsize : r_strlen (str);
+  for (i = 0; i < size; i++) {
+    if (r_str_idx_of_c (c, chars, str[i]) >= 0)
+      return (rssize)i;
+  }
+
+  return -1;
+}
+
+rssize
+r_str_idx_of_str (const rchar * str, rssize strsize,
+    const rchar * sub, rssize subsize)
+{
+  rssize ret;
+
+  if (strsize < 0) strsize = (rssize) r_strlen (str);
+  if (subsize < 0) subsize = (rssize) r_strlen (sub);
+
+  if (R_UNLIKELY (subsize <= 0))
+    return -1;
+  if (subsize == 1)
+    return r_str_idx_of_c (str, strsize, *sub);
+
+  ret = 0;
+  while ((ret += r_str_idx_of_c (str+ret, strsize-ret, *sub)) >= 0) {
+    if (strsize - ret < subsize) break;
+
+    if (r_strncmp (&str[ret+1], &sub[1], subsize - 1) == 0)
+      return ret;
+    ret++;
+  }
+
+  return -1;
+}
+
+rchar *
 r_strcpy (rchar * dst, const rchar * src)
 {
   if (R_UNLIKELY (dst == NULL))

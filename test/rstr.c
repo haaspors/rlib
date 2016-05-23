@@ -53,6 +53,45 @@ RTEST (rstr, prefix_suffix, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, idx_of_c, RTEST_FAST)
+{
+  r_assert_cmpint (r_str_idx_of_c (NULL, 0, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c (foobar, 0, 'f'), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c (foobar, -1, 'f'), ==, 0);
+  r_assert_cmpint (r_str_idx_of_c (foobar, -1, 'F'), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c (foobar, -1, 'a'), ==, 4);
+  r_assert_cmpint (r_str_idx_of_c (foobar, -1, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c (foobar, sizeof (foobar), 0), ==, 6);
+}
+RTEST_END;
+
+RTEST (rstr, idx_of_c_any, RTEST_FAST)
+{
+  r_assert_cmpint (r_str_idx_of_c_any (NULL, 0, NULL, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c_any (foobar, 0, NULL, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c_any (foobar, -1, NULL, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c_any (foobar, -1, "f", 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c_any (foobar, -1, "f", -1), ==, 0);
+  r_assert_cmpint (r_str_idx_of_c_any (foobar, -1, "F", -1), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c_any (foobar, -1, "Ff", -1), ==, 0);
+  r_assert_cmpint (r_str_idx_of_c_any (foobar, -1, "FRab", -1), ==, 3);
+}
+RTEST_END;
+
+RTEST (rstr, idx_of_str, RTEST_FAST)
+{
+  r_assert_cmpint (r_str_idx_of_str (NULL, 0, NULL, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_str (foobar, 0, NULL, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_str (foobar, -1, NULL, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_str (foobar, -1, "f", 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_str (foobar, -1, "f", -1), ==, 0);
+  r_assert_cmpint (r_str_idx_of_str (foobar, -1, foo, -1), ==, 0);
+  r_assert_cmpint (r_str_idx_of_str (foobar, -1, bar, -1), ==, 3);
+  r_assert_cmpint (r_str_idx_of_str ("---BEGIN PRIVATE KEY-----", -1,
+        "-----BEGIN", -1), ==, -1);
+}
+RTEST_END;
+
 RTEST (rstr, cpy, RTEST_FAST)
 {
   rchar dst[100];
