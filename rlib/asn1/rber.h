@@ -32,6 +32,7 @@ typedef struct _RAsn1BinDecoder RAsn1BerDecoder;
 
 R_API RAsn1BerDecoder * r_asn1_ber_decoder_new_file (const rchar * file);
 R_API RAsn1BerDecoder * r_asn1_ber_decoder_new (const ruint8 * data, rsize size);
+R_API RAsn1BerDecoder * r_asn1_ber_decoder_new_with_data (ruint8 * data, rsize size);
 #define r_asn1_ber_decoder_ref r_ref_ref
 #define r_asn1_ber_decoder_unref r_ref_unref
 

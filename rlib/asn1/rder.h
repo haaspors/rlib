@@ -30,6 +30,7 @@ R_BEGIN_DECLS
 typedef struct _RAsn1BinDecoder RAsn1DerDecoder;
 
 R_API RAsn1DerDecoder * r_asn1_der_decoder_new_file (const rchar * file);
+R_API RAsn1DerDecoder * r_asn1_der_decoder_new_with_data (ruint8 * data, rsize size);
 R_API RAsn1DerDecoder * r_asn1_der_decoder_new (const ruint8 * data, rsize size);
 #define r_asn1_der_decoder_ref r_ref_ref
 #define r_asn1_der_decoder_unref r_ref_unref

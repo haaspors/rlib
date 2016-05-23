@@ -36,6 +36,8 @@ typedef struct _RAsn1BinDecoder
 {
   RRef ref;
 
+  RMemFile * file;
+  ruint8 * free;
   const ruint8 * data;
   rsize size;
 
@@ -47,6 +49,9 @@ static void
 r_asn1_bin_decoder_free (RAsn1BinDecoder * dec)
 {
   r_slist_destroy_full (dec->stack, r_free);
+  r_free (dec->free);
+  if (dec->file != NULL)
+    r_mem_file_unref (dec->file);
   r_free (dec);
 }
 
@@ -58,6 +63,8 @@ r_asn1_bin_decoder_new (const ruint8 * data, rsize size)
   if (data != NULL && size > 0) {
     if ((ret = r_mem_new (RAsn1BinDecoder)) != NULL) {
       r_ref_init (ret, r_asn1_bin_decoder_free);
+      ret->file = NULL;
+      ret->free = NULL;
       ret->data = data;
       ret->size = size;
       ret->stack = NULL;
@@ -65,6 +72,17 @@ r_asn1_bin_decoder_new (const ruint8 * data, rsize size)
   } else {
     ret = NULL;
   }
+
+  return ret;
+}
+
+static inline RAsn1BinDecoder *
+r_asn1_bin_decoder_new_with_data (ruint8 * data, rsize size)
+{
+  RAsn1BinDecoder * ret;
+
+  if ((ret = r_asn1_bin_decoder_new (data, size)) != NULL)
+    ret->free = data;
 
   return ret;
 }
@@ -78,7 +96,7 @@ r_asn1_bin_decoder_new_file (const rchar * file)
   if ((memfile = r_mem_file_new (file, R_MEM_PROT_READ, FALSE)) != NULL) {
     ret = r_asn1_bin_decoder_new (r_mem_file_get_mem (memfile),
         r_mem_file_get_size (memfile));
-    r_mem_file_unref (memfile);
+    ret->file = memfile;
   } else {
     ret = NULL;
   }
