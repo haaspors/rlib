@@ -27,6 +27,8 @@ Features
 * Multiple/Arbitrary precision integer (bignum, BIGINT, big integer) math
 * ASN.1
   * BER and DER decoder
+* Cryptography
+  * Private/Public keys
 * more to come ...
 
 Getting the code

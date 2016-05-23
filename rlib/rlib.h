@@ -55,6 +55,9 @@
 #include <rlib/asn1/rasn1.h>
 #include <rlib/asn1/rber.h>
 
+#include <rlib/crypto/rkey.h>
+#include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/rmac.h>
+#include <rlib/crypto/rrsa.h>
 
 #endif /* __R_LIB_H__ */
