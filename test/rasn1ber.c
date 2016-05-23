@@ -198,3 +198,27 @@ RTEST (rasn1ber, stop_no_leak, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1ber, constructed_definite_long_form, RTEST_FAST)
+{
+  static ruint8 ber_encoded[] = {
+    0x30, 0x81, 0x06,
+      0x01, 0x01, 0xff, /* BOOL */
+      0x02, 0x01, 0x2a /* INTEGER */
+    };
+  RAsn1BerDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+
+  r_assert_cmpptr ((dec = r_asn1_ber_decoder_new (ber_encoded,
+          sizeof (ber_encoded))), !=, NULL);
+
+  r_assert_cmpint (r_asn1_ber_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
+  r_assert_cmpint (r_asn1_ber_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BOOLEAN));
+  r_assert_cmpint (r_asn1_ber_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
+
+  r_asn1_ber_decoder_unref (dec);
+}
+RTEST_END;
+

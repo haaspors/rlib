@@ -49,6 +49,7 @@ r_asn1_der_parse_length (const ruint8 * ptr, rsize * lensize, rsize * ret)
       *lensize = *ptr++ & 0x7f;
       for (*ret = i = 0; i < *lensize; i++)
         *ret = (*ret << 8) | *ptr++;
+      (*lensize)++;
     } else {
       /* definite short form */
       *lensize = 1;
