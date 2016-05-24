@@ -60,6 +60,7 @@
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/rmac.h>
+#include <rlib/crypto/rpem.h>
 #include <rlib/crypto/rrsa.h>
 
 #endif /* __R_LIB_H__ */
