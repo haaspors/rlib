@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include <rlib/asn1/rasn1-private.h>
+#include <rlib/asn1/roid.h>
 
 RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_boolean (const RAsn1BinTLV * tlv, rboolean * value)
@@ -86,9 +87,9 @@ r_asn1_bin_tlv_parse_mpint (const RAsn1BinTLV * tlv, rmpint * value)
 }
 
 RAsn1DecoderStatus
-r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * size)
+r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * len)
 {
-  if (R_UNLIKELY (tlv == NULL || varray == NULL || size == NULL || *size < 2))
+  if (R_UNLIKELY (tlv == NULL || varray == NULL || len == NULL || *len < 2))
     return R_ASN1_DECODER_INVALID_ARG;
 
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
@@ -107,7 +108,7 @@ r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * siz
           varray[idx++] = cur / 40;
           varray[idx++] = cur % 40;
         } else {
-          if (idx >= *size)
+          if (idx >= *len)
             return R_ASN1_DECODER_OVERFLOW;
           varray[idx++] = (ruint32)cur;
         }
@@ -119,10 +120,27 @@ r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * siz
     if (cur > 0)
       return R_ASN1_DECODER_EOS;
 
-    *size = idx;
+    *len = idx;
     return R_ASN1_DECODER_OK;
   } else {
     return R_ASN1_DECODER_WRONG_TYPE;
   }
+}
+
+RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot)
+{
+  RAsn1DecoderStatus ret;
+  ruint32 v[16];
+  rsize len = R_N_ELEMENTS (v);
+
+  if (R_UNLIKELY (tlv == NULL || dot == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
+
+  if ((ret = r_asn1_bin_tlv_parse_oid (tlv, v, &len)) == R_ASN1_DECODER_OK) {
+    *dot = r_asn1_oid_to_dot (v, len);
+  }
+
+  return ret;
 }
 

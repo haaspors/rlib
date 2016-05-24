@@ -28,6 +28,7 @@ RTEST (rasn1ber, sequence_primitives, RTEST_FAST)
   rmpint v_mpint;
   ruint32 v_oid[8];
   rsize size_oid = R_N_ELEMENTS (v_oid);
+  rchar * str_oid;
 
   r_assert_cmpptr ((dec = r_asn1_ber_decoder_new (ber_encoded,
           sizeof (ber_encoded))), !=, NULL);
@@ -76,6 +77,9 @@ RTEST (rasn1ber, sequence_primitives, RTEST_FAST)
   r_assert_cmpuint (v_oid[4], ==, 1);
   r_assert_cmpuint (v_oid[5], ==, 7);
   r_assert_cmpuint (v_oid[6], ==, 1);
+  r_assert_cmpint (r_asn1_ber_tlv_parse_oid_to_dot (&tlv, &str_oid), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str_oid, ==, "1.2.840.113549.1.7.1");
+  r_free (str_oid);
 
   r_assert_cmpint (r_asn1_ber_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_EOC);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_CLASS (&tlv), ==, R_ASN1_ID_UNIVERSAL);

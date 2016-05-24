@@ -113,6 +113,7 @@ R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_boolean (const RAsn1BinTLV * tlv, 
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_integer (const RAsn1BinTLV * tlv, rint32 * value);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_mpint (const RAsn1BinTLV * tlv, rmpint * value);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * size);
+R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot);
 /* TODO: Add parsing of strings, time and ... */
 
 R_END_DECLS

@@ -43,10 +43,11 @@ R_API RAsn1DecoderStatus r_asn1_der_decoder_out (RAsn1DerDecoder * dec, RAsn1Bin
 /*R_API rboolean r_asn1_der_decoder_decode_events (RAsn1DerDecoder * dec,*/
     /*RFunc primary, RFunc start, RFunc end);*/
 
-#define r_asn1_der_tlv_parse_boolean  r_asn1_bin_tlv_parse_boolean
-#define r_asn1_der_tlv_parse_integer  r_asn1_bin_tlv_parse_integer
-#define r_asn1_der_tlv_parse_mpint    r_asn1_bin_tlv_parse_mpint
-#define r_asn1_der_tlv_parse_oid      r_asn1_bin_tlv_parse_oid
+#define r_asn1_der_tlv_parse_boolean        r_asn1_bin_tlv_parse_boolean
+#define r_asn1_der_tlv_parse_integer        r_asn1_bin_tlv_parse_integer
+#define r_asn1_der_tlv_parse_mpint          r_asn1_bin_tlv_parse_mpint
+#define r_asn1_der_tlv_parse_oid            r_asn1_bin_tlv_parse_oid
+#define r_asn1_der_tlv_parse_oid_to_dot     r_asn1_bin_tlv_parse_oid_to_dot
 
 R_END_DECLS
 
