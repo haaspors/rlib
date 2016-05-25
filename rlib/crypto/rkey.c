@@ -20,6 +20,7 @@
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rrsa.h>
 #include <rlib/crypto/rdsa.h>
+#include <rlib/asn1/roid.h>
 #include <rlib/rbase64.h>
 #include <rlib/rmem.h>
 #include <rlib/rmemfile.h>
@@ -128,6 +129,48 @@ r_crypto_key_import_ssh_public_key (const rchar * data, rsize size)
     }
   }
 
+  return ret;
+}
+
+RCryptoKey *
+r_crypto_key_import_asn1_public_key (RAsn1DerDecoder * dec)
+{
+  RCryptoKey * ret;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  rchar * oid = NULL;
+
+  if (R_UNLIKELY (dec == NULL))
+    return NULL;
+
+  if (r_asn1_der_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_der_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_der_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_der_tlv_parse_oid_to_dot (&tlv, &oid) == R_ASN1_DECODER_OK &&
+      r_asn1_der_decoder_out (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_der_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
+
+    if (r_str_equals (oid, R_RSA_OID_RSA_ENCRYPTION)) {
+      rmpint n, e;
+      r_mpint_init (&n);
+      r_mpint_init (&e);
+      if (r_asn1_der_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
+          r_asn1_der_tlv_parse_mpint (&tlv, &n) == R_ASN1_DECODER_OK &&
+          r_asn1_der_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
+          r_asn1_der_tlv_parse_mpint (&tlv, &e) == R_ASN1_DECODER_OK) {
+        ret = r_rsa_pub_key_new (&n, &e);
+      } else {
+        ret = NULL;
+      }
+      r_mpint_clear (&e);
+      r_mpint_clear (&n);
+    } else {
+      ret = NULL;
+    }
+  } else {
+    ret = NULL;
+  }
+
+  r_free (oid);
   return ret;
 }
 

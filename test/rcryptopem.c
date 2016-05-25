@@ -141,3 +141,43 @@ RTEST (rcryptopem, multiple_blocks, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rcryptopem, pubkey, RTEST_FAST)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  rmpint mpint, mod;
+
+  r_mpint_init (&mpint);
+  r_mpint_init_str (&mod,
+      "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"
+      "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"
+      "358143b44a35449eb264113121a455bd7fde3fac919e94b56fb9bb4f651cdb23ead439"
+      "d6cd523eb08191e75b35fd13a7419b3090f24787bd4f4e1967", NULL, 16);
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_pubkey, sizeof (pem_pubkey))), !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), != , NULL);
+  r_assert_cmpuint (r_pem_block_get_type (block), ==, R_PEM_TYPE_PUBLIC_KEY);
+  r_assert (r_pem_block_is_key (block));
+
+  r_assert_cmpptr (r_pem_block_get_key (NULL, NULL, 0), ==, NULL);
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_pem_block_unref (block);
+
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), == , NULL);
+  r_pem_parser_unref (parser);
+
+  r_assert_cmpuint (key->type, ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpuint (key->algo, ==, R_CRYPTO_ALGO_RSA);
+  r_assert (r_rsa_pub_key_get_exponent (key, &mpint));
+  r_assert_cmpint (r_mpint_ucmp_u32 (&mpint, 65537), ==, 0);
+  r_assert (r_rsa_pub_key_get_modulus (key, &mpint));
+  r_assert_cmpint (r_mpint_cmp (&mpint, &mod), ==, 0);
+
+  r_mpint_clear (&mod);
+  r_mpint_clear (&mpint);
+  r_crypto_key_unref (key);
+}
+RTEST_END;
+

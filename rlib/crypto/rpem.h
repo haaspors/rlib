@@ -71,7 +71,8 @@ R_API rchar * r_pem_block_get_base64 (RPemBlock * block, rsize * size) R_ATTR_MA
 R_API ruint8 * r_pem_block_decode_base64 (RPemBlock * block, rsize * size) R_ATTR_MALLOC;
 R_API RAsn1DerDecoder * r_pem_block_get_der_decoder (RPemBlock * block);
 
-/* TODO: Convenience for keys */
+R_API RCryptoKey * r_pem_block_get_key (RPemBlock * block,
+    const rchar * passphrase, rsize ppsize);
 
 /* TODO: Convenience for certificates */
 

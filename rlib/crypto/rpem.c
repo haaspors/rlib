@@ -278,3 +278,36 @@ r_pem_block_get_der_decoder (RPemBlock * block)
   return ret;
 }
 
+RCryptoKey *
+r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
+{
+  RCryptoKey * ret;
+  RAsn1DerDecoder * der;
+
+  if (R_UNLIKELY (block == NULL))
+    return NULL;
+  if (R_UNLIKELY (!r_pem_block_is_key (block)))
+    return NULL;
+
+  /* TODO: If encrypted key, use passphrase */
+  (void) passphrase;
+  (void) ppsize;
+
+  if ((der = r_pem_block_get_der_decoder (block)) != NULL) {
+    switch (r_pem_block_get_type (block)) {
+      case R_PEM_TYPE_PUBLIC_KEY:
+        ret = r_crypto_key_import_asn1_public_key (der);
+        break;
+      /* TODO: PRIVATE keys */
+      /* TODO: ecnrypted PRIVATE keys */
+      default:
+        ret = NULL;
+    }
+    r_asn1_der_decoder_unref (der);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
