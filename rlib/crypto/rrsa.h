@@ -24,26 +24,42 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/crypto/rkey.h>
+#include <rlib/asn1/rder.h>
 #include <rlib/rmpint.h>
 
 R_BEGIN_DECLS
 
 #define R_RSA_STR     "RSA"
 
-R_API RCryptoKey * r_rsa_pub_key_new (const rmpint * n, const rmpint * e);
+R_API RCryptoKey * r_rsa_pub_key_new (const rmpint * n, const rmpint * e) R_ATTR_MALLOC;
 R_API RCryptoKey * r_rsa_pub_key_new_binary (rconstpointer n, rsize nsize,
-    rconstpointer e, rsize esize);
+    rconstpointer e, rsize esize) R_ATTR_MALLOC;
 
-R_API rboolean r_rsa_pub_key_get_exponent (RCryptoKey * key, rmpint * e);
+R_API RCryptoKey * r_rsa_priv_key_new (const rmpint * n, const rmpint * e,
+    const rmpint * d) R_ATTR_MALLOC;
+R_API RCryptoKey * r_rsa_priv_key_new_full (rint32 ver,
+    const rmpint * n, const rmpint * e, /* public part */
+    const rmpint * d, const rmpint * p, const rmpint * q,
+    const rmpint * dp, const rmpint * dq, const rmpint * qp) R_ATTR_MALLOC;
+R_API RCryptoKey * r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
+    rconstpointer e, rsize esize, rconstpointer d, rsize dsize) R_ATTR_MALLOC;
+R_API RCryptoKey * r_rsa_priv_key_new_from_asn1 (RAsn1DerDecoder * dec) R_ATTR_MALLOC;
+
+
+#define r_rsa_pub_key_get_exponent  r_rsa_key_get_exponent
+#define r_rsa_priv_key_get_exponent r_rsa_key_get_exponent
+R_API rboolean r_rsa_key_get_exponent (RCryptoKey * key, rmpint * e);
+
 R_API rboolean r_rsa_pub_key_get_modulus (RCryptoKey * key, rmpint * n);
+R_API rboolean r_rsa_priv_key_get_modulus (RCryptoKey * key, rmpint * d);
 
-R_API rboolean r_rsa_oaep_pub_key_encrypt (RCryptoKey * key,
+R_API rboolean r_rsa_oaep_encrypt (RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_oaep_pub_key_decrypt (RCryptoKey * key,
+R_API rboolean r_rsa_oaep_decrypt (RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_pkcs1v1_5_pub_key_encrypt (RCryptoKey * key,
+R_API rboolean r_rsa_pkcs1v1_5_encrypt (RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_pkcs1v1_5_pub_key_decrypt (RCryptoKey * key,
+R_API rboolean r_rsa_pkcs1v1_5_decrypt (RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
 
 R_END_DECLS

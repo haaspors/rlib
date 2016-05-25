@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include <rlib/crypto/rpem.h>
+#include <rlib/crypto/rrsa.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/rascii.h>
@@ -297,6 +298,9 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
     switch (r_pem_block_get_type (block)) {
       case R_PEM_TYPE_PUBLIC_KEY:
         ret = r_crypto_key_import_asn1_public_key (der);
+        break;
+      case R_PEM_TYPE_RSA_PRIVATE_KEY:
+        ret = r_rsa_priv_key_new_from_asn1 (der);
         break;
       /* TODO: PRIVATE keys */
       /* TODO: ecnrypted PRIVATE keys */

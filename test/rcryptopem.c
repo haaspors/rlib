@@ -181,3 +181,67 @@ RTEST (rcryptopem, pubkey, RTEST_FAST)
 }
 RTEST_END;
 
+static const rchar pem_rsa_privkey[] =
+  "-----BEGIN RSA PRIVATE KEY-----\n"
+  "MIICXAIBAAKBgQCqGKukO1De7zhZj6+H0qtjTkVxwTCpvKe4eCZ0FPqri0cb2JZfXJ/DgYSF6vUp\n"
+  "wmJG8wVQZKjeGcjDOL5UlsuusFncCzWBQ7RKNUSesmQRMSGkVb1/3j+skZ6UtW+5u09lHNsj6tQ5\n"
+  "1s1SPrCBkedbNf0Tp0GbMJDyR4e9T04ZZwIDAQABAoGAFijko56+qGyN8M0RVyaRAXz++xTqHBLh\n"
+  "3tx4VgMtrQ+WEgCjhoTwo23KMBAuJGSYnRmoBZM3lMfTKevIkAidPExvYCdm5dYq3XToLkkLv5L2\n"
+  "pIIVOFMDG+KESnAFV7l2c+cnzRMW0+b6f8mR1CJzZuxVLL6Q02fvLi55/mbSYxECQQDeAw6fiIQX\n"
+  "GukBI4eMZZt4nscy2o12KyYner3VpoeE+Np2q+Z3pvAMd/aNzQ/W9WaI+NRfcxUJrmfPwIGm63il\n"
+  "AkEAxCL5HQb2bQr4ByorcMWm/hEP2MZzROV73yF41hPsRC9m66KrheO9HPTJuo3/9s5p+sqGxOlF\n"
+  "L0NDt4SkosjgGwJAFklyR1uZ/wPJjj611cdBcztlPdqoxssQGnh85BzCj/u3WqBpE2vjvyyvyI5k\n"
+  "X6zk7S0ljKtt2jny2+00VsBerQJBAJGC1Mg5Oydo5NwD6BiROrPxGo2bpTbu/fhrT8ebHkTz2epl\n"
+  "U9VQQSQzY1oZMVX8i1m5WUTLPz2yLJIBQVdXqhMCQBGoiuSoSjafUhV7i1cEGpb88h5NBYZzWXGZ\n"
+  "37sJ5QsW+sJyoNde3xH8vdXhzU7eT82D6X/scw9RZz+/6rCJ4p0=\n"
+  "-----END RSA PRIVATE KEY-----\n";
+RTEST (rcryptopem, rsa_privkey, RTEST_FAST)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  rmpint mpint, expected;
+
+  r_mpint_init (&mpint);
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_rsa_privkey, sizeof (pem_rsa_privkey))), !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), != , NULL);
+  r_assert_cmpuint (r_pem_block_get_type (block), ==, R_PEM_TYPE_RSA_PRIVATE_KEY);
+  r_assert (r_pem_block_is_key (block));
+
+  r_assert_cmpptr (r_pem_block_get_key (NULL, NULL, 0), ==, NULL);
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_pem_block_unref (block);
+
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), == , NULL);
+  r_pem_parser_unref (parser);
+
+  r_assert_cmpuint (key->type, ==, R_CRYPTO_PRIVATE_KEY);
+  r_assert_cmpuint (key->algo, ==, R_CRYPTO_ALGO_RSA);
+
+  r_assert (r_rsa_priv_key_get_exponent (key, &mpint));
+  r_assert_cmpint (r_mpint_ucmp_u32 (&mpint, 65537), ==, 0);
+
+  r_assert (r_rsa_pub_key_get_modulus (key, &mpint));
+  r_mpint_init_str (&expected,
+      "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"
+      "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"
+      "358143b44a35449eb264113121a455bd7fde3fac919e94b56fb9bb4f651cdb23ead439"
+      "d6cd523eb08191e75b35fd13a7419b3090f24787bd4f4e1967", NULL, 16);
+  r_assert_cmpint (r_mpint_cmp (&mpint, &expected), ==, 0);
+  r_mpint_clear (&expected);
+
+  r_assert (r_rsa_priv_key_get_modulus (key, &mpint));
+  r_mpint_init_str (&expected,
+      "0x1628e4a39ebea86c8df0cd11572691017cfefb14ea1c12e1dedc7856032dad0f9612"
+      "00a38684f0a36dca30102e2464989d19a805933794c7d329ebc890089d3c4c6f602766"
+      "e5d62add74e82e490bbf92f6a482153853031be2844a700557b97673e727cd1316d3e6"
+      "fa7fc991d4227366ec552cbe90d367ef2e2e79fe66d26311", NULL, 16);
+  r_assert_cmpint (r_mpint_cmp (&mpint, &expected), ==, 0);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&mpint);
+  r_crypto_key_unref (key);
+}
+RTEST_END;
+
