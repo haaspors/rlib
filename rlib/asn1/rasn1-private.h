@@ -31,8 +31,9 @@ R_BEGIN_DECLS
 
 #define R_ASN1_BIN_TLV_NEXT(tlv) ((tlv)->value + (tlv)->len)
 
+typedef RAsn1DecoderStatus (*RAsn1BinDecoderOperation) (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 
-typedef struct _RAsn1BinDecoder
+struct _RAsn1BinDecoder
 {
   RRef ref;
 
@@ -42,67 +43,18 @@ typedef struct _RAsn1BinDecoder
   rsize size;
 
   RSList * stack;
-} RAsn1BinDecoder;
+
+  RAsn1BinDecoderOperation next, into, out;
+};
 
 
-static void
-r_asn1_bin_decoder_free (RAsn1BinDecoder * dec)
-{
-  r_slist_destroy_full (dec->stack, r_free);
-  r_free (dec->free);
-  if (dec->file != NULL)
-    r_mem_file_unref (dec->file);
-  r_free (dec);
-}
+R_API_HIDDEN RAsn1DecoderStatus r_asn1_ber_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
+R_API_HIDDEN RAsn1DecoderStatus r_asn1_ber_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
+R_API_HIDDEN RAsn1DecoderStatus r_asn1_ber_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 
-static inline RAsn1BinDecoder *
-r_asn1_bin_decoder_new (const ruint8 * data, rsize size)
-{
-  RAsn1BinDecoder * ret;
-
-  if (data != NULL && size > 0) {
-    if ((ret = r_mem_new (RAsn1BinDecoder)) != NULL) {
-      r_ref_init (ret, r_asn1_bin_decoder_free);
-      ret->file = NULL;
-      ret->free = NULL;
-      ret->data = data;
-      ret->size = size;
-      ret->stack = NULL;
-    }
-  } else {
-    ret = NULL;
-  }
-
-  return ret;
-}
-
-static inline RAsn1BinDecoder *
-r_asn1_bin_decoder_new_with_data (ruint8 * data, rsize size)
-{
-  RAsn1BinDecoder * ret;
-
-  if ((ret = r_asn1_bin_decoder_new (data, size)) != NULL)
-    ret->free = data;
-
-  return ret;
-}
-
-static inline RAsn1BinDecoder *
-r_asn1_bin_decoder_new_file (const rchar * file)
-{
-  RMemFile * memfile;
-  RAsn1BinDecoder * ret;
-
-  if ((memfile = r_mem_file_new (file, R_MEM_PROT_READ, FALSE)) != NULL) {
-    ret = r_asn1_bin_decoder_new (r_mem_file_get_mem (memfile),
-        r_mem_file_get_size (memfile));
-    ret->file = memfile;
-  } else {
-    ret = NULL;
-  }
-
-  return ret;
-}
+R_API_HIDDEN RAsn1DecoderStatus r_asn1_der_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
+R_API_HIDDEN RAsn1DecoderStatus r_asn1_der_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
+R_API_HIDDEN RAsn1DecoderStatus r_asn1_der_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 
 R_END_DECLS
 

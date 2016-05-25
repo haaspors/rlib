@@ -116,6 +116,32 @@ R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruin
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot);
 /* TODO: Add parsing of strings, time and ... */
 
+
+typedef enum {
+  R_ASN1_BER,
+  R_ASN1_DER,
+  R_ASN1_ENCODING_RULES_COUNT
+} RAsn1EncodingRules;
+
+typedef struct _RAsn1BinDecoder RAsn1BinDecoder;
+
+R_API RAsn1BinDecoder * r_asn1_bin_decoder_new_file (RAsn1EncodingRules enc,
+    const rchar * file);
+R_API RAsn1BinDecoder * r_asn1_bin_decoder_new_with_data (RAsn1EncodingRules enc,
+    ruint8 * data, rsize size);
+R_API RAsn1BinDecoder * r_asn1_bin_decoder_new (RAsn1EncodingRules enc,
+    const ruint8 * data, rsize size);
+#define r_asn1_bin_decoder_ref r_ref_ref
+#define r_asn1_bin_decoder_unref r_ref_unref
+
+R_API RAsn1DecoderStatus r_asn1_bin_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
+R_API RAsn1DecoderStatus r_asn1_bin_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
+R_API RAsn1DecoderStatus r_asn1_bin_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
+
+/* TODO: Add callback/events based decoder/parser (like a SAX parser) */
+/*R_API rboolean r_asn1_bin_decoder_decode_events (RAsn1BinDecoder * dec,*/
+    /*RFunc primary, RFunc start, RFunc end);*/
+
 R_END_DECLS
 
 #endif /* __R_ASN1_H__ */

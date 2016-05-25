@@ -133,7 +133,7 @@ r_crypto_key_import_ssh_public_key (const rchar * data, rsize size)
 }
 
 RCryptoKey *
-r_crypto_key_import_asn1_public_key (RAsn1DerDecoder * dec)
+r_crypto_key_import_asn1_public_key (RAsn1BinDecoder * dec)
 {
   RCryptoKey * ret;
   RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
@@ -142,21 +142,21 @@ r_crypto_key_import_asn1_public_key (RAsn1DerDecoder * dec)
   if (R_UNLIKELY (dec == NULL))
     return NULL;
 
-  if (r_asn1_der_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
-      r_asn1_der_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
-      r_asn1_der_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
-      r_asn1_der_tlv_parse_oid_to_dot (&tlv, &oid) == R_ASN1_DECODER_OK &&
-      r_asn1_der_decoder_out (dec, &tlv) == R_ASN1_DECODER_OK &&
-      r_asn1_der_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
+  if (r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_tlv_parse_oid_to_dot (&tlv, &oid) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_decoder_out (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
 
     if (r_str_equals (oid, R_RSA_OID_RSA_ENCRYPTION)) {
       rmpint n, e;
       r_mpint_init (&n);
       r_mpint_init (&e);
-      if (r_asn1_der_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
-          r_asn1_der_tlv_parse_mpint (&tlv, &n) == R_ASN1_DECODER_OK &&
-          r_asn1_der_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
-          r_asn1_der_tlv_parse_mpint (&tlv, &e) == R_ASN1_DECODER_OK) {
+      if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
+          r_asn1_bin_tlv_parse_mpint (&tlv, &n) == R_ASN1_DECODER_OK &&
+          r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
+          r_asn1_bin_tlv_parse_mpint (&tlv, &e) == R_ASN1_DECODER_OK) {
         ret = r_rsa_pub_key_new (&n, &e);
       } else {
         ret = NULL;

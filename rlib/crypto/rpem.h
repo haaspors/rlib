@@ -25,7 +25,6 @@
 #include <rlib/rtypes.h>
 #include <rlib/rref.h>
 #include <rlib/rmemfile.h>
-#include <rlib/asn1/rder.h>
 #include <rlib/crypto/rkey.h>
 
 R_BEGIN_DECLS
@@ -69,7 +68,7 @@ R_API rsize r_pem_block_get_blob_size (RPemBlock * block);
 R_API rsize r_pem_block_get_base64_size (RPemBlock * block);
 R_API rchar * r_pem_block_get_base64 (RPemBlock * block, rsize * size) R_ATTR_MALLOC;
 R_API ruint8 * r_pem_block_decode_base64 (RPemBlock * block, rsize * size) R_ATTR_MALLOC;
-R_API RAsn1DerDecoder * r_pem_block_get_der_decoder (RPemBlock * block);
+R_API RAsn1BinDecoder * r_pem_block_get_asn1_decoder (RPemBlock * block);
 
 R_API RCryptoKey * r_pem_block_get_key (RPemBlock * block,
     const rchar * passphrase, rsize ppsize);

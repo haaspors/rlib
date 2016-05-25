@@ -264,15 +264,15 @@ r_pem_block_decode_base64 (RPemBlock * block, rsize * size)
   return r_base64_decode (block->base64, s, size);
 }
 
-RAsn1DerDecoder *
-r_pem_block_get_der_decoder (RPemBlock * block)
+RAsn1BinDecoder *
+r_pem_block_get_asn1_decoder (RPemBlock * block)
 {
-  RAsn1DerDecoder * ret = NULL;
+  RAsn1BinDecoder * ret = NULL;
   ruint8 * data;
   rsize size;
 
   if ((data = r_pem_block_decode_base64 (block, &size)) != NULL) {
-    if ((ret = r_asn1_der_decoder_new_with_data (data, size)) == NULL)
+    if ((ret = r_asn1_bin_decoder_new_with_data (R_ASN1_BER, data, size)) == NULL)
       r_free (data);
   }
 
@@ -283,7 +283,7 @@ RCryptoKey *
 r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
 {
   RCryptoKey * ret;
-  RAsn1DerDecoder * der;
+  RAsn1BinDecoder * dec;
 
   if (R_UNLIKELY (block == NULL))
     return NULL;
@@ -294,20 +294,20 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
   (void) passphrase;
   (void) ppsize;
 
-  if ((der = r_pem_block_get_der_decoder (block)) != NULL) {
+  if ((dec = r_pem_block_get_asn1_decoder (block)) != NULL) {
     switch (r_pem_block_get_type (block)) {
       case R_PEM_TYPE_PUBLIC_KEY:
-        ret = r_crypto_key_import_asn1_public_key (der);
+        ret = r_crypto_key_import_asn1_public_key (dec);
         break;
       case R_PEM_TYPE_RSA_PRIVATE_KEY:
-        ret = r_rsa_priv_key_new_from_asn1 (der);
+        ret = r_rsa_priv_key_new_from_asn1 (dec);
         break;
       /* TODO: PRIVATE keys */
       /* TODO: ecnrypted PRIVATE keys */
       default:
         ret = NULL;
     }
-    r_asn1_der_decoder_unref (der);
+    r_asn1_bin_decoder_unref (dec);
   } else {
     ret = NULL;
   }

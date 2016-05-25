@@ -17,27 +17,8 @@
  */
 
 #include "config.h"
-#include <rlib/asn1/rder.h>
 #include <rlib/asn1/rasn1-private.h>
 #include <rlib/rmem.h>
-
-RAsn1DerDecoder *
-r_asn1_der_decoder_new_file (const rchar * file)
-{
-  return r_asn1_bin_decoder_new_file (file);
-}
-
-RAsn1DerDecoder *
-r_asn1_der_decoder_new (const ruint8 * data, rsize size)
-{
-  return r_asn1_bin_decoder_new (data, size);
-}
-
-RAsn1DerDecoder *
-r_asn1_der_decoder_new_with_data (ruint8 * data, rsize size)
-{
-  return r_asn1_bin_decoder_new_with_data (data, size);
-}
 
 static RAsn1DecoderStatus
 r_asn1_der_parse_length (const ruint8 * ptr, rsize * lensize, rsize * ret)
@@ -84,7 +65,7 @@ r_asn1_der_tlv_init (RAsn1BinTLV * tlv, const ruint8 * start, rsize size)
 }
 
 RAsn1DecoderStatus
-r_asn1_der_decoder_next (RAsn1DerDecoder * dec, RAsn1BinTLV * tlv)
+r_asn1_der_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
   RAsn1DecoderStatus ret;
   RSList * lst;
@@ -157,7 +138,7 @@ r_asn1_der_decoder_next (RAsn1DerDecoder * dec, RAsn1BinTLV * tlv)
 }
 
 RAsn1DecoderStatus
-r_asn1_der_decoder_into (RAsn1DerDecoder * dec, RAsn1BinTLV * tlv)
+r_asn1_der_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
   const ruint8 * ptr;
   rsize size;
@@ -188,7 +169,7 @@ r_asn1_der_decoder_into (RAsn1DerDecoder * dec, RAsn1BinTLV * tlv)
 }
 
 RAsn1DecoderStatus
-r_asn1_der_decoder_out (RAsn1DerDecoder * dec, RAsn1BinTLV * tlv)
+r_asn1_der_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
   RAsn1BinTLV * up;
 

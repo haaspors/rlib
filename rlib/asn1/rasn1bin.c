@@ -144,3 +144,99 @@ r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot)
   return ret;
 }
 
+
+static void
+r_asn1_bin_decoder_free (RAsn1BinDecoder * dec)
+{
+  r_slist_destroy_full (dec->stack, r_free);
+  r_free (dec->free);
+  if (dec->file != NULL)
+    r_mem_file_unref (dec->file);
+  r_free (dec);
+}
+
+RAsn1BinDecoder *
+r_asn1_bin_decoder_new (RAsn1EncodingRules enc, const ruint8 * data, rsize size)
+{
+  RAsn1BinDecoder * ret;
+
+  if (data != NULL && size > 0 && enc < R_ASN1_ENCODING_RULES_COUNT) {
+    if ((ret = r_mem_new (RAsn1BinDecoder)) != NULL) {
+      r_ref_init (ret, r_asn1_bin_decoder_free);
+      ret->file = NULL;
+      ret->free = NULL;
+      ret->data = data;
+      ret->size = size;
+      ret->stack = NULL;
+
+      switch (enc) {
+        case R_ASN1_BER:
+          ret->next = r_asn1_ber_decoder_next;
+          ret->into = r_asn1_ber_decoder_into;
+          ret->out = r_asn1_ber_decoder_out;
+          break;
+        case R_ASN1_DER:
+          ret->next = r_asn1_der_decoder_next;
+          ret->into = r_asn1_der_decoder_into;
+          ret->out = r_asn1_der_decoder_out;
+          break;
+        default:
+          break;
+      }
+    }
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+RAsn1BinDecoder *
+r_asn1_bin_decoder_new_with_data (RAsn1EncodingRules enc, ruint8 * data, rsize size)
+{
+  RAsn1BinDecoder * ret;
+
+  if ((ret = r_asn1_bin_decoder_new (enc, data, size)) != NULL)
+    ret->free = data;
+
+  return ret;
+}
+
+RAsn1BinDecoder *
+r_asn1_bin_decoder_new_file (RAsn1EncodingRules enc, const rchar * file)
+{
+  RMemFile * memfile;
+  RAsn1BinDecoder * ret;
+
+  if ((memfile = r_mem_file_new (file, R_MEM_PROT_READ, FALSE)) != NULL) {
+    ret = r_asn1_bin_decoder_new (enc, r_mem_file_get_mem (memfile),
+        r_mem_file_get_size (memfile));
+    ret->file = memfile;
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+RAsn1DecoderStatus
+r_asn1_bin_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
+{
+  if (R_UNLIKELY (dec == NULL || tlv == NULL)) return R_ASN1_DECODER_INVALID_ARG;
+  return dec->next (dec, tlv);
+}
+
+RAsn1DecoderStatus
+r_asn1_bin_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
+{
+  if (R_UNLIKELY (dec == NULL || tlv == NULL)) return R_ASN1_DECODER_INVALID_ARG;
+  return dec->into (dec, tlv);
+}
+
+RAsn1DecoderStatus
+r_asn1_bin_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
+{
+  if (R_UNLIKELY (dec == NULL || tlv == NULL)) return R_ASN1_DECODER_INVALID_ARG;
+  return dec->out (dec, tlv);
+}
+

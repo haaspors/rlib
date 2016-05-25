@@ -24,7 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/rref.h>
-#include <rlib/asn1/rder.h>
+#include <rlib/asn1/rasn1.h>
 
 R_BEGIN_DECLS
 
@@ -63,7 +63,7 @@ struct _RCryptoKey {
 
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key_file (const rchar * file);
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key (const rchar * data, rsize size);
-R_API RCryptoKey * r_crypto_key_import_asn1_public_key (RAsn1DerDecoder * dec);
+R_API RCryptoKey * r_crypto_key_import_asn1_public_key (RAsn1BinDecoder * dec);
 
 R_END_DECLS
 

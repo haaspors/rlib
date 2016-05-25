@@ -47,7 +47,7 @@ RTEST (rcryptopem, parser_block_basics, RTEST_FAST)
   rchar * base64;
   ruint8 * raw;
   rsize size;
-  RAsn1DerDecoder * der;
+  RAsn1BinDecoder * dec;
   RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
   ruint32 oid[8];
   const ruint32 rsapubkeyoid[] = { 1, 2, 840, 113549, 1, 1, 1 };
@@ -74,25 +74,25 @@ RTEST (rcryptopem, parser_block_basics, RTEST_FAST)
   r_assert_cmpmem (raw, ==, raw_pubkey, size);
   r_free (raw);
 
-  r_assert_cmpptr ((der = r_pem_block_get_der_decoder (block)), !=, NULL);
-  r_assert_cmpint (r_asn1_der_decoder_next (der, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpptr ((dec = r_pem_block_get_asn1_decoder (block)), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_PC (&tlv), ==, R_ASN1_ID_CONSTRUCTED);
-  r_assert_cmpint (r_asn1_der_decoder_into (der, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_PC (&tlv), ==, R_ASN1_ID_CONSTRUCTED);
-  r_assert_cmpint (r_asn1_der_decoder_into (der, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
   size = sizeof (oid);
-  r_assert_cmpint (r_asn1_der_tlv_parse_oid (&tlv, oid, &size), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_oid (&tlv, oid, &size), ==, R_ASN1_DECODER_OK);
   r_assert_cmpuint (size, ==, 7);
   r_assert_cmpmem (oid, ==, rsapubkeyoid, size);
-  r_assert_cmpint (r_asn1_der_decoder_out (der, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_decoder_out (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_TAG (&tlv), ==, R_ASN1_ID_BIT_STRING);
-  r_assert_cmpint (r_asn1_der_decoder_into (der, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_PC (&tlv), ==, R_ASN1_ID_CONSTRUCTED);
-  r_assert_cmpint (r_asn1_der_decoder_into (der, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_TAG (&tlv), ==, R_ASN1_ID_INTEGER);
-  r_assert_cmpint (r_asn1_der_decoder_next (der, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_TAG (&tlv), ==, R_ASN1_ID_INTEGER);
-  r_asn1_der_decoder_unref (der);
+  r_asn1_bin_decoder_unref (dec);
 
   r_pem_block_unref (block);
   r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), == , NULL);

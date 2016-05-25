@@ -207,7 +207,7 @@ r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
 }
 
 RCryptoKey *
-r_rsa_priv_key_new_from_asn1 (RAsn1DerDecoder * dec)
+r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec)
 {
   RRsaPrivKey * ret;
 
