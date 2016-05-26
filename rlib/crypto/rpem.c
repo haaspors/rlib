@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/crypto/rpem.h>
 #include <rlib/crypto/rrsa.h>
+#include <rlib/crypto/rdsa.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/rascii.h>
@@ -34,6 +35,7 @@
 #define R_PEM_CSR             "CERTIFICATE REQUEST"
 #define R_PEM_PUBKEY          "PUBLIC KEY"
 #define R_PEM_PRIVKEY         "PRIVATE KEY"
+#define R_PEM_DSAPRIVKEY      "DSA PRIVATE KEY"
 #define R_PEM_RSAPRIVKEY      "RSA PRIVATE KEY"
 #define R_PEM_ENCPRIVKEY      "ENCRYPTED PRIVATE KEY"
 
@@ -137,6 +139,8 @@ r_pem_type_from_label (const rchar * label)
     return R_PEM_TYPE_CERTIFICATE_REQUEST;
   else if (r_str_equals (label, R_PEM_PUBKEY))
     return R_PEM_TYPE_PUBLIC_KEY;
+  else if (r_str_equals (label, R_PEM_DSAPRIVKEY))
+    return R_PEM_TYPE_DSA_PRIVATE_KEY;
   else if (r_str_equals (label, R_PEM_RSAPRIVKEY))
     return R_PEM_TYPE_RSA_PRIVATE_KEY;
   else if (r_str_equals (label, R_PEM_PRIVKEY))
@@ -301,6 +305,9 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
         break;
       case R_PEM_TYPE_RSA_PRIVATE_KEY:
         ret = r_rsa_priv_key_new_from_asn1 (dec);
+        break;
+      case R_PEM_TYPE_DSA_PRIVATE_KEY:
+        ret = r_dsa_priv_key_new_from_asn1 (dec);
         break;
       /* TODO: PRIVATE keys */
       /* TODO: ecnrypted PRIVATE keys */

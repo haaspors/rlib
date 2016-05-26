@@ -35,12 +35,13 @@ typedef struct _RPemBlock RPemBlock;
 typedef enum {
   R_PEM_TYPE_UNKNOWN                  = -1,
   R_PEM_TYPE_CERTIFICATE              =  0, /* X.509 */
-  R_PEM_TYPE_CERTIFICATE_LIST         =  1, /* X.509 CRL */
-  R_PEM_TYPE_CERTIFICATE_REQUEST      =  2, /* PKCS#10 */
-  R_PEM_TYPE_PUBLIC_KEY               =  3, /* PubKey inside a X.509 */
-  R_PEM_TYPE_RSA_PRIVATE_KEY          =  4, /* PKCS#1 */
-  R_PEM_TYPE_PRIVATE_KEY              =  5, /* PKCS#8 */
-  R_PEM_TYPE_ENCRYPTED_PRIVATE_KEY    =  6, /* PKCS#8 */
+  R_PEM_TYPE_CERTIFICATE_LIST             , /* X.509 CRL */
+  R_PEM_TYPE_CERTIFICATE_REQUEST          , /* PKCS#10 */
+  R_PEM_TYPE_PUBLIC_KEY                   , /* PubKey inside a X.509 */
+  R_PEM_TYPE_RSA_PRIVATE_KEY              , /* PKCS#1 */
+  R_PEM_TYPE_DSA_PRIVATE_KEY              ,
+  R_PEM_TYPE_PRIVATE_KEY                  , /* PKCS#8 */
+  R_PEM_TYPE_ENCRYPTED_PRIVATE_KEY        , /* PKCS#8 */
   R_PEM_TYPE_COUNT,
   R_PEM_TYPE_KEY_START = R_PEM_TYPE_PUBLIC_KEY,
   R_PEM_TYPE_KEY_END   = R_PEM_TYPE_ENCRYPTED_PRIVATE_KEY

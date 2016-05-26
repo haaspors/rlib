@@ -158,6 +158,10 @@ R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
 #define R_RSA_OID_PBES2                     R_RSA_OID_PKCS_5".13"
 #define R_RSA_OID_PBMAC1                    R_RSA_OID_PKCS_5".14"
 
+#define R_OID_X9_57                         R_ASN_OID_DOT_ISO_US".10040"
+#define R_X9_57_OID_DSA                     R_OID_X9_57".4.1"
+#define R_X9_57_OID_DSA_WITH_SHA1           R_OID_X9_57".4.3"
+
 R_END_DECLS
 
 #endif /* __R_ASN1_OID_H__ */
