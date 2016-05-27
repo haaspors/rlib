@@ -212,6 +212,7 @@ rboolean
 r_dsa_pub_key_get_p (RCryptoKey * key, rmpint * p)
 {
   if (R_UNLIKELY (key == NULL || p == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
 
   r_mpint_set (p, &((RDsaPubKey*)key)->p);
   return TRUE;
@@ -221,6 +222,7 @@ rboolean
 r_dsa_pub_key_get_q (RCryptoKey * key, rmpint * q)
 {
   if (R_UNLIKELY (key == NULL || q == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
 
   r_mpint_set (q, &((RDsaPubKey*)key)->q);
   return TRUE;
@@ -230,6 +232,7 @@ rboolean
 r_dsa_pub_key_get_g (RCryptoKey * key, rmpint * g)
 {
   if (R_UNLIKELY (key == NULL || g == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
 
   r_mpint_set (g, &((RDsaPubKey*)key)->g);
   return TRUE;
@@ -239,6 +242,7 @@ rboolean
 r_dsa_pub_key_get_y (RCryptoKey * key, rmpint * y)
 {
   if (R_UNLIKELY (key == NULL || y == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
 
   r_mpint_set (y, &((RDsaPubKey*)key)->y);
   return TRUE;
@@ -248,6 +252,8 @@ rboolean
 r_dsa_priv_key_get_x (RCryptoKey * key, rmpint * x)
 {
   if (R_UNLIKELY (key == NULL || x == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
 
   r_mpint_set (x, &((RDsaPrivKey*)key)->x);
   return TRUE;
