@@ -24,12 +24,12 @@ RTEST (rcryptokey, import_ssh_public_key, RTEST_FAST)
 
   r_mpint_init (&res);
   r_mpint_init_binary (&ex, pk_m, sizeof (pk_m));
-  r_assert (r_rsa_pub_key_get_modulus (key, &res));
+  r_assert (r_rsa_pub_key_get_n (key, &res));
   r_assert_cmpmem (res.data, ==, ex.data, sizeof (rmpint_digit) * r_mpint_digits_used (&res));
   r_assert_cmpint (r_mpint_cmp (&res, &ex), ==, 0);
 
   r_mpint_set_u32 (&ex, 0x010001);
-  r_assert (r_rsa_pub_key_get_exponent (key, &res));
+  r_assert (r_rsa_pub_key_get_e(key, &res));
   r_assert_cmpint (r_mpint_cmp (&res, &ex), ==, 0);
 
   r_mpint_clear (&res);

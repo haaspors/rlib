@@ -170,9 +170,9 @@ RTEST (rcryptopem, rsa_pubkey, RTEST_FAST)
 
   r_assert_cmpuint (key->type, ==, R_CRYPTO_PUBLIC_KEY);
   r_assert_cmpuint (key->algo, ==, R_CRYPTO_ALGO_RSA);
-  r_assert (r_rsa_pub_key_get_exponent (key, &mpint));
+  r_assert (r_rsa_pub_key_get_e (key, &mpint));
   r_assert_cmpint (r_mpint_ucmp_u32 (&mpint, 65537), ==, 0);
-  r_assert (r_rsa_pub_key_get_modulus (key, &mpint));
+  r_assert (r_rsa_pub_key_get_n (key, &mpint));
   r_assert_cmpint (r_mpint_cmp (&mpint, &mod), ==, 0);
 
   r_mpint_clear (&mod);
@@ -220,10 +220,10 @@ RTEST (rcryptopem, rsa_privkey, RTEST_FAST)
   r_assert_cmpuint (key->type, ==, R_CRYPTO_PRIVATE_KEY);
   r_assert_cmpuint (key->algo, ==, R_CRYPTO_ALGO_RSA);
 
-  r_assert (r_rsa_priv_key_get_exponent (key, &mpint));
+  r_assert (r_rsa_priv_key_get_e (key, &mpint));
   r_assert_cmpint (r_mpint_ucmp_u32 (&mpint, 65537), ==, 0);
 
-  r_assert (r_rsa_pub_key_get_modulus (key, &mpint));
+  r_assert (r_rsa_pub_key_get_n (key, &mpint));
   r_mpint_init_str (&expected,
       "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"
       "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"
@@ -232,7 +232,7 @@ RTEST (rcryptopem, rsa_privkey, RTEST_FAST)
   r_assert_cmpint (r_mpint_cmp (&mpint, &expected), ==, 0);
   r_mpint_clear (&expected);
 
-  r_assert (r_rsa_priv_key_get_modulus (key, &mpint));
+  r_assert (r_rsa_priv_key_get_d (key, &mpint));
   r_mpint_init_str (&expected,
       "0x1628e4a39ebea86c8df0cd11572691017cfefb14ea1c12e1dedc7856032dad0f9612"
       "00a38684f0a36dca30102e2464989d19a805933794c7d329ebc890089d3c4c6f602766"

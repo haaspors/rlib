@@ -252,38 +252,91 @@ r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec)
 }
 
 rboolean
-r_rsa_key_get_exponent (RCryptoKey * key, rmpint * e)
+r_rsa_pub_key_get_e (RCryptoKey * key, rmpint * e)
 {
-  if (key != NULL && e != NULL && key->algo == R_CRYPTO_ALGO_RSA) {
-    r_mpint_set (e, &((RRsaPubKey *)key)->e);
-    return TRUE;
-  }
+  if (R_UNLIKELY (key == NULL || e == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
 
-  return FALSE;
+  r_mpint_set (e, &((RRsaPubKey*)key)->e);
+  return TRUE;
 }
 
 rboolean
-r_rsa_pub_key_get_modulus (RCryptoKey * key, rmpint * n)
+r_rsa_pub_key_get_n (RCryptoKey * key, rmpint * n)
 {
-  if (key != NULL && n != NULL && key->algo == R_CRYPTO_ALGO_RSA) {
-    r_mpint_set (n, &((RRsaPubKey *)key)->n);
-    return TRUE;
-  }
+  if (R_UNLIKELY (key == NULL || n == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
 
-  return FALSE;
+  r_mpint_set (n, &((RRsaPubKey*)key)->n);
+  return TRUE;
 }
 
 rboolean
-r_rsa_priv_key_get_modulus (RCryptoKey * key, rmpint * d)
+r_rsa_priv_key_get_d (RCryptoKey * key, rmpint * d)
 {
-  if (key != NULL && d != NULL &&
-      key->type == R_CRYPTO_PRIVATE_KEY && key->algo == R_CRYPTO_ALGO_RSA) {
-    r_mpint_set (d, &((RRsaPrivKey *)key)->d);
-    return TRUE;
-  }
+  if (R_UNLIKELY (key == NULL || d == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
 
-  return FALSE;
+  r_mpint_set (d, &((RRsaPrivKey*)key)->d);
+  return TRUE;
 }
+
+rboolean
+r_rsa_priv_key_get_p (RCryptoKey * key, rmpint * p)
+{
+  if (R_UNLIKELY (key == NULL || p == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+
+  r_mpint_set (p, &((RRsaPrivKey*)key)->p);
+  return TRUE;
+}
+
+rboolean
+r_rsa_priv_key_get_q (RCryptoKey * key, rmpint * q)
+{
+  if (R_UNLIKELY (key == NULL || q == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+
+  r_mpint_set (q, &((RRsaPrivKey*)key)->q);
+  return TRUE;
+}
+
+rboolean
+r_rsa_priv_key_get_dp (RCryptoKey * key, rmpint * dp)
+{
+  if (R_UNLIKELY (key == NULL || dp == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+
+  r_mpint_set (dp, &((RRsaPrivKey*)key)->dp);
+  return TRUE;
+}
+
+rboolean
+r_rsa_priv_key_get_dq (RCryptoKey * key, rmpint * dq)
+{
+  if (R_UNLIKELY (key == NULL || dq == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+
+  r_mpint_set (dq, &((RRsaPrivKey*)key)->dq);
+  return TRUE;
+}
+
+rboolean
+r_rsa_priv_key_get_qp (RCryptoKey * key, rmpint * qp)
+{
+  if (R_UNLIKELY (key == NULL || qp == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+
+  r_mpint_set (qp, &((RRsaPrivKey*)key)->qp);
+  return TRUE;
+}
+
 
 rboolean
 r_rsa_pub_key_encrypt (RCryptoKey * key,

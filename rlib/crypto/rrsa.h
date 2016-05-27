@@ -45,12 +45,15 @@ R_API RCryptoKey * r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
 R_API RCryptoKey * r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec) R_ATTR_MALLOC;
 
 
-#define r_rsa_pub_key_get_exponent  r_rsa_key_get_exponent
-#define r_rsa_priv_key_get_exponent r_rsa_key_get_exponent
-R_API rboolean r_rsa_key_get_exponent (RCryptoKey * key, rmpint * e);
-
-R_API rboolean r_rsa_pub_key_get_modulus (RCryptoKey * key, rmpint * n);
-R_API rboolean r_rsa_priv_key_get_modulus (RCryptoKey * key, rmpint * d);
+#define r_rsa_priv_key_get_e r_rsa_pub_key_get_e
+R_API rboolean r_rsa_pub_key_get_e (RCryptoKey * key, rmpint * e);
+R_API rboolean r_rsa_pub_key_get_n (RCryptoKey * key, rmpint * n);
+R_API rboolean r_rsa_priv_key_get_d (RCryptoKey * key, rmpint * d);
+R_API rboolean r_rsa_priv_key_get_p (RCryptoKey * key, rmpint * p);
+R_API rboolean r_rsa_priv_key_get_q (RCryptoKey * key, rmpint * q);
+R_API rboolean r_rsa_priv_key_get_dp (RCryptoKey * key, rmpint * dp);
+R_API rboolean r_rsa_priv_key_get_dq (RCryptoKey * key, rmpint * dq);
+R_API rboolean r_rsa_priv_key_get_qp (RCryptoKey * key, rmpint * qp);
 
 R_API rboolean r_rsa_oaep_encrypt (RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
