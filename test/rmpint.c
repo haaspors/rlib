@@ -91,7 +91,7 @@ RTEST (rmpint, init_binary, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rmpint, to_binary, RTEST_FAST)
+RTEST (rmpint, to_binary_new, RTEST_FAST)
 {
   rmpint a;
   static const ruint8 bin[] = {
@@ -112,20 +112,18 @@ RTEST (rmpint, to_binary, RTEST_FAST)
   ruint8 * binptr;
   rsize size = 0;
 
-  r_assert_cmpptr (r_mpint_to_binary (NULL, NULL), ==, NULL);
-  r_assert_cmpptr (r_mpint_to_binary (NULL, &size), ==, NULL);
+  r_assert_cmpptr (r_mpint_to_binary_new (NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_mpint_to_binary_new (NULL, &size), ==, NULL);
 
   r_mpint_init (&a);
-  r_assert_cmpptr ((binptr = r_mpint_to_binary (&a, &size)), !=, NULL);
+  r_assert_cmpptr (r_mpint_to_binary_new (&a, NULL), ==, NULL);
+  r_assert_cmpptr ((binptr = r_mpint_to_binary_new (&a, &size)), !=, NULL);
   r_assert_cmpuint (size, ==, 0);
   r_mpint_clear (&a);
   r_free (binptr);
 
   r_mpint_init_binary (&a, bin, sizeof (bin));
-  r_assert_cmpptr ((binptr = r_mpint_to_binary (&a, NULL)), !=, NULL);
-  r_free (binptr);
-
-  r_assert_cmpptr ((binptr = r_mpint_to_binary (&a, &size)), !=, NULL);
+  r_assert_cmpptr ((binptr = r_mpint_to_binary_new (&a, &size)), !=, NULL);
   r_assert_cmpuint (size, ==, sizeof (bin));
   r_assert_cmpmem (binptr, ==, bin, size);
 
@@ -133,12 +131,33 @@ RTEST (rmpint, to_binary, RTEST_FAST)
   r_free (binptr);
 
   r_mpint_init_binary (&a, leading0, sizeof (leading0));
-  r_assert_cmpptr ((binptr = r_mpint_to_binary (&a, &size)), !=, NULL);
+  r_assert_cmpptr ((binptr = r_mpint_to_binary_new (&a, &size)), !=, NULL);
   r_assert_cmpuint (size, ==, sizeof (leading0) - 8);
   r_assert_cmpmem (binptr, ==, leading0 + 8, size);
 
   r_mpint_clear (&a);
   r_free (binptr);
+}
+RTEST_END;
+
+RTEST (rmpint, to_binary_with_size, RTEST_FAST)
+{
+  rmpint a;
+  ruint8 out[256];
+
+  r_memset (out, 0, sizeof (out));
+  r_assert (!r_mpint_to_binary_with_size (NULL, NULL, 0));
+  r_mpint_init (&a);
+  r_mpint_set_u32 (&a, 42);
+  r_assert (!r_mpint_to_binary_with_size (&a, NULL, 0));
+  r_assert (!r_mpint_to_binary_with_size (NULL, out, 0));
+  r_assert (!r_mpint_to_binary_with_size (&a, out, 0));
+  r_assert (r_mpint_to_binary_with_size (&a, out, 3));
+  r_assert_cmpuint (out[0], ==, 0);
+  r_assert_cmpuint (out[1], ==, 0);
+  r_assert_cmpuint (out[2], ==, 42);
+
+  r_mpint_clear (&a);
 }
 RTEST_END;
 

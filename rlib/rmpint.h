@@ -45,7 +45,9 @@ R_API void r_mpint_init_str (rmpint * mpi, const rchar * str,
 R_API void r_mpint_init_copy (rmpint * dst, const rmpint * src);
 R_API void r_mpint_clear (rmpint * mpi);
 
-R_API ruint8 * r_mpint_to_binary (const rmpint * mpi, rsize * size);
+R_API ruint8 * r_mpint_to_binary_new (const rmpint * mpi, rsize * size) R_ATTR_MALLOC;
+R_API rboolean r_mpint_to_binary (const rmpint * mpi, ruint8 * bin, rsize * size);
+R_API rboolean r_mpint_to_binary_with_size (const rmpint * mpi, ruint8 * bin, rsize size);
 R_API rchar * r_mpint_to_str (const rmpint * mpi);
 
 #define r_mpint_iszero(mpi)       ((mpi)->dig_used == 0)

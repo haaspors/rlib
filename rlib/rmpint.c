@@ -152,49 +152,99 @@ r_mpint_clear (rmpint * mpi)
   r_memset (mpi, 0, sizeof (rmpint));
 }
 
+
+static void
+r_mpint_to_binary_copy (ruint8 * dst, ruint8 * src, ruint8 b, rsize d)
+{
+#if R_BYTE_ORDER == R_LITTLE_ENDIAN
+  while (b-- > 0)
+    *dst++ = src[d * sizeof (rmpint_digit) + b];
+  while (d-- > 0) {
+    *dst++ = src[d * sizeof (rmpint_digit) + 3];
+    *dst++ = src[d * sizeof (rmpint_digit) + 2];
+    *dst++ = src[d * sizeof (rmpint_digit) + 1];
+    *dst++ = src[d * sizeof (rmpint_digit) + 0];
+  }
+#else
+  while (b > 0)
+    *dst++ = src[(d+1) * sizeof (rmpint_digit) - b--];
+  while (d-- > 0) {
+    *dst++ = src[d * sizeof (rmpint_digit) + 0];
+    *dst++ = src[d * sizeof (rmpint_digit) + 1];
+    *dst++ = src[d * sizeof (rmpint_digit) + 2];
+    *dst++ = src[d * sizeof (rmpint_digit) + 3];
+  }
+#endif
+}
+
 ruint8 *
-r_mpint_to_binary (const rmpint * mpi, rsize * size)
+r_mpint_to_binary_new (const rmpint * mpi, rsize * size)
 {
   ruint8 * ret;
 
-  if (R_LIKELY (mpi != NULL)) {
-    rsize len = mpi->dig_used * sizeof (rmpint_digit);
-
-    if ((ret = r_malloc (len)) != NULL) {
-      ruint8 * src, * dst = ret;
-
-#if R_BYTE_ORDER == R_LITTLE_ENDIAN
-      src = (ruint8 *)(rpointer)mpi->data;
-
-      while (len > 0 && src[len - 1] == 0)
-        len--;
-      while (len-- > 0)
-        *dst++ = src[len];
-#else
-      if (mpi->dig_used > 0) {
-        rsize i = 0;
-        src = (ruint8 *)(rpointer)&mpi->data[mpi->dig_used - 1];
-
-        while (i < sizeof (rmpint_digit) && src[i] == 0)
-          i++;
-        for (; i < sizeof (rmpint_digit); i++)
-          *dst++ = src[i];
-
-        if (mpi->dig_used > 1) {
-          for (i = mpi->dig_used - 2; i > 0; i--, dst += sizeof (rmpint_digit))
-            r_memcpy (dst, &mpi->data[i], sizeof (rmpint_digit));
-        }
+  if (R_LIKELY (mpi != NULL && size != NULL)) {
+    *size = r_mpint_digits_used (mpi) * sizeof (rmpint_digit);
+    if ((ret = r_malloc (*size)) != NULL) {
+      if (!r_mpint_to_binary (mpi, ret, size)) {
+        r_free (ret);
+        ret = NULL;
       }
-#endif
-
-      if (size != NULL)
-        *size = dst - ret;
     }
   } else {
     ret = NULL;
   }
 
   return ret;
+}
+
+rboolean
+r_mpint_to_binary (const rmpint * mpi, ruint8 * bin, rsize * size)
+{
+  if (R_LIKELY (mpi != NULL && bin != NULL && size != NULL)) {
+    ruint8 * src = (ruint8 *)(rpointer)mpi->data;
+    rsize len = r_mpint_digits_used (mpi);
+    if (len > 0) {
+      ruint8 b = sizeof (rmpint_digit);
+
+#if R_BYTE_ORDER == R_LITTLE_ENDIAN
+      len--;
+      while (b > 0 && src[len * sizeof (rmpint_digit) + b - 1] == 0)
+        b--;
+#else
+      while (b > 0 && src[len * sizeof (rmpint_digit) - b] == 0)
+        b--;
+      len--;
+#endif
+
+      r_mpint_to_binary_copy (bin, src, b, len);
+      if (size != NULL)
+        *size = len * sizeof (rmpint_digit) + b;
+    } else if (size != NULL) {
+      *size = 0;
+    }
+
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+rboolean
+r_mpint_to_binary_with_size (const rmpint * mpi, ruint8 * bin, rsize size)
+{
+  if (R_LIKELY (mpi != NULL && bin != NULL)) {
+    rsize used = r_mpint_bytes_used (mpi);
+    if (size >= used) {
+      rsize prefix = size - used;
+
+      r_memset (bin, 0, prefix);
+      r_mpint_to_binary_copy (bin + prefix, (ruint8 *)(rpointer)mpi->data,
+          used % sizeof (rmpint_digit), used / sizeof (rmpint_digit));
+      return TRUE;
+    }
+  }
+
+  return FALSE;
 }
 
 rchar *
