@@ -57,6 +57,10 @@ R_API rchar * r_mpint_to_str (const rmpint * mpi);
 R_API rboolean r_mpint_isprime_t (const rmpint * mpi, ruint t);
 
 #define r_mpint_digits_used(mpi)  (mpi)->dig_used
+#define r_mpint_bytes_used(mpi)   ((ruint)((mpi)->dig_used > 0 ?              \
+    (ruint)(((ruint)(mpi)->dig_used * sizeof (rmpint_digit)) -                \
+    (ruint)RUINT32_CLZ (r_mpint_get_digit (mpi, (mpi)->dig_used - 1)) / 8) :  \
+    ((ruint)0)))
 #define r_mpint_bits_used(mpi)    ((ruint)((mpi)->dig_used > 0 ?              \
     (ruint)(((ruint)(mpi)->dig_used * sizeof (rmpint_digit) * 8) -            \
     (ruint)RUINT32_CLZ (r_mpint_get_digit (mpi, (mpi)->dig_used - 1))) :      \

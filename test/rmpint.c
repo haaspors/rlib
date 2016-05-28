@@ -9,7 +9,9 @@ RTEST (rmpint, init_and_set, RTEST_FAST)
 
   r_mpint_init (&a);
   r_assert_cmpuint (a.dig_alloc, >=, RMPINT_DEF_DIGITS);
-  r_assert_cmpuint (a.dig_used, ==, 0);
+  r_assert_cmpuint (r_mpint_digits_used (&a), ==, 0);
+  r_assert_cmpuint (r_mpint_bytes_used (&a), ==, 0);
+  r_assert_cmpuint (r_mpint_bits_used (&a), ==, 0);
   r_mpint_clear (&a);
 
   /* digits constraints */
@@ -20,9 +22,15 @@ RTEST (rmpint, init_and_set, RTEST_FAST)
   /* init_copy and set */
   r_mpint_init (&a);
   r_mpint_set_u32 (&a, 0x42424242);
+  r_assert_cmpuint (r_mpint_digits_used (&a), ==, 1);
+  r_assert_cmpuint (r_mpint_bytes_used (&a), ==, 4);
+  r_assert_cmpuint (r_mpint_bits_used (&a), ==, 31);
   r_mpint_init_copy (&b, &a);
   r_assert_cmpint (r_mpint_cmp (&a, &b), ==, 0);
   r_mpint_set_u32 (&a, 0x0000f00d);
+  r_assert_cmpuint (r_mpint_digits_used (&a), ==, 1);
+  r_assert_cmpuint (r_mpint_bytes_used (&a), ==, 2);
+  r_assert_cmpuint (r_mpint_bits_used (&a), ==, 16);
   r_assert_cmpint (r_mpint_cmp (&a, &b), <, 0);
   r_mpint_set (&a, &b);
   r_assert_cmpint (r_mpint_cmp (&a, &b), ==, 0);
