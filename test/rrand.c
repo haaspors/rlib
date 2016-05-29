@@ -13,3 +13,22 @@ RTEST (rrand, prng, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrand, fill_nonzero, RTEST_FAST)
+{
+  RPrng * prng;
+  ruint8 buffer[4096];
+  rsize i;
+
+  r_assert (!r_prng_fill_nonzero (NULL, NULL, 0));
+  r_assert (!r_prng_fill_nonzero (NULL, buffer, 0));
+
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+  r_assert (!r_prng_fill_nonzero (prng, NULL, 0));
+  r_assert (!r_prng_fill_nonzero (prng, buffer, 0));
+  r_assert (r_prng_fill_nonzero (prng, buffer, sizeof (buffer)));
+  for (i = 0; i < sizeof (buffer); i++)
+    r_assert_cmpuint (buffer[i], !=, 0);
+
+  r_prng_unref (prng);
+}
+RTEST_END;

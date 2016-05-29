@@ -110,3 +110,38 @@ r_prng_get_u64 (RPrng * prng)
   return prng->get (prng);
 }
 
+rboolean
+r_prng_fill (RPrng * prng, ruint8 * buf, rsize size)
+{
+  static const rsize inc = sizeof (ruint64);
+
+  if (R_UNLIKELY (prng == NULL)) return FALSE;
+  if (R_UNLIKELY (buf == NULL)) return FALSE;
+  if (R_UNLIKELY (size == 0)) return FALSE;
+
+  for (; size >= inc; buf += inc, size -= inc)
+    *((ruint64*)buf) = r_prng_get_u64 (prng);
+  if (size > 0) {
+    ruint64 v = r_prng_get_u64 (prng);
+    r_memcpy (buf, &v, size);
+  }
+
+  return TRUE;
+}
+
+rboolean
+r_prng_fill_nonzero (RPrng * prng, ruint8 * buf, rsize size)
+{
+  rboolean ret;
+
+  if ((ret = r_prng_fill (prng, buf, size))) {
+    rsize i;
+    for (i = 0; i < size; i++) {
+      while (R_UNLIKELY (buf[i] == 0))
+        buf[i] = (ruint8)r_prng_get_u64 (prng);
+    }
+  }
+
+  return ret;
+}
+
