@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/crypto/rkey.h>
+#include <rlib/rrand.h>
 #include <rlib/rmpint.h>
 
 R_BEGIN_DECLS
@@ -55,11 +56,16 @@ R_API rboolean r_rsa_priv_key_get_dp (RCryptoKey * key, rmpint * dp);
 R_API rboolean r_rsa_priv_key_get_dq (RCryptoKey * key, rmpint * dq);
 R_API rboolean r_rsa_priv_key_get_qp (RCryptoKey * key, rmpint * qp);
 
-R_API rboolean r_rsa_oaep_encrypt (RCryptoKey * key,
+
+R_API rboolean r_rsa_raw_encrypt (RCryptoKey * key, RPrng * prng,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
+R_API rboolean r_rsa_raw_decrypt (RCryptoKey * key,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
+R_API rboolean r_rsa_oaep_encrypt (RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
 R_API rboolean r_rsa_oaep_decrypt (RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_pkcs1v1_5_encrypt (RCryptoKey * key,
+R_API rboolean r_rsa_pkcs1v1_5_encrypt (RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
 R_API rboolean r_rsa_pkcs1v1_5_decrypt (RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);

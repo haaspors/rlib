@@ -338,27 +338,172 @@ r_rsa_priv_key_get_qp (RCryptoKey * key, rmpint * qp)
 }
 
 
-rboolean
-r_rsa_pub_key_encrypt (RCryptoKey * key,
-    rconstpointer data, rsize size, ruint8 * out, rsize * outsize)
+static rboolean
+r_rsa_raw_encrypt_internal (RRsaPrivKey * key,
+    rconstpointer data, ruint8 * out, rsize size)
 {
-  if (R_UNLIKELY (key == NULL || data == NULL || size == 0 ||
-        out == NULL || outsize == NULL || *outsize == 0))
+  rboolean ret;
+  rsize k;
+  rmpint c, m;
+
+  k = r_mpint_digits_used (&key->pub.n) * sizeof (rmpint_digit);
+  if (size != k)
     return FALSE;
 
-  /* TODO: implment... */
-  return FALSE;
+  r_mpint_init_binary (&m, data, size);
+  if (r_mpint_iszero (&m)) {
+    r_mpint_clear (&m);
+    return FALSE;
+  }
+
+  r_mpint_init_size (&c, r_mpint_digits_used (&key->pub.n));
+
+  ret = r_mpint_expmod (&c, &m, &key->pub.e, &key->pub.n) &&
+    r_mpint_to_binary_with_size (&c, out, k);
+
+  r_mpint_clear (&m);
+  r_mpint_clear (&c);
+  return ret;
 }
 
 rboolean
-r_rsa_pub_key_decrypt (RCryptoKey * key,
+r_rsa_raw_encrypt (RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize)
 {
-  if (R_UNLIKELY (key == NULL || data == NULL || size == 0 ||
-        out == NULL || outsize == NULL || *outsize == 0))
+  rboolean ret;
+
+  (void) prng;
+
+  if (R_UNLIKELY (key == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+
+  if (R_UNLIKELY (data == NULL || out == NULL || outsize == NULL))
     return FALSE;
 
-  /* TODO: implment... */
-  return FALSE;
+  if ((ret = r_rsa_raw_encrypt_internal ((RRsaPrivKey*)key, data, out, size)))
+    *outsize = size;
+
+  return ret;
+}
+
+static rboolean
+r_rsa_raw_decrypt_internal (RRsaPrivKey * key,
+    rconstpointer data, ruint8 * out, rsize size)
+{
+  rboolean ret;
+  rsize k;
+  rmpint c, m;
+
+  k = r_mpint_digits_used (&key->pub.n) * sizeof (rmpint_digit);
+  if (size != k)
+    return FALSE;
+
+  r_mpint_init_binary (&c, data, size);
+  if (r_mpint_iszero (&c)) {
+    r_mpint_clear (&c);
+    return FALSE;
+  }
+
+  r_mpint_init_size (&m, r_mpint_digits_used (&key->pub.n));
+
+  /* FIXME: implement... faster mode when we have q, p, dQ, dP and qInv */
+  ret = r_mpint_expmod (&m, &c, &key->d, &key->pub.n) &&
+    r_mpint_to_binary_with_size (&m, out, k);
+
+  r_mpint_clear (&m);
+  r_mpint_clear (&c);
+  return ret;
+}
+
+rboolean
+r_rsa_raw_decrypt (RCryptoKey * key,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize)
+{
+  rboolean ret;
+
+  if (R_UNLIKELY (key == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+
+  if (R_UNLIKELY (data == NULL || out == NULL || outsize == NULL))
+    return FALSE;
+
+  if ((ret = r_rsa_raw_decrypt_internal ((RRsaPrivKey*)key, data, out, size)))
+    *outsize = size;
+
+  return ret;
+}
+
+rboolean
+r_rsa_pkcs1v1_5_encrypt (RCryptoKey * key, RPrng * prng,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize)
+{
+  rboolean ret;
+  rsize k;
+  ruint8 * ptr;
+
+  if (R_UNLIKELY (key == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+
+  if (R_UNLIKELY (prng == NULL)) return FALSE;
+  if (R_UNLIKELY (data == NULL)) return FALSE;
+  if (R_UNLIKELY (out == NULL || outsize == NULL)) return FALSE;
+
+  k = r_mpint_digits_used (&((RRsaPrivKey*)key)->pub.n) * sizeof (rmpint_digit);
+  if (size > k - 11 || *outsize < k)
+    return FALSE;
+
+  ptr = out;
+  *ptr++ = 0;
+  *ptr++ = 2;
+  /* FIXME: This should be pseudo random nonzero! */
+  for (; ptr < out + k - (size+1); ptr++) *ptr = 0xff;
+  *ptr++ = 0;
+  r_memcpy (ptr, data, size);
+
+  if ((ret = r_rsa_raw_encrypt_internal ((RRsaPrivKey*)key, out, out, k)))
+    *outsize = k;
+
+  return ret;
+}
+
+rboolean
+r_rsa_pkcs1v1_5_decrypt (RCryptoKey * key,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize)
+{
+  rboolean ret;
+  ruint8 * buffer;
+
+  if (R_UNLIKELY (key == NULL)) return FALSE;
+  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_RSA)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+
+  if (R_UNLIKELY (data == NULL || out == NULL || outsize == NULL))
+    return FALSE;
+  if (size != r_mpint_digits_used (&((RRsaPrivKey*)key)->pub.n) * sizeof (rmpint_digit))
+    return FALSE;
+
+  buffer = (*outsize >= size) ? out : r_alloca (size);
+
+  if ((ret = r_rsa_raw_decrypt_internal ((RRsaPrivKey*)key, data, buffer, size))) {
+    ruint8 * ptr;
+
+    if (buffer[0] != 0 || buffer[1] != 2)
+      return FALSE;
+
+    ptr = buffer + 2;
+    while (ptr < buffer + size && *ptr != 0) ptr++;
+
+    ptr++;
+    if (*outsize < size - (ptr - buffer))
+      return FALSE;
+
+    *outsize = size - (ptr - buffer);
+    r_memmove (out, ptr, *outsize);
+  }
+
+  return ret;
 }
 
