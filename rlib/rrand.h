@@ -37,10 +37,10 @@ R_API ruint32 r_rand_entropy_u32 (void);
 typedef struct _RPrng RPrng;
 
 #define r_rand_prng_new           r_prng_new_kiss
-#define r_rand_prng_ref           r_ref_ref
-#define r_rand_prng_unref         r_ref_unref
+#define r_prng_ref                r_ref_ref
+#define r_prng_unref              r_ref_unref
 
-R_API ruint64 r_rand_prng_get (RPrng * prng);
+R_API ruint64 r_prng_get_u64 (RPrng * prng);
 
 
 /* Spesific PRNG implementations */

@@ -10,11 +10,11 @@ RTEST_STRESS (rprng_kiss, get_slow, RTEST_SLOW)
   ruint64 i, count = 100000000, v;
 
   for (i = 0; i < count; i++)
-    v = r_rand_prng_get (prng);
+    v = r_prng_get_u64 (prng);
 
   r_assert_cmpuint (v, ==, RUINT64_CONSTANT (1666297717051644203));
 
-  r_rand_prng_unref (prng);
+  r_prng_unref (prng);
 }
 RTEST_END;
 

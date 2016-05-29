@@ -158,7 +158,7 @@ r_fs_path_new_tmpname_full (const rchar * dir,
   do {
     int i;
     for (i = 0; i < 6; i++)
-      r[i] = candidates[r_rand_prng_get (prng) % cands];
+      r[i] = candidates[r_prng_get_u64 (prng) % cands];
 
     r_free (file);
     name = r_strprintf ("%s%s%s", prefix, r, suffix);
@@ -166,7 +166,7 @@ r_fs_path_new_tmpname_full (const rchar * dir,
     r_free (name);
   } while (r_fs_test_exists (file) && ++tries < RFS_PATH_RAND_MAX_TRIES);
 
-  r_rand_prng_unref (prng);
+  r_prng_unref (prng);
   return file;
 }
 

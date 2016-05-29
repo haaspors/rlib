@@ -105,7 +105,7 @@ r_prng_new (RPrngGetFunc func, rsize size)
 }
 
 ruint64
-r_rand_prng_get (RPrng * prng)
+r_prng_get_u64 (RPrng * prng)
 {
   return prng->get (prng);
 }
