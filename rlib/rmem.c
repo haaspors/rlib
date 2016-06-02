@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -129,5 +129,53 @@ r_memdup (rconstpointer src, rsize size)
   }
 
   return ret;
+}
+
+rpointer
+r_mem_scan_byte (rconstpointer mem, rsize size, ruint8 byte)
+{
+  if (R_LIKELY (mem != NULL)) {
+    const ruint8 * ptr = mem, * end;
+    for (end = ptr + size; ptr < end; ptr++) {
+      if (*ptr == byte)
+        return (rpointer)ptr;
+    }
+  }
+
+  return NULL;
+}
+
+rpointer
+r_mem_scan_byte_any (rconstpointer mem, rsize size,
+    const ruint8 * byte, rsize bytes)
+{
+  if (R_LIKELY (mem != NULL && byte != NULL && bytes > 0)) {
+    const ruint8 * ptr = mem, * end;
+    for (end = ptr + size; ptr < end; ptr++) {
+      if (r_mem_scan_byte (byte, bytes, *ptr) != NULL)
+        return (rpointer)ptr;
+    }
+  }
+
+  return NULL;
+}
+
+rpointer
+r_mem_scan_data (rconstpointer mem, rsize size,
+    rconstpointer data, rsize datasize)
+{
+  if (R_LIKELY (mem != NULL && data != NULL && datasize > 0)) {
+    const ruint8 * ptr = mem, * end = mem + size - datasize;
+    ruint8 byte = *(const ruint8 *)data;
+
+    while (ptr < end) {
+      if ((ptr = (rpointer)r_mem_scan_byte (ptr, size - datasize, byte)) == NULL)
+        break;
+      if (r_memcmp (ptr, data, datasize) == 0)
+        return (rpointer)ptr;
+    }
+  }
+
+  return NULL;
 }
 

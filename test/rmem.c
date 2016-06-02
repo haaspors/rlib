@@ -78,3 +78,47 @@ RTEST (rmem, move, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmem, scan_byte, RTEST_FAST)
+{
+  const ruint8 foo[]  = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+
+  r_assert_cmpptr (r_mem_scan_byte (NULL, 0, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_byte (foo, 0, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_byte (foo, sizeof (foo), 0), ==, &foo[0]);
+  r_assert_cmpptr (r_mem_scan_byte (foo, sizeof (foo), 8), ==, &foo[8]);
+  r_assert_cmpptr (r_mem_scan_byte (foo, sizeof (foo), 0xff), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_byte (foo, sizeof (foo) - 2, 8), ==, NULL);
+}
+RTEST_END;
+
+RTEST (rmem, scan_byte_any, RTEST_FAST)
+{
+  const ruint8 foo[]  = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  const ruint8 any[]  = { 0xff, 0x0f, 0xda, 8 };
+
+  r_assert_cmpptr (r_mem_scan_byte_any (NULL, 0, NULL, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_byte_any (foo, 0, NULL, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_byte_any (foo, 0, any, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_byte_any (foo, sizeof (foo), any, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_byte_any (foo, sizeof (foo), any, sizeof (any)), ==, &foo[8]);
+  r_assert_cmpptr (r_mem_scan_byte_any (foo, sizeof (foo), any, sizeof (any) - 1), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_byte_any (foo, sizeof (foo) - 2, any, sizeof (any)), ==, NULL);
+}
+RTEST_END;
+
+RTEST (rmem, scan_data, RTEST_FAST)
+{
+  const ruint8 foo[]  = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  const ruint8 data[]  = { 7, 8 };
+
+  r_assert_cmpptr (r_mem_scan_data (NULL, 0, NULL, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_data (foo, 0, NULL, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_data (foo, 0, data, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_data (foo, sizeof (foo), data, 0), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_data (foo, sizeof (foo), data, sizeof (data)), ==, &foo[7]);
+  r_assert_cmpptr (r_mem_scan_data (data, sizeof (data), foo, sizeof (foo)), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_data (foo, sizeof (foo), data + 1, sizeof (data) - 1), ==, &foo[8]);
+  r_assert_cmpptr (r_mem_scan_data (foo, sizeof (foo) - 2, data, sizeof (data)), ==, NULL);
+}
+RTEST_END;
+

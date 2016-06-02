@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -84,6 +84,13 @@ R_API rpointer  r_memcpy (rpointer R_ATTR_RESTRICT dst,
     rconstpointer R_ATTR_RESTRICT src, rsize size);
 R_API rpointer  r_memmove (rpointer dst, rconstpointer src, rsize size);
 R_API rpointer  r_memdup (rconstpointer src, rsize size) R_ATTR_MALLOC;
+
+/* memory scan operations */
+R_API rpointer r_mem_scan_byte (rconstpointer mem, rsize size, ruint8 byte);
+R_API rpointer r_mem_scan_byte_any (rconstpointer mem, rsize size,
+    const ruint8 * byte, rsize bytes);
+R_API rpointer r_mem_scan_data (rconstpointer mem, rsize size,
+    rconstpointer data, rsize datasize);
 
 R_END_DECLS
 
