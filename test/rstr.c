@@ -859,3 +859,28 @@ RTEST (rstr, mem_hex, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, ascii_xdigit_value, RTEST_FAST)
+{
+  rchar i;
+  r_assert_cmpint (r_ascii_digit_value (0), <, 0);
+  r_assert_cmpint (r_ascii_digit_value (0xff), <, 0);
+  r_assert_cmpint (r_ascii_xdigit_value (0xff), <, 0);
+
+  for (i = 0; i < 10; i++)
+    r_assert_cmpint (r_ascii_digit_value ('0' + i), ==, i);
+  for (i = 0; i < 6; i++) {
+    r_assert_cmpint (r_ascii_digit_value ('a' + i), <, 0);
+    r_assert_cmpint (r_ascii_digit_value ('A' + i), <, 0);
+  }
+
+  for (i = 0; i < 10; i++)
+    r_assert_cmpint (r_ascii_xdigit_value ('0' + i), ==, i);
+  for (i = 0; i < 6; i++) {
+    r_assert_cmpint (r_ascii_xdigit_value ('a' + i), ==, 10 + i);
+    r_assert_cmpint (r_ascii_xdigit_value ('A' + i), ==, 10 + i);
+  }
+  r_assert_cmpint (r_ascii_xdigit_value ('g'), <, 0);
+  r_assert_cmpint (r_ascii_xdigit_value ('G'), <, 0);
+}
+RTEST_END;
+

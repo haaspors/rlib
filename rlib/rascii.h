@@ -54,6 +54,9 @@ R_API extern const ruint16 r_ascii_table[256];
 #define r_ascii_isupper(c) ((r_ascii_table[(ruint8) (c)] & R_ASCII_UPPER) != 0)
 #define r_ascii_isxdigit(c) ((r_ascii_table[(ruint8) (c)] & R_ASCII_XDIGIT) != 0)
 
+R_API rint8 r_ascii_digit_value (rchar c);
+R_API rint8 r_ascii_xdigit_value (rchar c);
+
 R_END_DECLS
 
 #endif /* __R_ASCII_H__ */
