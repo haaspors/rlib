@@ -122,3 +122,73 @@ RTEST (rmem, scan_data, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmem, scan_simple_pattern, RTEST_FAST)
+{
+  const ruint8 foo[]  = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  rpointer end;
+
+  r_assert_cmpptr (r_mem_scan_simple_pattern (NULL, 0, NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, 0, NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "*", NULL), ==, foo);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "*", &end), ==, foo);
+  r_assert_cmpptr (end, ==, foo + sizeof (foo));
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "06", &end), ==, &foo[6]);
+  r_assert_cmpptr (end, ==, &foo[7]);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "??06??", &end), ==, &foo[5]);
+  r_assert_cmpptr (end, ==, &foo[8]);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "01*06??", &end), ==, &foo[1]);
+  r_assert_cmpptr (end, ==, &foo[8]);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "??**??", &end), ==, foo);
+  r_assert_cmpptr (end, ==, foo + sizeof (foo));
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "00??*??*??07", &end), ==, foo);
+  r_assert_cmpptr (end, ==, &foo[8]);
+
+  /* pattern errors */
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "666", NULL), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "-06", NULL), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "06???", NULL), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_simple_pattern (foo, sizeof (foo), "06??m?", NULL), ==, NULL);
+}
+RTEST_END;
+
+RTEST (rmem, scan_pattern, RTEST_FAST)
+{
+  RMemScanResult * res;
+  const ruint8 foo[]  = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+
+  r_assert_cmpuint (r_mem_scan_pattern (NULL, 0, NULL, NULL), ==, R_MEM_SCAN_RESULT_INVAL);
+  r_assert_cmpuint (r_mem_scan_pattern (foo, 0, NULL, NULL), ==, R_MEM_SCAN_RESULT_INVAL);
+  r_assert_cmpuint (r_mem_scan_pattern (foo, sizeof (foo), NULL, NULL), ==, R_MEM_SCAN_RESULT_INVAL);
+  r_assert_cmpuint (r_mem_scan_pattern (foo, sizeof (foo), "*", NULL), ==, R_MEM_SCAN_RESULT_INVAL);
+
+  r_assert_cmpuint (r_mem_scan_pattern (foo, sizeof (foo), "*", &res), ==, R_MEM_SCAN_RESULT_OK);
+  r_assert_cmpuint (res->tokens, ==, 1);
+  r_assert_cmpuint (res->token[0].size, ==, sizeof (foo));
+  r_assert_cmpptr (res->token[0].ptr_data, ==, &foo[0]);
+  r_free (res);
+
+  r_assert_cmpuint (r_mem_scan_pattern (foo, sizeof (foo), "??", &res), ==, R_MEM_SCAN_RESULT_OK);
+  r_assert_cmpuint (res->tokens, ==, 1);
+  r_assert_cmpuint (res->token[0].size, ==, 1);
+  r_assert_cmpptr (res->token[0].ptr_data, ==, &foo[0]);
+  r_free (res);
+
+  r_assert_cmpuint (r_mem_scan_pattern (foo, sizeof (foo), "00??*??*??07", &res), ==, R_MEM_SCAN_RESULT_OK);
+  r_assert_cmpuint (res->tokens, ==, 7);
+  r_assert_cmpuint (res->token[0].size, ==, 1);
+  r_assert_cmpuint (res->token[1].size, ==, 1);
+  r_assert_cmpuint (res->token[2].size, ==, 0);
+  r_assert_cmpuint (res->token[3].size, ==, 1);
+  r_assert_cmpuint (res->token[2].ptr_data, >=, res->token[1].ptr_data);
+  r_assert_cmpuint (res->token[3].ptr_data, >, res->token[1].ptr_data);
+  r_assert_cmpuint (res->token[3].ptr_data, <, res->token[5].ptr_data);
+  r_assert_cmpuint (res->token[4].ptr_data, <=, res->token[5].ptr_data);
+  r_assert_cmpuint (res->token[4].size, ==, 0);
+  r_assert_cmpuint (res->token[5].size, ==, 1);
+  r_assert_cmpuint (res->token[6].size, ==, 1);
+  r_free (res);
+
+}
+RTEST_END;
+

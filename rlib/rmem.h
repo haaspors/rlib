@@ -92,6 +92,43 @@ R_API rpointer r_mem_scan_byte_any (rconstpointer mem, rsize size,
 R_API rpointer r_mem_scan_data (rconstpointer mem, rsize size,
     rconstpointer data, rsize datasize);
 
+/* memory scan for pattern */
+typedef enum {
+  R_MEM_TOKEN_NONE = -1,
+  R_MEM_TOKEN_BYTES,
+  R_MEM_TOKEN_WILDCARD,
+  R_MEM_TOKEN_WILDCARD_SIZED,
+  R_MEM_TOKEN_COUNT
+} RMemTokenType;
+
+typedef enum {
+  R_MEM_SCAN_RESULT_INVAL             = -4,
+  R_MEM_SCAN_RESULT_OOM               = -3,
+  R_MEM_SCAN_RESULT_INVALID_PATTERN   = -2,
+  R_MEM_SCAN_RESULT_PATTERN_NOT_IMPL  = -1,
+  R_MEM_SCAN_RESULT_OK                =  0,
+  R_MEM_SCAN_RESULT_NOT_FOUND
+} RMemScanResultType;
+
+typedef struct _RMemScanToken {
+  const rchar * ptr_pattern;
+  rpointer ptr_data;
+  rsize size;
+  RMemTokenType type;
+} RMemScanToken;
+
+typedef struct _RMemScanResult {
+  rpointer ptr;
+  rpointer end;
+  rsize tokens;
+  RMemScanToken token[0];
+} RMemScanResult;
+
+R_API rpointer r_mem_scan_simple_pattern (rconstpointer mem, rsize size,
+    const rchar * pattern, rpointer * end);
+R_API RMemScanResultType r_mem_scan_pattern (rconstpointer mem, rsize size,
+    const rchar * pattern, RMemScanResult ** result);
+
 R_END_DECLS
 
 #endif /* __R_MEM_H__ */
