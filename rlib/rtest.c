@@ -155,6 +155,15 @@ _r_test_mark_position (const rchar * file, ruint line, const rchar * func,
   return TRUE;
 }
 
+static inline R_ATTR_NORETURN void
+r_test_abort (void)
+{
+  if (g__r_test_nofork_ctx != NULL && g__r_test_nofork_ctx->thread == r_thread_current ())
+    longjmp (g__r_test_nofork_ctx->jb, R_TEST_RUN_STATE_FAILED);
+  else
+    abort ();
+}
+
 void
 r_test_assertion (RLogCategory * cat,
     const rchar * file, ruint line, const rchar * func,
@@ -173,8 +182,10 @@ r_test_assertionv (RLogCategory * cat,
     const rchar * fmt, va_list args)
 {
   rchar * msg = r_strvprintf (fmt, args);
-  r_test_assertion_msg (cat, file, line, func, msg);
+  _r_test_mark_position (file, line, func, TRUE);
+  r_log_msg (cat, R_LOG_LEVEL_ERROR, file, line, func, msg);
   r_free (msg);
+  r_test_abort ();
 }
 
 void
@@ -183,10 +194,7 @@ r_test_assertion_msg (RLogCategory * cat,
 {
   _r_test_mark_position (file, line, func, TRUE);
   r_log_msg (cat, R_LOG_LEVEL_ERROR, file, line, func, msg);
-  if (g__r_test_nofork_ctx != NULL && g__r_test_nofork_ctx->thread == r_thread_current ())
-    longjmp (g__r_test_nofork_ctx->jb, R_TEST_RUN_STATE_FAILED);
-  else
-    abort ();
+  r_test_abort ();
 }
 
 rsize
