@@ -317,34 +317,69 @@ rulong __inline RULONG_CTZ (rulong x)
 #if RLIB_SIZEOF_LONG == 8
 #define RUINT64_CLZ(x)          RULONG_CLZ (x)
 #define RUINT64_CTZ(x)          RULONG_CTZ (x)
+#define RUINT64_POPCOUNT(x)     RULONG_POPCOUNT (x)
+#define RUINT64_PARITY(x)       RULONG_PARITY (x)
 #else
 #define RUINT64_CLZ(x)          RULONGLONG_CLZ (x)
 #define RUINT64_CTZ(x)          RULONGLONG_CTZ (x)
+#define RUINT64_POPCOUNT(x)     RULONGLONG_POPCOUNT (x)
+#define RUINT64_PARITY(x)       RULONGLONG_PARITY (x)
 #endif
 
 #if RLIB_SIZEOF_INT == 4
 #define RUINT32_CLZ(x)          RUINT_CLZ (x)
 #define RUINT32_CTZ(x)          RUINT_CTZ (x)
+#define RUINT32_POPCOUNT(x)     RUINT_POPCOUNT (x)
+#define RUINT32_PARITY(x)       RUINT_PARITY (x)
 #elif RLIB_SIZEOF_LONG == 4
 #define RUINT32_CLZ(x)          RULONG_CLZ (x)
 #define RUINT32_CTZ(x)          RULONG_CTZ (x)
+#define RUINT32_POPCOUNT(x)     RULONG_POPCOUNT (x)
+#define RUINT32_PARITY(x)       RULONG_PARITY (x)
 #else
 #define RUINT32_CLZ(x)          (RUINT64_CLZ (x & RUINT32_MAX) - 32)
 #define RUINT32_CTZ(x)          RUINT64_CTZ (x & RUINT32_MAX)
+#define RUINT32_POPCOUNT(x)     RUINT64_POPCOUNT (x & RUINT32_MAX)
+#define RUINT32_PARITY(x)       RUINT64_PARITY (x & RUINT32_MAX)
 #endif
 
 #if RLIB_SIZEOF_INT == 2
 #define RUINT16_CLZ(x)          RUINT_CLZ (x)
 #define RUINT16_CTZ(x)          RUINT_CTZ (x)
+#define RUINT16_POPCOUNT(x)     RUINT_POPCOUNT (x)
+#define RUINT16_PARITY(x)       RUINT_PARITY (x)
 #elif RLIB_SIZEOF_LONG == 2
 #define RUINT16_CLZ(x)          RULONG_CLZ (x)
 #define RUINT16_CTZ(x)          RULONG_CTZ (x)
+#define RUINT16_POPCOUNT(x)     RULONG_POPCOUNT (x)
+#define RUINT16_PARITY(x)       RULONG_PARITY (x)
 #else
 #define RUINT16_CLZ(x)          (RUINT32_CLZ (x & RUINT16_MAX) - 16)
 #define RUINT16_CTZ(x)          RUINT32_CTZ (x & RUINT16_MAX)
+#define RUINT16_POPCOUNT(x)     RUINT32_POPCOUNT (x & RUINT16_MAX)
+#define RUINT16_PARITY(x)       RUINT32_PARITY (x & RUINT16_MAX)
 #endif
 
-#define RUINT8_CLZ(x)          (RUINT32_CLZ (x & RUINT16_MAX) - 24)
-#define RUINT8_CTZ(x)          RUINT32_CTZ (x & RUINT16_MAX)
+#define RUINT8_CLZ(x)           (RUINT32_CLZ (x & RUINT8_MAX) - 24)
+#define RUINT8_CTZ(x)           RUINT32_CTZ (x & RUINT8_MAX)
+#define RUINT8_POPCOUNT(x)      RUINT32_POPCOUNT (x & RUINT8_MAX)
+#define RUINT8_PARITY(x)        RUINT32_PARITY (x & RUINT8_MAX)
+
+#if RLIB_SIZEOF_SIZE_T == 8
+#define RSIZE_CLZ(x)            RUINT64_CLZ (x)
+#define RSIZE_CTZ(x)            RUINT64_CTZ (x)
+#define RSIZE_POPCOUNT(x)       RUINT64_POPCOUNT (x)
+#define RSIZE_PARITY(x)         RUINT64_PARITY (x)
+#elif RLIB_SIZEOF_SIZE_T == 4
+#define RSIZE_CLZ(x)            RUINT32_CLZ (x)
+#define RSIZE_CTZ(x)            RUINT32_CTZ (x)
+#define RSIZE_POPCOUNT(x)       RUINT32_POPCOUNT (x)
+#define RSIZE_PARITY(x)         RUINT32_PARITY (x)
+#elif RLIB_SIZEOF_SIZE_T == 2
+#define RSIZE_CLZ(x)            RUINT16_CLZ (x)
+#define RSIZE_CTZ(x)            RUINT16_CTZ (x)
+#define RSIZE_POPCOUNT(x)       RUINT16_POPCOUNT (x)
+#define RSIZE_PARITY(x)         RUINT16_PARITY (x)
+#endif
 
 #endif /* __R_MACROS_H__ */
