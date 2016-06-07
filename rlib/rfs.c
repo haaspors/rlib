@@ -21,12 +21,13 @@
 #include <rlib/rstr.h>
 #include <rlib/rrand.h>
 #include <rlib/rthreads.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #if defined (R_OS_WIN32)
 #include <rlib/runicode.h>
 #include <windows.h>
 #elif defined (R_OS_UNIX)
 #include <unistd.h>
-#include <sys/stat.h>
 #include <errno.h>
 #endif
 
@@ -224,6 +225,34 @@ r_fs_get_cur_dir (void)
   } while (errno == ERANGE && maxlen < RINT16_MAX);
 #endif
 
+  return ret;
+}
+
+rssize
+r_fs_get_filesize (const rchar * path)
+{
+  rssize ret;
+#ifdef R_OS_WIN32
+  runichar2 * upath;
+
+  if ((upath = r_utf8_to_utf16 (path, -1, NULL, NULL, NULL)) != NULL) {
+    struct __stat64 s;
+    if (_wstat64 (upath, &s) == 0) {
+      ret = s.st_size;
+    } else {
+      ret = -1;
+    }
+  } else {
+    ret = -1;
+  }
+#else
+  struct stat s;
+  if (stat (path, &s) == 0) {
+    ret = s.st_size;
+  } else {
+    ret = -1;
+  }
+#endif
   return ret;
 }
 

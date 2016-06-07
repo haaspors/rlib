@@ -60,6 +60,8 @@ R_API rchar * r_fs_path_new_tmpname_full (const rchar * dir,
 R_API const rchar * r_fs_get_tmp_dir (void);
 R_API rchar * r_fs_get_cur_dir (void) R_ATTR_MALLOC;
 
+R_API rssize r_fs_get_filesize (const rchar * path);
+
 R_API rboolean r_fs_test_exists (const rchar * path);
 
 R_API rboolean r_fs_test_is_directory (const rchar * path);
