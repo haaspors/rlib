@@ -1,0 +1,70 @@
+/* RLIB - Convenience library for useful things
+ * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3.0 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.
+ * See the COPYING file at the root of the source repository.
+ */
+#ifndef __R_FILE_H__
+#define __R_FILE_H__
+
+#if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
+#error "#include <rlib.h> only pelase."
+#endif
+
+#include <rlib/rtypes.h>
+#include <rlib/rref.h>
+#include <stdarg.h>
+
+typedef struct _RFile RFile;
+
+typedef enum {
+  R_SEEK_MODE_SET,
+  R_SEEK_MODE_CUR,
+  R_SEEK_MODE_END
+} RSeekMode;
+
+typedef enum {
+  R_FILE_ERROR_OK,
+  R_FILE_ERROR_AGAIN,
+  R_FILE_ERROR_INVAL,
+  R_FILE_ERROR_BAD_FILE,
+  R_FILE_ERROR_ERROR
+} RIOError;
+
+R_API RFile * r_file_open (const rchar * file, const rchar * mode);
+#define r_file_new_tmp(dir, pre, path) r_file_new_tmp_full (dir, pre, "w", path)
+R_API RFile * r_file_new_tmp_full (const rchar * dir, const rchar * pre,
+    const rchar * mode, rchar ** path);
+#define r_file_ref r_ref_ref
+#define r_file_unref r_ref_unref
+
+R_API int r_file_get_fd (RFile * file);
+
+R_API RIOError r_file_read (RFile * file, rpointer data, rsize size, rsize * actual);
+R_API RIOError r_file_write (RFile * file, rconstpointer data, rsize size, rsize * actual);
+R_API RIOError r_file_scanf (RFile * file, const rchar * fmt, rsize * actual, ...) R_ATTR_SCANF (2, 4);
+R_API RIOError r_file_vscanf (RFile * file, const rchar * fmt, rsize * actual, va_list args) R_ATTR_SCANF (2, 0);
+R_API RIOError r_file_seek (RFile * file, rsize size, RSeekMode mode);
+R_API rssize   r_file_tell (RFile * file);
+
+R_API rboolean r_file_is_eof (RFile * file);
+R_API rboolean r_file_has_error (RFile * file);
+
+R_API rboolean r_file_flush (RFile * file);
+
+R_END_DECLS
+
+#endif /* __R_FILE_H__ */
+
+

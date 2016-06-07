@@ -27,6 +27,7 @@
 #include <rlib/rclr.h>
 #include <rlib/renv.h>
 #include <rlib/rfd.h>
+#include <rlib/rfile.h>
 #include <rlib/rfs.h>
 #include <rlib/rhash.h>
 #include <rlib/rhzrptr.h>
