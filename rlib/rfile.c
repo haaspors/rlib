@@ -230,3 +230,68 @@ r_file_flush (RFile * file)
   return fflush (file->file) != 0;
 }
 
+rboolean
+r_file_read_all (const rchar * filename, ruint8 ** data, rsize * size)
+{
+  rboolean ret;
+  RFile * f;
+  rssize fsize;
+
+  if (R_UNLIKELY (filename == NULL)) return FALSE;
+  if (R_UNLIKELY (data == NULL)) return FALSE;
+  if (R_UNLIKELY (size == NULL)) return FALSE;
+
+  if ((fsize = r_fs_get_filesize (filename)) >= 0 &&
+      (f = r_file_open (filename, "r")) != NULL) {
+    *size = fsize;
+    if ((*data = r_malloc (*size)) != NULL) {
+      ruint8 * ptr = *data;
+      rsize actual;
+
+      ret = TRUE;
+      while (fsize > 0 && ret) {
+        if ((ret = r_file_read (f, ptr, fsize, &actual) == R_FILE_ERROR_OK)) {
+          ptr += actual;
+          fsize -= actual;
+        }
+      }
+    } else {
+      ret = FALSE;
+    }
+
+    r_file_unref (f);
+  } else {
+    ret = FALSE;
+  }
+
+  return ret;
+}
+
+rboolean
+r_file_write_all (const rchar * filename, rconstpointer data, rsize size)
+{
+  rboolean ret;
+  RFile * f;
+
+  if (R_UNLIKELY (filename == NULL)) return FALSE;
+  if (R_UNLIKELY (data == NULL)) return FALSE;
+
+  if ((f = r_file_open (filename, "w")) != NULL) {
+    rsize actual;
+    const ruint8 * ptr = data;
+
+    ret = TRUE;
+    while (size > 0 && ret) {
+      if ((ret = r_file_write (f, ptr, size, &actual) == R_FILE_ERROR_OK)) {
+        ptr += actual;
+        size -= actual;
+      }
+    }
+    r_file_unref (f);
+  } else {
+    ret = FALSE;
+  }
+
+  return ret;
+}
+

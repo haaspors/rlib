@@ -56,3 +56,25 @@ RTEST (rfile, write_seek_read, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rfile, write_read_all, RTEST_FAST | RTEST_SYSTEM)
+{
+  rchar * file;
+  ruint8 * out;
+  rsize size;
+
+  r_assert_cmpptr ((file = r_fs_path_new_tmpname_full (NULL, TESTPREFIX, "")), !=, NULL);
+
+  r_assert (!r_file_read_all (NULL, NULL, NULL));
+  r_assert (!r_file_read_all (file, NULL, NULL));
+  r_assert (!r_file_read_all (file, &out, NULL));
+
+  r_assert (r_file_write_all (file, "foobarstop", 10));
+  r_assert (r_file_read_all (file, &out, &size));
+  r_free (file);
+
+  r_assert_cmpuint (size, ==, 10);
+  r_assert_cmpmem (out, ==, "foobarstop", size);
+  r_free (out);
+}
+RTEST_END;
+

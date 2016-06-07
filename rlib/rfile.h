@@ -26,6 +26,10 @@
 #include <rlib/rref.h>
 #include <stdarg.h>
 
+/* Convenience API for whole file */
+R_API rboolean r_file_read_all (const rchar * filename, ruint8 ** data, rsize * size);
+R_API rboolean r_file_write_all (const rchar * filename, rconstpointer data, rsize size);
+
 typedef struct _RFile RFile;
 
 typedef enum {
