@@ -42,18 +42,24 @@ typedef struct {
 #define r_bitset_init_heap(bs, bits)                                          \
   ((bs) = r_malloc0 (_R_BITSET_SIZE (bits)), (bs)->bsize = (bits), (bs))
 
-
+R_API rboolean r_bitset_copy (RBitset * dest, const RBitset * src);
 R_API rboolean r_bitset_set_bit (RBitset * bitset, rsize bit, rboolean set);
 R_API rboolean r_bitset_set_bits (RBitset * bitset,
     const rsize * bits, rsize count, rboolean set);
 R_API rboolean r_bitset_set_all (RBitset * bitset, rboolean set);
 #define r_bitset_clear(bs)  r_bitset_set_all (bs, FALSE)
+#define r_bitset_inv(bs)  r_bitset_not (bs, bs)
 
 R_API rboolean r_bitset_is_bit_set (const RBitset * bitset, rsize bit);
 R_API rsize r_bitset_popcount (const RBitset * bitset);
 
 R_API void r_bitset_foreach (const RBitset * bitset, rboolean set,
     RBitsetFunc func, rpointer user);
+
+R_API rboolean r_bitset_not (RBitset * dest, const RBitset * src);
+R_API rboolean r_bitset_or (RBitset * dest, const RBitset * a, const RBitset * b);
+R_API rboolean r_bitset_xor (RBitset * dest, const RBitset * a, const RBitset * b);
+R_API rboolean r_bitset_and (RBitset * dest, const RBitset * a, const RBitset * b);
 
 R_END_DECLS
 

@@ -26,9 +26,31 @@
 #define RBSWORD_CLZ       RUINT64_CLZ
 #define RBSWORD_CTZ       RUINT64_CTZ
 #define RBSWORD_CONSTANT  RUINT64_CONSTANT
+#define R_BITSET_WORDS(bs)   (_R_BITSET_BITS_SIZE ((bs)->bsize) / R_BSWORD_BYTES)
 #define R_BITSET_BIT_IDX(bit) ((bit) / R_BSWORD_BITS)
 #define R_BITSET_BIT_POS(bit) ((bit) % R_BSWORD_BITS)
 #define R_BITSET_BIT_MASK(bit) (RBSWORD_CONSTANT (1) << R_BITSET_BIT_POS (bit))
+#define R_BITSET_CLAMP(bs) (bs)->bits[R_BITSET_WORDS (bs) - 1] &= \
+  (RBSWORD_MAX >> (R_BSWORD_BITS - ((bs)->bsize % R_BSWORD_BITS)))
+
+
+rboolean
+r_bitset_copy (RBitset * dest, const RBitset * src)
+{
+  rsize size;
+
+  if (R_UNLIKELY (dest == NULL)) return FALSE;
+  if (R_UNLIKELY (src == NULL)) return FALSE;
+  if (R_UNLIKELY (dest == src)) return TRUE;
+  if (R_UNLIKELY (dest->bsize < src->bsize)) return FALSE;
+
+  size = _R_BITSET_BITS_SIZE (src->bsize);
+  r_memcpy (dest->bits, src->bits, size);
+  r_memset (&dest->bits[size / R_BSWORD_BYTES], 0,
+      _R_BITSET_BITS_SIZE (src->bsize) - size);
+
+  return TRUE;
+}
 
 rboolean
 r_bitset_set_bit (RBitset * bitset, rsize bit, rboolean set)
@@ -71,15 +93,13 @@ r_bitset_set_bits (RBitset * bitset,
 rboolean
 r_bitset_set_all (RBitset * bitset, rboolean set)
 {
-  rbsword mask;
   rsize size;
 
   if (R_UNLIKELY (bitset == NULL)) return FALSE;
 
   size = _R_BITSET_BITS_SIZE (bitset->bsize);
-  mask = RBSWORD_MAX >> (R_BSWORD_BITS - (bitset->bsize % R_BSWORD_BITS));
   r_memset (bitset->bits, set ? 0xFF : 0, size);
-  bitset->bits[(size / sizeof (rbsword)) - 1] &= mask;
+  R_BITSET_CLAMP (bitset);
 
   return TRUE;
 }
@@ -97,7 +117,7 @@ rsize
 r_bitset_popcount (const RBitset * bitset)
 {
   rsize ret, i;
-  rsize words = _R_BITSET_BITS_SIZE (bitset->bsize) / sizeof (rbsword);
+  rsize words = R_BITSET_WORDS (bitset);
 
   for (ret = i = 0; i < words; i++)
     ret += RBSWORD_POPCOUNT (bitset->bits[i]);
@@ -110,11 +130,11 @@ r_bitset_foreach (const RBitset * bitset, rboolean set,
     RBitsetFunc func, rpointer user)
 {
   rsize i, j, bit;
-  rsize wcount = (bitset->bsize / R_BSWORD_BITS) + 1;
+  rsize words = R_BITSET_WORDS (bitset);
   rbsword mask;
 
   if (set) {
-    for (i = bit = 0; i < wcount; bit = ++i * sizeof (rbsword) * 8) {
+    for (i = bit = 0; i < words; bit = ++i * sizeof (rbsword) * 8) {
       rsize bitmax = R_BSWORD_BITS - RBSWORD_CLZ (bitset->bits[i]);
       for (j = RBSWORD_CTZ (bitset->bits[i]), bit += j, mask = RBSWORD_CONSTANT (1) << j;
           j < bitmax && bit < bitset->bsize;
@@ -124,7 +144,7 @@ r_bitset_foreach (const RBitset * bitset, rboolean set,
       }
     }
   } else {
-    for (i = bit = 0; i < wcount; i++) {
+    for (i = bit = 0; i < words; i++) {
       for (j = 0, mask = RBSWORD_CONSTANT (1);
           j < R_BSWORD_BITS && bit < bitset->bsize;
           j++, bit++, mask <<= 1) {
@@ -133,5 +153,122 @@ r_bitset_foreach (const RBitset * bitset, rboolean set,
       }
     }
   }
+}
+
+rboolean
+r_bitset_or (RBitset * dest, const RBitset * a, const RBitset * b)
+{
+  const RBitset * c;
+  rsize words, i;
+
+  if (R_UNLIKELY (dest == NULL)) return FALSE;
+  if (R_UNLIKELY (a == NULL)) return FALSE;
+  if (R_UNLIKELY (b == NULL)) return FALSE;
+
+  if (R_UNLIKELY (dest->bsize < a->bsize)) return FALSE;
+  if (R_UNLIKELY (dest->bsize < b->bsize)) return FALSE;
+
+  if (dest == a) {
+    if (dest == b) return TRUE;
+    c = b;
+  } else if (dest == b) {
+    c = a;
+  } else {
+    r_bitset_copy (dest, a);
+    c = b;
+  }
+
+  words = R_BITSET_WORDS (c);
+  for (i = 0; i < words; i++)
+    dest->bits[i] |= c->bits[i];
+
+  return TRUE;
+}
+
+rboolean
+r_bitset_xor (RBitset * dest, const RBitset * a, const RBitset * b)
+{
+  const RBitset * c;
+  rsize words, i;
+
+  if (R_UNLIKELY (dest == NULL)) return FALSE;
+  if (R_UNLIKELY (a == NULL)) return FALSE;
+  if (R_UNLIKELY (b == NULL)) return FALSE;
+
+  if (R_UNLIKELY (dest->bsize < a->bsize)) return FALSE;
+  if (R_UNLIKELY (dest->bsize < b->bsize)) return FALSE;
+
+  if (dest == a) {
+    if (dest == b) return TRUE;
+    c = b;
+  } else if (dest == b) {
+    c = a;
+  } else {
+    r_bitset_copy (dest, a);
+    c = b;
+  }
+
+  words = R_BITSET_WORDS (c);
+  for (i = 0; i < words; i++)
+    dest->bits[i] ^= c->bits[i];
+  words = R_BITSET_WORDS (dest);
+  for (; i < words; i++)
+    dest->bits[i] = 0;
+
+  return TRUE;
+}
+
+rboolean
+r_bitset_and (RBitset * dest, const RBitset * a, const RBitset * b)
+{
+  const RBitset * c;
+  rsize words, i;
+
+  if (R_UNLIKELY (dest == NULL)) return FALSE;
+  if (R_UNLIKELY (a == NULL)) return FALSE;
+  if (R_UNLIKELY (b == NULL)) return FALSE;
+
+  if (R_UNLIKELY (dest->bsize < a->bsize)) return FALSE;
+  if (R_UNLIKELY (dest->bsize < b->bsize)) return FALSE;
+
+  if (dest == a) {
+    if (dest == b) return TRUE;
+    c = b;
+  } else if (dest == b) {
+    c = a;
+  } else {
+    r_bitset_copy (dest, a);
+    c = b;
+  }
+
+  words = R_BITSET_WORDS (c);
+  for (i = 0; i < words; i++)
+    dest->bits[i] &= c->bits[i];
+  words = R_BITSET_WORDS (dest);
+  for (; i < words; i++)
+    dest->bits[i] = 0;
+
+  return TRUE;
+}
+
+rboolean
+r_bitset_not (RBitset * dest, const RBitset * src)
+{
+  rsize words, i;
+
+  if (R_UNLIKELY (dest == NULL)) return FALSE;
+  if (R_UNLIKELY (src == NULL)) return FALSE;
+  if (R_UNLIKELY (dest->bsize < src->bsize)) return FALSE;
+
+  words = R_BITSET_WORDS (src);
+  for (i = 0; i < words - 1; i++)
+    dest->bits[i] = ~src->bits[i];
+  dest->bits[i] = ~src->bits[i] & RBSWORD_MAX >> (R_BSWORD_BITS - (src->bsize % R_BSWORD_BITS));
+
+  words = R_BITSET_WORDS (dest);
+  for (i++; i < words; i++)
+    dest->bits[i] = 0;
+
+  return TRUE;
 }
 
