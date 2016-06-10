@@ -35,7 +35,7 @@ typedef struct {
   rbsword bits[0];
 } RBitset;
 
-#define _R_BITSET_BITS_SIZE(bits) (sizeof (rbsword) + (((bits) / 8) & ~(sizeof (rbsword) - 1)))
+#define _R_BITSET_BITS_SIZE(bits) (((bits) + sizeof (rbsword) * 8 - 1) / 8)
 #define _R_BITSET_SIZE(bits)      (sizeof (RBitset) + _R_BITSET_BITS_SIZE (bits))
 #define r_bitset_init_stack(bs, bits)                                         \
   ((bs) = r_alloca0 (_R_BITSET_SIZE (bits)), (bs)->bsize = (bits), (bs))

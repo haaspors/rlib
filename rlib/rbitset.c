@@ -37,17 +37,19 @@
 rboolean
 r_bitset_copy (RBitset * dest, const RBitset * src)
 {
-  rsize size;
+  rsize i, words;
 
   if (R_UNLIKELY (dest == NULL)) return FALSE;
   if (R_UNLIKELY (src == NULL)) return FALSE;
   if (R_UNLIKELY (dest == src)) return TRUE;
   if (R_UNLIKELY (dest->bsize < src->bsize)) return FALSE;
 
-  size = _R_BITSET_BITS_SIZE (src->bsize);
-  r_memcpy (dest->bits, src->bits, size);
-  r_memset (&dest->bits[size / R_BSWORD_BYTES], 0,
-      _R_BITSET_BITS_SIZE (src->bsize) - size);
+  words = R_BITSET_WORDS (src);
+  for (i = 0; i < words; i++)
+    dest->bits[i] = src->bits[i];
+  words = R_BITSET_WORDS (dest);
+  for (; i < words; i++)
+    dest->bits[i] = 0;
 
   return TRUE;
 }
@@ -164,9 +166,11 @@ r_bitset_is_bit_set (const RBitset * bitset, rsize bit)
 rsize
 r_bitset_popcount (const RBitset * bitset)
 {
-  rsize ret, i;
-  rsize words = R_BITSET_WORDS (bitset);
+  rsize ret, i, words;
 
+  if (R_UNLIKELY (bitset == NULL)) return 0;
+
+  words = R_BITSET_WORDS (bitset);;
   for (ret = i = 0; i < words; i++)
     ret += RBSWORD_POPCOUNT (bitset->bits[i]);
 
