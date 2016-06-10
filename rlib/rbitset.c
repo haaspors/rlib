@@ -105,6 +105,54 @@ r_bitset_set_all (RBitset * bitset, rboolean set)
 }
 
 rboolean
+r_bitset_shr (RBitset * bitset, ruint count)
+{
+  if (R_UNLIKELY (bitset == NULL)) return FALSE;
+
+  if (count < bitset->bsize) {
+    rsize i, words = R_BITSET_WORDS (bitset);
+    ruint d = count / R_BSWORD_BITS;
+    count %= R_BSWORD_BITS;
+
+    for (i = 0; i < words - d - 1; i++) {
+      bitset->bits[i] = (bitset->bits[i + d] >> count) |
+        (bitset->bits[i + d + 1] << (R_BSWORD_BITS - count));
+    }
+    bitset->bits[i] = bitset->bits[i + d] >> count;
+    for (i++; i < words; i++)
+      bitset->bits[i] = 0;
+  } else {
+    r_bitset_set_all (bitset, FALSE);
+  }
+
+  return TRUE;
+}
+
+rboolean
+r_bitset_shl (RBitset * bitset, ruint count)
+{
+  if (R_UNLIKELY (bitset == NULL)) return FALSE;
+
+  if (count < bitset->bsize) {
+    rsize i, words = R_BITSET_WORDS (bitset);
+    ruint j, d = count / R_BSWORD_BITS;
+    count %= R_BSWORD_BITS;
+    for (i = words - d; i > 1; i--) {
+      bitset->bits[i - 1 + d] = bitset->bits[i - 1] << count |
+        bitset->bits[i - 2] >> (R_BSWORD_BITS - count);
+    }
+    bitset->bits[d] = bitset->bits[0] << count;
+    for (j = 0; j < d; j++)
+      bitset->bits[j] = 0;
+    R_BITSET_CLAMP (bitset);
+  } else {
+    r_bitset_set_all (bitset, FALSE);
+  }
+
+  return TRUE;
+}
+
+rboolean
 r_bitset_is_bit_set (const RBitset * bitset, rsize bit)
 {
   rsize idx = R_BITSET_BIT_IDX (bit);

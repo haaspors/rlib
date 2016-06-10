@@ -49,6 +49,8 @@ R_API rboolean r_bitset_set_bits (RBitset * bitset,
 R_API rboolean r_bitset_set_all (RBitset * bitset, rboolean set);
 #define r_bitset_clear(bs)  r_bitset_set_all (bs, FALSE)
 #define r_bitset_inv(bs)  r_bitset_not (bs, bs)
+R_API rboolean r_bitset_shr (RBitset * a, ruint count);
+R_API rboolean r_bitset_shl (RBitset * a, ruint count);
 
 R_API rboolean r_bitset_is_bit_set (const RBitset * bitset, rsize bit);
 R_API rsize r_bitset_popcount (const RBitset * bitset);
