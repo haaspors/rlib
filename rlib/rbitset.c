@@ -177,6 +177,41 @@ r_bitset_popcount (const RBitset * bitset)
   return ret;
 }
 
+rsize
+r_bitset_clz (const RBitset * bitset)
+{
+  rsize ret, i, words, rem;
+
+  if (R_UNLIKELY (bitset == NULL)) return 0;
+
+  words = R_BITSET_WORDS (bitset);
+  ret = 0;
+  for (i = words; i > 1 && bitset->bits[i - 1] == 0; i--)
+    ret += R_BSWORD_BITS;
+  ret += RBSWORD_CLZ (bitset->bits[i - 1]);
+
+  if ((rem = bitset->bsize % R_BSWORD_BITS) > 0)
+    ret -= (R_BSWORD_BITS - rem);
+
+  return ret;
+}
+
+rsize
+r_bitset_ctz (const RBitset * bitset)
+{
+  rsize ret, i, words;
+
+  if (R_UNLIKELY (bitset == NULL)) return 0;
+
+  words = R_BITSET_WORDS (bitset);
+  ret = 0;
+  for (i = 0; i < words - 1 && bitset->bits[i] == 0; i++)
+    ret += R_BSWORD_BITS;
+
+  ret += RBSWORD_CTZ (bitset->bits[i]);
+  return MIN (ret, bitset->bsize);
+}
+
 void
 r_bitset_foreach (const RBitset * bitset, rboolean set,
     RBitsetFunc func, rpointer user)

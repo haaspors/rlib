@@ -54,6 +54,8 @@ R_API rboolean r_bitset_shl (RBitset * a, ruint count);
 
 R_API rboolean r_bitset_is_bit_set (const RBitset * bitset, rsize bit);
 R_API rsize r_bitset_popcount (const RBitset * bitset);
+R_API rsize r_bitset_clz (const RBitset * bitset);
+R_API rsize r_bitset_ctz (const RBitset * bitset);
 
 R_API void r_bitset_foreach (const RBitset * bitset, rboolean set,
     RBitsetFunc func, rpointer user);
