@@ -107,6 +107,82 @@ r_bitset_set_all (RBitset * bitset, rboolean set)
 }
 
 rboolean
+r_bitset_set_u8_at (RBitset * bitset, ruint8 u8, rsize bit)
+{
+  ruint d;
+  rbsword w = (rbsword)u8;
+
+  if (R_UNLIKELY (bitset == NULL)) return FALSE;
+  if (R_UNLIKELY (bit + 8 > bitset->bsize)) return FALSE;
+
+  d = bit / R_BSWORD_BITS;
+  bit = bit % R_BSWORD_BITS;
+
+  bitset->bits[d] |= w << bit;
+  if (bit > R_BSWORD_BITS - 8)
+    bitset->bits[d + 1] |= w >> (R_BSWORD_BITS - bit);
+
+  return TRUE;
+}
+
+rboolean
+r_bitset_set_u16_at (RBitset * bitset, ruint16 u16, rsize bit)
+{
+  ruint d;
+  rbsword w = (rbsword)u16;
+
+  if (R_UNLIKELY (bitset == NULL)) return FALSE;
+  if (R_UNLIKELY (bit + 16 > bitset->bsize)) return FALSE;
+
+  d = bit / R_BSWORD_BITS;
+  bit = bit % R_BSWORD_BITS;
+
+  bitset->bits[d] |= w << bit;
+  if (bit > R_BSWORD_BITS - 16)
+    bitset->bits[d + 1] |= w >> (R_BSWORD_BITS - bit);
+
+  return TRUE;
+}
+
+rboolean
+r_bitset_set_u32_at (RBitset * bitset, ruint32 u32, rsize bit)
+{
+  ruint d;
+  rbsword w = (rbsword)u32;
+
+  if (R_UNLIKELY (bitset == NULL)) return FALSE;
+  if (R_UNLIKELY (bit + 32 > bitset->bsize)) return FALSE;
+
+  d = bit / R_BSWORD_BITS;
+  bit = bit % R_BSWORD_BITS;
+
+  bitset->bits[d] |= w << bit;
+  if (bit > R_BSWORD_BITS - 32)
+    bitset->bits[d + 1] |= w >> (R_BSWORD_BITS - bit);
+
+  return TRUE;
+}
+
+rboolean
+r_bitset_set_u64_at (RBitset * bitset, ruint64 u64, rsize bit)
+{
+  ruint d;
+  rbsword w = (rbsword)u64;
+
+  if (R_UNLIKELY (bitset == NULL)) return FALSE;
+  if (R_UNLIKELY (bit + 64 > bitset->bsize)) return FALSE;
+
+  d = bit / R_BSWORD_BITS;
+  bit = bit % R_BSWORD_BITS;
+
+  bitset->bits[d] |= w << bit;
+  if (bit > R_BSWORD_BITS - 64)
+    bitset->bits[d + 1] |= w >> (R_BSWORD_BITS - bit);
+
+  return TRUE;
+}
+
+rboolean
 r_bitset_shr (RBitset * bitset, ruint count)
 {
   if (R_UNLIKELY (bitset == NULL)) return FALSE;

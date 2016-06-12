@@ -65,6 +65,75 @@ RTEST (rbitset, copy, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbitset, set_at, RTEST_FAST)
+{
+  RBitset * a, * b;
+  rsize i, j;
+
+  r_assert (!r_bitset_set_u8_at (NULL, 42, 0));
+  r_assert (!r_bitset_set_u16_at (NULL, 42, 0));
+  r_assert (!r_bitset_set_u32_at (NULL, 42, 0));
+  r_assert (!r_bitset_set_u64_at (NULL, 42, 0));
+
+  r_assert_cmpptr (r_bitset_init_stack (a, 26), !=, NULL);
+  r_assert_cmpptr (r_bitset_init_stack (b, 80), !=, NULL);
+
+  r_assert (!r_bitset_set_u8_at (a, 42, 20));
+  r_assert (!r_bitset_set_u16_at (a, 42, 12));
+  r_assert (!r_bitset_set_u32_at (a, 42, 0));
+  r_assert (!r_bitset_set_u64_at (b, 42, 20));
+
+  /* u8 */
+  r_assert (r_bitset_clear (a));
+  r_assert (r_bitset_set_u8_at (a, 0x9C, 2));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 4);
+  r_assert (r_bitset_is_bit_set (a, 4));
+  r_assert (r_bitset_is_bit_set (a, 5));
+  r_assert (r_bitset_is_bit_set (a, 6));
+  r_assert (r_bitset_is_bit_set (a, 9));
+
+  r_assert (r_bitset_clear (b));
+  r_assert (r_bitset_set_u8_at (b, 0x9C, 61));
+  r_assert (r_bitset_is_bit_set (b, 63));
+  r_assert (r_bitset_is_bit_set (b, 64));
+  r_assert (r_bitset_is_bit_set (b, 65));
+  r_assert (r_bitset_is_bit_set (b, 68));
+
+  /* u16 */
+  r_assert (r_bitset_clear (a));
+  r_assert (r_bitset_set_u16_at (a, 0x09C0, 5));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 4);
+  r_assert (r_bitset_is_bit_set (a, 11));
+  r_assert (r_bitset_is_bit_set (a, 12));
+  r_assert (r_bitset_is_bit_set (a, 13));
+  r_assert (r_bitset_is_bit_set (a, 16));
+
+  /* u32 */
+  r_assert (r_bitset_clear (b));
+  r_assert (r_bitset_set_u32_at (b, 0x09C009C0, 26));
+  r_assert_cmpuint (r_bitset_popcount (b), ==, 8);
+  r_assert (r_bitset_is_bit_set (b, 32));
+  r_assert (r_bitset_is_bit_set (b, 33));
+  r_assert (r_bitset_is_bit_set (b, 34));
+  r_assert (r_bitset_is_bit_set (b, 37));
+  r_assert (r_bitset_is_bit_set (b, 48));
+  r_assert (r_bitset_is_bit_set (b, 49));
+  r_assert (r_bitset_is_bit_set (b, 50));
+  r_assert (r_bitset_is_bit_set (b, 53));
+
+  /* u64 */
+  r_assert (r_bitset_clear (b));
+  r_assert (r_bitset_set_u64_at (b, RUINT64_CONSTANT (0x00FF00FF00FF00FF), 2));
+  r_assert_cmpuint (r_bitset_popcount (b), ==, 32);
+  for (i = 0; i < sizeof (ruint64); ) {
+    for (j = 0; j < 8; j++, i++)
+      r_assert (r_bitset_is_bit_set (b, i + 2));
+    for (j = 0; j < 8; j++, i++)
+      r_assert (!r_bitset_is_bit_set (b, i + 2));
+  }
+}
+RTEST_END;
+
 static void
 bitset_counter (rsize bit, rpointer user)
 {

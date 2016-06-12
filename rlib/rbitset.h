@@ -46,8 +46,12 @@ R_API rboolean r_bitset_copy (RBitset * dest, const RBitset * src);
 R_API rboolean r_bitset_set_bit (RBitset * bitset, rsize bit, rboolean set);
 R_API rboolean r_bitset_set_bits (RBitset * bitset,
     const rsize * bits, rsize count, rboolean set);
-R_API rboolean r_bitset_set_all (RBitset * bitset, rboolean set);
 #define r_bitset_clear(bs)  r_bitset_set_all (bs, FALSE)
+R_API rboolean r_bitset_set_all (RBitset * bitset, rboolean set);
+R_API rboolean r_bitset_set_u8_at (RBitset * bitset, ruint8 u8, rsize bit);
+R_API rboolean r_bitset_set_u16_at (RBitset * bitset, ruint16 u16, rsize bit);
+R_API rboolean r_bitset_set_u32_at (RBitset * bitset, ruint32 u32, rsize bit);
+R_API rboolean r_bitset_set_u64_at (RBitset * bitset, ruint64 u64, rsize bit);
 #define r_bitset_inv(bs)  r_bitset_not (bs, bs)
 R_API rboolean r_bitset_shr (RBitset * a, ruint count);
 R_API rboolean r_bitset_shl (RBitset * a, ruint count);
