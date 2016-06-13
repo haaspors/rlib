@@ -424,3 +424,92 @@ RTEST (rbitset, set_n_bits_at, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbitset, set_from_human_readable, RTEST_FAST)
+{
+  RBitset * a;
+  int i;
+  rsize bits;
+
+  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+
+  r_assert (!r_bitset_set_from_human_readable (NULL, NULL, NULL));
+  r_assert (!r_bitset_set_from_human_readable (a, NULL, NULL));
+  r_assert (!r_bitset_set_from_human_readable (a, "-1", NULL));
+  r_assert (!r_bitset_set_from_human_readable (a, "77", NULL));
+
+  r_assert (!r_bitset_set_from_human_readable (a, "7,77", NULL));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 1);
+
+  r_assert (r_bitset_clear (a));
+  r_assert (r_bitset_set_from_human_readable (a, "7,7", NULL));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 1);
+
+  r_assert (r_bitset_clear (a));
+  r_assert (r_bitset_set_from_human_readable (a, "0,2,4,8,9,11,44,55,23,75", &bits));
+  r_assert_cmpuint (bits, ==, 10);
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 10);
+  r_assert (r_bitset_is_bit_set (a, 0));
+  r_assert (r_bitset_is_bit_set (a, 2));
+  r_assert (r_bitset_is_bit_set (a, 4));
+  r_assert (r_bitset_is_bit_set (a, 8));
+  r_assert (r_bitset_is_bit_set (a, 9));
+  r_assert (r_bitset_is_bit_set (a, 11));
+  r_assert (r_bitset_is_bit_set (a, 23));
+  r_assert (r_bitset_is_bit_set (a, 44));
+  r_assert (r_bitset_is_bit_set (a, 55));
+  r_assert (r_bitset_is_bit_set (a, 75));
+
+  r_assert (r_bitset_clear (a));
+  r_assert (r_bitset_set_from_human_readable (a, "0-3,8-11,16-19", &bits));
+  r_assert_cmpuint (bits, ==, 3*4);
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 3*4);
+  for (i = 0; i < 20; i++)
+    r_assert (r_bitset_is_bit_set (a, i) == ((i / 4) % 2 ? FALSE : TRUE));
+
+  r_assert (r_bitset_clear (a));
+  r_assert (r_bitset_set_from_human_readable (a, "  4, 0 -\r\n3,  8\t,\n\r\n\t16-19", &bits));
+  r_assert_cmpuint (bits, ==, 10);
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 10);
+}
+RTEST_END;
+
+RTEST (rbitset, set_from_human_readable_file, RTEST_FAST | RTEST_SYSTEM)
+{
+  RBitset * a;
+  int i;
+  rsize bits;
+  rchar * tmpfile;
+
+  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+
+  r_assert (!r_bitset_set_from_human_readable_file (NULL, NULL, NULL));
+  r_assert (!r_bitset_set_from_human_readable_file (a, NULL, NULL));
+  r_assert (!r_bitset_set_from_human_readable_file (a, NULL, &bits));
+
+  r_assert_cmpptr ((tmpfile = r_fs_path_new_tmpname_full (NULL, "rbitset", NULL)), !=, NULL);
+  r_file_write_all (tmpfile, "0,4-10,16", 9);
+  r_assert (r_fs_test_exists (tmpfile));
+
+  r_assert (r_bitset_set_from_human_readable_file (a, tmpfile, &bits));
+  r_assert_cmpuint (bits, ==, 9);
+  r_assert_cmpuint (r_bitset_popcount (a), ==, bits);
+
+  r_assert (r_bitset_is_bit_set (a, 0));
+  r_assert (r_bitset_is_bit_set (a, 16));
+  for (i = 4; i <= 10; i++)
+    r_assert (r_bitset_is_bit_set (a, i));
+
+  r_free (tmpfile);
+
+  r_assert_cmpptr ((tmpfile = r_fs_path_new_tmpname_full (NULL, "rbitset", NULL)), !=, NULL);
+  r_file_write_all (tmpfile, "0, 4 -  10,  16", 15);
+  r_assert (r_fs_test_exists (tmpfile));
+
+  r_assert (r_bitset_set_from_human_readable_file (a, tmpfile, &bits));
+  r_assert_cmpuint (bits, ==, 9);
+  r_assert_cmpuint (r_bitset_popcount (a), ==, bits);
+
+  r_free (tmpfile);
+}
+RTEST_END;
+

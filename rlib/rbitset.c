@@ -18,6 +18,8 @@
 
 #include "config.h"
 #include <rlib/rbitset.h>
+#include <rlib/rstr.h>
+#include <rlib/rfile.h>
 
 #define R_BSWORD_BYTES    (sizeof (rbsword))
 #define R_BSWORD_BITS     (sizeof (rbsword) * 8)
@@ -218,6 +220,82 @@ r_bitset_set_u64_at (RBitset * bitset, ruint64 u64, rsize bit)
   if (bit > R_BSWORD_BITS - 64)
     bitset->bits[d + 1] |= w >> (R_BSWORD_BITS - bit);
 
+  return TRUE;
+}
+
+rboolean
+r_bitset_set_from_human_readable (RBitset * bitset,
+    const rchar * str, rsize * bits)
+{
+  int pos, c;
+  ruint v1, v2;
+
+  if (bits) *bits = 0;
+  if (R_UNLIKELY (bitset == NULL)) return FALSE;
+  if (R_UNLIKELY (str == NULL)) return FALSE;
+
+  for (pos = 0; str[pos] != 0;) {
+    c = 0;
+    if (r_strscanf (&str[pos], "%u %n", &v1, &c) == 1) {
+      if (R_UNLIKELY (!r_bitset_set_bit (bitset, v1, TRUE)))
+        return FALSE;
+      if (bits) *bits += 1;
+      pos += c;
+    } else {
+      return FALSE;
+    }
+
+    c = 0;
+    if (r_strscanf (&str[pos], "- %u %n", &v2, &c) == 1) {
+      rsize n = v2 - v1;
+      if (v1 > v2)
+        return FALSE;
+      if (R_UNLIKELY (!r_bitset_set_n_bits_at (bitset, n, v1 + 1, TRUE)))
+        return FALSE;
+      if (bits) *bits += n;
+      pos += c;
+    }
+    if (str[pos] == ',')
+      pos++;
+  }
+
+  return TRUE;
+}
+
+rboolean
+r_bitset_set_from_human_readable_file (RBitset * bitset,
+    const rchar * file, rsize * bits)
+{
+  ruint v1, v2;
+  RFile * f;
+  rsize actual;
+
+  if (bits) *bits = 0;
+  if (R_UNLIKELY (bitset == NULL)) return FALSE;
+
+  if ((f = r_file_open (file, "r")) == NULL)
+    return FALSE;
+
+  while (TRUE) {
+    if (r_file_scanf (f, "%u ,", &actual, &v1) == R_FILE_ERROR_OK && actual == 1) {
+      if (R_UNLIKELY (!r_bitset_set_bit (bitset, v1, TRUE)))
+        return FALSE;
+      if (bits) *bits += 1;
+    } else {
+      break;
+    }
+
+    if (r_file_scanf (f, "- %u ,", &actual, &v2) == R_FILE_ERROR_OK && actual == 1) {
+      rsize n = v2 - v1;
+      if (v1 > v2)
+        return FALSE;
+      if (R_UNLIKELY (!r_bitset_set_n_bits_at (bitset, n, v1 + 1, TRUE)))
+        return FALSE;
+      if (bits) *bits += n;
+    }
+  }
+
+  r_file_unref (f);
   return TRUE;
 }
 
