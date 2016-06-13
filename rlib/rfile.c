@@ -58,6 +58,9 @@ r_file_open (const rchar * file, const rchar * mode)
 {
   FILE * f;
 
+  if (R_UNLIKELY (file == NULL))
+    return NULL;
+
   do {
     f = fopen (file, mode);
   } while (R_UNLIKELY (f == NULL && errno == EINTR));
