@@ -48,6 +48,7 @@ R_API rboolean r_bitset_set_bits (RBitset * bitset,
     const rsize * bits, rsize count, rboolean set);
 #define r_bitset_clear(bs)  r_bitset_set_all (bs, FALSE)
 R_API rboolean r_bitset_set_all (RBitset * bitset, rboolean set);
+R_API rboolean r_bitset_set_n_bits_at (RBitset * bitset, rsize n, rsize bit, rboolean set);
 R_API rboolean r_bitset_set_u8_at (RBitset * bitset, ruint8 u8, rsize bit);
 R_API rboolean r_bitset_set_u16_at (RBitset * bitset, ruint16 u16, rsize bit);
 R_API rboolean r_bitset_set_u32_at (RBitset * bitset, ruint32 u32, rsize bit);

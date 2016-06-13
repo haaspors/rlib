@@ -379,7 +379,6 @@ RTEST (rbitset, count_zeroes, RTEST_FAST)
   r_assert_cmpuint (r_bitset_clz (a), ==, 76);
   r_assert_cmpuint (r_bitset_ctz (a), ==, 76);
 
-
   r_assert (r_bitset_set_all (a, TRUE));
   r_assert_cmpuint (r_bitset_clz (a), ==, 0);
   r_assert_cmpuint (r_bitset_ctz (a), ==, 0);
@@ -402,6 +401,26 @@ RTEST (rbitset, count_zeroes, RTEST_FAST)
   r_assert (r_bitset_set_bit (b, 33, TRUE));
   r_assert_cmpuint (r_bitset_ctz (b), ==, 33);
   r_assert_cmpuint (r_bitset_clz (b), ==, 64 - 1 - 33);
+}
+RTEST_END;
+
+RTEST (rbitset, set_n_bits_at, RTEST_FAST)
+{
+  RBitset * a;
+  int i;
+
+  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+
+  r_assert (!r_bitset_set_n_bits_at (NULL, 0, 0, TRUE));
+  r_assert (!r_bitset_set_n_bits_at (a, 4, 73, TRUE));
+  r_assert (r_bitset_set_n_bits_at (a, 0, 0, FALSE));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 0);
+
+  r_assert (r_bitset_set_n_bits_at (a, 5, 0, TRUE));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 5);
+  for (i = 0; i < 5; i++)
+    r_assert (r_bitset_is_bit_set (a, i));
+  r_assert (!r_bitset_is_bit_set (a, 6));
 }
 RTEST_END;
 

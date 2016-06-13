@@ -107,6 +107,45 @@ r_bitset_set_all (RBitset * bitset, rboolean set)
 }
 
 rboolean
+r_bitset_set_n_bits_at (RBitset * bitset, rsize n, rsize bit, rboolean set)
+{
+  static const ruint64 v64 = RUINT64_MAX;
+  static const ruint32 v32 = RUINT32_MAX;
+  static const ruint16 v16 = RUINT16_MAX;
+  static const ruint8  v8  = RUINT8_MAX;
+
+  if (R_UNLIKELY (bitset == NULL)) return FALSE;
+  if (R_UNLIKELY (bit + n >= bitset->bsize)) return FALSE;
+
+  while (n > 64) {
+    if (!r_bitset_set_u64_at (bitset, v64, bit))
+      return FALSE;
+    n -= 64; bit += 64;
+  }
+  while (n > 32) {
+    if (!r_bitset_set_u32_at (bitset, v32, bit))
+      return FALSE;
+    n -= 32; bit += 32;
+  }
+  while (n > 16) {
+    if (!r_bitset_set_u16_at (bitset, v16, bit))
+      return FALSE;
+    n -= 16; bit += 16;
+  }
+  while (n > 8) {
+    if (!r_bitset_set_u8_at (bitset, v8, bit))
+      return FALSE;
+    n -= 8; bit += 8;
+  }
+  while (n--) {
+    if (!r_bitset_set_bit (bitset, bit + n, set))
+      return FALSE;
+  }
+
+  return TRUE;
+}
+
+rboolean
 r_bitset_set_u8_at (RBitset * bitset, ruint8 u8, rsize bit)
 {
   ruint d;
