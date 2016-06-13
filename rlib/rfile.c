@@ -94,8 +94,6 @@ static RIOError
 _r_errno_to_io_error (int e)
 {
   switch (e) {
-    case 0:
-      return R_FILE_ERROR_OK;
     case EINVAL:
       return R_FILE_ERROR_INVAL;
     case EBADF:
