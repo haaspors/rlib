@@ -59,6 +59,11 @@ R_API rboolean r_bitset_set_from_human_readable_file (RBitset * bitset, const rc
 R_API rboolean r_bitset_shr (RBitset * a, ruint count);
 R_API rboolean r_bitset_shl (RBitset * a, ruint count);
 
+R_API ruint8  r_bitset_get_u8_at  (const RBitset * bitset, rsize bit);
+R_API ruint16 r_bitset_get_u16_at (const RBitset * bitset, rsize bit);
+R_API ruint32 r_bitset_get_u32_at (const RBitset * bitset, rsize bit);
+R_API ruint64 r_bitset_get_u64_at (const RBitset * bitset, rsize bit);
+
 R_API rboolean r_bitset_is_bit_set (const RBitset * bitset, rsize bit);
 R_API rsize r_bitset_popcount (const RBitset * bitset);
 R_API rsize r_bitset_clz (const RBitset * bitset);

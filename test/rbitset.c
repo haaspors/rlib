@@ -368,6 +368,39 @@ RTEST (rbitset, shr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbitset, get_at, RTEST_FAST)
+{
+  RBitset * a;
+
+  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+  r_assert (r_bitset_set_all (a, TRUE));
+
+  r_assert_cmpuint (r_bitset_get_u8_at (NULL, 0), ==, 0);
+  r_assert_cmpuint (r_bitset_get_u8_at (a, 76), ==, 0);
+  r_assert_cmpuint (r_bitset_get_u8_at (a, 0), ==, RUINT8_MAX);
+  r_assert_cmpuint (r_bitset_get_u8_at (a, 70), ==, 0x3f);
+  r_assert_cmpuint (r_bitset_get_u8_at (a, 61), ==, RUINT8_MAX);
+
+  r_assert_cmpuint (r_bitset_get_u16_at (NULL, 0), ==, 0);
+  r_assert_cmpuint (r_bitset_get_u16_at (a, 76), ==, 0);
+  r_assert_cmpuint (r_bitset_get_u16_at (a, 0), ==, RUINT16_MAX);
+  r_assert_cmpuint (r_bitset_get_u16_at (a, 63), ==, 0x1fff);
+  r_assert_cmpuint (r_bitset_get_u16_at (a, 55), ==, RUINT16_MAX);
+
+  r_assert_cmpuint (r_bitset_get_u32_at (NULL, 0), ==, 0);
+  r_assert_cmpuint (r_bitset_get_u32_at (a, 76), ==, 0);
+  r_assert_cmpuint (r_bitset_get_u32_at (a, 0), ==, RUINT32_MAX);
+  r_assert_cmpuint (r_bitset_get_u32_at (a, 50), ==, 0x3ffffff);
+  r_assert_cmpuint (r_bitset_get_u32_at (a, 35), ==, RUINT32_MAX);
+
+  r_assert_cmpuint (r_bitset_get_u64_at (NULL, 0), ==, 0);
+  r_assert_cmpuint (r_bitset_get_u64_at (a, 76), ==, 0);
+  r_assert_cmpuint (r_bitset_get_u64_at (a, 0), ==, RUINT64_MAX);
+  r_assert_cmpuint (r_bitset_get_u64_at (a, 20), ==, RUINT64_CONSTANT (0xffffffffffffff));
+  r_assert_cmpuint (r_bitset_get_u64_at (a, 5), ==, RUINT64_MAX);
+}
+RTEST_END;
+
 RTEST (rbitset, count_zeroes, RTEST_FAST)
 {
   RBitset * a, * b;

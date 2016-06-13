@@ -347,6 +347,86 @@ r_bitset_shl (RBitset * bitset, ruint count)
   return TRUE;
 }
 
+ruint8
+r_bitset_get_u8_at  (const RBitset * bitset, rsize bit)
+{
+  ruint8 ret;
+  rsize i, p;
+
+  if (R_UNLIKELY (bitset == NULL)) return 0;
+  if (R_UNLIKELY (bit >= bitset->bsize)) return 0;
+
+  i = R_BITSET_BIT_IDX (bit);
+  p = R_BITSET_BIT_POS (bit);
+
+  ret = bitset->bits[i] >> p;
+  if (p + 8 > R_BSWORD_BITS && i+1 < R_BITSET_WORDS (bitset)) {
+    ret |= (bitset->bits[i + 1] << (R_BSWORD_BITS - p)) & RUINT8_MAX;
+  }
+
+  return ret;
+}
+
+ruint16
+r_bitset_get_u16_at (const RBitset * bitset, rsize bit)
+{
+  ruint16 ret;
+  rsize i, p;
+
+  if (R_UNLIKELY (bitset == NULL)) return 0;
+  if (R_UNLIKELY (bit >= bitset->bsize)) return 0;
+
+  i = R_BITSET_BIT_IDX (bit);
+  p = R_BITSET_BIT_POS (bit);
+
+  ret = bitset->bits[i] >> p;
+  if (p + 16 > R_BSWORD_BITS && i+1 < R_BITSET_WORDS (bitset)) {
+    ret |= (bitset->bits[i + 1] << (R_BSWORD_BITS - p)) & RUINT16_MAX;
+  }
+
+  return ret;
+}
+
+ruint32
+r_bitset_get_u32_at (const RBitset * bitset, rsize bit)
+{
+  ruint32 ret;
+  rsize i, p;
+
+  if (R_UNLIKELY (bitset == NULL)) return 0;
+  if (R_UNLIKELY (bit >= bitset->bsize)) return 0;
+
+  i = R_BITSET_BIT_IDX (bit);
+  p = R_BITSET_BIT_POS (bit);
+
+  ret = bitset->bits[i] >> p;
+  if (p + 32 > R_BSWORD_BITS && i+1 < R_BITSET_WORDS (bitset)) {
+    ret |= (bitset->bits[i + 1] << (R_BSWORD_BITS - p)) & RUINT32_MAX;
+  }
+
+  return ret;
+}
+
+ruint64
+r_bitset_get_u64_at (const RBitset * bitset, rsize bit)
+{
+  ruint64 ret;
+  rsize i, p;
+
+  if (R_UNLIKELY (bitset == NULL)) return 0;
+  if (R_UNLIKELY (bit >= bitset->bsize)) return 0;
+
+  i = R_BITSET_BIT_IDX (bit);
+  p = R_BITSET_BIT_POS (bit);
+
+  ret = bitset->bits[i] >> p;
+  if (p + 64 > R_BSWORD_BITS && i+1 < R_BITSET_WORDS (bitset)) {
+    ret |= (bitset->bits[i + 1] << (R_BSWORD_BITS - p)) & RUINT64_MAX;
+  }
+
+  return ret;
+}
+
 rboolean
 r_bitset_is_bit_set (const RBitset * bitset, rsize bit)
 {
