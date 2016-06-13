@@ -134,6 +134,9 @@ R_API int     r_vasprintf (rchar ** str, const rchar * fmt, va_list args) R_ATTR
 R_API rchar * r_strprintf (const rchar * fmt, ...) R_ATTR_PRINTF (1, 2);
 R_API rchar * r_strvprintf (const rchar * fmt, va_list args) R_ATTR_PRINTF (1, 0);
 
+R_API int     r_strscanf (const rchar * str, const rchar * fmt, ...) R_ATTR_SCANF (2, 3);
+R_API int     r_strvscanf (const rchar * str, const rchar * fmt, va_list args) R_ATTR_SCANF (2, 0);
+
 R_API RSList * r_str_list_new (const rchar * str0, ...);
 R_API RSList * r_str_list_newv (const rchar * str0, va_list args);
 

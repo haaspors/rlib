@@ -791,6 +791,25 @@ r_strvprintf (const rchar * fmt, va_list args)
   return ret;
 }
 
+int
+r_strscanf (const rchar * str, const rchar * fmt, ...)
+{
+  int ret;
+  va_list args;
+  va_start (args, fmt);
+  ret = r_strvscanf (str, fmt, args);
+  va_end (args);
+  return ret;
+}
+
+int
+r_strvscanf (const rchar * str, const rchar * fmt, va_list args)
+{
+  if (R_UNLIKELY (str == NULL)) return -1;
+  if (R_UNLIKELY (fmt == NULL)) return -1;
+  return vsscanf (str, fmt, args);
+}
+
 RSList *
 r_str_list_new (const rchar * str0, ...)
 {
