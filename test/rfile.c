@@ -78,3 +78,38 @@ RTEST (rfile, write_read_all, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rfile, read_number, RTEST_FAST | RTEST_SYSTEM)
+{
+  rchar * file;
+  rchar tmp[256];
+  int len;
+
+  r_assert_cmpuint (r_file_read_uint (NULL, 42), ==, 42);
+  r_assert_cmpint (r_file_read_int (NULL, 42), ==, 42);
+
+  r_assert_cmpptr ((file = r_fs_path_new_tmpname_full (NULL, TESTPREFIX, "")), !=, NULL);
+  r_assert (r_file_write_all (file, "14341542", 8));
+  r_assert_cmpuint (r_file_read_uint (file, 42), ==, 14341542);
+  r_free (file);
+
+  r_assert_cmpptr ((file = r_fs_path_new_tmpname_full (NULL, TESTPREFIX, "")), !=, NULL);
+  r_assert (r_file_write_all (file, "-14341542", 9));
+  r_assert_cmpint (r_file_read_int (file, 42), ==, -14341542);
+  r_free (file);
+
+  r_assert_cmpptr ((file = r_fs_path_new_tmpname_full (NULL, TESTPREFIX, "")), !=, NULL);
+  r_assert_cmpuint ((len = r_sprintf (tmp, "%u", RUINT_MAX)), ==, 10);
+  r_assert (r_file_write_all (file, tmp, len));
+  r_assert_cmpuint (r_file_read_uint (file, 42), ==, RUINT_MAX);
+  r_assert_cmpint (r_file_read_int (file, 42), ==, -1);
+  r_free (file);
+
+  r_assert_cmpptr ((file = r_fs_path_new_tmpname_full (NULL, TESTPREFIX"max", "")), !=, NULL);
+  r_assert_cmpuint ((len = r_sprintf (tmp, "0x%x", RUINT_MAX - 100)), ==, 10);
+  r_assert (r_file_write_all (file, tmp, len));
+  r_assert_cmpuint (r_file_read_uint (file, 42), ==, RUINT_MAX - 100);
+  r_assert_cmpint (r_file_read_int (file, 42), ==, -101);
+  r_free (file);
+}
+RTEST_END;
+

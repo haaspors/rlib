@@ -29,6 +29,8 @@
 /* Convenience API for whole file */
 R_API rboolean r_file_read_all (const rchar * filename, ruint8 ** data, rsize * size);
 R_API rboolean r_file_write_all (const rchar * filename, rconstpointer data, rsize size);
+R_API ruint r_file_read_uint (const rchar * filename, ruint def);
+R_API int   r_file_read_int (const rchar * filename, int def);
 
 typedef struct _RFile RFile;
 

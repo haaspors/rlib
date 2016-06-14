@@ -296,3 +296,32 @@ r_file_write_all (const rchar * filename, rconstpointer data, rsize size)
   return ret;
 }
 
+ruint
+r_file_read_uint (const rchar * filename, ruint def)
+{
+  RFile * f;
+
+  if ((f = r_file_open (filename, "r")) != NULL) {
+    rintmax v = def;
+    r_file_scanf (f, "%"RINTMAX_MODIFIER"i", NULL, &v);
+    r_file_unref (f);
+
+    def = (ruint)v;
+  }
+
+  return def;
+}
+
+int
+r_file_read_int (const rchar * filename, int def)
+{
+  RFile * f;
+
+  if ((f = r_file_open (filename, "r")) != NULL) {
+    r_file_scanf (f, "%i", NULL, &def);
+    r_file_unref (f);
+  }
+
+  return def;
+}
+
