@@ -316,11 +316,11 @@ r_bitset_shr (RBitset * bitset, ruint count)
     bitset->bits[i] = bitset->bits[i + d] >> count;
     for (i++; i < words; i++)
       bitset->bits[i] = 0;
-  } else {
-    r_bitset_set_all (bitset, FALSE);
+
+    return TRUE;
   }
 
-  return TRUE;
+  return r_bitset_set_all (bitset, FALSE);
 }
 
 rboolean
@@ -340,11 +340,11 @@ r_bitset_shl (RBitset * bitset, ruint count)
     for (j = 0; j < d; j++)
       bitset->bits[j] = 0;
     R_BITSET_CLAMP (bitset);
-  } else {
-    r_bitset_set_all (bitset, FALSE);
+
+    return TRUE;
   }
 
-  return TRUE;
+  return r_bitset_set_all (bitset, FALSE);
 }
 
 ruint8
