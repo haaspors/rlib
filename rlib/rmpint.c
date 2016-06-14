@@ -1306,10 +1306,12 @@ r_mpint_expmod (rmpint * dst, const rmpint * b, const rmpint * e, const rmpint *
   if (!r_mpint_montgomery_normalize (&R[0], m))
     goto expmod_failed;
 
-  if (r_mpint_ucmp (b, m) > 0)
-     r_mpint_mod (&R[1], b, m);
-  else
+  if (r_mpint_ucmp (b, m) > 0) {
+    if (!r_mpint_mod (&R[1], b, m))
+      goto expmod_failed;
+  } else {
      r_mpint_set (&R[1], b);
+  }
   if (!r_mpint_mulmod (&R[1], &R[1], &R[0], m))
     goto expmod_failed;
 
@@ -1412,17 +1414,18 @@ r_mpint_lcm (rmpint * dst, const rmpint * a, const rmpint * b)
 
   r_mpint_init (&tmp);
 
-  r_mpint_gcd (&tmp, a, b);
+  if ((ret = r_mpint_gcd (&tmp, a, b))) {
 #if 1
-  ret = r_mpint_mul (dst, a, b) && r_mpint_div (dst, NULL, dst, &tmp);
+    ret = r_mpint_mul (dst, a, b) && r_mpint_div (dst, NULL, dst, &tmp);
 #else
-  /* FIXME: check if this is faster!? */
-  if (r_mpint_ucmp (a, b) > 0) {
-    ret = r_mpint_div (&tmp, NULL, a, &tmp) && r_mpint_mul (dst, b, &tmp);
-  } else {
-    ret = r_mpint_div (&tmp, NULL, b, &tmp) && r_mpint_mul (dst, a, &tmp);
-  }
+    /* FIXME: check if this is faster!? */
+    if (r_mpint_ucmp (a, b) > 0) {
+      ret = r_mpint_div (&tmp, NULL, a, &tmp) && r_mpint_mul (dst, b, &tmp);
+    } else {
+      ret = r_mpint_div (&tmp, NULL, b, &tmp) && r_mpint_mul (dst, a, &tmp);
+    }
 #endif
+  }
   r_mpint_clear (&tmp);
 
   return ret;
