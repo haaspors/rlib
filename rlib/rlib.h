@@ -47,6 +47,7 @@
 #include <rlib/rsignal.h>
 #include <rlib/rstr.h>
 #include <rlib/rstring.h>
+#include <rlib/rsys.h>
 #include <rlib/rtest.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>

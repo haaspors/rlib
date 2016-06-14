@@ -39,6 +39,7 @@ def configure(cfg):
     configure_os_arch(cfg)
     configure_headers(cfg)
     configure_libs(cfg)
+    configure_sys(cfg)
     configure_string(cfg)
     configure_sizeof(cfg)
     configure_printf(cfg)
@@ -231,6 +232,10 @@ def configure_libs(cfg):
             cfg.env.RLIB_MATH_LIBS = '-lm'
         if cfg.check(lib='rt', mandatory=False):
             cfg.env.RLIB_RT_LIBS = '-lrt'
+
+def configure_sys(cfg):
+    cfg.check_cc(function_name='sysctlbyname',
+            header_name="sys/sysctl.h", mandatory=False)
 
 def configure_string(cfg):
     cfg.check_cc(function_name='stpcpy',
