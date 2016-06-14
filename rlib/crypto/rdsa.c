@@ -92,7 +92,7 @@ r_dsa_pub_key_new_full (const rmpint * p, const rmpint * q,
       else            r_mpint_init (&ret->p);
       if (q != NULL)  r_mpint_init_copy (&ret->q, q);
       else            r_mpint_init (&ret->q);
-      if (q != NULL)  r_mpint_init_copy (&ret->g, g);
+      if (g != NULL)  r_mpint_init_copy (&ret->g, g);
       else            r_mpint_init (&ret->g);
       r_mpint_init_copy (&ret->y, y);
     }
