@@ -61,7 +61,9 @@ r_prng_new_kiss (void)
   ruint64 c = r_rand_entropy_u64 ();
   ruint64 z = r_rand_entropy_u64 ();
 
-  return r_prng_new_kiss_with_seed (x, y, (z * z), (c * c));
+  z = (z * z) & RUINT64_MAX;
+  c = (c * c) & RUINT64_MAX;
+  return r_prng_new_kiss_with_seed (x, y, z, c);
 }
 
 RPrng *
