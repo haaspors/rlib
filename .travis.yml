@@ -23,9 +23,12 @@ matrix:
     - os: osx
       env: VARIANT=release VG_OPT=--valgrind
 
+before_install:
+  - test "$TRAVIS_BRANCH" != "coverity_scan" || test "$TRAVIS_OS_NAME" = "linux" -a "$VARIANT" = "release" -a "$CC" = "gcc" -a -z "$VG_OPT" || exit 0
 script:
-  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then python waf configure ; fi
-  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then python waf --variant=${VARIANT} test ${VG_OPT} ; fi
+  - test "$TRAVIS_BRANCH" != "coverity_scan" || exit 0
+  - python waf configure
+  - python waf --variant=${VARIANT} test ${VG_OPT}
 
 addons:
   apt:
