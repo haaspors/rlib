@@ -495,7 +495,9 @@ r_bitset_foreach (const RBitset * bitset, rboolean set,
 
   if (set) {
     for (i = bit = 0; i < words; bit = ++i * sizeof (rbsword) * 8) {
-      rsize bitmax = R_BSWORD_BITS - RBSWORD_CLZ (bitset->bits[i]);
+      rsize bitmax;
+      if (bitset->bits[i] == 0) continue;
+      bitmax = R_BSWORD_BITS - RBSWORD_CLZ (bitset->bits[i]);
       for (j = RBSWORD_CTZ (bitset->bits[i]), bit += j, mask = RBSWORD_CONSTANT (1) << j;
           j < bitmax && bit < bitset->bsize;
           j++, bit++, mask <<= 1) {
