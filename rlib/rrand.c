@@ -21,8 +21,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rtime.h>
 #ifdef R_OS_UNIX
-#include <stdio.h>
-#include <errno.h>
+#include <rlib/rfile.h>
 #endif
 
 ruint64
@@ -40,19 +39,17 @@ r_rand_entropy_u64 (void)
       return ret;
   }
 #elif defined (R_OS_UNIX)
-  FILE * devuranad;
-  size_t res;
+  RFile * devurand;
 
-  do {
-    devuranad = fopen ("/dev/urandom", "rb");
-  } while (R_UNLIKELY (devuranad == NULL && errno == EINTR));
+  if ((devurand = r_file_open ("/dev/urandom", "rb")) != NULL) {
+    rsize res = 0;
 
-  do {
-    res = fread (&ret, sizeof (ret), 1, devuranad);
-  } while (R_UNLIKELY (errno == EINTR));
+    r_file_read (devurand, &ret, sizeof (ruint64), &res);
+    r_file_unref (devurand);
 
-  if (res == 1)
-    return ret;
+    if (res == sizeof (ruint64))
+      return ret;
+  }
 #endif
 
   return r_time_get_ts_monotonic ();
@@ -73,19 +70,17 @@ r_rand_entropy_u32 (void)
       return ret;
   }
 #elif defined (R_OS_UNIX)
-  FILE * devuranad;
-  size_t res;
+  RFile * devurand;
 
-  do {
-    devuranad = fopen ("/dev/urandom", "rb");
-  } while (R_UNLIKELY (devuranad == NULL && errno == EINTR));
+  if ((devurand = r_file_open ("/dev/urandom", "rb")) != NULL) {
+    rsize res = 0;
 
-  do {
-    res = fread (&ret, sizeof (ret), 1, devuranad);
-  } while (R_UNLIKELY (errno == EINTR));
+    r_file_read (devurand, &ret, sizeof (ruint32), &res);
+    r_file_unref (devurand);
 
-  if (res == 1)
-    return ret;
+    if (res == sizeof (ruint32))
+      return ret;
+  }
 #endif
 
   return (ruint32)(r_time_get_ts_monotonic () & RUINT32_MAX);
