@@ -345,7 +345,9 @@ r_mem_scan_pattern (rconstpointer mem, rsize size,
 
     if (ret == R_MEM_SCAN_RESULT_OK) {
       (*result)->ptr = (*result)->token[0].ptr_data;
-      (*result)->end = (*result)->token[tokens-1].ptr_data + (*result)->token[tokens-1].size;
+      (*result)->end = RSIZE_TO_POINTER (
+          RPOINTER_TO_SIZE ((*result)->token[tokens-1].ptr_data) +
+          (*result)->token[tokens-1].size);
     } else {
       r_free (*result);
       *result = NULL;

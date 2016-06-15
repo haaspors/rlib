@@ -165,7 +165,8 @@ r_mem_scan_data (rconstpointer mem, rsize size,
     rconstpointer data, rsize datasize)
 {
   if (R_LIKELY (mem != NULL && data != NULL && datasize > 0 && datasize <= size)) {
-    const ruint8 * ptr = mem, * end = mem + size - datasize;
+    const ruint8 * ptr = mem;
+    const ruint8 * end = RSIZE_TO_POINTER (RPOINTER_TO_SIZE (mem) + size - datasize);
     ruint8 byte = *(const ruint8 *)data;
 
     while (ptr < end) {
