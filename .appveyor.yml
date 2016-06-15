@@ -1,0 +1,11 @@
+-
+    version: 1.0.{build}
+    clone_depth: 15
+    environment:
+        matrix:
+            - VARIANT: debug
+            - VARIANT: release
+    build_script:
+        - ps: python waf --variant=${env:VARIANT} configure build
+    test_script:
+        - ps: python waf --variant=${env:VARIANT} test
