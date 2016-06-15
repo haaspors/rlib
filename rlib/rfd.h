@@ -23,12 +23,34 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <fcntl.h>
 #if defined (R_OS_WIN32)
 #include <io.h>
-#else
-#include <fcntl.h>
+
+/* FIXME: Do something clever with flags and mode instead of this? */
+#if defined (_O_RDONLY) && !defined (O_RDONLY)
+#define O_RDONLY _O_RDONLY
 #endif
-/* FIXME: Do something clever with flags and mode instead of including headers? */
+#if defined (_O_WRONLY) && !defined (O_WRONLY)
+#define O_WRONLY _O_WRONLY
+#endif
+#if defined (_O_RDWR) && !defined (O_RDWR)
+#define O_RDWR _O_RDWR
+#endif
+
+#if defined (_O_APPEND) && !defined (O_APPEND)
+#define O_APPEND _O_APPEND
+#endif
+#if defined (_O_BINARY) && !defined (O_BINARY)
+#define O_BINARY _O_BINARY
+#endif
+#if defined (_O_CREAT) && !defined (O_CREAT)
+#define O_CREAT _O_CREAT
+#endif
+#if defined (_O_TRUNC) && !defined (O_TRUNC)
+#define O_TRUNC _O_TRUNC
+#endif
+#endif
 
 R_API int r_fd_open (const rchar * file, int flags, int mode);
 R_API int r_fd_open_tmp (const rchar * dir, const rchar * pre, rchar ** path);
