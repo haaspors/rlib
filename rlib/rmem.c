@@ -99,8 +99,8 @@ r_memset (rpointer a, int v, rsize size)
 }
 
 rpointer
-r_memcpy (rpointer R_ATTR_RESTRICT dst, rconstpointer
-    R_ATTR_RESTRICT src, rsize size)
+r_memcpy (void * R_ATTR_RESTRICT dst, const void * R_ATTR_RESTRICT src,
+    rsize size)
 {
   if (dst != NULL && src != NULL)
     return memcpy (dst, src, size);
