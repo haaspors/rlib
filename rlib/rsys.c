@@ -46,7 +46,7 @@
 static PSYSTEM_LOGICAL_PROCESSOR_INFORMATION
 r_sys_cpu_win32_get_logical_proc_info (ruint * count)
 {
-  PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ret;
+  PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ret = NULL;
   DWORD retlen = 0;
 
   if (!GetLogicalProcessorInformation (ret, &retlen))
