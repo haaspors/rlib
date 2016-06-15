@@ -28,10 +28,14 @@ main (int argc, char ** argv)
   {
     rchar * tmp = "TEST \x15 10101";
     ruint8  mem[160+7];
-    rsize i;
-    for (i = 0; i < sizeof (mem); i++)
-      mem[i] = (ruint8)(rand () % 0xFF);
+    RPrng * prng;
 
+    if ((prng = r_rand_prng_new ()) != NULL) {
+      r_prng_fill (prng, mem, sizeof (mem));
+      r_prng_unref (prng);
+    } else {
+      r_memset (mem, 0, sizeof (mem));
+    }
     R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG, (rpointer)tmp, 12);
     R_LOG_MEM_DUMP (R_LOG_LEVEL_INFO, mem, sizeof (mem));
   }
