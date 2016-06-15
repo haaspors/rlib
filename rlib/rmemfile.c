@@ -77,6 +77,29 @@ r_mem_file_new (const rchar * file, RMemProt prot, rboolean writeback)
   return ret;
 }
 
+#if defined (R_OS_WIN32)
+static DWORD
+_get_page_flags (RMemProt prot)
+{
+  DWORD ret = (prot & R_MEM_PROT_WRITE) ? PAGE_READWRITE : PAGE_READONLY;
+
+  if (prot & R_MEM_PROT_EXEC)
+    ret <<= 4;
+  return ret;
+}
+
+static DWORD
+_get_file_flags (RMemProt prot, rboolean writeback)
+{
+  if ((prot & R_MEM_PROT_WRITE) == 0)
+    return FILE_MAP_READ;
+  if (!writeback)
+    return FILE_MAP_COPY;
+
+  return FILE_MAP_WRITE;
+}
+#endif
+
 RMemFile *
 r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
 {
@@ -89,10 +112,10 @@ r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
       ret->size = (rsize)st.st_size;
 #if defined (R_OS_WIN32)
       if ((ret->handle = CreateFileMapping ((HANDLE) _get_osfhandle (fd), NULL,
-              _get_page_flags (prot, writeback), 0, 0, NULL)) != NULL) {
-        if ((file->mem = MapViewOfFile (file->handle, _get_file_flags (prot),
-                0, 0, 0)) == NULL) {
-          CloseHandle (file->handle);
+              _get_page_flags (prot), 0, 0, NULL)) != NULL) {
+        if ((ret->mem = MapViewOfFile (ret->handle,
+                _get_file_flags (prot, writeback), 0, 0, 0)) == NULL) {
+          CloseHandle (ret->handle);
           r_free (ret);
           ret = NULL;
         }
