@@ -100,7 +100,7 @@ def build(bld):
             vnum        = APIVERSION,
             includes    = [ '.' ],
             defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
-            use         = 'M DL PTHREAD RT')
+            use         = 'M DL PTHREAD RT KERNEL32 ADVAPI32')
     bld.stlib(
             source      = bld.path.ant_glob('rlib/**/*.c'),
             target      = STLIBNAME,
@@ -232,6 +232,8 @@ def configure_libs(cfg):
             cfg.env.RLIB_MATH_LIBS = '-lm'
         if cfg.check(lib='rt', mandatory=False):
             cfg.env.RLIB_RT_LIBS = '-lrt'
+    else:
+        cfg.check_libs_msvc('kernel32 advapi32')
 
 def configure_sys(cfg):
     cfg.check_cc(function_name='sysctlbyname',
