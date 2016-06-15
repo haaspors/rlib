@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,10 +22,43 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/* This header is included by rtypes.h (@ bottom of file) */
+
 R_BEGIN_DECLS
 
 #define R_LITTLE_ENDIAN         1234
 #define R_BIG_ENDIAN            4321
+
+#if R_GNUC_PREREQ(4, 2)
+/* Appearantly 16bit byteswap is missing from some versions of GCC on x86?? */
+#if !defined(__clang__) && !R_GNUC_PREREQ(4, 8)
+#define RUINT16_BSWAP(val) ((ruint16) (((ruint16)(val) >> 8) | ((ruint16)(val) << 8)))
+#else
+#define RUINT16_BSWAP(val) ((ruint16) __builtin_bswap16 ((rint16) (val)))
+#endif
+#define RUINT32_BSWAP(val) ((ruint32) __builtin_bswap32 ((rint32) (val)))
+#define RUINT64_BSWAP(val) ((ruint64) __builtin_bswap64 ((rint64) (val)))
+#elif defined(_MSC_VER)
+#define RUINT16_BSWAP(val) (_byteswap_ushort (val))
+#define RUINT32_BSWAP(val) (_byteswap_ulong (val))
+#define RUINT64_BSWAP(val) (_byteswap_uint64 (val))
+#else
+#define RUINT16_BSWAP(val) ((ruint16) (((ruint16)(val) >> 8) | ((ruint16)(val) << 8)))
+#define RUINT32_BSWAP(val) ((ruint32) (                                   \
+    ((((ruint32)(val))             ) >> 24) |                             \
+    ((((ruint32)(val)) & 0x00FF0000) >>  8) |                             \
+    ((((ruint32)(val)) & 0x0000FF00) <<  8) |                             \
+    ((((ruint32)(val))             ) << 24)))
+#define RUINT64_BSWAP(val)  ((ruint64) (                                  \
+      (((ruint64)(val) & RUINT64_CONSTANT (0x00000000000000FF)) << 56) | \
+      (((ruint64)(val) & RUINT64_CONSTANT (0x000000000000FF00)) << 40) | \
+      (((ruint64)(val) & RUINT64_CONSTANT (0x0000000000FF0000)) << 24) | \
+      (((ruint64)(val) & RUINT64_CONSTANT (0x00000000FF000000)) <<  8) | \
+      (((ruint64)(val) & RUINT64_CONSTANT (0x000000FF00000000)) >>  8) | \
+      (((ruint64)(val) & RUINT64_CONSTANT (0x0000FF0000000000)) >> 24) | \
+      (((ruint64)(val) & RUINT64_CONSTANT (0x00FF000000000000)) >> 40) | \
+      (((ruint64)(val) & RUINT64_CONSTANT (0xFF00000000000000)) >> 56)))
+#endif
 
 /* If your compiler doesn't support __BYTE_ORDER__ this doesn't work! */
 #if !defined(__BYTE_ORDER__) && !defined(_MSC_VER)
