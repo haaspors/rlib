@@ -43,7 +43,7 @@ RTEST_END;
 
 RTEST (rmpint, init_binary, RTEST_FAST)
 {
-  static const ruint8 small[] = { 0xF0, 0xF1, 0xF2, 0xF3 };
+  static const ruint8 sml[] = { 0xF0, 0xF1, 0xF2, 0xF3 };
   static const ruint8 big[] = { /* 1024 bits, 128 bytes */
     0xe6, 0x03, 0xbc, 0xf9, 0xfa, 0x9b, 0x40, 0x5c,
     0xd8, 0x51, 0xac, 0x0a, 0x3d, 0x33, 0xf9, 0x12,
@@ -70,7 +70,7 @@ RTEST (rmpint, init_binary, RTEST_FAST)
     0x1a, 0x82, 0xe7, 0x4d, 0x57, 0x69, 0x82, 0xcf };
   rmpint a;
 
-  r_mpint_init_binary (&a, small, sizeof (small));
+  r_mpint_init_binary (&a, sml, sizeof (sml));
   r_assert_cmpuint (a.dig_alloc, >=, RMPINT_DEF_DIGITS);
   r_assert_cmpuint (a.dig_used, ==, 1);
   r_assert_cmpuint (r_mpint_get_digit (&a, 0), ==, 0xF0F1F2F3);
