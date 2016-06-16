@@ -116,13 +116,13 @@ rulong __inline RULONG_CTZ (rulong x)
 #define RUINT16_PARITY(x)       RULONG_PARITY (x)
 #else
 #define RUINT16_CLZ(x)          (RUINT32_CLZ (x & RUINT16_MAX) - 16)
-#define RUINT16_CTZ(x)          RUINT32_CTZ (x & RUINT16_MAX)
+#define RUINT16_CTZ(x)          MIN (RUINT32_CTZ (x & RUINT16_MAX), 16)
 #define RUINT16_POPCOUNT(x)     RUINT32_POPCOUNT (x & RUINT16_MAX)
 #define RUINT16_PARITY(x)       RUINT32_PARITY (x & RUINT16_MAX)
 #endif
 
 #define RUINT8_CLZ(x)           (RUINT32_CLZ (x & RUINT8_MAX) - 24)
-#define RUINT8_CTZ(x)           RUINT32_CTZ (x & RUINT8_MAX)
+#define RUINT8_CTZ(x)           MIN (RUINT32_CTZ (x & RUINT8_MAX), 8)
 #define RUINT8_POPCOUNT(x)      RUINT32_POPCOUNT (x & RUINT8_MAX)
 #define RUINT8_PARITY(x)        RUINT32_PARITY (x & RUINT8_MAX)
 
