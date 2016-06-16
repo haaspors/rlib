@@ -1046,7 +1046,7 @@ r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
     return FALSE;
 
 #if RLIB_SIZEOF_VOID_P == 8
-#define _PTR_FMT  "%14p: "
+#define _PTR_FMT  "%16p: "
 #else
 #define _PTR_FMT  "%8p: "
 #endif

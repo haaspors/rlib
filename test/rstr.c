@@ -806,7 +806,7 @@ RTEST (rstr, mem_dump, RTEST_FAST)
   const ruint8 str[] = "abcdefgh";
   rchar * tmp;
 #if RLIB_SIZEOF_VOID_P == 8
-  ruint offset = 16;
+  ruint offset = 18;
 #else
   ruint offset = 10;
 #endif
@@ -834,7 +834,7 @@ RTEST (rstr, mem_dump, RTEST_FAST)
   {
     rchar * r = r_strprintf (
 #if RLIB_SIZEOF_VOID_P == 8
-        "%14p: 00 01 02 03 04  \".....\"\n%14p: 05 06 07 08 09  \".....\"",
+        "%16p: 00 01 02 03 04  \".....\"\n%16p: 05 06 07 08 09  \".....\"",
 #else
         "%8p: 00 01 02 03 04  \".....\"\n%8p: 05 06 07 08 09  \".....\"",
 #endif
