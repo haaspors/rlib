@@ -41,25 +41,34 @@ ruint __inline RUINT_CTZ (ruint x)
   return (_BitScanForward (&tz, x)) ? tz : 32;
 }
 
-rulong __inline RULONG_CLZ (rulong x)
+rulong __inline RULONGLONG_CLZ (ruint64 x)
 {
   rulong lz;
   return (_BitScanReverse64 (&lz, x)) ? 63 - lz : 64;
 }
 
-rulong __inline RULONG_CTZ (rulong x)
+rulong __inline RULONGLONG_CTZ (ruint64 x)
 {
   rulong tz;
   return (_BitScanForward64 (&tz, x)) ? tz : 64;
 }
+
 #define RUINT_POPCOUNT(x)       (ruint)__popcnt (x)
 #define RUINT_PARITY(x)         (__popcnt (x) & 1)
-#define RULONG_POPCOUNT(x)      (ruint)__popcnt64 (x)
-#define RULONG_PARITY(x)        (__popcnt64 (x) & 1)
-#define RULONGLONG_CLZ(x)       RULONG_CLZ (x)
-#define RULONGLONG_CTZ(x)       RULONG_CTZ (x)
-#define RULONGLONG_POPCOUNT(x)  RULONG_POPCOUNT (x)
-#define RULONGLONG_PARITY(x)    RULONG_PARITY (x)
+#define RULONGLONG_POPCOUNT(x)  (ruint)__popcnt64 (x)
+#define RULONGLONG_PARITY(x)    (__popcnt64 (x) & 1)
+#if RLIB_SIZEOF_LONG == 4
+#define RULONG_CLZ(x)           RUINT_CLZ (x)
+#define RULONG_CTZ(x)           RUINT_CTZ (x)
+#define RULONG_POPCOUNT(x)      RUINT_POPCOUNT (x)
+#define RULONG_PARITY(x)        RUINT_PARITY (x)
+#else
+#define RULONG_CLZ(x)           RULONGLONG_CLZ (x)
+#define RULONG_CTZ(x)           RULONGLONG_CTZ (x)
+#define RULONG_POPCOUNT(x)      RULONGLONG_POPCOUNT (x)
+#define RULONG_PARITY(x)        RULONGLONG_PARITY (x)
+#endif
+
 #elif defined(__GNUC__)
 #define RUINT_CLZ(x)            ((x) ? (ruint)__builtin_clz (x) : sizeof (ruint) * 8)
 #define RUINT_CTZ(x)            ((x) ? (ruint)__builtin_ctz (x) : sizeof (ruint) * 8)
