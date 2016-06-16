@@ -25,13 +25,13 @@ RTEST (rfs, dirname, RTEST_FAST)
   r_assert_cmpptr (r_fs_path_dirname (NULL), ==, NULL);
   r_assert_cmpstr ((tmp = r_fs_path_dirname ("")), ==, "."); r_free (tmp);
   r_assert_cmpstr ((tmp = r_fs_path_dirname (".")), ==, "."); r_free (tmp);
-  r_assert_cmpstr ((tmp = r_fs_path_dirname ("/")), ==, "/"); r_free (tmp);
-  r_assert_cmpstr ((tmp = r_fs_path_dirname ("/.")), ==, "/"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_fs_path_dirname ("/")), ==, R_DIR_SEP_STR); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_fs_path_dirname ("/.")), ==, R_DIR_SEP_STR); r_free (tmp);
   r_assert_cmpstr ((tmp = r_fs_path_dirname ("/dev/null")), ==, "/dev"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_fs_path_dirname ("tmp/temp")), ==, "tmp"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_fs_path_dirname ("tmp")), ==, "."); r_free (tmp);
-  r_assert_cmpstr ((tmp = r_fs_path_dirname ("/tmp")), ==, "/"); r_free (tmp);
-  r_assert_cmpstr ((tmp = r_fs_path_dirname ("/tmp/")), ==, "/"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_fs_path_dirname ("/tmp")), ==, R_DIR_SEP_STR); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_fs_path_dirname ("/tmp/")), ==, R_DIR_SEP_STR); r_free (tmp);
   r_assert_cmpstr ((tmp = r_fs_path_dirname ("tmp/.")), ==, "tmp"); r_free (tmp);
 }
 RTEST_END;
