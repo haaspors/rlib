@@ -24,18 +24,22 @@ RTEST (roptparse, help_help_options, RTEST_FAST)
   ROptionParser * parser = r_option_parser_new (NULL, NULL);
   rchar * expected;
   rchar * help;
+  rchar * exe;
+
+  r_assert_cmpptr ((exe = r_proc_get_exe_name ()), !=, NULL);
 
   r_assert (r_option_parser_is_help_enabled (parser));
-  expected = r_strprintf (g__roptparse_usage_tmpl, "rlibtest", "", g__roptparse_helpopt, "");
+  expected = r_strprintf (g__roptparse_usage_tmpl, exe, "", g__roptparse_helpopt, "");
   r_assert_cmpstr ((help = r_option_parser_get_help_output (parser)), ==, expected);
   r_free (expected);
   r_free (help);
 
   r_option_parser_set_help_enabled (parser, FALSE);
-  expected = r_strprintf (g__roptparse_usage_tmpl, "rlibtest", "", "", "");
+  expected = r_strprintf (g__roptparse_usage_tmpl, exe, "", "", "");
   r_assert_cmpstr ((help = r_option_parser_get_help_output (parser)), ==, expected);
   r_free (expected);
   r_free (help);
+  r_free (exe);
 
   r_option_parser_free (parser);
 }
@@ -43,15 +47,17 @@ RTEST_END;
 
 RTEST (roptparse, help_summary, RTEST_FAST)
 {
-  rchar * expected, * help;
+  rchar * expected, * help, * exe;
   ROptionParser * parser = r_option_parser_new (NULL, NULL);
 
+  r_assert_cmpptr ((exe = r_proc_get_exe_name ()), !=, NULL);
   r_option_parser_set_summary (parser, "This is the summary");
-  expected = r_strprintf (g__roptparse_usage_tmpl, "rlibtest",
+  expected = r_strprintf (g__roptparse_usage_tmpl, exe,
       "\nThis is the summary\n", g__roptparse_helpopt, "");
   r_assert_cmpstr ((help = r_option_parser_get_help_output (parser)), ==, expected);
   r_free (expected);
   r_free (help);
+  r_free (exe);
 
   r_option_parser_free (parser);
 }
@@ -59,15 +65,17 @@ RTEST_END;
 
 RTEST (roptparse, help_epilog, RTEST_FAST)
 {
-  rchar * expected, * help;
+  rchar * expected, * help, * exe;
   ROptionParser * parser = r_option_parser_new (NULL, NULL);
 
+  r_assert_cmpptr ((exe = r_proc_get_exe_name ()), !=, NULL);
   r_option_parser_set_epilog (parser, "This is the epilog");
-  expected = r_strprintf (g__roptparse_usage_tmpl, "rlibtest",
+  expected = r_strprintf (g__roptparse_usage_tmpl, exe,
       "", g__roptparse_helpopt, "\nThis is the epilog\n");
   r_assert_cmpstr ((help = r_option_parser_get_help_output (parser)), ==, expected);
   r_free (expected);
   r_free (help);
+  r_free (exe);
 
   r_option_parser_free (parser);
 }
@@ -153,14 +161,16 @@ RTEST (roptparse, help_args, RTEST_FAST)
   const rchar * args_help =
     "  -f, --foo                      Do foo\n"
     "  -b, --bar                      Do bar\n";
-  rchar * expected, * help;
+  rchar * expected, * help, * exe;
   ROptionParser * parser = r_option_parser_new (NULL, NULL);
 
+  r_assert_cmpptr ((exe = r_proc_get_exe_name ()), !=, NULL);
   r_assert (r_option_parser_add_arguments (parser, entries, R_N_ELEMENTS (entries)));
-  expected = r_strprintf (g__roptparse_usage_tmpl, "rlibtest", "", g__roptparse_helpopt, args_help);
+  expected = r_strprintf (g__roptparse_usage_tmpl, exe, "", g__roptparse_helpopt, args_help);
   r_assert_cmpstr ((help = r_option_parser_get_help_output (parser)), ==, expected);
   r_free (expected);
   r_free (help);
+  r_free (exe);
 
   r_option_parser_free (parser);
 }
@@ -192,14 +202,16 @@ RTEST (roptparse, help_argname, RTEST_FAST)
     "  -i, --input=FILENAME           Input file\n"
     "  -u, --outstr=STR               Output string\n"
     "  -s, --instr=STRING             Input string\n";
-  rchar * expected, * help;
+  rchar * expected, * help, * exe;
   ROptionParser * parser = r_option_parser_new (NULL, NULL);
 
+  r_assert_cmpptr ((exe = r_proc_get_exe_name ()), !=, NULL);
   r_assert (r_option_parser_add_arguments (parser, entries, R_N_ELEMENTS (entries)));
-  expected = r_strprintf (g__roptparse_usage_tmpl, "rlibtest", "", g__roptparse_helpopt, args_help);
+  expected = r_strprintf (g__roptparse_usage_tmpl, exe, "", g__roptparse_helpopt, args_help);
   r_assert_cmpstr ((help = r_option_parser_get_help_output (parser)), ==, expected);
   r_free (expected);
   r_free (help);
+  r_free (exe);
 
   r_option_parser_free (parser);
 }
@@ -326,7 +338,7 @@ RTEST (roptparse, get_version_output, RTEST_FAST)
 
   parser = r_option_parser_new (NULL, NULL);
   r_assert_cmpptr ((verstr = r_option_parser_get_version_output (parser)), !=, NULL);
-  r_assert_cmpstr (verstr, ==, "rlibtest (\"version not specified\")\n");
+  r_assert_cmpstr (verstr, ==, "rlibtest"R_EXE_SUFFIX" (\"version not specified\")\n");
   r_free (verstr);
   r_option_parser_free (parser);
 
