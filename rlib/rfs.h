@@ -36,12 +36,14 @@
 #define R_IS_DIR_SEP(c)   ((c) == R_DIR_SEP_WIN32 || (c) == R_DIR_SEP_UNIX)
 #define R_SEARCH_SEP      ';'
 #define R_SEARCH_SEP_STR  ";"
+#define R_EXE_SUFFIX      ".exe"
 #else
 #define R_DIR_SEP         R_DIR_SEP_UNIX
 #define R_DIR_SEP_STR     R_DIR_SEP_UNIX_STR
 #define R_IS_DIR_SEP(c)   ((c) == R_DIR_SEP_UNIX)
 #define R_SEARCH_SEP      ':'
 #define R_SEARCH_SEP_STR  ":"
+#define R_EXE_SUFFIX      ""
 #endif
 
 R_BEGIN_DECLS
