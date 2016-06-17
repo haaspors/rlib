@@ -16,7 +16,7 @@ RTEST_FIXTURE_SETUP (rlog)
 
 RTEST_FIXTURE_TEARDOWN (rlog)
 {
-  r_log_keep_last_end (&fixture->ctx, TRUE);
+  r_log_keep_last_end (&fixture->ctx, TRUE, TRUE);
 }
 
 RTEST (rlog, register, RTEST_FAST)
@@ -82,10 +82,7 @@ RTEST_F (rlog, threshold, RTEST_FAST)
   R_LOG_TRACE ("this is trace");
   r_assert_cmpuint (fixture->ctx.last.lvl, ==, R_LOG_LEVEL_TRACE);
 
-  fixture->ctx.last.cat = NULL;
-  fixture->ctx.last.lvl = R_LOG_LEVEL_NONE;
-  fixture->ctx.last.file = fixture->ctx.last.func = NULL;
-  fixture->ctx.last.line = 0;
+  r_log_keep_last_reset (&fixture->ctx);
   r_log_category_set_threshold (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_NONE);
 
   R_LOG_ERROR ("this is error");

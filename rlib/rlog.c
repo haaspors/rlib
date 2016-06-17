@@ -378,12 +378,29 @@ r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
   fflush (f);
 }
 
+
+static void
+r_log_keep_last_log_last (const RLogKeepLastCtx * ctx)
+{
+  if (R_UNLIKELY (ctx->last.msg != NULL)) {
+    if (ctx->last.lvl <= ctx->last.cat->threshold) {
+      if (ctx->oldfunc != NULL && ctx->last.cat != ctx->cat) {
+        ctx->oldfunc (ctx->last.cat, ctx->last.lvl,
+            ctx->last.file, ctx->last.line, ctx->last.func,
+            ctx->last.msg, ctx->olddata);
+      }
+    }
+  }
+}
+
 static void
 r_log_keep_last_handler (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,
     const rchar * msg, rpointer user_data)
 {
   RLogKeepLastCtx * ctx = user_data;
+
+  r_log_keep_last_log_last (ctx);
 
   ctx->last.cat = cat;
   ctx->last.lvl = lvl;
@@ -392,12 +409,6 @@ r_log_keep_last_handler (RLogCategory * cat, RLogLevel lvl,
   ctx->last.func = func;
   r_free (ctx->last.msg);
   ctx->last.msg = r_strdup (msg);
-
-  if (lvl > cat->threshold)
-    return;
-
-  if (ctx->oldfunc != NULL && cat != ctx->cat)
-    ctx->oldfunc (cat, lvl, file, line, func, msg, ctx->olddata);
 }
 
 void
@@ -414,8 +425,11 @@ r_log_keep_last_begin_full (RLogKeepLastCtx * ctx, RLogCategory * cat,
 }
 
 void
-r_log_keep_last_end (RLogKeepLastCtx * ctx, rboolean reset)
+r_log_keep_last_end (RLogKeepLastCtx * ctx, rboolean fwdlast, rboolean reset)
 {
+  if (fwdlast)
+    r_log_keep_last_log_last (ctx);
+
   g__r_log_ignore_threshold = FALSE;
   r_log_override_default_handler (ctx->oldfunc, ctx->olddata, NULL);
 
@@ -427,5 +441,6 @@ void
 r_log_keep_last_reset (RLogKeepLastCtx * ctx)
 {
   r_free (ctx->last.msg);
+  memset (&ctx->last, 0, sizeof (ctx->last));
 }
 

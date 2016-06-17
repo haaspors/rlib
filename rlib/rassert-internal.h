@@ -88,7 +88,7 @@
   RLogKeepLastCtx ctx;                                                        \
   r_log_keep_last_begin (&ctx, CAT);                                          \
   { expr; };                                                                  \
-  r_log_keep_last_end (&ctx, FALSE); /* Call _reset() later! */               \
+  r_log_keep_last_end (&ctx, FALSE, FALSE); /* Call _reset() later! */        \
   if (CAT != NULL)                                                            \
     R_ASSERT_CMP (CAT,==,ctx.last.cat,rpointer,"%p","cat","<last log cat>");  \
   if (LVL != R_LOG_LEVEL_NONE)                                                \

@@ -33,7 +33,6 @@
 /* TODO: Add API to customize options usage string + (get|set)ters appname++ */
 /* TODO: Add add_groups API */
 /* TODO: Add commands API? */
-/* FIXME: remove warning logging?? */
 
 struct _ROptionParser
 {

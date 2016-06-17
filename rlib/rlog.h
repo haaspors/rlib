@@ -159,7 +159,7 @@ typedef struct {
   r_log_keep_last_begin_full (ctx, cat, TRUE)
 R_API void r_log_keep_last_begin_full (RLogKeepLastCtx * ctx, RLogCategory * cat,
     rboolean ignore_threshold);
-R_API void r_log_keep_last_end (RLogKeepLastCtx * ctx, rboolean reset);
+R_API void r_log_keep_last_end (RLogKeepLastCtx * ctx, rboolean fwdlast, rboolean reset);
 R_API void r_log_keep_last_reset (RLogKeepLastCtx * ctx);
 
 /* Internal API used for marking last position for rtests */
