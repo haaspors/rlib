@@ -60,14 +60,18 @@ R_BEGIN_DECLS
       (((ruint64)(val) & RUINT64_CONSTANT (0xFF00000000000000)) >> 56)))
 #endif
 
+#if defined(_MSC_VER)
+#define R_BYTE_ORDER R_LITTLE_ENDIAN
+#elif  __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define R_BYTE_ORDER R_LITTLE_ENDIAN
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define R_BYTE_ORDER R_BIG_ENDIAN
+#else
 /* If your compiler doesn't support __BYTE_ORDER__ this doesn't work! */
-#if !defined(__BYTE_ORDER__) && !defined(_MSC_VER)
 #warning "__BYTE_ORDER__ not defined"
 #endif
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define R_BYTE_ORDER R_BIG_ENDIAN
-
+#if R_BYTE_ORDER == R_BIG_ENDIAN
 #define RINT16_TO_BE(val)   ((rint16)  (val))
 #define RUINT16_TO_BE(val)  ((ruint16) (val))
 #define RINT16_TO_LE(val)   ((rint16) RUINT16_BSWAP (val))
@@ -80,13 +84,8 @@ R_BEGIN_DECLS
 #define RUINT64_TO_BE(val)  ((ruint64) (val))
 #define RINT64_TO_LE(val)   ((rint64) RUINT64_BSWAP (val))
 #define RUINT64_TO_LE(val)  (RUINT64_BSWAP (val))
-#else
-#if !defined(_MSC_VER) && __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
-#error "__BYTE_ORDER__ is not supported"
-#endif
-#define R_BYTE_ORDER R_LITTLE_ENDIAN
-
-#define RINT16_TO_LE(val)     ((rint16)  (val))
+#elif R_BYTE_ORDER == R_LITTLE_ENDIAN
+#define RINT17_TO_LE(val)     ((rint16)  (val))
 #define RUINT16_TO_LE(val)    ((ruint16) (val))
 #define RINT16_TO_BE(val)     ((rint16) RUINT16_BSWAP (val))
 #define RUINT16_TO_BE(val)    (RUINT16_BSWAP (val))
@@ -98,6 +97,8 @@ R_BEGIN_DECLS
 #define RUINT64_TO_LE(val)    ((ruint64) (val))
 #define RINT64_TO_BE(val)     ((rint64) RUINT64_BSWAP (val))
 #define RUINT64_TO_BE(val)    (RUINT64_BSWAP (val))
+#else
+#error "__BYTE_ORDER__ is not supported"
 #endif
 
 #if RLIB_SIZEOF_SIZE_T == 8
