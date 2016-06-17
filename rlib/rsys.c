@@ -49,7 +49,8 @@ r_sys_cpu_win32_get_logical_proc_info (ruint * count)
   PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ret = NULL;
   DWORD retlen = 0;
 
-  if (!GetLogicalProcessorInformation (ret, &retlen))
+  GetLogicalProcessorInformation (ret, &retlen);
+  if (retlen == 0)
     return NULL;
 
   if ((ret = r_malloc (retlen)) != NULL) {
