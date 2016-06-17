@@ -17,8 +17,10 @@
  */
 
 #include "config.h"
+#include "rlib-private.h"
 
 #include <rlib/rsys.h>
+#include <rlib/rlog.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
@@ -41,6 +43,8 @@
 #include <rlib/rbitset.h>
 #include <rlib/rthreads.h>
 #endif
+
+#define R_LOG_CAT_DEFAULT &rlib_logcat
 
 #if defined (R_OS_WIN32)
 static PSYSTEM_LOGICAL_PROCESSOR_INFORMATION
@@ -83,11 +87,12 @@ static void
 r_sys_cpu_linux_package_func (rsize bit, rpointer data)
 {
   rchar tmp[256];
-  RBitset * packages = data;
+  RBitset * pack = data;
 
   r_snprintf (tmp, sizeof (tmp), R_SYSFS_CPU_FMT R_SYSFS_CPU_TOPO_PKG_ID,
       (ruint)bit);
-  r_bitset_set_bit (packages, r_file_read_uint (tmp, packages->bsize), TRUE);
+  if (!r_bitset_set_bit (pack, r_file_read_uint (tmp, pack->bsize), TRUE))
+    R_LOG_WARNING ("Found wierd package ID in %s", tmp);
 }
 
 static void
@@ -99,7 +104,8 @@ r_sys_cpu_linux_phys_func (rsize bit, rpointer data)
       (ruint)bit);
 
   /* This reads the first number out of the human readable list file */
-  r_bitset_set_bit (phys, r_file_read_uint (tmp, phys->bsize), TRUE);
+  if (!r_bitset_set_bit (phys, r_file_read_uint (tmp, phys->bsize), TRUE))
+    R_LOG_WARNING ("Found wierd siblings ID in %s", tmp);
 }
 #endif
 
