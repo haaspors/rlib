@@ -48,22 +48,48 @@ static rpointer g__r_log_default_handler_data = NULL;
 static RClockTime g__r_log_ts_start = R_CLOCK_TIME_NONE;
 static RSList * g__r_log_cats = NULL;
 static FILE * g__r_log_file = NULL;
+static rchar ** g__r_log_dbg_strv = NULL;
 
 
-static rboolean
-r_log_configure (const rchar * cfg)
+/*
+ * Parses string in format:
+ * - "*:5"
+ * - "mylogcategory:5"
+ * - "5"
+ */
+static rssize
+r_log_level_parse_from_str (const rchar * str, RLogLevel * lvl)
 {
-  rulong lvl;
-  rchar * end;
+  const rchar * strlvl;
+  RStrParse res;
 
-  /* FIXME: Parse list with string functions */
-  lvl = strtoul (cfg, &end, 10);
-  if (end > cfg && *end == 0 && lvl < RLONG_MAX) {
-    r_log_set_default_level (lvl);
-    return TRUE;
+  if ((strlvl = r_strchr (str, ':')) != NULL) {
+    *lvl = r_str_to_uint (strlvl+1, NULL, 10, &res);
+    if (res == R_STR_PARSE_OK)
+      return (rssize)RPOINTER_TO_SIZE (strlvl - str);
+  } else {
+    *lvl = r_str_to_uint (str, NULL, 10, &res);
+    if (res == R_STR_PARSE_OK)
+      return 0;
   }
 
-  return FALSE;
+  return -1;
+}
+
+static void
+r_log_set_initial_default_level (rpointer str, rpointer data)
+{
+  const rchar * dbg = r_str_lwstrip (str);
+  RLogLevel lvl;
+  rssize n;
+
+  (void) data;
+
+  if ((n = r_log_level_parse_from_str (dbg, &lvl)) < 0 || lvl < g__r_log_level_default)
+    return;
+
+  if (n == 0 || (n == 1 && dbg[0] == '*'))
+    r_log_set_default_level (MIN (lvl, R_LOG_LEVEL_MAX));
 }
 
 void
@@ -84,11 +110,13 @@ r_log_init (void)
     g__r_log_color = FALSE;
 
   if ((env = r_getenv ("R_DEBUG")) != NULL)
-    r_log_configure (env);
+    r_strv_foreach ((g__r_log_dbg_strv = r_strsplit (env, ",", RSIZE_MAX)),
+        r_log_set_initial_default_level, NULL);
 
   r_log_category_register (R_LOG_CAT_ASSERT);
   /* Make sure assertions are always going through the log system */
-  r_log_category_set_threshold (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR);
+  if (R_LOG_LEVEL_ERROR > (R_LOG_CAT_ASSERT)->threshold)
+    r_log_category_set_threshold (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR);
 
   g__r_log_ts_start = r_time_get_ts_monotonic ();
 }
@@ -96,6 +124,7 @@ r_log_init (void)
 void
 r_log_deinit (void)
 {
+  r_strv_free (g__r_log_dbg_strv);
   if (g__r_log_file != NULL)
     fclose (g__r_log_file);
 }
@@ -157,6 +186,22 @@ r_log_get_default_level (void)
   return g__r_log_level_default;
 }
 
+static void
+r_log_category_initial_level (rpointer str, rpointer data)
+{
+  const rchar * dbg = r_str_lwstrip (str);
+  RLogCategory * cat = data;
+  RLogLevel lvl;
+  rssize n;
+
+  if ((n = r_log_level_parse_from_str (dbg, &lvl)) < 0 || lvl < cat->threshold)
+    return;
+
+  /* FIXME: Add glob matching */
+  if (n == 0 || (n == 1 && dbg[0] == '*') || r_strncmp (dbg, cat->name, n) == 0)
+    cat->threshold = MIN (lvl, R_LOG_LEVEL_MAX);
+}
+
 rboolean
 r_log_category_register (RLogCategory * cat)
 {
@@ -164,6 +209,8 @@ r_log_category_register (RLogCategory * cat)
     return FALSE;
   g__r_log_cats = r_slist_prepend (g__r_log_cats, cat);
   cat->threshold = g__r_log_level_default;
+  r_strv_foreach (g__r_log_dbg_strv, r_log_category_initial_level, cat);
+  r_log_update_level_min (cat->threshold);
   return TRUE;
 }
 
