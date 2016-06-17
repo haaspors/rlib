@@ -273,7 +273,6 @@ r_fs_get_file_attributes (const rchar * path)
   return ret;
 }
 
-/* FIXME: this is not tested manually nor compiled at all */
 static DWORD
 r_fs_get_file_access (const rchar * path, DWORD req)
 {
@@ -284,27 +283,41 @@ r_fs_get_file_access (const rchar * path, DWORD req)
     DWORD len = 0;
     HANDLE token = NULL;
 
-    if (OpenThreadToken (GetCurrentThread (), TOKEN_QUERY, TRUE, token)) {
-      PSECURITY_DESCRIPTOR secdesc;
-      if (GetFileSecurityW (upath,
+    if (OpenProcessToken (GetCurrentProcess (),
+          TOKEN_IMPERSONATE | TOKEN_DUPLICATE | TOKEN_QUERY | STANDARD_RIGHTS_READ,
+          &token)) {
+      HANDLE impToken = NULL;
+      if (DuplicateToken (token, SecurityImpersonation, &impToken)) {
+        PSECURITY_DESCRIPTOR secdesc;
+
+        GetFileSecurityW (upath,
             OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
-            NULL, len, &len) &&
-          (secdesc = r_mem_new (SECURITY_DESCRIPTOR)) != NULL) {
-        GENERIC_MAPPING mapping = { 0xFFFFFFFF };
-        PRIVILEGE_SET privset = { 0 };
-        DWORD privsetlen = sizeof (PRIVILEGE_SET);
-        BOOL result = FALSE;
+            NULL, len, &len);
+        if (len > 0 && (secdesc = r_malloc (len)) != NULL) {
+          if (GetFileSecurityW (upath,
+                OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                secdesc, len, &len)) {
+            GENERIC_MAPPING mapping = { 0xFFFFFFFF };
+            PRIVILEGE_SET privset = { 0 };
+            DWORD privsetlen = sizeof (PRIVILEGE_SET);
+            BOOL result = FALSE;
+            DWORD granted = 0;
 
-        mapping.GenericRead = FILE_GENERIC_READ;
-        mapping.GenericWrite = FILE_GENERIC_WRITE;
-        mapping.GenericExecute = FILE_GENERIC_EXECUTE;
-        mapping.GenericAll = FILE_ALL_ACCESS;
+            mapping.GenericRead = FILE_GENERIC_READ;
+            mapping.GenericWrite = FILE_GENERIC_WRITE;
+            mapping.GenericExecute = FILE_GENERIC_EXECUTE;
+            mapping.GenericAll = FILE_ALL_ACCESS;
 
-        MapGenericMask (&req, &mapping);
-        AccessCheck (secdesc, token, req, &mapping, &privset, &privsetlen,
-            &ret, &result);
+            MapGenericMask (&req, &mapping);
+            if (AccessCheck (secdesc, impToken, req, &mapping, &privset, &privsetlen,
+                &granted, &result) && result)
+              ret = granted;
+          }
 
-        r_free (secdesc);
+          r_free (secdesc);
+        }
+
+        CloseHandle (impToken);
       }
 
       CloseHandle (token);
