@@ -44,7 +44,7 @@ typedef enum
 } RLogLevel;
 
 #ifndef R_LOG_LEVEL_DEFAULT
-#define R_LOG_LEVEL_DEFAULT     R_LOG_LEVEL_NONE
+#define R_LOG_LEVEL_DEFAULT     R_LOG_LEVEL_CRITICAL
 #endif
 #ifndef R_LOG_LEVEL_MAX
 #define R_LOG_LEVEL_MAX         R_LOG_LEVEL_COUNT
