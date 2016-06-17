@@ -26,6 +26,7 @@
 #include <rlib/rlog.h>
 
 R_API_HIDDEN void r_log_init (void);
+R_API_HIDDEN void r_log_deinit (void);
 
 R_API_HIDDEN void r_test_init (void);
 

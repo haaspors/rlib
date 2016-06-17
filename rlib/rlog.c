@@ -47,6 +47,7 @@ static RLogFunc g__r_log_default_handler = r_log_default_handler;
 static rpointer g__r_log_default_handler_data = NULL;
 static RClockTime g__r_log_ts_start = R_CLOCK_TIME_NONE;
 static RSList * g__r_log_cats = NULL;
+static FILE * g__r_log_file = NULL;
 
 
 static rboolean
@@ -69,13 +70,13 @@ void
 r_log_init (void)
 {
   const rchar * env;
-  FILE * file = NULL; /* NULL means stderr */
+  FILE * file = NULL;
 
   if ((env = r_getenv ("R_DEBUG_FILE")) != NULL) {
     if (r_str_equals (env, "-"))
       file = stdout;
     else
-      file = fopen (env, "w"); /* FIXME: Add file API */
+      g__r_log_file = file = fopen (env, "w");
   }
   r_log_override_default_handler (r_log_default_handler, file, NULL);
 
@@ -90,6 +91,13 @@ r_log_init (void)
   r_log_category_set_threshold (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR);
 
   g__r_log_ts_start = r_time_get_ts_monotonic ();
+}
+
+void
+r_log_deinit (void)
+{
+  if (g__r_log_file != NULL)
+    fclose (g__r_log_file);
 }
 
 const rchar *

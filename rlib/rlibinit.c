@@ -41,6 +41,7 @@ R_INITIALIZER (rlib_init)
 R_DEINITIALIZER (rlib_deinit)
 {
   r_thread_deinit ();
+  r_log_deinit ();
 }
 
 #ifdef R_OS_WIN32
