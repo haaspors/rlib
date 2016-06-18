@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/ratomic.h>
+#include <rlib/rbitset.h>
 #include <rlib/rref.h>
 
 R_BEGIN_DECLS
@@ -101,8 +102,11 @@ R_API RThread * r_thread_new        (const rchar * name,
 #define r_thread_unref      r_ref_unref
 R_API rpointer  r_thread_join       (RThread * thread);
 R_API int       r_thread_kill       (RThread * thread, int sig);
-R_API const rchar * r_thread_get_name (RThread * thread);
-R_API ruint     r_thread_get_id     (RThread * thread);
+R_API const rchar * r_thread_get_name (const RThread * thread);
+R_API ruint     r_thread_get_id     (const RThread * thread);
+R_API rboolean  r_thread_get_affinity (const RThread * thread, RBitset * cpuset);
+R_API rboolean  r_thread_set_affinity (RThread * thread, const RBitset * cpuset);
+
 R_API RThread * r_thread_current    (void);
 R_API void      r_thread_exit       (rpointer retval);
 R_API void      r_thread_yield      (void);

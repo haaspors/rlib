@@ -224,6 +224,7 @@ def configure_headers(cfg):
     cfg.check(header_name='sys/time.h', mandatory=False)
     if cfg.env.DEST_OS == 'darwin':
         cfg.check(header_name='mach/clock.h')
+        cfg.check(header_name='mach/thread_policy.h')
         cfg.check(header_name='mach/mach_time.h')
 
 def configure_libs(cfg):
@@ -289,6 +290,10 @@ def configure_threads(cfg):
         cfg.check_cc(function_name='pthread_getthreadid_np', defines=['_GNU_SOURCE=1'],
                 header_name="pthread.h", lib='pthread', mandatory=False)
         cfg.check_cc(function_name='pthread_threadid_np', defines=['_GNU_SOURCE=1'],
+                header_name="pthread.h", lib='pthread', mandatory=False)
+        cfg.check_cc(function_name='pthread_getaffinity_np', defines=['_GNU_SOURCE=1'],
+                header_name="pthread.h", lib='pthread', mandatory=False)
+        cfg.check_cc(function_name='pthread_setaffinity_np', defines=['_GNU_SOURCE=1'],
                 header_name="pthread.h", lib='pthread', mandatory=False)
 
 def configure_signal(cfg):

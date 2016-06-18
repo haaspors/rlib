@@ -22,11 +22,15 @@
 #include <rlib/rlist.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
+#include <rlib/rsys.h>
 #include <rlib/rtime.h>
 
 #ifdef HAVE_PTHREAD_H
 #include <pthread.h>
 #define R_PTHREAD_KEY(tss)          (pthread_key_t)((tss)->impl.ui)
+#endif
+#ifdef HAVE_MACH_THREAD_POLICY_H
+#include <mach/mach.h>
 #endif
 #ifdef HAVE_SCHED_H
 #include <sched.h>
@@ -587,15 +591,142 @@ r_thread_current (void)
 }
 
 const rchar *
-r_thread_get_name (RThread * thread)
+r_thread_get_name (const RThread * thread)
 {
   return thread->name;
 }
 
 ruint
-r_thread_get_id (RThread * thread)
+r_thread_get_id (const RThread * thread)
 {
   return thread->thread_id;
+}
+
+rboolean
+r_thread_get_affinity (const RThread * thread, RBitset * cpuset)
+{
+#if defined (R_OS_WIN32)
+  DWORD_PTR mask, old;
+
+  if (R_UNLIKELY (thread == NULL)) return FALSE;
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  for (mask = 1; mask > 0; mask <<= 1) {
+    if ((old = SetThreadAffinityMask (thread->thread, mask)) != 0) {
+      SetThreadAffinityMask (thread->thread, old);
+#if RLIB_SIZEOF_VOID_P == 8
+      return r_bitset_set_u64_at (cpuset, old, 0);
+#elif RLIB_SIZEOF_VOID_P == 4
+      return r_bitset_set_u32_at (cpuset, old, 0);
+#else
+#error "weird windows architecture!"
+#endif
+    } else if (GetLastError () != ERROR_INVALID_PARAMETER) {
+      break;
+    }
+  }
+#elif defined (HAVE_PTHREAD_GETAFFINITY_NP)
+  rsize csetsize;
+  cpu_set_t * cset;
+
+  if (R_UNLIKELY (thread == NULL)) return FALSE;
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  r_bitset_clear (cpuset);
+  csetsize = CPU_ALLOC_SIZE (cpuset->bsize);
+  if ((cset = r_alloca0 (csetsize)) != NULL &&
+      pthread_getaffinity_np (thread->thread, csetsize, cset) == 0) {
+    rsize i;
+    for (i = 0; i < csetsize / sizeof (rulong); i++) {
+#if RLIB_SIZEOF_LONG == 8
+      r_bitset_set_u64_at (cpuset, ((rulong *)cset)[i], i * RLIB_SIZEOF_LONG * 8);
+#elif RLIB_SIZEOF_LONG == 4
+      r_bitset_set_u32_at (cpuset, ((rulong *)cset)[i], i * RLIB_SIZEOF_LONG * 8);
+#else
+#error "weird sizeof long!"
+#endif
+    }
+    return TRUE;
+  }
+#elif defined (HAVE_MACH_THREAD_POLICY_H)
+  mach_port_t mach_thread;
+
+  if (R_UNLIKELY (thread == NULL)) return FALSE;
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  /* FIXME: This is just bogus! OSX doesn't have proper API for affinity */
+  r_bitset_clear (cpuset);
+  if ((mach_thread = pthread_mach_thread_np (thread->thread)) != 0) {
+    thread_affinity_policy_data_t data = { THREAD_AFFINITY_TAG_NULL };
+    mach_msg_type_number_t count = THREAD_AFFINITY_POLICY_COUNT;
+    boolean_t def = FALSE;
+
+    if (thread_policy_get (mach_thread, THREAD_AFFINITY_POLICY,
+          (thread_policy_t)&data, &count, &def) == KERN_SUCCESS) {
+      if (data.affinity_tag == THREAD_AFFINITY_TAG_NULL)
+        r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
+      return TRUE;
+    }
+  }
+#endif
+  return FALSE;
+}
+
+#if defined (HAVE_PTHREAD_SETAFFINITY_NP)
+static void
+r_thread_bitset_to_cpu_set (rsize bit, rpointer user)
+{
+  cpu_set_t * cpuset = user;
+  CPU_SET ((int)bit, cpuset);
+}
+#endif
+
+rboolean
+r_thread_set_affinity (RThread * thread, const RBitset * cpuset)
+{
+#if defined (R_OS_WIN32)
+  DWORD_PTR mask;
+
+  if (R_UNLIKELY (thread == NULL)) return FALSE;
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+#if RLIB_SIZEOF_VOID_P == 8
+  mask = r_bitset_get_u64_at (cpuset, 0);
+#elif RLIB_SIZEOF_VOID_P == 4
+  mask = r_bitset_get_u32_at (cpuset, 0);
+#else
+#error "weird windows architecture!"
+#endif
+  return SetThreadAffinityMask (thread->thread, mask) != 0;
+#elif defined (HAVE_PTHREAD_SETAFFINITY_NP)
+  rsize csetsize;
+  cpu_set_t * cset;
+
+  if (R_UNLIKELY (thread == NULL)) return FALSE;
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  csetsize = CPU_ALLOC_SIZE (cpuset->bsize);
+  if ((cset = r_alloca0 (csetsize)) != NULL) {
+    r_bitset_foreach (cpuset, TRUE, r_thread_bitset_to_cpu_set, cset);
+    return pthread_setaffinity_np (thread->thread, csetsize, cset) == 0;
+  }
+#elif defined (HAVE_MACH_THREAD_POLICY_H)
+  mach_port_t mach_thread;
+
+  if (R_UNLIKELY (thread == NULL)) return FALSE;
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  /* FIXME: This is also bogus! OSX doesn't have proper API for affinity */
+  if (r_bitset_popcount (cpuset) == r_sys_cpu_logical_count ()) {
+    if ((mach_thread = pthread_mach_thread_np (thread->thread)) != 0) {
+      thread_affinity_policy_data_t data = { THREAD_AFFINITY_TAG_NULL };
+
+      thread_policy_set (mach_thread, THREAD_AFFINITY_POLICY,
+          (thread_policy_t)&data, THREAD_AFFINITY_POLICY_COUNT);
+    }
+  }
+#endif
+  return FALSE;
 }
 
 void
