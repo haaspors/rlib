@@ -27,7 +27,8 @@ main (int argc, char ** argv)
         if (hr) {
           RBitset * bitset;
           rsize bits;
-          r_bitset_init_stack (bitset, 256);
+          if (!r_bitset_init_stack (bitset, 256))
+            break;
 
           if (r_bitset_set_from_human_readable_file (bitset, argv[0], &bits)) {
             ruint i;

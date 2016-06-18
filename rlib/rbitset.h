@@ -38,9 +38,9 @@ typedef struct {
 #define _R_BITSET_BITS_SIZE(bits) (((bits) + sizeof (rbsword) * 8 - 1) / 8)
 #define _R_BITSET_SIZE(bits)      (sizeof (RBitset) + _R_BITSET_BITS_SIZE (bits))
 #define r_bitset_init_stack(bs, bits)                                         \
-  ((bs) = r_alloca0 (_R_BITSET_SIZE (bits)), (bs)->bsize = (bits), (bs))
+  (((bs) = r_alloca0 (_R_BITSET_SIZE (bits))) != NULL && (((bs)->bsize = (bits)) > 0))
 #define r_bitset_init_heap(bs, bits)                                          \
-  ((bs) = r_malloc0 (_R_BITSET_SIZE (bits)), (bs)->bsize = (bits), (bs))
+  (((bs) = r_malloc0 (_R_BITSET_SIZE (bits))) != NULL && (((bs)->bsize = (bits)) > 0))
 
 R_API rboolean r_bitset_copy (RBitset * dest, const RBitset * src);
 R_API rboolean r_bitset_set_bit (RBitset * bitset, rsize bit, rboolean set);

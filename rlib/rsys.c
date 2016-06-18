@@ -133,14 +133,13 @@ r_sys_cpu_packages (void)
   if (sysctlbyname ("hw.packages", &count, &size, NULL, 0) == 0)
     ret = count;
 #elif defined (R_OS_LINUX)
-  RBitset * online, * packages;
+  RBitset * online, * packs;
   ruint max = r_sys_cpu_linux_max_cpus ();
-  r_bitset_init_stack (online, max);
-  r_bitset_init_stack (packages, max);
-
-  r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
-  r_bitset_foreach (online, TRUE, r_sys_cpu_linux_package_func, packages);
-  ret = r_bitset_popcount (packages);
+  if (r_bitset_init_stack (online, max) && r_bitset_init_stack (packs, max)) {
+    r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
+    r_bitset_foreach (online, TRUE, r_sys_cpu_linux_package_func, packs);
+    ret = r_bitset_popcount (packs);
+  }
 #endif
 
   return ret;
@@ -172,12 +171,11 @@ r_sys_cpu_physical_count (void)
 #elif defined (R_OS_LINUX)
   RBitset * online, * phys;
   ruint max = r_sys_cpu_linux_max_cpus ();
-  r_bitset_init_stack (online, max);
-  r_bitset_init_stack (phys, max);
-
-  r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
-  r_bitset_foreach (online, TRUE, r_sys_cpu_linux_phys_func, phys);
-  ret = r_bitset_popcount (phys);
+  if (r_bitset_init_stack (online, max) && r_bitset_init_stack (phys, max)) {
+    r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
+    r_bitset_foreach (online, TRUE, r_sys_cpu_linux_phys_func, phys);
+    ret = r_bitset_popcount (phys);
+  }
 #endif
 
   return ret;
@@ -210,10 +208,10 @@ r_sys_cpu_logical_count (void)
 #elif defined (R_OS_LINUX)
   RBitset * online;
   ruint max = r_sys_cpu_linux_max_cpus ();
-  r_bitset_init_stack (online, max);
-
-  r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
-  ret = r_bitset_popcount (online);
+  if (r_bitset_init_stack (online, max)) {
+    r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
+    ret = r_bitset_popcount (online);
+  }
 #endif
 
   return ret;

@@ -15,7 +15,7 @@ main (int argc, char ** argv)
   (void) argc;
   (void) argv;
 
-  if (r_bitset_init_stack (cpuset, 256) == NULL) {
+  if (!r_bitset_init_stack (cpuset, 256)) {
     r_printerr ("r_bitset_init_stack failed\n");
     return 1;
   }

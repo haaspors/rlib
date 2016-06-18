@@ -4,7 +4,7 @@ RTEST (rbitset, stack, RTEST_FAST)
 {
   RBitset * bitset;
 
-  r_assert_cmpptr (r_bitset_init_stack (bitset, 80), !=, NULL);
+  r_assert (r_bitset_init_stack (bitset, 80));
 
   r_assert_cmpuint (r_bitset_popcount (bitset), ==, 0);
   r_assert (!r_bitset_set_bit (bitset, 80, TRUE));
@@ -14,7 +14,7 @@ RTEST (rbitset, stack, RTEST_FAST)
   r_assert ( r_bitset_set_bit (bitset, 0, FALSE));
   r_assert_cmpuint (r_bitset_popcount (bitset), ==, 0);
 
-  r_assert_cmpptr (r_bitset_init_stack (bitset, sizeof (rbsword) * 8), !=, NULL);
+  r_assert (r_bitset_init_stack (bitset, sizeof (rbsword) * 8));
   r_assert_cmpuint (_R_BITSET_BITS_SIZE (bitset->bsize) / sizeof (rbsword), ==, 1);
 
 }
@@ -24,7 +24,7 @@ RTEST (rbitset, heap, RTEST_FAST)
 {
   RBitset * bitset;
 
-  r_assert_cmpptr (r_bitset_init_heap (bitset, 80), !=, NULL);
+  r_assert (r_bitset_init_heap (bitset, 80));
 
   r_assert_cmpuint (r_bitset_popcount (bitset), ==, 0);
   r_assert (!r_bitset_set_bit (bitset, 80, TRUE));
@@ -44,9 +44,9 @@ RTEST (rbitset, copy, RTEST_FAST)
 
   r_assert (!r_bitset_copy (NULL, NULL));
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 26), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (b, 64), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (c, 80), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 26));
+  r_assert (r_bitset_init_stack (b, 64));
+  r_assert (r_bitset_init_stack (c, 80));
 
   r_assert (!r_bitset_copy (NULL, NULL));
   r_assert (!r_bitset_copy (a, NULL));
@@ -75,8 +75,8 @@ RTEST (rbitset, set_at, RTEST_FAST)
   r_assert (!r_bitset_set_u32_at (NULL, 42, 0));
   r_assert (!r_bitset_set_u64_at (NULL, 42, 0));
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 26), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (b, 80), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 26));
+  r_assert (r_bitset_init_stack (b, 80));
 
   r_assert (!r_bitset_set_u8_at (a, 42, 20));
   r_assert (!r_bitset_set_u16_at (a, 42, 12));
@@ -154,7 +154,7 @@ RTEST (rbitset, foreach, RTEST_FAST)
   RBitset * bitset;
   rsize count = 0;
 
-  r_assert_cmpptr (r_bitset_init_stack (bitset, 160), !=, NULL);
+  r_assert (r_bitset_init_stack (bitset, 160));
 
   r_bitset_foreach (bitset, TRUE, bitset_counter, &count);
   r_assert_cmpuint (count, ==, 0);
@@ -183,7 +183,7 @@ RTEST (rbitset, set_bits, RTEST_FAST)
   RBitset * bitset;
   rsize array[] = { 2, 55, 123, 99, 3, 160, 44, 103 };
 
-  r_assert_cmpptr (r_bitset_init_stack (bitset, 176), !=, NULL);
+  r_assert (r_bitset_init_stack (bitset, 176));
 
   r_assert (!r_bitset_set_bits (NULL, NULL, 0, TRUE));
   r_assert (!r_bitset_set_bits (bitset, NULL, 0, TRUE));
@@ -201,7 +201,7 @@ RTEST (rbitset, set_all, RTEST_FAST)
 
   r_assert (!r_bitset_set_all (NULL, TRUE));
 
-  r_assert_cmpptr (r_bitset_init_stack (bitset, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (bitset, 76));
   r_assert_cmpuint (r_bitset_popcount (bitset), ==, 0);
 
   r_assert (r_bitset_set_all (bitset, TRUE));
@@ -216,9 +216,9 @@ RTEST (rbitset, or, RTEST_FAST)
 {
   RBitset * a, * b, * c;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 26), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (b, 66), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (c, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 26));
+  r_assert (r_bitset_init_stack (b, 66));
+  r_assert (r_bitset_init_stack (c, 76));
 
   r_assert (!r_bitset_or (NULL, NULL, NULL));
   r_assert (!r_bitset_or (a, NULL, NULL));
@@ -243,9 +243,9 @@ RTEST (rbitset, and, RTEST_FAST)
 {
   RBitset * a, * b, * c;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 26), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (b, 66), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (c, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 26));
+  r_assert (r_bitset_init_stack (b, 66));
+  r_assert (r_bitset_init_stack (c, 76));
 
   r_assert (!r_bitset_and (NULL, NULL, NULL));
   r_assert (!r_bitset_and (a, NULL, NULL));
@@ -270,9 +270,9 @@ RTEST (rbitset, xor, RTEST_FAST)
 {
   RBitset * a, * b, * c;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 26), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (b, 66), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (c, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 26));
+  r_assert (r_bitset_init_stack (b, 66));
+  r_assert (r_bitset_init_stack (c, 76));
 
   r_assert (!r_bitset_xor (NULL, NULL, NULL));
   r_assert (!r_bitset_xor (a, NULL, NULL));
@@ -297,8 +297,8 @@ RTEST (rbitset, not, RTEST_FAST)
 {
   RBitset * a, * b;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 26), !=, NULL);
-  r_assert_cmpptr (r_bitset_init_stack (b, 66), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 26));
+  r_assert (r_bitset_init_stack (b, 66));
 
   r_assert (!r_bitset_not (NULL, NULL));
   r_assert (!r_bitset_not (a, NULL));
@@ -320,7 +320,7 @@ RTEST (rbitset, shl, RTEST_FAST)
 {
   RBitset * a;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 76));
   r_assert (r_bitset_set_all (a, TRUE));
   r_assert_cmpuint (r_bitset_popcount (a), ==, 76);
 
@@ -346,7 +346,7 @@ RTEST (rbitset, shr, RTEST_FAST)
 {
   RBitset * a;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 76));
   r_assert (r_bitset_set_all (a, TRUE));
   r_assert_cmpuint (r_bitset_popcount (a), ==, 76);
 
@@ -372,7 +372,7 @@ RTEST (rbitset, get_at, RTEST_FAST)
 {
   RBitset * a;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 76));
   r_assert (r_bitset_set_all (a, TRUE));
 
   r_assert_cmpuint (r_bitset_get_u8_at (NULL, 0), ==, 0);
@@ -405,7 +405,7 @@ RTEST (rbitset, count_zeroes, RTEST_FAST)
 {
   RBitset * a, * b;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 76));
 
   r_assert_cmpuint (r_bitset_clz (NULL), ==, 0);
 
@@ -421,7 +421,7 @@ RTEST (rbitset, count_zeroes, RTEST_FAST)
   r_assert_cmpuint (r_bitset_ctz (a), ==, 33);
   r_assert_cmpuint (r_bitset_clz (a), ==, 76 - 1 - 33);
 
-  r_assert_cmpptr (r_bitset_init_stack (b, 64), !=, NULL);
+  r_assert (r_bitset_init_stack (b, 64));
 
   r_assert_cmpuint (r_bitset_clz (b), ==, 64);
   r_assert_cmpuint (r_bitset_ctz (b), ==, 64);
@@ -442,7 +442,7 @@ RTEST (rbitset, set_n_bits_at, RTEST_FAST)
   RBitset * a;
   int i;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 76));
 
   r_assert (!r_bitset_set_n_bits_at (NULL, 0, 0, TRUE));
   r_assert (!r_bitset_set_n_bits_at (a, 4, 73, TRUE));
@@ -463,7 +463,7 @@ RTEST (rbitset, set_from_human_readable, RTEST_FAST)
   int i;
   rsize bits;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 76));
 
   r_assert (!r_bitset_set_from_human_readable (NULL, NULL, NULL));
   r_assert (!r_bitset_set_from_human_readable (a, NULL, NULL));
@@ -513,7 +513,7 @@ RTEST (rbitset, set_from_human_readable_file, RTEST_FAST | RTEST_SYSTEM)
   rsize bits;
   rchar * tmpfile;
 
-  r_assert_cmpptr (r_bitset_init_stack (a, 76), !=, NULL);
+  r_assert (r_bitset_init_stack (a, 76));
 
   r_assert (!r_bitset_set_from_human_readable_file (NULL, NULL, NULL));
   r_assert (!r_bitset_set_from_human_readable_file (a, NULL, NULL));
