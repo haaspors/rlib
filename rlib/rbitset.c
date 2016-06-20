@@ -634,3 +634,44 @@ r_bitset_not (RBitset * dest, const RBitset * src)
   return TRUE;
 }
 
+rchar *
+r_bitset_to_human_readable (const RBitset * bitset)
+{
+  rchar * ret;
+  rssize size, sp = 0;
+
+  if (R_UNLIKELY (bitset == NULL)) return NULL;
+
+  size = 32;
+  if ((ret = r_malloc (size)) != NULL) {
+    rsize i, j;
+    for (i = 0; i < bitset->bsize; i++) {
+      if (r_bitset_is_bit_set (bitset, i)) {
+        rchar tmp[32];
+        int tmpsize;
+
+        j = i;
+        while (i+1 < bitset->bsize && r_bitset_is_bit_set (bitset, i+1)) i++;
+        if (sp > 0)
+          ret[sp++] = ',';
+
+        if (i == j)
+          tmpsize = r_snprintf (tmp, 32, "%"RSIZE_FMT, i);
+        else
+          tmpsize = r_snprintf (tmp, 32, "%"RSIZE_FMT"-%"RSIZE_FMT, j, i);
+
+        if (sp > size - tmpsize) {
+          size += 32;
+          ret = r_realloc (ret, size);
+        }
+
+        r_strncpy (&ret[sp], tmp, tmpsize);
+        sp += tmpsize;
+      }
+    }
+  }
+
+  ret[sp] = 0;
+  return ret;
+}
+

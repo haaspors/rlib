@@ -550,3 +550,30 @@ RTEST (rbitset, set_from_human_readable_file, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rbitset, to_human_readable, RTEST_FAST)
+{
+  RBitset * a;
+  rchar * hr;
+
+  r_assert (r_bitset_init_stack (a, 76));
+
+  r_assert_cmpptr (r_bitset_to_human_readable (NULL), ==, NULL);
+
+  r_assert_cmpptr ((hr = r_bitset_to_human_readable (a)), !=, NULL);
+  r_assert_cmpstr (hr, ==, ""); r_free (hr);
+
+  r_assert (r_bitset_set_bit (a, 0, TRUE));
+  r_assert_cmpptr ((hr = r_bitset_to_human_readable (a)), !=, NULL);
+  r_assert_cmpstr (hr, ==, "0"); r_free (hr);
+
+  r_assert (r_bitset_set_n_bits_at (a, 5, 10, TRUE));
+  r_assert (r_bitset_set_bit (a, 70, TRUE));
+  r_assert_cmpptr ((hr = r_bitset_to_human_readable (a)), !=, NULL);
+  r_assert_cmpstr (hr, ==, "0,10-14,70"); r_free (hr);
+
+  r_assert (r_bitset_set_n_bits_at (a, 5, 71, TRUE));
+  r_assert_cmpptr ((hr = r_bitset_to_human_readable (a)), !=, NULL);
+  r_assert_cmpstr (hr, ==, "0,10-14,70-75"); r_free (hr);
+}
+RTEST_END;
+

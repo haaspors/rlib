@@ -63,6 +63,7 @@ R_API ruint8  r_bitset_get_u8_at  (const RBitset * bitset, rsize bit);
 R_API ruint16 r_bitset_get_u16_at (const RBitset * bitset, rsize bit);
 R_API ruint32 r_bitset_get_u32_at (const RBitset * bitset, rsize bit);
 R_API ruint64 r_bitset_get_u64_at (const RBitset * bitset, rsize bit);
+R_API rchar * r_bitset_to_human_readable (const RBitset * bitset);
 
 R_API rboolean r_bitset_is_bit_set (const RBitset * bitset, rsize bit);
 R_API rsize r_bitset_popcount (const RBitset * bitset);
