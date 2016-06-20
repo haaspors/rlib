@@ -117,7 +117,7 @@ r_bitset_set_n_bits_at (RBitset * bitset, rsize n, rsize bit, rboolean set)
   static const ruint8  v8  = RUINT8_MAX;
 
   if (R_UNLIKELY (bitset == NULL)) return FALSE;
-  if (R_UNLIKELY (bit + n >= bitset->bsize)) return FALSE;
+  if (R_UNLIKELY (bit + n > bitset->bsize)) return FALSE;
 
   while (n > 64) {
     if (!r_bitset_set_u64_at (bitset, v64, bit))

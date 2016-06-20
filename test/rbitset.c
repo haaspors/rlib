@@ -449,6 +449,10 @@ RTEST (rbitset, set_n_bits_at, RTEST_FAST)
   r_assert (r_bitset_set_n_bits_at (a, 0, 0, FALSE));
   r_assert_cmpuint (r_bitset_popcount (a), ==, 0);
 
+  r_assert (r_bitset_set_n_bits_at (a, 4, 72, TRUE));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 4);
+
+  r_assert (r_bitset_clear (a));
   r_assert (r_bitset_set_n_bits_at (a, 5, 0, TRUE));
   r_assert_cmpuint (r_bitset_popcount (a), ==, 5);
   for (i = 0; i < 5; i++)
