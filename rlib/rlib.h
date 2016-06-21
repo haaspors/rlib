@@ -50,6 +50,7 @@
 #include <rlib/rsys.h>
 #include <rlib/rtest.h>
 #include <rlib/rthreads.h>
+#include <rlib/rthreadpool.h>
 #include <rlib/rtime.h>
 #include <rlib/rtty.h>
 #include <rlib/rtypes.h>
