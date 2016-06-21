@@ -98,6 +98,7 @@ static inline rboolean r_slist_contains (RSList * head, rpointer data);
 static inline RSList * r_slist_last (RSList * head);
 static inline RSList * r_slist_nth (RSList * head, rsize n);
 static inline void r_slist_foreach (RSList * head, RFunc func, rpointer user);
+static inline RSList * r_slist_copy (RSList * head);
 
 
 
@@ -544,6 +545,20 @@ static inline void r_slist_foreach (RSList * head, RFunc func, rpointer user)
 
   for (it = head; it != NULL; it = r_slist_next (it))
     func (r_slist_data (it), user);
+}
+
+static inline RSList * r_slist_copy (RSList * head)
+{
+  RSList * ret, * last, * it;
+
+  if (R_UNLIKELY (head == NULL)) return NULL;
+
+  ret = last = r_slist_alloc (r_slist_data (head));
+
+  for (it = r_slist_next (head); it != NULL; it = r_slist_next (it), last = last->next)
+    last->next = r_slist_alloc (r_slist_data (it));
+
+  return ret;
 }
 
 R_END_DECLS
