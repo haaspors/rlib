@@ -548,6 +548,8 @@ r_thread_new (const rchar * name, RThreadFunc func, rpointer data)
 {
   RThread * ret;
 
+  if (R_UNLIKELY (func == NULL)) return NULL;
+
   if ((ret = r_mem_new (RThread)) != NULL) {
 #if defined (HAVE_PTHREAD_H)
     pthread_attr_t attr;
