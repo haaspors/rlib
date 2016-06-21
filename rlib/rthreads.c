@@ -19,7 +19,9 @@
 #include "config.h"
 #include "rlib-private.h"
 #include <rlib/rthreads.h>
+
 #include <rlib/rlist.h>
+#include <rlib/rlog.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/rsys.h>
@@ -88,6 +90,8 @@ typedef struct tagTHREADNAME_INFO
 #pragma pack(pop)
 #endif
 
+#define R_LOG_CAT_DEFAULT &rthreadcat
+R_LOG_CATEGORY_DEFINE_STATIC (rthreadcat, "rthread", "RLib threads", R_CLR_BG_YELLOW);
 
 /******************************************************************************/
 /*  INIT/DEINIT                                                               */
@@ -96,6 +100,8 @@ void
 r_thread_init (void)
 {
   RThread * thread = r_thread_current ();
+
+  r_log_category_register (&rthreadcat);
 
 #ifdef HAVE_PTHREAD_GETNAME_NP
   static const int maxname = 24;
@@ -533,7 +539,9 @@ r_thread_trampoline (rpointer data)
   thread->thread_id = (ruint)gettid ();
 #endif
 
+  R_LOG_INFO ("Thread %s [%u] starting", thread->name, thread->thread_id);
   thread->retval = thread->func (thread->data);
+  R_LOG_TRACE ("Thread %s [%u] ending", thread->name, thread->thread_id);
 
 #if defined (R_OS_WIN32)
   return 0;
@@ -585,10 +593,18 @@ r_thread_new (const rchar * name, RThreadFunc func, rpointer data)
   return ret;
 }
 
+#if RLIB_SIZEOF_VOID_P == 8
+#define THR_FMT "%14p"
+#else
+#define THR_FMT "%10p"
+#endif
+
 rpointer
 r_thread_join (RThread * thread)
 {
 #ifdef RLIB_HAVE_THREADS
+  R_LOG_TRACE ("Trying to join thread %s [%u] "THR_FMT,
+      thread->name, thread->thread_id, thread);
 #if defined (R_OS_WIN32)
   if (!thread->joined) {
     WaitForSingleObject (thread->thread, INFINITE);
