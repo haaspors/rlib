@@ -30,6 +30,8 @@ R_API ruint r_sys_cpu_packages (void);
 R_API ruint r_sys_cpu_physical_count (void);
 R_API ruint r_sys_cpu_logical_count (void);
 
+R_API ruint r_sys_node_count (void);
+
 R_END_DECLS
 
 #endif /* __R_SYS_H__ */

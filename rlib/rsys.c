@@ -39,6 +39,8 @@
 #define R_SYSFS_CPU_TOPO_PKG_ID       "/topology/physical_package_id"
 #define R_SYSFS_CPU_TOPO_THR_SIB_LST  "/topology/thread_siblings_list"
 
+#define R_SYSFS_NODE_ONLINE           "/sys/devices/system/node/online"
+
 #include <rlib/rfile.h>
 #include <rlib/rbitset.h>
 #include <rlib/rthreads.h>
@@ -210,6 +212,35 @@ r_sys_cpu_logical_count (void)
   ruint max = r_sys_cpu_linux_max_cpus ();
   if (r_bitset_init_stack (online, max)) {
     r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
+    ret = r_bitset_popcount (online);
+  }
+#endif
+
+  return ret;
+}
+
+ruint
+r_sys_node_count (void)
+{
+  ruint ret = 0;
+
+#if defined (R_OS_WIN32)
+  ULONG hnn = 0;
+  if (GetNumaHighestNodeNumber (&hnn))
+    ret = ((ruint)hnn) + 1;
+#elif defined (HAVE_SYSCTLBYNAME)
+  size_t size = 0;
+
+  if (sysctlbyname("hw.cacheconfig", NULL, &size, NULL, 0) == 0) {
+    ruint64 * cc = r_alloca (size);
+    if (sysctlbyname("hw.cacheconfig", cc, &size, NULL, 0) == 0)
+      ret = r_sys_cpu_logical_count () / cc[0];
+  }
+#elif defined (R_OS_LINUX)
+  RBitset * online;
+  ruint max = r_sys_cpu_linux_max_cpus ();
+  if (r_bitset_init_stack (online, max)) {
+    r_bitset_set_from_human_readable_file (online, R_SYSFS_NODE_ONLINE, NULL);
     ret = r_bitset_popcount (online);
   }
 #endif

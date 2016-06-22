@@ -9,3 +9,9 @@ RTEST (rsys, cpu, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rsys, node, RTEST_FAST | RTEST_SYSTEM)
+{
+  r_assert_cmpuint (r_sys_node_count (), >, 0);
+}
+RTEST_END;
+
