@@ -40,9 +40,9 @@
 #define R_SYSFS_CPU_TOPO_THR_SIB_LST  "/topology/thread_siblings_list"
 
 #define R_SYSFS_NODE_ONLINE           "/sys/devices/system/node/online"
+#define R_SYSFS_NODE_FMT              "/sys/devices/system/node/node%u"
 
 #include <rlib/rfile.h>
-#include <rlib/rbitset.h>
 #include <rlib/rthreads.h>
 #endif
 
@@ -209,11 +209,28 @@ r_sys_cpu_logical_count (void)
     ret = count;
 #elif defined (R_OS_LINUX)
   RBitset * online;
-  ruint max = r_sys_cpu_linux_max_cpus ();
-  if (r_bitset_init_stack (online, max)) {
+  if (r_bitset_init_stack (online, r_sys_cpu_linux_max_cpus ())) {
     r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
     ret = r_bitset_popcount (online);
   }
+#endif
+
+  return ret;
+}
+
+ruint
+r_sys_cpu_max_count (void)
+{
+  ruint ret;
+
+#if defined (R_OS_WIN32)
+  ret = sizeof (ULONGLONG) * 8;
+#elif defined (HAVE_SYSCTLBYNAME)
+  ret = 256;
+#elif defined (R_OS_LINUX)
+  ret = r_sys_cpu_linux_max_cpus ();
+#else
+  ret = 0;
 #endif
 
   return ret;
@@ -238,13 +255,227 @@ r_sys_node_count (void)
   }
 #elif defined (R_OS_LINUX)
   RBitset * online;
-  ruint max = r_sys_cpu_linux_max_cpus ();
-  if (r_bitset_init_stack (online, max)) {
+  if (r_bitset_init_stack (online, r_sys_cpu_linux_max_cpus ())) {
     r_bitset_set_from_human_readable_file (online, R_SYSFS_NODE_ONLINE, NULL);
     ret = r_bitset_popcount (online);
   }
 #endif
 
   return ret;
+}
+
+
+struct _RSysTopology {
+  RRef ref;
+
+#if defined (HAVE_SYSCTLBYNAME)
+  rsize     cachelvl;
+  ruint64 * cachecfg;
+#endif
+
+  RBitset * nodeset;
+  rsize nodecount;
+  RSysNode ** nodes;
+};
+struct _RSysNode {
+  RRef ref;
+
+  rsize idx;
+  rsize availablemem;
+
+  RBitset * cpuset;
+  rsize cpucount;
+  RSysCpu ** cpus;
+};
+struct _RSysCpu {
+  RRef ref;
+  rsize idx;
+
+  RSysNode * node;
+};
+
+static void
+r_sys_topology_free (RSysTopology * topo)
+{
+  if (R_LIKELY (topo != NULL)) {
+    rsize i;
+#if defined (HAVE_SYSCTLBYNAME)
+    r_free (topo->cachecfg);
+#endif
+    for (i = 0; i < topo->nodecount; i++)
+      r_sys_node_unref (topo->nodes[i]);
+    r_free (topo->nodes);
+    r_free (topo->nodeset);
+    r_free (topo);
+  }
+}
+
+static void
+r_sys_node_free (RSysNode * node)
+{
+  if (R_LIKELY (node != NULL)) {
+    rsize i;
+    for (i = 0; i < node->cpucount; i++)
+      r_sys_cpu_unref (node->cpus[i]);
+    r_free (node->cpus);
+    r_free (node->cpuset);
+    r_free (node);
+  }
+}
+
+static void
+r_sys_cpu_free (RSysCpu * cpu)
+{
+  if (R_LIKELY (cpu != NULL)) {
+    r_free (cpu);
+  }
+}
+
+static RSysCpu *
+r_sys_cpu_discover (rsize idx, RSysNode * node)
+{
+  RSysCpu * ret;
+
+  if ((ret = r_mem_new0 (RSysCpu)) != NULL) {
+    r_ref_init (ret, r_sys_cpu_free);
+    ret->idx = idx;
+    ret->node = node;
+
+    /* TODO! */
+  }
+
+  return ret;
+}
+
+static void
+r_sys_topology_prepend_cpu (rsize bit, rpointer data)
+{
+  RSysNode * node = data;
+  node->cpus[node->cpucount++] = r_sys_cpu_discover (bit, node);
+}
+
+static RSysNode *
+r_sys_node_discover (rsize idx, RSysTopology * topo)
+{
+  RSysNode * ret;
+
+  (void) topo;
+
+  if ((ret = r_mem_new0 (RSysNode)) != NULL) {
+    r_ref_init (ret, r_sys_node_free);
+    ret->idx = idx;
+
+#if defined (R_OS_WIN32)
+    GetNumaAvailableMemoryNode ((ruchar)idx, &ret->availablemem);
+    if (r_bitset_init_heap (ret->cpuset, sizeof (ULONGLONG) * 8)) {
+      ULONGLONG mask;
+      if (idx < RUINT8_MAX && GetNumaNodeProcessorMask ((ruchar)idx, &mask))
+        r_bitset_set_u64_at (ret->cpuset, mask, 0);
+    }
+#elif defined (HAVE_SYSCTLBYNAME)
+    /* FIXME: Read out available memory */
+    if (r_bitset_init_heap (ret->cpuset, r_sys_cpu_logical_count ())) {
+      r_bitset_set_n_bits_at (ret->cpuset,
+          topo->cachecfg[0], idx * topo->cachecfg[0], TRUE);
+    }
+#elif defined (R_OS_LINUX)
+    /* FIXME: Read out available memory */
+    if (r_bitset_init_heap (ret->cpuset, r_sys_cpu_linux_max_cpus ())) {
+      rchar tmp[256];
+      r_snprintf (tmp, sizeof (tmp), R_SYSFS_NODE_FMT "/cpulist", (ruint)idx);
+      r_bitset_set_from_human_readable_file (ret->cpuset, tmp, NULL);
+    }
+#endif
+
+    if (R_LIKELY (ret->cpuset != NULL)) {
+      ret->cpus = r_mem_new_n (RSysCpu *, r_bitset_popcount (ret->cpuset));
+      r_bitset_foreach (ret->cpuset, TRUE, r_sys_topology_prepend_cpu, ret);
+    }
+  }
+
+  return ret;
+}
+
+static void
+r_sys_topology_prepend_node (rsize bit, rpointer data)
+{
+  RSysTopology * topo = data;
+  topo->nodes[topo->nodecount++] = r_sys_node_discover (bit, topo);
+}
+
+RSysTopology *
+r_sys_topology_discover (void)
+{
+  RSysTopology * ret;
+
+  if ((ret = r_mem_new0 (RSysTopology)) != NULL) {
+    r_ref_init (ret, r_sys_topology_free);
+
+    R_STMT_START {
+#if defined (R_OS_WIN32)
+      ULONG hnn = 0;
+      if (GetNumaHighestNodeNumber (&hnn)) {
+        if (r_bitset_init_heap (ret->nodeset, hnn + 1))
+          r_bitset_set_all (ret->nodeset, TRUE);
+      }
+#elif defined (HAVE_SYSCTLBYNAME)
+      size_t size = 0;
+      if (sysctlbyname("hw.cacheconfig", NULL, &size, NULL, 0) == 0) {
+        ret->cachecfg = r_malloc (size);
+        ret->cachelvl = size / sizeof (ruint64);
+        if (sysctlbyname("hw.cacheconfig", ret->cachecfg, &size, NULL, 0) == 0) {
+          if (r_bitset_init_heap (ret->nodeset, r_sys_cpu_logical_count () / ret->cachecfg[0]))
+            r_bitset_set_all (ret->nodeset, TRUE);
+        }
+      }
+#elif defined (R_OS_LINUX)
+      ruint max = r_sys_cpu_linux_max_cpus ();
+      if (r_bitset_init_heap (ret->nodeset, max))
+        r_bitset_set_from_human_readable_file (ret->nodeset, R_SYSFS_NODE_ONLINE, NULL);
+#endif
+    } R_STMT_END;
+
+    if (R_LIKELY (ret->nodeset != NULL)) {
+      ret->nodes = r_mem_new_n (RSysNode *, r_bitset_popcount (ret->nodeset));
+      r_bitset_foreach (ret->nodeset, TRUE, r_sys_topology_prepend_node, ret);
+    }
+  }
+
+  return ret;
+}
+
+rsize
+r_sys_topology_node_count (const RSysTopology * topo)
+{
+  if (R_UNLIKELY (topo == NULL)) return 0;
+  return topo->nodecount;
+}
+
+RSysNode *
+r_sys_topology_node (RSysTopology * topo, rsize idx)
+{
+  if (R_UNLIKELY (topo == NULL)) return NULL;
+  return idx < topo->nodecount ? r_sys_node_ref (topo->nodes[idx]) : NULL;
+}
+
+rboolean
+r_sys_topology_node_cpuset (const RSysNode * node, RBitset * cpuset)
+{
+  if (R_UNLIKELY (node == NULL)) return FALSE;
+  return r_bitset_copy (cpuset, node->cpuset);
+}
+
+rsize
+r_sys_topology_node_cpu_count (const RSysNode * node)
+{
+  if (R_UNLIKELY (node == NULL)) return 0;
+  return node->cpucount;
+}
+
+RSysCpu *
+r_sys_topology_node_cpu (RSysNode * node, rsize idx)
+{
+  if (R_UNLIKELY (node == NULL)) return NULL;
+  return idx < node->cpucount ? r_sys_cpu_ref (node->cpus[idx]) : NULL;
 }
 
