@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -55,7 +55,7 @@ r_thread_pool_free (RThreadPool * pool)
 }
 
 RThreadPool *
-r_thread_pool_new (const rchar * nameprefix, RThreadFunc func, rpointer data)
+r_thread_pool_new (const rchar * prefix, RThreadFunc func, rpointer data)
 {
   RThreadPool * ret;
 
@@ -63,7 +63,7 @@ r_thread_pool_new (const rchar * nameprefix, RThreadFunc func, rpointer data)
 
   if ((ret = r_mem_new (RThreadPool)) != NULL) {
     r_ref_init (ret, r_thread_pool_free);
-    ret->prefix = r_strdup (nameprefix);
+    ret->prefix = r_strdup (prefix != NULL ? prefix : "rthreadpool");
     ret->func = func;
     ret->data = data;
 
@@ -99,31 +99,41 @@ r_thread_pool_proxy (rpointer data)
   return ret;
 }
 
+static RThread *
+r_thread_pool_start_thread_internal (RThreadPool * pool,
+    const rchar * fullname, const RBitset * affinity)
+{
+  RThread * ret;
+
+  if (affinity != NULL)
+    r_assert_cmpuint (r_bitset_popcount (affinity), >, 0);
+
+  if ((ret = r_thread_new (fullname, r_thread_pool_proxy, pool)) != NULL) {
+    if (affinity != NULL)
+      r_thread_set_affinity (ret, affinity);
+  }
+  return ret;
+}
+
 rboolean
-r_thread_pool_start_thread (RThreadPool * pool, const rchar * suffix, const RBitset * affinity)
+r_thread_pool_start_thread (RThreadPool * pool, const rchar * name, const RBitset * affinity)
 {
   RThread * t;
-  rchar * name;
+  rchar * fullname;
+  ruint n;
 
   if (R_UNLIKELY (pool == NULL)) return FALSE;
 
-  if (suffix != NULL) {
+  n = r_atomic_uint_fetch_add (&pool->counter, 1);
+  if (name == NULL) {
     rchar tmp[16];
-    r_snprintf (tmp, sizeof (tmp), "%u", r_atomic_uint_load (&pool->counter));
-    suffix = tmp;
-  }
-  if (pool->prefix != NULL)
-    name = r_strprintf ("%s-%s", pool->prefix, suffix);
-  else
-    name = r_strprintf ("rthreadpool-%s", suffix);
-
-  if ((t = r_thread_new (name, r_thread_pool_proxy, pool)) != NULL) {
-    if (affinity != NULL)
-      r_thread_set_affinity (t, affinity);
-    r_atomic_uint_fetch_add (&pool->counter, 1);
+    r_snprintf (tmp, sizeof (tmp), "%u", n);
+    name = tmp;
   }
 
-  r_free (name);
+  fullname = r_strprintf ("%s-%s", pool->prefix, name);
+  t = r_thread_pool_start_thread_internal (pool, fullname, affinity);
+  r_free (fullname);
 
   return t != NULL;
 }
@@ -132,7 +142,7 @@ rboolean
 r_thread_pool_start_thread_on_cpu (RThreadPool * pool, rsize cpuidx)
 {
   RThread * t;
-  rchar * name;
+  rchar * fullname;
   RBitset * cpuset;
 
   if (R_UNLIKELY (pool == NULL)) return FALSE;
@@ -141,17 +151,11 @@ r_thread_pool_start_thread_on_cpu (RThreadPool * pool, rsize cpuidx)
         !r_bitset_set_bit (cpuset, cpuidx, TRUE)))
     return FALSE;
 
-  if (pool->prefix != NULL)
-    name = r_strprintf ("%s-%"RSIZE_FMT, pool->prefix, cpuidx);
-  else
-    name = r_strprintf ("rthreadpool-%"RSIZE_FMT, cpuidx);
+  r_atomic_uint_fetch_add (&pool->counter, 1);
 
-  if ((t = r_thread_new (name, r_thread_pool_proxy, pool)) != NULL) {
-    r_thread_set_affinity (t, cpuset);
-    r_atomic_uint_fetch_add (&pool->counter, 1);
-  }
-
-  r_free (name);
+  fullname = r_strprintf ("%s-%"RSIZE_FMT, pool->prefix, cpuidx);
+  t = r_thread_pool_start_thread_internal (pool, fullname, cpuset);
+  r_free (fullname);
 
   return t != NULL;
 }

@@ -32,14 +32,14 @@ R_BEGIN_DECLS
 
 typedef struct _RThreadPool RThreadPool;
 
-R_API RThreadPool * r_thread_pool_new (const rchar * nameprefix,
+R_API RThreadPool * r_thread_pool_new (const rchar * prefix,
     RThreadFunc func, rpointer data);
 
 #define r_thread_pool_ref     r_ref_ref
 #define r_thread_pool_unref   r_ref_unref
 
 R_API rboolean  r_thread_pool_start_thread (RThreadPool * pool,
-    const rchar * suffix, const RBitset * affinity);
+    const rchar * name, const RBitset * affinity);
 R_API rboolean  r_thread_pool_start_thread_on_cpu (RThreadPool * pool,
     rsize cpuidx);
 R_API rboolean  r_thread_pool_start_thread_on_each_cpu (RThreadPool * pool,
