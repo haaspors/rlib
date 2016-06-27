@@ -77,6 +77,21 @@ R_API rpointer  r_queue_ring_peek (RQueueRing * q);
 R_API rsize     r_queue_ring_size (RQueueRing * q);
 R_API rboolean  r_queue_ring_is_empty (RQueueRing * q);
 
+/******************************************************************************/
+/* Lock-Free Queue implemented with a circular ring buffer                    */
+/******************************************************************************/
+typedef struct _RQueueRingLF RQueueRingLF;
+R_API RQueueRingLF * r_queue_ring_lf_new (rsize size) R_ATTR_MALLOC;
+#define r_queue_ring_lf_ref    r_ref_ref
+#define r_queue_ring_lf_unref  r_ref_unref
+
+R_API void      r_queue_ring_lf_clear (RQueueRingLF * q, RDestroyNotify notify);
+R_API rboolean  r_queue_ring_lf_push (RQueueRingLF * q, rpointer item) R_ATTR_WARN_UNUSED_RESULT;
+R_API rpointer  r_queue_ring_lf_pop (RQueueRingLF * q);
+R_API rpointer  r_queue_ring_lf_peek (RQueueRingLF * q);
+R_API rsize     r_queue_ring_lf_size (RQueueRingLF * q);
+R_API rboolean  r_queue_ring_lf_is_empty (RQueueRingLF * q);
+
 
 
 
