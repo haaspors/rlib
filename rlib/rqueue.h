@@ -62,6 +62,22 @@ static inline rpointer    r_queue_list_peek (const RQueueList * q);
 #define r_queue_list_is_empty(q)  ((q)->size == 0)
 
 
+/******************************************************************************/
+/* Queue implemented with a circular ring buffer                              */
+/******************************************************************************/
+typedef struct _RQueueRing RQueueRing;
+R_API RQueueRing * r_queue_ring_new (rsize size) R_ATTR_MALLOC;
+#define r_queue_ring_ref    r_ref_ref
+#define r_queue_ring_unref  r_ref_unref
+
+R_API void      r_queue_ring_clear (RQueueRing * q, RDestroyNotify notify);
+R_API rboolean  r_queue_ring_push (RQueueRing * q, rpointer item) R_ATTR_WARN_UNUSED_RESULT;
+R_API rpointer  r_queue_ring_pop (RQueueRing * q);
+R_API rpointer  r_queue_ring_peek (RQueueRing * q);
+R_API rsize     r_queue_ring_size (RQueueRing * q);
+R_API rboolean  r_queue_ring_is_empty (RQueueRing * q);
+
+
 
 
 /******************************************************************************/
