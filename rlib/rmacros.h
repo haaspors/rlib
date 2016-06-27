@@ -186,6 +186,7 @@
 #endif
 
 #if defined(__GNUC__)
+#define R_ATTR_NULL_TERMINATED        __attribute__((__sentinel__))
 #define R_ATTR_UNUSED                 __attribute__((__unused__))
 #define R_ATTR_CONST                  __attribute__((__const__))
 #define R_ATTR_PURE                   __attribute__((__pure__))
@@ -196,6 +197,7 @@
 #define R_ATTR_SCANF(fmt_idx, arg_idx)  \
   __attribute__((__format__ (__scanf__, fmt_idx, arg_idx)))
 #else
+#define R_ATTR_NULL_TERMINATED
 #define R_ATTR_UNUSED
 #define R_ATTR_CONST
 #define R_ATTR_PURE
