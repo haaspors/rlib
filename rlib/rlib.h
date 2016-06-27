@@ -49,6 +49,7 @@
 #include <rlib/rstr.h>
 #include <rlib/rstring.h>
 #include <rlib/rsys.h>
+#include <rlib/rtaskqueue.h>
 #include <rlib/rtest.h>
 #include <rlib/rthreads.h>
 #include <rlib/rthreadpool.h>

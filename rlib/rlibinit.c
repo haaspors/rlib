@@ -30,6 +30,7 @@ R_LOG_CATEGORY_DEFINE (rlib_logcat, "*** rlib   ***", "Internal RLib logger",
 R_INITIALIZER (rlib_init)
 {
   r_log_init ();
+  r_task_queue_init ();
   r_time_init ();
   r_thread_init ();
   r_test_init ();
