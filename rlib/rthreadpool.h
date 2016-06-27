@@ -31,19 +31,20 @@
 R_BEGIN_DECLS
 
 typedef struct _RThreadPool RThreadPool;
+typedef rpointer (*RThreadPoolFunc) (rpointer common, rpointer specific);
 
 R_API RThreadPool * r_thread_pool_new (const rchar * prefix,
-    RThreadFunc func, rpointer data);
+    RThreadPoolFunc func, rpointer data);
 
 #define r_thread_pool_ref     r_ref_ref
 #define r_thread_pool_unref   r_ref_unref
 
 R_API rboolean  r_thread_pool_start_thread (RThreadPool * pool,
-    const rchar * name, const RBitset * affinity);
+    const rchar * name, const RBitset * affinity, rpointer data);
 R_API rboolean  r_thread_pool_start_thread_on_cpu (RThreadPool * pool,
-    rsize cpuidx);
+    rsize cpuidx, rpointer data);
 R_API rboolean  r_thread_pool_start_thread_on_each_cpu (RThreadPool * pool,
-    const RBitset * cpuset);
+    const RBitset * cpuset, rpointer data);
 
 R_API void      r_thread_pool_join (RThreadPool * pool);
 

@@ -30,12 +30,15 @@ struct _RThreadPool
 {
   RRef ref;
   rchar * prefix;
-  RThreadFunc func;
+  RThreadPoolFunc func;
   rpointer data;
 
-  RMutex mutex;
-  RSList * active, * joined;
   rauint counter, running;
+
+  RMutex mutex;
+  RCond cond;
+  RThread * waiting_for_thread;
+  RSList * active, * joined;
 };
 
 static void
@@ -43,11 +46,13 @@ r_thread_pool_free (RThreadPool * pool)
 {
   if (R_LIKELY (pool != NULL)) {
     r_mutex_lock (&pool->mutex);
+    r_assert_cmpptr (pool->waiting_for_thread, ==, NULL);
     r_assert_cmpptr (pool->active, ==, NULL);
     r_slist_destroy_full (pool->joined, r_thread_unref);
     pool->joined = NULL;
     r_mutex_unlock (&pool->mutex);
     r_mutex_clear (&pool->mutex);
+    r_cond_clear (&pool->cond);
 
     r_free (pool->prefix);
     r_free (pool);
@@ -55,7 +60,7 @@ r_thread_pool_free (RThreadPool * pool)
 }
 
 RThreadPool *
-r_thread_pool_new (const rchar * prefix, RThreadFunc func, rpointer data)
+r_thread_pool_new (const rchar * prefix, RThreadPoolFunc func, rpointer data)
 {
   RThreadPool * ret;
 
@@ -67,10 +72,12 @@ r_thread_pool_new (const rchar * prefix, RThreadFunc func, rpointer data)
     ret->func = func;
     ret->data = data;
 
-    r_mutex_init (&ret->mutex);
-    ret->active = ret->joined = NULL;
     r_atomic_uint_store (&ret->counter, 0);
     r_atomic_uint_store (&ret->running, 0);
+    r_mutex_init (&ret->mutex);
+    r_cond_init (&ret->cond);
+    ret->waiting_for_thread = NULL;
+    ret->active = ret->joined = NULL;
   }
 
   return ret;
@@ -79,16 +86,19 @@ r_thread_pool_new (const rchar * prefix, RThreadFunc func, rpointer data)
 static rpointer
 r_thread_pool_proxy (rpointer data)
 {
-  RThreadPool * pool = data;
+  RThreadPool * pool = ((rpointer *)data)[0];
   RThread * t = r_thread_current ();
-  rpointer ret;
+  rpointer ret, spec = ((rpointer *)data)[1];
 
   r_mutex_lock (&pool->mutex);
+  r_assert_cmpptr (pool->waiting_for_thread, ==, t);
   pool->active = r_slist_prepend (pool->active, t);
+  pool->waiting_for_thread = NULL;
+  r_cond_signal (&pool->cond);
   r_mutex_unlock (&pool->mutex);
 
   r_atomic_uint_fetch_add (&pool->running, 1);
-  ret = pool->func (pool->data);
+  ret = pool->func (pool->data, spec);
   r_atomic_uint_fetch_sub (&pool->running, 1);
 
   r_mutex_lock (&pool->mutex);
@@ -101,22 +111,32 @@ r_thread_pool_proxy (rpointer data)
 
 static RThread *
 r_thread_pool_start_thread_internal (RThreadPool * pool,
-    const rchar * fullname, const RBitset * affinity)
+    const rchar * fullname, const RBitset * affinity, rpointer data)
 {
   RThread * ret;
+  rpointer p[] = { pool, data };
 
   if (affinity != NULL)
     r_assert_cmpuint (r_bitset_popcount (affinity), >, 0);
 
-  if ((ret = r_thread_new (fullname, r_thread_pool_proxy, pool)) != NULL) {
+  r_mutex_lock (&pool->mutex);
+  r_assert_cmpptr (pool->waiting_for_thread, ==, NULL);
+  if ((ret = r_thread_new (fullname, r_thread_pool_proxy, p)) != NULL) {
     if (affinity != NULL)
       r_thread_set_affinity (ret, affinity);
+
+    pool->waiting_for_thread = ret;
+    do {
+      r_cond_wait (&pool->cond, &pool->mutex);
+    } while (pool->waiting_for_thread != NULL);
   }
+  r_mutex_unlock (&pool->mutex);
   return ret;
 }
 
 rboolean
-r_thread_pool_start_thread (RThreadPool * pool, const rchar * name, const RBitset * affinity)
+r_thread_pool_start_thread (RThreadPool * pool, const rchar * name,
+    const RBitset * affinity, rpointer data)
 {
   RThread * t;
   rchar * fullname;
@@ -132,14 +152,14 @@ r_thread_pool_start_thread (RThreadPool * pool, const rchar * name, const RBitse
   }
 
   fullname = r_strprintf ("%s-%s", pool->prefix, name);
-  t = r_thread_pool_start_thread_internal (pool, fullname, affinity);
+  t = r_thread_pool_start_thread_internal (pool, fullname, affinity, data);
   r_free (fullname);
 
   return t != NULL;
 }
 
 rboolean
-r_thread_pool_start_thread_on_cpu (RThreadPool * pool, rsize cpuidx)
+r_thread_pool_start_thread_on_cpu (RThreadPool * pool, rsize cpuidx, rpointer data)
 {
   RThread * t;
   rchar * fullname;
@@ -154,31 +174,35 @@ r_thread_pool_start_thread_on_cpu (RThreadPool * pool, rsize cpuidx)
   r_atomic_uint_fetch_add (&pool->counter, 1);
 
   fullname = r_strprintf ("%s-%"RSIZE_FMT, pool->prefix, cpuidx);
-  t = r_thread_pool_start_thread_internal (pool, fullname, cpuset);
+  t = r_thread_pool_start_thread_internal (pool, fullname, cpuset, data);
   r_free (fullname);
 
   return t != NULL;
 }
 
 static void
-r_thread_pool_start_thread_on_cpu_swapped (rsize cpu, rpointer pool)
+r_thread_pool_start_thread_on_cpu_swapped (rsize cpu, rpointer data)
 {
-  r_thread_pool_start_thread_on_cpu ((RThreadPool *)pool, cpu);
+  rpointer * p = data;
+  r_thread_pool_start_thread_on_cpu ((RThreadPool *)p[0], cpu, p[1]);
 }
 
 rboolean
-r_thread_pool_start_thread_on_each_cpu (RThreadPool * pool, const RBitset * cpuset)
+r_thread_pool_start_thread_on_each_cpu (RThreadPool * pool,
+    const RBitset * cpuset, rpointer data)
 {
+  rpointer p[] = { pool, data };
+
   if (R_UNLIKELY (pool == NULL)) return FALSE;
 
   if (cpuset != NULL) {
-    r_bitset_foreach (cpuset, TRUE, r_thread_pool_start_thread_on_cpu_swapped, pool);
+    r_bitset_foreach (cpuset, TRUE, r_thread_pool_start_thread_on_cpu_swapped, p);
   } else {
     RBitset * bitset;
     if (R_UNLIKELY (!r_bitset_init_stack (bitset, r_sys_cpu_logical_count ())))
       return FALSE;
     r_bitset_set_all (bitset, TRUE);
-    r_bitset_foreach (bitset, TRUE, r_thread_pool_start_thread_on_cpu_swapped, pool);
+    r_bitset_foreach (bitset, TRUE, r_thread_pool_start_thread_on_cpu_swapped, p);
   }
 
   return TRUE;
