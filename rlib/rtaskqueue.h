@@ -42,13 +42,10 @@ R_API rboolean r_task_add_dep_v (RTask * task, RTask * dep, va_list args);
 
 
 R_API RTaskQueue * r_task_queue_new_simple (ruint threads) R_ATTR_MALLOC;
-/* TODO: Implement */
-#if 0
 R_API RTaskQueue * r_task_queue_new_per_numa_simple (ruint thrpernode) R_ATTR_MALLOC;
-R_API RTaskQueue * r_task_queue_new_per_numa_with_cpuset (const RBitset * cpuset) R_ATTR_MALLOC;
-R_API RTaskQueue * r_task_queue_new_per_cpu_simple (void) R_ATTR_MALLOC;
-R_API RTaskQueue * r_task_queue_new_per_cpu_with_cpuset (const RBitset * cpuset) R_ATTR_MALLOC;
-#endif
+R_API RTaskQueue * r_task_queue_new_per_numa_each_cpu (void) R_ATTR_MALLOC;
+R_API RTaskQueue * r_task_queue_new_per_numa_each_cpu_with_cpuset (const RBitset * cpuset) R_ATTR_MALLOC;
+R_API RTaskQueue * r_task_queue_new_per_cpu_simple (ruint cpupergroup) R_ATTR_MALLOC;
 #define r_task_queue_ref    r_ref_ref
 #define r_task_queue_unref  r_ref_unref
 
@@ -64,6 +61,10 @@ R_API RTask * r_task_queue_add_full (RTaskQueue * queue, ruint group,
     RTaskFunc func, rpointer data, ...) R_ATTR_NULL_TERMINATED R_ATTR_WARN_UNUSED_RESULT;
 R_API RTask * r_task_queue_add_full_v (RTaskQueue * queue, ruint group,
     RTaskFunc func, rpointer data, va_list args) R_ATTR_WARN_UNUSED_RESULT;
+
+R_API rsize r_task_queue_queued_tasks (const RTaskQueue * queue);
+R_API ruint r_task_queue_group_count (const RTaskQueue * queue);
+R_API ruint r_task_queue_thread_count (const RTaskQueue * queue);
 
 R_END_DECLS
 
