@@ -95,13 +95,13 @@ r_thread_pool_proxy (rpointer data)
   pool->active = r_slist_prepend (pool->active, t);
   pool->waiting_for_thread = NULL;
   r_cond_signal (&pool->cond);
+  r_atomic_uint_fetch_add (&pool->running, 1);
   r_mutex_unlock (&pool->mutex);
 
-  r_atomic_uint_fetch_add (&pool->running, 1);
   ret = pool->func (pool->data, spec);
-  r_atomic_uint_fetch_sub (&pool->running, 1);
 
   r_mutex_lock (&pool->mutex);
+  r_atomic_uint_fetch_sub (&pool->running, 1);
   pool->active = r_slist_remove (pool->active, t);
   pool->joined = r_slist_prepend (pool->joined, t);
   r_mutex_unlock (&pool->mutex);
