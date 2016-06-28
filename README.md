@@ -29,6 +29,8 @@ Features
   * BER and DER decoder
 * Cryptography
   * Private/Public keys
+* Threadpool
+  * Taskqueue
 * more to come ...
 
 Getting the code
