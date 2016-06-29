@@ -124,6 +124,22 @@ r_str_has_suffix (const rchar * str, const rchar * suffix)
   return strcmp (str + len - suffixlen, suffix) == 0;
 }
 
+rsize
+r_strspn (const rchar * str, const rchar * set)
+{
+  if (R_UNLIKELY (str == NULL)) return 0;
+  if (R_UNLIKELY (set == NULL)) return strlen (str);
+  return strspn (str, set);
+}
+
+rsize
+r_strcspn (const rchar * str, const rchar * cset)
+{
+  if (R_UNLIKELY (str == NULL)) return 0;
+  if (R_UNLIKELY (cset == NULL)) return 0;
+  return strcspn (str, cset);
+}
+
 rchar *
 r_strchr (const rchar * str, int c)
 {
@@ -137,6 +153,14 @@ r_strstr (const rchar * str, const rchar * sub)
   if (R_UNLIKELY (str == NULL)) return NULL;
   if (R_UNLIKELY (sub == NULL)) return NULL;
   return strstr (str, sub);
+}
+
+rchar *
+r_strpbrk (const rchar * str, const rchar * set)
+{
+  if (R_UNLIKELY (str == NULL)) return NULL;
+  if (R_UNLIKELY (set == NULL)) return NULL;
+  return strpbrk (str, set);
 }
 
 rchar *
@@ -242,23 +266,39 @@ r_str_idx_of_str (const rchar * str, rssize strsize,
 rchar *
 r_strcpy (rchar * dst, const rchar * src)
 {
-  if (R_UNLIKELY (dst == NULL))
-    return NULL;
-  if (R_UNLIKELY (src == NULL))
-    return dst;
+  if (R_UNLIKELY (dst == NULL)) return NULL;
+  if (R_UNLIKELY (src == NULL)) return dst;
   return strcpy (dst, src);
 }
 
 rchar *
 r_strncpy (rchar * dst, const rchar * src, rsize len)
 {
-  if (R_UNLIKELY (dst == NULL))
-    return NULL;
+  if (R_UNLIKELY (dst == NULL)) return NULL;
   if (R_UNLIKELY (src == NULL)) {
     memset (dst, 0, len);
     return dst;
   }
   return strncpy (dst, src, len);
+}
+
+rchar *
+r_strcat (rchar * dst, const rchar * src)
+{
+  if (R_UNLIKELY (dst == NULL)) return NULL;
+  if (R_UNLIKELY (src == NULL)) return dst;
+  return strcat (dst, src);
+}
+
+rchar *
+r_strncat (rchar * dst, const rchar * src, rsize len)
+{
+  if (R_UNLIKELY (dst == NULL)) return NULL;
+  if (R_UNLIKELY (src == NULL)) {
+    memset (dst, 0, len);
+    return dst;
+  }
+  return strncat (dst, src, len);
 }
 
 rchar *
