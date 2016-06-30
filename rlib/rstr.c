@@ -148,11 +148,51 @@ r_strchr (const rchar * str, int c)
 }
 
 rchar *
+r_strnchr (const rchar * str, int c, rsize size)
+{
+  if (R_UNLIKELY (str == NULL)) return NULL;
+  return memchr (str, c, size);
+}
+
+rchar *
 r_strstr (const rchar * str, const rchar * sub)
 {
   if (R_UNLIKELY (str == NULL)) return NULL;
   if (R_UNLIKELY (sub == NULL)) return NULL;
   return strstr (str, sub);
+}
+
+rchar *
+r_strnstr (const rchar * str, const rchar * sub, rsize size)
+{
+#ifndef HAVE_STRNSTR
+  rchar * ret;
+  rsize s, ss;
+
+  if (R_UNLIKELY (sub == NULL)) return NULL;
+
+  ret = (rchar *)str;
+  s = size;
+  ss = strlen (sub);
+  do {
+    if ((ret = memchr (ret, (int)*sub, s)) != NULL) {
+      if ((s = size - (ret - str)) < ss) {
+        ret = NULL;
+      } else {
+        if (r_strncmp (ret, sub, ss) == 0)
+          break;
+        ret++;
+      }
+    }
+  } while (ret != NULL);
+
+  return ret;
+#else
+  if (R_UNLIKELY (str == NULL)) return NULL;
+  if (R_UNLIKELY (sub == NULL)) return NULL;
+
+  return strnstr (str, sub, size);
+#endif
 }
 
 rchar *

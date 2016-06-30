@@ -296,6 +296,8 @@ def configure_string(cfg):
             header_name="string.h", mandatory=False)
     cfg.check_cc(function_name='stpncpy',
             header_name="string.h", mandatory=False)
+    cfg.check_cc(function_name='strnstr',
+            header_name="string.h", mandatory=False)
 
 def configure_printf(cfg):
     funcs = ['printf', 'fprintf', 'sprintf',

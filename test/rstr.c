@@ -145,6 +145,20 @@ RTEST (rstr, cpy, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, strnstr, RTEST_FAST)
+{
+  r_assert_cmpptr (r_strnstr (NULL, NULL, 0), ==, NULL);
+  r_assert_cmpptr (r_strnstr (foo, NULL, 0), ==, NULL);
+  r_assert_cmpptr (r_strnstr (foo, bar, 0), ==, NULL);
+  r_assert_cmpptr (r_strnstr (foo, foo, 0), ==, NULL);
+  r_assert_cmpptr (r_strnstr (foo, foo, 1), ==, NULL);
+  r_assert_cmpptr (r_strnstr (foo, foo, 3), ==, foo);
+  r_assert_cmpptr (r_strnstr (foobar, foo, 3), ==, foobar);
+  r_assert_cmpptr (r_strnstr (foobar, bar, 4), ==, NULL);
+  r_assert_cmpptr (r_strnstr (foobar, bar, 6), ==, foobar + 3);
+}
+RTEST_END;
+
 RTEST (rstr, to_int8_base0, RTEST_FAST)
 {
   RStrParse res = R_STR_PARSE_OK;

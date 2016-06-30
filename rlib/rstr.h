@@ -44,7 +44,9 @@ R_API rboolean r_str_has_suffix (const rchar * str, const rchar * suffix);
 R_API rsize r_strspn (const rchar * str, const rchar * set);
 R_API rsize r_strcspn (const rchar * str, const rchar * cset);
 R_API rchar * r_strchr (const rchar * str, int c);
+R_API rchar * r_strnchr (const rchar * str, int c, rsize size);
 R_API rchar * r_strstr (const rchar * str, const rchar * sub);
+R_API rchar * r_strnstr (const rchar * str, const rchar * sub, rsize size);
 R_API rchar * r_strpbrk (const rchar * str, const rchar * set);
 R_API rchar * r_str_ptr_of_c (const rchar * str, rssize strsize, rchar c);
 R_API rchar * r_str_ptr_of_c_any (const rchar * str, rssize strsize,
