@@ -161,12 +161,15 @@ int main (int argc, rchar ** argv) {                                          \
   int ret = -1;                                                               \
                                                                               \
   rboolean verbose, igskip;                                                   \
-  rchar * output;                                                             \
+  rchar * output, * filter;                                                   \
   const ROptionArgument args[] = {                                            \
     R_OPT_ARG ("verbose",     'v', R_OPTION_TYPE_NONE,      &verbose,         \
         R_OPTION_FLAG_NONE, "Print verbose info", NULL),                      \
     R_OPT_ARG ("ignore-skip", 'i', R_OPTION_TYPE_NONE,      &igskip,          \
         R_OPTION_FLAG_NONE, "Run tests that default would be skipped", NULL), \
+    R_OPT_ARG ("filter",      'f', R_OPTION_TYPE_STRING,    &filter,          \
+        R_OPTION_FLAG_NONE,                                                   \
+        "Filter on test path - default is * (\"/<suite>/<name>\")", NULL),    \
     R_OPT_ARG ("output",      'o', R_OPTION_TYPE_FILENAME,  &output,          \
         R_OPTION_FLAG_NONE,                                                   \
         "File to print results to, use - for stdout [default]", NULL),        \
@@ -182,7 +185,11 @@ int main (int argc, rchar ** argv) {                                          \
       }                                                                       \
       break;                                                                  \
     case R_OPTION_PARSE_OK:                                                   \
-      if ((report = r_test_run_local_tests (R_TEST_ALL_MASK, igskip)) != NULL) {\
+      if (filter == NULL)                                                     \
+        filter = r_strdup ("*");                                              \
+                                                                              \
+      if ((report = r_test_run_local_tests (R_TEST_ALL_MASK,                  \
+              filter, igskip)) != NULL) {                                     \
         FILE * f = stdout;                                                    \
         if (output != NULL && !r_str_equals (output, "-"))                    \
           f = fopen (output, "w");                                            \
@@ -203,8 +210,12 @@ int main (int argc, rchar ** argv) {                                          \
   }                                                                           \
   r_option_parser_free (parser);                                              \
   r_free (output);                                                            \
+  r_free (filter);                                                            \
   return ret;                                                                 \
 }
+
+R_API rchar * r_test_dup_path (const RTest * test) R_ATTR_MALLOC;
+R_API rboolean r_test_fill_path (const RTest * test, rchar * path, rsize size);
 
 R_API rsize r_test_get_local_test_count (rsize * runs);
 R_API const RTest * r_test_get_local_tests (rsize * tests, rsize * runs);
@@ -214,7 +225,7 @@ R_API RTestRunState r_test_run_fork (const RTest * test, rsize __i,
 R_API RTestRunState r_test_run_nofork (const RTest * test, rsize __i,
     RClockTime timeout, RTestLastPos * lastpos, RTestLastPos * failpos);
 R_API RTestReport * r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data);
-R_API RTestReport * r_test_run_local_tests (RTestType type, rboolean ignore_skip);
+R_API RTestReport * r_test_run_local_tests (RTestType type, const rchar * filter, rboolean ignore_skip);
 
 R_API void r_test_report_print (RTestReport * report, rboolean verbose, FILE * f);
 #define r_test_report_free(report)  r_free (report)

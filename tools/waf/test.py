@@ -106,6 +106,7 @@ class test(Task.Task):
             self.last_cmd += ['--tool=memcheck', '--leak-check=full']
 
         self.last_cmd += [self.inputs[0].abspath()]
+        self.last_cmd += ['-f', getattr(Options.options, 'filter', '*')]
 
         try:
             stdout, stderr = bld.cmd_and_log(self.last_cmd, env=env, cwd=cwd,
@@ -129,6 +130,8 @@ def options(opt):
     gr = opt.add_option_group('Test options')
     gr.add_option('--valgrind', action='store_true', default=False, dest='valgrind',
             help = 'Run the tests using the valgrind')
+    gr.add_option('-f', '--filter', action='store', default='*', dest='filter',
+            help = 'Run only tests satisfying path filter')
 
 def configure(cfg):
     cfg.find_program('valgrind', var='VALGRIND', mandatory=False)

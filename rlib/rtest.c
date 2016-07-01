@@ -201,6 +201,18 @@ r_test_assertion_msg (RLogCategory * cat,
   r_test_abort ();
 }
 
+rchar *
+r_test_dup_path (const RTest * test)
+{
+  return r_strjoin_dup ("/", "", test->suite, test->name, NULL);
+}
+
+rboolean
+r_test_fill_path (const RTest * test, rchar * path, rsize size)
+{
+  return r_strnjoin (path, size, "/", "", test->suite, test->name, NULL) != NULL;
+}
+
 rsize
 r_test_get_local_test_count (rsize * runs)
 {
@@ -784,6 +796,7 @@ r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data)
 
 typedef struct {
   RTestType type;
+  const rchar * filter;
   rboolean ignore_skip;
 } RTestFilterCtx;
 
@@ -793,18 +806,25 @@ r_test_filter_default (const RTest * test, rsize __i, rpointer data)
   RTestFilterCtx * ctx = data;
   rboolean noskip = !test->skip || ctx->ignore_skip;
   rboolean type = (ctx->type & test->type) != 0;
+  rchar fullname[1024];
 
   (void)__i;
 
-  return type && noskip;
+  return type && noskip &&
+    r_test_fill_path (test, fullname, sizeof (fullname)) &&
+    r_str_match_simple_pattern (fullname, -1, ctx->filter);
 }
 
 RTestReport *
-r_test_run_local_tests (RTestType type, rboolean ignore_skip)
+r_test_run_local_tests (RTestType type, const rchar * filter, rboolean ignore_skip)
 {
-  RTestFilterCtx ctx = { type, ignore_skip };
+  rchar * wf = r_strprintf ("*%s*", filter);
+  RTestFilterCtx ctx = { type, wf, ignore_skip };
+  RTestReport * ret;
 
-  return r_test_run_local_tests_full (r_test_filter_default, &ctx);
+  ret = r_test_run_local_tests_full (r_test_filter_default, &ctx);
+  r_free (wf);
+  return ret;
 }
 
 void
