@@ -1071,20 +1071,20 @@ r_strsplit (const rchar * str, const rchar * delim, rsize max)
 }
 
 rchar *
-r_strjoin (const rchar * delim, ...)
+r_strjoin_dup (const rchar * delim, ...)
 {
   rchar * ret;
   va_list args;
 
   va_start (args, delim);
-  ret = r_strjoinv (delim, args);
+  ret = r_strjoinv_dup (delim, args);
   va_end (args);
 
   return ret;
 }
 
 rchar *
-r_strjoinv (const rchar * delim, va_list args)
+r_strjoinv_dup (const rchar * delim, va_list args)
 {
   rchar * ret, * ptr;
   const rchar * cur;
@@ -1115,6 +1115,57 @@ r_strjoinv (const rchar * delim, va_list args)
 
   va_end (args_dup);
   return ret;
+}
+
+rchar *
+r_strnjoin (rchar * str, rsize size, const rchar * delim, ...)
+{
+  rchar * ret;
+  va_list args;
+
+  va_start (args, delim);
+  ret = r_strnjoinv (str, size, delim, args);
+  va_end (args);
+
+  return ret;
+}
+
+rchar *
+r_strnjoinv (rchar * str, rsize size, const rchar * delim, va_list args)
+{
+  rchar * ptr;
+  const rchar * cur;
+  rsize len, dlen;
+  va_list args_dup;
+
+  if (R_UNLIKELY (str == NULL)) return NULL;
+  if (R_UNLIKELY (size == 0)) return NULL;
+  if (R_UNLIKELY (delim == NULL)) return NULL;
+
+  va_copy (args_dup, args);
+
+  cur = va_arg (args_dup, const rchar *);
+  ptr = str;
+  if (R_LIKELY (cur != NULL)) {
+    /* compute total length len */
+    dlen = strlen (delim);
+    len = strlen (cur);
+    while ((cur = va_arg (args_dup, const rchar *)) != NULL)
+      len += dlen + strlen (cur);
+
+    if (len >= size)
+      return NULL;
+
+    /* join strings */
+    ptr = r_stpcpy (ptr, va_arg (args, const rchar *));
+    while ((cur = va_arg (args, const rchar *)) != NULL)
+      ptr = r_stpcpy (r_stpcpy (ptr, delim), cur);
+  } else {
+    *str = 0;
+  }
+
+  va_end (args_dup);
+  return str;
 }
 
 rboolean

@@ -82,8 +82,10 @@ R_API const rchar * r_str_lstrip (const rchar * str, const rchar * chars);
 R_API rchar * r_str_tstrip (rchar * str, const rchar * chars);
 
 /* Join and split */
-R_API rchar * r_strjoin (const rchar * delim, ...);
-R_API rchar * r_strjoinv (const rchar * delim, va_list args);
+R_API rchar * r_strjoin_dup (const rchar * delim, ...) R_ATTR_NULL_TERMINATED;
+R_API rchar * r_strjoinv_dup (const rchar * delim, va_list args);
+R_API rchar * r_strnjoin (rchar * str, rsize size, const rchar * delim, ...) R_ATTR_NULL_TERMINATED;
+R_API rchar * r_strnjoinv (rchar * str, rsize size, const rchar * delim, va_list args);
 R_API rchar ** r_strsplit (const rchar * str, const rchar * delim, rsize max);
 
 /* Parsing from string to numbers (integers and floats) */
