@@ -902,19 +902,19 @@ RTEST (rstr, match_simple_pattern, RTEST_FAST)
 {
   const rchar foo[] = "this is my foobar string?";
 
-  r_assert (!r_str_match_simple_pattern (NULL, 0, NULL, NULL));
-  r_assert (!r_str_match_simple_pattern (foo, 0, NULL, NULL));
-  r_assert (!r_str_match_simple_pattern (foo, -1, NULL, NULL));
+  r_assert (!r_str_match_simple_pattern (NULL, 0, NULL));
+  r_assert (!r_str_match_simple_pattern (foo, 0, NULL));
+  r_assert (!r_str_match_simple_pattern (foo, -1, NULL));
 
-  r_assert (!r_str_match_simple_pattern (foo, -1, "foo", NULL));
-  r_assert (r_str_match_simple_pattern (foo, -1, "*", NULL));
-  r_assert (r_str_match_simple_pattern (foo, -1, "*\\?", NULL));
-  r_assert (r_str_match_simple_pattern (foo, -1, "*foobar*", NULL));
-  r_assert (r_str_match_simple_pattern (foo, -1, "this*??*foobar*?", NULL));
-  r_assert (!r_str_match_simple_pattern (foo, -1, "?this*", NULL));
-  r_assert (r_str_match_simple_pattern (foo, -1, "this*foobar*", NULL));
-  r_assert (!r_str_match_simple_pattern (foo, -1, "this*foobar", NULL));
-  r_assert (r_str_match_simple_pattern (foo, -1, "this*\\f\\oobar*", NULL));
+  r_assert (!r_str_match_simple_pattern (foo, -1, "foo"));
+  r_assert (r_str_match_simple_pattern (foo, -1, "*"));
+  r_assert (r_str_match_simple_pattern (foo, -1, "*\\?"));
+  r_assert (r_str_match_simple_pattern (foo, -1, "*foobar*"));
+  r_assert (r_str_match_simple_pattern (foo, -1, "this*??*foobar*?"));
+  r_assert (!r_str_match_simple_pattern (foo, -1, "?this*"));
+  r_assert (r_str_match_simple_pattern (foo, -1, "this*foobar*"));
+  r_assert (!r_str_match_simple_pattern (foo, -1, "this*foobar"));
+  r_assert (r_str_match_simple_pattern (foo, -1, "this*\\f\\oobar*"));
 }
 RTEST_END;
 

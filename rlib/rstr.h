@@ -175,7 +175,7 @@ typedef struct _RStrMatchResult {
 } RStrMatchResult;
 
 R_API rboolean r_str_match_simple_pattern (const rchar * str, rssize size,
-    const rchar * pattern, rchar ** end);
+    const rchar * pattern);
 R_API RStrMatchResultType r_str_match_pattern (const rchar * str, rssize size,
     const rchar * pattern, RStrMatchResult ** result);
 

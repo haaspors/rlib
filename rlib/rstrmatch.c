@@ -23,16 +23,12 @@
 
 rboolean
 r_str_match_simple_pattern (const rchar * str, rssize size,
-    const rchar * pattern, rchar ** end)
+    const rchar * pattern)
 {
   rboolean ret;
   RStrMatchResult * res = NULL;
 
-  if ((ret = (r_str_match_pattern (str, size, pattern, &res) ==
-          R_STR_MATCH_RESULT_OK))) {
-    if (end != NULL)
-      *end = res->end;
-  }
+  ret = r_str_match_pattern (str, size, pattern, &res) == R_STR_MATCH_RESULT_OK;
 
   r_free (res);
   return ret;
