@@ -94,7 +94,7 @@ r_sys_cpu_linux_package_func (rsize bit, rpointer data)
   r_snprintf (tmp, sizeof (tmp), R_SYSFS_CPU_FMT R_SYSFS_CPU_TOPO_PKG_ID,
       (ruint)bit);
   if (!r_bitset_set_bit (pack, r_file_read_uint (tmp, pack->bsize), TRUE))
-    R_LOG_WARNING ("Found wierd package ID in %s", tmp);
+    R_LOG_WARNING ("Found weird package ID in %s", tmp);
 }
 
 static void
@@ -107,7 +107,7 @@ r_sys_cpu_linux_phys_func (rsize bit, rpointer data)
 
   /* This reads the first number out of the human readable list file */
   if (!r_bitset_set_bit (phys, r_file_read_uint (tmp, phys->bsize), TRUE))
-    R_LOG_WARNING ("Found wierd siblings ID in %s", tmp);
+    R_LOG_WARNING ("Found weird siblings ID in %s", tmp);
 }
 #endif
 
