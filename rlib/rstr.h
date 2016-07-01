@@ -142,6 +142,43 @@ R_API rdouble r_str_to_double (const rchar * str, const rchar ** endptr, RStrPar
 #define r_strtof(str, endptr) r_str_to_float  (str, endptr, NULL)
 #define r_strtod(str, endptr) r_str_to_double (str, endptr, NULL)
 
+/* Match pattern - very much the same as r_mem_scan* */
+typedef enum {
+  R_STR_TOKEN_NONE = -1,
+  R_STR_TOKEN_CHARS,
+  R_STR_TOKEN_WILDCARD,
+  R_STR_TOKEN_WILDCARD_SIZED,
+  R_STR_TOKEN_COUNT
+} RStrTokenType;
+
+typedef enum {
+  R_STR_MATCH_RESULT_INVAL             = -4,
+  R_STR_MATCH_RESULT_OOM               = -3,
+  R_STR_MATCH_RESULT_INVALID_PATTERN   = -2,
+  R_STR_MATCH_RESULT_PATTERN_NOT_IMPL  = -1,
+  R_STR_MATCH_RESULT_OK                =  0,
+  R_STR_MATCH_RESULT_NO_MATCH
+} RStrMatchResultType;
+
+typedef struct _RStrMatchToken {
+  const rchar * ptr_pattern;
+  rchar * ptr_data;
+  rsize size;
+  RStrTokenType type;
+} RStrMatchToken;
+
+typedef struct _RStrMatchResult {
+  rchar * ptr;
+  rchar * end;
+  rsize tokens;
+  RStrMatchToken token[0];
+} RStrMatchResult;
+
+R_API rboolean r_str_match_simple_pattern (const rchar * str, rssize size,
+    const rchar * pattern, rchar ** end);
+R_API RStrMatchResultType r_str_match_pattern (const rchar * str, rssize size,
+    const rchar * pattern, RStrMatchResult ** result);
+
 /* Formatting strings */
 #define r_sprintf       sprintf
 #define r_vsprintf      vsprintf

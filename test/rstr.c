@@ -898,3 +898,59 @@ RTEST (rstr, ascii_xdigit_value, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, match_simple_pattern, RTEST_FAST)
+{
+  const rchar foo[] = "this is my foobar string?";
+
+  r_assert (!r_str_match_simple_pattern (NULL, 0, NULL, NULL));
+  r_assert (!r_str_match_simple_pattern (foo, 0, NULL, NULL));
+  r_assert (!r_str_match_simple_pattern (foo, -1, NULL, NULL));
+
+  r_assert (!r_str_match_simple_pattern (foo, -1, "foo", NULL));
+  r_assert (r_str_match_simple_pattern (foo, -1, "*", NULL));
+  r_assert (r_str_match_simple_pattern (foo, -1, "*\\?", NULL));
+  r_assert (r_str_match_simple_pattern (foo, -1, "*foobar*", NULL));
+  r_assert (r_str_match_simple_pattern (foo, -1, "this*??*foobar*?", NULL));
+  r_assert (!r_str_match_simple_pattern (foo, -1, "?this*", NULL));
+  r_assert (r_str_match_simple_pattern (foo, -1, "this*foobar*", NULL));
+  r_assert (!r_str_match_simple_pattern (foo, -1, "this*foobar", NULL));
+  r_assert (r_str_match_simple_pattern (foo, -1, "this*\\f\\oobar*", NULL));
+}
+RTEST_END;
+
+RTEST (rstr, match_pattern, RTEST_FAST)
+{
+  RStrMatchResult * res;
+  const rchar foo[] = "this is my foobar string?";
+
+  r_assert_cmpuint (r_str_match_pattern (NULL, 0, NULL, NULL), ==, R_STR_MATCH_RESULT_INVAL);
+  r_assert_cmpuint (r_str_match_pattern (foo, 0, NULL, NULL), ==, R_STR_MATCH_RESULT_INVAL);
+  r_assert_cmpuint (r_str_match_pattern (foo, -1, NULL, NULL), ==, R_STR_MATCH_RESULT_INVAL);
+  r_assert_cmpuint (r_str_match_pattern (foo, -1, "*", NULL), ==, R_STR_MATCH_RESULT_INVAL);
+
+  r_assert_cmpuint (r_str_match_pattern (foo, -1, "*", &res), ==, R_STR_MATCH_RESULT_OK);
+  r_assert_cmpuint (res->tokens, ==, 1);
+  r_assert_cmpuint (res->token[0].size, ==, r_strlen (foo));
+  r_assert_cmpptr (res->token[0].ptr_data, ==, &foo[0]);
+  r_free (res);
+
+  r_assert_cmpuint (r_str_match_pattern (foo, -1, "this?is*foobar*\\?", &res), ==, R_MEM_SCAN_RESULT_OK);
+  r_assert_cmpuint (res->tokens, ==, 7);
+  r_assert_cmpuint (res->token[0].size, ==, 4);
+  r_assert_cmpuint (res->token[1].size, ==, 1);
+  r_assert_cmpuint (res->token[2].size, ==, 2);
+  r_assert_cmpuint (res->token[3].size, ==, 4);
+  r_assert_cmpuint (res->token[4].size, ==, 6);
+  r_assert_cmpuint (res->token[5].size, ==, 7);
+  r_assert_cmpuint (res->token[6].size, ==, 1);
+  r_assert_cmpptr (res->token[0].ptr_data, ==, &foo[0]);
+  r_assert_cmpptr (res->token[1].ptr_data, ==, &foo[4]);
+  r_assert_cmpptr (res->token[2].ptr_data, ==, &foo[5]);
+  r_assert_cmpptr (res->token[3].ptr_data, ==, &foo[7]);
+  r_assert_cmpptr (res->token[4].ptr_data, ==, &foo[11]);
+  r_assert_cmpptr (res->token[5].ptr_data, ==, &foo[17]);
+  r_assert_cmpptr (res->token[6].ptr_data, ==, &foo[24]);
+  r_free (res);
+}
+RTEST_END;
+
