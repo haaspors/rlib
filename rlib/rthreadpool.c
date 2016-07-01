@@ -201,7 +201,8 @@ r_thread_pool_start_thread_on_each_cpu (RThreadPool * pool,
     RBitset * bitset;
     if (R_UNLIKELY (!r_bitset_init_stack (bitset, r_sys_cpu_logical_count ())))
       return FALSE;
-    r_bitset_set_all (bitset, TRUE);
+    if (!r_bitset_set_all (bitset, TRUE))
+      return FALSE;
     r_bitset_foreach (bitset, TRUE, r_thread_pool_start_thread_on_cpu_swapped, p);
   }
 

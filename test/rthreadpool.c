@@ -155,8 +155,10 @@ RTEST_F (rthreadpool, start_thread_on_each_cpu, RTEST_FAST)
     fixture->running = TRUE;
 
     r_assert (r_bitset_init_stack (cpuset, cpus));
-    for (i = 0; i < cpus; i += 2)
-      r_bitset_set_bit (cpuset, i, TRUE);
+    for (i = 0; i < cpus; i += 2) {
+      if (!r_bitset_set_bit (cpuset, i, TRUE))
+        break;
+    }
     r_assert_cmpuint (r_bitset_popcount (cpuset), >, 2);
 
     r_mutex_lock (&fixture->mutex);
