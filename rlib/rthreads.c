@@ -716,12 +716,13 @@ r_thread_get_affinity (const RThread * thread, RBitset * cpuset)
     rsize i;
     for (i = 0; i < csetsize / sizeof (rulong); i++) {
 #if RLIB_SIZEOF_LONG == 8
-      r_bitset_set_u64_at (cpuset, ((rulong *)cset)[i], i * RLIB_SIZEOF_LONG * 8);
+      if (!r_bitset_set_u64_at (cpuset, ((rulong *)cset)[i], i * RLIB_SIZEOF_LONG * 8))
 #elif RLIB_SIZEOF_LONG == 4
-      r_bitset_set_u32_at (cpuset, ((rulong *)cset)[i], i * RLIB_SIZEOF_LONG * 8);
+      if (!r_bitset_set_u32_at (cpuset, ((rulong *)cset)[i], i * RLIB_SIZEOF_LONG * 8))
 #else
 #error "weird sizeof long!"
 #endif
+        return FALSE;
     }
     return TRUE;
   }
