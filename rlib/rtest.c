@@ -214,10 +214,10 @@ r_test_fill_path (const RTest * test, rchar * path, rsize size)
 }
 
 rsize
-r_test_get_local_test_count (rsize * runs)
+r_test_get_local_test_count (rsize * total)
 {
   rsize ret = 0;
-  r_test_get_local_tests (&ret, runs);
+  r_test_get_local_tests (&ret, total);
   return ret;
 }
 
@@ -242,10 +242,10 @@ r_test_find_magic_sym (RMODULE mod)
 }
 
 const RTest *
-r_test_get_local_tests (rsize * tests, rsize * runs)
+r_test_get_local_tests (rsize * tests, rsize * total)
 {
   const RTest * begin, * end, * sym, * cur;
-  rsize total;
+  rsize count;
   RMODULE mod;
   if (!r_module_open (&mod, NULL))
     return NULL;
@@ -271,17 +271,17 @@ r_test_get_local_tests (rsize * tests, rsize * runs)
 
   R_LOG_TRACE ("Found RTESTs: first %p, last %p (size: %"RSIZE_FMT")",
       begin, end, sizeof (RTest));
-  for (cur = begin, total = 0; cur <= end; cur++) {
+  for (cur = begin, count = 0; cur <= end; cur++) {
     if (cur->type & R_TEST_FLAG_LOOP)
-      total += (cur->loop_end - cur->loop_start);
+      count += (cur->loop_end - cur->loop_start);
     else
-      total++;
+      count++;
   }
 
   if (tests != NULL)
     *tests = (end - begin) + 1;
-  if (runs)
-    *runs = total;
+  if (total != NULL)
+    *total = count;
 
   return begin;
 }

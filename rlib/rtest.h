@@ -217,8 +217,8 @@ int main (int argc, rchar ** argv) {                                          \
 R_API rchar * r_test_dup_path (const RTest * test) R_ATTR_MALLOC;
 R_API rboolean r_test_fill_path (const RTest * test, rchar * path, rsize size);
 
-R_API rsize r_test_get_local_test_count (rsize * runs);
-R_API const RTest * r_test_get_local_tests (rsize * tests, rsize * runs);
+R_API rsize r_test_get_local_test_count (rsize * total);
+R_API const RTest * r_test_get_local_tests (rsize * tests, rsize * total);
 
 R_API RTestRunState r_test_run_fork (const RTest * test, rsize __i,
     RClockTime timeout, RTestLastPos * lastpos, RTestLastPos * failpos);
