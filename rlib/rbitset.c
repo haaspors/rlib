@@ -669,9 +669,10 @@ r_bitset_to_human_readable (const RBitset * bitset)
         sp += tmpsize;
       }
     }
+
+    ret[sp] = 0;
   }
 
-  ret[sp] = 0;
   return ret;
 }
 
