@@ -140,13 +140,13 @@ r_thread_pool_start_thread (RThreadPool * pool, const rchar * name,
 {
   RThread * t;
   rchar * fullname;
+  rchar tmp[16];
   ruint n;
 
   if (R_UNLIKELY (pool == NULL)) return FALSE;
 
   n = r_atomic_uint_fetch_add (&pool->counter, 1);
   if (name == NULL) {
-    rchar tmp[16];
     r_snprintf (tmp, sizeof (tmp), "%u", n);
     name = tmp;
   }
