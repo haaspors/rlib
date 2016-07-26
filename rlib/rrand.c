@@ -29,7 +29,7 @@ r_rand_entropy_u64 (void)
 {
   ruint64 ret;
 #if defined (R_OS_WIN32)
-  HCRYPTPROV hCryptProv = NULL;
+  HCRYPTPROV hCryptProv = (HCRYPTPROV)NULL;
 
   if (CryptAcquireContext (&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0)) {
     BOOL res = CryptGenRandom (hCryptProv, sizeof (ret), (BYTE *)&ret);
@@ -60,7 +60,7 @@ r_rand_entropy_u32 (void)
 {
   ruint32 ret;
 #if defined (R_OS_WIN32)
-  HCRYPTPROV hCryptProv = NULL;
+  HCRYPTPROV hCryptProv = (HCRYPTPROV)NULL;
 
   if (CryptAcquireContext (&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0)) {
     BOOL res = CryptGenRandom (hCryptProv, sizeof (ret), (BYTE *)&ret);
