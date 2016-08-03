@@ -85,7 +85,7 @@ R_BEGIN_DECLS
 #define RINT64_TO_LE(val)   ((rint64) RUINT64_BSWAP (val))
 #define RUINT64_TO_LE(val)  (RUINT64_BSWAP (val))
 #elif R_BYTE_ORDER == R_LITTLE_ENDIAN
-#define RINT17_TO_LE(val)     ((rint16)  (val))
+#define RINT16_TO_LE(val)     ((rint16)  (val))
 #define RUINT16_TO_LE(val)    ((ruint16) (val))
 #define RINT16_TO_BE(val)     ((rint16) RUINT16_BSWAP (val))
 #define RUINT16_TO_BE(val)    (RUINT16_BSWAP (val))
