@@ -1261,3 +1261,50 @@ r_str_mem_hex (const ruint8 * ptr, rsize size)
   return ret;
 }
 
+rsize
+r_str_hex_to_binary (const rchar * hex, ruint8 * bin, rsize size)
+{
+  rsize ret;
+
+  if (R_UNLIKELY (hex == NULL)) return 0;
+  if (R_UNLIKELY (bin == NULL)) return 0;
+  if (R_UNLIKELY (size == 0)) return 0;
+
+  hex = r_str_lwstrip (hex);
+  if (hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X'))
+    hex += 2;
+
+  for (ret = 0; *hex != 0 && !r_ascii_isspace (*hex); ret++, hex += 2) {
+    if (ret > size) return 0;
+    if (!r_ascii_isxdigit (hex[0])) return 0;
+    if (hex[1] == 0 || !r_ascii_isxdigit (hex[1])) return 0;
+
+    *bin++ =  (r_ascii_xdigit_value (hex[0]) << 4) |
+              (r_ascii_xdigit_value (hex[1])     );
+  }
+
+  return ret;
+}
+
+ruint8 *
+r_str_hex_mem (const rchar * hex, rsize * outsize)
+{
+  ruint8 * ret;
+  rsize size;
+
+  if (R_UNLIKELY (hex == NULL)) return NULL;
+  if ((size = strlen (hex) / 2) == 0) return NULL;
+
+  if ((ret = r_malloc (size)) != NULL) {
+    if ((size = r_str_hex_to_binary (hex, ret, size)) == 0) {
+      r_free (ret);
+      ret = NULL;
+    }
+
+    if (outsize != NULL)
+      *outsize = size;
+  }
+
+  return ret;
+}
+

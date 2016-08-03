@@ -200,6 +200,9 @@ R_API rchar * r_str_mem_dump_dup (const ruint8 * ptr,
     rsize size, rsize align);
 R_API rchar * r_str_mem_hex (const ruint8 * ptr, rsize size);
 
+R_API rsize r_str_hex_to_binary (const rchar * hex, ruint8 * bin, rsize size);
+R_API ruint8 * r_str_hex_mem (const rchar * hex, rsize * outsize) R_ATTR_MALLOC;
+
 /* Scanning */
 R_API int     r_strscanf (const rchar * str, const rchar * fmt, ...) R_ATTR_SCANF (2, 3);
 R_API int     r_strvscanf (const rchar * str, const rchar * fmt, va_list args) R_ATTR_SCANF (2, 0);

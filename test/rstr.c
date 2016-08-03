@@ -889,6 +889,40 @@ RTEST (rstr, mem_hex, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, hex_mem, RTEST_FAST)
+{
+  ruint8 * bin;
+  rsize size;
+  ruint8 data[8];
+  ruint8 expected[8] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77 };
+  ruint8 expected_wierd[] = { 0x01, 0x12, 0x23, 0x34, 0x45 };
+
+  r_assert_cmpuint (r_str_hex_to_binary (NULL, NULL, 0), ==, 0);
+  r_assert_cmpuint (r_str_hex_to_binary ("00112233", data, 0), ==, 0);
+  r_assert_cmpuint (r_str_hex_to_binary ("00112233", data, sizeof (data)), ==, 4);
+  r_assert_cmpmem (data, ==, expected, 4);
+
+  r_assert_cmpptr (r_str_hex_mem (NULL, NULL), ==, NULL);
+  r_assert_cmpptr ((bin = r_str_hex_mem ("00112233", NULL)), !=, NULL);
+  r_assert_cmpmem (bin, ==, expected, 4);
+  r_free (bin);
+  r_assert_cmpptr ((bin = r_str_hex_mem ("0011223344556677", &size)), !=, NULL);
+  r_assert_cmpuint (size, ==, 8);
+  r_assert_cmpmem (bin, ==, expected, size);
+  r_free (bin);
+
+  /* Error cases */
+  r_assert_cmpptr (r_str_hex_mem ("0x0x00", NULL), ==, NULL);
+  r_assert_cmpptr (r_str_hex_mem ("0x012", NULL), ==, NULL);
+  r_assert_cmpptr (r_str_hex_mem ("012", NULL), ==, NULL);
+
+  r_assert_cmpptr ((bin = r_str_hex_mem ("  0x0112233445 56677", &size)), !=, NULL);
+  r_assert_cmpuint (size, ==, 5);
+  r_assert_cmpmem (bin, ==, expected_wierd, size);
+  r_free (bin);
+}
+RTEST_END;
+
 RTEST (rstr, ascii_xdigit_value, RTEST_FAST)
 {
   rchar i;
