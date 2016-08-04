@@ -61,8 +61,10 @@
 #include <rlib/asn1/rasn1.h>
 #include <rlib/asn1/roid.h>
 
-#include <rlib/crypto/rkey.h>
+#include <rlib/crypto/raes.h>
+#include <rlib/crypto/rcipher.h>
 #include <rlib/crypto/rdsa.h>
+#include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rpem.h>
 #include <rlib/crypto/rrsa.h>
