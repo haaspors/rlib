@@ -43,6 +43,11 @@ R_API RCryptoCipherResult r_cipher_aes_ecb_encrypt (const RCryptoCipher * cipher
 R_API RCryptoCipherResult r_cipher_aes_ecb_decrypt (const RCryptoCipher * cipher,
     ruint8 * iv, rconstpointer data, rsize size, ruint8 * out);
 
+R_API RCryptoCipherResult r_cipher_aes_cbc_encrypt (const RCryptoCipher * cipher,
+    ruint8 iv[R_AES_BLOCK_BYTES], rconstpointer data, rsize size, ruint8 * out);
+R_API RCryptoCipherResult r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
+    ruint8 iv[R_AES_BLOCK_BYTES], rconstpointer data, rsize size, ruint8 * out);
+
 R_END_DECLS
 
 #endif /* __R_CRYPTO_AES_H__ */

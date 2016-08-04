@@ -174,3 +174,63 @@ RTEST_LOOP (raes, ecb, RTEST_FAST, 0, R_N_ELEMENTS (ECB_mmt_test_data))
 }
 RTEST_END;
 
+RCryptoCipherTestData CBC_test_data[] = {
+  /* Subset of the Official NIST test vectors */
+  { 128, "1f8e4973953f3fb0bd6b16662e9a3c17", "2fe2b333ceda8f98f4a99b40d2cd34a8", "45cf12964fc824ab76616ae2f4bf0822", "0f61c4d44c5147c03c195ad7e2cc12b2" },
+  { 128, "0700d603a1c514e46b6191ba430a3a0c", "aad1583cd91365e3bb2f0c3430d065bb", "068b25c7bfb1f8bdd4cfc908f69dffc5ddc726a197f0e5f720f730393279be91", "c4dc61d9725967a3020104a9738f23868527ce839aab1752fd8bdb95a82c4d00" },
+  { 128, "3348aa51e9a45c2dbe33ccc47f96e8de", "19153c673160df2b1d38c28060e59b96", "9b7cee827a26575afdbb7c7a329f887238052e3601a7917456ba61251c214763d5e1847a6ad5d54127a399ab07ee3599", "d5aed6c9622ec451a15db12819952b6752501cf05cdbf8cda34a457726ded97818e1f127a28d72db5652749f0c6afee5" },
+  { 128, "b7f3c9576e12dd0db63e8f8fac2b9a39", "c80f095d8bb1a060699f7c19974a1aa0", "9ac19954ce1319b354d3220460f71c1e373f1cd336240881160cfde46ebfed2e791e8d5a1a136ebd1dc469dec00c4187722b841cdabcb22c1be8a14657da200e", "19b9609772c63f338608bf6eb52ca10be65097f89c1e0905c42401fd47791ae2c5440b2d473116ca78bd9ff2fb6015cfd316524eae7dcb95ae738ebeae84a467" },
+  { 192, "ba75f4d1d9d7cf7f551445d56cc1a8ab2a078e15e049dc2c", "531ce78176401666aa30db94ec4a30eb", "c51fc276774dad94bcdc1d2891ec8668", "70dd95a14ee975e239df36ff4aee1d5d" },
+  { 192, "eab3b19c581aa873e1981c83ab8d83bbf8025111fb2e6b21", "f3d6667e8d4d791e60f7505ba383eb05", "9d4e4cccd1682321856df069e3f1c6fa391a083a9fb02d59db74c14081b3acc4", "51d44779f90d40a80048276c035cb49ca2a47bcb9b9cf7270b9144793787d53f" },
+  { 192, "16c93bb398f1fc0cf6d68fc7a5673cdf431fa147852b4a2d", "eaaeca2e07ddedf562f94df63f0a650f", "c5ce958613bf741718c17444484ebaf1050ddcacb59b9590178cbe69d7ad7919608cb03af13bbe04f3506b718a301ea0", "ed6a50e0c6921d52d6647f75d67b4fd56ace1fedb8b5a6a997b4d131640547d22c5d884a75e6752b5846b5b33a5181f4" },
+  { 192, "067bb17b4df785697eaccf961f98e212cb75e6797ce935cb", "8b59c9209c529ca8391c9fc0ce033c38", "db3785a889b4bd387754da222f0e4c2d2bfe0d79e05bc910fba941beea30f1239eacf0068f4619ec01c368e986fca6b7c58e490579d29611bd10087986eff54f", "d5f5589760bf9c762228fde236de1fa2dd2dad448db3fa9be0c4196efd46a35c84dd1ac77d9db58c95918cb317a6430a08d2fb6a8e8b0f1c9b72c7a344dc349f" },
+  { 256, "6ed76d2d97c69fd1339589523931f2a6cff554b15f738f21ec72dd97a7330907", "851e8764776e6796aab722dbb644ace8", "6282b8c05c5c1530b97d4816ca434762", "6acc04142e100a65f51b97adf5172c41" },
+  { 256, "dce26c6b4cfb286510da4eecd2cffe6cdf430f33db9b5f77b460679bd49d13ae", "fdeaa134c8d7379d457175fd1a57d3fc", "50e9eee1ac528009e8cbcd356975881f957254b13f91d7c6662d10312052eb00", "2fa0df722a9fd3b64cb18fb2b3db55ff2267422757289413f8f657507412a64c" },
+  { 256, "fe8901fecd3ccd2ec5fdc7c7a0b50519c245b42d611a5ef9e90268d59f3edf33", "bd416cb3b9892228d8f1df575692e4d0", "8d3aa196ec3d7c9b5bb122e7fe77fb1295a6da75abe5d3a510194d3a8a4157d5c89d40619716619859da3ec9b247ced9", "608e82c7ab04007adb22e389a44797fed7de090c8c03ca8a2c5acd9e84df37fbc58ce8edb293e98f02b640d6d1d72464" },
+  { 256, "0493ff637108af6a5b8e90ac1fdf035a3d4bafd1afb573be7ade9e8682e663e5", "c0cd2bebccbb6c49920bd5482ac756e8", "8b37f9148df4bb25956be6310c73c8dc58ea9714ff49b643107b34c9bff096a94fedd6823526abc27a8e0b16616eee254ab4567dd68e8ccd4c38ac563b13639c", "05d5c77729421b08b737e41119fa4438d1f570cc772a4d6c3df7ffeda0384ef84288ce37fc4c4c7d1125a499b051364c389fd639bdda647daa3bdadab2eb5594" },
+
+  /* These test vectors I found on InCON team website */
+  { 128, "2b7e151628aed2a6abf7158809cf4f3c", "000102030405060708090A0B0C0D0E0F", "6bc1bee22e409f96e93d7e117393172a", "7649abac8119b246cee98e9b12e9197d" },
+  { 128, "2b7e151628aed2a6abf7158809cf4f3c", "7649ABAC8119B246CEE98E9B12E9197D", "ae2d8a571e03ac9c9eb76fac45af8e51", "5086cb9b507219ee95db113a917678b2" },
+  { 128, "2b7e151628aed2a6abf7158809cf4f3c", "5086CB9B507219EE95DB113A917678B2", "30c81c46a35ce411e5fbc1191a0a52ef", "73bed6b8e3c1743b7116e69e22229516" },
+  { 128, "2b7e151628aed2a6abf7158809cf4f3c", "73BED6B8E3C1743B7116E69E22229516", "f69f2445df4f9b17ad2b417be66c3710", "3ff1caa1681fac09120eca307586e1a7" },
+  { 192, "8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b", "000102030405060708090A0B0C0D0E0F", "6bc1bee22e409f96e93d7e117393172a", "4f021db243bc633d7178183a9fa071e8" },
+  { 192, "8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b", "4F021DB243BC633D7178183A9FA071E8", "ae2d8a571e03ac9c9eb76fac45af8e51", "b4d9ada9ad7dedf4e5e738763f69145a" },
+  { 192, "8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b", "B4D9ADA9AD7DEDF4E5E738763F69145A", "30c81c46a35ce411e5fbc1191a0a52ef", "571b242012fb7ae07fa9baac3df102e0" },
+  { 192, "8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b", "571B242012FB7AE07FA9BAAC3DF102E0", "f69f2445df4f9b17ad2b417be66c3710", "08b0e27988598881d920a9e64f5615cd" },
+  { 256, "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4", "000102030405060708090A0B0C0D0E0F", "6bc1bee22e409f96e93d7e117393172a", "f58c4c04d6e5f1ba779eabfb5f7bfbd6" },
+  { 256, "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4", "F58C4C04D6E5F1BA779EABFB5F7BFBD6", "ae2d8a571e03ac9c9eb76fac45af8e51", "9cfc4e967edb808d679f777bc6702c7d" },
+  { 256, "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4", "9CFC4E967EDB808D679F777BC6702C7D", "30c81c46a35ce411e5fbc1191a0a52ef", "39f23369a9d9bacfa530e26304231461" },
+  { 256, "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4", "39F23369A9D9BACFA530E26304231461", "f69f2445df4f9b17ad2b417be66c3710", "b2eb05e2c39be9fcda6c19078c6a9d1b" },
+};
+
+RTEST_LOOP (raes, cbc, RTEST_FAST, 0, R_N_ELEMENTS (CBC_test_data))
+{
+  RCryptoCipherTestData * data = &CBC_test_data[__i];
+  RCryptoCipher * cipher;
+  ruint8 * plaintxt, * ciphertxt, * out, iv[R_AES_BLOCK_BYTES];
+  rsize plainsize, ciphersize;
+
+  r_assert_cmpptr ((plaintxt = r_str_hex_mem (data->plaintxt, &plainsize)), !=, NULL);
+  r_assert_cmpptr ((ciphertxt = r_str_hex_mem (data->ciphertxt, &ciphersize)), !=, NULL);
+  r_assert_cmpuint (plainsize, ==, ciphersize);
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (data->key)), !=, NULL);
+  r_assert_cmpuint (cipher->keybits, ==, data->keybits);
+
+  out = r_malloc (ciphersize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
+  r_assert_cmpint (r_cipher_aes_cbc_encrypt (cipher, iv, plaintxt, plainsize, out), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, ciphertxt, ciphersize);
+
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
+  r_assert_cmpint (r_cipher_aes_cbc_decrypt (cipher, iv, ciphertxt, ciphersize, out), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, plaintxt, plainsize);
+
+  r_crypto_cipher_unref (cipher);
+  r_free (plaintxt);
+  r_free (ciphertxt);
+  r_free (out);
+}
+RTEST_END;
+

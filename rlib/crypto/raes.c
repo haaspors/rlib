@@ -357,3 +357,50 @@ r_cipher_aes_ecb_decrypt (const RCryptoCipher * cipher,
   return R_CRYPTO_CIPHER_OK;
 }
 
+RCryptoCipherResult
+r_cipher_aes_cbc_encrypt (const RCryptoCipher * cipher,
+    ruint8 iv[R_AES_BLOCK_BYTES], rconstpointer data, rsize size, ruint8 * out)
+{
+  const ruint8 * ptr;
+  int i;
+
+  if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (data == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (out == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY ((size % R_AES_BLOCK_BYTES) > 0)) return R_CRYPTO_CIPHER_WRONG_BLOCK_SIZE;
+
+  for (ptr = data; ptr < ((ruint8 *)data) + size; ptr += R_AES_BLOCK_BYTES, out += R_AES_BLOCK_BYTES) {
+    for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+        out[i] = ptr[i] ^ iv[i];
+    r_cipher_aes_ecb_encrypt_block (cipher, out, out);
+    r_memcpy (iv, out, R_AES_BLOCK_BYTES);
+  }
+
+  return R_CRYPTO_CIPHER_OK;
+}
+
+RCryptoCipherResult
+r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
+    ruint8 iv[R_AES_BLOCK_BYTES], rconstpointer data, rsize size, ruint8 * out)
+{
+  const ruint8 * ptr;
+  ruint8 scratch[R_AES_BLOCK_BYTES];
+  int i;
+
+  if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (data == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (out == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY ((size % R_AES_BLOCK_BYTES) > 0)) return R_CRYPTO_CIPHER_WRONG_BLOCK_SIZE;
+
+  for (ptr = data; ptr < ((ruint8 *)data) + size; ptr += R_AES_BLOCK_BYTES, out += R_AES_BLOCK_BYTES) {
+    /* Use scratch memory because decryption can be done inplace */
+    r_memcpy (scratch, ptr, R_AES_BLOCK_BYTES);
+    r_cipher_aes_ecb_decrypt_block (cipher, ptr, out);
+    for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+        out[i] ^= iv[i];
+    r_memcpy (iv, scratch, R_AES_BLOCK_BYTES);
+  }
+
+  return R_CRYPTO_CIPHER_OK;
+}
+
