@@ -164,7 +164,7 @@ R_API void r_log_keep_last_reset (RLogKeepLastCtx * ctx);
 
 /* Internal API used for marking last position for rtests */
 R_API rboolean _r_test_mark_position (const rchar * file, ruint line,
-    const rchar * func, rboolean assrt);
+    const rchar * func, rboolean assert);
 
 R_END_DECLS
 

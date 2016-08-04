@@ -129,7 +129,7 @@ r_test_init (void)
 
 rboolean
 _r_test_mark_position (const rchar * file, ruint line, const rchar * func,
-    rboolean assrt)
+    rboolean assert)
 {
   RTestLastPos * lastpos;
 
@@ -151,9 +151,9 @@ _r_test_mark_position (const rchar * file, ruint line, const rchar * func,
   lastpos->file = file;
   lastpos->line = line;
   lastpos->func = func;
-  lastpos->assrt = assrt;
+  lastpos->assert = assert;
 
-  if (assrt)
+  if (assert)
     g__r_test_nofork_ctx->failpos = lastpos;
 
   return TRUE;
@@ -445,7 +445,7 @@ r_test_run_fork (const RTest * test, rsize __i, RClockTime timeout,
     lastpos->ts = r_time_get_ts_monotonic ();
     lastpos->line = 0;
     lastpos->file = lastpos->func = NULL;
-    lastpos->assrt = FALSE;
+    lastpos->assert = FALSE;
 
     if (wpid == pid) {
       if (WIFEXITED (status)) {

@@ -97,7 +97,7 @@ typedef struct {
   const rchar * file;
   const rchar * func;
   ruint line;
-  rboolean assrt;
+  rboolean assert;
 } RTestLastPos;
 
 typedef struct {
