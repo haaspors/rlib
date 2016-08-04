@@ -457,6 +457,7 @@ r_test_run_fork (const RTest * test, rsize __i, RClockTime timeout,
           R_LOG_WARNING ("Failed to read from pipe to forked child");
       }
     }
+    close(fdp[0]);
   } else if (pid == 0) {
     RTestRunState res;
     close(fdp[0]);
