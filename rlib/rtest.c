@@ -430,6 +430,12 @@ r_test_run_fork (const RTest * test, rsize __i, RClockTime timeout,
   if (R_UNLIKELY (pipe (fdp) != 0))
     return ret;
 
+  lastpos->ts = r_time_get_ts_monotonic ();
+  lastpos->file = __FILE__;
+  lastpos->line = __LINE__;
+  lastpos->func = R_STRFUNC;
+  lastpos->assert = FALSE;
+
   if ((pid = fork ()) > 0) {
     RTestRunForkCtx ctx;
     int status;
@@ -441,11 +447,6 @@ r_test_run_fork (const RTest * test, rsize __i, RClockTime timeout,
 
     if (ctx.state != R_TEST_RUN_STATE_NONE)
       ret = ctx.state;
-
-    lastpos->ts = r_time_get_ts_monotonic ();
-    lastpos->line = 0;
-    lastpos->file = lastpos->func = NULL;
-    lastpos->assert = FALSE;
 
     if (wpid == pid) {
       if (WIFEXITED (status)) {
@@ -714,6 +715,12 @@ r_test_run_nofork (const RTest * test, rsize __i, RClockTime timeout,
   if (R_UNLIKELY (test == NULL))
     return ret;
 
+  lastpos->ts = r_time_get_ts_monotonic ();
+  lastpos->file = __FILE__;
+  lastpos->line = __LINE__;
+  lastpos->func = R_STRFUNC;
+  lastpos->assert = FALSE;
+
   r_test_run_nofork_setup (&ctx, timeout);
   R_LOG_DEBUG ("About to run: /%s/%s/%"RSIZE_FMT, test->suite, test->name, __i);
   if ((jmpres = setjmp (ctx.jb)) == 0) {
@@ -786,6 +793,12 @@ r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data)
           ret->run++;
           run->state = R_TEST_RUN_STATE_RUNNING;
           run->start = r_time_get_ts_monotonic ();
+          run->lastpos.ts = run->start;
+          run->lastpos.file = __FILE__;
+          run->lastpos.line = __LINE__;
+          run->lastpos.func = R_STRFUNC;
+          run->lastpos.assert = FALSE;
+
           run->state = runner (test, it, timeout, &run->lastpos, &run->failpos);
           run->end = r_time_get_ts_monotonic ();
 
