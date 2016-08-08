@@ -33,8 +33,9 @@ R_BEGIN_DECLS
 #define RQueue              RQueueList
 #define R_QUEUE_INIT        R_QUEUE_LIST_INIT
 #define r_queue_new         r_queue_list_new
-#define r_queue_init        r_queue_list_init
 #define r_queue_free        r_queue_list_free
+#define r_queue_init        r_queue_list_init
+#define r_queue_clear       r_queue_list_clear
 #define r_queue_push        r_queue_list_push
 #define r_queue_pop         r_queue_list_pop
 #define r_queue_peek        r_queue_list_peek
