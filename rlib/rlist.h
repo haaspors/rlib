@@ -94,6 +94,25 @@ static inline rboolean r_cblist_contains (RCBList * head, RFunc cb, rpointer dat
 static inline void r_cblist_call (RCBList * head);
 
 /******************************************************************************/
+/* Callback return list (Singly linked list)                                         */
+/******************************************************************************/
+typedef struct _RCBRList RCBRList;
+
+static inline RCBRList * r_cbrlist_alloc_full (RFuncReturn cb,
+    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+#define r_cbrlist_alloc(cb, data, user)                                        \
+  r_cbrlist_alloc_full (cb, data, NULL, user, NULL)
+static inline RCBRList * r_cbrlist_prepend_full (RCBRList * head, RFuncReturn cb,
+    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+#define r_cbrlist_prepend(head, cb, data, user)                                \
+  r_cbrlist_prepend_full (head, cb, data, NULL, user, NULL)
+static inline void r_cbrlist_free1 (RCBRList * entry);
+static inline void r_cbrlist_destroy (RCBRList * head);
+static inline rsize r_cbrlist_len (RCBRList * head);
+static inline rboolean r_cbrlist_contains (RCBRList * head, RFuncReturn cb, rpointer data);
+static inline RCBRList * r_cbrlist_call (RCBRList * head);
+
+/******************************************************************************/
 /* Singly linked list                                                         */
 /******************************************************************************/
 typedef struct _RSList RSList;
@@ -431,6 +450,9 @@ static inline rsize r_free_list_foreach_remove (RFreeList ** head,
   return ret;
 }
 
+/******************************************************************************/
+/* Callback list (Singly linked list)                                         */
+/******************************************************************************/
 struct _RCBList {
   RCBList * next;
   RFunc cb;
@@ -506,6 +528,102 @@ static inline void r_cblist_call (RCBList * head)
     if (R_LIKELY (head->cb != NULL))
       head->cb (head->data, head->user);
   }
+}
+
+/******************************************************************************/
+/* Callback return list (Singly linked list)                                         */
+/******************************************************************************/
+struct _RCBRList {
+  RCBRList * next;
+  RFuncReturn cb;
+  rpointer data;
+  RDestroyNotify datanotify;
+  rpointer user;
+  RDestroyNotify usernotify;
+};
+
+static inline RCBRList * r_cbrlist_alloc_full (RFuncReturn cb,
+    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify)
+{
+  RCBRList * ret;
+  if ((ret = r_mem_new (RCBRList)) != NULL) {
+    ret->next = NULL;
+    ret->cb = cb;
+    ret->data = data;
+    ret->datanotify = datanotify;
+    ret->user = user;
+    ret->usernotify = usernotify;
+  }
+  return ret;
+}
+static inline RCBRList * r_cbrlist_prepend_full (RCBRList * head, RFuncReturn cb,
+    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify)
+{
+  RCBRList * ret = r_cbrlist_alloc_full (cb, data, datanotify, user, usernotify);
+  ret->next = head;
+  return ret;
+}
+static inline void r_cbrlist_free1 (RCBRList * entry)
+{
+  if (R_LIKELY (entry != NULL)) {
+    if (entry->datanotify != NULL)
+      entry->datanotify (entry->data);
+    if (entry->usernotify != NULL)
+      entry->usernotify (entry->user);
+    r_free (entry);
+  }
+}
+static inline void r_cbrlist_destroy (RCBRList * head)
+{
+  RCBRList * next;
+  while (head != NULL) {
+    next = head->next;
+    r_cbrlist_free1 (head);
+    head = next;
+  }
+}
+static inline rsize r_cbrlist_len (RCBRList * head)
+{
+  rsize ret = 0;
+
+  while (head != NULL) {
+    head = head->next;
+    ret++;
+  }
+
+  return ret;
+}
+static inline rboolean r_cbrlist_contains (RCBRList * head, RFuncReturn cb, rpointer data)
+{
+  for (; head != NULL; head = head->next) {
+    if (head->cb == cb && head->data == data)
+      return TRUE;
+  }
+
+  return FALSE;
+}
+static inline RCBRList * r_cbrlist_call (RCBRList * head)
+{
+  RCBRList * it;
+
+  for (it = head; it != NULL; it = it->next) {
+    if (it->cb == NULL || !it->cb (it->data, it->user)) {
+      RCBRList * prev = it->prev;
+      RCBRList * next = it->next;
+
+      if (head == it)
+        head = next;
+
+      if (prev != NULL)
+        prev->next = it->next;
+      if (next != NULL)
+        next->prev = it->prev;
+
+      r_cbrlist_free1 (it);
+    }
+  }
+
+  return head;
 }
 
 /******************************************************************************/
