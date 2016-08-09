@@ -166,6 +166,10 @@ R_API void r_log_keep_last_reset (RLogKeepLastCtx * ctx);
 R_API rboolean _r_test_mark_position (const rchar * file, ruint line,
     const rchar * func, rboolean assert);
 
+#ifdef RLIB_COMPILATION
+#define _r_test_mark_position(...)
+#endif
+
 R_END_DECLS
 
 #endif /* __R_LOG_H__ */

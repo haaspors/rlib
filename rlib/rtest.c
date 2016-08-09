@@ -40,6 +40,9 @@
 #include <sys/wait.h>
 #endif
 
+#ifdef _r_test_mark_position
+#undef _r_test_mark_position
+#endif
 
 /* FIXME: move forking/process stuff to rproc */
 /* FIXME: move pipe stuff to rproc or rpipe? */
