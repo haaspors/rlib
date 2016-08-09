@@ -62,6 +62,26 @@ static inline rpointer    r_queue_list_peek (const RQueueList * q);
 #define r_queue_list_size(q)      (q)->size
 #define r_queue_list_is_empty(q)  ((q)->size == 0)
 
+/******************************************************************************/
+/* CBQueue / Callback Queue implemented with a list                            */
+/******************************************************************************/
+typedef struct {
+  RCBList * head, * tail;
+  rsize size;
+} RCBQueue;
+
+#define R_QUEUE_LIST_INIT { NULL, NULL, 0 }
+static inline RCBQueue *  r_cbqueue_new (void) R_ATTR_MALLOC;
+static inline void        r_cbqueue_init (RCBQueue * q);
+static inline void        r_cbqueue_free (RCBQueue * q);
+static inline void        r_cbqueue_clear (RCBQueue * q);
+static inline void        r_cbqueue_push (RCBQueue * q, RFunc cb,
+    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+static inline RCBList *   r_cbqueue_pop (RCBQueue * q);
+static inline RCBList *   r_cbqueue_peek (const RCBQueue * q);
+#define r_cbqueue_size(q)      (q)->size
+#define r_cbqueue_is_empty(q)  ((q)->size == 0)
+
 
 /******************************************************************************/
 /* Queue implemented with a circular ring buffer                              */
@@ -88,12 +108,10 @@ static inline RQueueList * r_queue_list_new (void)
 {
   return r_mem_new0 (RQueueList);
 }
-
 static inline void r_queue_list_init (RQueueList * q)
 {
   r_memset (q, 0, sizeof (RQueueList));
 }
-
 static inline void r_queue_list_free (RQueueList * q, RDestroyNotify notify)
 {
   if (q != NULL) {
@@ -101,21 +119,18 @@ static inline void r_queue_list_free (RQueueList * q, RDestroyNotify notify)
     r_free (q);
   }
 }
-
 static inline void r_queue_list_clear (RQueueList * q, RDestroyNotify notify)
 {
   RList * head = q->head;
   r_memset (q, 0, sizeof (RQueueList));
   r_list_destroy_full (head, notify);
 }
-
 static inline void r_queue_list_push (RQueueList * q, rpointer item)
 {
   q->head = r_list_prepend (q->head, item);
   if (q->size++ == 0)
     q->tail = q->head;
 }
-
 static inline rpointer r_queue_list_pop (RQueueList * q)
 {
   rpointer ret;
@@ -136,12 +151,61 @@ static inline rpointer r_queue_list_pop (RQueueList * q)
 
   return ret;
 }
-
 static inline rpointer r_queue_list_peek (const RQueueList * q)
 {
   return q->tail != NULL ? r_list_data (q->tail) : NULL;
 }
 
+static inline RCBQueue *  r_cbqueue_new (void)
+{
+  return r_mem_new0 (RCBQueue);
+}
+static inline void r_cbqueue_init (RCBQueue * q)
+{
+  r_memset (q, 0, sizeof (RCBQueue));
+}
+static inline void r_cbqueue_free (RCBQueue * q)
+{
+  if (q != NULL) {
+    r_cbqueue_clear (q);
+    r_free (q);
+  }
+}
+static inline void r_cbqueue_clear (RCBQueue * q)
+{
+  RCBList * head = q->head;
+  r_memset (q, 0, sizeof (RCBQueue));
+  r_cblist_destroy (head);
+}
+static inline void r_cbqueue_push (RCBQueue * q, RFunc cb,
+    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify)
+{
+  q->head = r_cblist_prepend_full (q->head, cb, data, datanotify, user, usernotify);
+  if (q->size++ == 0)
+    q->tail = q->head;
+}
+static inline RCBList * r_cbqueue_pop (RCBQueue * q)
+{
+  RCBList * ret;
+
+  if ((ret = q->tail) != NULL) {
+    if ((q->tail = ret->prev) != NULL)
+      q->tail->next = NULL;
+    else
+      q->head = NULL;
+    ret->prev = NULL;
+
+    q->size--;
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+static inline RCBList * r_cbqueue_peek (const RCBQueue * q)
+{
+  return q->tail;
+}
 
 R_END_DECLS
 
