@@ -39,6 +39,7 @@ R_BEGIN_DECLS
 #define r_queue_push        r_queue_list_push
 #define r_queue_pop         r_queue_list_pop
 #define r_queue_peek        r_queue_list_peek
+#define r_queue_remove_link r_queue_list_remove_link
 #define r_queue_size        r_queue_list_size
 #define r_queue_is_empty    r_queue_list_is_empty
 
@@ -56,9 +57,10 @@ static inline RQueueList * r_queue_list_new (void) R_ATTR_MALLOC;
 static inline void        r_queue_list_init (RQueueList * q);
 static inline void        r_queue_list_free (RQueueList * q, RDestroyNotify notify);
 static inline void        r_queue_list_clear (RQueueList * q, RDestroyNotify notify);
-static inline void        r_queue_list_push (RQueueList * q, rpointer item);
+static inline RList *     r_queue_list_push (RQueueList * q, rpointer item);
 static inline rpointer    r_queue_list_pop (RQueueList * q);
 static inline rpointer    r_queue_list_peek (const RQueueList * q);
+static inline void        r_queue_list_remove_link (RQueueList * q, RList * link);
 #define r_queue_list_size(q)      (q)->size
 #define r_queue_list_is_empty(q)  ((q)->size == 0)
 
@@ -125,11 +127,14 @@ static inline void r_queue_list_clear (RQueueList * q, RDestroyNotify notify)
   r_memset (q, 0, sizeof (RQueueList));
   r_list_destroy_full (head, notify);
 }
-static inline void r_queue_list_push (RQueueList * q, rpointer item)
+static inline RList * r_queue_list_push (RQueueList * q, rpointer item)
 {
-  q->head = r_list_prepend (q->head, item);
+  RList * ret;
+  ret = q->head = r_list_prepend (q->head, item);
   if (q->size++ == 0)
     q->tail = q->head;
+
+  return ret;
 }
 static inline rpointer r_queue_list_pop (RQueueList * q)
 {
@@ -154,6 +159,13 @@ static inline rpointer r_queue_list_pop (RQueueList * q)
 static inline rpointer r_queue_list_peek (const RQueueList * q)
 {
   return q->tail != NULL ? r_list_data (q->tail) : NULL;
+}
+static inline void r_queue_list_remove_link (RQueueList * q, RList * link)
+{
+  if (link == q->tail)
+    q->tail = r_list_prev (q->tail);
+  q->head = r_list_destroy_link (q->head, link);
+  q->size--;
 }
 
 static inline RCBQueue *  r_cbqueue_new (void)
