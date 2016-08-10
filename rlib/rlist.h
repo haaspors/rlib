@@ -58,6 +58,32 @@ static inline RList * r_list_nth (RList * lst, rsize n);
 static inline void r_list_foreach (RList * head, RFunc func, rpointer user);
 
 /******************************************************************************/
+/* Singly linked list                                                         */
+/******************************************************************************/
+typedef struct _RSList RSList;
+
+#define r_slist_data(lst)  (lst)->data
+#define r_slist_next(lst)  (lst)->next
+
+static inline RSList * r_slist_alloc (rpointer data);
+static inline RSList * r_slist_prepend (RSList * head, rpointer data);
+static inline RSList * r_slist_append (RSList * head, rpointer data);
+static inline RSList * r_slist_insert_after (RSList * entry, rpointer data);
+static inline RSList * r_slist_remove (RSList * head, rpointer data);
+
+#define r_slist_free1(entry) r_free (entry)
+static inline void r_slist_free1_full (RSList * entry, RDestroyNotify notify);
+#define r_slist_destroy(head) r_slist_destroy_full (head, NULL)
+static inline void r_slist_destroy_full (RSList * head, RDestroyNotify notify);
+
+static inline rsize r_slist_len (RSList * head);
+static inline rboolean r_slist_contains (RSList * head, rpointer data);
+static inline RSList * r_slist_last (RSList * head);
+static inline RSList * r_slist_nth (RSList * head, rsize n);
+static inline void r_slist_foreach (RSList * head, RFunc func, rpointer user);
+static inline RSList * r_slist_copy (RSList * head);
+
+/******************************************************************************/
 /* Free list (Singly linked list)                                             */
 /******************************************************************************/
 typedef struct _RFreeList RFreeList;
@@ -98,7 +124,7 @@ static inline rboolean r_cblist_contains (RCBList * head, RFunc cb, rpointer dat
 static inline void r_cblist_call (RCBList * head);
 
 /******************************************************************************/
-/* Callback return list (Doubly linked list)                                         */
+/* Callback return list (Doubly linked list)                                  */
 /******************************************************************************/
 typedef struct _RCBRList RCBRList;
 
@@ -119,34 +145,6 @@ static inline void r_cbrlist_destroy (RCBRList * head);
 static inline rsize r_cbrlist_len (RCBRList * head);
 static inline rboolean r_cbrlist_contains (RCBRList * head, RFuncReturn cb, rpointer data);
 static inline RCBRList * r_cbrlist_call (RCBRList * head);
-
-/******************************************************************************/
-/* Singly linked list                                                         */
-/******************************************************************************/
-typedef struct _RSList RSList;
-
-#define r_slist_data(lst)  (lst)->data
-#define r_slist_next(lst)  (lst)->next
-
-static inline RSList * r_slist_alloc (rpointer data);
-static inline RSList * r_slist_prepend (RSList * head, rpointer data);
-static inline RSList * r_slist_append (RSList * head, rpointer data);
-static inline RSList * r_slist_insert_after (RSList * entry, rpointer data);
-static inline RSList * r_slist_remove (RSList * head, rpointer data);
-
-#define r_slist_free1(entry) r_free (entry)
-static inline void r_slist_free1_full (RSList * entry, RDestroyNotify notify);
-#define r_slist_destroy(head) r_slist_destroy_full (head, NULL)
-static inline void r_slist_destroy_full (RSList * head, RDestroyNotify notify);
-
-static inline rsize r_slist_len (RSList * head);
-static inline rboolean r_slist_contains (RSList * head, rpointer data);
-static inline RSList * r_slist_last (RSList * head);
-static inline RSList * r_slist_nth (RSList * head, rsize n);
-static inline void r_slist_foreach (RSList * head, RFunc func, rpointer user);
-static inline RSList * r_slist_copy (RSList * head);
-
-
 
 /******************************************************************************/
 /* Doubly linked list                                                         */
@@ -357,6 +355,155 @@ static inline void r_list_foreach (RList * head, RFunc func, rpointer user)
 
   for (it = head; it != NULL; it = r_list_next (it))
     func (r_list_data (it), user);
+}
+
+
+/******************************************************************************/
+/* Singly linked list                                                         */
+/******************************************************************************/
+struct _RSList {
+  rpointer data;
+  RSList * next;
+};
+
+static inline RSList * r_slist_alloc (rpointer data)
+{
+  RSList * ret;
+  if ((ret = r_mem_new (RSList)) != NULL) {
+    ret->data = data;
+    ret->next = NULL;
+  }
+  return ret;
+}
+
+static inline RSList * r_slist_prepend (RSList * head, rpointer data)
+{
+  RSList * ret = r_slist_alloc (data);
+  ret->next = head;
+  return ret;
+}
+
+static inline RSList * r_slist_append (RSList * head, rpointer data)
+{
+  RSList * n = r_slist_alloc (data);
+
+  if (head != NULL)
+    r_slist_last (head)->next = n;
+  else
+    head = n;
+
+  return head;
+}
+
+static inline RSList * r_slist_insert_after (RSList * entry, rpointer data)
+{
+  RSList * ret = r_slist_alloc (data);
+  if (entry != NULL) {
+    ret->next = entry->next;
+    entry->next = ret;
+    ret = entry;
+  }
+
+  return ret;
+}
+
+static inline void r_slist_free1_full (RSList * entry, RDestroyNotify notify)
+{
+  if (R_LIKELY (entry != NULL)) {
+    if (notify != NULL)
+      notify (r_slist_data (entry));
+    r_free (entry);
+  }
+}
+
+static inline void r_slist_destroy_full (RSList * head, RDestroyNotify notify)
+{
+  RSList * next;
+  while (head != NULL) {
+    next = r_slist_next (head);
+    r_slist_free1_full (head, notify);
+    head = next;
+  }
+}
+
+static inline rsize r_slist_len (RSList * head)
+{
+  rsize ret = 0;
+
+  while (head != NULL) {
+    head = r_slist_next (head);
+    ret++;
+  }
+
+  return ret;
+}
+
+static inline RSList * r_slist_last (RSList * head)
+{
+  if (R_LIKELY (head != NULL)) {
+    while (r_slist_next (head) != NULL)
+      head = r_slist_next (head);
+  }
+  return head;
+}
+
+static inline rboolean r_slist_contains (RSList * head, rpointer data)
+{
+  for (; head != NULL; head = r_slist_next (head)) {
+    if (r_slist_data (head) == data)
+      return TRUE;
+  }
+
+  return FALSE;
+}
+
+static inline RSList * r_slist_remove (RSList * head, rpointer data)
+{
+  RSList * ret = head, * prev;
+
+  for (prev = NULL; head != NULL; head = r_slist_next (head)) {
+    if (r_slist_data (head) == data) {
+      if (ret == head)
+        ret = r_slist_next (head);
+      if (prev != NULL)
+        prev->next = r_slist_next (head);
+      r_slist_free1 (head);
+      break;
+    }
+
+    prev = head;
+  }
+
+  return ret;
+}
+
+static inline RSList * r_slist_nth (RSList * head, rsize n)
+{
+  while (n-- > 0 && head != NULL)
+    head = r_slist_next (head);
+  return head;
+}
+
+static inline void r_slist_foreach (RSList * head, RFunc func, rpointer user)
+{
+  RSList * it;
+
+  for (it = head; it != NULL; it = r_slist_next (it))
+    func (r_slist_data (it), user);
+}
+
+static inline RSList * r_slist_copy (RSList * head)
+{
+  RSList * ret, * last, * it;
+
+  if (R_UNLIKELY (head == NULL)) return NULL;
+
+  ret = last = r_slist_alloc (r_slist_data (head));
+
+  for (it = r_slist_next (head); it != NULL; it = r_slist_next (it), last = last->next)
+    last->next = r_slist_alloc (r_slist_data (it));
+
+  return ret;
 }
 
 
@@ -580,7 +727,7 @@ static inline void r_cblist_call (RCBList * head)
 }
 
 /******************************************************************************/
-/* Callback return list (Doubly linked list)                                         */
+/* Callback return list (Doubly linked list)                                  */
 /******************************************************************************/
 struct _RCBRList {
   RCBRList * next;
@@ -714,154 +861,6 @@ static inline RCBRList * r_cbrlist_call (RCBRList * head)
   }
 
   return head;
-}
-
-/******************************************************************************/
-/* Singly linked list                                                         */
-/******************************************************************************/
-struct _RSList {
-  rpointer data;
-  RSList * next;
-};
-
-static inline RSList * r_slist_alloc (rpointer data)
-{
-  RSList * ret;
-  if ((ret = r_mem_new (RSList)) != NULL) {
-    ret->data = data;
-    ret->next = NULL;
-  }
-  return ret;
-}
-
-static inline RSList * r_slist_prepend (RSList * head, rpointer data)
-{
-  RSList * ret = r_slist_alloc (data);
-  ret->next = head;
-  return ret;
-}
-
-static inline RSList * r_slist_append (RSList * head, rpointer data)
-{
-  RSList * n = r_slist_alloc (data);
-
-  if (head != NULL)
-    r_slist_last (head)->next = n;
-  else
-    head = n;
-
-  return head;
-}
-
-static inline RSList * r_slist_insert_after (RSList * entry, rpointer data)
-{
-  RSList * ret = r_slist_alloc (data);
-  if (entry != NULL) {
-    ret->next = entry->next;
-    entry->next = ret;
-    ret = entry;
-  }
-
-  return ret;
-}
-
-static inline void r_slist_free1_full (RSList * entry, RDestroyNotify notify)
-{
-  if (R_LIKELY (entry != NULL)) {
-    if (notify != NULL)
-      notify (r_slist_data (entry));
-    r_free (entry);
-  }
-}
-
-static inline void r_slist_destroy_full (RSList * head, RDestroyNotify notify)
-{
-  RSList * next;
-  while (head != NULL) {
-    next = r_slist_next (head);
-    r_slist_free1_full (head, notify);
-    head = next;
-  }
-}
-
-static inline rsize r_slist_len (RSList * head)
-{
-  rsize ret = 0;
-
-  while (head != NULL) {
-    head = r_slist_next (head);
-    ret++;
-  }
-
-  return ret;
-}
-
-static inline RSList * r_slist_last (RSList * head)
-{
-  if (R_LIKELY (head != NULL)) {
-    while (r_slist_next (head) != NULL)
-      head = r_slist_next (head);
-  }
-  return head;
-}
-
-static inline rboolean r_slist_contains (RSList * head, rpointer data)
-{
-  for (; head != NULL; head = r_slist_next (head)) {
-    if (r_slist_data (head) == data)
-      return TRUE;
-  }
-
-  return FALSE;
-}
-
-static inline RSList * r_slist_remove (RSList * head, rpointer data)
-{
-  RSList * ret = head, * prev;
-
-  for (prev = NULL; head != NULL; head = r_slist_next (head)) {
-    if (r_slist_data (head) == data) {
-      if (ret == head)
-        ret = r_slist_next (head);
-      if (prev != NULL)
-        prev->next = r_slist_next (head);
-      r_slist_free1 (head);
-      break;
-    }
-
-    prev = head;
-  }
-
-  return ret;
-}
-
-static inline RSList * r_slist_nth (RSList * head, rsize n)
-{
-  while (n-- > 0 && head != NULL)
-    head = r_slist_next (head);
-  return head;
-}
-
-static inline void r_slist_foreach (RSList * head, RFunc func, rpointer user)
-{
-  RSList * it;
-
-  for (it = head; it != NULL; it = r_slist_next (it))
-    func (r_slist_data (it), user);
-}
-
-static inline RSList * r_slist_copy (RSList * head)
-{
-  RSList * ret, * last, * it;
-
-  if (R_UNLIKELY (head == NULL)) return NULL;
-
-  ret = last = r_slist_alloc (r_slist_data (head));
-
-  for (it = r_slist_next (head); it != NULL; it = r_slist_next (it), last = last->next)
-    last->next = r_slist_alloc (r_slist_data (it));
-
-  return ret;
 }
 
 R_END_DECLS
