@@ -22,6 +22,8 @@
 #include <rlib/rmem.h>
 
 struct _RToCB {
+  RRef ref;
+  RTimeoutCBList * lst;
   RToCB * next;
   RToCB * prev;
   RClockTime ts;
@@ -32,22 +34,12 @@ struct _RToCB {
   RDestroyNotify usernotify;
 };
 
-static RToCB *
-r_to_cb_alloc (RClockTime ts, RFunc cb,
-    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify)
-{
-  RToCB * ret;
-  if ((ret = r_mem_new (RToCB)) != NULL) {
-    ret->next = ret->prev = NULL;
-    ret->ts = ts;
-    ret->cb = cb;
-    ret->data = data;
-    ret->datanotify = datanotify;
-    ret->user = user;
-    ret->usernotify = usernotify;
-  }
-  return ret;
-}
+#define r_to_cb_internal_free(tocb)                                           \
+  R_STMT_START {                                                              \
+    (tocb)->next = (tocb)->prev = NULL;                                       \
+    (tocb)->lst = NULL;                                                       \
+    r_to_cb_unref (tocb);                                                     \
+  } R_STMT_END
 
 static void
 r_to_cb_free (RToCB * cb)
@@ -60,6 +52,24 @@ r_to_cb_free (RToCB * cb)
   r_free (cb);
 }
 
+static RToCB *
+r_to_cb_alloc (RClockTime ts, RFunc cb,
+    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify)
+{
+  RToCB * ret;
+  if ((ret = r_mem_new (RToCB)) != NULL) {
+    r_ref_init (ret, r_to_cb_free);
+    ret->next = ret->prev = NULL;
+    ret->ts = ts;
+    ret->cb = cb;
+    ret->data = data;
+    ret->datanotify = datanotify;
+    ret->user = user;
+    ret->usernotify = usernotify;
+  }
+  return ret;
+}
+
 void
 r_timeout_cblist_clear (RTimeoutCBList * lst)
 {
@@ -70,17 +80,19 @@ r_timeout_cblist_clear (RTimeoutCBList * lst)
   while (it != NULL) {
     RToCB * cur = it;
     it = it->next;
-    r_to_cb_free (cur);
+    r_to_cb_internal_free (cur);
   }
 }
 
 rboolean
-r_timeout_cblist_insert (RTimeoutCBList * lst, RClockTime ts, RFunc cb,
+r_timeout_cblist_insert (RTimeoutCBList * lst,
+    RToCB ** out, RClockTime ts, RFunc cb,
     rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify)
 {
   RToCB * tocb, * it;
 
   if ((tocb = r_to_cb_alloc (ts, cb, data, datanotify, user, usernotify)) != NULL) {
+    tocb->lst = lst;
     if (lst->head == NULL) {
       lst->head = lst->tail = tocb;
     } else if (ts >= lst->tail->ts) { /* last */
@@ -111,11 +123,40 @@ r_timeout_cblist_insert (RTimeoutCBList * lst, RClockTime ts, RFunc cb,
       it->prev = tocb;
     }
 
+    if (out != NULL)
+      *out = r_to_cb_ref (tocb);
     lst->size++;
     return TRUE;
   }
 
+  if (out != NULL)
+    *out = NULL;
   return FALSE;
+}
+
+rboolean
+r_timeout_cblist_cancel (RTimeoutCBList * lst, RToCB * cb)
+{
+  RToCB * next, * prev;
+
+  if (R_UNLIKELY (cb == NULL)) return FALSE;
+  if (R_UNLIKELY (cb->lst != lst)) return FALSE;
+
+  if (cb == lst->head)
+    lst->head = cb->next;
+  if (cb == lst->tail)
+    lst->tail = cb->prev;
+
+  prev = cb->prev;
+  next = cb->next;
+  if (prev != NULL)
+    prev->next = cb->next;
+  if (next != NULL)
+    next->prev = cb->prev;
+
+  r_to_cb_internal_free (cb);
+  lst->size--;
+  return TRUE;
 }
 
 RClockTime
@@ -139,7 +180,7 @@ r_timeout_cblist_update (RTimeoutCBList * lst, RClockTime ts)
       cur->cb (cur->data, cur->user);
 
     lst->head = lst->head->next;
-    r_to_cb_free (cur);
+    r_to_cb_internal_free (cur);
     ret++;
   }
 

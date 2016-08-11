@@ -23,10 +23,13 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rref.h>
 
 R_BEGIN_DECLS
 
 typedef struct _RToCB RToCB;
+#define r_to_cb_ref r_ref_ref
+#define r_to_cb_unref r_ref_unref
 
 typedef struct {
   RToCB * head;
@@ -41,8 +44,10 @@ typedef struct {
 R_API void r_timeout_cblist_clear (RTimeoutCBList * lst);
 #define r_timeout_cblist_len(lst) (lst)->size
 
-R_API rboolean r_timeout_cblist_insert (RTimeoutCBList * lst, RClockTime ts, RFunc cb,
+R_API rboolean r_timeout_cblist_insert (RTimeoutCBList * lst,
+    RToCB ** tocb, RClockTime ts, RFunc cb,
     rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+R_API rboolean r_timeout_cblist_cancel (RTimeoutCBList * lst, RToCB * cb);
 R_API RClockTime r_timeout_cblist_first_timeout (RTimeoutCBList * lst);
 R_API rsize r_timeout_cblist_update (RTimeoutCBList * lst, RClockTime ts);
 
