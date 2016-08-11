@@ -184,7 +184,9 @@ r_timeout_cblist_update (RTimeoutCBList * lst, RClockTime ts)
     ret++;
   }
 
-  if (lst->head == NULL)
+  if (lst->head != NULL)
+    lst->head->prev = NULL;
+  else
     lst->tail = NULL;
 
   lst->size -= ret;
