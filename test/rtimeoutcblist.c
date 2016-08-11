@@ -131,3 +131,23 @@ RTEST (rtimeoutcblist, cb, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtimeoutcblist, first_timeout, RTEST_FAST)
+{
+  RTimeoutCBList lst = R_TIMEOUT_CBLIST_INIT;
+
+  r_assert (r_timeout_cblist_insert (&lst, 4, NULL, NULL, NULL, NULL, NULL));
+  r_assert (r_timeout_cblist_insert (&lst, 0, NULL, NULL, NULL, NULL, NULL));
+  r_assert (r_timeout_cblist_insert (&lst, 2, NULL, NULL, NULL, NULL, NULL));
+  r_assert (r_timeout_cblist_insert (&lst, 1, NULL, NULL, NULL, NULL, NULL));
+  r_assert (r_timeout_cblist_insert (&lst, 3, NULL, NULL, NULL, NULL, NULL));
+  r_assert_cmpuint (r_timeout_cblist_len (&lst), ==, 5);
+
+  r_assert_cmpuint (r_timeout_cblist_first_timeout (&lst), ==, 0);
+
+  r_assert_cmpuint (r_timeout_cblist_update (&lst, 2), ==, 3);
+  r_assert_cmpuint (r_timeout_cblist_first_timeout (&lst), ==, 3);
+
+  r_timeout_cblist_clear (&lst);
+}
+RTEST_END;
+

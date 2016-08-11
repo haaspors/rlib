@@ -43,6 +43,7 @@ R_API void r_timeout_cblist_clear (RTimeoutCBList * lst);
 
 R_API rboolean r_timeout_cblist_insert (RTimeoutCBList * lst, RClockTime ts, RFunc cb,
     rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+R_API RClockTime r_timeout_cblist_first_timeout (RTimeoutCBList * lst);
 R_API rsize r_timeout_cblist_update (RTimeoutCBList * lst, RClockTime ts);
 
 R_END_DECLS

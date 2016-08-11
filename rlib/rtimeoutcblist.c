@@ -118,6 +118,12 @@ r_timeout_cblist_insert (RTimeoutCBList * lst, RClockTime ts, RFunc cb,
   return FALSE;
 }
 
+RClockTime
+r_timeout_cblist_first_timeout (RTimeoutCBList * lst)
+{
+  return (lst->head != NULL) ? lst->head->ts : R_CLOCK_TIME_NONE;
+}
+
 rsize
 r_timeout_cblist_update (RTimeoutCBList * lst, RClockTime ts)
 {
