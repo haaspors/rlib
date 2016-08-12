@@ -613,7 +613,10 @@ r_thread_join (RThread * thread)
 #elif defined (HAVE_PTHREAD_H)
   r_mutex_lock (&thread->join_mutex);
   if (!thread->joined) {
-    pthread_join (thread->thread, NULL);
+    if (pthread_join (thread->thread, NULL) != 0) {
+      R_LOG_ERROR ("Error when join thread %s [%u] "THR_FMT,
+          thread->name, thread->thread_id, thread);
+    }
     thread->joined = TRUE;
   }
   r_mutex_unlock (&thread->join_mutex);
