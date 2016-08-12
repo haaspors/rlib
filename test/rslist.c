@@ -92,3 +92,23 @@ RTEST (rslist, contains, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rslist, copy, RTEST_FAST)
+{
+  RSList * head = NULL, * copy;
+
+  r_assert_cmpptr ((head = r_slist_prepend (head, PTR_CAFEBABE)), !=, NULL);
+  r_assert_cmpptr ((head = r_slist_prepend (head, PTR_DEADBEEF)), !=, NULL);
+  r_assert_cmpptr ((head = r_slist_prepend (head, PTR_BAADFOOD)), !=, NULL);
+  r_assert_cmpuint (r_slist_len (head), ==, 3);
+
+  copy = r_slist_copy (head);
+  r_slist_destroy (head);
+  r_assert_cmpuint (r_slist_len (copy), ==, 3);
+
+  r_assert (r_slist_contains (copy, PTR_DEADBEEF));
+  r_assert (r_slist_contains (copy, PTR_CAFEBABE));
+  r_assert (r_slist_contains (copy, PTR_BAADFOOD));
+  r_slist_destroy (copy);
+}
+RTEST_END;
+
