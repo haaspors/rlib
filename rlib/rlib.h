@@ -25,6 +25,7 @@
 #include <rlib/ratomic.h>
 #include <rlib/rbase64.h>
 #include <rlib/rbitset.h>
+#include <rlib/rclock.h>
 #include <rlib/rclr.h>
 #include <rlib/renv.h>
 #include <rlib/rfd.h>
