@@ -44,6 +44,11 @@ typedef struct _RClock RClock;
 #define r_clock_ref    r_ref_ref
 #define r_clock_unref  r_ref_unref
 
+typedef struct _RClockEntry RClockEntry;
+#define r_clock_entry_ref   r_ref_ref
+#define r_clock_entry_unref r_ref_unref
+
+
 R_API RClock * r_system_clock_get (void);
 R_API RClock * r_test_clock_new (rboolean update_on_wait) R_ATTR_MALLOC;
 
@@ -52,6 +57,17 @@ R_API RClockTime r_clock_wait (RClock * clock, RClockTime ts);
 #define r_clock_wait_relative(clock, delay) \
   r_clock_wait (clock, r_clock_get_time (clock) + (delay))
 
+R_API RClockEntry * r_clock_add_timeout_callback (RClock * clock,
+    RClockTime ts, RFunc cb, rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify);
+R_API rboolean r_clock_cancel_entry (RClock * clock, RClockEntry * entry);
+R_API rsize r_clock_timeout_count (const RClock * clock);
+
+/* These functions are used by threads/sources that wait for time */
+R_API RClockTime r_clock_first_timeout (RClock * clock);
+R_API ruint r_clock_process_entries (RClock * clock);
+
+/* RTestClock spesific */
 R_API rboolean r_test_clock_update_time (RClock * clock, RClockTime ts);
 
 R_END_DECLS

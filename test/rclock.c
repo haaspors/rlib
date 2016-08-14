@@ -97,3 +97,80 @@ RTEST (rtestclock, wait_no_update, RTEST_FAST)
 }
 RTEST_END;
 
+static void
+increment_data_rsize (rpointer data, rpointer user)
+{
+  (void) user;
+  (*((rsize *)data))++;
+}
+
+RTEST (rclock, add_cancel_timeout, RTEST_FAST)
+{
+  RClock * clock;
+  RClockEntry * entry[4];
+  rsize count = 0;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpuint (r_clock_timeout_count (clock), ==, 0);
+
+  r_assert_cmpptr ((entry[0] = r_clock_add_timeout_callback (clock, 0,
+          increment_data_rsize, &count, NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((entry[1] = r_clock_add_timeout_callback (clock, 1,
+          increment_data_rsize, &count, NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((entry[2] = r_clock_add_timeout_callback (clock, 2,
+          increment_data_rsize, &count, NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((entry[3] = r_clock_add_timeout_callback (clock, 3,
+          increment_data_rsize, &count, NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpuint (r_clock_timeout_count (clock), ==, 4);
+  r_assert_cmpuint (count, ==, 0);
+
+  r_assert (!r_clock_cancel_entry (NULL, NULL));
+  r_assert (!r_clock_cancel_entry (clock, NULL));
+  r_assert (r_clock_cancel_entry (clock, entry[1]));
+  r_assert_cmpuint (r_clock_timeout_count (clock), ==, 3);
+
+  r_clock_entry_unref (entry[3]);
+  r_clock_entry_unref (entry[2]);
+  r_clock_entry_unref (entry[1]);
+  r_clock_entry_unref (entry[0]);
+  r_clock_unref (clock);
+}
+RTEST_END;
+
+RTEST (rtestclock, process_entries, RTEST_FAST)
+{
+  RClock * clock;
+  RClockEntry * entry[4];
+  rsize count = 0;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpuint (r_clock_timeout_count (clock), ==, 0);
+
+  r_assert_cmpptr ((entry[0] = r_clock_add_timeout_callback (clock, 0,
+          increment_data_rsize, &count, NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((entry[1] = r_clock_add_timeout_callback (clock, 1,
+          increment_data_rsize, &count, NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((entry[2] = r_clock_add_timeout_callback (clock, 2,
+          increment_data_rsize, &count, NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((entry[3] = r_clock_add_timeout_callback (clock, 3,
+          increment_data_rsize, &count, NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpuint (r_clock_timeout_count (clock), ==, 4);
+  r_assert_cmpuint (count, ==, 0);
+
+  r_assert_cmpuint (r_clock_first_timeout (clock), ==, 0);
+  r_assert (r_clock_cancel_entry (clock, entry[1]));
+  r_assert_cmpuint (r_clock_timeout_count (clock), ==, 3);
+
+  r_assert (r_test_clock_update_time (clock, 2));
+  r_assert_cmpuint (r_clock_process_entries (clock), ==, 2);
+  r_assert_cmpuint (r_clock_timeout_count (clock), ==, 1);
+  r_assert_cmpuint (r_clock_first_timeout (clock), ==, 3);
+
+  r_clock_entry_unref (entry[3]);
+  r_clock_entry_unref (entry[2]);
+  r_clock_entry_unref (entry[1]);
+  r_clock_entry_unref (entry[0]);
+  r_clock_unref (clock);
+}
+RTEST_END;
+
