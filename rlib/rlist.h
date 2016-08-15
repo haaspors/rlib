@@ -847,9 +847,10 @@ static inline rboolean r_cbrlist_contains (RCBRList * lst, RFuncReturn cb, rpoin
 }
 static inline RCBRList * r_cbrlist_call (RCBRList * head)
 {
-  RCBRList * it;
+  RCBRList * it, * next;
 
-  for (it = head; it != NULL; it = it->next) {
+  for (it = head; it != NULL; it = next) {
+    next = it->next;
     if (it->cb == NULL || !it->cb (it->data, it->user)) {
       RCBRList * prev = it->prev;
       RCBRList * next = it->next;
