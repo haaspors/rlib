@@ -51,6 +51,12 @@ struct _RClockEntry {
   RToCB tocb;
 };
 
+static void
+r_clock_clear (rpointer clock)
+{
+  r_timeout_cblist_clear (&((RClock *)clock)->timers);
+}
+
 RClockTime
 r_clock_get_time (const RClock * clock)
 {
@@ -130,7 +136,8 @@ r_system_clock_wait (RClock * clock, RClockTime ts)
   return now;
 }
 
-static RClock g__r_sysclock = { { 0, NULL },
+static RClock g__r_sysclock = {
+  { 0, r_clock_clear },
   (RClockGetTimeFunc)r_time_get_ts_monotonic,
   r_system_clock_wait,
 
@@ -140,7 +147,7 @@ static RClock g__r_sysclock = { { 0, NULL },
 RClock *
 r_system_clock_get (void)
 {
-  return &g__r_sysclock;
+  return r_clock_ref (&g__r_sysclock);
 }
 
 
@@ -178,7 +185,7 @@ r_test_clock_wait (RClock * clock, RClockTime ts)
 static void
 r_test_clock_free (RTestClock * clock)
 {
-  r_timeout_cblist_clear (&clock->clock.timers);
+  r_clock_clear (clock);
 
   r_cond_clear (&clock->cond);
   r_mutex_clear (&clock->mutex);
