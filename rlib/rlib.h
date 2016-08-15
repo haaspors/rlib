@@ -28,6 +28,7 @@
 #include <rlib/rclock.h>
 #include <rlib/rclr.h>
 #include <rlib/renv.h>
+#include <rlib/revloop.h>
 #include <rlib/rfd.h>
 #include <rlib/rfile.h>
 #include <rlib/rfs.h>

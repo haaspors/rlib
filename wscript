@@ -267,6 +267,7 @@ def configure_headers(cfg):
 
     cfg.check(header_name='sched.h', mandatory=False)
     cfg.check(header_name='fcntl.h', mandatory=False)
+    cfg.check(header_name='sys/ioctl.h', mandatory=False)
     cfg.check(header_name='sys/sysctl.h', mandatory=False)
     if cfg.env.DEST_OS == 'linux':
         cfg.check(header_name='sys/prctl.h')
@@ -290,6 +291,15 @@ def configure_libs(cfg):
 def configure_sys(cfg):
     cfg.check_cc(function_name='sysctlbyname',
             header_name="sys/sysctl.h", mandatory=False)
+    cfg.check_cc(function_name='ioctl',
+            header_name="sys/ioctl.h", mandatory=False)
+    cfg.check_cc(function_name='fcntl',
+            header_name="fcntl.h", mandatory=False)
+    cfg.check_cc(function_name='kqueue',
+            header_name="sys/event.h", mandatory=False)
+    cfg.check_cc(function_name='epoll_ctl',
+            define_name="HAVE_EPOLL",
+            header_name="sys/epoll.h", mandatory=False)
 
 def configure_string(cfg):
     cfg.check_cc(function_name='stpcpy',

@@ -31,6 +31,10 @@ Features
   * Private/Public keys
 * Threadpool
   * Taskqueue
+* Event loop - using edge triggered IO events
+  * KQueue on BSD/Darwin
+  * Epoll on Linux
+  * IOCP on Windows
 * more to come ...
 
 Getting the code
