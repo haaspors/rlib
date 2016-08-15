@@ -65,7 +65,7 @@ R_API rsize r_clock_timeout_count (const RClock * clock);
 
 /* These functions are used by threads/sources that wait for time */
 R_API RClockTime r_clock_first_timeout (RClock * clock);
-R_API ruint r_clock_process_entries (RClock * clock);
+R_API ruint r_clock_process_entries (RClock * clock, RClockTime * out);
 
 /* RTestClock spesific */
 R_API rboolean r_test_clock_update_time (RClock * clock, RClockTime ts);

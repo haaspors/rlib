@@ -106,9 +106,14 @@ r_clock_first_timeout (RClock * clock)
 }
 
 ruint
-r_clock_process_entries (RClock * clock)
+r_clock_process_entries (RClock * clock, RClockTime * tsout)
 {
-  return r_timeout_cblist_update (&clock->timers, r_clock_get_time (clock));
+  RClockTime ts = r_clock_get_time (clock);
+
+  if (tsout != NULL)
+    *tsout = ts;
+
+  return r_timeout_cblist_update (&clock->timers, ts);
 }
 
 

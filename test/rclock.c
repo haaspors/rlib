@@ -162,7 +162,7 @@ RTEST (rtestclock, process_entries, RTEST_FAST)
   r_assert_cmpuint (r_clock_timeout_count (clock), ==, 3);
 
   r_assert (r_test_clock_update_time (clock, 2));
-  r_assert_cmpuint (r_clock_process_entries (clock), ==, 2);
+  r_assert_cmpuint (r_clock_process_entries (clock, NULL), ==, 2);
   r_assert_cmpuint (r_clock_timeout_count (clock), ==, 1);
   r_assert_cmpuint (r_clock_first_timeout (clock), ==, 3);
 
