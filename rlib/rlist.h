@@ -36,14 +36,14 @@ typedef struct _RList RList;
 #define r_list_next(lst)  (lst)->next
 #define r_list_prev(lst)  (lst)->prev
 
-static inline RList * r_list_alloc (rpointer data);
-static inline RList * r_list_prepend (RList * lst, rpointer data);
-static inline RList * r_list_append (RList * lst, rpointer data);
-static inline RList * r_list_insert_after (RList * head, RList * entry, rpointer data);
-static inline RList * r_list_insert_before (RList * head, RList * entry, rpointer data);
-static inline RList * r_list_remove (RList * head, rpointer data);
-static inline RList * r_list_remove_link (RList * head, RList * entry);
-static inline RList * r_list_destroy_link (RList * head, RList * entry);
+static inline RList * r_list_alloc (rpointer data) R_ATTR_MALLOC;
+static inline RList * r_list_prepend (RList * lst, rpointer data) R_ATTR_WARN_UNUSED_RESULT;
+static inline RList * r_list_append (RList * lst, rpointer data) R_ATTR_WARN_UNUSED_RESULT;
+static inline RList * r_list_insert_after (RList * head, RList * entry, rpointer data) R_ATTR_WARN_UNUSED_RESULT;
+static inline RList * r_list_insert_before (RList * head, RList * entry, rpointer data) R_ATTR_WARN_UNUSED_RESULT;
+static inline RList * r_list_remove (RList * head, rpointer data) R_ATTR_WARN_UNUSED_RESULT;
+static inline RList * r_list_remove_link (RList * head, RList * entry) R_ATTR_WARN_UNUSED_RESULT;
+static inline RList * r_list_destroy_link (RList * head, RList * entry) R_ATTR_WARN_UNUSED_RESULT;
 
 #define r_list_free1(entry) r_free (entry)
 static inline void r_list_free1_full (RList * entry, RDestroyNotify notify);
@@ -65,11 +65,11 @@ typedef struct _RSList RSList;
 #define r_slist_data(lst)  (lst)->data
 #define r_slist_next(lst)  (lst)->next
 
-static inline RSList * r_slist_alloc (rpointer data);
-static inline RSList * r_slist_prepend (RSList * head, rpointer data);
-static inline RSList * r_slist_append (RSList * head, rpointer data);
-static inline RSList * r_slist_insert_after (RSList * entry, rpointer data);
-static inline RSList * r_slist_remove (RSList * head, rpointer data);
+static inline RSList * r_slist_alloc (rpointer data) R_ATTR_MALLOC;
+static inline RSList * r_slist_prepend (RSList * head, rpointer data) R_ATTR_WARN_UNUSED_RESULT;
+static inline RSList * r_slist_append (RSList * head, rpointer data) R_ATTR_WARN_UNUSED_RESULT;
+static inline RSList * r_slist_insert_after (RSList * entry, rpointer data) R_ATTR_WARN_UNUSED_RESULT;
+static inline RSList * r_slist_remove (RSList * head, rpointer data) R_ATTR_WARN_UNUSED_RESULT;
 
 #define r_slist_free1(entry) r_free (entry)
 static inline void r_slist_free1_full (RSList * entry, RDestroyNotify notify);
@@ -88,9 +88,9 @@ static inline RSList * r_slist_copy (RSList * head);
 /******************************************************************************/
 typedef struct _RFreeList RFreeList;
 
-static inline RFreeList * r_free_list_alloc (rpointer ptr, RDestroyNotify notify);
+static inline RFreeList * r_free_list_alloc (rpointer ptr, RDestroyNotify notify) R_ATTR_MALLOC;
 static inline RFreeList * r_free_list_prepend (RFreeList * entry,
-    rpointer ptr, RDestroyNotify notify);
+    rpointer ptr, RDestroyNotify notify) R_ATTR_WARN_UNUSED_RESULT;
 static inline void r_free_list_free1 (RFreeList * entry);
 static inline void r_free_list_destroy (RFreeList * head);
 static inline rsize r_free_list_len (RFreeList * head);
@@ -106,15 +106,18 @@ static inline rsize r_free_list_foreach_remove (RFreeList ** head,
 typedef struct _RCBList RCBList;
 
 static inline RCBList * r_cblist_alloc_full (RFunc cb,
-    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify) R_ATTR_MALLOC;
 #define r_cblist_alloc(cb, data, user)                                        \
   r_cblist_alloc_full (cb, data, NULL, user, NULL)
 static inline RCBList * r_cblist_prepend_full (RCBList * head, RFunc cb,
-    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify) R_ATTR_WARN_UNUSED_RESULT;
 #define r_cblist_prepend(head, cb, data, user)                                \
   r_cblist_prepend_full (head, cb, data, NULL, user, NULL)
 static inline RCBList * r_cblist_append_full (RCBList * entry, RFunc cb,
-    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify) R_ATTR_WARN_UNUSED_RESULT;
 #define r_cblist_append(head, cb, data, user)                                 \
   r_cblist_append_full (head, cb, data, NULL, user, NULL)
 static inline void r_cblist_free1 (RCBList * entry);
@@ -129,22 +132,25 @@ static inline void r_cblist_call (RCBList * head);
 typedef struct _RCBRList RCBRList;
 
 static inline RCBRList * r_cbrlist_alloc_full (RFuncReturn cb,
-    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify) R_ATTR_MALLOC;
 #define r_cbrlist_alloc(cb, data, user)                                        \
   r_cbrlist_alloc_full (cb, data, NULL, user, NULL)
 static inline RCBRList * r_cbrlist_prepend_full (RCBRList * head, RFuncReturn cb,
-    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify) R_ATTR_WARN_UNUSED_RESULT;
 #define r_cbrlist_prepend(head, cb, data, user)                                \
   r_cbrlist_prepend_full (head, cb, data, NULL, user, NULL)
 static inline RCBRList * r_cbrlist_append_full (RCBRList * entry, RFuncReturn cb,
-    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify) R_ATTR_WARN_UNUSED_RESULT;
 #define r_cbrlist_append(head, cb, data, user)                                 \
   r_cbrlist_append_full (head, cb, data, NULL, user, NULL)
 static inline void r_cbrlist_free1 (RCBRList * entry);
 static inline void r_cbrlist_destroy (RCBRList * head);
 static inline rsize r_cbrlist_len (RCBRList * head);
 static inline rboolean r_cbrlist_contains (RCBRList * head, RFuncReturn cb, rpointer data);
-static inline RCBRList * r_cbrlist_call (RCBRList * head);
+static inline RCBRList * r_cbrlist_call (RCBRList * head) R_ATTR_WARN_UNUSED_RESULT;
 
 /******************************************************************************/
 /* Doubly linked list                                                         */
