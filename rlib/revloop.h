@@ -23,8 +23,10 @@
 #endif
 
 #include <rlib/rtypes.h>
-#include <rlib/rref.h>
+
 #include <rlib/rclock.h>
+#include <rlib/rref.h>
+#include <rlib/rtaskqueue.h>
 
 R_BEGIN_DECLS
 
@@ -52,7 +54,7 @@ typedef void (*REvIOFunc) (rpointer data, REvIO * evio);
 typedef void (*REvIOCB) (rpointer data, REvIOEvents events, REvIO * evio);
 
 #define R_EV_IO_FORMAT        "%p [%"R_EV_HANDLE_FMT"]"
-#define R_EV_IO_ARGS(evio)    evio, evio->handle
+#define R_EV_IO_ARGS(evio)    evio, (evio != NULL ? evio->handle : R_EV_HANDLE_INVALID)
 
 typedef enum {
   R_EV_LOOP_RUN_LOOP,
@@ -64,8 +66,8 @@ typedef struct _REvLoop REvLoop;
 typedef void (*REvFunc) (rpointer data, REvLoop * loop);
 typedef rboolean (*REvFuncReturn) (rpointer data, REvLoop * loop);
 
-#define r_ev_loop_new() r_ev_loop_new_full (NULL)
-R_API REvLoop * r_ev_loop_new_full (RClock * clock) R_ATTR_MALLOC;
+#define r_ev_loop_new() r_ev_loop_new_full (NULL, NULL)
+R_API REvLoop * r_ev_loop_new_full (RClock * clock, RTaskQueue * tq) R_ATTR_MALLOC;
 R_API REvLoop * r_ev_loop_default (void);
 #define r_ev_loop_ref r_ref_ref
 #define r_ev_loop_unref r_ref_unref
@@ -85,6 +87,9 @@ R_API rboolean r_ev_loop_add_callback_at (REvLoop * loop, RClockEntry ** entry,
 R_API rboolean r_ev_loop_add_callback_later (REvLoop * loop, RClockEntry ** entry,
     RClockTimeDiff delay, REvFunc cb, rpointer data, RDestroyNotify datanotify);
 R_API rboolean r_ev_loop_cancel_timer (REvLoop * loop, RClockEntry * entry);
+
+R_API RTask * r_ev_loop_add_task (REvLoop * loop, RTaskFunc task, REvFunc done,
+    rpointer data, RDestroyNotify datanotify);
 
 R_API REvIO * r_ev_loop_init_handle (REvLoop * loop, REvHandle handle);
 #define r_ev_io_ref r_ref_ref

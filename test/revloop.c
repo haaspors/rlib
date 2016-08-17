@@ -167,7 +167,7 @@ RTEST (revloop, timers, RTEST_FAST)
   rsize size = 0, it = 0;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
-  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_assert (r_ev_loop_add_prepare (loop, prepare_cb, &it, NULL));
   r_assert (r_ev_loop_add_prepare (loop, update_clock_qmsec_func,
         r_clock_ref (clock), r_clock_unref));
@@ -197,7 +197,7 @@ RTEST (revloop, callback_later_cancel, RTEST_FAST)
   RClockEntry * entry;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
-  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_assert (r_ev_loop_add_prepare (loop, prepare_cb, &it, NULL));
 
   r_assert (r_ev_loop_add_callback_later (loop, &entry, R_MSECOND,
@@ -247,7 +247,7 @@ RTEST (revloop, evio_handle, RTEST_FAST)
   rsize iocount = 0, it = 0;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
-  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_assert (r_ev_loop_add_prepare (loop, prepare_cb, &it, NULL));
 
   r_assert_cmpint (pipe (fd), ==, 0);
@@ -272,5 +272,53 @@ RTEST (revloop, evio_handle, RTEST_FAST)
 }
 RTEST_END;
 #endif
+
+static void
+register_thread_task (rpointer data, RTaskQueue * queue, RTask * task)
+{
+  (void) queue;
+  (void) task;
+
+  *((RThread **)data) = r_thread_current ();
+}
+
+static void
+task_done (rpointer data, REvLoop * loop)
+{
+  (void) loop;
+
+  r_assert_cmpptr (*(RThread **)data, !=, r_thread_current ());
+}
+
+RTEST (revloop, add_task, RTEST_FAST)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RThread * thread = NULL;
+  RTask * task;
+  rsize it = 0;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_assert (r_ev_loop_add_prepare (loop, prepare_cb, &it, NULL));
+
+  r_assert_cmpptr ((task = r_ev_loop_add_task (loop, register_thread_task, task_done, &thread, NULL)), !=, NULL);
+
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+  r_assert_cmpuint (it, ==, 1);
+  r_assert_cmpptr (thread, !=, r_thread_current ());
+  r_task_unref (task);
+
+  thread = NULL;
+  r_assert_cmpptr ((task = r_ev_loop_add_task (loop, register_thread_task, task_done, &thread, NULL)), !=, NULL);
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+  r_assert_cmpuint (it, ==, 2);
+  r_assert_cmpptr (thread, !=, r_thread_current ());
+  r_task_unref (task);
+
+  r_ev_loop_unref (loop);
+  r_clock_unref (clock);
+}
+RTEST_END;
 #endif
 

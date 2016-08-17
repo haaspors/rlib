@@ -24,6 +24,7 @@
 #include <rlib/rlist.h>
 #include <rlib/rmem.h>
 #include <rlib/rqueue.h>
+#include <rlib/rthreads.h>
 
 #include <sys/types.h>
 #include <string.h>
@@ -36,6 +37,9 @@
 #ifdef HAVE_EPOLL
 #include <sys/epoll.h>
 #endif
+#ifdef HAVE_SYS_EVENTFD_H
+#include <sys/eventfd.h>
+#endif
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
@@ -47,7 +51,7 @@
 #endif
 #include <errno.h>
 
-R_LOG_CATEGORY_DEFINE_STATIC (evloopcat, "revloop", "RLib EvLoop", R_CLR_BG_YELLOW);
+R_LOG_CATEGORY_DEFINE_STATIC (evloopcat, "revloop", "RLib EvLoop", R_CLR_BG_CYAN | R_CLR_FG_RED | R_CLR_FMT_BOLD);
 #define R_LOG_CAT_DEFAULT &evloopcat
 
 void
@@ -109,6 +113,10 @@ struct _REvIO {
     (evio)->current.io_cb ((evio)->current.data, events, evio);               \
   } R_STMT_END
 
+#ifdef HAVE_EPOLL
+static void r_ev_loop_eventfd_io_cb (rpointer data, REvIOEvents events, REvIO * evio);
+#endif
+
 
 struct _REvLoop {
   RRef ref;
@@ -116,6 +124,19 @@ struct _REvLoop {
   rboolean stop_request;
   RClockTime ts;
   RClock * clock;
+
+  RTaskQueue * tq;
+  rauint tqitems;
+  RCBQueue dcbs;
+  RMutex done_mutex;
+#ifdef HAVE_EPOLL
+  REvIO evio_wakeup;
+#ifdef HAVE_EVENTFD
+  int evfd;
+#else
+  int pipefd[2];
+#endif
+#endif
 
   /* For various callbacks */
   RCBQueue acbs;
@@ -129,7 +150,8 @@ struct _REvLoop {
   RQueue chg;
 };
 
-#define R_EV_LOOP_MAX_EVENTS 1024
+#define R_EV_LOOP_MAX_EVENTS              1024
+#define R_EV_LOOP_DEFAULT_TASK_THREADS    2
 
 static void
 r_ev_loop_free (REvLoop * loop)
@@ -144,7 +166,21 @@ r_ev_loop_free (REvLoop * loop)
   r_cbqueue_clear (&loop->acbs);
   r_cbqueue_clear (&loop->bcbs);
 
-  r_clock_unref (loop->clock); loop->clock = NULL;
+  r_clock_unref (loop->clock);    loop->clock = NULL;
+  r_task_queue_unref (loop->tq);  loop->tq = NULL;
+  r_mutex_lock (&loop->done_mutex);
+  r_cbqueue_clear (&loop->dcbs);
+  r_mutex_unlock (&loop->done_mutex);
+  r_mutex_clear (&loop->done_mutex);
+
+#ifdef HAVE_EPOLL
+#ifdef HAVE_EVENTFD
+    r_ev_handle_close (loop->evfd);
+#else
+    r_ev_handle_close (loop->pipefd[0]);
+    r_ev_handle_close (loop->pipefd[1]);
+#endif
+#endif
 
   if (loop->evhandle != R_EV_HANDLE_INVALID) {
     r_ev_handle_close (loop->evhandle);
@@ -155,9 +191,10 @@ r_ev_loop_free (REvLoop * loop)
 }
 
 static void
-r_ev_loop_setup (REvLoop * loop, RClock * clock)
+r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
 {
   loop->stop_request = FALSE;
+  r_cbqueue_init (&loop->dcbs);
   r_cbqueue_init (&loop->bcbs);
   r_cbqueue_init (&loop->acbs);
   loop->prepare = loop->idle = NULL;
@@ -167,23 +204,62 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock)
   loop->clock = clock != NULL ? r_clock_ref (clock) : r_system_clock_get ();
   loop->ts = r_clock_get_time (loop->clock);
 
+  loop->tq = tq != NULL ? r_task_queue_ref (tq) :
+    r_task_queue_new_simple (R_EV_LOOP_DEFAULT_TASK_THREADS);
+  r_atomic_uint_store (&loop->tqitems, 0);
+  r_mutex_init (&loop->done_mutex);
+
 #if defined (R_OS_WIN32)
 #elif defined (HAVE_EPOLL)
-  loop->evhandle = epoll_create1 (0);
+  if ((loop->evhandle = epoll_create1 (0)) != R_EV_HANDLE_INVALID) {
+    struct epoll_event ev;
+    REvHandle fd;
+
+#ifdef HAVE_EVENTFD
+    fd = loop->evfd = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
+#else
+    if (pipe (loop->pipefd) != 0) {
+      R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
+      abort ();
+    }
+    fd = loop->pipefd[1];
+#endif
+
+    r_memset (&loop->evio_wakeup, 0, sizeof (REvIO));
+    loop->evio_wakeup.loop = loop;
+    loop->evio_wakeup.handle = fd;
+    r_ev_io_ctx_init (&loop->evio_wakeup.current, R_EV_IO_READABLE,
+        r_ev_loop_eventfd_io_cb, loop, NULL);
+
+    ev.data.ptr = &loop->evio_wakeup;
+    ev.events = EPOLLIN | EPOLLET;
+    if (epoll_ctl (loop->evhandle, EPOLL_CTL_ADD, fd, &ev) != 0) {
+      R_LOG_ERROR ("Failed to add tq event fd %d for loop %p",
+          ev.data.fd, loop);
+      abort ();
+    }
+  }
 #elif defined (HAVE_KQUEUE)
-  loop->evhandle = kqueue ();
+  if ((loop->evhandle = kqueue ()) != R_EV_HANDLE_INVALID) {
+    struct kevent ev;
+    EV_SET (&ev, 1, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
+    if (kevent (loop->evhandle, &ev, 1, NULL, 0, NULL) != 0) {
+      R_LOG_ERROR ("Failed to initialize EVFILT_USER for loop %p", loop);
+      abort ();
+    }
+  }
 #endif
 }
 
 REvLoop *
-r_ev_loop_new_full (RClock * clock)
+r_ev_loop_new_full (RClock * clock, RTaskQueue * tq)
 {
   REvLoop * loop;
 
   if ((loop = r_mem_new (REvLoop)) != NULL) {
     REvLoop * prev = NULL;
     r_ref_init (loop, r_ev_loop_free);
-    r_ev_loop_setup (loop, clock);
+    r_ev_loop_setup (loop, clock, tq);
 
     r_atomic_ptr_cmp_xchg_strong (&g__r_ev_loop_default, &prev, loop);
   }
@@ -237,6 +313,16 @@ r_ev_loop_invoke_acbs (REvLoop * loop)
   }
 }
 
+static void
+r_ev_loop_move_done_callbacks (REvLoop * loop)
+{
+  r_mutex_lock (&loop->done_mutex);
+  R_LOG_TRACE ("loop %p - Move callbacks: %"RUINT64_FMT,
+      loop, r_cbqueue_size (&loop->dcbs));
+  r_cbqueue_merge (&loop->acbs, &loop->dcbs);
+  r_mutex_unlock (&loop->done_mutex);
+}
+
 static RClockTime
 r_ev_loop_next_deadline (REvLoop * loop, REvLoopRunMode mode)
 {
@@ -244,7 +330,10 @@ r_ev_loop_next_deadline (REvLoop * loop, REvLoopRunMode mode)
   if (loop->stop_request) return loop->ts;
   if (loop->idle != NULL) return loop->ts;
   if (r_cbqueue_size (&loop->acbs) > 0) return loop->ts;
-  if (r_clock_timeout_count (loop->clock) == 0 && r_queue_size (&loop->active) == 0) return loop->ts;
+  if (r_clock_timeout_count (loop->clock) == 0 &&
+      r_queue_size (&loop->active) == 0 &&
+      r_atomic_uint_load (&loop->tqitems) == 0)
+    return loop->ts;
 
   return r_clock_first_timeout (loop->clock);
 }
@@ -388,12 +477,13 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
   for (i = 0; i < ret; i++) {
     REvIOEvents rev = 0;
     ev = &events[i];
-    evio = ev->udata;
 
     if (ev->flags & EV_ERROR)
       rev |= R_EV_IO_ERROR;
-    if ((ev->flags & EV_EOF) && (evio->current.events & R_EV_IO_HANGUP))
-      rev |= R_EV_IO_HANGUP;
+    if ((evio = ev->udata) != NULL) {
+      if ((ev->flags & EV_EOF) && (evio->current.events & R_EV_IO_HANGUP))
+        rev |= R_EV_IO_HANGUP;
+    }
 
     switch (ev->filter) {
       case EVFILT_READ:
@@ -408,6 +498,11 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
             R_EV_IO_ARGS (evio), ev->flags, ev->fflags);
         rev |= R_EV_IO_WRITABLE;
         break;
+      case EVFILT_USER:
+        R_LOG_DEBUG ("USER flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
+            ev->flags, ev->fflags);
+        r_ev_loop_move_done_callbacks (loop);
+        continue;
       default:
         R_LOG_DEBUG ("evio "R_EV_IO_FORMAT" gives filter: %"RINT16_FMT
             " flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
@@ -428,8 +523,9 @@ static ruint
 r_ev_loop_outstanding_events (REvLoop * loop)
 {
   return r_cbrlist_len (loop->idle) +
-    r_cbqueue_size (&loop->bcbs) +
     r_cbqueue_size (&loop->acbs) +
+    r_cbqueue_size (&loop->bcbs) +
+    loop->tqitems +
     r_clock_timeout_count (loop->clock) +
     r_queue_size (&loop->active);
 }
@@ -447,6 +543,8 @@ r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode)
   while (!loop->stop_request && ret != 0 && res >= 0) {
     r_ev_loop_prepare (loop);
     r_ev_loop_update_timers (loop);
+
+    r_ev_loop_move_done_callbacks (loop);
 
     r_ev_loop_invoke_bcbs (loop);
     deadline = r_ev_loop_next_deadline (loop, mode);
@@ -538,6 +636,145 @@ r_ev_loop_cancel_timer (REvLoop * loop, RClockEntry * timer)
 {
   if (R_UNLIKELY (loop == NULL)) return FALSE;
   return r_clock_cancel_entry (loop->clock, timer);
+}
+
+#ifdef HAVE_EPOLL
+static void
+r_ev_loop_eventfd_io_cb (rpointer data, REvIOEvents events, REvIO * evio)
+{
+  REvLoop * loop = data;
+  REvHandle fd = evio->handle;
+
+  if (events & R_EV_IO_ERROR) {
+    R_LOG_ERROR ("Wakeup evio "R_EV_IO_FORMAT" received error event for loop %p",
+        R_EV_IO_ARGS (evio), loop);
+  }
+
+  if (events & R_EV_IO_READABLE) {
+    int r;
+    ruint64 buf;
+    while (TRUE) {
+      do {
+        r = read (fd, &buf, sizeof (ruint64));
+      } while (r == sizeof (ruint64));
+
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        break;
+      } else if (errno != EINTR) {
+        R_LOG_ERROR ("Read from wakeup eventfd failed, errno: %d for loop %p",
+            errno, loop);
+        abort ();
+      }
+    }
+
+    r_ev_loop_move_done_callbacks (loop);
+  }
+}
+#endif
+
+static void
+r_ev_loop_wakeup (REvLoop * loop)
+{
+#if defined (R_OS_WIN32)
+  R_LOG_DEBUG ("loop %p wakeup!", loop);
+#elif defined (HAVE_EPOLL)
+  ruint64 buf = r_atomic_uint_load (&loop->tqitems);
+  int res;
+#ifdef HAVE_EVENTFD
+  int fd = loop->evfd;
+#else
+  int fd = loop->pipefd[1];
+#endif
+  R_LOG_DEBUG ("loop %p wakeup!", loop);
+  if ((res = write (fd, &buf, sizeof (ruint64))) != sizeof (ruint64)) {
+    R_LOG_ERROR ("Write failed (res %d) to event fd %d for loop %p",
+        res, fd, loop);
+  }
+#elif defined (HAVE_KQUEUE)
+  struct kevent ev;
+  int res;
+
+  EV_SET (&ev, 1, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
+  res = kevent (loop->evhandle, &ev, 1, NULL, 0, NULL);
+  R_LOG_DEBUG ("loop %p wakeup! res %d", loop, res);
+#endif
+}
+
+typedef struct {
+  REvLoop * loop;
+  RTaskFunc task;
+  REvFunc done;
+  rpointer data;
+  RDestroyNotify datanotify;
+} REvLoopTaskCtx;
+
+static void
+r_ev_loop_task_done (rpointer data, rpointer user)
+{
+  REvLoopTaskCtx * ctx = data;
+  (void) user;
+
+  /* This is a barrier, so after this barrier - task_proxy is done and
+   * the loop is unrefed!*/
+  r_mutex_lock (&ctx->loop->done_mutex);
+  r_mutex_unlock (&ctx->loop->done_mutex);
+
+  R_LOG_TRACE ("loop %p task done: %p", ctx->loop, ctx->done);
+
+  if (ctx->done != NULL)
+    ctx->done (ctx->data, ctx->loop);
+
+  if (ctx->datanotify != NULL)
+    ctx->datanotify (ctx->data);
+
+  r_atomic_uint_fetch_sub (&ctx->loop->tqitems, 1);
+}
+
+static void
+r_ev_loop_task_proxy (rpointer data, RTaskQueue * q, RTask * t)
+{
+  REvLoopTaskCtx * ctx = data;
+  rboolean wakeup;
+
+  ctx->task (ctx->data, q, t);
+
+  r_mutex_lock (&ctx->loop->done_mutex);
+  wakeup = r_cbqueue_is_empty (&ctx->loop->dcbs);
+  R_LOG_TRACE ("loop %p push r_ev_loop_task_done", ctx->loop);
+  r_cbqueue_push (&ctx->loop->dcbs, r_ev_loop_task_done,
+      ctx, NULL, r_task_ref (t), r_task_unref);
+
+  if (wakeup)
+    r_ev_loop_wakeup (ctx->loop);
+  r_ev_loop_unref (ctx->loop);
+  r_mutex_unlock (&ctx->loop->done_mutex);
+}
+
+RTask *
+r_ev_loop_add_task (REvLoop * loop, RTaskFunc task, REvFunc done,
+    rpointer data, RDestroyNotify datanotify)
+{
+  RTask * ret;
+  REvLoopTaskCtx * ctx;
+
+  if (R_UNLIKELY (loop == NULL)) return NULL;
+
+  if ((ctx = r_mem_new (REvLoopTaskCtx)) != NULL) {
+    ctx->loop = r_ev_loop_ref (loop);
+    ctx->task = task;
+    ctx->done = done;
+    ctx->data = data;
+    ctx->datanotify = datanotify;
+    if ((ret = r_task_queue_add (loop->tq, r_ev_loop_task_proxy, ctx, r_free)) != NULL) {
+      r_atomic_uint_fetch_add (&loop->tqitems, 1);
+    } else {
+      r_free (ctx);
+    }
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
 }
 
 static void
