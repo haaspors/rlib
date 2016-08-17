@@ -38,7 +38,7 @@ struct _RThreadPool
   RMutex mutex;
   RCond cond;
   RThread * waiting_for_thread;
-  RSList * active, * joined;
+  RSList * active, * done;
 };
 
 static void
@@ -48,8 +48,8 @@ r_thread_pool_free (RThreadPool * pool)
     r_mutex_lock (&pool->mutex);
     r_assert_cmpptr (pool->waiting_for_thread, ==, NULL);
     r_assert_cmpptr (pool->active, ==, NULL);
-    r_slist_destroy_full (pool->joined, r_thread_unref);
-    pool->joined = NULL;
+    r_slist_destroy_full (pool->done, r_thread_unref);
+    pool->done = NULL;
     r_mutex_unlock (&pool->mutex);
     r_mutex_clear (&pool->mutex);
     r_cond_clear (&pool->cond);
@@ -77,7 +77,7 @@ r_thread_pool_new (const rchar * prefix, RThreadPoolFunc func, rpointer data)
     r_mutex_init (&ret->mutex);
     r_cond_init (&ret->cond);
     ret->waiting_for_thread = NULL;
-    ret->active = ret->joined = NULL;
+    ret->active = ret->done = NULL;
   }
 
   return ret;
@@ -103,7 +103,7 @@ r_thread_pool_proxy (rpointer data)
   r_mutex_lock (&pool->mutex);
   r_atomic_uint_fetch_sub (&pool->running, 1);
   pool->active = r_slist_remove (pool->active, t);
-  pool->joined = r_slist_prepend (pool->joined, t);
+  pool->done = r_slist_prepend (pool->done, t);
   r_mutex_unlock (&pool->mutex);
 
   return ret;
@@ -215,11 +215,10 @@ r_thread_pool_join (RThreadPool * pool)
   RSList * copy;
 
   r_mutex_lock (&pool->mutex);
-  copy = r_slist_copy (pool->active);
+  copy = r_slist_merge (r_slist_copy (pool->active), r_slist_copy (pool->done));
   r_mutex_unlock (&pool->mutex);
 
-  r_slist_foreach (copy, (RFunc)r_thread_join, NULL);
-  r_slist_destroy (copy);
+  r_slist_destroy_full (copy, (RDestroyNotify)r_thread_join);
 }
 
 ruint
