@@ -35,6 +35,7 @@ struct _RTask {
   ruint group;
   RTaskFunc func;
   rpointer data;
+  RDestroyNotify datanotify;
 
   RSList * dep;
 
@@ -293,13 +294,16 @@ static void
 r_task_free (RTask * task)
 {
   if (R_LIKELY (task != NULL)) {
+    if (task->datanotify != NULL)
+      task->datanotify (task->data);
     r_slist_destroy_full (task->dep, r_task_unref);
     r_free (task);
   }
 }
 
 RTask *
-r_task_queue_allocate (RTaskQueue * queue, RTaskFunc func, rpointer data)
+r_task_queue_allocate (RTaskQueue * queue, RTaskFunc func,
+    rpointer data, RDestroyNotify datanotify)
 {
   RTask * ret;
 
@@ -310,6 +314,7 @@ r_task_queue_allocate (RTaskQueue * queue, RTaskFunc func, rpointer data)
     ret->queue = queue;
     ret->func = func;
     ret->data = data;
+    ret->datanotify = datanotify;
   }
 
   return ret;
@@ -343,13 +348,13 @@ r_task_queue_add_task_with_group (RTaskQueue * queue,
 
 RTask *
 r_task_queue_add_full (RTaskQueue * queue, ruint group,
-    RTaskFunc func, rpointer data, ...)
+    RTaskFunc func, rpointer data, RDestroyNotify datanotify, ...)
 {
   RTask * ret;
   va_list args;
 
-  va_start (args, data);
-  ret = r_task_queue_add_full_v (queue, group, func, data, args);
+  va_start (args, datanotify);
+  ret = r_task_queue_add_full_v (queue, group, func, data, datanotify, args);
   va_end (args);
 
   return ret;
@@ -357,11 +362,11 @@ r_task_queue_add_full (RTaskQueue * queue, ruint group,
 
 RTask *
 r_task_queue_add_full_v (RTaskQueue * queue, ruint group,
-    RTaskFunc func, rpointer data, va_list args)
+    RTaskFunc func, rpointer data, RDestroyNotify datanotify, va_list args)
 {
   RTask * ret = NULL;
 
-  if ((ret = r_task_queue_allocate (queue, func, data)) != NULL) {
+  if ((ret = r_task_queue_allocate (queue, func, data, datanotify)) != NULL) {
     RTask * dep = va_arg (args, RTask *);
     if (!r_task_add_dep_v (ret, dep, args) ||
         !r_task_queue_add_task_with_group (queue, ret, group)) {

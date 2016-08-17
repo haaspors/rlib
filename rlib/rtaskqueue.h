@@ -49,18 +49,21 @@ R_API RTaskQueue * r_task_queue_new_per_cpu_simple (ruint cpupergroup) R_ATTR_MA
 #define r_task_queue_ref    r_ref_ref
 #define r_task_queue_unref  r_ref_unref
 
-R_API RTask * r_task_queue_allocate (RTaskQueue * queue, RTaskFunc func, rpointer data);
+R_API RTask * r_task_queue_allocate (RTaskQueue * queue, RTaskFunc func,
+    rpointer data, RDestroyNotify datanotify);
 #define r_task_queue_add_task(queue, task)                                    \
   r_task_queue_add_task_with_group (queue, task, RUINT_MAX)
 R_API rboolean r_task_queue_add_task_with_group (RTaskQueue * queue,
     RTask * task, ruint group);
 
-#define r_task_queue_add(queue, func, data)                                   \
-  r_task_queue_add_full (queue, RUINT_MAX, func, data, NULL)
+#define r_task_queue_add(queue, func, data, datanotify)                       \
+  r_task_queue_add_full (queue, RUINT_MAX, func, data, datanotify, NULL)
 R_API RTask * r_task_queue_add_full (RTaskQueue * queue, ruint group,
-    RTaskFunc func, rpointer data, ...) R_ATTR_NULL_TERMINATED R_ATTR_WARN_UNUSED_RESULT;
+    RTaskFunc func, rpointer data, RDestroyNotify datanotify,
+    ...) R_ATTR_NULL_TERMINATED R_ATTR_WARN_UNUSED_RESULT;
 R_API RTask * r_task_queue_add_full_v (RTaskQueue * queue, ruint group,
-    RTaskFunc func, rpointer data, va_list args) R_ATTR_WARN_UNUSED_RESULT;
+    RTaskFunc func, rpointer data, RDestroyNotify datanotify,
+    va_list args) R_ATTR_WARN_UNUSED_RESULT;
 
 R_API rsize r_task_queue_queued_tasks (const RTaskQueue * queue);
 R_API ruint r_task_queue_group_count (const RTaskQueue * queue);
