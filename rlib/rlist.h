@@ -82,6 +82,7 @@ static inline RSList * r_slist_last (RSList * head);
 static inline RSList * r_slist_nth (RSList * head, rsize n);
 static inline void r_slist_foreach (RSList * head, RFunc func, rpointer user);
 static inline RSList * r_slist_copy (RSList * head);
+static inline RSList * r_slist_merge (RSList * a, RSList * b);
 
 /******************************************************************************/
 /* Free list (Singly linked list)                                             */
@@ -510,6 +511,16 @@ static inline RSList * r_slist_copy (RSList * head)
     last->next = r_slist_alloc (r_slist_data (it));
 
   return ret;
+}
+
+static inline RSList * r_slist_merge (RSList * a, RSList * b)
+{
+  if (a != NULL)
+    r_slist_last (a)->next = b;
+  else
+    a = b;
+
+  return a;
 }
 
 

@@ -112,3 +112,24 @@ RTEST (rslist, copy, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rslist, merge, RTEST_FAST)
+{
+  RSList * a = NULL, * b = NULL, * merged;
+
+  r_assert_cmpptr ((a = r_slist_prepend (a, PTR_CAFEBABE)), !=, NULL);
+  r_assert_cmpptr ((a = r_slist_prepend (a, PTR_DEADBEEF)), !=, NULL);
+  r_assert_cmpptr ((a = r_slist_prepend (a, PTR_BAADFOOD)), !=, NULL);
+  r_assert_cmpuint (r_slist_len (a), ==, 3);
+
+  r_assert_cmpptr ((b = r_slist_prepend (b, PTR_CAFEBABE)), !=, NULL);
+  r_assert_cmpptr ((b = r_slist_prepend (b, PTR_DEADBEEF)), !=, NULL);
+  r_assert_cmpptr ((b = r_slist_prepend (b, PTR_BAADFOOD)), !=, NULL);
+  r_assert_cmpuint (r_slist_len (b), ==, 3);
+
+  r_assert_cmpptr ((merged = r_slist_merge (a, b)), !=, NULL);
+  r_assert_cmpuint (r_slist_len (merged), ==, 6);
+
+  r_slist_destroy (merged);
+}
+RTEST_END;
+
