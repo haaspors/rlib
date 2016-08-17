@@ -81,6 +81,7 @@ static inline void        r_cbqueue_push (RCBQueue * q, RFunc cb,
     rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
 static inline RCBList *   r_cbqueue_pop (RCBQueue * q);
 static inline RCBList *   r_cbqueue_peek (const RCBQueue * q);
+static inline void        r_cbqueue_merge (RCBQueue * dst, RCBQueue * src);
 #define r_cbqueue_size(q)      (q)->size
 #define r_cbqueue_is_empty(q)  ((q)->size == 0)
 
@@ -217,6 +218,21 @@ static inline RCBList * r_cbqueue_pop (RCBQueue * q)
 static inline RCBList * r_cbqueue_peek (const RCBQueue * q)
 {
   return q->tail;
+}
+
+static inline void r_cbqueue_merge (RCBQueue * dst, RCBQueue * src)
+{
+  if (dst->size > 0 && src->size > 0) {
+    dst->size += src->size;
+
+    dst->head->prev = src->tail;
+    src->tail->next = dst->head;
+    dst->head = src->head;
+  } else if (dst->size == 0) {
+    r_memcpy (dst, src, sizeof (RCBQueue));
+  }
+
+  r_memset (src, 0, sizeof (RCBQueue));
 }
 
 R_END_DECLS
