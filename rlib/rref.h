@@ -32,6 +32,7 @@ typedef struct _RRef {
   RDestroyNotify notify;
 } RRef;
 
+#define r_ref_refcount(ref) r_atomic_uint_load (&((RRef *)ref)->refcount)
 #define r_ref_init(self, destroy)         R_STMT_START {                      \
   r_atomic_uint_store (&((RRef *)self)->refcount, 1);                         \
   ((RRef *)self)->notify = (RDestroyNotify)destroy;                           \
