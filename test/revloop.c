@@ -267,6 +267,8 @@ RTEST (revloop, evio_handle, RTEST_FAST)
 
   close (fd[0]);
   close (fd[1]);
+  r_ev_io_unref (evio);
+  r_assert_cmpuint (r_ref_refcount (loop), ==, 1);
   r_ev_loop_unref (loop);
   r_clock_unref (clock);
 }
