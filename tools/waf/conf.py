@@ -30,7 +30,7 @@ def _compile_int(self, exp, **kw):
 @conf
 def compute_int(self, exp, l=-1, h=1024, **kw):
     if 'startmsg' not in kw:
-        kw['startmsg'] = 'Checking for value of ' + e
+        kw['startmsg'] = 'Checking for value of ' + exp
     if 'errmsg' not in kw:
         kw['errmsg'] = 'Unknown'
     self.start_msg(kw['startmsg'])
