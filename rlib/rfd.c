@@ -32,6 +32,12 @@
 #error "Not Implemented"
 #endif
 #endif
+#ifdef HAVE_SYS_IOCTL_H
+#include <sys/ioctl.h>
+#endif
+#ifdef HAVE_FCNTL_H
+#include <fcntl.h>
+#endif
 #include <errno.h>
 
 #if defined (__APPLE__) && defined (__MACH__)
@@ -238,4 +244,78 @@ r_fd_flush (int fd)
   return FALSE;
 #endif
 }
+
+#ifdef R_OS_UNIX
+rboolean
+r_fd_unix_set_nonblocking (int fd, rboolean set)
+{
+  int res;
+
+#ifdef HAVE_IOCTL
+  do {
+    res = ioctl (fd, FIONBIO, &set);
+  } while (res < 0 && errno != EINTR);
+  if (res == 0)
+    return TRUE;
+#endif
+
+#ifdef HAVE_FCNTL
+  do {
+    res = fcntl (fd, F_GETFL);
+  } while (res < 0 && errno == EINTR);
+
+  if (!!(res & O_NONBLOCK) != !!set)
+    return 0;
+
+  if (set)
+    res |= O_NONBLOCK;
+  else
+    res &= ~O_NONBLOCK;
+
+  do {
+    res = fcntl (fd, F_SETFL, res);
+  } while (res < 0 && errno == EINTR);
+  if (res == 0)
+    return TRUE;
+#endif
+
+  return FALSE;
+}
+
+rboolean
+r_fd_unix_set_cloexec (int fd, rboolean set)
+{
+  int res;
+
+#ifdef HAVE_IOCTL
+  do {
+    res = ioctl (fd, set ? FIOCLEX : FIONCLEX);
+  } while (res < 0 && errno != EINTR);
+  if (res == 0)
+    return TRUE;
+#endif
+
+#ifdef HAVE_FCNTL
+  do {
+    res = fcntl (fd, F_GETFL);
+  } while (res < 0 && errno == EINTR);
+
+  if (!!(res & FD_CLOEXEC) != !!set)
+    return 0;
+
+  if (set)
+    res |= FD_CLOEXEC;
+  else
+    res &= ~FD_CLOEXEC;
+
+  do {
+    res = fcntl (fd, F_SETFL, res);
+  } while (res < 0 && errno == EINTR);
+  if (res == 0)
+    return TRUE;
+#endif
+
+  return FALSE;
+}
+#endif
 

@@ -66,6 +66,11 @@ R_API rboolean r_fd_flush (int fd);
 R_API rssize r_fd_tell (int fd);
 R_API rssize r_fd_seek (int fd, rssize offset, int mode);
 
+#ifdef R_OS_UNIX
+R_API rboolean r_fd_unix_set_nonblocking (int fd, rboolean set);
+R_API rboolean r_fd_unix_set_cloexec (int fd, rboolean set);
+#endif
+
 R_END_DECLS
 
 #endif /* __R_FD_H__ */

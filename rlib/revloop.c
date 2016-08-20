@@ -21,6 +21,7 @@
 #include <rlib/revloop.h>
 
 #include <rlib/ratomic.h>
+#include <rlib/rfd.h>
 #include <rlib/rlist.h>
 #include <rlib/rmem.h>
 #include <rlib/rqueue.h>
@@ -43,12 +44,6 @@
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
-#ifdef HAVE_SYS_IOCTL_H
-#include <sys/ioctl.h>
-#endif
-#ifdef HAVE_FCNTL_H
-#include <fcntl.h>
-#endif
 #include <errno.h>
 
 R_LOG_CATEGORY_DEFINE_STATIC (evloopcat, "revloop", "RLib EvLoop", R_CLR_BG_CYAN | R_CLR_FG_RED | R_CLR_FMT_BOLD);
@@ -66,6 +61,19 @@ r_ev_loop_deinit (void)
 }
 
 static raptr g__r_ev_loop_default; /* (REvLoop *) */
+
+static rboolean
+r_ev_handle_close (REvHandle handle)
+{
+#if defined (R_OS_WIN32)
+  return CloseHandle (handle);
+#elif defined (R_OS_UNIX)
+  return close (handle) == 0;
+#else
+  (void) handle;
+  return FALSE;
+#endif
+}
 
 typedef struct {
   REvIOEvents events;
@@ -809,7 +817,7 @@ r_ev_loop_init_handle (REvLoop * loop, REvHandle handle)
     ret->handle = handle;
 
 #ifdef R_OS_UNIX
-    r_ev_handle_set_nonblocking (handle, TRUE);
+    r_fd_unix_set_nonblocking (handle, TRUE);
 #endif
   }
 
@@ -880,91 +888,4 @@ r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
 
   return TRUE;
 }
-
-rboolean
-r_ev_handle_close (REvHandle handle)
-{
-#if defined (R_OS_WIN32)
-  return CloseHandle (handle);
-#elif defined (R_OS_UNIX)
-  return close (handle) == 0;
-#else
-  (void) handle;
-  return FALSE;
-#endif
-}
-
-#ifdef R_OS_UNIX
-rboolean
-r_ev_handle_set_nonblocking (REvHandle handle, rboolean set)
-{
-  int res;
-
-#ifdef HAVE_IOCTL
-  do {
-    res = ioctl (handle, FIONBIO, &set);
-  } while (res < 0 && errno != EINTR);
-  if (res == 0)
-    return TRUE;
-#endif
-
-#ifdef HAVE_FCNTL
-  do {
-    res = fcntl (handle, F_GETFL);
-  } while (res < 0 && errno == EINTR);
-
-  if (!!(res & O_NONBLOCK) != !!set)
-    return 0;
-
-  if (set)
-    res |= O_NONBLOCK;
-  else
-    res &= ~O_NONBLOCK;
-
-  do {
-    res = fcntl (handle, F_SETFL, res);
-  } while (res < 0 && errno == EINTR);
-  if (res == 0)
-    return TRUE;
-#endif
-
-  return FALSE;
-}
-
-rboolean
-r_ev_handle_set_cloexec (REvHandle handle, rboolean set)
-{
-  int res;
-
-#ifdef HAVE_IOCTL
-  do {
-    res = ioctl (handle, set ? FIOCLEX : FIONCLEX);
-  } while (res < 0 && errno != EINTR);
-  if (res == 0)
-    return TRUE;
-#endif
-
-#ifdef HAVE_FCNTL
-  do {
-    res = fcntl (handle, F_GETFL);
-  } while (res < 0 && errno == EINTR);
-
-  if (!!(res & FD_CLOEXEC) != !!set)
-    return 0;
-
-  if (set)
-    res |= FD_CLOEXEC;
-  else
-    res &= ~FD_CLOEXEC;
-
-  do {
-    res = fcntl (handle, F_SETFL, res);
-  } while (res < 0 && errno == EINTR);
-  if (res == 0)
-    return TRUE;
-#endif
-
-  return FALSE;
-}
-#endif
 

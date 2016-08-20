@@ -101,12 +101,6 @@ R_API rboolean r_ev_io_stop (REvIO * evio);
 R_API rboolean r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
     rpointer data, RDestroyNotify datanotify);
 
-rboolean r_ev_handle_close (REvHandle handle);
-#ifdef R_OS_UNIX
-rboolean r_ev_handle_set_nonblocking (REvHandle handle, rboolean set);
-rboolean r_ev_handle_set_cloexec (REvHandle handle, rboolean set);
-#endif
-
 R_END_DECLS
 
 #endif /* __R_EV_LOOP_H__ */
