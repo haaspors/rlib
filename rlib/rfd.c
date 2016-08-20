@@ -254,7 +254,7 @@ r_fd_unix_set_nonblocking (int fd, rboolean set)
 #ifdef HAVE_IOCTL
   do {
     res = ioctl (fd, FIONBIO, &set);
-  } while (res < 0 && errno != EINTR);
+  } while (res < 0 && errno == EINTR);
   if (res == 0)
     return TRUE;
 #endif
@@ -290,7 +290,7 @@ r_fd_unix_set_cloexec (int fd, rboolean set)
 #ifdef HAVE_IOCTL
   do {
     res = ioctl (fd, set ? FIOCLEX : FIONCLEX);
-  } while (res < 0 && errno != EINTR);
+  } while (res < 0 && errno == EINTR);
   if (res == 0)
     return TRUE;
 #endif
