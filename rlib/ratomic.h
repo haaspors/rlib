@@ -31,6 +31,7 @@
 #elif defined(__GNUC__)
 #define USE_SYNC_ATOMICS          1
 #elif defined(_MSC_VER)
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #define USE_MSC_ATOMICS           1
 #endif
