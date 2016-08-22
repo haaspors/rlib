@@ -48,6 +48,8 @@
 #include <rlib/rrand.h>
 #include <rlib/rref.h>
 #include <rlib/rsignal.h>
+#include <rlib/rsocket.h>
+#include <rlib/rsocketaddress.h>
 #include <rlib/rstr.h>
 #include <rlib/rstring.h>
 #include <rlib/rsys.h>

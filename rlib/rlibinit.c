@@ -32,6 +32,7 @@ R_INITIALIZER (rlib_init)
   r_log_init ();
 
   r_ev_loop_init ();
+  r_networking_init ();
   r_task_queue_init ();
   r_time_init ();
   r_thread_init ();
@@ -44,8 +45,10 @@ R_INITIALIZER (rlib_init)
 R_DEINITIALIZER (rlib_deinit)
 {
   r_thread_deinit ();
-  r_log_deinit ();
+  r_networking_deinit ();
   r_ev_loop_deinit ();
+
+  r_log_deinit ();
 }
 
 #ifdef R_OS_WIN32

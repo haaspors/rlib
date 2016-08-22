@@ -70,6 +70,7 @@ def configure(cfg):
     configure_threads(cfg)
     configure_signal(cfg)
     configure_fs(cfg)
+    configure_networking(cfg)
 
     if cfg.env.BUILD_SHLIB:
         cfg.env.RLIB_INTERNAL_USE = SHLIBNAME + ' RTEST'
@@ -267,7 +268,10 @@ def configure_headers(cfg):
 
     cfg.check(header_name='sched.h', mandatory=False)
     cfg.check(header_name='fcntl.h', mandatory=False)
+    cfg.check(header_name='arpa/inet.h', mandatory=False)
+    cfg.check(header_name='netinet/in.h', mandatory=False)
     cfg.check(header_name='sys/ioctl.h', mandatory=False)
+    cfg.check(header_name='sys/socket.h', mandatory=False)
     cfg.check(header_name='sys/sysctl.h', mandatory=False)
     if cfg.env.DEST_OS == 'linux':
         cfg.check(header_name='sys/eventfd.h')
@@ -386,6 +390,24 @@ def configure_fs(cfg):
         cfg.env.RLIB_DEFINE_HAVE_FILES = '/* #undef RLIB_HAVE_FILES */'
     else:
         cfg.env.RLIB_DEFINE_HAVE_FILES = '#define RLIB_HAVE_FILES     1'
+
+def configure_networking(cfg):
+    cfg.check_cc(function_name='inet_pton',
+            header_name="arpa/inet.h", mandatory=False)
+    cfg.check_cc(function_name='inet_ntop',
+            header_name="arpa/inet.h", mandatory=False)
+    if cfg.env.DEST_OS == 'win32':
+        cfg.env.R_AF_UNIX       = 1;
+        cfg.env.R_AF_INET       = cfg.compute_int('AF_INET', header_name='winsock2.h', guess=2) or 2;
+        cfg.env.R_AF_INET6      = cfg.compute_int('AF_INET6', header_name='winsock2.h', guess=23) or 'R_SOCKET_FAMILY_NONE';
+        cfg.env.R_AF_IRDA       = cfg.compute_int('AF_IRDA', header_name='winsock2.h', guess=26) or 'R_SOCKET_FAMILY_NONE';
+        cfg.env.R_AF_BLUETOOTH  = cfg.compute_int('AF_BTH', header_name='winsock2.h', guess=32) or 'R_SOCKET_FAMILY_NONE';
+    else:
+        cfg.env.R_AF_UNIX       = cfg.compute_int('AF_UNIX', header_name='sys/socket.h', guess=1) or 1;
+        cfg.env.R_AF_INET       = cfg.compute_int('AF_INET', header_name='sys/socket.h', guess=2) or 2;
+        cfg.env.R_AF_INET6      = cfg.compute_int('AF_INET6', header_name='sys/socket.h', guess=10) or 'R_SOCKET_FAMILY_NONE';
+        cfg.env.R_AF_IRDA       = cfg.compute_int('AF_IRDA', header_name='sys/socket.h', guess=23) or 'R_SOCKET_FAMILY_NONE';
+        cfg.env.R_AF_BLUETOOTH  = cfg.compute_int('AF_BLUETOOTH', header_name='sys/socket.h', guess=31) or 'R_SOCKET_FAMILY_NONE';
 
 
 def configure_sizeof(cfg):

@@ -78,6 +78,12 @@ typedef unsigned @RINTPTR_TYPE@ ruintptr;
 #define RLIB_SIZEOF_INTMAX      @RLIB_SIZEOF_INTMAX@
 #define RLIB_SIZEOF_SIZE_T      @RLIB_SIZEOF_SIZE_T@
 
+#define R_AF_UNIX               @R_AF_UNIX@
+#define R_AF_INET               @R_AF_INET@
+#define R_AF_INET6              @R_AF_INET6@
+#define R_AF_IRDA               @R_AF_IRDA@
+#define R_AF_BLUETOOTH          @R_AF_BLUETOOTH@
+
 #define @RLIB_OS@               1
 @RLIB_OS_EXTRA@
 #define @RLIB_ARCH@             1

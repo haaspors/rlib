@@ -15,6 +15,7 @@ Features
 * Threads
 * Atomic operations
 * Clock/Timestamp
+* Socket/Networking
 * Log framework
   * Nice colors in supported text terminals (not on windows (cmd.exe))
 * Test framework
