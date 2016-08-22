@@ -159,7 +159,7 @@ RTEST_F (rthreadpool, start_thread_on_each_cpu, RTEST_FAST)
       if (!r_bitset_set_bit (cpuset, i, TRUE))
         break;
     }
-    r_assert_cmpuint (r_bitset_popcount (cpuset), >, 2);
+    r_assert_cmpuint (r_bitset_popcount (cpuset), >=, 2);
 
     r_mutex_lock (&fixture->mutex);
     r_assert_cmpptr ((pool = r_thread_pool_new ("pool",
