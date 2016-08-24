@@ -39,6 +39,7 @@
 #include <rlib/rmacros.h>
 #include <rlib/rmath.h>
 #include <rlib/rmem.h>
+#include <rlib/rmemallocator.h>
 #include <rlib/rmemfile.h>
 #include <rlib/rmodule.h>
 #include <rlib/rmpint.h>

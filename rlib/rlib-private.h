@@ -31,6 +31,9 @@ R_API_HIDDEN void r_ev_loop_deinit (void);
 R_API_HIDDEN void r_log_init (void);
 R_API_HIDDEN void r_log_deinit (void);
 
+R_API_HIDDEN void r_mem_allocator_init (void);
+R_API_HIDDEN void r_mem_allocator_deinit (void);
+
 R_API_HIDDEN void r_networking_init (void);
 R_API_HIDDEN void r_networking_deinit (void);
 
