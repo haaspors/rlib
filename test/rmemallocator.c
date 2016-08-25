@@ -93,7 +93,7 @@ RTEST (rmem, copy, RTEST_FAST)
   RMemMapInfo infomem, infocopy;
 
   r_assert_cmpptr ((mem = r_mem_allocator_alloc (NULL, 0, 1024, 16, 16, 0xff)), !=, NULL);
-  r_assert (r_mem_map (mem, &infomem, R_MEM_MAP_READ));
+  r_assert (r_mem_map (mem, &infomem, R_MEM_MAP_WRITE));
   r_memset (infomem.data, 0x42, infomem.size);
   r_assert (r_mem_unmap (mem, &infomem));
 
@@ -130,7 +130,7 @@ RTEST (rmem, view, RTEST_FAST)
   r_mem_unref (mem);
 
   r_assert_cmpptr ((mem = r_mem_allocator_alloc (NULL, 0, 1024, 16, 16, 0xff)), !=, NULL);
-  r_assert (r_mem_map (mem, &infomem, R_MEM_MAP_READ));
+  r_assert (r_mem_map (mem, &infomem, R_MEM_MAP_WRITE));
   r_memset (infomem.data, 0x42, infomem.size);
   r_memset (infomem.data + infomem.size / 3, 0x13, infomem.size / 3);
   r_assert (r_mem_unmap (mem, &infomem));
@@ -183,6 +183,56 @@ RTEST (rmem, wrapped, RTEST_FAST)
   r_assert_cmpuint (mem->offset, ==, 4);
 
   r_mem_unref (mem);
+}
+RTEST_END;
+
+RTEST (rmem, merge, RTEST_FAST)
+{
+  RMem * a, * b, * c, * d, * merged;
+  RMemAllocationParams params = { R_MEM_FLAG_NONE, 0, 64, 32 };
+  RMemMapInfo info;
+  ruint8 test[256];
+
+  r_assert_cmpptr ((a = r_mem_allocator_alloc (NULL, R_MEM_FLAG_NONE, 256, 16, 16, 0xff)), !=, NULL);
+  r_assert (r_mem_map (a, &info, R_MEM_MAP_WRITE));
+  r_memset (info.data, 0x42, info.size);
+  r_assert (r_mem_unmap (a, &info));
+
+  r_assert_cmpptr ((b = r_mem_allocator_alloc (NULL, R_MEM_FLAG_NONE, 256, 0, 0, 0x0f)), !=, NULL);
+  r_assert (r_mem_map (b, &info, R_MEM_MAP_WRITE));
+  r_memset (info.data, 0x20, info.size);
+  r_assert (r_mem_unmap (b, &info));
+
+  r_assert_cmpptr ((c = r_mem_allocator_alloc (NULL, R_MEM_FLAG_NONE, 256, 0, 0, 0x0f)), !=, NULL);
+  r_assert (r_mem_map (c, &info, R_MEM_MAP_WRITE));
+  r_memset (info.data, 0x0, info.size);
+  r_assert (r_mem_unmap (c, &info));
+
+  r_assert_cmpptr ((d = r_mem_allocator_alloc (NULL, R_MEM_FLAG_NONE, 256, 0, 0, 0x0f)), !=, NULL);
+  r_assert (r_mem_map (d, &info, R_MEM_MAP_WRITE));
+  r_memset (info.data, 0xff, info.size);
+  r_assert (r_mem_unmap (d, &info));
+
+  r_assert_cmpptr ((merged = r_mem_merge (&params, a, b, c, d, NULL)), !=, NULL);
+  r_assert_cmpuint (merged->size, ==, 1024);
+  r_assert_cmpuint (merged->allocsize, >=, 1024 + 64 + 32);
+  r_assert_cmpuint (merged->offset, ==, 64);
+
+  r_mem_unref (a);
+  r_mem_unref (b);
+
+  r_assert (r_mem_map (merged, &info, R_MEM_MAP_WRITE));
+  r_memset (test, 0x42, sizeof (test));
+  r_assert_cmpmem (&info.data[0], ==, test, sizeof (test));
+  r_memset (test, 0x20, sizeof (test));
+  r_assert_cmpmem (&info.data[256], ==, test, sizeof (test));
+  r_memset (test, 0x0, sizeof (test));
+  r_assert_cmpmem (&info.data[512], ==, test, sizeof (test));
+  r_memset (test, 0xff, sizeof (test));
+  r_assert_cmpmem (&info.data[768], ==, test, sizeof (test));
+  r_assert (r_mem_unmap (merged, &info));
+
+  r_mem_unref (merged);
 }
 RTEST_END;
 

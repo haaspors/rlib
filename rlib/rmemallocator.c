@@ -27,6 +27,7 @@
 static RMemAllocator ** g__r_mem_allocator = NULL;
 static rsize g__r_mem_allocator_size = 0;
 static rsize g__r_mem_allocator_idx = 0;
+static const RMemAllocationParams g__r_mem_defparams = { R_MEM_FLAG_NONE, 0, 0, 0 };
 
 #define R_MEM_ALLOCATOR_SYSTEM_ALIGNMASK    0x0f
 
@@ -160,6 +161,39 @@ r_system_mem_allocator_view (RMem * mem, rssize offset, rssize size)
 }
 
 
+static RMem *
+r_system_mem_allocator_merge (const RMemAllocationParams * params,
+    RMem ** mems, ruint count)
+{
+  RMem * ret;
+  rsize size;
+  ruint i;
+
+  for (i = 0, size = 0; i < count; i++)
+    size += mems[i]->size;
+
+  if ((ret = r_system_mem_allocator_alloc (mems[0]->allocator, size, params)) != NULL) {
+    ruint8 * dst = ((RSystemMem *) ret)->data + ret->offset;
+    RMemMapInfo info;
+    for (i = 0; i < count; i++) {
+      if (r_mem_map (mems[i], &info, R_MEM_MAP_READ)) {
+        r_memcpy (dst, info.data, info.size);
+        dst += info.size;
+        r_mem_unmap (mems[i], &info);
+      } else {
+        goto map_error;
+      }
+    }
+  }
+
+  return ret;
+map_error:
+  r_mem_unref (ret);
+  /* R_LOG_WARNING (); */
+  return NULL;
+}
+
+
 static RMemAllocator g__r_mem_allocator_system = {
   { 0, NULL },
   R_MEM_ALLOCATOR_SYSTEM, R_MEM_ALLOCATOR_SYSTEM_ALIGNMASK,
@@ -167,6 +201,7 @@ static RMemAllocator g__r_mem_allocator_system = {
   r_system_mem_allocator_free,
   r_system_mem_allocator_map,
   r_system_mem_allocator_unmap,
+  r_system_mem_allocator_merge,
   r_system_mem_allocator_copy,
   r_system_mem_allocator_view
 };
@@ -321,5 +356,42 @@ r_mem_new_wrapped (RMemFlags flags, rpointer data, rsize allocsize,
   }
 
   return (RMem *) sysmem;
+}
+
+RMem *
+r_mem_merge (const RMemAllocationParams * params, RMem * a, ...)
+{
+  va_list args;
+  RMem * ret;
+
+  va_start (args, a);
+  ret = r_mem_mergev (params, a, args);
+  va_end (args);
+
+  return ret;
+}
+
+RMem *
+r_mem_mergev (const RMemAllocationParams * params, RMem * a, va_list args)
+{
+  va_list ac;
+  rsize i, count;
+  RMem ** mems;
+
+  if (R_UNLIKELY (a == NULL)) return NULL;
+  if (params == NULL)
+    params = &g__r_mem_defparams;
+
+  count = 1;
+  va_copy (ac, args);
+  while (va_arg (ac, rpointer) != NULL) count++;
+  va_end (ac);
+
+  mems = r_alloca (sizeof (RMem *) * count);
+  mems[0] = a;
+  for (i = 1; i < count; i++)
+    mems[i] = va_arg (args, RMem *);
+
+  return a->allocator->merge (params, mems, count);
 }
 

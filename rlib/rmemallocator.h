@@ -25,6 +25,8 @@
 #include <rlib/rtypes.h>
 #include <rlib/rref.h>
 
+#include <stdarg.h>
+
 R_BEGIN_DECLS
 
 typedef enum {
@@ -64,6 +66,10 @@ typedef struct {
 } RMemMapInfo;
 
 
+/******************************************************************************/
+/* RMem - Memory chunks                                                       */
+/******************************************************************************/
+
 /* Convenience for wrapping normal system memory */
 R_API RMem * r_mem_new_wrapped (RMemFlags flags, rpointer data, rsize allocsize,
     rsize size, rsize offset, rpointer user, RDestroyNotify usernotify) R_ATTR_WARN_UNUSED_RESULT;
@@ -71,12 +77,17 @@ R_API RMem * r_mem_new_wrapped (RMemFlags flags, rpointer data, rsize allocsize,
   r_mem_new_wrapped (flags, data, allocsize, size, offset, data, r_free)
 
 /* Abstract RMem functionality */
+
 #define r_mem_ref     r_ref_ref
 #define r_mem_unref   r_ref_unref
 R_API rboolean  r_mem_map   (RMem * mem, RMemMapInfo * info, RMemMapFlags flags);
 R_API rboolean  r_mem_unmap (RMem * mem, RMemMapInfo * info);
 R_API RMem *    r_mem_copy  (RMem * mem, rssize offset, rssize size) R_ATTR_WARN_UNUSED_RESULT;
 R_API RMem *    r_mem_view  (RMem * mem, rssize offset, rssize size) R_ATTR_WARN_UNUSED_RESULT;
+R_API RMem *    r_mem_merge (const RMemAllocationParams * params,
+    RMem * a, ...) R_ATTR_NULL_TERMINATED R_ATTR_WARN_UNUSED_RESULT;
+R_API RMem *    r_mem_mergev (const RMemAllocationParams * params,
+    RMem * a, va_list args) R_ATTR_WARN_UNUSED_RESULT;
 #define r_mem_is_readonly(mem)        (mem->flags & R_MEM_FLAG_READONLY)
 #define r_mem_is_writable(mem)       ((mem->flags & R_MEM_FLAG_READONLY) == 0)
 #define r_mem_is_zero_prefixed(mem)   (mem->flags & R_MEM_FLAG_ZERO_PREFIXED)
@@ -94,6 +105,16 @@ struct _RMem {
   rsize           offset;
 };
 
+/* Theses should only be called from the spesific RMem implementations */
+R_API void      r_mem_init  (RMem * mem, RDestroyNotify notify,
+    RMemFlags flags, RMemAllocator * allocator, RMem * parent,
+    rsize allocsize, rsize size, rsize alignmask, rsize offset);
+R_API void      r_mem_clear (RMem * mem);
+
+
+/******************************************************************************/
+/* RMemAllocator - Memory allocator                                           */
+/******************************************************************************/
 
 /* Getting/finding and registering allocators */
 #define r_mem_allocator_default() r_mem_allocator_find (R_MEM_ALLOCATOR_SYSTEM)
@@ -122,16 +143,11 @@ struct _RMemAllocator {
   rboolean  (*free)   (RMemAllocator * allocator, RMem * mem);
   rpointer  (*map)    (RMem * mem, const RMemMapInfo * info);
   rboolean  (*unmap)  (RMem * mem, const RMemMapInfo * info);
+  RMem *    (*merge)  (const RMemAllocationParams * params, RMem ** mems, ruint count);
   RMem *    (*copy)   (RMem * mem, rssize offset, rssize size);
   RMem *    (*view)   (RMem * mem, rssize offset, rssize size);
 };
 
-
-/* Theses should only be called from the spesific RMem implementations */
-R_API void      r_mem_init  (RMem * mem, RDestroyNotify notify,
-    RMemFlags flags, RMemAllocator * allocator, RMem * parent,
-    rsize allocsize, rsize size, rsize alignmask, rsize offset);
-R_API void      r_mem_clear (RMem * mem);
 
 R_END_DECLS
 
