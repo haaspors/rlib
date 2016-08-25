@@ -80,6 +80,7 @@ R_API RMem * r_mem_new_wrapped (RMemFlags flags, rpointer data, rsize allocsize,
 
 #define r_mem_ref     r_ref_ref
 #define r_mem_unref   r_ref_unref
+R_API rboolean  r_mem_resize (RMem * mem, rsize offset, rsize size);
 R_API rboolean  r_mem_map   (RMem * mem, RMemMapInfo * info, RMemMapFlags flags);
 R_API rboolean  r_mem_unmap (RMem * mem, RMemMapInfo * info);
 R_API RMem *    r_mem_copy  (RMem * mem, rssize offset, rssize size) R_ATTR_WARN_UNUSED_RESULT;

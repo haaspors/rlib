@@ -44,6 +44,59 @@ RTEST (rmemallocator, alloc, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmem, resize, RTEST_FAST)
+{
+  RMem * mem;
+
+  r_assert_cmpptr ((mem = r_mem_allocator_alloc (NULL, 0, 1024, 64, 64, 0xff)), !=, NULL);
+  r_assert_cmpuint (mem->size, ==, 1024);
+  r_assert_cmpuint (mem->offset, ==, 64);
+
+  r_assert (!r_mem_resize (mem, 2048, 42));
+  r_assert (!r_mem_resize (mem, mem->allocsize, 1));
+  r_assert (!r_mem_resize (mem, 0, mem->allocsize + 1));
+
+  r_assert (r_mem_resize (mem, 128, 512));
+  r_assert_cmpuint (mem->size, ==, 512);
+  r_assert_cmpuint (mem->offset, ==, 128);
+
+  r_assert (r_mem_resize (mem, 0, 1024));
+  r_assert_cmpuint (mem->size, ==, 1024);
+  r_assert_cmpuint (mem->offset, ==, 0);
+
+  r_assert (r_mem_resize (mem, 0, mem->allocsize));
+  r_assert_cmpuint (mem->size, ==, mem->allocsize);
+  r_assert_cmpuint (mem->offset, ==, 0);
+
+  r_mem_unref (mem);
+
+  r_assert_cmpptr ((mem = r_mem_allocator_alloc (NULL,
+          R_MEM_FLAG_ZERO_PREFIXED | R_MEM_FLAG_ZERO_PADDED,
+          512, 256, 256, 0xff)), !=, NULL);
+  r_assert_cmpuint (mem->size, ==, 512);
+  r_assert_cmpuint (mem->offset, ==, 256);
+  r_assert (r_mem_is_zero_prefixed (mem));
+  r_assert (r_mem_is_zero_padded (mem));
+
+  /* This should still guarantee zero prefix/padding ... */
+  r_assert (r_mem_resize (mem, 0, 768));
+  r_assert (r_mem_is_zero_prefixed (mem));
+  r_assert (r_mem_is_zero_padded (mem));
+
+  /* ... and this will clear zero prefix ... */
+  r_assert (r_mem_resize (mem, 256, 512));
+  r_assert (!r_mem_is_zero_prefixed (mem));
+  r_assert (r_mem_is_zero_padded (mem));
+
+  /* ... while this will clear padding as well */
+  r_assert (r_mem_resize (mem, 256, 256));
+  r_assert (!r_mem_is_zero_prefixed (mem));
+  r_assert (!r_mem_is_zero_padded (mem));
+
+  r_mem_unref (mem);
+}
+RTEST_END;
+
 RTEST (rmem, map, RTEST_FAST)
 {
   RMem * mem;

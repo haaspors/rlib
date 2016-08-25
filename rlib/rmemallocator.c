@@ -290,6 +290,23 @@ r_mem_clear (RMem * mem)
 }
 
 rboolean
+r_mem_resize (RMem * mem, rsize offset, rsize size)
+{
+  if (R_UNLIKELY (mem == NULL)) return FALSE;
+  if (R_UNLIKELY (r_mem_is_readonly (mem))) return FALSE;
+  if (R_UNLIKELY (offset + size > mem->allocsize)) return FALSE;
+
+  if (offset > mem->offset)
+    mem->flags &= ~R_MEM_FLAG_ZERO_PREFIXED;
+  if (offset + size < mem->offset + mem->size)
+    mem->flags &= ~R_MEM_FLAG_ZERO_PADDED;
+
+  mem->offset = offset;
+  mem->size = size;
+  return TRUE;
+}
+
+rboolean
 r_mem_map (RMem * mem, RMemMapInfo * info, RMemMapFlags flags)
 {
   rboolean ret;
