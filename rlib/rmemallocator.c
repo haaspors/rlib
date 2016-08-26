@@ -412,3 +412,14 @@ r_mem_mergev (const RMemAllocationParams * params, RMem * a, va_list args)
   return a->allocator->merge (params, mems, count);
 }
 
+RMem *
+r_mem_merge_array (const RMemAllocationParams * params, RMem ** mems, ruint count)
+{
+  if (R_UNLIKELY (mems == NULL)) return NULL;
+  if (R_UNLIKELY (count == 0)) return NULL;
+  if (params == NULL)
+    params = &g__r_mem_defparams;
+
+  return mems[0]->allocator->merge (params, mems, count);
+}
+

@@ -273,6 +273,8 @@ RTEST (rmem, merge, RTEST_FAST)
 
   r_mem_unref (a);
   r_mem_unref (b);
+  r_mem_unref (c);
+  r_mem_unref (d);
 
   r_assert (r_mem_map (merged, &info, R_MEM_MAP_WRITE));
   r_memset (test, 0x42, sizeof (test));
