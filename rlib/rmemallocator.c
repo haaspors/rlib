@@ -21,7 +21,6 @@
 #include <rlib/rmemallocator.h>
 
 #include <rlib/rassert.h>
-#include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
 static RMemAllocator ** g__r_mem_allocator = NULL;

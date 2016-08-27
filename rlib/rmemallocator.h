@@ -23,6 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rmem.h>
 #include <rlib/rref.h>
 
 #include <stdarg.h>
@@ -73,8 +74,11 @@ typedef struct {
 /* Convenience for wrapping normal system memory */
 R_API RMem * r_mem_new_wrapped (RMemFlags flags, rpointer data, rsize allocsize,
     rsize size, rsize offset, rpointer user, RDestroyNotify usernotify) R_ATTR_WARN_UNUSED_RESULT;
-#define r_mem_new_take(flags, data, allocsize, size, offset)                  \
-  r_mem_new_wrapped (flags, data, allocsize, size, offset, data, r_free)
+static inline RMem * r_mem_new_take(RMemFlags flags, rpointer data,
+    rsize allocsize, rsize size, rsize offset)
+{
+  return r_mem_new_wrapped (flags, data, allocsize, size, offset, data, r_free);
+}
 
 /* Abstract RMem functionality */
 
