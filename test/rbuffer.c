@@ -425,6 +425,44 @@ RTEST (rbuffer, append_region_from, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbuffer, merge_take, RTEST_FAST)
+{
+  RBuffer * buf1, * buf2, * merged;
+  RMem * mem;
+
+  r_assert_cmpptr ((buf1 = r_buffer_new ()), !=, NULL);
+  r_assert_cmpptr ((buf2 = r_buffer_new ()), !=, NULL);
+
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 256, 128)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf1, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf1, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf1, mem));
+  r_mem_unref (mem);
+
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 256, 128)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf2, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf2, mem));
+  r_mem_unref (mem);
+
+  r_assert_cmpuint (r_buffer_mem_count (buf1), ==, 3);
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 1280);
+  r_assert_cmpuint (r_buffer_mem_count (buf2), ==, 2);
+  r_assert_cmpuint (r_buffer_get_size (buf2), ==, 768);
+
+  r_assert_cmpptr ((merged = r_buffer_merge_take (buf1, buf2, NULL)), !=, NULL);
+  r_assert_cmpuint (r_buffer_mem_count (merged), ==, 5);
+  r_assert_cmpuint (r_buffer_get_size (merged), ==, 1280 + 768);
+
+  r_buffer_unref (merged);
+}
+RTEST_END;
+
 RTEST (rbuffer, resize, RTEST_FAST)
 {
   RBuffer * buf;

@@ -376,6 +376,85 @@ r_buffer_append_region_from (RBuffer * buffer, RBuffer * from,
   return ret;
 }
 
+RBuffer *
+r_buffer_merge_take (RBuffer * a, ...)
+{
+  va_list args;
+  RBuffer * ret;
+
+  va_start (args, a);
+  ret = r_buffer_merge_takev (a, args);
+  va_end (args);
+
+  return ret;
+}
+
+RBuffer *
+r_buffer_merge_takev (RBuffer * a, va_list args)
+{
+  if (R_LIKELY (a != NULL)) {
+    RBuffer * from;
+
+    while ((from = va_arg (args, RBuffer *)) != NULL) {
+      if (a->mem_count + from->mem_count <= R_BUFFER_MAX_MEM) {
+        r_memcpy (&a->mem[a->mem_count], from->mem, from->mem_count * sizeof (RMem *));
+        a->mem_count += from->mem_count;
+        from->mem_count = 0;
+      } else {
+        ruint count = a->mem_count + from->mem_count;
+        RMem ** mems = r_alloca (count * sizeof (RMem *));
+
+        r_memcpy (&mems[           0], a->mem,    a->mem_count * sizeof (RMem *));
+        r_memcpy (&mems[a->mem_count], from->mem, from->mem_count * sizeof (RMem *));
+
+        if (!r_buffer_mem_replace_all (a, r_mem_take_array (NULL, mems, count))) {
+          /* WARNING ... */
+        }
+      }
+
+      r_buffer_unref (from);
+    }
+  }
+
+  return a;
+}
+
+RBuffer *
+r_buffer_merge_take_array (RBuffer ** arr, ruint count)
+{
+  RBuffer * ret;
+
+  if ((ret = r_buffer_new ()) != NULL) {
+    ruint mem_count, i;
+    RMem ** mems, ** ptr;
+    for (i = 0, mem_count = 0; i < count; i++)
+      mem_count += arr[i]->mem_count;
+
+    mems = r_alloca (mem_count * sizeof (RMem *));
+    for (i = 0, ptr = mems; i < count; i++) {
+      r_memcpy (ptr, arr[i]->mem, arr[i]->mem_count * sizeof (RMem *));
+      ptr += arr[i]->mem_count;
+      arr[i]->mem_count = 0;
+      r_buffer_unref (arr[i]);
+    }
+
+    if (mem_count >= R_BUFFER_MAX_MEM / 2) {
+      RMem * mem;
+      if ((mem = r_mem_take_array (NULL, mems, mem_count)) != NULL) {
+        r_buffer_mem_append (ret, mem);
+      } else {
+        r_buffer_unref (ret);
+        ret = NULL;
+      }
+    } else {
+      r_memcpy (ret->mem, mems, mem_count * sizeof (RMem *));
+      ret->mem_count = mem_count;
+    }
+  }
+
+  return ret;
+}
+
 static rboolean
 r_buffer_resize_fast (RBuffer * buffer, rsize offset, rsize size)
 {
