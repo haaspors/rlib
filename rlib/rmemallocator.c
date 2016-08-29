@@ -422,3 +422,59 @@ r_mem_merge_array (const RMemAllocationParams * params, RMem ** mems, ruint coun
   return mems[0]->allocator->merge (params, mems, count);
 }
 
+RMem *
+r_mem_take (const RMemAllocationParams * params, RMem * a, ...)
+{
+  va_list args;
+  RMem * ret;
+
+  va_start (args, a);
+  ret = r_mem_takev (params, a, args);
+  va_end (args);
+
+  return ret;
+}
+
+RMem *
+r_mem_takev (const RMemAllocationParams * params, RMem * a, va_list args)
+{
+  va_list ac;
+  rsize i, count;
+  RMem ** mems, * ret;
+
+  if (R_UNLIKELY (a == NULL)) return NULL;
+  if (params == NULL)
+    params = &g__r_mem_defparams;
+
+  count = 1;
+  va_copy (ac, args);
+  while (va_arg (ac, rpointer) != NULL) count++;
+  va_end (ac);
+
+  mems = r_alloca (sizeof (RMem *) * count);
+  mems[0] = a;
+  for (i = 1; i < count; i++)
+    mems[i] = va_arg (args, RMem *);
+
+  if ((ret = a->allocator->merge (params, mems, count)) != NULL) {
+    for (i = 0; i < count; i++)
+      r_mem_unref (mems[i]);
+  }
+
+  return ret;
+}
+
+RMem *
+r_mem_take_array (const RMemAllocationParams * params, RMem ** mems, ruint count)
+{
+  RMem * ret;
+
+  if ((ret = r_mem_merge_array (params, mems, count)) != NULL) {
+    ruint i;
+    for (i = 0; i < count; i++)
+      r_mem_unref (mems[i]);
+  }
+
+  return ret;
+}
+

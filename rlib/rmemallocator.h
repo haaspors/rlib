@@ -95,6 +95,12 @@ R_API RMem *    r_mem_mergev (const RMemAllocationParams * params,
     RMem * a, va_list args) R_ATTR_WARN_UNUSED_RESULT;
 R_API RMem *    r_mem_merge_array (const RMemAllocationParams * params,
     RMem ** mems, ruint count) R_ATTR_WARN_UNUSED_RESULT;
+R_API RMem *    r_mem_take (const RMemAllocationParams * params,
+    RMem * a, ...) R_ATTR_NULL_TERMINATED R_ATTR_WARN_UNUSED_RESULT;
+R_API RMem *    r_mem_takev (const RMemAllocationParams * params,
+    RMem * a, va_list args) R_ATTR_WARN_UNUSED_RESULT;
+R_API RMem *    r_mem_take_array (const RMemAllocationParams * params,
+    RMem ** mems, ruint count) R_ATTR_WARN_UNUSED_RESULT;
 #define r_mem_is_readonly(mem)        (mem->flags & R_MEM_FLAG_READONLY)
 #define r_mem_is_writable(mem)       ((mem->flags & R_MEM_FLAG_READONLY) == 0)
 #define r_mem_is_zero_prefixed(mem)   (mem->flags & R_MEM_FLAG_ZERO_PREFIXED)
