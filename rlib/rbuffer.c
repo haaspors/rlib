@@ -303,6 +303,79 @@ r_buffer_mem_find (RBuffer * buffer, rsize offset, rsize size,
   return TRUE;
 }
 
+rboolean
+r_buffer_append_from (RBuffer * buffer, RBuffer * from)
+{
+  ruint i;
+  RMem * mem;
+  rboolean ret;
+
+  if (R_UNLIKELY (buffer == NULL)) return FALSE;
+  if (R_UNLIKELY (from == NULL)) return FALSE;
+
+  for (i = 0, ret = TRUE; i < from->mem_count && ret; i++) {
+    if ((mem = r_mem_view (from->mem[i], 0, -1)) == NULL)
+      if ((mem = r_mem_copy (from->mem[i], 0, -1)) == NULL)
+        return FALSE;
+    ret = r_buffer_mem_append (buffer, mem);
+    r_mem_unref (mem);
+  }
+
+  return ret;
+}
+
+rboolean
+r_buffer_append_region_from (RBuffer * buffer, RBuffer * from,
+    rsize offset, rssize size)
+{
+  ruint i;
+  rssize msize;
+  RMem * mem;
+  rboolean ret;
+
+  if (R_UNLIKELY (buffer == NULL)) return FALSE;
+  if (R_UNLIKELY (from == NULL)) return FALSE;
+  if (R_UNLIKELY (from->mem_count == 0)) return TRUE;
+
+  for (i = 0; i < from->mem_count && offset >= from->mem[i]->size; i++)
+    offset -= from->mem[i]->size;
+  if (i == from->mem_count)
+    return FALSE;
+
+  msize = MIN (size, (rssize)(from->mem[i]->size - offset));
+  if ((mem = r_mem_view (from->mem[i], offset, msize)) == NULL)
+    if ((mem = r_mem_copy (from->mem[i], offset, msize)) == NULL)
+      return FALSE;
+
+  ret = r_buffer_mem_append (buffer, mem);
+  r_mem_unref (mem);
+
+  if (size < 0) {
+    for (i++; i < from->mem_count && ret; i++) {
+      if ((mem = r_mem_view (from->mem[i], 0, -1)) == NULL)
+        if ((mem = r_mem_copy (from->mem[i], 0, -1)) == NULL)
+          return FALSE;
+      ret = r_buffer_mem_append (buffer, mem);
+      r_mem_unref (mem);
+    }
+  } else {
+    size -= msize;
+
+    for (i++; i < from->mem_count && size > 0 && ret; i++) {
+      msize = MIN (size, (rssize)(from->mem[i]->size - offset));
+      if ((mem = r_mem_view (from->mem[i], offset, msize)) == NULL)
+        if ((mem = r_mem_copy (from->mem[i], offset, msize)) == NULL)
+          return FALSE;
+
+      ret = r_buffer_mem_append (buffer, mem);
+      r_mem_unref (mem);
+      size -= msize;
+    }
+  }
+
+  return ret;
+}
+
 static rboolean
 r_buffer_resize_fast (RBuffer * buffer, rsize offset, rsize size)
 {

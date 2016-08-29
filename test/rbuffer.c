@@ -356,6 +356,75 @@ RTEST (rbuffer, mem_find, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbuffer, append_from, RTEST_FAST)
+{
+  RBuffer * buf1, * buf2;
+  RMem * mem;
+
+  r_assert_cmpptr ((buf1 = r_buffer_new ()), !=, NULL);
+  r_assert_cmpptr ((buf2 = r_buffer_new ()), !=, NULL);
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 0);
+  r_assert_cmpuint (r_buffer_get_size (buf2), ==, 0);
+
+  r_assert (r_buffer_append_from (buf1, buf2));
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 0);
+
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 256, 128)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf2, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf2, mem));
+  r_mem_unref (mem);
+
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 0);
+  r_assert (r_buffer_append_from (buf1, buf2));
+  r_buffer_unref (buf2);
+  r_assert_cmpuint (r_buffer_mem_count (buf1), ==, 2);
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 768);
+
+  r_buffer_unref (buf1);
+}
+RTEST_END;
+
+RTEST (rbuffer, append_region_from, RTEST_FAST)
+{
+  RBuffer * buf1, * buf2;
+  RMem * mem;
+
+  r_assert_cmpptr ((buf1 = r_buffer_new ()), !=, NULL);
+  r_assert_cmpptr ((buf2 = r_buffer_new ()), !=, NULL);
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 0);
+  r_assert_cmpuint (r_buffer_get_size (buf2), ==, 0);
+
+  r_assert (r_buffer_append_from (buf1, buf2));
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 0);
+
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 256, 128)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf2, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf2, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf2, mem));
+  r_mem_unref (mem);
+
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 0);
+  r_assert (r_buffer_append_region_from (buf1, buf2, 42, -1));
+  r_assert_cmpuint (r_buffer_mem_count (buf1), ==, 3);
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 1280 - 42);
+
+  r_buffer_mem_clear (buf1);
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 0);
+  r_assert (r_buffer_append_region_from (buf1, buf2, 42, 512));
+  r_assert_cmpuint (r_buffer_mem_count (buf1), ==, 2);
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 512);
+
+  r_buffer_unref (buf2);
+  r_buffer_unref (buf1);
+}
+RTEST_END;
+
 RTEST (rbuffer, resize, RTEST_FAST)
 {
   RBuffer * buf;

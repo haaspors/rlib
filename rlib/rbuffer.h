@@ -64,6 +64,10 @@ R_API void r_buffer_mem_clear (RBuffer * buffer);
 R_API rboolean r_buffer_mem_find (RBuffer * buffer, rsize offset, rsize size,
     ruint * idx, ruint * mem_count, rsize * mem_offset);
 
+R_API rboolean r_buffer_append_from (RBuffer * buffer, RBuffer * from);
+R_API rboolean r_buffer_append_region_from (RBuffer * buffer, RBuffer * from,
+    rsize offset, rssize size);
+
 R_API rboolean r_buffer_resize (RBuffer * buffer, rsize offset, rsize size);
 
 #define r_buffer_map(buf, info, flags) \
