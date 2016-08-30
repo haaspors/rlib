@@ -555,3 +555,263 @@ r_socket_shutdown (RSocket * socket, rboolean rx, rboolean tx)
 
   return r_socket_errno_to_socket_status ();
 }
+
+RSocketStatus
+r_socket_receive (RSocket * socket, ruint8 * buffer, rsize size, rsize * received)
+{
+#ifdef HAVE_WINSOCK2
+  int res;
+#else
+  rssize res;
+#endif
+
+  do {
+    res = recv (socket->handle, buffer, size, 0);
+  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
+
+  if (res >= 0) {
+    if (received != NULL)
+      *received = (rsize)res;
+    return R_SOCKET_OK;
+  }
+
+  return r_socket_errno_to_socket_status ();
+}
+
+RSocketStatus
+r_socket_receive_from (RSocket * socket, RSocketAddress * address, ruint8 * buffer, rsize size, rsize * received)
+{
+#ifdef HAVE_WINSOCK2
+  int res;
+#else
+  rssize res;
+#endif
+
+  do {
+    res = recvfrom (socket->handle, buffer, size, 0,
+        (struct sockaddr *)&address->addr, &address->addrlen);
+  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
+
+  if (res >= 0) {
+    if (received != NULL)
+      *received = (rsize)res;
+    return R_SOCKET_OK;
+  }
+
+  return r_socket_errno_to_socket_status ();
+}
+
+RSocketStatus
+r_socket_receive_message (RSocket * socket, RSocketAddress * address,
+    RBuffer * buf, rsize * received)
+{
+  rsize i, mem_count;
+  RMemMapInfo * info;
+#ifdef HAVE_WINSOCK2
+  int res;
+  LPWSABUF bufs;
+  DWORD winrecv, winflags;
+#else
+  rssize res;
+  struct msghdr msg;
+#endif
+
+  mem_count = r_buffer_mem_count (buf);
+
+#ifdef HAVE_WINSOCK2
+  bufs = r_alloca (mem_count * sizeof (WSABUF));
+#else
+  msg.msg_name = &address->addr;
+  msg.msg_namelen = address->addrlen;
+  msg.msg_iov = r_alloca (mem_count * sizeof (struct iovec));
+  msg.msg_iovlen = mem_count;
+  msg.msg_control = NULL;
+  msg.msg_controllen = 0;
+  msg.msg_flags = 0;
+#endif
+
+  info = r_alloca (mem_count * sizeof (RMemMapInfo));
+  for (i = 0; i < mem_count; i++) {
+    RMem * mem = r_buffer_mem_peek (buf, i);
+    if (r_mem_map (mem, &info[i], R_MEM_MAP_WRITE)) {
+#ifdef HAVE_WINSOCK2
+      bufs[i].len = info[i].size;
+      bufs[i].buf = info[i].data;
+#else
+      msg.msg_iov[i].iov_base = info[i].data;
+      msg.msg_iov[i].iov_len = info[i].size;
+#endif
+    } else {
+      /* WARNING */
+#ifdef HAVE_WINSOCK2
+      bufs[i].len = 0;
+      bufs[i].buf = "";
+#else
+      msg.msg_iov[i].iov_base = "";
+      msg.msg_iov[i].iov_len = 0;
+#endif
+    }
+    r_mem_unref (mem);
+  }
+
+#ifdef HAVE_WINSOCK2
+  winrecv = winflags = 0;
+  res = WSARecvFrom (socket->handle, bufs, mem_count, &winrecv, &winflags,
+      (struct sockaddr *)&address->addr, &address->addrlen, NULL, NULL);
+#else
+  do {
+    res = recvmsg (socket->handle, &msg, 0);
+  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
+#endif
+
+  for (i = 0; i < mem_count; i++) {
+    RMem * mem = r_buffer_mem_peek (buf, i);
+    r_mem_unmap (mem, &info[i]);
+    r_mem_unref (mem);
+  }
+
+#ifdef HAVE_WINSOCK2
+  if (res != SOCKET_ERROR) {
+    if (received != NULL)
+      *received = (rsize)winrecv;
+    return R_SOCKET_OK;
+  }
+#else
+  if (res >= 0) {
+    if (received != NULL)
+      *received = (rsize)res;
+    return R_SOCKET_OK;
+  }
+#endif
+
+  return r_socket_errno_to_socket_status ();
+}
+
+RSocketStatus
+r_socket_send (RSocket * socket, const ruint8 * buffer, rsize size, rsize * sent)
+{
+  rssize res;
+
+  do {
+    res = send (socket->handle, buffer, size, 0);
+  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
+
+  if (res >= 0) {
+    if (sent != NULL)
+      *sent = (rsize)res;
+    return R_SOCKET_OK;
+  }
+
+  return r_socket_errno_to_socket_status ();
+}
+
+RSocketStatus
+r_socket_send_to (RSocket * socket, const RSocketAddress * address,
+    const ruint8 * buffer, rsize size, rsize * sent)
+{
+#ifdef HAVE_WINSOCK2
+  int res;
+#else
+  rssize res;
+#endif
+
+  do {
+    res = sendto (socket->handle, buffer, size, 0,
+        (const struct sockaddr *)&address->addr, address->addrlen);
+  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
+
+  if (res >= 0) {
+    if (sent != NULL)
+      *sent = (rsize)res;
+    return R_SOCKET_OK;
+  }
+
+  return r_socket_errno_to_socket_status ();
+}
+
+RSocketStatus
+r_socket_send_message (RSocket * socket, const RSocketAddress * address,
+    RBuffer * buf, rsize * sent)
+{
+  rsize i, mem_count;
+  RMemMapInfo * info;
+#ifdef HAVE_WINSOCK2
+  int res;
+  LPWSABUF bufs;
+  DWORD winsent;
+#else
+  rssize res;
+  struct msghdr msg;
+#endif
+
+  mem_count = r_buffer_mem_count (buf);
+
+#ifdef HAVE_WINSOCK2
+  bufs = r_alloca (mem_count * sizeof (WSABUF));
+#else
+  msg.msg_name = (rpointer)&address->addr;
+  msg.msg_namelen = address->addrlen;
+  msg.msg_iovlen = mem_count;
+  msg.msg_iov = r_alloca (msg.msg_iovlen * sizeof (struct iovec));
+  msg.msg_control = NULL;
+  msg.msg_controllen = 0;
+  msg.msg_flags = 0;
+#endif
+
+  info = r_alloca (mem_count * sizeof (RMemMapInfo));
+  for (i = 0; i < mem_count; i++) {
+    RMem * mem = r_buffer_mem_peek (buf, i);
+    if (r_mem_map (mem, &info[i], R_MEM_MAP_READ)) {
+#ifdef HAVE_WINSOCK2
+      bufs[i].len = info[i].size;
+      bufs[i].buf = info[i].data;
+#else
+      msg.msg_iov[i].iov_base = info[i].data;
+      msg.msg_iov[i].iov_len = info[i].size;
+#endif
+    } else {
+      /* WARNING */
+#ifdef HAVE_WINSOCK2
+      bufs[i].len = 0;
+      bufs[i].buf = "";
+#else
+      msg.msg_iov[i].iov_base = "";
+      msg.msg_iov[i].iov_len = 0;
+#endif
+    }
+    r_mem_unref (mem);
+  }
+
+#ifdef HAVE_WINSOCK2
+  winsent = 0;
+  res = WSASendTo (socket->handle, bufs, mem_count, &winsent, 0,
+      (const struct sockaddr *)&address->addr, (int)address->addrlen, NULL, NULL);
+#else
+  do {
+    res = sendmsg (socket->handle, &msg, 0);
+  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
+#endif
+
+  for (i = 0; i < mem_count; i++) {
+    RMem * mem = r_buffer_mem_peek (buf, i);
+    r_mem_unmap (mem, &info[i]);
+    r_mem_unref (mem);
+  }
+
+#ifdef HAVE_WINSOCK2
+  if (res != SOCKET_ERROR) {
+    if (sent != NULL)
+      *sent = (rsize)winsent;
+    return R_SOCKET_OK;
+  }
+#else
+  if (res >= 0) {
+    if (sent != NULL)
+      *sent = (rsize)res;
+    return R_SOCKET_OK;
+  }
+#endif
+
+  return r_socket_errno_to_socket_status ();
+}
+

@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/rbuffer.h>
 #include <rlib/rref.h>
 #include <rlib/rsocketaddress.h>
 
@@ -123,6 +124,13 @@ R_API RSocketStatus r_socket_accept (RSocket * socket, RSocket ** newsock);
 R_API RSocket * r_socket_accept_simple (RSocket * socket);
 R_API RSocketStatus r_socket_connect (RSocket * socket, const RSocketAddress * address);
 R_API RSocketStatus r_socket_shutdown (RSocket * socket, rboolean rx, rboolean tx);
+
+R_API RSocketStatus r_socket_receive (RSocket * socket, ruint8 * buffer, rsize size, rsize * received);
+R_API RSocketStatus r_socket_receive_from (RSocket * socket, RSocketAddress * address, ruint8 * buffer, rsize size, rsize * received);
+R_API RSocketStatus r_socket_receive_message (RSocket * socket, RSocketAddress * address, RBuffer * buf, rsize * received);
+R_API RSocketStatus r_socket_send (RSocket * socket, const ruint8 * buffer, rsize size, rsize * sent);
+R_API RSocketStatus r_socket_send_to (RSocket * socket, const RSocketAddress * address, const ruint8 * buffer, rsize size, rsize * sent);
+R_API RSocketStatus r_socket_send_message (RSocket * socket, const RSocketAddress * address, RBuffer * buf, rsize * sent);
 
 R_END_DECLS
 

@@ -279,6 +279,7 @@ def configure_headers(cfg):
         cfg.check(header_name='sys/sysinfo.h')
 
     cfg.check(header_name='sys/time.h', mandatory=False)
+    cfg.check(header_name='sys/types.h', mandatory=False)
     if cfg.env.DEST_OS == 'darwin':
         cfg.check(header_name='mach/clock.h')
         cfg.check(header_name='mach/thread_policy.h')
