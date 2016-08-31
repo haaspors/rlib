@@ -436,7 +436,7 @@ r_socket_close (RSocket * socket)
 }
 
 RSocketStatus
-r_socket_bind (RSocket * socket, RSocketAddress * address, rboolean reuse)
+r_socket_bind (RSocket * socket, const RSocketAddress * address, rboolean reuse)
 {
   if (R_UNLIKELY (address == NULL)) return R_SOCKET_INVAL;
 
@@ -446,7 +446,7 @@ r_socket_bind (RSocket * socket, RSocketAddress * address, rboolean reuse)
       (reuse && socket->type == R_SOCKET_TYPE_DATAGRAM) ? 1 : 0);
 #endif
 
-  if (bind (socket->handle, (struct sockaddr *)&address->addr, address->addrlen) == 0)
+  if (bind (socket->handle, (const struct sockaddr *)&address->addr, address->addrlen) == 0)
     return R_SOCKET_OK;
 
   return r_socket_errno_to_socket_status ();

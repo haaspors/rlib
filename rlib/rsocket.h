@@ -117,7 +117,7 @@ R_API rboolean r_socket_set_multicast_ttl (RSocket * socket, ruint ttl);
 R_API rboolean r_socket_set_ttl (RSocket * socket, ruint ttl);
 
 R_API RSocketStatus r_socket_close (RSocket * socket);
-R_API RSocketStatus r_socket_bind (RSocket * socket, RSocketAddress * address, rboolean reuse);
+R_API RSocketStatus r_socket_bind (RSocket * socket, const RSocketAddress * address, rboolean reuse);
 #define r_socket_listen(s)  r_socket_listen_full (s, R_SOCKET_DEFAULT_BACKLOG)
 R_API RSocketStatus r_socket_listen_full (RSocket * socket, ruint8 backlog);
 R_API RSocketStatus r_socket_accept (RSocket * socket, RSocket ** newsock);
