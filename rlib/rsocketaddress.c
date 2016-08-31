@@ -39,6 +39,22 @@ r_socket_address_new_from_native (rconstpointer addr, rsize addrsize)
 }
 
 RSocketAddress *
+r_socket_address_copy (const RSocketAddress * addr)
+{
+  RSocketAddress * ret;
+
+  if (R_UNLIKELY (addr == NULL)) return NULL;
+
+  if ((ret = r_mem_new (RSocketAddress)) != NULL) {
+    r_ref_init (ret, r_free);
+    ret->addrlen = addr->addrlen;
+    r_memcpy (&ret->addr, &addr->addr, sizeof (struct sockaddr_storage));
+  }
+
+  return ret;
+}
+
+RSocketAddress *
 r_socket_address_ipv4_new_uint32 (ruint32 addr, ruint16 port)
 {
   RSocketAddress * ret;

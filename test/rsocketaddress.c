@@ -54,4 +54,19 @@ RTEST (rsocketaddress, ipv4_new, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsocketaddress, copy, RTEST_FAST)
+{
+  RSocketAddress * addr, * copy;
+
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint32 (INADDR_LOOPBACK, 42)), !=, NULL);
+  r_assert_cmpptr ((copy = r_socket_address_copy (addr)), !=, NULL);
+  r_socket_address_unref (addr);
+
+  r_assert_cmpptr (r_socket_address_get_family (copy), ==, R_SOCKET_FAMILY_IPV4);
+  r_assert_cmpuint (r_socket_address_ipv4_get_port (copy), ==, 42);
+  r_assert_cmpuint (r_socket_address_ipv4_get_ip (copy), ==, INADDR_LOOPBACK);
+  r_socket_address_unref (copy);
+}
+RTEST_END;
+
 
