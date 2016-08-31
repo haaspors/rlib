@@ -17,23 +17,12 @@
  */
 
 #include "config.h"
-#include <rlib/rsocket.h>
 #include "rnetworking-private.h"
 #include "rlib-private.h"
 
 #include <rlib/rfd.h>
 #include <rlib/rmem.h>
 
-
-struct _RSocket {
-  RRef ref;
-
-  RSocketHandle   handle;
-  RSocketFamily   family;
-  RSocketType     type;
-  RSocketProtocol proto;
-  RSocketFlags    flags;
-};
 
 static rboolean
 r_socket_handle_close (RSocketHandle handle)

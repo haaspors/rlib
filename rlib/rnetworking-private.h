@@ -25,6 +25,8 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/rsocket.h>
+
 /* FIXME: Do this by configuration? */
 #ifdef R_OS_WIN32
 #define HAVE_WINSOCK2
@@ -75,6 +77,16 @@ typedef int socklen_t;
 typedef int RSocketHandle;
 #define R_SOCKET_ERRNO            errno
 #endif
+
+struct _RSocket {
+  RRef ref;
+
+  RSocketHandle   handle;
+  RSocketFamily   family;
+  RSocketType     type;
+  RSocketProtocol proto;
+  RSocketFlags    flags;
+};
 
 struct _RSocketAddress {
   RRef ref;
