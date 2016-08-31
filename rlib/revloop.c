@@ -18,11 +18,9 @@
 
 #include "config.h"
 #include "rlib-private.h"
-#include <rlib/revloop.h>
+#include "rev-private.h"
 
 #include <rlib/ratomic.h>
-#include <rlib/rfd.h>
-#include <rlib/rlist.h>
 #include <rlib/rmem.h>
 #include <rlib/rqueue.h>
 #include <rlib/rthreads.h>
@@ -75,52 +73,6 @@ r_ev_handle_close (REvHandle handle)
 #endif
 }
 
-typedef struct {
-  REvIOEvents events;
-  REvIOCB io_cb;
-  rpointer data;
-  RDestroyNotify notify;
-} REvIOCtx;
-
-typedef struct {
-  REvIOFunc close_cb;
-  rpointer data;
-  RDestroyNotify notify;
-} REvIOCloseCtx;
-
-struct _REvIO {
-  RRef ref;
-
-  REvLoop * loop;
-  RList * alnk; /* If NULL -> inactive, else -> link in REvLoop::active queue */
-  RList * chglnk; /* If not NULL -> changing link in REvLoop::chg queue */
-  REvIOCloseCtx close_ctx;
-
-  REvHandle handle;
-  REvIOCtx current;
-  REvIOCtx pending;
-};
-
-#define R_EV_IO_IS_ACTIVE(evio) ((evio->alnk) != NULL)
-#define R_EV_IO_IS_CHANGING(evio) ((evio->chglnk) != NULL)
-
-#define r_ev_io_ctx_init(ctx, e, cb, d, n)                                    \
-  R_STMT_START {                                                              \
-    (ctx)->events = e;                                                        \
-    (ctx)->io_cb = cb;                                                        \
-    (ctx)->data = d;                                                          \
-    (ctx)->notify = n;                                                        \
-  } R_STMT_END
-#define r_ev_io_ctx_clear(ctx)                                                \
-  R_STMT_START {                                                              \
-    if ((ctx)->notify != NULL) (ctx)->notify ((ctx)->data);                   \
-    r_memset (ctx, 0, sizeof (REvIOCtx));                                     \
-  } R_STMT_END
-#define r_ev_io_invoke_cb(evio, events)                                       \
-  R_STMT_START {                                                              \
-    (evio)->current.io_cb ((evio)->current.data, events, evio);               \
-  } R_STMT_END
-
 #ifdef HAVE_EPOLL
 static void r_ev_loop_eventfd_io_cb (rpointer data, REvIOEvents events, REvIO * evio);
 #endif
@@ -157,9 +109,6 @@ struct _REvLoop {
   RQueue active;
   RQueue chg;
 };
-
-#define R_EV_LOOP_MAX_EVENTS              1024
-#define R_EV_LOOP_DEFAULT_TASK_THREADS    2
 
 static void
 r_ev_loop_free (REvLoop * loop)
@@ -785,8 +734,8 @@ r_ev_loop_add_task (REvLoop * loop, RTaskFunc task, REvFunc done,
   return ret;
 }
 
-static void
-r_ev_io_free (REvIO * evio)
+void
+r_ev_io_clear (REvIO * evio)
 {
   if (R_UNLIKELY (R_EV_IO_IS_ACTIVE (evio))) {
     R_LOG_ERROR ("REvIO instance "R_EV_IO_FORMAT" still active when freeing",
@@ -802,6 +751,26 @@ r_ev_io_free (REvIO * evio)
   r_ev_io_ctx_clear (&evio->current);
 
   r_ev_loop_unref (evio->loop);
+}
+
+void
+r_ev_io_init (REvIO * evio, REvLoop * loop, REvHandle handle, RDestroyNotify notify)
+{
+  r_ref_init (evio, notify);
+
+  evio->loop = r_ev_loop_ref (loop);
+  evio->handle = handle;
+
+#ifdef R_OS_UNIX
+  if (handle != R_EV_HANDLE_INVALID)
+    r_fd_unix_set_nonblocking (handle, TRUE);
+#endif
+}
+
+static void
+r_ev_io_free (REvIO * evio)
+{
+  r_ev_io_clear (evio);
   r_free (evio);
 }
 
@@ -810,16 +779,8 @@ r_ev_loop_init_handle (REvLoop * loop, REvHandle handle)
 {
   REvIO * ret;
 
-  if ((ret = r_mem_new0 (REvIO)) != NULL) {
-    r_ref_init (ret, r_ev_io_free);
-
-    ret->loop = r_ev_loop_ref (loop);
-    ret->handle = handle;
-
-#ifdef R_OS_UNIX
-    r_fd_unix_set_nonblocking (handle, TRUE);
-#endif
-  }
+  if ((ret = r_mem_new0 (REvIO)) != NULL)
+    r_ev_io_init (ret, loop, handle, (RDestroyNotify)r_ev_io_free);
 
   return ret;
 }

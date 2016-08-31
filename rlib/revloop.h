@@ -53,9 +53,6 @@ typedef struct _REvIO REvIO;
 typedef void (*REvIOFunc) (rpointer data, REvIO * evio);
 typedef void (*REvIOCB) (rpointer data, REvIOEvents events, REvIO * evio);
 
-#define R_EV_IO_FORMAT        "%p [%"R_EV_HANDLE_FMT"]"
-#define R_EV_IO_ARGS(evio)    evio, (evio != NULL ? evio->handle : R_EV_HANDLE_INVALID)
-
 typedef enum {
   R_EV_LOOP_RUN_LOOP,
   R_EV_LOOP_RUN_ONCE,
