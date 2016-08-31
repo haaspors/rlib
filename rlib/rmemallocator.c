@@ -254,6 +254,8 @@ RMem *
 r_mem_allocator_alloc_full (RMemAllocator * allocator, rsize size,
     const RMemAllocationParams * params)
 {
+  if (params == NULL)
+    params = &g__r_mem_defparams;
   if (RSIZE_POPCOUNT (params->alignmask) != sizeof (rsize) * 8 - RSIZE_CLZ (params->alignmask))
     return NULL;
 
