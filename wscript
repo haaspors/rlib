@@ -540,6 +540,7 @@ def str2bool(s):
 
 def build_summary(cfg):
     print('\nBuild summary')
+    cfg.msg('Prefix', cfg.env.PREFIX, color='GREEN')
     cfg.msg('Building for dest/host arch', cfg.env.DEST_CPU, color='CYAN')
     cfg.msg('Building for dest/host OS', cfg.env.DEST_OS, color='CYAN')
     build_summary_item(cfg, 'Support threads', not cfg.env.NOTHREAD, 'GREEN', 'RED')
