@@ -122,7 +122,8 @@ def build(bld):
 
     bld(    features    = 'subst',
             source      = 'rlib/rconfig.h.in',
-            target      = 'rlib/rconfig.h')
+            target      = 'rlib/rconfig.h',
+            install_path= '${PREFIX}/include/rlib')
 
     privlibs = []
     if bld.env.RLIB_MATH_LIBS:
@@ -163,7 +164,8 @@ def build(bld):
                 install_path= '${LIBDIR}/pkgconfig')
 
     bld.install_files('${PREFIX}/include',
-            bld.path.ant_glob('rlib/**/*.h', excl = [ 'rlib/**/*private.h' ]))
+            bld.path.ant_glob('rlib/**/*.h', excl = [ 'rlib/**/*private.h' ]),
+            relative_trick=True)
 
     bld.recurse('example test')
 
