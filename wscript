@@ -156,7 +156,7 @@ def build(bld):
                 use         = 'M DL PTHREAD RT')
         bld(    features    = 'subst',
                 source      = LIBNAME + '.pc.in',
-                target      = STLIBNAME + 'st.pc',
+                target      = STLIBNAME + '.pc',
                 NAME        = STLIBNAME,
                 VERSION     = VERSION,
                 RLIB_EXTRA_LIBS = ' '.join(privlibs),
