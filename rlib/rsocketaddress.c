@@ -33,6 +33,7 @@ r_socket_address_new_from_native (rconstpointer addr, rsize addrsize)
   if ((ret = r_mem_new0 (RSocketAddress)) != NULL) {
     r_ref_init (ret, r_free);
     r_memcpy (&ret->addr, addr, addrsize);
+    ret->addrlen = addrsize;
   }
 
   return ret;
