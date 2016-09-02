@@ -30,6 +30,7 @@
 #include <rlib/rclr.h>
 #include <rlib/renv.h>
 #include <rlib/revloop.h>
+#include <rlib/revudp.h>
 #include <rlib/rfd.h>
 #include <rlib/rfile.h>
 #include <rlib/rfs.h>
