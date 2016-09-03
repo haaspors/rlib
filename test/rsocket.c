@@ -371,6 +371,7 @@ RTEST (rsocket, sendmsg_recvmsg, RTEST_FAST | RTEST_SYSTEM)
     r_assert_cmpuint (size, ==, 768);
     r_assert_cmpint (r_socket_receive_message (sock2, srcaddr, buf2, &size), ==, R_SOCKET_OK);
     r_assert_cmpuint (size, ==, 768);
+    r_assert_cmpuint (r_buffer_get_size (buf2), ==, size);
 
     r_assert (r_socket_address_is_equal (srcaddr, addr1));
     r_assert_cmpint (r_buffer_memcmp (buf2, 0, txbuf[0], 256), ==, 0);

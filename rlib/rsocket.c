@@ -661,12 +661,14 @@ r_socket_receive_message (RSocket * socket, RSocketAddress * address,
 
 #ifdef HAVE_WINSOCK2
   if (res != SOCKET_ERROR) {
+    r_buffer_resize (buf, r_buffer_get_offset (buf), (rsize)winrecv);
     if (received != NULL)
       *received = (rsize)winrecv;
     return R_SOCKET_OK;
   }
 #else
   if (res >= 0) {
+    r_buffer_resize (buf, r_buffer_get_offset (buf), (rsize)res);
     if (received != NULL)
       *received = (rsize)res;
     return R_SOCKET_OK;
