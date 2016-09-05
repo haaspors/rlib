@@ -21,6 +21,7 @@
 #include "rnetworking-private.h"
 
 #include <rlib/rmem.h>
+#include <rlib/rstr.h>
 
 RSocketAddress *
 r_socket_address_new_from_native (rconstpointer addr, rsize addrsize)
@@ -188,5 +189,56 @@ r_socket_address_ipv4_get_ip (const RSocketAddress * addr)
 
   addr_in = (struct sockaddr_in *)&addr->addr;
   return r_ntohl (addr_in->sin_addr.s_addr);
+}
+
+rboolean
+r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port,
+    rchar * str, rsize size)
+{
+  struct sockaddr_in * addr_in;
+
+  if (R_UNLIKELY (addr == NULL)) return FALSE;
+
+  addr_in = (struct sockaddr_in *)&addr->addr;
+
+#if defined (HAVE_INET_PTON)
+  if (inet_ntop (AF_INET, &addr_in->sin_addr, str, size) == NULL)
+    return FALSE;
+  if (port) {
+    rchar p[8];
+    r_sprintf (p, ":%"RUINT16_FMT, r_ntohs (addr_in->sin_port));
+    if (size <= r_strlen (str) + r_strlen (p))
+      return FALSE;
+
+    r_strcat (str, p);
+  }
+#else
+  if (port) {
+    return r_snprintf (str, size,
+        "%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT":%"RUINT16_FMT,
+        (ruint8)((addr_in->sin_addr.s_addr      ) & 0xff),
+        (ruint8)((addr_in->sin_addr.s_addr >>  8) & 0xff),
+        (ruint8)((addr_in->sin_addr.s_addr >> 16) & 0xff),
+        (ruint8)((addr_in->sin_addr.s_addr >> 24) & 0xff),
+        r_ntohs (addr_in->sin_port)) < (int)size;
+  } else {
+    return r_snprintf (str, size,
+        "%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT,
+        (ruint8)((addr_in->sin_addr.s_addr      ) & 0xff),
+        (ruint8)((addr_in->sin_addr.s_addr >>  8) & 0xff),
+        (ruint8)((addr_in->sin_addr.s_addr >> 16) & 0xff),
+        (ruint8)((addr_in->sin_addr.s_addr >> 24) & 0xff)) < (int)size;
+  }
+#endif
+
+  return TRUE;
+}
+
+rchar *
+r_socket_address_ipv4_to_str (const RSocketAddress * addr, rboolean port)
+{
+  rchar str[32];
+  return r_socket_address_ipv4_build_str (addr, port, str, sizeof (str)) ?
+    r_strndup (str, sizeof (str)) : NULL;
 }
 

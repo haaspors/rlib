@@ -54,6 +54,36 @@ RTEST (rsocketaddress, ipv4_new, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsocketaddress, ipv4_to_str, RTEST_FAST)
+{
+  RSocketAddress * addr_u32, * addr_str;
+  rchar str[22], * dupstr;
+
+  r_assert_cmpptr ((addr_u32 = r_socket_address_ipv4_new_uint32 (INADDR_LOOPBACK, 42)), !=, NULL);
+  r_assert_cmpptr ((addr_str = r_socket_address_ipv4_new_from_string ("192.168.100.200", RUINT16_MAX-1)), !=, NULL);
+
+  r_assert (!r_socket_address_ipv4_build_str (NULL, TRUE, str, sizeof (str)));
+  r_assert (!r_socket_address_ipv4_build_str (addr_u32, TRUE, NULL, 0));
+  r_assert (!r_socket_address_ipv4_build_str (addr_u32, TRUE, str, 0));
+  r_assert (!r_socket_address_ipv4_build_str (addr_u32, TRUE, str, 12));
+
+  r_assert (r_socket_address_ipv4_build_str (addr_u32, TRUE, str, sizeof (str)));
+  r_assert_cmpstr (str, ==, "127.0.0.1:42");
+  r_assert_cmpptr ((dupstr = r_socket_address_ipv4_to_str (addr_str, TRUE)), !=, NULL);
+  r_assert_cmpstr (dupstr, ==, "192.168.100.200:65534");
+  r_free (dupstr);
+
+  r_assert (r_socket_address_ipv4_build_str (addr_u32, FALSE, str, 12));
+  r_assert_cmpstr (str, ==, "127.0.0.1");
+  r_assert_cmpptr ((dupstr = r_socket_address_ipv4_to_str (addr_str, FALSE)), !=, NULL);
+  r_assert_cmpstr (dupstr, ==, "192.168.100.200");
+  r_free (dupstr);
+
+  r_socket_address_unref (addr_str);
+  r_socket_address_unref (addr_u32);
+}
+RTEST_END;
+
 RTEST (rsocketaddress, copy, RTEST_FAST)
 {
   RSocketAddress * addr, * copy;

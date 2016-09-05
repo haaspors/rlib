@@ -53,6 +53,8 @@ R_API int r_socket_address_cmp (const RSocketAddress * a, const RSocketAddress *
 
 R_API ruint16 r_socket_address_ipv4_get_port (const RSocketAddress * addr);
 R_API ruint32 r_socket_address_ipv4_get_ip (const RSocketAddress * addr);
+R_API rboolean r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port, rchar * str, rsize size);
+R_API rchar * r_socket_address_ipv4_to_str (const RSocketAddress * addr, rboolean port);
 
 R_END_DECLS
 
