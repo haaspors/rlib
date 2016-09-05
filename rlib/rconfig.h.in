@@ -34,6 +34,9 @@ typedef unsigned @RINT32_TYPE@  ruint32;
 typedef unsigned @RINT64_TYPE@  ruint64;
 typedef unsigned @RINTMAX_TYPE@ ruintmax;
 
+#define RINT8_MODIFIER          "hh"
+#define RINT8_FMT               "hhi"
+#define RUINT8_FMT              "hhu"
 #define RINT16_MODIFIER         @RINT16_MODIFIER@
 #define RINT16_FMT              @RINT16_FMT@
 #define RUINT16_FMT             @RUINT16_FMT@
