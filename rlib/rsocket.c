@@ -594,7 +594,7 @@ RSocketStatus
 r_socket_receive_message (RSocket * socket, RSocketAddress * address,
     RBuffer * buf, rsize * received)
 {
-  rsize i, mem_count;
+  rsize i, mem_count, b;
   RMemMapInfo * info;
 #ifdef HAVE_WINSOCK2
   int res;
@@ -647,28 +647,35 @@ r_socket_receive_message (RSocket * socket, RSocketAddress * address,
   winrecv = winflags = 0;
   res = WSARecvFrom (socket->handle, bufs, mem_count, &winrecv, &winflags,
       (struct sockaddr *)&address->addr, &address->addrlen, NULL, NULL);
+  b = res != SOCKET_ERROR ? (rsize)winrecv : 0;
 #else
   do {
     res = recvmsg (socket->handle, &msg, 0);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
+  b = res > 0 ? (rsize)res : 0;
 #endif
 
   for (i = 0; i < mem_count; i++) {
     RMem * mem = r_buffer_mem_peek (buf, i);
     r_mem_unmap (mem, &info[i]);
+
+    if (b >= mem->size) {
+      b -= mem->size;
+    } else {
+      r_mem_resize (mem, mem->offset, b);
+      b = 0;
+    }
     r_mem_unref (mem);
   }
 
 #ifdef HAVE_WINSOCK2
   if (res != SOCKET_ERROR) {
-    r_buffer_resize (buf, r_buffer_get_offset (buf), (rsize)winrecv);
     if (received != NULL)
       *received = (rsize)winrecv;
     return R_SOCKET_OK;
   }
 #else
   if (res >= 0) {
-    r_buffer_resize (buf, r_buffer_get_offset (buf), (rsize)res);
     if (received != NULL)
       *received = (rsize)res;
     return R_SOCKET_OK;
