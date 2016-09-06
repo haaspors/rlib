@@ -29,8 +29,6 @@
 #include <rlib/rclock.h>
 #include <rlib/rclr.h>
 #include <rlib/renv.h>
-#include <rlib/revloop.h>
-#include <rlib/revudp.h>
 #include <rlib/rfd.h>
 #include <rlib/rfile.h>
 #include <rlib/rfs.h>
@@ -76,5 +74,8 @@
 #include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rpem.h>
 #include <rlib/crypto/rrsa.h>
+
+#include <rlib/ev/revloop.h>
+#include <rlib/ev/revudp.h>
 
 #endif /* __R_LIB_H__ */

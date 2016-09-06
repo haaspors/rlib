@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include "rlib-private.h"
+#include "../rlib-private.h"
 #include "rev-private.h"
 
 #include <rlib/ratomic.h>

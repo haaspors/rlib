@@ -18,8 +18,8 @@
 
 #include "config.h"
 #include "rev-private.h"
-#include "rnetworking-private.h"
-#include <rlib/revudp.h>
+#include "../rnetworking-private.h"
+#include <rlib/ev/revudp.h>
 
 #include <rlib/rmem.h>
 #include <rlib/rqueue.h>

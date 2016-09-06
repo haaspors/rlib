@@ -24,8 +24,8 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/ev/revloop.h>
 #include <rlib/rbuffer.h>
-#include <rlib/revloop.h>
 #include <rlib/rref.h>
 #include <rlib/rsocketaddress.h>
 

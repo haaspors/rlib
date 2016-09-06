@@ -24,7 +24,7 @@
 
 #include <rlib/rtypes.h>
 
-#include <rlib/revloop.h>
+#include <rlib/ev/revloop.h>
 #include <rlib/rfd.h>
 #include <rlib/rlist.h>
 
