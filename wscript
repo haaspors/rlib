@@ -167,7 +167,7 @@ def build(bld):
             bld.path.ant_glob('rlib/**/*.h', excl = [ 'rlib/**/*private.h' ]),
             relative_trick=True)
 
-    bld.recurse('example test')
+    bld.recurse('bench example test')
 
 def init(ctx):
     from waflib.Build import BuildContext, CleanContext, ListContext, InstallContext, UninstallContext, StepContext
