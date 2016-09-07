@@ -56,7 +56,7 @@ typedef enum {
   /* Flags                              Used for tests:             */
   R_TEST_FLAG_STRESS    = 0x01000000, /*  that are run continously  */
   R_TEST_FLAG_LOOP      = 0x02000000, /*  that are run x iterations */
-  R_TEST_FLAG_PERF      = 0x20000000, /*  measuring performance     */
+  R_TEST_FLAG_BENCH     = 0x20000000, /*  measuring performance     */
   R_TEST_FLAG_FUZZY     = 0x40000000, /*  with random input         */
   R_TEST_FLAG_NOFORK    = 0x80000000, /*  which shouldn't fork      */
   R_TEST_FLAG_MASK      = 0xFF000000,
@@ -133,17 +133,21 @@ typedef struct {
 /* Start your test using one of these macros */
 #define RTEST(suite, name, type)                  RTEST_DEFINE_TEST (suite, name, 0, type, RTEST_TYPE_TIMEOUT(type), 0, 1)
 #define RTEST_F(suite, name, type)                RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 0, type, RTEST_TYPE_TIMEOUT(type), 0, 1)
+#define RTEST_LOOP(suite, name, type, s,e)        RTEST_DEFINE_TEST (suite, name, 0, (type) | R_TEST_FLAG_LOOP, RTEST_TYPE_TIMEOUT(type), s, e)
+#define RTEST_LOOP_F(suite, name, type, s,e)      RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 0, (type) | R_TEST_FLAG_LOOP, RTEST_TYPE_TIMEOUT(type), s, e)
 #define RTEST_STRESS(suite, name, type)           RTEST_DEFINE_TEST (suite, name, 0, (type) | R_TEST_FLAG_STRESS, R_CLOCK_TIME_NONE, 0, 1)
 #define RTEST_STRESS_F(suite, name,type)          RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 0, (type) | R_TEST_FLAG_STRESS, R_CLOCK_TIME_NONE, 0, 1)
-#define RTEST_LOOP(suite, name, type, s,e)        RTEST_DEFINE_TEST (suite, name, 0, (type) | R_TEST_FLAG_LOOP, RTEST_TYPE_TIMEOUT(type), s, e)
-#define RTEST_LOOP_F(suite, name,type, s,e)       RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 0, (type) | R_TEST_FLAG_LOOP, RTEST_TYPE_TIMEOUT(type), s, e)
+#define RTEST_BENCH(suite, name, type)            RTEST_DEFINE_TEST (suite, name, 0, (type) | R_TEST_FLAG_BENCH, R_CLOCK_TIME_NONE, 0, 1)
+#define RTEST_BENCH_F(suite, name, type)          RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 0, (type) | R_TEST_FLAG_BENCH, R_CLOCK_TIME_NONE, 0, 1)
 /* Or easily prefix with SKIP to easy disable it temporarily */
 #define SKIP_RTEST(suite, name, type)             RTEST_DEFINE_TEST (suite, name, 1, type, RTEST_TYPE_TIMEOUT(type), 0, 1)
 #define SKIP_RTEST_F(suite, name, type)           RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 1, type, RTEST_TYPE_TIMEOUT(type), 0, 1)
-#define SKIP_RTEST_STRESS(suite, name, type)      RTEST_DEFINE_TEST (suite, name, 1, (type) | R_TEST_FLAG_STRESS, R_CLOCK_TIME_NONE, 0, 1)
-#define SKIP_RTEST_STRESS_F(suite, name,type)     RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 1, (type) | R_TEST_FLAG_STRESS, R_CLOCK_TIME_NONE, 0, 1)
 #define SKIP_RTEST_LOOP(suite, name, type, s,e)   RTEST_DEFINE_TEST (suite, name, 1, type, RTEST_TYPE_TIMEOUT(type), s, e)
 #define SKIP_RTEST_LOOP_F(suite, name,type, s,e)  RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 1, type, RTEST_TYPE_TIMEOUT(type), s, e)
+#define SKIP_RTEST_STRESS(suite, name, type)      RTEST_DEFINE_TEST (suite, name, 1, (type) | R_TEST_FLAG_STRESS, R_CLOCK_TIME_NONE, 0, 1)
+#define SKIP_RTEST_STRESS_F(suite, name, type)    RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 1, (type) | R_TEST_FLAG_STRESS, R_CLOCK_TIME_NONE, 0, 1)
+#define SKIP_RTEST_BENCH(suite, name, type)       RTEST_DEFINE_TEST (suite, name, 1, (type) | R_TEST_FLAG_BENCH, R_CLOCK_TIME_NONE, 0, 1)
+#define SKIP_RTEST_BENCH_F(suite, name, type)     RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 1, (type) | R_TEST_FLAG_BENCH, R_CLOCK_TIME_NONE, 0, 1)
 /* End your test with this macro! */
 #define RTEST_END _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE); }
 
