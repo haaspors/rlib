@@ -125,7 +125,7 @@ static inline void r_cblist_free1 (RCBList * entry);
 static inline void r_cblist_destroy (RCBList * head);
 static inline rsize r_cblist_len (RCBList * head);
 static inline rboolean r_cblist_contains (RCBList * head, RFunc cb, rpointer data);
-static inline void r_cblist_call (RCBList * head);
+static inline rsize r_cblist_call (RCBList * head);
 
 /******************************************************************************/
 /* Callback return list (Doubly linked list)                                  */
@@ -735,12 +735,16 @@ static inline rboolean r_cblist_contains (RCBList * lst, RFunc cb, rpointer data
 
   return FALSE;
 }
-static inline void r_cblist_call (RCBList * head)
+static inline rsize r_cblist_call (RCBList * head)
 {
+  rsize ret = 0;
   for (; head != NULL; head = head->next) {
-    if (R_LIKELY (head->cb != NULL))
+    if (R_LIKELY (head->cb != NULL)) {
+      ret++;
       head->cb (head->data, head->user);
+    }
   }
+  return ret;
 }
 
 /******************************************************************************/

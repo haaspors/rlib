@@ -35,9 +35,10 @@ RTEST (rcblist, call, RTEST_FAST)
 
   r_assert_cmpptr ((lst = r_cblist_prepend (lst, add_data_to_user_lst, PTR_CAFEBABE, &usr)), !=, NULL);
   r_assert_cmpptr ((lst = r_cblist_prepend (lst, add_data_to_user_lst, PTR_DEADBEEF, &usr)), !=, NULL);
+  r_assert_cmpuint (r_cblist_len (lst), ==, 2);
 
   r_assert_cmpptr (usr, ==, NULL);
-  r_cblist_call (lst);
+  r_assert_cmpuint (r_cblist_call (lst), ==, 2);
   r_assert_cmpptr (usr, !=, NULL);
   r_assert_cmpuint (r_slist_len (usr), ==, 2);
   r_assert (r_slist_contains (usr, PTR_CAFEBABE));
