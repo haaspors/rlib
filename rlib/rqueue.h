@@ -130,10 +130,14 @@ static inline void r_queue_list_clear (RQueueList * q, RDestroyNotify notify)
 }
 static inline RList * r_queue_list_push (RQueueList * q, rpointer item)
 {
-  RList * ret;
-  ret = q->head = r_list_prepend (q->head, item);
-  if (q->size++ == 0)
-    q->tail = q->head;
+  RList * ret = r_list_alloc (item);
+  if (q->size++ > 0) {
+    ret->prev = q->tail;
+    q->tail->next = ret;
+    q->tail = ret;
+  } else {
+    q->head = q->tail = ret;
+  }
 
   return ret;
 }
@@ -142,11 +146,11 @@ static inline rpointer r_queue_list_pop (RQueueList * q)
   rpointer ret;
   RList * it;
 
-  if ((it = q->tail) != NULL) {
-    if ((q->tail = r_list_prev (it)) != NULL)
-      q->tail->next = NULL;
+  if ((it = q->head) != NULL) {
+    if ((q->head = r_list_next (it)) != NULL)
+      q->head->prev = NULL;
     else
-      q->head = NULL;
+      q->tail = NULL;
     ret = r_list_data (it);
     r_list_free1 (it);
 
@@ -159,7 +163,7 @@ static inline rpointer r_queue_list_pop (RQueueList * q)
 }
 static inline rpointer r_queue_list_peek (const RQueueList * q)
 {
-  return q->tail != NULL ? r_list_data (q->tail) : NULL;
+  return q->head != NULL ? r_list_data (q->head) : NULL;
 }
 static inline void r_queue_list_remove_link (RQueueList * q, RList * link)
 {
@@ -193,19 +197,24 @@ static inline void r_cbqueue_clear (RCBQueue * q)
 static inline void r_cbqueue_push (RCBQueue * q, RFunc cb,
     rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify)
 {
-  q->head = r_cblist_prepend_full (q->head, cb, data, datanotify, user, usernotify);
-  if (q->size++ == 0)
-    q->tail = q->head;
+  RCBList * n = r_cblist_alloc_full (cb, data, datanotify, user, usernotify);
+  if (q->size++ > 0) {
+    n->prev = q->tail;
+    q->tail->next = n;
+    q->tail = n;
+  } else {
+    q->tail = q->head = n;
+  }
 }
 static inline RCBList * r_cbqueue_pop (RCBQueue * q)
 {
   RCBList * ret;
 
-  if ((ret = q->tail) != NULL) {
-    if ((q->tail = ret->prev) != NULL)
-      q->tail->next = NULL;
+  if ((ret = q->head) != NULL) {
+    if ((q->head = ret->next) != NULL)
+      q->head->prev = NULL;
     else
-      q->head = NULL;
+      q->tail = NULL;
     ret->prev = NULL;
 
     q->size--;
@@ -217,17 +226,16 @@ static inline RCBList * r_cbqueue_pop (RCBQueue * q)
 }
 static inline RCBList * r_cbqueue_peek (const RCBQueue * q)
 {
-  return q->tail;
+  return q->head;
 }
-
 static inline void r_cbqueue_merge (RCBQueue * dst, RCBQueue * src)
 {
   if (dst->size > 0 && src->size > 0) {
     dst->size += src->size;
 
-    dst->head->prev = src->tail;
-    src->tail->next = dst->head;
-    dst->head = src->head;
+    dst->tail->next = src->head;
+    src->head->prev = dst->tail;
+    dst->tail = src->tail;
   } else if (dst->size == 0) {
     r_memcpy (dst, src, sizeof (RCBQueue));
   }
