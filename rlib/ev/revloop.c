@@ -249,28 +249,6 @@ r_ev_loop_update_timers (REvLoop * loop)
 }
 
 static void
-r_ev_loop_invoke_bcbs (REvLoop * loop)
-{
-  RCBList * lst;
-
-  while ((lst = r_cbqueue_pop (&loop->bcbs)) != NULL) {
-    lst->cb (lst->data, lst->user);
-    r_cblist_free1 (lst);
-  }
-}
-
-static void
-r_ev_loop_invoke_acbs (REvLoop * loop)
-{
-  RCBList * lst;
-
-  while ((lst = r_cbqueue_pop (&loop->acbs)) != NULL) {
-    lst->cb (lst->data, lst->user);
-    r_cblist_free1 (lst);
-  }
-}
-
-static void
 r_ev_loop_move_done_callbacks (REvLoop * loop)
 {
   r_mutex_lock (&loop->done_mutex);
@@ -503,11 +481,11 @@ r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode)
 
     r_ev_loop_move_done_callbacks (loop);
 
-    r_ev_loop_invoke_bcbs (loop);
+    r_cbqueue_call_pop (&loop->bcbs);
     deadline = r_ev_loop_next_deadline (loop, mode);
     if ((res = r_ev_loop_io_wait (loop, deadline)) == 0)
       r_ev_loop_idle (loop);
-    r_ev_loop_invoke_acbs (loop);
+    r_cbqueue_call_pop (&loop->acbs);
 
     r_ev_loop_update_timers (loop);
 
