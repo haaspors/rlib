@@ -24,6 +24,7 @@ VARIANTS = [ DBGVAR, RELVAR ]
 def options(opt):
     opt.load('compiler_c')
     opt.load('test', tooldir='tools/waf')
+    opt.load('bench', tooldir='tools/waf')
 
     grp = opt.add_option_group('configure options')
     grp.add_option('--no-thread',
@@ -50,6 +51,7 @@ def options(opt):
 def configure(cfg):
     cfg.load('compiler_c')
     cfg.load('test', tooldir='tools/waf')
+    cfg.load('bench', tooldir='tools/waf')
 
     configure_options(cfg)
 
@@ -172,9 +174,10 @@ def build(bld):
 def init(ctx):
     from waflib.Build import BuildContext, CleanContext, ListContext, InstallContext, UninstallContext, StepContext
     from tools.waf.test import TestContext
+    from tools.waf.bench import BenchContext
     from waflib.Options import options
 
-    for y in (BuildContext, CleanContext, ListContext, InstallContext, UninstallContext, StepContext, TestContext):
+    for y in (BuildContext, CleanContext, ListContext, InstallContext, UninstallContext, StepContext, TestContext, BenchContext):
         name = y.__name__.replace('Context','').lower()
         class tmp(y):
             cmd = name
