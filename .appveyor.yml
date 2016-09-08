@@ -4,8 +4,12 @@
     environment:
         matrix:
             - VARIANT: debug
+              WAFTESTCMD: test
             - VARIANT: release
+              WAFTESTCMD: test
+            - VARIANT: release
+              WAFTESTCMD: bench
     build_script:
         - ps: python waf --variant=${env:VARIANT} configure build
     test_script:
-        - ps: python waf --variant=${env:VARIANT} test
+        - ps: python waf --variant=${env:VARIANT} ${env:WAFTESTCMD}
