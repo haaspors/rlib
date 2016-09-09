@@ -27,11 +27,12 @@
 #include <rlib/ev/revloop.h>
 #include <rlib/rfd.h>
 #include <rlib/rlist.h>
+#include <rlib/rsys.h>
 
 R_BEGIN_DECLS
 
 #define R_EV_LOOP_MAX_EVENTS              1024
-#define R_EV_LOOP_DEFAULT_TASK_THREADS    2
+#define R_EV_LOOP_DEFAULT_TASK_THREADS    r_sys_cpu_physical_count ()
 
 typedef struct {
   REvIOEvents events;
