@@ -32,8 +32,8 @@
 R_BEGIN_DECLS
 
 typedef struct _REvUDP REvUDP;
-typedef RBuffer * (*REvUDPBufferAllocFunc) (rpointer user, REvUDP * evudp);
-typedef void (*REvUDPBufferFunc) (rpointer user, RBuffer * buf, const RSocketAddress * addr, REvUDP * evudp);
+typedef RBuffer * (*REvUDPBufferAllocFunc) (rpointer data, REvUDP * evudp);
+typedef void (*REvUDPBufferFunc) (rpointer data, RBuffer * buf, const RSocketAddress * addr, REvUDP * evudp);
 
 R_API REvUDP * r_ev_udp_new (RSocketFamily family, REvLoop * loop);
 #define r_ev_udp_ref r_ref_ref
@@ -43,14 +43,14 @@ R_API rboolean r_ev_udp_bind (REvUDP * evudp,
     const RSocketAddress * address, rboolean reuse);
 R_API rboolean r_ev_udp_recv_start (REvUDP * evudp,
     REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
-    rpointer user, RDestroyNotify usernotify);
+    rpointer data, RDestroyNotify datanotify);
 R_API rboolean r_ev_udp_recv_stop (REvUDP * evudp);
 R_API rboolean r_ev_udp_send (REvUDP * evudp, RBuffer * buf,
     RSocketAddress * address, REvUDPBufferFunc done,
-    rpointer user, RDestroyNotify usernotify);
-R_API rboolean r_ev_udp_send_take (REvUDP * evudp, rpointer data, rsize size,
+    rpointer data, RDestroyNotify datanotify);
+R_API rboolean r_ev_udp_send_take (REvUDP * evudp, rpointer buffer, rsize size,
     RSocketAddress * address, REvUDPBufferFunc done,
-    rpointer user, RDestroyNotify usernotify);
+    rpointer data, RDestroyNotify datanotify);
 
 R_END_DECLS
 

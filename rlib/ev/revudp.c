@@ -27,31 +27,32 @@
 typedef struct {
   REvUDPBufferAllocFunc alloc;
   REvUDPBufferFunc func;
-  rpointer user;
-  RDestroyNotify usernotify;
+  rpointer data;
+  RDestroyNotify datanotify;
 } REvUDPRecvCtx;
 
 #define r_ev_udp_recv_ctx_clear(recv)                                         \
   R_STMT_START {                                                              \
-    if ((recv)->usernotify != NULL)                                           \
-      (recv)->usernotify ((recv)->user);                                      \
+    if ((recv)->datanotify != NULL)                                           \
+      (recv)->datanotify ((recv)->data);                                      \
     r_memclear (recv, sizeof (REvUDPRecvCtx));                                \
   } R_STMT_END
+
 
 typedef struct {
   RBuffer * buf;
   RSocketAddress * addr;
   REvUDPBufferFunc done;
-  rpointer user;
-  RDestroyNotify usernotify;
+  rpointer data;
+  RDestroyNotify datanotify;
 } REvUDPSendCtx;
 
 #define r_ev_udp_send_ctx_clear(send)                                         \
   R_STMT_START {                                                              \
     r_socket_address_unref ((send)->addr);                                    \
     r_buffer_unref ((send)->buf);                                             \
-    if ((send)->usernotify != NULL)                                           \
-      (send)->usernotify ((send)->user);                                      \
+    if ((send)->datanotify != NULL)                                           \
+      (send)->datanotify ((send)->data);                                      \
   } R_STMT_END
 
 
@@ -108,9 +109,9 @@ r_ev_udp_bind (REvUDP * evudp, const RSocketAddress * address, rboolean reuse)
 #define R_EV_UDP_BUFFER_SIZE        2048
 
 static RBuffer *
-r_ev_udp_buffer_alloc_default (rpointer user, REvUDP * evudp)
+r_ev_udp_buffer_alloc_default (rpointer data, REvUDP * evudp)
 {
-  (void) user;
+  (void) data;
   (void) evudp;
 
   return r_buffer_new_alloc (NULL, R_EV_UDP_BUFFER_SIZE, NULL);
@@ -127,7 +128,7 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
   r_memclear (&addr, sizeof (RSocketAddress));
 
   do {
-    if ((buf = evudp->recv.alloc (evudp->recv.user, evudp)) == NULL) {
+    if ((buf = evudp->recv.alloc (evudp->recv.data, evudp)) == NULL) {
       res = R_SOCKET_OOM;
       break;
     }
@@ -136,7 +137,7 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
     res = r_socket_receive_message (evudp->socket, &addr, buf, &size);
     switch (res) {
       case R_SOCKET_OK:
-        evudp->recv.func (evudp->recv.user, buf, &addr, evudp);
+        evudp->recv.func (evudp->recv.data, buf, &addr, evudp);
         break;
       /* FIXME: Handle errors?? */
       default:
@@ -161,7 +162,7 @@ r_ev_udp_send_iocb (REvUDP * evudp)
     res = r_socket_send_message (evudp->socket, ctx->addr, ctx->buf, &sent);
     if (res == R_SOCKET_OK) {
       r_queue_pop (&evudp->qsend);
-      ctx->done (ctx->user, ctx->buf, ctx->addr, evudp);
+      ctx->done (ctx->data, ctx->buf, ctx->addr, evudp);
       r_ev_udp_send_ctx_clear (ctx);
       r_free (ctx);
     } else if (res == R_SOCKET_WOULD_BLOCK) {
@@ -214,7 +215,7 @@ r_ev_udp_stop (REvUDP * evudp, REvIOEvent event)
 rboolean
 r_ev_udp_recv_start (REvUDP * evudp,
     REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
-    rpointer user, RDestroyNotify usernotify)
+    rpointer data, RDestroyNotify datanotify)
 {
   rboolean ret;
 
@@ -227,8 +228,7 @@ r_ev_udp_recv_start (REvUDP * evudp,
 
     evudp->recv.func = recv;
     evudp->recv.alloc = alloc;
-    evudp->recv.user = user;
-    evudp->recv.usernotify = usernotify;
+    evudp->recv.data = data;
   }
 
   return ret;
@@ -248,7 +248,7 @@ r_ev_udp_recv_stop (REvUDP * evudp)
 rboolean
 r_ev_udp_send (REvUDP * evudp, RBuffer * buf,
     RSocketAddress * address, REvUDPBufferFunc done,
-    rpointer user, RDestroyNotify usernotify)
+    rpointer data, RDestroyNotify datanotify)
 {
   REvUDPSendCtx * ctx;
   rboolean ret;
@@ -257,8 +257,8 @@ r_ev_udp_send (REvUDP * evudp, RBuffer * buf,
     ctx->buf = r_buffer_ref (buf);
     ctx->addr = r_socket_address_ref (address);
     ctx->done = done;
-    ctx->user = user;
-    ctx->usernotify = usernotify;
+    ctx->data = data;
+    ctx->datanotify = datanotify;
     r_queue_push (&evudp->qsend, ctx);
 
     if (r_queue_size (&evudp->qsend) == 1) {
@@ -271,15 +271,15 @@ r_ev_udp_send (REvUDP * evudp, RBuffer * buf,
 }
 
 rboolean
-r_ev_udp_send_take (REvUDP * evudp, rpointer data, rsize size,
+r_ev_udp_send_take (REvUDP * evudp, rpointer buffer, rsize size,
     RSocketAddress * address, REvUDPBufferFunc done,
-    rpointer user, RDestroyNotify usernotify)
+    rpointer data, RDestroyNotify datanotify)
 {
   RBuffer * buf;
   rboolean ret;
 
-  if ((buf = r_buffer_new_take (data, size)) != NULL) {
-    ret = r_ev_udp_send (evudp, buf, address, done, user, usernotify);
+  if ((buf = r_buffer_new_take (buffer, size)) != NULL) {
+    ret = r_ev_udp_send (evudp, buf, address, done, data, datanotify);
     r_buffer_unref (buf);
   } else {
     ret = FALSE;
