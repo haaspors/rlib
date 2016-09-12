@@ -321,7 +321,8 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
         abort ();
     }
 
-    r_memset (&evio->pending, 0, sizeof (REvIOCtx));
+    r_memclear (&evio->pending, sizeof (REvIOCtx));
+    evio->chglnk = NULL;
   }
 
   if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
@@ -379,7 +380,8 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
     r_ev_io_ctx_clear (&evio->current);
     r_memcpy (&evio->current, &evio->pending, sizeof (REvIOCtx));
-    r_memset (&evio->pending, 0, sizeof (REvIOCtx));
+    r_memclear (&evio->pending, sizeof (REvIOCtx));
+    evio->chglnk = NULL;
 
     if (R_UNLIKELY (nev > (R_EV_LOOP_MAX_EVENTS - 4))) {
       if (kevent (loop->evhandle, events, nev, NULL, 0, NULL) != 0) {
@@ -774,7 +776,8 @@ r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
 
   r_ev_io_ctx_clear (&evio->pending);
   r_ev_io_ctx_init (&evio->pending, events, io_cb, data, datanotify);
-  evio->chglnk = r_queue_push (&evio->loop->chg, evio);
+  if (!R_EV_IO_IS_CHANGING (evio))
+    evio->chglnk = r_queue_push (&evio->loop->chg, evio);
 
   if (!R_EV_IO_IS_ACTIVE (evio))
     evio->alnk = r_queue_push (&evio->loop->active, evio);
@@ -792,7 +795,8 @@ r_ev_io_stop (REvIO * evio)
     evio->alnk = NULL;
 
     r_ev_io_ctx_clear (&evio->pending);
-    evio->chglnk = r_queue_push (&evio->loop->chg, evio);
+    if (!R_EV_IO_IS_CHANGING (evio))
+      evio->chglnk = r_queue_push (&evio->loop->chg, evio);
     return R_EV_IO_IS_CHANGING (evio);
   }
 
