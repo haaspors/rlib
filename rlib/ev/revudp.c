@@ -22,22 +22,6 @@
 #include <rlib/ev/revudp.h>
 
 #include <rlib/rmem.h>
-#include <rlib/rqueue.h>
-
-typedef struct {
-  REvUDPBufferAllocFunc alloc;
-  REvUDPBufferFunc func;
-  rpointer data;
-  RDestroyNotify datanotify;
-} REvUDPRecvCtx;
-
-#define r_ev_udp_recv_ctx_clear(recv)                                         \
-  R_STMT_START {                                                              \
-    if ((recv)->datanotify != NULL)                                           \
-      (recv)->datanotify ((recv)->data);                                      \
-    r_memclear (recv, sizeof (REvUDPRecvCtx));                                \
-  } R_STMT_END
-
 
 typedef struct {
   RBuffer * buf;
@@ -61,9 +45,12 @@ struct _REvUDP {
 
   RSocketFamily family;
   RSocket * socket;
-  REvIOEvents events;
 
-  REvUDPRecvCtx recv;
+  REvUDPBufferAllocFunc alloc;
+  REvUDPBufferFunc recv;
+  rpointer recv_data;
+  rpointer recv_iocb_ctx;
+
   RQueue qsend;
 };
 
@@ -128,7 +115,7 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
   r_memclear (&addr, sizeof (RSocketAddress));
 
   do {
-    if ((buf = evudp->recv.alloc (evudp->recv.data, evudp)) == NULL) {
+    if ((buf = evudp->alloc (evudp->recv_data, evudp)) == NULL) {
       res = R_SOCKET_OOM;
       break;
     }
@@ -137,7 +124,7 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
     res = r_socket_receive_message (evudp->socket, &addr, buf, &size);
     switch (res) {
       case R_SOCKET_OK:
-        evudp->recv.func (evudp->recv.data, buf, &addr, evudp);
+        evudp->recv (evudp->recv_data, buf, &addr, evudp);
         break;
       /* FIXME: Handle errors?? */
       default:
@@ -192,46 +179,26 @@ r_ev_udp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
   if (events & R_EV_IO_ERROR) r_ev_udp_error_iocb ((REvUDP *)evio);
 }
 
-static rboolean
-r_ev_udp_start (REvUDP * evudp, REvIOEvent event)
-{
-  if (R_UNLIKELY (evudp->events & event)) return TRUE;
-
-  evudp->events |= event;
-  return r_ev_io_start (&evudp->evio, evudp->events, r_ev_udp_iocb, NULL, NULL);
-}
-
-static rboolean
-r_ev_udp_stop (REvUDP * evudp, REvIOEvent event)
-{
-  if (R_UNLIKELY ((evudp->events & event) == 0)) return TRUE;
-
-  if ((evudp->events &= ~event))
-    return r_ev_io_start (&evudp->evio, evudp->events, r_ev_udp_iocb, NULL, NULL);
-  else
-    return r_ev_io_stop (&evudp->evio);
-}
-
 rboolean
 r_ev_udp_recv_start (REvUDP * evudp,
     REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
     rpointer data, RDestroyNotify datanotify)
 {
-  rboolean ret;
-
   if (R_UNLIKELY (recv == NULL)) return FALSE;
-  if (R_UNLIKELY (evudp->recv.func != NULL)) return FALSE;
+  if (R_UNLIKELY (evudp->recv_iocb_ctx != NULL)) return FALSE;
 
-  if ((ret = r_ev_udp_start (evudp, R_EV_IO_READABLE))) {
+  if ((evudp->recv_iocb_ctx = r_ev_io_start (&evudp->evio, R_EV_IO_READABLE,
+      r_ev_udp_iocb, data, datanotify))) {
     if (alloc == NULL)
       alloc = r_ev_udp_buffer_alloc_default;
 
-    evudp->recv.func = recv;
-    evudp->recv.alloc = alloc;
-    evudp->recv.data = data;
+    evudp->alloc = alloc;
+    evudp->recv = recv;
+    evudp->recv_data = data;
+    return TRUE;
   }
 
-  return ret;
+  return FALSE;
 }
 
 rboolean
@@ -239,8 +206,8 @@ r_ev_udp_recv_stop (REvUDP * evudp)
 {
   rboolean ret;
 
-  if ((ret = r_ev_udp_stop (evudp, R_EV_IO_READABLE)))
-    r_ev_udp_recv_ctx_clear (&evudp->recv);
+  ret = r_ev_io_stop (&evudp->evio, evudp->recv_iocb_ctx);
+  evudp->recv_iocb_ctx = NULL;
 
   return ret;
 }

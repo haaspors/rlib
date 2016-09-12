@@ -22,7 +22,6 @@
 
 #include <rlib/ratomic.h>
 #include <rlib/rmem.h>
-#include <rlib/rqueue.h>
 #include <rlib/rthreads.h>
 
 #include <sys/types.h>
@@ -137,6 +136,7 @@ r_ev_loop_free (REvLoop * loop)
     r_ev_handle_close (loop->pipefd[0]);
     r_ev_handle_close (loop->pipefd[1]);
 #endif
+    r_cbqueue_clear (&loop->evio_wakeup.iocbq);
 #endif
 
   if (loop->evhandle != R_EV_HANDLE_INVALID) {
@@ -182,11 +182,14 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
     fd = loop->pipefd[1];
 #endif
 
-    r_memset (&loop->evio_wakeup, 0, sizeof (REvIO));
+    r_ref_init (&loop->evio_wakeup.ref, NULL);
     loop->evio_wakeup.loop = loop;
+    loop->evio_wakeup.alnk = loop->evio_wakeup.chglnk = NULL;
     loop->evio_wakeup.handle = fd;
-    r_ev_io_ctx_init (&loop->evio_wakeup.current, R_EV_IO_READABLE,
-        r_ev_loop_eventfd_io_cb, loop, NULL);
+    loop->evio_wakeup.events = R_EV_IO_READABLE;
+    r_cbqueue_init (&loop->evio_wakeup.iocbq);
+    r_cbqueue_push (&loop->evio_wakeup.iocbq,
+        (RFunc)r_ev_loop_eventfd_io_cb, loop, NULL, NULL, NULL);
 
     ev.data.ptr = &loop->evio_wakeup;
     ev.events = EPOLLIN | EPOLLET;
@@ -273,6 +276,18 @@ r_ev_loop_next_deadline (REvLoop * loop, REvLoopRunMode mode)
   return r_clock_first_timeout (loop->clock);
 }
 
+static inline REvIOEvents
+r_ev_io_get_iocbq_events (REvIO * evio)
+{
+  REvIOEvents ret = 0;
+  RCBList * it;
+
+  for (it = evio->iocbq.head; it != NULL; it = it->next)
+    ret |= RPOINTER_TO_UINT (it->user);
+
+  return ret;
+}
+
 static int
 r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 {
@@ -293,36 +308,38 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 #elif defined (HAVE_EPOLL)
   struct epoll_event events[R_EV_LOOP_MAX_EVENTS], * ev = events;
 
+  /* FIXME: clear->pop! which makes us able to move stuff back on the queue */
   while ((evio = r_queue_pop (&loop->chg)) != NULL) {
+    REvIOEvents pending = 0;
     int op;
 
     if (R_UNLIKELY (evio->handle == R_EV_HANDLE_INVALID))
       continue;
 
-    R_LOG_DEBUG ("loop %p changes evio "R_EV_IO_FORMAT, loop, R_EV_IO_ARGS (evio));
+    pending = evio->events | r_ev_io_get_iocbq_events (evio);
+    R_LOG_DEBUG ("loop %p changes evio "R_EV_IO_FORMAT" %4x->%x",
+        loop, R_EV_IO_ARGS (evio), evio->events, pending);
 
     ev->data.ptr = evio;
     ev->events = EPOLLET;
-    if (evio->pending.events & R_EV_IO_READABLE) ev->events |= EPOLLIN;
-    if (evio->pending.events & R_EV_IO_WRITABLE) ev->events |= EPOLLOUT;
-    if (evio->pending.events & R_EV_IO_HANGUP)   ev->events |= EPOLLRDHUP;
-    op = (evio->current.events == 0) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
+    if (pending & R_EV_IO_READABLE) ev->events |= EPOLLIN;
+    if (pending & R_EV_IO_WRITABLE) ev->events |= EPOLLOUT;
+    if (pending & R_EV_IO_HANGUP)   ev->events |= EPOLLRDHUP;
+    op = (evio->events == 0) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
+
     if (epoll_ctl (loop->evhandle, op, evio->handle, ev) == 0) {
-      r_ev_io_ctx_clear (&evio->current);
-      r_memcpy (&evio->current, &evio->pending, sizeof (REvIOCtx));
+      evio->events = pending;
+      evio->chglnk = NULL;
     } else {
       R_LOG_ERROR ("epoll_ctl for loop %p failed %d: \"%s\" with operation %d for fd: %d",
           loop, errno, strerror (errno), op, evio->handle);
 
-      r_ev_io_ctx_clear (&evio->pending);
       if (errno == EPERM)
-        r_ev_io_invoke_cb (evio, R_EV_IO_ERROR);
+        r_ev_io_invoke_iocb (evio, R_EV_IO_ERROR);
       else
         abort ();
+      evio->chglnk = NULL; /*r_queue_push (&evio->loop->chg, evio)*/
     }
-
-    r_memclear (&evio->pending, sizeof (REvIOCtx));
-    evio->chglnk = NULL;
   }
 
   if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
@@ -356,31 +373,32 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     if (ev->events & EPOLLOUT)  rev |= R_EV_IO_WRITABLE;
 
     if (R_LIKELY (rev != 0))
-      r_ev_io_invoke_cb (evio, rev);
+      r_ev_io_invoke_iocb (evio, rev);
   }
 #elif defined (HAVE_KQUEUE)
   struct kevent events[R_EV_LOOP_MAX_EVENTS], * ev;
   struct timespec spec = { 0, 0 };
   int nev = 0;
+  REvIOEvents pending;
 
   while ((evio = r_queue_pop (&loop->chg)) != NULL) {
     if (R_UNLIKELY (evio->handle == R_EV_HANDLE_INVALID))
       continue;
 
-    R_LOG_DEBUG ("loop %p changes evio "R_EV_IO_FORMAT, loop, R_EV_IO_ARGS (evio));
+    pending = evio->events | r_ev_io_get_iocbq_events (evio);
+    R_LOG_DEBUG ("loop %p changes evio "R_EV_IO_FORMAT" %4x->%x",
+        loop, R_EV_IO_ARGS (evio), evio->events, pending);
 
-    if (evio->pending.events & R_EV_IO_READABLE && !(evio->current.events & R_EV_IO_READABLE))
+    if (pending & R_EV_IO_READABLE && !(evio->events & R_EV_IO_READABLE))
       EV_SET (&events[nev++], evio->handle, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, evio);
-    else if (evio->current.events & R_EV_IO_READABLE && !(evio->pending.events & R_EV_IO_READABLE))
+    else if (evio->events & R_EV_IO_READABLE && !(pending & R_EV_IO_READABLE))
       EV_SET (&events[nev++], evio->handle, EVFILT_READ, EV_DELETE, 0, 0, evio);
-    if (evio->pending.events & R_EV_IO_WRITABLE && !(evio->current.events & R_EV_IO_WRITABLE))
+    if (pending & R_EV_IO_WRITABLE && !(evio->events & R_EV_IO_WRITABLE))
       EV_SET (&events[nev++], evio->handle, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, evio);
-    else if (evio->current.events & R_EV_IO_WRITABLE && !(evio->pending.events & R_EV_IO_WRITABLE))
+    else if (evio->events & R_EV_IO_WRITABLE && !(pending & R_EV_IO_WRITABLE))
       EV_SET (&events[nev++], evio->handle, EVFILT_READ, EV_DELETE, 0, 0, evio);
 
-    r_ev_io_ctx_clear (&evio->current);
-    r_memcpy (&evio->current, &evio->pending, sizeof (REvIOCtx));
-    r_memclear (&evio->pending, sizeof (REvIOCtx));
+    evio->events = pending;
     evio->chglnk = NULL;
 
     if (R_UNLIKELY (nev > (R_EV_LOOP_MAX_EVENTS - 4))) {
@@ -418,7 +436,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     if (ev->flags & EV_ERROR)
       rev |= R_EV_IO_ERROR;
     if ((evio = ev->udata) != NULL) {
-      if ((ev->flags & EV_EOF) && (evio->current.events & R_EV_IO_HANGUP))
+      if ((ev->flags & EV_EOF) && (evio->events & R_EV_IO_HANGUP))
         rev |= R_EV_IO_HANGUP;
     }
 
@@ -448,7 +466,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
           continue;
     }
 
-    r_ev_io_invoke_cb (evio, rev);
+    r_ev_io_invoke_iocb (evio, rev);
   }
 #endif
 beach:
@@ -727,8 +745,7 @@ r_ev_io_clear (REvIO * evio)
     evio->alnk = evio->chglnk = NULL;
   }
 
-  r_ev_io_ctx_clear (&evio->pending);
-  r_ev_io_ctx_clear (&evio->current);
+  r_cbqueue_clear (&evio->iocbq);
 
   r_ev_loop_unref (evio->loop);
 }
@@ -765,39 +782,46 @@ r_ev_loop_init_handle (REvLoop * loop, REvHandle handle)
   return ret;
 }
 
-rboolean
+rpointer
 r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
     rpointer data, RDestroyNotify datanotify)
 {
+  rpointer ret;
+
   if (R_UNLIKELY (evio == NULL)) return FALSE;
   if (R_UNLIKELY (events == 0)) return FALSE;
   if (R_UNLIKELY (io_cb == NULL)) return FALSE;
   if (R_UNLIKELY (evio->loop->stop_request)) return FALSE;
 
-  r_ev_io_ctx_clear (&evio->pending);
-  r_ev_io_ctx_init (&evio->pending, events, io_cb, data, datanotify);
-  if (!R_EV_IO_IS_CHANGING (evio))
+  ret = r_cbqueue_push (&evio->iocbq, (RFunc)io_cb, data, datanotify,
+      RUINT_TO_POINTER (events), NULL);
+  if (!R_EV_IO_IS_CHANGING (evio) && (evio->events & events) != events)
     evio->chglnk = r_queue_push (&evio->loop->chg, evio);
 
   if (!R_EV_IO_IS_ACTIVE (evio))
     evio->alnk = r_queue_push (&evio->loop->active, evio);
 
-  return R_EV_IO_IS_ACTIVE (evio);
+  return ret;
 }
 
 rboolean
-r_ev_io_stop (REvIO * evio)
+r_ev_io_stop (REvIO * evio, rpointer ctx)
 {
   if (R_UNLIKELY (evio == NULL)) return FALSE;
+  if (R_UNLIKELY (ctx == NULL)) return FALSE;
+
+  r_cbqueue_remove_link (&evio->iocbq, ctx);
 
   if (R_EV_IO_IS_ACTIVE (evio)) {
-    r_queue_remove_link (&evio->loop->active, evio->alnk);
-    evio->alnk = NULL;
+    REvIOEvents events;
 
-    r_ev_io_ctx_clear (&evio->pending);
-    if (!R_EV_IO_IS_CHANGING (evio))
+    if ((events = r_ev_io_get_iocbq_events (evio)) == 0) {
+      r_queue_remove_link (&evio->loop->active, evio->alnk);
+      evio->alnk = NULL;
+    }
+
+    if (!R_EV_IO_IS_CHANGING (evio) && evio->events != events)
       evio->chglnk = r_queue_push (&evio->loop->chg, evio);
-    return R_EV_IO_IS_CHANGING (evio);
   }
 
   return TRUE;
@@ -808,7 +832,6 @@ r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
     rpointer data, RDestroyNotify datanotify)
 {
   if (R_UNLIKELY (evio == NULL)) return FALSE;
-  if (R_UNLIKELY (evio->close_ctx.close_cb != NULL)) return FALSE;
 
   if (evio->handle != R_EV_HANDLE_INVALID) {
     r_ev_handle_close (evio->handle);
@@ -816,18 +839,14 @@ r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
   }
 
   if (R_EV_IO_IS_ACTIVE (evio)) {
-    if (!r_ev_io_stop (evio))
-      return FALSE;
-
-    r_cbqueue_push (&evio->loop->acbs, (RFunc)close_cb,
-        data, datanotify, r_ev_io_ref (evio), r_ev_io_unref);
-  } else {
-    if (close_cb != NULL)
-      close_cb (data, evio);
-
-    if (datanotify != NULL)
-      datanotify (data);
+    r_queue_remove_link (&evio->loop->active, evio->alnk);
+    if (R_EV_IO_IS_CHANGING (evio))
+      r_queue_remove_link (&evio->loop->chg, evio->chglnk);
+    evio->alnk = evio->chglnk = NULL;
   }
+
+  r_cbqueue_push (&evio->loop->acbs, (RFunc)close_cb,
+      data, datanotify, r_ev_io_ref (evio), r_ev_io_unref);
 
   return TRUE;
 }

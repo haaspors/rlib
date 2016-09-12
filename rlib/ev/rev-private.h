@@ -28,41 +28,12 @@
 #include <rlib/rfd.h>
 #include <rlib/rlist.h>
 #include <rlib/rsys.h>
+#include <rlib/rqueue.h>
 
 R_BEGIN_DECLS
 
 #define R_EV_LOOP_MAX_EVENTS              1024
 #define R_EV_LOOP_DEFAULT_TASK_THREADS    r_sys_cpu_physical_count ()
-
-typedef struct {
-  REvIOEvents events;
-  REvIOCB io_cb;
-  rpointer data;
-  RDestroyNotify notify;
-} REvIOCtx;
-
-#define r_ev_io_ctx_init(ctx, e, cb, d, n)                                    \
-  R_STMT_START {                                                              \
-    (ctx)->events = e;                                                        \
-    (ctx)->io_cb = cb;                                                        \
-    (ctx)->data = d;                                                          \
-    (ctx)->notify = n;                                                        \
-  } R_STMT_END
-#define r_ev_io_ctx_clear(ctx)                                                \
-  R_STMT_START {                                                              \
-    if ((ctx)->notify != NULL) (ctx)->notify ((ctx)->data);                   \
-    r_memset (ctx, 0, sizeof (REvIOCtx));                                     \
-  } R_STMT_END
-#define r_ev_io_invoke_cb(evio, events)                                       \
-  R_STMT_START {                                                              \
-    (evio)->current.io_cb ((evio)->current.data, events, evio);               \
-  } R_STMT_END
-
-typedef struct {
-  REvIOFunc close_cb;
-  rpointer data;
-  RDestroyNotify notify;
-} REvIOCloseCtx;
 
 struct _REvIO {
   RRef ref;
@@ -70,11 +41,10 @@ struct _REvIO {
   REvLoop * loop;
   RList * alnk; /* If NULL -> inactive, else -> link in REvLoop::active queue */
   RList * chglnk; /* If not NULL -> changing link in REvLoop::chg queue */
-  REvIOCloseCtx close_ctx;
 
   REvHandle handle;
-  REvIOCtx current;
-  REvIOCtx pending;
+  REvIOEvents events;
+  RCBQueue iocbq;
 };
 
 #define R_EV_IO_FORMAT        "%p [%"R_EV_HANDLE_FMT"]"
@@ -86,6 +56,16 @@ struct _REvIO {
 R_API_HIDDEN void r_ev_io_init (REvIO * evio, REvLoop * loop, REvHandle handle,
     RDestroyNotify notify);
 R_API_HIDDEN void r_ev_io_clear (REvIO * evio);
+
+#define r_ev_io_invoke_iocb(evio, events)                                     \
+  R_STMT_START {                                                              \
+    RCBList * it;                                                             \
+    REvIOCB iocb;                                                             \
+    for (it = evio->iocbq.head; it != NULL; it = it->next) {                  \
+      iocb = (REvIOCB) it->cb;                                                \
+      iocb (it->data, events, evio);                                          \
+    }                                                                         \
+  } R_STMT_END
 
 R_END_DECLS
 

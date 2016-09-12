@@ -92,9 +92,9 @@ R_API REvIO * r_ev_loop_init_handle (REvLoop * loop, REvHandle handle);
 #define r_ev_io_ref r_ref_ref
 #define r_ev_io_unref r_ref_unref
 
-R_API rboolean r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
-    rpointer data, RDestroyNotify datanotify);
-R_API rboolean r_ev_io_stop (REvIO * evio);
+R_API rpointer r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
+    rpointer data, RDestroyNotify datanotify) R_ATTR_WARN_UNUSED_RESULT;
+R_API rboolean r_ev_io_stop (REvIO * evio, rpointer ctx);
 R_API rboolean r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
     rpointer data, RDestroyNotify datanotify);
 
