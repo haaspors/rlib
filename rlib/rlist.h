@@ -123,6 +123,8 @@ static inline RCBList * r_cblist_append_full (RCBList * entry, RFunc cb,
   r_cblist_append_full (head, cb, data, NULL, user, NULL)
 static inline void r_cblist_free1 (RCBList * entry);
 static inline void r_cblist_destroy (RCBList * head);
+static inline RCBList * r_cblist_remove_link (RCBList * head, RCBList * entry) R_ATTR_WARN_UNUSED_RESULT;
+static inline RCBList * r_cblist_destroy_link (RCBList * head, RCBList * entry) R_ATTR_WARN_UNUSED_RESULT;
 static inline rsize r_cblist_len (RCBList * head);
 static inline rboolean r_cblist_contains (RCBList * head, RFunc cb, rpointer data);
 static inline rsize r_cblist_call (RCBList * head);
@@ -700,6 +702,30 @@ static inline void r_cblist_destroy (RCBList * lst)
 
     r_cblist_free1 (lst);
   }
+}
+static inline RCBList * r_cblist_remove_link (RCBList * head, RCBList * entry)
+{
+  if (entry != NULL) {
+    RCBList * prev = entry->prev;
+    RCBList * next = entry->next;
+
+    if (head == entry)
+      head = head->next;
+
+    if (prev != NULL)
+      prev->next = entry->next;
+    if (next != NULL)
+      next->prev = entry->prev;
+  }
+
+  return head;
+}
+static inline RCBList * r_cblist_destroy_link (RCBList * head, RCBList * entry)
+{
+  head = r_cblist_remove_link (head, entry);
+  r_cblist_free1 (entry);
+
+  return head;
 }
 static inline rsize r_cblist_len (RCBList * lst)
 {
