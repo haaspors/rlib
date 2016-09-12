@@ -714,7 +714,9 @@ r_ev_loop_add_task (REvLoop * loop, RTaskFunc task, REvFunc done,
 
   if (R_UNLIKELY (loop == NULL)) return NULL;
 
-  if ((ctx = r_mem_new (REvLoopTaskCtx)) != NULL) {
+  if (done == NULL) {
+    ret = r_task_queue_add (loop->tq, task, data, datanotify);
+  } else if ((ctx = r_mem_new (REvLoopTaskCtx)) != NULL) {
     ctx->loop = r_ev_loop_ref (loop);
     ctx->task = task;
     ctx->done = done;
