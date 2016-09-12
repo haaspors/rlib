@@ -77,10 +77,11 @@ static inline RCBQueue *  r_cbqueue_new (void) R_ATTR_MALLOC;
 static inline void        r_cbqueue_init (RCBQueue * q);
 static inline void        r_cbqueue_free (RCBQueue * q);
 static inline void        r_cbqueue_clear (RCBQueue * q);
-static inline void        r_cbqueue_push (RCBQueue * q, RFunc cb,
+static inline RCBList *   r_cbqueue_push (RCBQueue * q, RFunc cb,
     rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
 static inline RCBList *   r_cbqueue_pop (RCBQueue * q);
 static inline RCBList *   r_cbqueue_peek (const RCBQueue * q);
+static inline void        r_cbqueue_remove_link (RCBQueue * q, RCBList * link);
 static inline rsize       r_cbqueue_call (RCBQueue * q);
 static inline rsize       r_cbqueue_call_pop (RCBQueue * q);
 static inline void        r_cbqueue_merge (RCBQueue * dst, RCBQueue * src);
@@ -196,7 +197,7 @@ static inline void r_cbqueue_clear (RCBQueue * q)
   r_memset (q, 0, sizeof (RCBQueue));
   r_cblist_destroy (head);
 }
-static inline void r_cbqueue_push (RCBQueue * q, RFunc cb,
+static inline RCBList * r_cbqueue_push (RCBQueue * q, RFunc cb,
     rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify)
 {
   RCBList * n = r_cblist_alloc_full (cb, data, datanotify, user, usernotify);
@@ -207,6 +208,8 @@ static inline void r_cbqueue_push (RCBQueue * q, RFunc cb,
   } else {
     q->tail = q->head = n;
   }
+
+  return n;
 }
 static inline RCBList * r_cbqueue_pop (RCBQueue * q)
 {
@@ -229,6 +232,13 @@ static inline RCBList * r_cbqueue_pop (RCBQueue * q)
 static inline RCBList * r_cbqueue_peek (const RCBQueue * q)
 {
   return q->head;
+}
+static inline void r_cbqueue_remove_link (RCBQueue * q, RCBList * link)
+{
+  if (link == q->tail)
+    q->tail = r_list_prev (q->tail);
+  q->head = r_cblist_destroy_link (q->head, link);
+  q->size--;
 }
 static inline rsize r_cbqueue_call (RCBQueue * q)
 {
