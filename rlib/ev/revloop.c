@@ -734,6 +734,37 @@ r_ev_loop_add_task (REvLoop * loop, RTaskFunc task, REvFunc done,
   return ret;
 }
 
+RTask *
+r_ev_loop_add_task_with_taskgroup (REvLoop * loop, ruint taskgroup,
+    RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify)
+{
+  RTask * ret;
+  REvLoopTaskCtx * ctx;
+
+  if (R_UNLIKELY (loop == NULL)) return NULL;
+
+  if (done == NULL) {
+    ret = r_task_queue_add_full (loop->tq, taskgroup,
+        task, data, datanotify, NULL);
+  } else if ((ctx = r_mem_new (REvLoopTaskCtx)) != NULL) {
+    ctx->loop = r_ev_loop_ref (loop);
+    ctx->task = task;
+    ctx->done = done;
+    ctx->data = data;
+    ctx->datanotify = datanotify;
+    if ((ret = r_task_queue_add_full (loop->tq, taskgroup,
+            r_ev_loop_task_proxy, ctx, r_free, NULL)) != NULL) {
+      r_atomic_uint_fetch_add (&loop->tqitems, 1);
+    } else {
+      r_free (ctx);
+    }
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
 void
 r_ev_io_clear (REvIO * evio)
 {

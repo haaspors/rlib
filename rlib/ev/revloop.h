@@ -87,6 +87,8 @@ R_API rboolean r_ev_loop_cancel_timer (REvLoop * loop, RClockEntry * entry);
 
 R_API RTask * r_ev_loop_add_task (REvLoop * loop, RTaskFunc task, REvFunc done,
     rpointer data, RDestroyNotify datanotify);
+R_API RTask * r_ev_loop_add_task_with_taskgroup (REvLoop * loop, ruint taskgroup,
+    RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify);
 
 R_API REvIO * r_ev_loop_init_handle (REvLoop * loop, REvHandle handle);
 #define r_ev_io_ref r_ref_ref
