@@ -44,6 +44,10 @@ R_API rboolean r_ev_udp_bind (REvUDP * evudp,
 R_API rboolean r_ev_udp_recv_start (REvUDP * evudp,
     REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
     rpointer data, RDestroyNotify datanotify);
+/* Use task pool for receiving... */
+R_API rboolean r_ev_udp_task_recv_start (REvUDP * evudp, ruint taskgroup,
+    REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
+    rpointer data, RDestroyNotify datanotify);
 R_API rboolean r_ev_udp_recv_stop (REvUDP * evudp);
 R_API rboolean r_ev_udp_send (REvUDP * evudp, RBuffer * buf,
     RSocketAddress * address, REvUDPBufferFunc done,

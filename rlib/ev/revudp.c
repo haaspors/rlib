@@ -45,6 +45,7 @@ struct _REvUDP {
 
   RSocketFamily family;
   RSocket * socket;
+  ruint taskgroup;
 
   REvUDPBufferAllocFunc alloc;
   REvUDPBufferFunc recv;
@@ -93,7 +94,7 @@ r_ev_udp_bind (REvUDP * evudp, const RSocketAddress * address, rboolean reuse)
     r_socket_bind (evudp->socket, address, reuse) == R_SOCKET_OK;
 }
 
-#define R_EV_UDP_BUFFER_SIZE        2048
+#define R_EV_UDP_BUFFER_SIZE        4096
 
 static RBuffer *
 r_ev_udp_buffer_alloc_default (rpointer data, REvUDP * evudp)
@@ -179,6 +180,28 @@ r_ev_udp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
   if (events & R_EV_IO_ERROR) r_ev_udp_error_iocb ((REvUDP *)evio);
 }
 
+static void
+r_ev_udp_task_recv_iocb (REvUDP * evudp)
+{
+  RTask * task;
+
+  if ((task = r_ev_loop_add_task_with_taskgroup (evudp->evio.loop,
+          evudp->taskgroup, (RTaskFunc) r_ev_udp_recv_iocb, NULL,
+          r_ev_udp_ref (evudp), r_ev_udp_unref)) != NULL) {
+    r_task_unref (task);
+  }
+}
+
+static void
+r_ev_udp_task_iocb (rpointer data, REvIOEvents events, REvIO * evio)
+{
+  (void) data;
+
+  if (events & R_EV_IO_READABLE) r_ev_udp_task_recv_iocb ((REvUDP *)evio);
+  if (events & R_EV_IO_WRITABLE) r_ev_udp_send_iocb ((REvUDP *)evio);
+  if (events & R_EV_IO_ERROR) r_ev_udp_error_iocb ((REvUDP *)evio);
+}
+
 rboolean
 r_ev_udp_recv_start (REvUDP * evudp,
     REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
@@ -192,6 +215,29 @@ r_ev_udp_recv_start (REvUDP * evudp,
     if (alloc == NULL)
       alloc = r_ev_udp_buffer_alloc_default;
 
+    evudp->alloc = alloc;
+    evudp->recv = recv;
+    evudp->recv_data = data;
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+rboolean
+r_ev_udp_task_recv_start (REvUDP * evudp, ruint taskgroup,
+    REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
+    rpointer data, RDestroyNotify datanotify)
+{
+  if (R_UNLIKELY (recv == NULL)) return FALSE;
+  if (R_UNLIKELY (evudp->recv_iocb_ctx != NULL)) return FALSE;
+
+  if ((evudp->recv_iocb_ctx = r_ev_io_start (&evudp->evio, R_EV_IO_READABLE,
+      r_ev_udp_task_iocb, data, datanotify))) {
+    if (alloc == NULL)
+      alloc = r_ev_udp_buffer_alloc_default;
+
+    evudp->taskgroup = taskgroup;
     evudp->alloc = alloc;
     evudp->recv = recv;
     evudp->recv_data = data;
