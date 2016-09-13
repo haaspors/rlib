@@ -691,6 +691,7 @@ r_thread_get_affinity (const RThread * thread, RBitset * cpuset)
   if (R_UNLIKELY (thread == NULL)) return FALSE;
   if (R_UNLIKELY (cpuset == NULL)) return FALSE;
 
+  r_bitset_clear (cpuset);
   for (mask = 1; mask > 0; mask <<= 1) {
     if ((old = SetThreadAffinityMask (thread->thread, mask)) != 0) {
       SetThreadAffinityMask (thread->thread, old);
