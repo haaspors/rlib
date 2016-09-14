@@ -237,6 +237,30 @@ r_sys_cpu_max_count (void)
 }
 
 ruint
+r_sys_cpuset_max_count (void)
+{
+  ruint ret = r_sys_cpu_max_count ();
+  return MAX (ret, 1024);
+}
+
+rboolean
+r_sys_cpuset_online (RBitset * cpuset)
+{
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  r_bitset_clear (cpuset);
+#if defined (R_OS_WIN32)
+  return r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
+#elif defined (HAVE_SYSCTLBYNAME)
+  return r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
+#elif defined (R_OS_LINUX)
+  return r_bitset_set_from_human_readable_file (cpuset, R_SYSFS_CPU_ONLINE, NULL);
+#else
+  return FALSE;
+#endif
+}
+
+ruint
 r_sys_node_count (void)
 {
   ruint ret = 0;

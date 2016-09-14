@@ -9,6 +9,16 @@ RTEST (rsys, cpu, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rsys, cpuset, RTEST_FAST | RTEST_SYSTEM)
+{
+  RBitset * cpuset;
+
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max_count ()));
+  r_assert (r_sys_cpuset_online (cpuset));
+  r_assert_cmpuint (r_bitset_popcount (cpuset), ==, r_sys_cpu_logical_count ());
+}
+RTEST_END;
+
 RTEST (rsys, node, RTEST_FAST | RTEST_SYSTEM)
 {
   r_assert_cmpuint (r_sys_node_count (), >, 0);
