@@ -14,8 +14,13 @@ RTEST_BENCH (rbench, system, RTEST_FAST | RTEST_SYSTEM)
   r_print ("\t\tLogical:  %4u\n", r_sys_cpu_logical_count ());
   if (r_sys_cpuset_online (cpuset)) {
     rchar * online;
-    r_print ("\t\tOnline:   %s\n", (online = r_bitset_to_human_readable (cpuset)));
+    r_print ("\t\tOnline:   [%s]\n", (online = r_bitset_to_human_readable (cpuset)));
     r_free (online);
+  }
+  if (r_thread_get_affinity (r_thread_current (), cpuset)) {
+    rchar * aff;
+    r_print ("\t\tAffinity: [%s]\n", (aff = r_bitset_to_human_readable (cpuset)));
+    r_free (aff);
   }
 }
 RTEST_END;
