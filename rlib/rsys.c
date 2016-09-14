@@ -20,6 +20,7 @@
 #include "rlib-private.h"
 
 #include <rlib/rsys.h>
+#include <rlib/rfile.h>
 #include <rlib/rlog.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
@@ -279,6 +280,38 @@ r_sys_cpuset_online (RBitset * cpuset)
 #else
   return r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
 #endif
+}
+
+rboolean
+r_sys_cpuset_allowed (RBitset * cpuset)
+{
+  rboolean ret = FALSE;
+
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  r_bitset_clear (cpuset);
+#if defined (R_OS_LINUX)
+  if (r_bitset_set_from_human_readable_file (cpuset, R_SYSFS_CPU "/online", NULL)) {
+    RFile * f;
+
+    if ((f = r_file_open ("/proc/self/status", "r")) != NULL) {
+      rchar buf[256];
+      while (r_file_read_line (f, buf, sizeof (buf)) == R_FILE_ERROR_OK) {
+        if (r_str_has_prefix (buf, "Cpus_allowed_list:")) {
+          RBitset * bs;
+          ret = r_bitset_init_stack (bs, cpuset->bsize) &&
+            r_bitset_set_from_human_readable (bs, buf + 18, NULL) &&
+            r_bitset_and (cpuset, cpuset, bs);
+          break;
+        }
+      }
+      r_file_unref (f);
+    }
+  }
+#else
+  ret = r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
+#endif
+  return ret;
 }
 
 ruint
