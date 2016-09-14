@@ -35,6 +35,8 @@ R_API ruint r_sys_cpu_logical_count (void);
 R_API ruint r_sys_cpu_max_count (void);
 
 R_API ruint r_sys_cpuset_max_count (void);
+R_API rboolean r_sys_cpuset_possible (RBitset * cpuset);
+R_API rboolean r_sys_cpuset_present (RBitset * cpuset);
 R_API rboolean r_sys_cpuset_online (RBitset * cpuset);
 
 R_API ruint r_sys_node_count (void);

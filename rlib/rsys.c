@@ -32,14 +32,13 @@
 #endif
 
 #ifdef R_OS_LINUX
-#define R_SYSFS_CPU_ONLINE            "/sys/devices/system/cpu/online"
-#define R_SYSFS_CPU_MAX               "/sys/devices/system/cpu/kernel_max"
+#define R_SYSFS_CPU                   "/sys/devices/system/cpu"
 #define R_SYSFS_CPU_FMT               "/sys/devices/system/cpu/cpu%u"
 
 #define R_SYSFS_CPU_TOPO_PKG_ID       "/topology/physical_package_id"
 #define R_SYSFS_CPU_TOPO_THR_SIB_LST  "/topology/thread_siblings_list"
 
-#define R_SYSFS_NODE_ONLINE           "/sys/devices/system/node/online"
+#define R_SYSFS_NODE                  "/sys/devices/system/node"
 #define R_SYSFS_NODE_FMT              "/sys/devices/system/node/node%u"
 
 #include <rlib/rfile.h>
@@ -78,7 +77,7 @@ _max_cpu_func (rpointer data)
 {
   ruint ret;
   (void) data;
-  ret = r_file_read_uint (R_SYSFS_CPU_MAX, RUINT_MAX);
+  ret = r_file_read_uint (R_SYSFS_CPU "/kernel_max", RUINT_MAX);
   return RUINT_TO_POINTER (ret + 1);
 }
 
@@ -138,7 +137,7 @@ r_sys_cpu_packages (void)
   RBitset * online, * packs;
   ruint max = r_sys_cpu_linux_max_cpus ();
   if (r_bitset_init_stack (online, max) && r_bitset_init_stack (packs, max)) {
-    r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
+    r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU "/online", NULL);
     r_bitset_foreach (online, TRUE, r_sys_cpu_linux_package_func, packs);
     ret = r_bitset_popcount (packs);
   }
@@ -174,7 +173,7 @@ r_sys_cpu_physical_count (void)
   RBitset * online, * phys;
   ruint max = r_sys_cpu_linux_max_cpus ();
   if (r_bitset_init_stack (online, max) && r_bitset_init_stack (phys, max)) {
-    r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
+    r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU "/online", NULL);
     r_bitset_foreach (online, TRUE, r_sys_cpu_linux_phys_func, phys);
     ret = r_bitset_popcount (phys);
   }
@@ -210,7 +209,7 @@ r_sys_cpu_logical_count (void)
 #elif defined (R_OS_LINUX)
   RBitset * online;
   if (r_bitset_init_stack (online, r_sys_cpu_linux_max_cpus ())) {
-    r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU_ONLINE, NULL);
+    r_bitset_set_from_human_readable_file (online, R_SYSFS_CPU "/online", NULL);
     ret = r_bitset_popcount (online);
   }
 #endif
@@ -244,19 +243,41 @@ r_sys_cpuset_max_count (void)
 }
 
 rboolean
+r_sys_cpuset_possible (RBitset * cpuset)
+{
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  r_bitset_clear (cpuset);
+#if defined (R_OS_LINUX)
+  return r_bitset_set_from_human_readable_file (cpuset, R_SYSFS_CPU "/possible", NULL);
+#else
+  return r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
+#endif
+}
+
+rboolean
+r_sys_cpuset_present (RBitset * cpuset)
+{
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  r_bitset_clear (cpuset);
+#if defined (R_OS_LINUX)
+  return r_bitset_set_from_human_readable_file (cpuset, R_SYSFS_CPU "/present", NULL);
+#else
+  return r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
+#endif
+}
+
+rboolean
 r_sys_cpuset_online (RBitset * cpuset)
 {
   if (R_UNLIKELY (cpuset == NULL)) return FALSE;
 
   r_bitset_clear (cpuset);
-#if defined (R_OS_WIN32)
-  return r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
-#elif defined (HAVE_SYSCTLBYNAME)
-  return r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
-#elif defined (R_OS_LINUX)
-  return r_bitset_set_from_human_readable_file (cpuset, R_SYSFS_CPU_ONLINE, NULL);
+#if defined (R_OS_LINUX)
+  return r_bitset_set_from_human_readable_file (cpuset, R_SYSFS_CPU "/online", NULL);
 #else
-  return FALSE;
+  return r_bitset_set_n_bits_at (cpuset, r_sys_cpu_logical_count (), 0, TRUE);
 #endif
 }
 
@@ -280,7 +301,7 @@ r_sys_node_count (void)
 #elif defined (R_OS_LINUX)
   RBitset * online;
   if (r_bitset_init_stack (online, r_sys_cpu_linux_max_cpus ())) {
-    r_bitset_set_from_human_readable_file (online, R_SYSFS_NODE_ONLINE, NULL);
+    r_bitset_set_from_human_readable_file (online, R_SYSFS_NODE "/online", NULL);
     ret = r_bitset_popcount (online);
   }
 #endif
@@ -455,7 +476,7 @@ r_sys_topology_discover (void)
 #elif defined (R_OS_LINUX)
       ruint max = r_sys_cpu_linux_max_cpus ();
       if (r_bitset_init_heap (ret->nodeset, max))
-        r_bitset_set_from_human_readable_file (ret->nodeset, R_SYSFS_NODE_ONLINE, NULL);
+        r_bitset_set_from_human_readable_file (ret->nodeset, R_SYSFS_NODE "/online", NULL);
 #endif
     } R_STMT_END;
 
