@@ -376,6 +376,8 @@ def configure_threads(cfg):
                 header_name="pthread.h", lib='pthread', mandatory=False)
         cfg.check_cc(function_name='pthread_setaffinity_np', defines=['_GNU_SOURCE=1'],
                 header_name="pthread.h", lib='pthread', mandatory=False)
+        cfg.check_cc(function_name='pthread_attr_setaffinity_np', defines=['_GNU_SOURCE=1'],
+                header_name="pthread.h", lib='pthread', mandatory=False)
 
 def configure_signal(cfg):
     if cfg.env.NOSIGNAL:

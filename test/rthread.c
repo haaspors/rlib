@@ -44,17 +44,52 @@ rthread_test_wait_thread_func (rpointer data)
   return RUINT_TO_POINTER (r_thread_get_id (r_thread_current ()));
 }
 
-RTEST_F (rthread, join, RTEST_FAST)
+RTEST_F (rthread, new_join, RTEST_FAST)
 {
   RThread * t;
 
-  r_mutex_lock (&fixture->mutex);
   r_assert_cmpptr (r_thread_new (NULL, NULL, NULL), ==, NULL);
   r_assert_cmpptr (r_thread_new ("rthread-test", NULL, NULL), ==, NULL);
 
+  r_mutex_lock (&fixture->mutex);
   r_assert_cmpptr ((t = r_thread_new ("rthread-test",
           rthread_test_wait_thread_func, fixture)), !=, NULL);
   r_cond_wait (&fixture->cond, &fixture->mutex); /* Wait for thread to start. */
+  rthread_test_end_thread (fixture);
+  r_mutex_unlock (&fixture->mutex);
+  r_assert_cmpptr (r_thread_join (t), ==, RUINT_TO_POINTER (r_thread_get_id (t)));
+  r_thread_unref (t);
+}
+RTEST_END;
+
+RTEST_F (rthread, new_with_affinity, RTEST_FAST | RTEST_SYSTEM)
+{
+  RThread * t;
+  RBitset * cpuset;
+  rsize first;
+
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max_count ()));
+
+  r_assert_cmpptr (r_thread_new_full (NULL, NULL, NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_thread_new_full ("rthread-test", NULL, NULL, NULL), ==, NULL);
+  r_assert_cmpptr ((t = r_thread_new_full ("rthread-test", cpuset,
+          rthread_test_wait_thread_func, fixture)), ==, NULL);
+
+  r_assert (r_sys_cpuset_allowed (cpuset));
+  r_assert_cmpuint (r_bitset_popcount (cpuset), >, 0);
+  r_assert_cmpuint ((first = r_bitset_ctz (cpuset)), <, cpuset->bsize);
+  r_assert (r_bitset_clear (cpuset));
+  r_assert (r_bitset_set_bit (cpuset, first, TRUE));
+  r_assert_cmpuint (r_bitset_popcount (cpuset), ==, 1);
+  r_mutex_lock (&fixture->mutex);
+  r_assert_cmpptr ((t = r_thread_new_full ("rthread-test", cpuset,
+          rthread_test_wait_thread_func, fixture)), !=, NULL);
+  r_cond_wait (&fixture->cond, &fixture->mutex); /* Wait for thread to start. */
+#if defined (R_OS_LINUX)
+  r_assert (r_thread_get_affinity (t, cpuset));
+  r_assert_cmpuint (r_bitset_popcount (cpuset), ==, 1);
+  r_assert (r_bitset_is_bit_set (cpuset, first));
+#endif
   rthread_test_end_thread (fixture);
   r_mutex_unlock (&fixture->mutex);
   r_assert_cmpptr (r_thread_join (t), ==, RUINT_TO_POINTER (r_thread_get_id (t)));
@@ -67,9 +102,6 @@ RTEST_F (rthread, get_name, RTEST_FAST)
   RThread * t;
 
   r_mutex_lock (&fixture->mutex);
-  r_assert_cmpptr (r_thread_new (NULL, NULL, NULL), ==, NULL);
-  r_assert_cmpptr (r_thread_new ("rthread-test", NULL, NULL), ==, NULL);
-
   r_assert_cmpptr ((t = r_thread_new ("rthread-test",
           rthread_test_wait_thread_func, fixture)), !=, NULL);
   r_cond_wait (&fixture->cond, &fixture->mutex); /* Wait for thread to start. */

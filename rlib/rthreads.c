@@ -40,6 +40,7 @@
 #ifdef HAVE_SYS_PRCTL_H
 #include <sys/prctl.h>
 #endif
+#include <string.h>
 #include <time.h>
 
 #if defined (R_OS_WIN32)
@@ -552,13 +553,16 @@ r_thread_trampoline (rpointer data)
 #endif
 
 RThread *
-r_thread_new (const rchar * name, RThreadFunc func, rpointer data)
+r_thread_new_full (const rchar * name,
+    const RBitset * cpuset, RThreadFunc func, rpointer data)
 {
   RThread * ret;
 
   if (R_UNLIKELY (func == NULL)) return NULL;
+  if (cpuset != NULL && r_bitset_popcount (cpuset) == 0) return NULL;
 
   if ((ret = r_mem_new (RThread)) != NULL) {
+    int err;
 #if defined (HAVE_PTHREAD_H)
     pthread_attr_t attr;
 #endif
@@ -581,7 +585,35 @@ r_thread_new (const rchar * name, RThreadFunc func, rpointer data)
 #elif defined (HAVE_PTHREAD_H)
     r_mutex_init (&ret->join_mutex);
     pthread_attr_init (&attr);
-    if (pthread_create (&ret->thread, &attr, r_thread_trampoline, ret) != 0) {
+#ifdef HAVE_PTHREAD_ATTR_SETAFFINITY_NP
+    if (cpuset != NULL) {
+      rsize i, csetsize = CPU_ALLOC_SIZE (MAX (cpuset->bsize, CPU_SETSIZE));
+      cpu_set_t * cset = r_alloca0 (csetsize);
+
+      for (i = 0; i < cpuset->bsize; i++) {
+        if (r_bitset_is_bit_set (cpuset, i))
+          CPU_SET (i, cset);
+      }
+      if ((err = pthread_attr_setaffinity_np (&attr, csetsize, cset)) == 0) {
+        cpuset = NULL;
+      } else {
+        rchar * str = r_bitset_to_human_readable (cpuset);
+        R_LOG_ERROR ("pthread_attr_setaffinity_np error %u - %s for cpuset: [%s]",
+            err, strerror (err), str);
+        r_free (str);
+      }
+    }
+#endif
+    if ((err = pthread_create (&ret->thread, &attr, r_thread_trampoline, ret)) != 0) {
+      rchar * str;
+
+      if (cpuset != NULL)
+        str = r_bitset_to_human_readable (cpuset);
+      else
+        str = r_strdup ("all");
+      R_LOG_ERROR ("Error when creating new thread %u - %s with cpuset: [%s]",
+          err, strerror (err), str);
+      r_free (str);
       r_thread_unref (ret);
       ret = NULL;
     }
@@ -589,6 +621,9 @@ r_thread_new (const rchar * name, RThreadFunc func, rpointer data)
 #endif
 #endif
   }
+
+  if (ret != NULL && cpuset != NULL)
+    r_thread_set_affinity (ret, cpuset);
 
   return ret;
 }

@@ -96,8 +96,10 @@ R_API void      r_cond_signal       (RCond * cond);
 R_API void      r_cond_broadcast    (RCond * cond);
 
 /* Threads */
-R_API RThread * r_thread_new        (const rchar * name,
-    RThreadFunc func, rpointer data);
+#define r_thread_new(name, func, data)                                        \
+  r_thread_new_full (name, NULL, func, data)
+R_API RThread * r_thread_new_full   (const rchar * name,
+    const RBitset * cpuset, RThreadFunc func, rpointer data);
 #define r_thread_ref        r_ref_ref
 #define r_thread_unref      r_ref_unref
 R_API rpointer  r_thread_join       (RThread * thread);
