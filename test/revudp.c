@@ -130,6 +130,7 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
 {
   REvLoop * loop;
   RClock * clock;
+  RTaskQueue * tq;
   RSocketAddress * addr;
   REvUDP * udp1, * udp2;
   REvUDPTestRecvCtx ctx;
@@ -141,7 +142,8 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
   sentbuf = NULL;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
-  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new_per_cpu_simple (1)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, tq)), !=, NULL);
   r_clock_unref (clock);
 
   r_assert_cmpptr ((udp1 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
@@ -160,7 +162,9 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr (sentbuf, !=, NULL);
   r_assert_cmpint (r_buffer_memcmp (sentbuf, 0, sendbuf, 512), ==, 0);
 
-  /* TODO: This is not cool! */
+  /* FIXME: wait for this some how!? */
+  while (r_task_queue_queued_tasks (tq) > 0)
+    r_thread_usleep (1000);
   r_thread_usleep (1000);
   r_assert_cmpuint (r_list_len (ctx.buffers), ==, 1);
   r_assert_cmpuint (r_list_len (ctx.addrs), ==, 1);
@@ -173,6 +177,7 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
   r_socket_address_unref (addr);
   r_ev_udp_unref (udp1);
   r_ev_udp_unref (udp2);
+  r_task_queue_unref (tq);
   r_ev_loop_unref (loop);
 }
 RTEST_END;
