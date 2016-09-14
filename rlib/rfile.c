@@ -133,6 +133,12 @@ r_file_read (RFile * file, rpointer data, rsize size, rsize * actual)
 }
 
 RIOError
+r_file_read_line (RFile * file, rchar * data, rsize maxsize)
+{
+  return fgets (data, maxsize, file->file) ? R_FILE_ERROR_OK : R_FILE_ERROR_ERROR;
+}
+
+RIOError
 r_file_write (RFile * file, rconstpointer data, rsize size, rsize * actual)
 {
   rsize acc = 0, cur;

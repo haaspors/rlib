@@ -60,6 +60,7 @@ R_API RFile * r_file_new_tmp_full (const rchar * dir, const rchar * pre,
 R_API int r_file_get_fd (RFile * file);
 
 R_API RIOError r_file_read (RFile * file, rpointer data, rsize size, rsize * actual);
+R_API RIOError r_file_read_line (RFile * file, rchar * data, rsize maxsize);
 R_API RIOError r_file_write (RFile * file, rconstpointer data, rsize size, rsize * actual);
 R_API RIOError r_file_scanf (RFile * file, const rchar * fmt, rsize * actual, ...) R_ATTR_SCANF (2, 4);
 R_API RIOError r_file_vscanf (RFile * file, const rchar * fmt, rsize * actual, va_list args) R_ATTR_SCANF (2, 0);
