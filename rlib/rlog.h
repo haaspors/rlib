@@ -94,7 +94,7 @@ R_API void r_log_msg (RLogCategory * cat, RLogLevel lvl,
     const rchar * msg);
 R_API void r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,
-    const ruint8 * ptr, rsize size, rsize bytesperline);
+    rconstpointer ptr, rsize size, rsize bytesperline);
 
 #define R_LOG_CAT_LEVEL(cat,lvl,...) R_STMT_START {                           \
   _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE);               \

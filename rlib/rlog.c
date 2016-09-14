@@ -296,9 +296,10 @@ r_log_msg (RLogCategory * cat, RLogLevel lvl,
 void
 r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,
-    const ruint8 * ptr, rsize size, rsize bytesperline)
+    rconstpointer ptr, rsize size, rsize bytesperline)
 {
   rchar * msg = r_alloca (R_STR_MEM_DUMP_SIZE (bytesperline));
+  const ruint8 * p = ptr;
 
   if (R_UNLIKELY (cat == NULL))
     abort ();
@@ -306,14 +307,14 @@ r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
     return;
 
   while (size > bytesperline) {
-    r_str_mem_dump (msg, ptr, bytesperline, bytesperline);
+    r_str_mem_dump (msg, p, bytesperline, bytesperline);
     r_log_it (cat, lvl, file, line, func, msg);
     size -= bytesperline;
-    ptr  += bytesperline;
+    p += bytesperline;
   }
 
   if (size > 0) {
-    r_str_mem_dump (msg, ptr, size, bytesperline);
+    r_str_mem_dump (msg, p, size, bytesperline);
     r_log_it (cat, lvl, file, line, func, msg);
   }
 }
