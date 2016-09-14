@@ -749,18 +749,12 @@ r_thread_get_affinity (const RThread * thread, RBitset * cpuset)
   if (R_UNLIKELY (cpuset == NULL)) return FALSE;
 
   r_bitset_clear (cpuset);
-  csetsize = CPU_ALLOC_SIZE (cpuset->bsize);
-  if ((cset = r_alloca0 (csetsize)) != NULL &&
-      pthread_getaffinity_np (thread->thread, csetsize, cset) == 0) {
-    rsize i;
-    for (i = 0; i < csetsize / sizeof (rulong); i++) {
-#if RLIB_SIZEOF_LONG == 8
-      if (!r_bitset_set_u64_at (cpuset, ((rulong *)cset)[i], i * RLIB_SIZEOF_LONG * 8))
-#elif RLIB_SIZEOF_LONG == 4
-      if (!r_bitset_set_u32_at (cpuset, ((rulong *)cset)[i], i * RLIB_SIZEOF_LONG * 8))
-#else
-#error "weird sizeof long!"
-#endif
+  csetsize = CPU_ALLOC_SIZE (MAX (cpuset->bsize, CPU_SETSIZE));
+  cset = r_alloca0 (csetsize);
+  if (pthread_getaffinity_np (thread->thread, csetsize, cset) == 0) {
+    rsize i = 0;
+    for (; i < cpuset->bsize; i++) {
+      if (!r_bitset_set_bit (cpuset, i, CPU_ISSET (i, cset)))
         return FALSE;
     }
     return TRUE;
@@ -790,17 +784,6 @@ r_thread_get_affinity (const RThread * thread, RBitset * cpuset)
   return FALSE;
 }
 
-#ifdef RLIB_HAVE_THREADS
-#if defined (HAVE_PTHREAD_SETAFFINITY_NP)
-static void
-r_thread_bitset_to_cpu_set (rsize bit, rpointer user)
-{
-  cpu_set_t * cpuset = user;
-  CPU_SET ((int)bit, cpuset);
-}
-#endif
-#endif
-
 rboolean
 r_thread_set_affinity (RThread * thread, const RBitset * cpuset)
 {
@@ -822,15 +805,18 @@ r_thread_set_affinity (RThread * thread, const RBitset * cpuset)
 #elif defined (HAVE_PTHREAD_SETAFFINITY_NP)
   rsize csetsize;
   cpu_set_t * cset;
+  rsize i;
 
   if (R_UNLIKELY (thread == NULL)) return FALSE;
   if (R_UNLIKELY (cpuset == NULL)) return FALSE;
 
-  csetsize = CPU_ALLOC_SIZE (cpuset->bsize);
-  if ((cset = r_alloca0 (csetsize)) != NULL) {
-    r_bitset_foreach (cpuset, TRUE, r_thread_bitset_to_cpu_set, cset);
-    return pthread_setaffinity_np (thread->thread, csetsize, cset) == 0;
+  csetsize = CPU_ALLOC_SIZE (MAX (cpuset->bsize, CPU_SETSIZE));
+  cset = r_alloca0 (csetsize);
+  for (i = 0; i < CPU_SETSIZE && i < cpuset->bsize; i++) {
+    if (r_bitset_is_bit_set (cpuset, i))
+      CPU_SET (i, cset);
   }
+  return pthread_setaffinity_np (thread->thread, csetsize, cset) == 0;
 #elif defined (HAVE_MACH_THREAD_POLICY_H)
   mach_port_t mach_thread;
 
@@ -846,6 +832,7 @@ r_thread_set_affinity (RThread * thread, const RBitset * cpuset)
           (thread_policy_t)&data, THREAD_AFFINITY_POLICY_COUNT);
     }
   }
+  return TRUE;
 #endif
 #endif
   return FALSE;
