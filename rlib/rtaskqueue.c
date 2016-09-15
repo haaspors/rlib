@@ -196,6 +196,22 @@ r_task_queue_new_simple (ruint threads)
 }
 
 RTaskQueue *
+r_task_queue_new_thread_per_group (ruint groups)
+{
+  RTaskQueue * ret;
+
+  if (R_UNLIKELY (groups == 0)) return NULL;
+
+  if ((ret = r_task_queue_alloc (groups)) != NULL) {
+    ruint i;
+    for (i = 0; i < groups; i++)
+      r_thread_pool_start_thread (ret->pool, NULL, NULL, &ret->ctx[i]);
+  }
+
+  return ret;
+}
+
+RTaskQueue *
 r_task_queue_new_per_numa_simple (ruint thrpernode)
 {
   RSysTopology * topo;

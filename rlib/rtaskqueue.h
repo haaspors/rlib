@@ -43,6 +43,7 @@ R_API rboolean r_task_wait (RTask * task);
 
 
 R_API RTaskQueue * r_task_queue_new_simple (ruint threads) R_ATTR_MALLOC;
+R_API RTaskQueue * r_task_queue_new_thread_per_group (ruint groups) R_ATTR_MALLOC;
 R_API RTaskQueue * r_task_queue_new_per_numa_simple (ruint thrpernode) R_ATTR_MALLOC;
 R_API RTaskQueue * r_task_queue_new_per_numa_each_cpu (void) R_ATTR_MALLOC;
 R_API RTaskQueue * r_task_queue_new_per_numa_each_cpu_with_cpuset (const RBitset * cpuset) R_ATTR_MALLOC;
