@@ -39,6 +39,7 @@ typedef void (*RTaskFunc) (rpointer data, RTaskQueue * queue, RTask * task);
 #define r_task_unref  r_ref_unref
 R_API rboolean r_task_add_dep (RTask * task, RTask * dep, ...) R_ATTR_NULL_TERMINATED;
 R_API rboolean r_task_add_dep_v (RTask * task, RTask * dep, va_list args);
+R_API rboolean r_task_wait (RTask * task);
 
 
 R_API RTaskQueue * r_task_queue_new_simple (ruint threads) R_ATTR_MALLOC;

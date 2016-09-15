@@ -56,6 +56,9 @@ struct _RTaskQueue {
   RThreadPool * pool;
   RDestroyNotify stop;
 
+  RCond   wait_cond;
+  RMutex  wait_mutex;
+
   ruint ctxcount;
   RTQCtx * ctx;
 };
@@ -95,6 +98,19 @@ r_task_add_dep_v (RTask * task, RTask * dep, va_list args)
   return TRUE;
 }
 
+rboolean
+r_task_wait (RTask * task)
+{
+  if (R_UNLIKELY (task == NULL || task->queue == NULL)) return FALSE;
+
+  r_mutex_lock (&task->queue->wait_mutex);
+  while (!task->ran)
+    r_cond_wait (&task->queue->wait_cond, &task->queue->wait_mutex);
+  r_mutex_unlock (&task->queue->wait_mutex);
+
+  return TRUE;
+}
+
 static void
 r_task_queue_free (RTaskQueue * queue)
 {
@@ -117,6 +133,10 @@ r_task_queue_free (RTaskQueue * queue)
       r_cond_clear (&queue->ctx[i].cond);
       r_mutex_clear (&queue->ctx[i].mutex);
     }
+
+    r_cond_clear (&queue->wait_cond);
+    r_mutex_clear (&queue->wait_mutex);
+
     r_free (queue->ctx);
     r_free (queue);
   }
@@ -130,6 +150,9 @@ r_task_queue_alloc (rsize ctxcount)
   if ((ret = r_mem_new0 (RTaskQueue)) != NULL) {
     ruint i;
     r_ref_init (ret, r_task_queue_free);
+
+    r_mutex_init (&ret->wait_mutex);
+    r_cond_init (&ret->wait_cond);
 
     ret->ctxcount = ctxcount;
     ret->ctx = r_mem_new_n (RTQCtx, ctxcount);
@@ -415,7 +438,10 @@ r_task_queue_loop (rpointer common, rpointer spec)
       R_LOG_TRACE ("TQ: %p [%p] - process task %p", queue, ctx, task);
       task->func (task->data, queue, task);
       r_mutex_lock (&(ctx)->mutex);
+      r_mutex_lock (&queue->wait_mutex);
       task->ran = TRUE;
+      r_cond_broadcast (&queue->wait_cond);
+      r_mutex_unlock (&queue->wait_mutex);
       r_task_unref (task);
     } else {
       R_LOG_TRACE ("TQ: %p [%p] - wait", queue, ctx);

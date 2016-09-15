@@ -22,8 +22,8 @@ RTEST (rtaskqueue, simple, RTEST_FAST)
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, 1);
 
   r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
-  while (r_atomic_uint_load (&counter) < 1)
-    r_thread_yield ();
+  r_assert (r_task_wait (t));
+  r_assert_cmpuint (r_atomic_uint_load (&counter), ==, 1);
 
   r_task_unref (t);
   r_task_queue_unref (tq);
@@ -62,6 +62,7 @@ RTEST (rtaskqueue, chain, RTEST_FAST)
   r_assert_cmpptr ((t[1] = r_task_queue_add (tq, chain_adder, &counter, NULL)), !=, NULL);
   r_assert_cmpptr ((t[2] = r_task_queue_add (tq, chain_adder, &counter, NULL)), !=, NULL);
 
+  /* We can't use r_task_wait, as new tasks are added, and we should wait for them. */
   while (r_atomic_uint_load (&counter) < 9)
     r_thread_yield ();
 
@@ -120,6 +121,7 @@ RTEST (rtaskqueue, dep, RTEST_FAST)
   r_assert_cmpptr ((t[1] = r_task_queue_add_full (tq, 0, chain_ctx, &ctx[1], NULL, t[0], NULL)), !=, NULL);
   r_assert_cmpptr ((t[2] = r_task_queue_add_full (tq, 0, chain_ctx, &ctx[2], NULL, t[1], NULL)), !=, NULL);
 
+  /* We can't use r_task_wait, as new tasks are added, and we should wait for them. */
   while (r_atomic_uint_load (&counter) < 20)
     r_thread_yield ();
 
@@ -157,6 +159,7 @@ RTEST (rtaskqueue, allocate_manually, RTEST_FAST)
   r_assert (r_task_add_dep (t[2], t[1], t[0], NULL));
   r_assert (r_task_queue_add_task (tq, t[2]));
 
+  /* We can't use r_task_wait, as new tasks are added, and we should wait for them. */
   while (r_atomic_uint_load (&counter) < 30)
     r_thread_yield ();
 
@@ -180,8 +183,8 @@ RTEST (rtaskqueue, per_numa, RTEST_FAST)
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_node_count () * 2);
 
   r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
-  while (r_atomic_uint_load (&counter) < 1)
-    r_thread_yield ();
+  r_assert (r_task_wait (t));
+  r_assert_cmpuint (r_atomic_uint_load (&counter), ==, 1);
 
   r_task_unref (t);
   r_task_queue_unref (tq);
@@ -201,8 +204,8 @@ RTEST (rtaskqueue, per_numa_each_cpu, RTEST_FAST)
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_cpu_logical_count ());
 
   r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
-  while (r_atomic_uint_load (&counter) < 1)
-    r_thread_yield ();
+  r_assert (r_task_wait (t));
+  r_assert_cmpuint (r_atomic_uint_load (&counter), ==, 1);
 
   r_task_unref (t);
   r_task_queue_unref (tq);
@@ -222,8 +225,8 @@ RTEST (rtaskqueue, per_cpu, RTEST_FAST)
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_cpu_logical_count ());
 
   r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
-  while (r_atomic_uint_load (&counter) < 1)
-    r_thread_yield ();
+  r_assert (r_task_wait (t));
+  r_assert_cmpuint (r_atomic_uint_load (&counter), ==, 1);
 
   r_task_unref (t);
   r_task_queue_unref (tq);
