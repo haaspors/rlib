@@ -188,11 +188,12 @@ r_ev_udp_task_recv_iocb (REvUDP * evudp)
 
   if ((task = r_ev_loop_add_task_full (evudp->evio.loop,
           evudp->taskgroup, (RTaskFunc) r_ev_udp_recv_iocb, NULL,
-          evudp, r_ev_udp_unref, evudp->recv_task, NULL)) != NULL) {
-    r_ev_udp_ref (evudp);
+          r_ev_udp_ref (evudp), r_ev_udp_unref, evudp->recv_task, NULL)) != NULL) {
     if (evudp->recv_task != NULL)
       r_task_unref (evudp->recv_task);
     evudp->recv_task = task;
+  } else {
+    r_ev_udp_unref (evudp);
   }
 }
 
@@ -236,6 +237,7 @@ r_ev_udp_task_recv_start (REvUDP * evudp, ruint taskgroup,
 {
   if (R_UNLIKELY (recv == NULL)) return FALSE;
   if (R_UNLIKELY (evudp->recv_iocb_ctx != NULL)) return FALSE;
+  if (R_UNLIKELY (!r_ev_io_validate_taskgroup (&evudp->evio, taskgroup))) return FALSE;
 
   if ((evudp->recv_iocb_ctx = r_ev_io_start (&evudp->evio, R_EV_IO_READABLE,
       r_ev_udp_task_iocb, data, datanotify))) {

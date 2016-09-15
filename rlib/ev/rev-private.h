@@ -56,6 +56,7 @@ struct _REvIO {
 R_API_HIDDEN void r_ev_io_init (REvIO * evio, REvLoop * loop, REvHandle handle,
     RDestroyNotify notify);
 R_API_HIDDEN void r_ev_io_clear (REvIO * evio);
+R_API_HIDDEN rboolean r_ev_io_validate_taskgroup (REvIO * evio, ruint taskgroup);
 
 #define r_ev_io_invoke_iocb(evio, events)                                     \
   R_STMT_START {                                                              \

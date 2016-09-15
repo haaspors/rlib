@@ -788,6 +788,13 @@ r_ev_io_clear (REvIO * evio)
   r_ev_loop_unref (evio->loop);
 }
 
+rboolean
+r_ev_io_validate_taskgroup (REvIO * evio, ruint taskgroup)
+{
+  return (taskgroup == RUINT_MAX) ||
+    (taskgroup < r_task_queue_group_count (evio->loop->tq));
+}
+
 void
 r_ev_io_init (REvIO * evio, REvLoop * loop, REvHandle handle, RDestroyNotify notify)
 {
