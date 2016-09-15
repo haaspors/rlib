@@ -51,6 +51,7 @@ struct _REvUDP {
   REvUDPBufferFunc recv;
   rpointer recv_data;
   rpointer recv_iocb_ctx;
+  rauint recv_counter;
   RTask * recv_task;
 
   RQueue qsend;
@@ -115,6 +116,7 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
   rsize size;
 
   r_memclear (&addr, sizeof (RSocketAddress));
+  r_atomic_uint_store (&evudp->recv_counter, 0);
 
   do {
     if ((buf = evudp->alloc (evudp->recv_data, evudp)) == NULL) {
@@ -186,6 +188,9 @@ r_ev_udp_task_recv_iocb (REvUDP * evudp)
 {
   RTask * task;
 
+  if (r_atomic_uint_fetch_add (&evudp->recv_counter, 1) > 0)
+    return;
+
   if ((task = r_ev_loop_add_task_full (evudp->evio.loop,
           evudp->taskgroup, (RTaskFunc) r_ev_udp_recv_iocb, NULL,
           r_ev_udp_ref (evudp), r_ev_udp_unref, evudp->recv_task, NULL)) != NULL) {
@@ -223,7 +228,6 @@ r_ev_udp_recv_start (REvUDP * evudp,
     evudp->alloc = alloc;
     evudp->recv = recv;
     evudp->recv_data = data;
-    evudp->recv_task = NULL;
     return TRUE;
   }
 
@@ -248,6 +252,7 @@ r_ev_udp_task_recv_start (REvUDP * evudp, ruint taskgroup,
     evudp->alloc = alloc;
     evudp->recv = recv;
     evudp->recv_data = data;
+    r_atomic_uint_store (&evudp->recv_counter, 0);
     evudp->recv_task = NULL;
     return TRUE;
   }
