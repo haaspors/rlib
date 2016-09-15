@@ -28,6 +28,8 @@
 #include <rlib/rref.h>
 #include <rlib/rtaskqueue.h>
 
+#include <stdarg.h>
+
 R_BEGIN_DECLS
 
 typedef enum {
@@ -86,10 +88,16 @@ R_API rboolean r_ev_loop_add_callback_later (REvLoop * loop, RClockEntry ** entr
     RClockTimeDiff delay, REvFunc cb, rpointer data, RDestroyNotify datanotify);
 R_API rboolean r_ev_loop_cancel_timer (REvLoop * loop, RClockEntry * entry);
 
-R_API RTask * r_ev_loop_add_task (REvLoop * loop, RTaskFunc task, REvFunc done,
-    rpointer data, RDestroyNotify datanotify);
-R_API RTask * r_ev_loop_add_task_with_taskgroup (REvLoop * loop, ruint taskgroup,
-    RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify);
+#define r_ev_loop_add_task(loop, task, done, data, datanotify)                \
+  r_ev_loop_add_task_full (loop, RUINT_MAX, task, done, data, datanotify, NULL)
+#define r_ev_loop_add_task_with_taskgroup(loop, group, task, done, data, datanotify)  \
+  r_ev_loop_add_task_full (loop, group, task, done, data, datanotify, NULL)
+R_API RTask * r_ev_loop_add_task_full (REvLoop * loop, ruint taskgroup,
+    RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify,
+    ...) R_ATTR_NULL_TERMINATED; /* RTasks as dependencies*/
+R_API RTask * r_ev_loop_add_task_full_v (REvLoop * loop, ruint taskgroup,
+    RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify,
+    va_list args); /* RTasks as dependencies*/
 
 R_API REvIO * r_ev_loop_init_handle (REvLoop * loop, REvHandle handle);
 #define r_ev_io_ref r_ref_ref

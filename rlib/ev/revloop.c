@@ -719,37 +719,23 @@ r_ev_loop_task_proxy (rpointer data, RTaskQueue * q, RTask * t)
 }
 
 RTask *
-r_ev_loop_add_task (REvLoop * loop, RTaskFunc task, REvFunc done,
-    rpointer data, RDestroyNotify datanotify)
+r_ev_loop_add_task_full (REvLoop * loop, ruint taskgroup,
+    RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify, ...)
 {
   RTask * ret;
-  REvLoopTaskCtx * ctx;
+  va_list args;
 
-  if (R_UNLIKELY (loop == NULL)) return NULL;
-
-  if (done == NULL) {
-    ret = r_task_queue_add (loop->tq, task, data, datanotify);
-  } else if ((ctx = r_mem_new (REvLoopTaskCtx)) != NULL) {
-    ctx->loop = r_ev_loop_ref (loop);
-    ctx->task = task;
-    ctx->done = done;
-    ctx->data = data;
-    ctx->datanotify = datanotify;
-    if ((ret = r_task_queue_add (loop->tq, r_ev_loop_task_proxy, ctx, r_free)) != NULL) {
-      r_atomic_uint_fetch_add (&loop->tqitems, 1);
-    } else {
-      r_free (ctx);
-    }
-  } else {
-    ret = NULL;
-  }
+  va_start (args, datanotify);
+  ret = r_ev_loop_add_task_full_v (loop, taskgroup, task, done, data, datanotify, args);
+  va_end (args);
 
   return ret;
 }
 
 RTask *
-r_ev_loop_add_task_with_taskgroup (REvLoop * loop, ruint taskgroup,
-    RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify)
+r_ev_loop_add_task_full_v (REvLoop * loop, ruint taskgroup,
+    RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify,
+    va_list args)
 {
   RTask * ret;
   REvLoopTaskCtx * ctx;
@@ -757,16 +743,16 @@ r_ev_loop_add_task_with_taskgroup (REvLoop * loop, ruint taskgroup,
   if (R_UNLIKELY (loop == NULL)) return NULL;
 
   if (done == NULL) {
-    ret = r_task_queue_add_full (loop->tq, taskgroup,
-        task, data, datanotify, NULL);
+    ret = r_task_queue_add_full_v (loop->tq, taskgroup,
+        task, data, datanotify, args);
   } else if ((ctx = r_mem_new (REvLoopTaskCtx)) != NULL) {
     ctx->loop = r_ev_loop_ref (loop);
     ctx->task = task;
     ctx->done = done;
     ctx->data = data;
     ctx->datanotify = datanotify;
-    if ((ret = r_task_queue_add_full (loop->tq, taskgroup,
-            r_ev_loop_task_proxy, ctx, r_free, NULL)) != NULL) {
+    if ((ret = r_task_queue_add_full_v (loop->tq, taskgroup,
+            r_ev_loop_task_proxy, ctx, r_free, args)) != NULL) {
       r_atomic_uint_fetch_add (&loop->tqitems, 1);
     } else {
       r_free (ctx);
