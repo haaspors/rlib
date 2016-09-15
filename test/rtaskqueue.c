@@ -31,6 +31,33 @@ RTEST (rtaskqueue, simple, RTEST_FAST)
 RTEST_END;
 
 static void
+store_current (rpointer data, RTaskQueue * tq, RTask * task)
+{
+  RTaskQueue ** cur = data;
+  (void) tq;
+  (void) task;
+  *cur = r_task_queue_current ();
+}
+
+RTEST (rtaskqueue, current, RTEST_FAST)
+{
+  RTaskQueue * tq, * cur = NULL;
+  RTask * t;
+
+  r_assert_cmpptr ((tq = r_task_queue_new_simple (1)), !=, NULL);
+
+  r_assert_cmpptr (r_task_queue_current (), ==, NULL);
+  r_assert_cmpptr (cur, ==, NULL);
+  r_assert_cmpptr ((t = r_task_queue_add (tq, store_current, &cur, NULL)), !=, NULL);
+  r_assert (r_task_wait (t));
+  r_assert_cmpptr (r_task_queue_current (), ==, NULL);
+  r_assert_cmpptr (cur, ==, tq);
+  r_task_unref (t);
+  r_task_queue_unref (tq);
+}
+RTEST_END;
+
+static void
 chain_adder (rpointer data, RTaskQueue * tq, RTask * task)
 {
   RTask * t;

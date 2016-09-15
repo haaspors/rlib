@@ -49,6 +49,7 @@ R_API RTaskQueue * r_task_queue_new_per_numa_each_cpu_with_cpuset (const RBitset
 R_API RTaskQueue * r_task_queue_new_per_cpu_simple (ruint cpupergroup) R_ATTR_MALLOC;
 #define r_task_queue_ref    r_ref_ref
 #define r_task_queue_unref  r_ref_unref
+R_API RTaskQueue * r_task_queue_current (void);
 
 R_API RTask * r_task_queue_allocate (RTaskQueue * queue, RTaskFunc func,
     rpointer data, RDestroyNotify datanotify);

@@ -28,6 +28,8 @@
 #define R_LOG_CAT_DEFAULT &tqcat
 R_LOG_CATEGORY_DEFINE_STATIC (tqcat, "rtaskqueue", "RLib TaskQueue", R_CLR_BG_BLUE);
 
+static RTss  g__r_task_queue_tss = R_TSS_INIT (NULL);
+
 struct _RTask {
   RRef ref;
 
@@ -102,6 +104,11 @@ rboolean
 r_task_wait (RTask * task)
 {
   if (R_UNLIKELY (task == NULL || task->queue == NULL)) return FALSE;
+  if (R_UNLIKELY (r_task_queue_current () != NULL)) {
+    R_LOG_ERROR ("Do NOT wait for a task (%p) from a task callback!", task);
+    abort ();
+    return FALSE;
+  }
 
   r_mutex_lock (&task->queue->wait_mutex);
   while (!task->ran)
@@ -313,6 +320,12 @@ r_task_queue_new_per_cpu_simple (ruint cpupergroup)
   return ret;
 }
 
+RTaskQueue *
+r_task_queue_current (void)
+{
+  return r_tss_get (&g__r_task_queue_tss);
+}
+
 static void
 r_task_free (RTask * task)
 {
@@ -429,7 +442,14 @@ r_task_queue_loop (rpointer common, rpointer spec)
   RTQCtx * ctx = spec;
   RTask * task;
 
+  if (R_UNLIKELY (r_tss_get (&g__r_task_queue_tss) != NULL)) {
+    R_LOG_ERROR ("Nested task queue???? %p ---> %p",
+        queue, r_tss_get (&g__r_task_queue_tss));
+    abort ();
+  }
+
   R_LOG_DEBUG ("TQ: %p - start thread for ctx %p", queue, ctx);
+  r_tss_set (&g__r_task_queue_tss, queue);
   r_mutex_lock (&(ctx)->mutex);
   ctx->threads++;
   while (ctx->running) {
@@ -450,6 +470,7 @@ r_task_queue_loop (rpointer common, rpointer spec)
   }
   ctx->threads--;
   r_mutex_unlock (&(ctx)->mutex);
+  r_tss_set (&g__r_task_queue_tss, NULL);
   R_LOG_DEBUG ("TQ: %p - end thread for ctx %p", queue, ctx);
 
   return NULL;
