@@ -537,6 +537,12 @@ r_ev_loop_stop (REvLoop * loop)
   loop->stop_request = TRUE;
 }
 
+ruint
+r_ev_loop_task_group_count (REvLoop * loop)
+{
+  return r_task_queue_group_count (loop->tq);
+}
+
 rboolean
 r_ev_loop_add_prepare (REvLoop * loop, REvFuncReturn prepare_cb,
     rpointer data, RDestroyNotify datanotify)

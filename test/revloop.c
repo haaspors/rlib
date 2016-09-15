@@ -8,6 +8,7 @@ RTEST (revloop, default, RTEST_FAST)
 
   r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
   r_assert_cmpptr (r_ev_loop_default (), !=, NULL);
+  r_assert_cmpuint (r_ev_loop_task_group_count (loop), >, 0);
 
   r_ev_loop_unref (loop);
   r_assert_cmpptr (r_ev_loop_default (), ==, NULL);

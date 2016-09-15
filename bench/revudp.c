@@ -169,7 +169,9 @@ RTEST_BENCH (revudp, multi_loopback_receive, RTEST_FASTSLOW | RTEST_SYSTEM)
     r_assert (r_ev_udp_bind (ctx[i].evudp, ctx[i].addr, TRUE));
 
     ctx[i].running = TRUE;
-    r_assert (r_ev_udp_task_recv_start (ctx[i].evudp, i, NULL, udp_recv, &ctx[i], NULL));
+    r_assert (r_ev_udp_task_recv_start (ctx[i].evudp,
+          i % r_ev_loop_task_group_count (loop),
+          NULL, udp_recv, &ctx[i], NULL));
     r_assert_cmpptr ((ctx[i].tsnd = r_thread_new ("send udp packets", udp_send, &ctx[i])), !=, NULL);
   }
 

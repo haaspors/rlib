@@ -75,6 +75,8 @@ R_API REvLoop * r_ev_loop_current (void);
 R_API ruint r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode);
 R_API void r_ev_loop_stop (REvLoop * loop);
 
+R_API ruint r_ev_loop_task_group_count (REvLoop * loop);
+
 R_API rboolean r_ev_loop_add_prepare (REvLoop * loop, REvFuncReturn prepare_cb,
     rpointer data, RDestroyNotify datanotify);
 R_API rboolean r_ev_loop_add_idle (REvLoop * loop, REvFuncReturn idle_cb,
