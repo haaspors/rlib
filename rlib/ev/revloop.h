@@ -66,6 +66,7 @@ typedef rboolean (*REvFuncReturn) (rpointer data, REvLoop * loop);
 #define r_ev_loop_new() r_ev_loop_new_full (NULL, NULL)
 R_API REvLoop * r_ev_loop_new_full (RClock * clock, RTaskQueue * tq) R_ATTR_MALLOC;
 R_API REvLoop * r_ev_loop_default (void);
+R_API REvLoop * r_ev_loop_current (void);
 #define r_ev_loop_ref r_ref_ref
 #define r_ev_loop_unref r_ref_unref
 

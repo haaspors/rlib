@@ -84,6 +84,29 @@ RTEST_END;
 #endif
 
 static void
+check_for_current (rpointer data, REvLoop * loop)
+{
+  (void) data;
+  r_assert_cmpptr (r_ev_loop_current (), ==, loop);
+}
+
+RTEST (revloop, current, RTEST_FAST)
+{
+  REvLoop * loop;
+
+  r_assert_cmpptr (r_ev_loop_current (), ==, NULL);
+
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+
+  r_assert (r_ev_loop_add_callback (loop, TRUE, check_for_current, NULL, NULL));
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+
+  r_assert_cmpptr (r_ev_loop_current (), ==, NULL);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+static void
 increment_rsize (rpointer data, REvLoop * loop)
 {
   (void) loop;

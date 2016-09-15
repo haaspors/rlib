@@ -58,6 +58,7 @@ r_ev_loop_deinit (void)
 }
 
 static raptr g__r_ev_loop_default; /* (REvLoop *) */
+static RTss  g__r_ev_loop_tss = R_TSS_INIT (NULL);
 
 static rboolean
 r_ev_handle_close (REvHandle handle)
@@ -231,6 +232,12 @@ REvLoop *
 r_ev_loop_default (void)
 {
   return r_atomic_ptr_load (&g__r_ev_loop_default);
+}
+
+REvLoop *
+r_ev_loop_current (void)
+{
+  return r_tss_get (&g__r_ev_loop_tss);
 }
 
 static inline void
@@ -493,7 +500,12 @@ r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode)
   int res = 0;
 
   R_LOG_DEBUG ("EvLoop %p mode %d", loop, mode);
+  if (R_UNLIKELY (r_tss_get (&g__r_ev_loop_tss) != NULL)) {
+    R_LOG_ERROR ("Nested event loops not really supported %p ---> %p",
+        loop, r_tss_get (&g__r_ev_loop_tss));
+  }
 
+  r_tss_set (&g__r_ev_loop_tss, loop);
   ret = r_ev_loop_outstanding_events (loop);
   while (!loop->stop_request && ret != 0 && res >= 0) {
     r_ev_loop_prepare (loop);
@@ -513,6 +525,7 @@ r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode)
     if (mode != R_EV_LOOP_RUN_LOOP)
       break;
   }
+  r_tss_set (&g__r_ev_loop_tss, NULL);
 
   return ret;
 }
