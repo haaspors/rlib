@@ -455,6 +455,8 @@ r_task_queue_loop (rpointer common, rpointer spec)
   while (ctx->running) {
     if (R_LIKELY ((task = r_task_queue_ctx_pop_locked (ctx)) != NULL)) {
       r_mutex_unlock (&(ctx)->mutex);
+      r_slist_destroy_full (task->dep, r_task_unref);
+      task->dep = NULL;
       R_LOG_TRACE ("TQ: %p [%p] - process task %p", queue, ctx, task);
       task->func (task->data, queue, task);
       r_mutex_lock (&(ctx)->mutex);
