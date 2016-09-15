@@ -162,10 +162,6 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr (sentbuf, !=, NULL);
   r_assert_cmpint (r_buffer_memcmp (sentbuf, 0, sendbuf, 512), ==, 0);
 
-  /* FIXME: wait for this some how!? */
-  while (r_task_queue_queued_tasks (tq) > 0)
-    r_thread_usleep (1000);
-  r_thread_usleep (1000);
   r_assert_cmpuint (r_list_len (ctx.buffers), ==, 1);
   r_assert_cmpuint (r_list_len (ctx.addrs), ==, 1);
   r_assert_cmpint (r_buffer_memcmp (r_list_data (ctx.buffers), 0, sendbuf, 512), ==, 0);

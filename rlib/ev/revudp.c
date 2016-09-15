@@ -51,6 +51,7 @@ struct _REvUDP {
   REvUDPBufferFunc recv;
   rpointer recv_data;
   rpointer recv_iocb_ctx;
+  RTask * recv_task;
 
   RQueue qsend;
 };
@@ -185,10 +186,13 @@ r_ev_udp_task_recv_iocb (REvUDP * evudp)
 {
   RTask * task;
 
-  if ((task = r_ev_loop_add_task_with_taskgroup (evudp->evio.loop,
+  if ((task = r_ev_loop_add_task_full (evudp->evio.loop,
           evudp->taskgroup, (RTaskFunc) r_ev_udp_recv_iocb, NULL,
-          r_ev_udp_ref (evudp), r_ev_udp_unref)) != NULL) {
-    r_task_unref (task);
+          evudp, r_ev_udp_unref, evudp->recv_task, NULL)) != NULL) {
+    r_ev_udp_ref (evudp);
+    if (evudp->recv_task != NULL)
+      r_task_unref (evudp->recv_task);
+    evudp->recv_task = task;
   }
 }
 
@@ -218,6 +222,7 @@ r_ev_udp_recv_start (REvUDP * evudp,
     evudp->alloc = alloc;
     evudp->recv = recv;
     evudp->recv_data = data;
+    evudp->recv_task = NULL;
     return TRUE;
   }
 
@@ -241,6 +246,7 @@ r_ev_udp_task_recv_start (REvUDP * evudp, ruint taskgroup,
     evudp->alloc = alloc;
     evudp->recv = recv;
     evudp->recv_data = data;
+    evudp->recv_task = NULL;
     return TRUE;
   }
 
@@ -254,6 +260,10 @@ r_ev_udp_recv_stop (REvUDP * evudp)
 
   ret = r_ev_io_stop (&evudp->evio, evudp->recv_iocb_ctx);
   evudp->recv_iocb_ctx = NULL;
+  if (evudp->recv_task != NULL) {
+    r_task_wait (evudp->recv_task);
+    r_task_unref (evudp->recv_task);
+  }
 
   return ret;
 }
