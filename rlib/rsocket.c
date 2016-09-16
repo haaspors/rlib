@@ -17,8 +17,9 @@
  */
 
 #include "config.h"
-#include "rnetworking-private.h"
 #include "rlib-private.h"
+#include "rsocket-private.h"
+#include "net/rnet-private.h"
 
 #include <rlib/rfd.h>
 #include <rlib/rmem.h>

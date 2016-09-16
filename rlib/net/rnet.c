@@ -17,11 +17,14 @@
  */
 
 #include "config.h"
-#include "rnetworking-private.h"
+#include "../rsocket-private.h"
+#include "rnet-private.h"
 
 #include <rlib/rstr.h>
 
 #ifdef R_OS_WIN32
+#include <rlib/rmodule.h>
+
 static int r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst);
 static const rchar * r_win32_sim_inet_ntop (int family, rconstpointer src,
     rchar * dst, size_t size);

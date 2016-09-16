@@ -16,15 +16,16 @@
  * See the COPYING file at the root of the source repository.
  */
 
-#ifndef __R_NETWORKING_PRIV_H__
-#define __R_NETWORKING_PRIV_H__
+#ifndef __R_SOCKET_PRIV_H__
+#define __R_SOCKET_PRIV_H__
 
 #if !defined(RLIB_COMPILATION)
-#error "rnetworking-private.h should only be used internally in rlib!"
+#error "rsocket-private.h should only be used internally in rlib!"
 #endif
 
 #include <rlib/rtypes.h>
 
+#include <rlib/rref.h>
 #include <rlib/rsocket.h>
 
 /* FIXME: Do this by configuration? */
@@ -42,27 +43,15 @@
 #pragma comment(lib, "Ws2_32.lib")
 #endif
 
-#ifdef R_OS_WIN32
-#include <rlib/rmodule.h>
-#endif
-#include <rlib/rref.h>
-
 #ifdef R_OS_UNIX
 #include <unistd.h>
 #endif
 #include <errno.h>
-
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
 #endif
 #ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
-#endif
-#ifdef HAVE_NETINET_IN_H
-#include <netinet/in.h>
-#endif
-#ifdef HAVE_ARPA_INET_H
-#include <arpa/inet.h>
 #endif
 
 R_BEGIN_DECLS
@@ -95,21 +84,7 @@ struct _RSocketAddress {
   socklen_t addrlen;
 };
 
-#ifdef R_OS_WIN32
-R_API_HIDDEN int (* r_win32_inet_pton) (int, const rchar *, rpointer);
-R_API_HIDDEN const rchar * (* r_win32_inet_ntop) (int, rpointer, rchar *, size_t);
-
-#if _WIN32_WINNT < 0x0600
-#define inet_pton r_win32_inet_pton
-#define inet_ntop r_win32_inet_ntop
-#endif
-#ifndef HAVE_INET_PTON
-#define HAVE_INET_PTON            1
-#endif
-#endif
-
-
 R_END_DECLS
 
-#endif /* __R_NETWORKING_PRIV_H__ */
+#endif /* __R_SOCKET_PRIV_H__ */
 

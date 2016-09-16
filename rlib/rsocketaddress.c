@@ -18,7 +18,8 @@
 
 #include "config.h"
 #include <rlib/rsocketaddress.h>
-#include "rnetworking-private.h"
+#include "rsocket-private.h"
+#include "net/rnet-private.h"
 
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>

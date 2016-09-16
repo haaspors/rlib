@@ -18,7 +18,8 @@
 
 #include "config.h"
 #include "rev-private.h"
-#include "../rnetworking-private.h"
+#include "../rsocket-private.h"
+#include "../net/rnet-private.h"
 #include <rlib/ev/revudp.h>
 
 #include <rlib/rmem.h>
