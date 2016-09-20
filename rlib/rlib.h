@@ -78,4 +78,6 @@
 #include <rlib/ev/revloop.h>
 #include <rlib/ev/revudp.h>
 
+#include <rlib/net/proto/rstun.h>
+
 #endif /* __R_LIB_H__ */
