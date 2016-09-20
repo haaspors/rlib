@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/net/proto/rstun.h>
 
+#include <rlib/crypto/rmac.h>
 #include <rlib/rmem.h>
 
 rboolean
@@ -160,5 +161,39 @@ r_stun_attr_tlv_parse_error_code (rconstpointer buf, const RStunAttrTLV * tlv)
   (void) buf;
 
   return (tlv->value[2] & 0x7) * 100 + MIN (tlv->value[3], 99);
+}
+
+rboolean
+r_stun_msg_check_integrity_short_cred (rconstpointer buf,
+    const RStunAttrTLV * tlv, rconstpointer key, rsize keysize)
+{
+  RHmac * hmac;
+  rboolean ret;
+  rsize len;
+
+  if (R_UNLIKELY (tlv->type != R_STUN_ATTR_TYPE_MESSAGE_INTEGRITY)) return FALSE;
+  if (R_UNLIKELY (tlv->len != R_STUN_MSG_INTEGRITY_SIZE)) return FALSE;
+
+  len = (ruint16)(tlv->start - (const ruint8 *)buf);
+  if (R_UNLIKELY (len <= R_STUN_HEADER_SIZE)) return FALSE;
+
+  if ((hmac = r_hmac_new (R_HASH_TYPE_SHA1, key, keysize)) != NULL) {
+    ruint8 data[R_STUN_MSG_INTEGRITY_SIZE];
+    rsize datasize = R_STUN_MSG_INTEGRITY_SIZE;
+    ruint16 be = RUINT16_TO_BE ((ruint16)len +
+        R_STUN_ATTR_TLV_HEADER_SIZE + tlv->len - R_STUN_HEADER_SIZE);
+
+    if ((ret = r_hmac_update (hmac, buf, R_STUN_MSGLEN_OFFSET) &&
+          r_hmac_update (hmac, &be, sizeof (ruint16)) &&
+          r_hmac_update (hmac, ((const ruint8 *)buf) + R_STUN_MAGIC_COOKIE_OFFSET,
+            len - (R_STUN_MSGLEN_OFFSET + sizeof (ruint16))) &&
+          r_hmac_get_data (hmac, data, &datasize)))
+      ret = r_memcmp (data, tlv->value, tlv->len) == 0;
+    r_hmac_free (hmac);
+  } else {
+    ret = FALSE;
+  }
+
+  return ret;
 }
 

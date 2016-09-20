@@ -199,3 +199,48 @@ RTEST (rstun, req_alloc, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstun, message_integrity, RTEST_FAST)
+{
+  /* Software name:  "STUN test client" (without quotes)  */
+  /* Username:  "evtj:h6vY" (without quotes)              */
+  /* Password:  "VOkJxbRl1RmTxUk/WvJxBt" (without quotes) */
+  const ruint8 pkt_rfc5769_2_1[] = {
+    0x00, 0x01, 0x00, 0x58, 0x21, 0x12, 0xa4, 0x42, 0xb7, 0xe7, 0xa7, 0x01, 0xbc, 0x34, 0xd6, 0x86,
+    0xfa, 0x87, 0xdf, 0xae, 0x80, 0x22, 0x00, 0x10, 0x53, 0x54, 0x55, 0x4e, 0x20, 0x74, 0x65, 0x73,
+    0x74, 0x20, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x00, 0x24, 0x00, 0x04, 0x6e, 0x00, 0x01, 0xff,
+    0x80, 0x29, 0x00, 0x08, 0x93, 0x2f, 0xf9, 0xb1, 0x51, 0x26, 0x3b, 0x36, 0x00, 0x06, 0x00, 0x09,
+    0x65, 0x76, 0x74, 0x6a, 0x3a, 0x68, 0x36, 0x76, 0x59, 0x20, 0x20, 0x20, 0x00, 0x08, 0x00, 0x14,
+    0x9a, 0xea, 0xa7, 0x0c, 0xbf, 0xd8, 0xcb, 0x56, 0x78, 0x1e, 0xf2, 0xb5, 0xb2, 0xd3, 0xf2, 0x49,
+    0xc1, 0xb5, 0x71, 0xa2, 0x80, 0x28, 0x00, 0x04, 0xe5, 0x7a, 0x3b, 0xcf
+  };
+  const rchar * pwd = "VOkJxbRl1RmTxUk/WvJxBt";
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+
+  r_assert (r_stun_is_valid_msg (pkt_rfc5769_2_1, sizeof (pkt_rfc5769_2_1)));
+  r_assert (r_stun_msg_is_request (pkt_rfc5769_2_1));
+  r_assert (r_stun_msg_method_is_binding (pkt_rfc5769_2_1));
+
+  r_assert (r_stun_attr_tlv_first (pkt_rfc5769_2_1, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_SOFTWARE);
+  r_assert_cmpuint (r_strlen ("STUN test client"), ==, tlv.len);
+  r_assert_cmpmem (tlv.value, ==, "STUN test client", tlv.len);
+  r_assert (r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_PRIORITY);
+  r_assert_cmphex (r_stun_att_tlv_parse_lifetime (pkt_rfc5769_2_1, &tlv), ==, 0x6e0001ff);
+  r_assert (r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_ICE_CONTROLLED);
+  r_assert (r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_USERNAME);
+  r_assert_cmpuint (r_strlen ("evtj:h6vY"), ==, tlv.len);
+  r_assert_cmpmem (tlv.value, ==, "evtj:h6vY", tlv.len);
+  r_assert (r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_MESSAGE_INTEGRITY);
+  r_assert (r_stun_msg_check_integrity_short_cred (pkt_rfc5769_2_1, &tlv,
+        pwd, r_strlen (pwd)));
+  r_assert (r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_FINGERPRINT);
+  r_assert (!r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
+}
+RTEST_END;
+
+
