@@ -36,6 +36,7 @@ R_BEGIN_DECLS
 #define R_STUN_MAGIC_COOKIE_SIZE        (R_STUN_TRANSACTION_ID_OFFSET - R_STUN_MAGIC_COOKIE_OFFSET)
 #define R_STUN_TRANSACTION_ID_SIZE      (R_STUN_HEADER_SIZE - R_STUN_TRANSACTION_ID_OFFSET)
 #define R_STUN_MSG_INTEGRITY_SIZE       20
+#define R_STUN_FINGERPRINT_XOR          0x5354554e
 #define R_STUN_MAGIC_COOKIE_BE          0x2112a442
 #define R_STUN_TYPE_CLASS_MASK_BE       0x0110
 #define R_STUN_TYPE_METHOD_MASK_BE      0x3eef
@@ -115,6 +116,10 @@ R_API ruint r_stun_attr_tlv_parse_error_code (rconstpointer buf, const RStunAttr
 
 R_API rboolean r_stun_msg_check_integrity_short_cred (rconstpointer buf,
     const RStunAttrTLV * tlv, rconstpointer key, rsize keysize);
+R_API ruint32 r_stun_msg_calc_fingerprint (rconstpointer buf,
+    const RStunAttrTLV * tlv);
+#define r_stun_msg_check_fingerprint(buf, tlv)                                \
+  (r_stun_msg_calc_fingerprint (buf, tlv) == RUINT32_FROM_BE (*(ruint32 *)((tlv)->value)))
 
 R_END_DECLS
 

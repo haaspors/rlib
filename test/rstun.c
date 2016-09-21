@@ -199,7 +199,7 @@ RTEST (rstun, req_alloc, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rstun, message_integrity, RTEST_FAST)
+RTEST (rstun, message_integrity_fingerprint, RTEST_FAST)
 {
   /* Software name:  "STUN test client" (without quotes)  */
   /* Username:  "evtj:h6vY" (without quotes)              */
@@ -239,6 +239,7 @@ RTEST (rstun, message_integrity, RTEST_FAST)
         pwd, r_strlen (pwd)));
   r_assert (r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
   r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_FINGERPRINT);
+  r_assert (r_stun_msg_check_fingerprint (pkt_rfc5769_2_1, &tlv));
   r_assert (!r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
 }
 RTEST_END;

@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/net/proto/rstun.h>
 
+#include <rlib/rcrc.h>
 #include <rlib/crypto/rmac.h>
 #include <rlib/rmem.h>
 
@@ -195,5 +196,17 @@ r_stun_msg_check_integrity_short_cred (rconstpointer buf,
   }
 
   return ret;
+}
+
+ruint32
+r_stun_msg_calc_fingerprint (rconstpointer buf, const RStunAttrTLV * tlv)
+{
+  ruint32 crc;
+
+  if (R_UNLIKELY (tlv->type != R_STUN_ATTR_TYPE_FINGERPRINT)) return FALSE;
+  if (R_UNLIKELY (tlv->len != sizeof (ruint32))) return FALSE;
+
+  crc = r_crc32 (buf, RPOINTER_TO_SIZE (tlv->start) - RPOINTER_TO_SIZE (buf));
+  return crc ^ R_STUN_FINGERPRINT_XOR;
 }
 
