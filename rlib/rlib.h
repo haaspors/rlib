@@ -28,6 +28,7 @@
 #include <rlib/rbuffer.h>
 #include <rlib/rclock.h>
 #include <rlib/rclr.h>
+#include <rlib/rcrc.h>
 #include <rlib/renv.h>
 #include <rlib/rfd.h>
 #include <rlib/rfile.h>
