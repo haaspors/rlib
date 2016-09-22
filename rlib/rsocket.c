@@ -653,6 +653,7 @@ r_socket_receive_message (RSocket * socket, RSocketAddress * address,
   do {
     res = recvmsg (socket->handle, &msg, 0);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
+  address->addrlen = msg.msg_namelen;
   b = res > 0 ? (rsize)res : 0;
 #endif
 
