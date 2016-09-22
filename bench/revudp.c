@@ -62,7 +62,7 @@ udp_send (rpointer data)
 }
 
 static void
-udp_recv (rpointer user, RBuffer * buf, const RSocketAddress * addr, REvUDP * evudp)
+udp_recv (rpointer user, RBuffer * buf, RSocketAddress * addr, REvUDP * evudp)
 {
   REvUDPBenchCtx * ctx = user;
   rsize size;

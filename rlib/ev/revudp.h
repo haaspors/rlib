@@ -33,7 +33,7 @@ R_BEGIN_DECLS
 
 typedef struct _REvUDP REvUDP;
 typedef RBuffer * (*REvUDPBufferAllocFunc) (rpointer data, REvUDP * evudp);
-typedef void (*REvUDPBufferFunc) (rpointer data, RBuffer * buf, const RSocketAddress * addr, REvUDP * evudp);
+typedef void (*REvUDPBufferFunc) (rpointer data, RBuffer * buf, RSocketAddress * addr, REvUDP * evudp);
 
 R_API REvUDP * r_ev_udp_new (RSocketFamily family, REvLoop * loop);
 #define r_ev_udp_ref r_ref_ref

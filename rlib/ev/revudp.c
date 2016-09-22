@@ -113,7 +113,7 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
 {
   RBuffer * buf;
   RSocketStatus res;
-  RSocketAddress addr;
+  RSocketAddress addr, * copy;
   rsize size;
 
   r_memclear (&addr, sizeof (RSocketAddress));
@@ -129,7 +129,9 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
     res = r_socket_receive_message (evudp->socket, &addr, buf, &size);
     switch (res) {
       case R_SOCKET_OK:
-        evudp->recv (evudp->recv_data, buf, &addr, evudp);
+        copy = r_socket_address_copy (&addr);
+        evudp->recv (evudp->recv_data, buf, copy, evudp);
+        r_socket_address_unref (copy);
         break;
       /* FIXME: Handle errors?? */
       default:

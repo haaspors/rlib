@@ -12,18 +12,18 @@ typedef struct {
 } REvUDPTestRecvCtx;
 
 static void
-buffer_recv (rpointer user, RBuffer * buf, const RSocketAddress * addr, REvUDP * evudp)
+buffer_recv (rpointer user, RBuffer * buf, RSocketAddress * addr, REvUDP * evudp)
 {
   REvUDPTestRecvCtx * ctx = user;
   (void) evudp;
   (void) addr;
 
   ctx->buffers = r_list_append (ctx->buffers, r_buffer_ref (buf));
-  ctx->addrs = r_list_append (ctx->addrs, r_socket_address_copy (addr));
+  ctx->addrs = r_list_append (ctx->addrs, r_socket_address_ref (addr));
 }
 
 static void
-buffer_send_done (rpointer user, RBuffer * buf, const RSocketAddress * addr, REvUDP * evudp)
+buffer_send_done (rpointer user, RBuffer * buf, RSocketAddress * addr, REvUDP * evudp)
 {
   (void) evudp;
   (void) addr;
