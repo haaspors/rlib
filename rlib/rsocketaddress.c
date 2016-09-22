@@ -150,6 +150,7 @@ r_socket_address_cmp (const RSocketAddress * a, const RSocketAddress * b)
 
   if (R_UNLIKELY (a == NULL)) return -(a != b);
   if (R_UNLIKELY (b == NULL)) return a != b;
+  if (R_UNLIKELY (a->addrlen != b->addrlen)) return b->addrlen - a->addrlen;
 
   /* We can't do memcmp on the storage structure */
 
@@ -163,6 +164,7 @@ r_socket_address_cmp (const RSocketAddress * a, const RSocketAddress * b)
           if ((ret = ((int)bin->sin_port - (int)ain->sin_port)) == 0)
             ret = (int)bin->sin_addr.s_addr - (int)ain->sin_addr.s_addr;
         }
+        break;
       case R_SOCKET_FAMILY_IPV6:
         {
           struct sockaddr_in6 * ain = (struct sockaddr_in6 *)&a->addr;
