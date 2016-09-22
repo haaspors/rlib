@@ -39,6 +39,7 @@ typedef enum {
 
 typedef struct _RSocketAddress  RSocketAddress;
 
+R_API RSocketAddress * r_socket_address_new (void) R_ATTR_MALLOC;
 R_API RSocketAddress * r_socket_address_new_from_native (rconstpointer addr, rsize addrsize) R_ATTR_MALLOC;
 R_API RSocketAddress * r_socket_address_copy (const RSocketAddress * addr);
 R_API RSocketAddress * r_socket_address_ipv4_new_uint32 (ruint32 addr, ruint16 port) R_ATTR_MALLOC;

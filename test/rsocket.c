@@ -297,7 +297,7 @@ RTEST (rsocket, sendto_recvfrom, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpptr ((addr1 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
   r_assert_cmpptr ((addr2 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x2222)), !=, NULL);
-  r_assert_cmpptr ((srcaddr = r_socket_address_ipv4_new_uint32 (0, 0)), !=, NULL);
+  r_assert_cmpptr ((srcaddr = r_socket_address_new ()), !=, NULL);
   r_assert_cmpint (r_socket_bind (sock1, addr1, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_bind (sock2, addr2, TRUE), ==, R_SOCKET_OK);
 
@@ -342,7 +342,7 @@ RTEST (rsocket, sendmsg_recvmsg, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpptr ((addr1 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
   r_assert_cmpptr ((addr2 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x2222)), !=, NULL);
-  r_assert_cmpptr ((srcaddr = r_socket_address_ipv4_new_uint32 (0, 0)), !=, NULL);
+  r_assert_cmpptr ((srcaddr = r_socket_address_new ()), !=, NULL);
   r_assert_cmpint (r_socket_bind (sock1, addr1, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_bind (sock2, addr2, TRUE), ==, R_SOCKET_OK);
 

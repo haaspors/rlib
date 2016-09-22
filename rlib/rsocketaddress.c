@@ -25,6 +25,19 @@
 #include <rlib/rstr.h>
 
 RSocketAddress *
+r_socket_address_new (void)
+{
+  RSocketAddress * ret;
+
+  if ((ret = r_mem_new0 (RSocketAddress)) != NULL) {
+    r_ref_init (ret, r_free);
+    ret->addrlen = sizeof (ret->addr);
+  }
+
+  return ret;
+}
+
+RSocketAddress *
 r_socket_address_new_from_native (rconstpointer addr, rsize addrsize)
 {
   RSocketAddress * ret;
@@ -34,8 +47,8 @@ r_socket_address_new_from_native (rconstpointer addr, rsize addrsize)
 
   if ((ret = r_mem_new0 (RSocketAddress)) != NULL) {
     r_ref_init (ret, r_free);
-    r_memcpy (&ret->addr, addr, addrsize);
-    ret->addrlen = addrsize;
+    ret->addrlen = MIN (sizeof (ret->addr), addrsize);
+    r_memcpy (&ret->addr, addr, ret->addrlen);
   }
 
   return ret;
