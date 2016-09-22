@@ -156,7 +156,8 @@ r_ev_udp_send_iocb (REvUDP * evudp)
     res = r_socket_send_message (evudp->socket, ctx->addr, ctx->buf, &sent);
     if (res == R_SOCKET_OK) {
       r_queue_pop (&evudp->qsend);
-      ctx->done (ctx->data, ctx->buf, ctx->addr, evudp);
+      if (ctx->done != NULL)
+        ctx->done (ctx->data, ctx->buf, ctx->addr, evudp);
       r_ev_udp_send_ctx_clear (ctx);
       r_free (ctx);
     } else if (res == R_SOCKET_WOULD_BLOCK) {
