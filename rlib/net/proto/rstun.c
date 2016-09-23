@@ -33,7 +33,7 @@ r_stun_is_valid_msg (rconstpointer buf, rsize size)
 
   ptr = buf;
   if (R_UNLIKELY ((*ptr & 0xc0) != 0)) return FALSE;
-  if (R_UNLIKELY (size < r_stun_msg_len (buf) + R_STUN_HEADER_SIZE)) return FALSE;
+  if (R_UNLIKELY (size < (rsize)r_stun_msg_len (buf) + R_STUN_HEADER_SIZE)) return FALSE;
 
   return r_stun_msg_magic_cookie (buf) == RUINT32_FROM_BE (R_STUN_MAGIC_COOKIE);
 }
@@ -206,7 +206,7 @@ r_stun_attr_tlv_next (rconstpointer buf, RStunAttrTLV * tlv)
   start = tlv->value + tlv->len;
   if (tlv->len & 0x3) start += (R_STUN_ATTR_TLV_HEADER_SIZE - (tlv->len & 0x3));
 
-  if ((ret = (r_stun_msg_len (buf) > start - ptr))) {
+  if ((ret = ((rsize)r_stun_msg_len (buf) > RPOINTER_TO_SIZE (start) - RPOINTER_TO_SIZE (ptr)))) {
     tlv->start  = start;
     tlv->type   = RUINT16_FROM_BE (*(ruint16 *)tlv->start);
     tlv->len    = RUINT16_FROM_BE (*((ruint16 *)(tlv->start + 2)));
