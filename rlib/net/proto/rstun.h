@@ -37,38 +37,48 @@ R_BEGIN_DECLS
 #define R_STUN_TRANSACTION_ID_SIZE      (R_STUN_HEADER_SIZE - R_STUN_TRANSACTION_ID_OFFSET)
 #define R_STUN_MSG_INTEGRITY_SIZE       20
 #define R_STUN_FINGERPRINT_XOR          0x5354554e
-#define R_STUN_MAGIC_COOKIE_BE          0x2112a442
-#define R_STUN_TYPE_CLASS_MASK_BE       0x0110
-#define R_STUN_TYPE_METHOD_MASK_BE      0x3eef
+#define R_STUN_MAGIC_COOKIE             0x2112a442
+#define R_STUN_TYPE_CLASS_MASK          0x0110
+#define R_STUN_TYPE_METHOD_MASK         0x3eef
 
 R_API rboolean r_stun_is_valid_msg (rconstpointer buf, rsize size);
 
+typedef enum {
+  R_STUN_CLASS_REQUEST                    = 0x0000,
+  R_STUN_CLASS_INDICATION                 = 0x0010,
+  R_STUN_CLASS_SUCCESS_RESPONSE           = 0x0100,
+  R_STUN_CLASS_ERROR_RESPONSE             = 0x0110,
+} RStunClass;
+
+typedef enum {
+  R_STUN_METHOD_BINDING                   = 0x0001,
+  R_STUN_METHOD_ALLOCATE                  = 0x0003,
+} RStunMethod;
 
 static inline ruint16 r_stun_msg_type (rconstpointer buf) { return RUINT16_FROM_BE (*(const ruint16 *)buf); }
 static inline ruint16 r_stun_msg_len  (rconstpointer buf) { return RUINT16_FROM_BE (*(const ruint16 *)&((const ruint8 *)(buf))[R_STUN_MSGLEN_OFFSET]); }
 #define r_stun_msg_magic_cookie(buf)      (*(const ruint32 *)&((const ruint8 *)(buf))[R_STUN_MAGIC_COOKIE_OFFSET])
 #define r_stun_msg_transaction_id(buf)    (&((const ruint8 *)(buf))[R_STUN_TRANSACTION_ID_OFFSET])
-#define r_stun_msg_is_request(buf)        ((r_stun_msg_type (buf) & R_STUN_TYPE_CLASS_MASK_BE)  == 0x0000)
-#define r_stun_msg_is_indication(buf)     ((r_stun_msg_type (buf) & R_STUN_TYPE_CLASS_MASK_BE)  == 0x0010)
-#define r_stun_msg_is_success_resp(buf)   ((r_stun_msg_type (buf) & R_STUN_TYPE_CLASS_MASK_BE)  == 0x0100)
-#define r_stun_msg_is_err_resp(buf)       ((r_stun_msg_type (buf) & R_STUN_TYPE_CLASS_MASK_BE)  == 0x0110)
-#define r_stun_msg_method_is_binding(buf) ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK_BE) == 0x0001)
-#define r_stun_msg_method_is_allocate(buf)((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK_BE) == 0x0003)
-R_API ruint r_stun_msg_attribute_count (rconstpointer buf);
+#define r_stun_msg_is_request(buf)        ((r_stun_msg_type (buf) & R_STUN_TYPE_CLASS_MASK)  == R_STUN_CLASS_REQUEST)
+#define r_stun_msg_is_indication(buf)     ((r_stun_msg_type (buf) & R_STUN_TYPE_CLASS_MASK)  == R_STUN_CLASS_INDICATION)
+#define r_stun_msg_is_success_resp(buf)   ((r_stun_msg_type (buf) & R_STUN_TYPE_CLASS_MASK)  == R_STUN_CLASS_SUCCESS_RESPONSE)
+#define r_stun_msg_is_err_resp(buf)       ((r_stun_msg_type (buf) & R_STUN_TYPE_CLASS_MASK)  == R_STUN_CLASS_ERROR_RESPONSE)
+#define r_stun_msg_method_is_binding(buf) ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_BINDING)
+#define r_stun_msg_method_is_allocate(buf)((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_ALLOCATE)
 
 typedef enum {
   R_STUN_ATTR_TYPE_RESERVED_0             = 0x0000, /* Reserved */
   R_STUN_ATTR_TYPE_MAPPED_ADDRESS         = 0x0001,
-  R_STUN_ATTR_TYPE_ESPONSE_ADDRESS        = 0x0002, /* Reserved */
-  R_STUN_ATTR_TYPE_HANGE_ADDRESS          = 0x0003, /* Reserved */
-  R_STUN_ATTR_TYPE_OURCE_ADDRESS          = 0x0004, /* Reserved */
-  R_STUN_ATTR_TYPE_HANGED_ADDRESS         = 0x0005, /* Reserved */
+  R_STUN_ATTR_TYPE_RESPONSE_ADDRESS       = 0x0002, /* Reserved */
+  R_STUN_ATTR_TYPE_CHANGE_ADDRESS         = 0x0003, /* Reserved */
+  R_STUN_ATTR_TYPE_SOURCE_ADDRESS         = 0x0004, /* Reserved */
+  R_STUN_ATTR_TYPE_CHANGED_ADDRESS        = 0x0005, /* Reserved */
   R_STUN_ATTR_TYPE_USERNAME               = 0x0006,
   R_STUN_ATTR_TYPE_PASSWORD               = 0x0007, /* Reserved */
   R_STUN_ATTR_TYPE_MESSAGE_INTEGRITY      = 0x0008,
   R_STUN_ATTR_TYPE_ERROR_CODE             = 0x0009,
   R_STUN_ATTR_TYPE_UNKNOWN_ATTRIBUTES     = 0x000a,
-  R_STUN_ATTR_TYPE_EFLECTED_FROM          = 0x000b, /* Reserved */
+  R_STUN_ATTR_TYPE_REFLECTED_FROM         = 0x000b, /* Reserved */
   R_STUN_ATTR_TYPE_CHANNEL_NUMBER         = 0x000c,
   R_STUN_ATTR_TYPE_LIFETIME               = 0x000d,
   R_STUN_ATTR_TYPE_BANDWIDTH              = 0x0010, /* Reserved */
@@ -104,6 +114,25 @@ typedef struct _RStunAttrTLV {
 #define R_STUN_ATTR_TLV_INIT              { NULL, 0, 0, NULL }
 #define R_STUN_ATTR_TLV_HEADER_SIZE       4
 
+typedef struct {
+  ruint8 * buf;
+  rsize alloc_size;
+  ruint16 used_size;
+} RStunMsgCtx;
+
+/* Building stun packets */
+R_API rboolean r_stun_msg_begin (RStunMsgCtx * ctx, rpointer buf, rsize size,
+    RStunClass cls, RStunMethod method,
+    const ruint8 transaction_id[R_STUN_TRANSACTION_ID_SIZE]);
+R_API rboolean r_stun_msg_add_attribute (RStunMsgCtx * ctx, const RStunAttrTLV * tlv);
+R_API rboolean r_stun_msg_add_xor_address (RStunMsgCtx * ctx,
+    RStunAttrType type, const RSocketAddress * addr);
+R_API rboolean r_stun_msg_add_message_integrity_short_cred (RStunMsgCtx * ctx,
+    rconstpointer key, rsize keysize);
+R_API ruint16 r_stun_msg_end (RStunMsgCtx * ctx, rboolean fingerprint);
+
+/* For parsing stun packets */
+R_API ruint r_stun_msg_attribute_count (rconstpointer buf);
 R_API rboolean r_stun_attr_tlv_first (rconstpointer buf, RStunAttrTLV * tlv);
 R_API rboolean r_stun_attr_tlv_next (rconstpointer buf, RStunAttrTLV * tlv);
 

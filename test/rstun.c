@@ -244,4 +244,174 @@ RTEST (rstun, message_integrity_fingerprint, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstun, build_empty_binding, RTEST_FAST)
+{
+  ruint8 buf[1024];
+  ruint8 tid[R_STUN_TRANSACTION_ID_SIZE] =
+    { 0xff, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb };
+  RStunMsgCtx ctx;
+  rsize size;
+
+  r_memclear (buf, sizeof (buf));
+  r_assert (r_stun_msg_begin (&ctx, buf, sizeof (buf),
+          R_STUN_CLASS_REQUEST, R_STUN_METHOD_BINDING, tid));
+  r_assert_cmpuint ((size = r_stun_msg_end (&ctx, FALSE)), ==, R_STUN_HEADER_SIZE);
+
+  r_assert (r_stun_is_valid_msg (buf, size));
+  r_assert (r_stun_msg_is_request (buf));
+  r_assert (r_stun_msg_method_is_binding (buf));
+  r_assert_cmpuint (r_stun_msg_len (buf), ==, 0);
+  r_assert_cmpmem (r_stun_msg_transaction_id (buf), ==, tid, sizeof (tid));
+  r_assert_cmpuint (r_stun_msg_attribute_count (buf), ==, 0);
+}
+RTEST_END;
+
+RTEST (rstun, build_success_resp_binding_with_xor_mapped_addr, RTEST_FAST)
+{
+  ruint8 buf[1024];
+  ruint8 tid[R_STUN_TRANSACTION_ID_SIZE] =
+    { 0xff, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb };
+  RStunMsgCtx ctx;
+  rsize size;
+  RSocketAddress * addr;
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  rchar * ipstr;
+
+  r_memclear (buf, sizeof (buf));
+  r_assert (r_stun_msg_begin (&ctx, buf, sizeof (buf),
+          R_STUN_CLASS_SUCCESS_RESPONSE, R_STUN_METHOD_BINDING, tid));
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (1, 2, 3, 4, 0x4242)), !=, NULL);
+  r_assert (r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS, addr));
+  r_socket_address_unref (addr);
+  r_assert_cmpuint ((size = r_stun_msg_end (&ctx, FALSE)), ==,
+      R_STUN_HEADER_SIZE + R_STUN_ATTR_TLV_HEADER_SIZE + 4 + sizeof (ruint32));
+
+  r_assert (r_stun_is_valid_msg (buf, size));
+  r_assert (r_stun_msg_is_success_resp (buf));
+  r_assert (r_stun_msg_method_is_binding (buf));
+  r_assert_cmpmem (r_stun_msg_transaction_id (buf), ==, tid, sizeof (tid));
+  r_assert_cmpuint (r_stun_msg_len (buf), ==, R_STUN_ATTR_TLV_HEADER_SIZE + 4 + sizeof (ruint32));
+  r_assert_cmpuint (r_stun_msg_attribute_count (buf), ==, 1);
+  r_assert (r_stun_attr_tlv_first (buf, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS);
+  r_assert_cmpuint (tlv.len, ==, 4 + sizeof (ruint32));
+  r_assert_cmpptr ((addr = r_stun_attr_tlv_parse_xor_address (buf, &tlv)), !=, NULL);
+  r_assert_cmpuint (r_socket_address_get_family (addr), ==, R_SOCKET_FAMILY_IPV4);
+  r_assert_cmphex (r_socket_address_ipv4_get_port (addr), ==, 0x4242);
+  r_assert_cmpstr ((ipstr = r_socket_address_ipv4_to_str (addr, FALSE)), ==, "1.2.3.4");
+
+  r_free (ipstr);
+  r_socket_address_unref (addr);
+  r_assert (!r_stun_attr_tlv_next (buf, &tlv));
+}
+RTEST_END;
+
+RTEST (rstun, build_with_message_integrity_fingerprint, RTEST_FAST)
+{
+  ruint8 buf[1024];
+  ruint8 tid[R_STUN_TRANSACTION_ID_SIZE] =
+    { 0xff, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb };
+  RStunMsgCtx ctx;
+  rsize size;
+  RSocketAddress * addr;
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  rchar * ipstr;
+  const rchar * pwd = "VSB0NGEgMTMzNyBoYVhYMHIK";
+
+  r_memclear (buf, sizeof (buf));
+  r_assert (r_stun_msg_begin (&ctx, buf, sizeof (buf),
+          R_STUN_CLASS_SUCCESS_RESPONSE, R_STUN_METHOD_BINDING, tid));
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (1, 2, 3, 4, 0x4242)), !=, NULL);
+  r_assert (r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS, addr));
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (11, 22, 33, 44, 0x1234)), !=, NULL);
+  r_assert (r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_RELAYED_ADDRESS, addr));
+  r_socket_address_unref (addr);
+  r_assert (r_stun_msg_add_message_integrity_short_cred (&ctx, pwd, r_strlen (pwd)));
+  r_assert_cmpuint ((size = r_stun_msg_end (&ctx, TRUE)), ==,
+      R_STUN_HEADER_SIZE + 4*4 + 8+8+R_STUN_MSG_INTEGRITY_SIZE+4);
+
+  r_assert (r_stun_is_valid_msg (buf, size));
+  r_assert (r_stun_msg_is_success_resp (buf));
+  r_assert (r_stun_msg_method_is_binding (buf));
+  r_assert_cmpmem (r_stun_msg_transaction_id (buf), ==, tid, sizeof (tid));
+  r_assert_cmpuint (r_stun_msg_len (buf), >, R_STUN_ATTR_TLV_HEADER_SIZE * 4);
+  r_assert_cmpuint (r_stun_msg_attribute_count (buf), ==, 4);
+
+  r_assert (r_stun_attr_tlv_first (buf, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS);
+  r_assert_cmpuint (tlv.len, ==, 4 + sizeof (ruint32));
+  r_assert_cmpptr ((addr = r_stun_attr_tlv_parse_xor_address (buf, &tlv)), !=, NULL);
+  r_assert_cmpuint (r_socket_address_get_family (addr), ==, R_SOCKET_FAMILY_IPV4);
+  r_assert_cmphex (r_socket_address_ipv4_get_port (addr), ==, 0x4242);
+  r_assert_cmpstr ((ipstr = r_socket_address_ipv4_to_str (addr, FALSE)), ==, "1.2.3.4");
+  r_free (ipstr);
+  r_socket_address_unref (addr);
+
+  r_assert (r_stun_attr_tlv_next (buf, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_XOR_RELAYED_ADDRESS);
+  r_assert_cmpuint (tlv.len, ==, 4 + sizeof (ruint32));
+  r_assert_cmpptr ((addr = r_stun_attr_tlv_parse_xor_address (buf, &tlv)), !=, NULL);
+  r_assert_cmpuint (r_socket_address_get_family (addr), ==, R_SOCKET_FAMILY_IPV4);
+  r_assert_cmphex (r_socket_address_ipv4_get_port (addr), ==, 0x1234);
+  r_assert_cmpstr ((ipstr = r_socket_address_ipv4_to_str (addr, FALSE)), ==, "11.22.33.44");
+  r_free (ipstr);
+  r_socket_address_unref (addr);
+
+  r_assert (r_stun_attr_tlv_next (buf, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_MESSAGE_INTEGRITY);
+  r_assert_cmpuint (tlv.len, ==, 20);
+  r_assert (r_stun_msg_check_integrity_short_cred (buf, &tlv, pwd, r_strlen (pwd)));
+
+  r_assert (r_stun_attr_tlv_next (buf, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_FINGERPRINT);
+  r_assert_cmpuint (tlv.len, ==, 4);
+  r_assert (r_stun_msg_check_fingerprint (buf, &tlv));
+
+  r_assert (!r_stun_attr_tlv_next (buf, &tlv));
+}
+RTEST_END;
+
+RTEST (rstun, recreate_binding_success_resp, RTEST_FAST)
+{
+  const rchar * pwd = "jdZU5MNMAUnq+FM5FHHArfdN1Ys9uw==";
+  const ruint8 pkt_from_server[] = {
+    0x01, 0x01, 0x00, 0x2c, 0x21, 0x12, 0xa4, 0x42, 0x6f, 0x67, 0x2f, 0x45, 0x4b, 0x78, 0x77, 0x64,
+    0x38, 0x44, 0x61, 0x34, 0x00, 0x20, 0x00, 0x08, 0x00, 0x01, 0xf2, 0xa4, 0xb5, 0x68, 0x0b, 0x68,
+    0x00, 0x08, 0x00, 0x14, 0x27, 0x30, 0x9c, 0xa5, 0xfa, 0x82, 0xdc, 0x64, 0xcd, 0x4c, 0xe3, 0x6e,
+    0xfa, 0xf6, 0x52, 0x4c, 0xf7, 0x11, 0xec, 0xcc, 0x80, 0x28, 0x00, 0x04, 0xc1, 0x21, 0x46, 0x9a,
+  };
+  ruint8 pkt_recreate[96];
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  RStunMsgCtx ctx;
+  rsize size_pkt;
+  RSocketAddress * addr;
+
+  r_assert (r_stun_is_valid_msg (pkt_from_server, sizeof (pkt_from_server)));
+  r_assert (r_stun_msg_is_success_resp (pkt_from_server));
+  r_assert (r_stun_msg_method_is_binding (pkt_from_server));
+
+  r_assert (r_stun_attr_tlv_first (pkt_from_server, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS);
+  r_assert (r_stun_attr_tlv_next (pkt_from_server, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_MESSAGE_INTEGRITY);
+  r_assert (r_stun_msg_check_integrity_short_cred (pkt_from_server, &tlv,
+        pwd, r_strlen (pwd)));
+  r_assert (r_stun_attr_tlv_next (pkt_from_server, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_FINGERPRINT);
+  r_assert (r_stun_msg_check_fingerprint (pkt_from_server, &tlv));
+  r_assert (!r_stun_attr_tlv_next (pkt_from_server, &tlv));
+
+  r_assert (r_stun_msg_begin (&ctx, pkt_recreate, sizeof (pkt_recreate),
+        R_STUN_CLASS_SUCCESS_RESPONSE, R_STUN_METHOD_BINDING,
+        r_stun_msg_transaction_id (pkt_from_server)));
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (148, 122, 175, 42, 54198)), !=, NULL);
+  r_assert (r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS, addr));
+  r_socket_address_unref (addr);
+  r_assert (r_stun_msg_add_message_integrity_short_cred (&ctx, pwd, r_strlen (pwd)));
+  r_assert_cmpuint ((size_pkt = r_stun_msg_end (&ctx, TRUE)), ==, sizeof (pkt_from_server));
+  r_assert_cmpmem (pkt_from_server, ==, pkt_recreate, sizeof (pkt_from_server));
+}
+RTEST_END;
+
 
