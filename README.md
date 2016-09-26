@@ -1,7 +1,12 @@
 rlib [![Build Status](https://travis-ci.org/ieei/rlib.svg?branch=master)](https://travis-ci.org/ieei/rlib) [![Appveyor Status](https://ci.appveyor.com/api/projects/status/github/ieei/rlib?branch=master&svg=true)](https://ci.appveyor.com/project/ieei/rlib) [![Coverity Status](https://scan.coverity.com/projects/6732/badge.svg)](https://scan.coverity.com/projects/ieei-rlib) [![License](https://img.shields.io/badge/license-LGPL-blue.svg)](https://github.com/ieei/rlib/blob/master/LICENSE) [![Gitter](https://badges.gitter.im/rliborg/Lobby.svg)](https://gitter.im/rliborg/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 ========
-rlib is a c library and contains abstractions for OS, platform and CPU architecture.
+rlib is a c library which contains abstractions for OS, platform and CPU architecture.
 It's a convenience library for useful things. :-)
+
+**Note:**
+*rlib is under active development.
+Anything may change at any time.
+The public API should NOT be considered stable.*
 
 Platforms
 --------
@@ -31,6 +36,7 @@ Features
   * BER and DER decoder
 * Cryptography
   * Private/Public keys
+  * Ciphers
 * Threadpool
   * Taskqueue
 * Event loop - using edge triggered IO events
