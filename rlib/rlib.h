@@ -71,6 +71,7 @@
 #include <rlib/crypto/raes.h>
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rcipher.h>
+#include <rlib/crypto/rciphersuite.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rmac.h>
@@ -82,5 +83,6 @@
 #include <rlib/ev/revudp.h>
 
 #include <rlib/net/proto/rstun.h>
+#include <rlib/net/proto/rtls.h>
 
 #endif /* __R_LIB_H__ */
