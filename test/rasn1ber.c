@@ -157,9 +157,9 @@ RTEST (rasn1ber, sequence_definite_length, RTEST_FAST)
           ber_encoded, sizeof (ber_encoded))), !=, NULL);
 
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
-  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
+  r_assert (R_ASN1_BIN_TLV_IS_ID (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
   r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
-  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
+  r_assert (R_ASN1_BIN_TLV_IS_ID (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
   r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BOOLEAN));
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
@@ -193,9 +193,9 @@ RTEST (rasn1ber, stop_no_leak, RTEST_FAST)
           ber_encoded, sizeof (ber_encoded))), !=, NULL);
 
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
-  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
+  r_assert (R_ASN1_BIN_TLV_IS_ID (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
   r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
-  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
+  r_assert (R_ASN1_BIN_TLV_IS_ID (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
   r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BOOLEAN));
 
@@ -217,7 +217,7 @@ RTEST (rasn1ber, constructed_definite_long_form, RTEST_FAST)
           ber_encoded, sizeof (ber_encoded))), !=, NULL);
 
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
-  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
+  r_assert (R_ASN1_BIN_TLV_IS_ID (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
   r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BOOLEAN));
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
