@@ -20,6 +20,8 @@
 #include <rlib/asn1/rasn1-private.h>
 #include <rlib/asn1/roid.h>
 
+#include <rlib/rstring.h>
+
 RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_boolean (const RAsn1BinTLV * tlv, rboolean * value)
 {
@@ -154,6 +156,113 @@ r_asn1_bin_tlv_parse_bit_string_bits (const RAsn1BinTLV * tlv, rsize * bits)
 
   *bits = (tlv->len - sizeof (ruint8)) * 8 - tlv->value[0];
   return R_ASN1_DECODER_OK;
+}
+
+static const rchar *
+r_asn1_oid_to_x500_name (const ruint32 * v, rsize count)
+{
+  const struct x500attrtype {
+    const rchar * name;
+    ruint32 oid[16];
+  } x500_attr_table[] = {
+    { "CN",     { 2, 5, 4,  3, } }, /* commonName */
+    { "SN",     { 2, 5, 4,  4, } }, /* surname */
+    { "C",      { 2, 5, 4,  6, } }, /* countryName */
+    { "L",      { 2, 5, 4,  7, } }, /* localityName */
+    { "ST",     { 2, 5, 4,  8, } }, /* stateOrProvinceName */
+    { "STREET", { 2, 5, 4,  9, } }, /* streetAddress */
+    { "O",      { 2, 5, 4, 10, } }, /* organizationName */
+    { "OU",     { 2, 5, 4, 11, } }, /* organizationalUnitName */
+    { "UID",    { 0, 9, 2342, 19200300, 100, 1,  1, } }, /* userId */
+    { "DC",     { 0, 9, 2342, 19200300, 100, 1, 25, } }, /* domainComponent */
+  };
+  rsize i;
+
+  for (i = 0; i < R_N_ELEMENTS (x500_attr_table); i++) {
+    if (r_memcmp (x500_attr_table[i].oid, v, count * sizeof (ruint32)) == 0)
+      return x500_attr_table[i].name;
+  }
+
+  return NULL;
+}
+
+
+static RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_attribute_type_and_value (RAsn1BinDecoder * dec,
+    RAsn1BinTLV * tlv, RString * strbld)
+{
+  RAsn1DecoderStatus ret;
+  const rchar * t, * v;
+  rsize vlen;
+  ruint32 oid[16];
+  rsize count = R_N_ELEMENTS (oid);
+
+  /* AttributeType */
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER))
+    return R_ASN1_DECODER_WRONG_TYPE;
+  if ((ret = r_asn1_bin_tlv_parse_oid (tlv, oid, &count)) != R_ASN1_DECODER_OK)
+    return ret;
+  if ((t = r_asn1_oid_to_x500_name (oid, count)) == NULL)
+    return R_ASN1_DECODER_WRONG_TYPE;
+
+  /* AttributeValue */
+  if ((ret = r_asn1_bin_decoder_next (dec, tlv)) != R_ASN1_DECODER_OK)
+    return ret;
+  switch (R_ASN1_BIN_TLV_ID_TAG (tlv)) {
+    case R_ASN1_ID_PRINTABLE_STRING:
+    case R_ASN1_ID_VISIBLE_STRING:
+    case R_ASN1_ID_IA5_STRING:
+      v = (const rchar *)tlv->value;
+      vlen = tlv->len;
+      break;
+    default:
+      return R_ASN1_DECODER_WRONG_TYPE;
+  }
+
+  if (r_string_length (strbld) > 0)
+    r_string_prepend_printf (strbld, "%s=%.*s,", t, (int)vlen, v);
+  else
+    r_string_prepend_printf (strbld, "%s=%.*s", t, (int)vlen, v);
+
+  return R_ASN1_DECODER_OK;
+}
+
+RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_distinguished_name (RAsn1BinDecoder * dec,
+    RAsn1BinTLV * tlv, rchar ** name)
+{
+  RAsn1DecoderStatus ret;
+
+  if ((ret = r_asn1_bin_decoder_into (dec, tlv)) == R_ASN1_DECODER_OK) {
+    RString * strbld = r_string_new_sized (256);
+
+    while (ret == R_ASN1_DECODER_OK &&
+        R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SET) &&
+        r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+
+      /* AttributeTypeAndValue */
+      if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+        ret = r_asn1_bin_tlv_parse_attribute_type_and_value (dec, tlv, strbld);
+        r_asn1_bin_decoder_out (dec, tlv);
+        if (ret != R_ASN1_DECODER_OK) {
+          r_asn1_bin_decoder_out (dec, tlv);
+          break;
+        }
+      }
+
+      ret = r_asn1_bin_decoder_out (dec, tlv);
+    }
+
+    if (R_ASN1_DECODER_STATUS_SUCCESS (ret)) {
+      ret = r_asn1_bin_decoder_out (dec, tlv);
+      *name = r_string_free_keep (strbld);
+    } else {
+      r_string_free (strbld);
+      *name = NULL;
+    }
+  }
+
+  return ret;
 }
 
 static void

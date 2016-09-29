@@ -94,6 +94,8 @@ typedef enum {
   R_ASN1_DECODER_INDEFINITE,
   R_ASN1_DECODER_NOT_CONSTRUCTED,
 } RAsn1DecoderStatus;
+#define R_ASN1_DECODER_STATUS_ERROR(s)      ((s) >  R_ASN1_DECODER_OK)
+#define R_ASN1_DECODER_STATUS_SUCCESS(s)    ((s) <= R_ASN1_DECODER_OK)
 
 /* ASN.1 binary Type-Length-Value */
 #define R_ASN1_BIN_TLV_INIT           { NULL, 0, NULL }
@@ -140,6 +142,9 @@ R_API RAsn1BinDecoder * r_asn1_bin_decoder_new (RAsn1EncodingRules enc,
 R_API RAsn1DecoderStatus r_asn1_bin_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 R_API RAsn1DecoderStatus r_asn1_bin_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 R_API RAsn1DecoderStatus r_asn1_bin_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
+
+R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_distinguished_name (RAsn1BinDecoder * dec,
+    RAsn1BinTLV * tlv, rchar ** name);
 
 /* TODO: Add callback/events based decoder/parser (like a SAX parser) */
 /*R_API rboolean r_asn1_bin_decoder_decode_events (RAsn1BinDecoder * dec,*/
