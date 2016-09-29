@@ -144,6 +144,17 @@ r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot)
   return ret;
 }
 
+RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_bit_string_bits (const RAsn1BinTLV * tlv, rsize * bits)
+{
+  if (R_UNLIKELY (tlv == NULL || bits == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING)))
+    return R_ASN1_DECODER_WRONG_TYPE;
+
+  *bits = (tlv->len - sizeof (ruint8)) * 8 - tlv->value[0];
+  return R_ASN1_DECODER_OK;
+}
 
 static void
 r_asn1_bin_decoder_free (RAsn1BinDecoder * dec)
