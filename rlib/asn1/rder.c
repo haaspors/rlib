@@ -171,15 +171,25 @@ r_asn1_der_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 RAsn1DecoderStatus
 r_asn1_der_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
+  RSList * lst;
   RAsn1BinTLV * up;
+  RAsn1DecoderStatus ret;
 
   if (R_UNLIKELY (dec == NULL || tlv == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
-  if (R_UNLIKELY (dec->stack == NULL))
+  if (R_UNLIKELY ((lst = dec->stack) == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
 
-  up = r_slist_data (dec->stack);
-  return r_asn1_der_tlv_init (tlv, up->value + up->len,
-      dec->data + dec->size - (up->value + up->len));
+  up = r_slist_data (lst);
+  if (up->value + up->len < dec->data + dec->size) {
+    ret = r_asn1_der_tlv_init (tlv, up->value + up->len,
+            dec->data + dec->size - (up->value + up->len));
+  } else {
+    r_memset (tlv, 0, sizeof (RAsn1BinTLV));
+    ret = R_ASN1_DECODER_EOS;
+  }
+  dec->stack = r_slist_next (dec->stack);
+  r_slist_free1_full (lst, r_free);
+  return ret;
 }
 

@@ -183,8 +183,13 @@ r_asn1_ber_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 
   up = r_slist_data (lst);
   if (up->len > 0) {
-    ret = r_asn1_ber_tlv_init (tlv, up->value + up->len,
-        dec->data + dec->size - (up->value + up->len));
+    if (up->value + up->len < dec->data + dec->size) {
+      ret = r_asn1_ber_tlv_init (tlv, up->value + up->len,
+          dec->data + dec->size - (up->value + up->len));
+    } else {
+      r_memset (tlv, 0, sizeof (RAsn1BinTLV));
+      ret = R_ASN1_DECODER_EOS;
+    }
   } else {
     do {
       ret = r_asn1_ber_decoder_next (dec, tlv);
