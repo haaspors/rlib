@@ -74,8 +74,16 @@ R_API RClockTime r_time_get_ts_monotonic (void);
 R_API RClockTime r_time_get_ts_raw (void);
 
 R_API ruint64 r_time_get_uptime (void);
-R_API ruint64 r_time_get_unix_timestamp (void);
-#define r_time_get_time_since_epoch() r_time_get_unix_timestamp ()
+
+/* FIXME: Maybe move this separate header? */
+R_API rboolean r_time_is_leap_year (ruint16 year);
+R_API ruint16 r_time_leap_years (ruint16 from, ruint16 to);
+R_API rint8 r_time_days_in_month (ruint16 year, ruint8 month);
+R_API ruint64 r_time_create_unix_time (ruint16 year, ruint8 month, ruint8 day,
+    ruint8 hour, ruint8 minute, ruint8 second);
+
+R_API ruint64 r_time_get_unix_time (void);
+#define r_time_get_time_since_epoch() r_time_get_unix_time ()
 
 R_END_DECLS
 

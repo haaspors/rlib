@@ -166,8 +166,77 @@ r_time_get_uptime (void)
 #endif
 }
 
+static const ruint8 g__r_time_days_in_month[2][12] = {
+  { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 },
+  { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
+};
+static const ruint16 g__r_time_accum_days[2][12] = {
+  { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 },
+  { 0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335 }
+};
+
+rboolean
+r_time_is_leap_year (ruint16 year)
+{
+  if (R_UNLIKELY (year < 1753)) return FALSE;
+  if ((year % 400) == 0) return TRUE;
+  if ((year % 100) == 0) return FALSE;
+  if ((year %   4) == 0) return TRUE;
+  return FALSE;
+}
+
+ruint16
+r_time_leap_years (ruint16 from, ruint16 to)
+{
+  ruint16 ret;
+
+  from = MAX (1753, from);
+  if (--to <= --from) return 0;
+
+  ret  = (to /   4) - (from /   4);
+  ret -= (to / 100) - (from / 100);
+  ret += (to / 400) - (from / 400);
+
+  return ret;
+}
+
+static rboolean
+r_time_is_year_month_day_valid (ruint16 year, ruint8 month, ruint8 day)
+{
+  if (R_UNLIKELY (year < 1753)) return FALSE;
+  if (R_UNLIKELY (month < 1 || month > 12)) return FALSE;
+  if (R_UNLIKELY (day < 1)) return FALSE;
+
+  return day <= g__r_time_days_in_month[r_time_is_leap_year (year)][month - 1];
+}
+
+rint8
+r_time_days_in_month (ruint16 year, ruint8 month)
+{
+  if (R_UNLIKELY (month < 1 || month > 12)) return -1;
+  if (R_UNLIKELY (year < 1753)) return -1;
+
+  return g__r_time_days_in_month[r_time_is_leap_year (year)][month - 1];
+}
+
 ruint64
-r_time_get_unix_timestamp (void)
+r_time_create_unix_time (ruint16 year, ruint8 month, ruint8 day,
+    ruint8 hour, ruint8 minute, ruint8 second)
+{
+  ruint64 days;
+
+  if (R_UNLIKELY (!r_time_is_year_month_day_valid (year, month, day) || year < 1970))
+      return 0;
+
+  days = (year - 1970) * 365 + r_time_leap_years (1970, year);
+  days += g__r_time_accum_days[r_time_is_leap_year (year) ? 1 : 0][month - 1];
+  days += day - 1;
+
+  return days * 86400 + hour * 3600 + minute * 60 + second;
+}
+
+ruint64
+r_time_get_unix_time (void)
 {
   return (ruint64)time (NULL);
 }
