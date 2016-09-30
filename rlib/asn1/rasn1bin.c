@@ -20,7 +20,9 @@
 #include <rlib/asn1/rasn1-private.h>
 #include <rlib/asn1/roid.h>
 
+#include <rlib/rstr.h>
 #include <rlib/rstring.h>
+#include <rlib/rtime.h>
 
 RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_boolean (const RAsn1BinTLV * tlv, rboolean * value)
@@ -144,6 +146,104 @@ r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot)
   }
 
   return ret;
+}
+
+RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_time (const RAsn1BinTLV * tlv, ruint64 * time)
+{
+  ruint16 y;
+  ruint8 m, d, hh, mm, ss;
+  const rchar * ptr, * end;
+
+  if (R_UNLIKELY (tlv == NULL || time == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
+
+  ptr = (const rchar *)tlv->value;
+  end = (const rchar *)&tlv->value[tlv->len];
+  if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_UTC_TIME) {
+    ruint8 yy;
+    int res;
+
+    if (tlv->len < 10)
+      return R_ASN1_DECODER_OVERFLOW;
+
+    // YYMMDDhhmm[ss]
+    if (tlv->len >= 12) {
+      res = r_strscanf (ptr, "%2hhu%2hhu%2hhu%2hhu%2hhu%2hhu",
+          &yy, &m, &d, &hh, &mm, &ss);
+    } else {
+      res = r_strscanf (ptr, "%2hhu%2hhu%2hhu%2hhu%2hhu",
+          &yy, &m, &d, &hh, &mm);
+    }
+    switch (res) {
+      case 5:
+        ss = 0;
+      case 6:
+        y = (ruint16)yy + ((yy < 70) ? 2000 : 1900);
+        break;
+      default:
+        return R_ASN1_DECODER_OVERFLOW;
+    }
+
+    ptr += res * 2;
+    if (ptr == end - 1 && *ptr == 'Z')
+      ptr++;
+  } else if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_GENERALIZED_TIME) {
+    ruint16 fff;
+
+    if (tlv->len < 10)
+      return R_ASN1_DECODER_OVERFLOW;
+
+    // YYYYMMDDhh[mm[ss[.fff]]]
+    if (r_strscanf (ptr, "%4hu%2hhu%2hhu%2hhu", &y, &m, &d, &hh) != 4)
+      return R_ASN1_DECODER_OVERFLOW;
+    ptr += 4 + 2 + 2 + 2;
+    mm = ss = 0;
+    if (end - ptr > 2) {
+      if (*ptr == '-' || *ptr == '+') {
+        goto done;
+      } else if (r_strscanf (ptr, "%2hhu", &mm) == 1) {
+        ptr += 2;
+        if (end - ptr > 2) {
+          if (*ptr == '-' || *ptr == '+') {
+            goto done;
+          } else if (r_strscanf (ptr, "%2hhu", &ss) == 1) {
+            ptr += 2;
+            if (end - ptr > 3 && *ptr == '.' && r_strscanf (ptr, ".%3hu", &fff) == 1)
+              ptr += 4;
+          }
+        }
+      }
+    }
+
+    if (end - ptr == 1 && *ptr == 'Z') {
+      ptr++;
+    } else if (ptr == end) {
+      /* TODO: Adjust for Local time */
+    }
+  } else {
+    return R_ASN1_DECODER_WRONG_TYPE;
+  }
+
+done:
+  *time = r_time_create_unix_time (y, m, d, hh, mm, ss);
+
+  if (ptr == end - 5) {
+    ruint8 hd, md;
+    if (r_strscanf (&ptr[1], "%2hhu%2hhu", &hd, &md) != 2)
+      return R_ASN1_DECODER_OVERFLOW;
+
+    if (*ptr == '+')
+      *time -= hd * 3600 + md * 60;
+    else if (*ptr == '-')
+      *time += hd * 3600 + md * 60;
+    else
+      return R_ASN1_DECODER_WRONG_TYPE;
+  } else if (ptr != end) {
+    return R_ASN1_DECODER_OVERFLOW;
+  }
+
+  return R_ASN1_DECODER_OK;
 }
 
 RAsn1DecoderStatus
