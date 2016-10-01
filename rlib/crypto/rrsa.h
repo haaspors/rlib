@@ -43,7 +43,7 @@ R_API RCryptoKey * r_rsa_priv_key_new_full (rint32 ver,
     const rmpint * dp, const rmpint * dq, const rmpint * qp) R_ATTR_MALLOC;
 R_API RCryptoKey * r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
     rconstpointer e, rsize esize, rconstpointer d, rsize dsize) R_ATTR_MALLOC;
-R_API RCryptoKey * r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec) R_ATTR_MALLOC;
+R_API RCryptoKey * r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv) R_ATTR_MALLOC;
 
 
 #define r_rsa_priv_key_get_e r_rsa_pub_key_get_e

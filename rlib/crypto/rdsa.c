@@ -173,12 +173,11 @@ r_dsa_priv_key_new_binary (rconstpointer p, rsize psize,
 }
 
 RCryptoKey *
-r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec)
+r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
   RDsaPrivKey * ret;
 
   if ((ret = r_mem_new (RDsaPrivKey)) != NULL) {
-    RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
     r_dsa_priv_key_init (&ret->pub.key);
 
     r_mpint_init (&ret->pub.p);
@@ -187,19 +186,18 @@ r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec)
     r_mpint_init (&ret->pub.y);
     r_mpint_init (&ret->x);
 
-    if (r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_decoder_into (dec, &tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_integer (&tlv, &ret->ver) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (&tlv, &ret->pub.p) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (&tlv, &ret->pub.q) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (&tlv, &ret->pub.g) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (&tlv, &ret->pub.y) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (&tlv, &ret->x) != R_ASN1_DECODER_OK) {
+    if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_integer (tlv, &ret->ver) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_mpint (tlv, &ret->pub.p) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_mpint (tlv, &ret->pub.q) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_mpint (tlv, &ret->pub.g) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_mpint (tlv, &ret->pub.y) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_mpint (tlv, &ret->x) != R_ASN1_DECODER_OK) {
       r_crypto_key_unref ((RCryptoKey *)ret);
       ret = NULL;
     }

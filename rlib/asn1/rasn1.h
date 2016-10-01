@@ -104,7 +104,6 @@ typedef enum {
 #define R_ASN1_BIN_TLV_ID_TAG(tlv)    (*(tlv)->start & R_ASN1_ID_TAG_MASK)
 #define R_ASN1_BIN_TLV_IS_ID(tlv, tag)(*(tlv)->start == (tag))
 #define R_ASN1_BIN_TLV_ID_IS_TAG(tlv, tag)  (R_ASN1_BIN_TLV_ID_TAG (tlv) == (tag))
-#define R_ASN1_BIN_TLV_ID_IS_EOC(tlv)       R_ASN1_BIN_TLV_ID_IS_TAG(tlv, R_ASN1_ID_EOC)
 
 typedef struct _RAsn1BinTLV {
   const ruint8 *  start;  /* Type   (first octet of tlv) */

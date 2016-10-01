@@ -82,7 +82,7 @@ RTEST (rasn1ber, sequence_primitives, RTEST_FAST)
   r_assert_cmpstr (str_oid, ==, "1.2.840.113549.1.7.1");
   r_free (str_oid);
 
-  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_EOC);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_CLASS (&tlv), ==, R_ASN1_ID_UNIVERSAL);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_PC (&tlv), ==, R_ASN1_ID_PRIMITIVE);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_TAG (&tlv), ==, R_ASN1_ID_EOC);
@@ -167,12 +167,13 @@ RTEST (rasn1ber, sequence_definite_length, RTEST_FAST)
   r_assert_cmpint (r_asn1_bin_tlv_parse_integer (&tlv, &v_int), ==, R_ASN1_DECODER_OK);
   r_assert_cmpint (v_int, ==, 42);
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_EOC);
+  r_assert_cmpint (r_asn1_bin_decoder_out (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
   r_assert_cmpint (r_asn1_bin_tlv_parse_integer (&tlv, &v_int), ==, R_ASN1_DECODER_OK);
   r_assert_cmpint (v_int, ==, 2);
-  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_EOC);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_EOC));
-  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_EOS);
+  r_assert_cmpint (r_asn1_bin_decoder_out (dec, &tlv), ==, R_ASN1_DECODER_EOS);
 
   r_asn1_bin_decoder_unref (dec);
 }
@@ -198,6 +199,8 @@ RTEST (rasn1ber, stop_no_leak, RTEST_FAST)
   r_assert (R_ASN1_BIN_TLV_IS_ID (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
   r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BOOLEAN));
+  r_assert_cmpint (r_asn1_bin_decoder_out (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
 
   r_asn1_bin_decoder_unref (dec);
 }

@@ -288,6 +288,7 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
 {
   RCryptoKey * ret;
   RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
 
   if (R_UNLIKELY (block == NULL))
     return NULL;
@@ -298,16 +299,17 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
   (void) passphrase;
   (void) ppsize;
 
-  if ((dec = r_pem_block_get_asn1_decoder (block)) != NULL) {
+  if ((dec = r_pem_block_get_asn1_decoder (block)) != NULL &&
+      r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK) {
     switch (r_pem_block_get_type (block)) {
       case R_PEM_TYPE_PUBLIC_KEY:
-        ret = r_crypto_key_import_asn1_public_key (dec);
+        ret = r_crypto_key_from_asn1_public_key (dec, &tlv);
         break;
       case R_PEM_TYPE_RSA_PRIVATE_KEY:
-        ret = r_rsa_priv_key_new_from_asn1 (dec);
+        ret = r_rsa_priv_key_new_from_asn1 (dec, &tlv);
         break;
       case R_PEM_TYPE_DSA_PRIVATE_KEY:
-        ret = r_dsa_priv_key_new_from_asn1 (dec);
+        ret = r_dsa_priv_key_new_from_asn1 (dec, &tlv);
         break;
       /* TODO: PRIVATE keys */
       /* TODO: ecnrypted PRIVATE keys */

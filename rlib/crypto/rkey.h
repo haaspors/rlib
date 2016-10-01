@@ -63,7 +63,7 @@ struct _RCryptoKey {
 
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key_file (const rchar * file);
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key (const rchar * data, rsize size);
-R_API RCryptoKey * r_crypto_key_import_asn1_public_key (RAsn1BinDecoder * dec);
+R_API RCryptoKey * r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 
 R_END_DECLS
 

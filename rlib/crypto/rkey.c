@@ -133,77 +133,80 @@ r_crypto_key_import_ssh_public_key (const rchar * data, rsize size)
 }
 
 RCryptoKey *
-r_crypto_key_import_asn1_public_key (RAsn1BinDecoder * dec)
+r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
-  RCryptoKey * ret;
-  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  RCryptoKey * ret = NULL;
   rchar * oid = NULL;
 
-  if (R_UNLIKELY (dec == NULL))
+  if (R_UNLIKELY (dec == NULL || tlv == NULL))
     return NULL;
 
-  if (r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
-      r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
-      r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
-      r_asn1_bin_tlv_parse_oid_to_dot (&tlv, &oid) == R_ASN1_DECODER_OK &&
-      r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK) {
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
 
-    if (r_str_equals (oid, R_RSA_OID_RSA_ENCRYPTION)) {
-      rmpint n, e;
-      r_mpint_init (&n);
-      r_mpint_init (&e);
-      if (r_asn1_bin_decoder_out (dec, &tlv) == R_ASN1_DECODER_OK &&
-          r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
-          r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
-          r_asn1_bin_tlv_parse_mpint (&tlv, &n) == R_ASN1_DECODER_OK &&
-          r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
-          r_asn1_bin_tlv_parse_mpint (&tlv, &e) == R_ASN1_DECODER_OK) {
-        ret = r_rsa_pub_key_new (&n, &e);
+  if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+    if (r_asn1_bin_tlv_parse_oid_to_dot (tlv, &oid) == R_ASN1_DECODER_OK &&
+        r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK) {
+
+      if (r_str_equals (oid, R_RSA_OID_RSA_ENCRYPTION)) {
+        rmpint n, e;
+        r_mpint_init (&n);
+        r_mpint_init (&e);
+        r_asn1_bin_decoder_out (dec, tlv);
+        if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+          if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+            if (r_asn1_bin_tlv_parse_mpint (tlv, &n) == R_ASN1_DECODER_OK &&
+                r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
+                r_asn1_bin_tlv_parse_mpint (tlv, &e) == R_ASN1_DECODER_OK) {
+              ret = r_rsa_pub_key_new (&n, &e);
+            }
+            r_asn1_bin_decoder_out (dec, tlv);
+          }
+          r_asn1_bin_decoder_out (dec, tlv);
+        }
+        r_mpint_clear (&e);
+        r_mpint_clear (&n);
+      } else if (r_str_equals (oid, R_X9_57_OID_DSA)) {
+        rmpint p, q, g, y;
+        r_mpint_init (&p);
+        r_mpint_init (&q);
+        r_mpint_init (&g);
+        r_mpint_init (&y);
+        if (R_ASN1_BIN_TLV_ID_PC (tlv) == R_ASN1_ID_CONSTRUCTED &&
+            r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+          if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_INTEGER) {
+            r_asn1_bin_tlv_parse_mpint (tlv, &p);
+            r_asn1_bin_decoder_next (dec, tlv);
+          }
+          if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_INTEGER) {
+            r_asn1_bin_tlv_parse_mpint (tlv, &q);
+            r_asn1_bin_decoder_next (dec, tlv);
+          }
+          if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_INTEGER) {
+            r_asn1_bin_tlv_parse_mpint (tlv, &g);
+            r_asn1_bin_decoder_next (dec, tlv);
+          }
+          r_asn1_bin_decoder_out (dec, tlv);
+        }
+        r_asn1_bin_decoder_out (dec, tlv);
+        if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+          if (r_asn1_bin_tlv_parse_mpint (tlv, &y) == R_ASN1_DECODER_OK)
+            ret = r_dsa_pub_key_new_full (&p, &q, &g, &y);
+          r_asn1_bin_decoder_out (dec, tlv);
+        }
+        r_mpint_clear (&p);
+        r_mpint_clear (&q);
+        r_mpint_clear (&g);
+        r_mpint_clear (&y);
       } else {
-        ret = NULL;
+        r_asn1_bin_decoder_out (dec, tlv);
       }
-      r_mpint_clear (&e);
-      r_mpint_clear (&n);
-    } else if (r_str_equals (oid, R_X9_57_OID_DSA)) {
-      rmpint p, q, g, y;
-      r_mpint_init (&p);
-      r_mpint_init (&q);
-      r_mpint_init (&g);
-      r_mpint_init (&y);
-      if (R_ASN1_BIN_TLV_ID_PC (&tlv) == R_ASN1_ID_CONSTRUCTED &&
-          r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
-        if (R_ASN1_BIN_TLV_ID_TAG (&tlv) == R_ASN1_ID_INTEGER) {
-          r_asn1_bin_tlv_parse_mpint (&tlv, &p);
-          r_asn1_bin_decoder_next (dec, &tlv);
-        }
-        if (R_ASN1_BIN_TLV_ID_TAG (&tlv) == R_ASN1_ID_INTEGER) {
-          r_asn1_bin_tlv_parse_mpint (&tlv, &q);
-          r_asn1_bin_decoder_next (dec, &tlv);
-        }
-        if (R_ASN1_BIN_TLV_ID_TAG (&tlv) == R_ASN1_ID_INTEGER) {
-          r_asn1_bin_tlv_parse_mpint (&tlv, &g);
-          r_asn1_bin_decoder_next (dec, &tlv);
-        }
-        r_asn1_bin_decoder_out (dec, &tlv);
-      }
-      if (r_asn1_bin_decoder_out (dec, &tlv) == R_ASN1_DECODER_OK &&
-          r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
-          r_asn1_bin_tlv_parse_mpint (&tlv, &y) == R_ASN1_DECODER_OK) {
-        ret = r_dsa_pub_key_new_full (&p, &q, &g, &y);
-      } else {
-        ret = NULL;
-      }
-      r_mpint_clear (&p);
-      r_mpint_clear (&q);
-      r_mpint_clear (&g);
-      r_mpint_clear (&y);
     } else {
-      ret = NULL;
+      r_asn1_bin_decoder_out (dec, tlv);
     }
-  } else {
-    ret = NULL;
   }
 
+  r_asn1_bin_decoder_out (dec, tlv);
   r_free (oid);
   return ret;
 }
