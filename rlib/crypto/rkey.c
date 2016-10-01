@@ -166,7 +166,7 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         }
         r_mpint_clear (&e);
         r_mpint_clear (&n);
-      } else if (r_str_equals (oid, R_X9_57_OID_DSA)) {
+      } else if (r_str_equals (oid, R_X9CM_OID_DSA)) {
         rmpint p, q, g, y;
         r_mpint_init (&p);
         r_mpint_init (&q);
