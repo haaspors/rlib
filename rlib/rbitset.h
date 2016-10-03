@@ -42,6 +42,7 @@ typedef struct {
 #define r_bitset_init_heap(bs, bits)                                          \
   (((bs) = r_malloc0 (_R_BITSET_SIZE (bits))) != NULL && (((bs)->bsize = (bits)) > 0))
 
+R_API RBitset * r_bitset_new_from_binary (rconstpointer data, rsize size);
 R_API rboolean r_bitset_copy (RBitset * dest, const RBitset * src);
 R_API rboolean r_bitset_set_bit (RBitset * bitset, rsize bit, rboolean set);
 R_API rboolean r_bitset_set_bits (RBitset * bitset,

@@ -38,6 +38,55 @@ RTEST (rbitset, heap, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbitset, new_from_binary, RTEST_FAST)
+{
+  RBitset * bitset;
+  const ruint8 data[] = { 0xf0, 0x33, 0xff, 0x0e };
+
+  r_assert_cmpptr ((bitset = r_bitset_new_from_binary (data, sizeof (data))), !=, NULL);
+  r_assert_cmpuint (bitset->bsize, ==, sizeof (data) * 8);
+  r_assert_cmpuint (r_bitset_popcount (bitset), ==, 19);
+
+  r_assert (!r_bitset_is_bit_set (bitset,  0));
+  r_assert ( r_bitset_is_bit_set (bitset,  1));
+  r_assert ( r_bitset_is_bit_set (bitset,  2));
+  r_assert ( r_bitset_is_bit_set (bitset,  3));
+  r_assert (!r_bitset_is_bit_set (bitset,  4));
+  r_assert (!r_bitset_is_bit_set (bitset,  5));
+  r_assert (!r_bitset_is_bit_set (bitset,  6));
+  r_assert (!r_bitset_is_bit_set (bitset,  7));
+
+  r_assert ( r_bitset_is_bit_set (bitset,  8));
+  r_assert ( r_bitset_is_bit_set (bitset,  9));
+  r_assert ( r_bitset_is_bit_set (bitset, 10));
+  r_assert ( r_bitset_is_bit_set (bitset, 11));
+  r_assert ( r_bitset_is_bit_set (bitset, 12));
+  r_assert ( r_bitset_is_bit_set (bitset, 13));
+  r_assert ( r_bitset_is_bit_set (bitset, 14));
+  r_assert ( r_bitset_is_bit_set (bitset, 15));
+
+  r_assert ( r_bitset_is_bit_set (bitset, 16));
+  r_assert ( r_bitset_is_bit_set (bitset, 17));
+  r_assert (!r_bitset_is_bit_set (bitset, 18));
+  r_assert (!r_bitset_is_bit_set (bitset, 19));
+  r_assert ( r_bitset_is_bit_set (bitset, 20));
+  r_assert ( r_bitset_is_bit_set (bitset, 21));
+  r_assert (!r_bitset_is_bit_set (bitset, 22));
+  r_assert (!r_bitset_is_bit_set (bitset, 23));
+
+  r_assert (!r_bitset_is_bit_set (bitset, 24));
+  r_assert (!r_bitset_is_bit_set (bitset, 25));
+  r_assert (!r_bitset_is_bit_set (bitset, 26));
+  r_assert (!r_bitset_is_bit_set (bitset, 27));
+  r_assert ( r_bitset_is_bit_set (bitset, 28));
+  r_assert ( r_bitset_is_bit_set (bitset, 29));
+  r_assert ( r_bitset_is_bit_set (bitset, 30));
+  r_assert ( r_bitset_is_bit_set (bitset, 31));
+
+  r_free (bitset);
+}
+RTEST_END;
+
 RTEST (rbitset, copy, RTEST_FAST)
 {
   RBitset * a, * b, * c;

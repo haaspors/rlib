@@ -35,6 +35,35 @@
 #define R_BITSET_CLAMP(bs) (bs)->bits[R_BITSET_WORDS (bs) - 1] &= \
   (RBSWORD_MAX >> (R_BSWORD_BITS - ((bs)->bsize % R_BSWORD_BITS)))
 
+RBitset *
+r_bitset_new_from_binary (rconstpointer data, rsize size)
+{
+  RBitset * ret;
+
+  if (r_bitset_init_heap (ret, size * 8)) {
+    const ruint8 * src = data;
+    ruint8 * dst;
+
+#if R_BYTE_ORDER == R_LITTLE_ENDIAN
+    dst = (ruint8 *)(rpointer)ret->bits;
+    while (size-- > 0)
+      dst[size] = *src++;
+#else
+    dst = (ruint8 *)(rpointer)&ret->bits[R_BITSET_WORDS (ret) - 1];
+    size %= R_BSWORD_BYTES;
+    while (size > 0)
+      dst[R_BSWORD_BYTES - 1 - size--] = *src++;
+    dst -= R_BSWORD_BYTES;
+    while (dst >= (ruint8 *)(rpointer)ret->bits) {
+      r_memcpy (dst, src, R_BSWORD_BYTES);
+      src -= R_BSWORD_BYTES;
+      dst -= R_BSWORD_BYTES;
+    }
+#endif
+  }
+
+  return ret;
+}
 
 rboolean
 r_bitset_copy (RBitset * dest, const RBitset * src)
