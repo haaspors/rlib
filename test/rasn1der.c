@@ -136,3 +136,26 @@ RTEST (rasn1der, x500_distinguished_name, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_bit_string, RTEST_FAST)
+{
+  static ruint8 der_encoded[] = { 0x03, 0x02, 0x04, 0xf0 };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  RBitset * bitset = NULL;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+          der_encoded, sizeof (der_encoded))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+
+  r_assert_cmpuint (tlv.len, ==, 2);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_bit_string (&tlv, &bitset), ==,
+      R_ASN1_DECODER_OK);
+  r_assert_cmpptr (bitset, !=, NULL);
+  r_assert_cmpuint (bitset->bsize, ==, 4);
+  r_assert_cmpuint (r_bitset_popcount (bitset), ==, 4);
+  r_free (bitset);
+
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+

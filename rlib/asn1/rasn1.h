@@ -23,6 +23,8 @@
 #endif
 
 #include <rlib/rtypes.h>
+
+#include <rlib/rbitset.h>
 #include <rlib/rmpint.h>
 #include <rlib/rref.h>
 
@@ -89,6 +91,8 @@ typedef enum {
   R_ASN1_DECODER_EOC                    = -1,
   R_ASN1_DECODER_OK                     = 0,
   R_ASN1_DECODER_INVALID_ARG,
+  R_ASN1_DECODER_OOM,
+  R_ASN1_DECODER_PARSE_ERROR,
   R_ASN1_DECODER_WRONG_TYPE,
   R_ASN1_DECODER_OVERFLOW,
   R_ASN1_DECODER_INDEFINITE,
@@ -117,6 +121,7 @@ R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_mpint (const RAsn1BinTLV * tlv, rm
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * size);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_time (const RAsn1BinTLV * tlv, ruint64 * time);
+R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_bit_string (const RAsn1BinTLV * tlv, RBitset ** bitset);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_bit_string_bits (const RAsn1BinTLV * tlv, rsize * bits);
 #define r_asn1_bin_tlv_bit_string_value(tlv) (&(tlv)->value[1])
 /* TODO: Add parsing of strings, time and ... */
