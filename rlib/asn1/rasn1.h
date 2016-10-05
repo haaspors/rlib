@@ -116,8 +116,8 @@ typedef struct _RAsn1BinTLV {
 } RAsn1BinTLV;
 
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_boolean (const RAsn1BinTLV * tlv, rboolean * value);
-R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_integer (const RAsn1BinTLV * tlv, rint32 * value);
-R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_mpint (const RAsn1BinTLV * tlv, rmpint * value);
+R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_integer_i32 (const RAsn1BinTLV * tlv, rint32 * value);
+R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_integer_mpint (const RAsn1BinTLV * tlv, rmpint * value);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * size);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_time (const RAsn1BinTLV * tlv, ruint64 * time);

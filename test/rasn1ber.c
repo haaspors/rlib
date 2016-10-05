@@ -43,7 +43,7 @@ RTEST (rasn1ber, sequence_primitives, RTEST_FAST)
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_CLASS (&tlv), ==, R_ASN1_ID_UNIVERSAL);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_PC (&tlv), ==, R_ASN1_ID_PRIMITIVE);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_TAG (&tlv), ==, R_ASN1_ID_BOOLEAN);
-  r_assert_cmpint (r_asn1_bin_tlv_parse_integer (&tlv, &v_int), ==, R_ASN1_DECODER_WRONG_TYPE);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i32 (&tlv, &v_int), ==, R_ASN1_DECODER_WRONG_TYPE);
   r_assert_cmpint (r_asn1_bin_tlv_parse_boolean (&tlv, &v_bool), ==, R_ASN1_DECODER_OK);
   r_assert (v_bool);
 
@@ -51,7 +51,7 @@ RTEST (rasn1ber, sequence_primitives, RTEST_FAST)
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_CLASS (&tlv), ==, R_ASN1_ID_UNIVERSAL);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_PC (&tlv), ==, R_ASN1_ID_PRIMITIVE);
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_TAG (&tlv), ==, R_ASN1_ID_INTEGER);
-  r_assert_cmpint (r_asn1_bin_tlv_parse_integer (&tlv, &v_int), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i32 (&tlv, &v_int), ==, R_ASN1_DECODER_OK);
   r_assert_cmpint (v_int, ==, 42);
 
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
@@ -60,8 +60,8 @@ RTEST (rasn1ber, sequence_primitives, RTEST_FAST)
   r_assert_cmpuint (R_ASN1_BIN_TLV_ID_TAG (&tlv), ==, R_ASN1_ID_INTEGER);
   r_mpint_init (&v_mpint);
   r_assert_cmpint (r_asn1_bin_tlv_parse_boolean (&tlv, &v_bool), ==, R_ASN1_DECODER_WRONG_TYPE);
-  r_assert_cmpint (r_asn1_bin_tlv_parse_integer (&tlv, &v_int), ==, R_ASN1_DECODER_OVERFLOW);
-  r_assert_cmpint (r_asn1_bin_tlv_parse_mpint (&tlv, &v_mpint), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i32 (&tlv, &v_int), ==, R_ASN1_DECODER_OVERFLOW);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_mpint (&tlv, &v_mpint), ==, R_ASN1_DECODER_OK);
   r_mpint_clear (&v_mpint);
 
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
@@ -164,12 +164,12 @@ RTEST (rasn1ber, sequence_definite_length, RTEST_FAST)
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BOOLEAN));
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
-  r_assert_cmpint (r_asn1_bin_tlv_parse_integer (&tlv, &v_int), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i32 (&tlv, &v_int), ==, R_ASN1_DECODER_OK);
   r_assert_cmpint (v_int, ==, 42);
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_EOC);
   r_assert_cmpint (r_asn1_bin_decoder_out (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
-  r_assert_cmpint (r_asn1_bin_tlv_parse_integer (&tlv, &v_int), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i32 (&tlv, &v_int), ==, R_ASN1_DECODER_OK);
   r_assert_cmpint (v_int, ==, 2);
   r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
   r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_EOC));

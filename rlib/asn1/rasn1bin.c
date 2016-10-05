@@ -43,7 +43,7 @@ r_asn1_bin_tlv_parse_boolean (const RAsn1BinTLV * tlv, rboolean * value)
 }
 
 RAsn1DecoderStatus
-r_asn1_bin_tlv_parse_integer (const RAsn1BinTLV * tlv, rint32 * value)
+r_asn1_bin_tlv_parse_integer_i32 (const RAsn1BinTLV * tlv, rint32 * value)
 {
   if (R_UNLIKELY (tlv == NULL || value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
@@ -73,7 +73,7 @@ r_asn1_bin_tlv_parse_integer (const RAsn1BinTLV * tlv, rint32 * value)
 }
 
 RAsn1DecoderStatus
-r_asn1_bin_tlv_parse_mpint (const RAsn1BinTLV * tlv, rmpint * value)
+r_asn1_bin_tlv_parse_integer_mpint (const RAsn1BinTLV * tlv, rmpint * value)
 {
   if (R_UNLIKELY (tlv == NULL || value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;

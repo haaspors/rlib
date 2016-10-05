@@ -155,9 +155,9 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         r_asn1_bin_decoder_out (dec, tlv);
         if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
           if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
-            if (r_asn1_bin_tlv_parse_mpint (tlv, &n) == R_ASN1_DECODER_OK &&
+            if (r_asn1_bin_tlv_parse_integer_mpint (tlv, &n) == R_ASN1_DECODER_OK &&
                 r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
-                r_asn1_bin_tlv_parse_mpint (tlv, &e) == R_ASN1_DECODER_OK) {
+                r_asn1_bin_tlv_parse_integer_mpint (tlv, &e) == R_ASN1_DECODER_OK) {
               ret = r_rsa_pub_key_new (&n, &e);
             }
             r_asn1_bin_decoder_out (dec, tlv);
@@ -175,22 +175,22 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         if (R_ASN1_BIN_TLV_ID_PC (tlv) == R_ASN1_ID_CONSTRUCTED &&
             r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
           if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_INTEGER) {
-            r_asn1_bin_tlv_parse_mpint (tlv, &p);
+            r_asn1_bin_tlv_parse_integer_mpint (tlv, &p);
             r_asn1_bin_decoder_next (dec, tlv);
           }
           if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_INTEGER) {
-            r_asn1_bin_tlv_parse_mpint (tlv, &q);
+            r_asn1_bin_tlv_parse_integer_mpint (tlv, &q);
             r_asn1_bin_decoder_next (dec, tlv);
           }
           if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_INTEGER) {
-            r_asn1_bin_tlv_parse_mpint (tlv, &g);
+            r_asn1_bin_tlv_parse_integer_mpint (tlv, &g);
             r_asn1_bin_decoder_next (dec, tlv);
           }
           r_asn1_bin_decoder_out (dec, tlv);
         }
         r_asn1_bin_decoder_out (dec, tlv);
         if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
-          if (r_asn1_bin_tlv_parse_mpint (tlv, &y) == R_ASN1_DECODER_OK)
+          if (r_asn1_bin_tlv_parse_integer_mpint (tlv, &y) == R_ASN1_DECODER_OK)
             ret = r_dsa_pub_key_new_full (&p, &q, &g, &y);
           r_asn1_bin_decoder_out (dec, tlv);
         }

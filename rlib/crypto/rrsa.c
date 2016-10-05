@@ -224,23 +224,23 @@ r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
     r_mpint_init (&ret->qp);
 
     if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_integer (tlv, &ret->ver) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_integer_i32 (tlv, &ret->ver) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (tlv, &ret->pub.n) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->pub.n) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (tlv, &ret->pub.e) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->pub.e) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (tlv, &ret->d) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->d) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (tlv, &ret->p) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->p) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (tlv, &ret->q) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->q) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (tlv, &ret->dp) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->dp) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (tlv, &ret->dq) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->dq) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_mpint (tlv, &ret->qp) != R_ASN1_DECODER_OK) {
+        r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->qp) != R_ASN1_DECODER_OK) {
       r_crypto_key_unref ((RCryptoKey *)ret);
       ret = NULL;
     }
