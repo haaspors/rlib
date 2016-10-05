@@ -159,3 +159,91 @@ RTEST (rasn1der, parse_bit_string, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_integer_small, RTEST_FAST)
+{
+  static const ruint8 int_u8[] = { 0x02, 0x01, 0x02 };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  ruint bits;
+  rboolean unsign;
+  rint32 i32;
+  ruint32 u32;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, int_u8, sizeof (int_u8))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+
+  r_assert_cmpint (R_ASN1_DECODER_OK, ==,
+      r_asn1_bin_tlv_parse_integer_bits (&tlv, &bits, &unsign));
+  r_assert_cmpuint (bits, ==, 8);
+  r_assert (unsign);
+  r_assert_cmpint (R_ASN1_DECODER_OK, ==,
+      r_asn1_bin_tlv_parse_integer_i32 (&tlv, &i32));
+  r_assert_cmpint (i32, ==, 2);
+  r_assert_cmpint (R_ASN1_DECODER_OK, ==,
+      r_asn1_bin_tlv_parse_integer_u32 (&tlv, &u32));
+  r_assert_cmpuint (u32, ==, 2);
+
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
+RTEST (rasn1der, parse_integer_unsigned_16, RTEST_FAST)
+{
+  static const ruint8 int_s8[] = { 0x02, 0x02, 0xc0, 0xff };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  ruint bits;
+  rboolean unsign;
+  rint32 i32;
+  ruint32 u32;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, int_s8, sizeof (int_s8))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+
+  r_assert_cmpint (R_ASN1_DECODER_OK, ==,
+      r_asn1_bin_tlv_parse_integer_bits (&tlv, &bits, &unsign));
+  r_assert_cmpuint (bits, ==, 16);
+  r_assert (!unsign);
+  r_assert_cmpint (R_ASN1_DECODER_OK, ==,
+      r_asn1_bin_tlv_parse_integer_i32 (&tlv, &i32));
+  r_assert_cmpint (i32, ==, -16129);
+  r_assert_cmpint (R_ASN1_DECODER_OVERFLOW, ==,
+      r_asn1_bin_tlv_parse_integer_u32 (&tlv, &u32));
+
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
+RTEST (rasn1der, parse_integer_unsigned_64_full, RTEST_FAST)
+{
+  static const ruint8 int_64[] = { 0x02, 0x09, 0x00, 0x83, 0x72, 0x37, 0xd9, 0xef, 0x01, 0xd1, 0x2f };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  ruint bits;
+  rboolean unsign;
+  rint32 i32;
+  ruint32 u32;
+  rint64 i64;
+  ruint64 u64;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, int_64, sizeof (int_64))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+
+  r_assert_cmpint (R_ASN1_DECODER_OK, ==,
+      r_asn1_bin_tlv_parse_integer_bits (&tlv, &bits, &unsign));
+  r_assert_cmpuint (bits, ==, 64);
+  r_assert (unsign);
+  r_assert_cmpint (R_ASN1_DECODER_OVERFLOW, ==,
+      r_asn1_bin_tlv_parse_integer_i32 (&tlv, &i32));
+  r_assert_cmpint (R_ASN1_DECODER_OVERFLOW, ==,
+      r_asn1_bin_tlv_parse_integer_u32 (&tlv, &u32));
+  r_assert_cmpint (R_ASN1_DECODER_OVERFLOW, ==,
+      r_asn1_bin_tlv_parse_integer_i64 (&tlv, &i64));
+  r_assert_cmpint (R_ASN1_DECODER_OK, ==,
+      r_asn1_bin_tlv_parse_integer_u64 (&tlv, &u64));
+  r_assert_cmpuint (u64, ==, RUINT64_CONSTANT (9471694375470879023));
+
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+

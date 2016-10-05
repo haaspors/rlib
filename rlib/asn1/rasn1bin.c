@@ -43,6 +43,27 @@ r_asn1_bin_tlv_parse_boolean (const RAsn1BinTLV * tlv, rboolean * value)
 }
 
 RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_integer_bits (const RAsn1BinTLV * tlv,
+    ruint * bits, rboolean * unsign)
+{
+  if (R_UNLIKELY (tlv == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER)))
+    return R_ASN1_DECODER_WRONG_TYPE;
+
+  if (unsign != NULL)
+    *unsign = (tlv->value[0] & 0x80) == 0;
+
+  if (bits != NULL) {
+    *bits = tlv->len * 8;
+    if (tlv->value[0] == 0)
+      *bits -= 8;
+  }
+
+  return R_ASN1_DECODER_OK;
+}
+
+RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_integer_i32 (const RAsn1BinTLV * tlv, rint32 * value)
 {
   if (R_UNLIKELY (tlv == NULL || value == NULL))
@@ -50,22 +71,122 @@ r_asn1_bin_tlv_parse_integer_i32 (const RAsn1BinTLV * tlv, rint32 * value)
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER) ||
       R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_ENUMERATED)) {
     ruint32 u = 0;
-    rsize size;
-    const ruint8 * ptr;
+    const ruint8 * ptr = tlv->value;
+    const ruint8 * end = tlv->value + tlv->len;
+    ruint bits = tlv->len * 8;
+    if (tlv->value[0] == 0) {
+      bits -= 8;
+      ptr++;
+    }
 
-    if (R_UNLIKELY ((size = tlv->len) > sizeof (ruint32)))
+    if (R_UNLIKELY (bits > sizeof (u) * 8))
+      return R_ASN1_DECODER_OVERFLOW;
+    if (bits == sizeof (u) * 8 && *ptr & 0x80)
       return R_ASN1_DECODER_OVERFLOW;
 
-    ptr = tlv->value;
-    if ((*tlv->value & 0x80) == 0) {
-      while (size-- > 0)
+    if ((tlv->value[0] & 0x80) == 0) {
+      while (ptr < end)
         u = (u << 8) | *ptr++;
       *value = u;
     } else {
-      while (size-- > 0)
+      while (ptr < end)
         u = (u << 8) | (*ptr++ ^ 0xFF);
       *value = -(rint32)++u;
     }
+    return R_ASN1_DECODER_OK;
+  } else {
+    return R_ASN1_DECODER_WRONG_TYPE;
+  }
+}
+
+RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_integer_u32 (const RAsn1BinTLV * tlv, ruint32 * value)
+{
+  if (R_UNLIKELY (tlv == NULL || value == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
+  if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER) ||
+      R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_ENUMERATED)) {
+    ruint32 u = 0;
+    const ruint8 * ptr = tlv->value;
+    const ruint8 * end = tlv->value + tlv->len;
+    ruint bits = tlv->len * 8;
+    if (tlv->value[0] == 0) {
+      bits -= 8;
+      ptr++;
+    } else if (tlv->value[0] & 0x80) {
+      return R_ASN1_DECODER_OVERFLOW;
+    }
+
+    if (R_UNLIKELY (bits > sizeof (u) * 8))
+      return R_ASN1_DECODER_OVERFLOW;
+
+    while (ptr < end)
+      u = (u << 8) | *ptr++;
+    *value = u;
+    return R_ASN1_DECODER_OK;
+  } else {
+    return R_ASN1_DECODER_WRONG_TYPE;
+  }
+}
+
+RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_integer_i64 (const RAsn1BinTLV * tlv, rint64 * value)
+{
+  if (R_UNLIKELY (tlv == NULL || value == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
+  if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER)) {
+    ruint64 u = 0;
+    const ruint8 * ptr = tlv->value;
+    const ruint8 * end = tlv->value + tlv->len;
+    ruint bits = tlv->len * 8;
+    if (tlv->value[0] == 0) {
+      bits -= 8;
+      ptr++;
+    }
+
+    if (R_UNLIKELY (bits > sizeof (u) * 8))
+      return R_ASN1_DECODER_OVERFLOW;
+    if (bits == sizeof (u) * 8 && *ptr & 0x80)
+      return R_ASN1_DECODER_OVERFLOW;
+
+    if ((tlv->value[0] & 0x80) == 0) {
+      while (ptr < end)
+        u = (u << 8) | *ptr++;
+      *value = u;
+    } else {
+      while (ptr < end)
+        u = (u << 8) | (*ptr++ ^ 0xFF);
+      *value = -(rint32)++u;
+    }
+    return R_ASN1_DECODER_OK;
+  } else {
+    return R_ASN1_DECODER_WRONG_TYPE;
+  }
+}
+
+RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_integer_u64 (const RAsn1BinTLV * tlv, ruint64 * value)
+{
+  if (R_UNLIKELY (tlv == NULL || value == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
+  if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER)) {
+    ruint64 u = 0;
+    const ruint8 * ptr = tlv->value;
+    const ruint8 * end = tlv->value + tlv->len;
+    ruint bits = tlv->len * 8;
+    if (tlv->value[0] == 0) {
+      bits -= 8;
+      ptr++;
+    } else if (tlv->value[0] & 0x80) {
+      return R_ASN1_DECODER_OVERFLOW;
+    }
+
+    if (R_UNLIKELY (bits > sizeof (u) * 8))
+      return R_ASN1_DECODER_OVERFLOW;
+
+    while (ptr < end)
+      u = (u << 8) | *ptr++;
+    *value = u;
     return R_ASN1_DECODER_OK;
   } else {
     return R_ASN1_DECODER_WRONG_TYPE;
