@@ -100,8 +100,12 @@ r_stun_msg_add_xor_address (RStunMsgCtx * ctx, RStunAttrType type,
   switch (r_socket_address_get_family (addr)) {
     case R_SOCKET_FAMILY_IPV4:
       val[1] = 1;
-      *(ruint16 *)&val[2] = RUINT16_TO_BE (r_socket_address_ipv4_get_port (addr)) ^ *(ruint16 *)&ctx->buf[R_STUN_MAGIC_COOKIE_OFFSET];
-      *(ruint32 *)&val[4] = RUINT32_TO_BE (r_socket_address_ipv4_get_ip (addr))   ^ *(ruint32 *)&ctx->buf[R_STUN_MAGIC_COOKIE_OFFSET];
+      {
+        ruint16 port = RUINT16_TO_BE (r_socket_address_ipv4_get_port (addr)) ^ *(ruint16 *)&ctx->buf[R_STUN_MAGIC_COOKIE_OFFSET];
+        ruint32 ip = RUINT32_TO_BE (r_socket_address_ipv4_get_ip (addr))   ^ *(ruint32 *)&ctx->buf[R_STUN_MAGIC_COOKIE_OFFSET];
+        r_memcpy (val + 2, &port, sizeof (ruint16));
+        r_memcpy (val + 4, &ip, sizeof (ruint32));
+      }
       tlv.len += 4 + sizeof (ruint32);
       break;
     case R_SOCKET_FAMILY_IPV6:
