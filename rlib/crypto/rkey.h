@@ -51,15 +51,15 @@ typedef rboolean (*RCryptoOperation) (const RCryptoKey * key,
 typedef RCryptoOperation RCryptoEncrypt;
 typedef RCryptoOperation RCryptoDecrypt;
 
-struct _RCryptoKey {
-  RRef ref;
-  RCryptoKeyType type;
-  RCryptoAlgorithm algo;
-  const rchar * strtype;
-};
-
 #define r_crypto_key_ref r_ref_ref
 #define r_crypto_key_unref r_ref_unref
+
+R_API RCryptoKeyType r_crypto_key_get_type (const RCryptoKey * key);
+#define r_crypto_key_has_private_key(key) (r_crypto_key_get_type (key) == R_CRYPTO_PRIVATE_KEY)
+R_API RCryptoAlgorithm r_crypto_key_get_algo (const RCryptoKey * key);
+R_API const rchar * r_crypto_key_get_strtype (const RCryptoKey * key);
+R_API ruint r_crypto_key_get_bitsize (const RCryptoKey * key);
+
 
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key_file (const rchar * file);
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key (const rchar * data, rsize size);

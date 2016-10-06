@@ -19,8 +19,8 @@ RTEST (rcryptokey, import_ssh_public_key, RTEST_FAST)
     0x99, 0xd5, 0x18, 0xf1, 0x0c, 0xbd, 0x91, 0xf4, 0x5f, 0x4c, 0x52, 0x46, 0xaa, 0x60, 0x49, 0x5b };
 
   r_assert_cmpptr ((key = r_crypto_key_import_ssh_public_key (ssh_pk, sizeof (ssh_pk))), !=, NULL);
-  r_assert_cmpuint (key->type, ==, R_CRYPTO_PUBLIC_KEY);
-  r_assert_cmpuint (key->algo, ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_type (key), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpuint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_RSA);
 
   r_mpint_init (&res);
   r_mpint_init_binary (&ex, pk_m, sizeof (pk_m));

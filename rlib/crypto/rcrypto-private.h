@@ -24,10 +24,18 @@
 
 #include <rlib/rtypes.h>
 
-#include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rkey.h>
+#include <rlib/crypto/rcert.h>
 
 R_BEGIN_DECLS
+
+struct _RCryptoKey {
+  RRef ref;
+  RCryptoKeyType type;
+  RCryptoAlgorithm algo;
+  const rchar * strtype;
+  ruint bits;
+};
 
 struct _RCryptoCert {
   RRef ref;
@@ -43,6 +51,7 @@ struct _RCryptoCert {
   rsize signbits;
 };
 
+R_API_HIDDEN void r_crypto_key_destroy (RCryptoKey * key);
 R_API_HIDDEN void r_crypto_cert_destroy (RCryptoCert * cert);
 
 R_END_DECLS

@@ -18,6 +18,8 @@
 
 #include "config.h"
 #include <rlib/crypto/rrsa.h>
+#include <rlib/crypto/rcrypto-private.h>
+
 #include <rlib/rmem.h>
 
 typedef struct {
@@ -49,17 +51,19 @@ r_rsa_pub_key_free (rpointer data)
   if ((key = data) != NULL) {
     r_mpint_clear (&key->n);
     r_mpint_clear (&key->e);
+    r_crypto_key_destroy ((RCryptoKey *)key);
     r_free (key);
   }
 }
 
 static void
-r_rsa_pub_key_init (RCryptoKey * key)
+r_rsa_pub_key_init (RCryptoKey * key, ruint bits)
 {
   r_ref_init (key, r_rsa_pub_key_free);
   key->type = R_CRYPTO_PUBLIC_KEY;
   key->algo = R_CRYPTO_ALGO_RSA;
   key->strtype = R_RSA_STR;
+  key->bits = bits;
 }
 
 static void
@@ -80,12 +84,13 @@ r_rsa_priv_key_free (rpointer data)
 }
 
 static void
-r_rsa_priv_key_init (RCryptoKey * key)
+r_rsa_priv_key_init (RCryptoKey * key, ruint bits)
 {
   r_ref_init (key, r_rsa_priv_key_free);
   key->type = R_CRYPTO_PRIVATE_KEY;
   key->algo = R_CRYPTO_ALGO_RSA;
   key->strtype = R_RSA_STR;
+  key->bits = bits;
 }
 
 RCryptoKey *
@@ -95,9 +100,9 @@ r_rsa_pub_key_new (const rmpint * n, const rmpint * e)
 
   if (n != NULL && e != NULL) {
     if ((ret = r_mem_new (RRsaPubKey)) != NULL) {
-      r_rsa_pub_key_init (&ret->key);
       r_mpint_init_copy (&ret->n, n);
       r_mpint_init_copy (&ret->e, e);
+      r_rsa_pub_key_init (&ret->key, r_mpint_bits_used (&ret->n));
     }
   } else {
     ret = NULL;
@@ -114,9 +119,9 @@ r_rsa_pub_key_new_binary (rconstpointer n, rsize nsize,
 
   if (n != NULL && nsize > 0 && e != NULL && esize > 0) {
     if ((ret = r_mem_new (RRsaPubKey)) != NULL) {
-      r_rsa_pub_key_init (&ret->key);
       r_mpint_init_binary (&ret->n, n, nsize);
       r_mpint_init_binary (&ret->e, e, esize);
+      r_rsa_pub_key_init (&ret->key, r_mpint_bits_used (&ret->n));
     }
   } else {
     ret = NULL;
@@ -132,7 +137,6 @@ r_rsa_priv_key_new (const rmpint * n, const rmpint * e, const rmpint * d)
 
   if (n != NULL && e != NULL && d != NULL) {
     if ((ret = r_mem_new0 (RRsaPrivKey)) != NULL) {
-      r_rsa_priv_key_init (&ret->pub.key);
       r_mpint_init_copy (&ret->pub.n, n);
       r_mpint_init_copy (&ret->pub.e, e);
       r_mpint_init_copy (&ret->d, d);
@@ -141,6 +145,7 @@ r_rsa_priv_key_new (const rmpint * n, const rmpint * e, const rmpint * d)
       r_mpint_init (&ret->dp);
       r_mpint_init (&ret->dq);
       r_mpint_init (&ret->qp);
+      r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
     }
   } else {
     ret = NULL;
@@ -158,7 +163,6 @@ r_rsa_priv_key_new_full (rint32 ver, const rmpint * n, const rmpint * e,
 
   if (n != NULL && e != NULL && d != NULL) {
     if ((ret = r_mem_new (RRsaPrivKey)) != NULL) {
-      r_rsa_priv_key_init (&ret->pub.key);
       ret->ver = ver;
       r_mpint_init_copy (&ret->pub.n, n);
       r_mpint_init_copy (&ret->pub.e, e);
@@ -173,6 +177,7 @@ r_rsa_priv_key_new_full (rint32 ver, const rmpint * n, const rmpint * e,
       else            r_mpint_init (&ret->dq);
       if (qp != NULL) r_mpint_init_copy (&ret->qp, qp);
       else            r_mpint_init (&ret->qp);
+      r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
     }
   } else {
     ret = NULL;
@@ -189,7 +194,6 @@ r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
 
   if (n != NULL && e != NULL && d != NULL) {
     if ((ret = r_mem_new0 (RRsaPrivKey)) != NULL) {
-      r_rsa_priv_key_init (&ret->pub.key);
       r_mpint_init_binary (&ret->pub.n, n, nsize);
       r_mpint_init_binary (&ret->pub.e, e, esize);
       r_mpint_init_binary (&ret->d, d, dsize);
@@ -198,6 +202,7 @@ r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
       r_mpint_init (&ret->dp);
       r_mpint_init (&ret->dq);
       r_mpint_init (&ret->qp);
+      r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
     }
   } else {
     ret = NULL;
@@ -212,7 +217,6 @@ r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   RRsaPrivKey * ret;
 
   if ((ret = r_mem_new (RRsaPrivKey)) != NULL) {
-    r_rsa_priv_key_init (&ret->pub.key);
 
     r_mpint_init (&ret->pub.n);
     r_mpint_init (&ret->pub.e);
@@ -243,6 +247,8 @@ r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->qp) != R_ASN1_DECODER_OK) {
       r_crypto_key_unref ((RCryptoKey *)ret);
       ret = NULL;
+    } else {
+      r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
     }
   }
 

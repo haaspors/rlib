@@ -168,8 +168,9 @@ RTEST (rcryptopem, rsa_pubkey, RTEST_FAST)
   r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), == , NULL);
   r_pem_parser_unref (parser);
 
-  r_assert_cmpuint (key->type, ==, R_CRYPTO_PUBLIC_KEY);
-  r_assert_cmpuint (key->algo, ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_type (key), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpuint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (key), ==, 1024);
   r_assert (r_rsa_pub_key_get_e (key, &mpint));
   r_assert_cmpint (r_mpint_ucmp_u32 (&mpint, 65537), ==, 0);
   r_assert (r_rsa_pub_key_get_n (key, &mpint));
@@ -217,8 +218,9 @@ RTEST (rcryptopem, rsa_privkey, RTEST_FAST)
   r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), == , NULL);
   r_pem_parser_unref (parser);
 
-  r_assert_cmpuint (key->type, ==, R_CRYPTO_PRIVATE_KEY);
-  r_assert_cmpuint (key->algo, ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_type (key), ==, R_CRYPTO_PRIVATE_KEY);
+  r_assert_cmpuint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (key), ==, 1024);
 
   r_assert (r_rsa_priv_key_get_e (key, &mpint));
   r_assert_cmpint (r_mpint_ucmp_u32 (&mpint, 65537), ==, 0);
@@ -288,8 +290,9 @@ RTEST (rcryptopem, dsa_privkey, RTEST_FAST)
   r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), == , NULL);
   r_pem_parser_unref (parser);
 
-  r_assert_cmpuint (key->type, ==, R_CRYPTO_PRIVATE_KEY);
-  r_assert_cmpuint (key->algo, ==, R_CRYPTO_ALGO_DSA);
+  r_assert_cmpuint (r_crypto_key_get_type (key), ==, R_CRYPTO_PRIVATE_KEY);
+  r_assert_cmpuint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_DSA);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (key), ==, 2048);
 
   r_assert (r_dsa_pub_key_get_p (key, &mpint));
   r_mpint_init_str (&expected,
@@ -367,8 +370,9 @@ RTEST (rcryptopem, dsa_pubkey, RTEST_FAST)
 
   r_assert_cmpptr (r_pem_block_get_key (NULL, NULL, 0), ==, NULL);
   r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
-  r_assert_cmpuint (key->type, ==, R_CRYPTO_PUBLIC_KEY);
-  r_assert_cmpuint (key->algo, ==, R_CRYPTO_ALGO_DSA);
+  r_assert_cmpuint (r_crypto_key_get_type (key), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpuint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_DSA);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (key), ==, 2048);
   r_pem_block_unref (block);
 
   r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), == , NULL);

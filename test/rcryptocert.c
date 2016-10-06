@@ -60,8 +60,9 @@ RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
   r_assert_cmpuint (r_crypto_cert_get_valid_to (cert),    ==, r_time_create_unix_time (2005, 4, 30, 14, 25, 34));
 
   r_assert_cmpptr ((pk = r_crypto_cert_get_public_key (cert)), !=, NULL);
-  r_assert_cmpint (pk->type, ==, R_CRYPTO_PUBLIC_KEY);
-  r_assert_cmpint (pk->algo, ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_type (pk), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpuint (r_crypto_key_get_algo (pk), ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 1024);
   r_crypto_key_unref (pk);
 
   r_assert_cmphex (r_crypt_x509_cert_key_usage (cert), ==,
@@ -178,8 +179,9 @@ RTEST (rcryptocert, valid_x509v3, RTEST_FAST)
   r_assert_cmpuint (r_crypto_cert_get_valid_to (cert),    ==, r_time_create_unix_time (2030, 12, 31, 8, 30, 0));
 
   r_assert_cmpptr ((pk = r_crypto_cert_get_public_key (cert)), !=, NULL);
-  r_assert_cmpint (pk->type, ==, R_CRYPTO_PUBLIC_KEY);
-  r_assert_cmpint (pk->algo, ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_type (pk), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpuint (r_crypto_key_get_algo (pk), ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 2048);
   r_crypto_key_unref (pk);
 
   r_assert_cmphex (r_crypt_x509_cert_key_usage (cert), ==,
@@ -268,8 +270,9 @@ RTEST (rcryptocert, openssl_gen_x509_rsa_1024, RTEST_FAST)
   r_assert_cmpuint (r_crypto_cert_get_valid_to (cert),    ==, r_time_create_unix_time (2016, 11, 4, 18, 5, 46));
 
   r_assert_cmpptr ((pk = r_crypto_cert_get_public_key (cert)), !=, NULL);
-  r_assert_cmpint (pk->type, ==, R_CRYPTO_PUBLIC_KEY);
-  r_assert_cmpint (pk->algo, ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_type (pk), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpuint (r_crypto_key_get_algo (pk), ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 1024);
   r_crypto_key_unref (pk);
 
   r_assert (r_crypt_x509_cert_is_ca (cert));
@@ -322,8 +325,9 @@ RTEST (rcryptocert, nodejs_pem_gen_x509_self_signed_rsa_2048_days_1, RTEST_FAST)
   r_assert_cmpuint (r_crypto_cert_get_valid_to (cert),    ==, r_time_create_unix_time (2016, 10, 6, 21, 3, 55));
 
   r_assert_cmpptr ((pk = r_crypto_cert_get_public_key (cert)), !=, NULL);
-  r_assert_cmpint (pk->type, ==, R_CRYPTO_PUBLIC_KEY);
-  r_assert_cmpint (pk->algo, ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_type (pk), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpuint (r_crypto_key_get_algo (pk), ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 2048);
   r_crypto_key_unref (pk);
 
   r_assert (!r_crypt_x509_cert_is_ca (cert));

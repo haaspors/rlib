@@ -18,6 +18,8 @@
 
 #include "config.h"
 #include <rlib/crypto/rkey.h>
+#include <rlib/crypto/rcrypto-private.h>
+
 #include <rlib/crypto/rrsa.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/asn1/roid.h>
@@ -27,6 +29,36 @@
 #include <rlib/rstr.h>
 
 #include <string.h>
+
+void
+r_crypto_key_destroy (RCryptoKey * key)
+{
+  (void) key;
+}
+
+RCryptoKeyType
+r_crypto_key_get_type (const RCryptoKey * key)
+{
+  return key->type;
+}
+
+RCryptoAlgorithm
+r_crypto_key_get_algo (const RCryptoKey * key)
+{
+  return key->algo;
+}
+
+const rchar *
+r_crypto_key_get_strtype (const RCryptoKey * key)
+{
+  return key->strtype;
+}
+
+ruint
+r_crypto_key_get_bitsize (const RCryptoKey * key)
+{
+  return key->bits;
+}
 
 RCryptoKey *
 r_crypto_key_import_ssh_public_key_file (const rchar * file)
