@@ -69,12 +69,14 @@
 #include <rlib/asn1/roid.h>
 
 #include <rlib/crypto/raes.h>
+#include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rcipher.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rpem.h>
 #include <rlib/crypto/rrsa.h>
+#include <rlib/crypto/rx509.h>
 
 #include <rlib/ev/revloop.h>
 #include <rlib/ev/revudp.h>
