@@ -137,9 +137,9 @@ r_hash_size (RHash * hash)
       return sizeof (hash->hash.sha256.data);
     case R_HASH_TYPE_SHA512:
       return sizeof (hash->hash.sha512.data);
+    default:
+      return 0;
   }
-
-  return 0;
 }
 
 rsize
@@ -154,9 +154,9 @@ r_hash_blocksize (RHash * hash)
       return sizeof (hash->hash.sha256.buffer);
     case R_HASH_TYPE_SHA512:
       return sizeof (hash->hash.sha512.buffer);
+    default:
+      return 0;
   }
-
-  return 0;
 }
 
 void
@@ -177,6 +177,8 @@ r_hash_reset (RHash * hash)
     case R_HASH_TYPE_SHA512:
       r_sha512_hash_init (&hash->hash.sha512);
       break;
+    default:
+      break;
   }
 }
 
@@ -193,6 +195,8 @@ r_hash_update (RHash * hash, rconstpointer data, rsize size)
         return r_sha256_hash_update (&hash->hash.sha256, data, size);
       case R_HASH_TYPE_SHA512:
         return r_sha512_hash_update (&hash->hash.sha512, data, size);
+      default:
+        break;
     }
   }
 
@@ -227,9 +231,9 @@ r_hash_get_data (RHash * hash, ruint8 * data, rsize * size)
         hash->is_final = TRUE;
       }
       return r_sha512_hash_get (&hash->hash.sha512, data, size);
+    default:
+      return FALSE;
   }
-
-  return FALSE;
 }
 
 rchar *
