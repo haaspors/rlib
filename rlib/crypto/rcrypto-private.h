@@ -29,12 +29,31 @@
 
 R_BEGIN_DECLS
 
+typedef RCryptoResult (*RCryptoOperation) (const RCryptoKey * key, RPrng * prng,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
+typedef RCryptoResult (*RCryptoSign) (const RCryptoKey * key, RPrng * prng,
+    RHashType hashtype, const ruint8 * hash, rsize hashsize,
+    ruint8 * sig, rsize * sigsize);
+typedef RCryptoResult (*RCryptoVerify) (const RCryptoKey * key,
+    RHashType hashtype, const ruint8 * hash, rsize hashsize,
+    const ruint8 * sig, rsize sigsize);
+
+typedef struct {
+  RCryptoAlgorithm algo;
+  const rchar * strtype;
+
+  RCryptoOperation encrypt;
+  RCryptoOperation decrypt;
+  RCryptoSign sign;
+  RCryptoVerify verify;
+} RCryptoAlgoInfo;
+
 struct _RCryptoKey {
   RRef ref;
   RCryptoKeyType type;
-  RCryptoAlgorithm algo;
-  const rchar * strtype;
   ruint bits;
+
+  const RCryptoAlgoInfo * algo;
 };
 
 struct _RCryptoCert {

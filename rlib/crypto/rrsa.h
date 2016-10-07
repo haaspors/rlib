@@ -31,6 +31,12 @@ R_BEGIN_DECLS
 
 #define R_RSA_STR     "RSA"
 
+typedef enum {
+  R_RSA_PADDING_UNKNOWN       = -1,
+  R_RSA_PADDING_PKCS1_V15     = 0, /* RSAES-PKCS1-v1_5 and RSASSA-PKCS1-v1_5 */
+  R_RSA_PADDING_PKCS1_V21     = 1, /* RSAES-OAEP and RSASSA-PSS */
+} RRsaPadding;
+
 R_API RCryptoKey * r_rsa_pub_key_new (const rmpint * n, const rmpint * e) R_ATTR_MALLOC;
 R_API RCryptoKey * r_rsa_pub_key_new_binary (rconstpointer n, rsize nsize,
     rconstpointer e, rsize esize) R_ATTR_MALLOC;
@@ -46,28 +52,33 @@ R_API RCryptoKey * r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
 R_API RCryptoKey * r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv) R_ATTR_MALLOC;
 
 
+#define r_rsa_priv_key_get_padding r_rsa_pub_key_get_padding
+#define r_rsa_priv_key_set_padding r_rsa_pub_key_set_padding
+R_API rboolean r_rsa_pub_key_set_padding (RCryptoKey * key, RRsaPadding padding);
+R_API RRsaPadding r_rsa_pub_key_get_padding (const RCryptoKey * key);
+
 #define r_rsa_priv_key_get_e r_rsa_pub_key_get_e
-R_API rboolean r_rsa_pub_key_get_e (RCryptoKey * key, rmpint * e);
-R_API rboolean r_rsa_pub_key_get_n (RCryptoKey * key, rmpint * n);
-R_API rboolean r_rsa_priv_key_get_d (RCryptoKey * key, rmpint * d);
-R_API rboolean r_rsa_priv_key_get_p (RCryptoKey * key, rmpint * p);
-R_API rboolean r_rsa_priv_key_get_q (RCryptoKey * key, rmpint * q);
-R_API rboolean r_rsa_priv_key_get_dp (RCryptoKey * key, rmpint * dp);
-R_API rboolean r_rsa_priv_key_get_dq (RCryptoKey * key, rmpint * dq);
-R_API rboolean r_rsa_priv_key_get_qp (RCryptoKey * key, rmpint * qp);
+R_API rboolean r_rsa_pub_key_get_e (const RCryptoKey * key, rmpint * e);
+R_API rboolean r_rsa_pub_key_get_n (const RCryptoKey * key, rmpint * n);
+R_API rboolean r_rsa_priv_key_get_d (const RCryptoKey * key, rmpint * d);
+R_API rboolean r_rsa_priv_key_get_p (const RCryptoKey * key, rmpint * p);
+R_API rboolean r_rsa_priv_key_get_q (const RCryptoKey * key, rmpint * q);
+R_API rboolean r_rsa_priv_key_get_dp (const RCryptoKey * key, rmpint * dp);
+R_API rboolean r_rsa_priv_key_get_dq (const RCryptoKey * key, rmpint * dq);
+R_API rboolean r_rsa_priv_key_get_qp (const RCryptoKey * key, rmpint * qp);
 
 
-R_API rboolean r_rsa_raw_encrypt (RCryptoKey * key, RPrng * prng,
+R_API rboolean r_rsa_raw_encrypt (const RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_raw_decrypt (RCryptoKey * key,
+R_API rboolean r_rsa_raw_decrypt (const RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_oaep_encrypt (RCryptoKey * key, RPrng * prng,
+R_API rboolean r_rsa_oaep_encrypt (const RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_oaep_decrypt (RCryptoKey * key,
+R_API rboolean r_rsa_oaep_decrypt (const RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_pkcs1v1_5_encrypt (RCryptoKey * key, RPrng * prng,
+R_API rboolean r_rsa_pkcs1v1_5_encrypt (const RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_pkcs1v1_5_decrypt (RCryptoKey * key,
+R_API rboolean r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
 
 R_END_DECLS

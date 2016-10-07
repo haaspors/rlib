@@ -56,10 +56,14 @@ r_dsa_pub_key_free (rpointer data)
 static void
 r_dsa_pub_key_init (RCryptoKey * key, ruint bits)
 {
+  static const RCryptoAlgoInfo dsa_pub_key_info = {
+    R_CRYPTO_ALGO_DSA, R_DSA_STR,
+    NULL, NULL, NULL, NULL
+  };
+
   r_ref_init (key, r_dsa_pub_key_free);
   key->type = R_CRYPTO_PUBLIC_KEY;
-  key->algo = R_CRYPTO_ALGO_DSA;
-  key->strtype = R_DSA_STR;
+  key->algo = &dsa_pub_key_info;
   key->bits = bits;
 }
 
@@ -77,10 +81,14 @@ r_dsa_priv_key_free (rpointer data)
 static void
 r_dsa_priv_key_init (RCryptoKey * key, ruint bits)
 {
+  static const RCryptoAlgoInfo dsa_priv_key_info = {
+    R_CRYPTO_ALGO_DSA, R_DSA_STR,
+    NULL, NULL, NULL, NULL
+  };
+
   r_ref_init (key, r_dsa_priv_key_free);
   key->type = R_CRYPTO_PRIVATE_KEY;
-  key->algo = R_CRYPTO_ALGO_DSA;
-  key->strtype = R_DSA_STR;
+  key->algo = &dsa_priv_key_info;
   key->bits = bits;
 }
 
@@ -212,50 +220,50 @@ r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 }
 
 rboolean
-r_dsa_pub_key_get_p (RCryptoKey * key, rmpint * p)
+r_dsa_pub_key_get_p (const RCryptoKey * key, rmpint * p)
 {
   if (R_UNLIKELY (key == NULL || p == NULL)) return FALSE;
-  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
+  if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
 
   r_mpint_set (p, &((RDsaPubKey*)key)->p);
   return TRUE;
 }
 
 rboolean
-r_dsa_pub_key_get_q (RCryptoKey * key, rmpint * q)
+r_dsa_pub_key_get_q (const RCryptoKey * key, rmpint * q)
 {
   if (R_UNLIKELY (key == NULL || q == NULL)) return FALSE;
-  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
+  if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
 
   r_mpint_set (q, &((RDsaPubKey*)key)->q);
   return TRUE;
 }
 
 rboolean
-r_dsa_pub_key_get_g (RCryptoKey * key, rmpint * g)
+r_dsa_pub_key_get_g (const RCryptoKey * key, rmpint * g)
 {
   if (R_UNLIKELY (key == NULL || g == NULL)) return FALSE;
-  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
+  if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
 
   r_mpint_set (g, &((RDsaPubKey*)key)->g);
   return TRUE;
 }
 
 rboolean
-r_dsa_pub_key_get_y (RCryptoKey * key, rmpint * y)
+r_dsa_pub_key_get_y (const RCryptoKey * key, rmpint * y)
 {
   if (R_UNLIKELY (key == NULL || y == NULL)) return FALSE;
-  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
+  if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
 
   r_mpint_set (y, &((RDsaPubKey*)key)->y);
   return TRUE;
 }
 
 rboolean
-r_dsa_priv_key_get_x (RCryptoKey * key, rmpint * x)
+r_dsa_priv_key_get_x (const RCryptoKey * key, rmpint * x)
 {
   if (R_UNLIKELY (key == NULL || x == NULL)) return FALSE;
-  if (R_UNLIKELY (key->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
+  if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_DSA)) return FALSE;
   if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
 
   r_mpint_set (x, &((RDsaPrivKey*)key)->x);

@@ -21,6 +21,7 @@ RTEST (rcryptokey, import_ssh_public_key, RTEST_FAST)
   r_assert_cmpptr ((key = r_crypto_key_import_ssh_public_key (ssh_pk, sizeof (ssh_pk))), !=, NULL);
   r_assert_cmpuint (r_crypto_key_get_type (key), ==, R_CRYPTO_PUBLIC_KEY);
   r_assert_cmpuint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_RSA);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (key), ==, sizeof (pk_m) * 8);
 
   r_mpint_init (&res);
   r_mpint_init_binary (&ex, pk_m, sizeof (pk_m));
@@ -41,12 +42,11 @@ RTEST_END;
 
 RTEST (rcryptokey, import_ssh_public_key_invalid, RTEST_FAST)
 {
+  static const rchar ssh_pk[] = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAgQDJlkED";
   r_assert_cmpptr (r_crypto_key_import_ssh_public_key (NULL, 1),      ==, NULL);
   r_assert_cmpptr (r_crypto_key_import_ssh_public_key ("ssh-rsa", 1), ==, NULL);
   r_assert_cmpptr (r_crypto_key_import_ssh_public_key ("ssh-rsa", 0), ==, NULL);
-  r_assert_cmpptr (r_crypto_key_import_ssh_public_key ("ssh-rsa AAAAB3NzaC1yc"
-        "2EAAAADAQABAAAAgQDJlkEDb6yg76tKpi4TuTxPnsMI5Wz8q/cNBovF4qiV41Ztu", 0),
-      ==, NULL);
+  r_assert_cmpptr (r_crypto_key_import_ssh_public_key (ssh_pk, sizeof (ssh_pk)), ==, NULL);
 }
 RTEST_END;
 

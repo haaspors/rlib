@@ -45,19 +45,71 @@ r_crypto_key_get_type (const RCryptoKey * key)
 RCryptoAlgorithm
 r_crypto_key_get_algo (const RCryptoKey * key)
 {
-  return key->algo;
+  return key->algo->algo;
 }
 
 const rchar *
 r_crypto_key_get_strtype (const RCryptoKey * key)
 {
-  return key->strtype;
+  return key->algo->strtype;
 }
 
 ruint
 r_crypto_key_get_bitsize (const RCryptoKey * key)
 {
   return key->bits;
+}
+
+RCryptoResult
+r_crypto_key_encrypt (const RCryptoKey * key,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize, RPrng * prng)
+{
+  if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (data == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (out == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (prng == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (key->algo->encrypt == NULL)) return R_CRYPTO_NOT_AVAILABLE;
+
+  return key->algo->encrypt (key, prng, data, size, out, outsize);
+}
+
+RCryptoResult
+r_crypto_key_decrypt (const RCryptoKey * key,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize, RPrng * prng)
+{
+  if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (data == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (out == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (prng == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (key->algo->decrypt == NULL)) return R_CRYPTO_NOT_AVAILABLE;
+
+  return key->algo->decrypt (key, prng, data, size, out, outsize);
+}
+
+RCryptoResult
+r_crypto_key_sign (const RCryptoKey * key, RHashType hashtype,
+    const ruint8 * hash, rsize hashsize, ruint8 * sig, rsize * sigsize,
+    RPrng * prng)
+{
+  if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (hash == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (sig == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (prng == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (key->algo->sign == NULL)) return R_CRYPTO_NOT_AVAILABLE;
+
+  return key->algo->sign (key, prng, hashtype, hash, hashsize, sig, sigsize);
+}
+
+RCryptoResult
+r_crypto_key_verify (const RCryptoKey * key, RHashType hashtype,
+    const ruint8 * hash, rsize hashsize, const ruint8 * sig, rsize sigsize)
+{
+  if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (hash == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (sig == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (key->algo->verify == NULL)) return R_CRYPTO_NOT_AVAILABLE;
+
+  return key->algo->verify (key, hashtype, hash, hashsize, sig, sigsize);
 }
 
 RCryptoKey *

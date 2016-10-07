@@ -44,11 +44,11 @@ R_API RCryptoKey * r_dsa_priv_key_new_binary (rconstpointer p, rsize psize,
     rconstpointer y, rsize ysize, rconstpointer x, rsize xsize) R_ATTR_MALLOC;
 R_API RCryptoKey * r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv) R_ATTR_MALLOC;
 
-R_API rboolean r_dsa_pub_key_get_p (RCryptoKey * key, rmpint * p);
-R_API rboolean r_dsa_pub_key_get_q (RCryptoKey * key, rmpint * q);
-R_API rboolean r_dsa_pub_key_get_g (RCryptoKey * key, rmpint * g);
-R_API rboolean r_dsa_pub_key_get_y (RCryptoKey * key, rmpint * y);
-R_API rboolean r_dsa_priv_key_get_x (RCryptoKey * key, rmpint * x);
+R_API rboolean r_dsa_pub_key_get_p (const RCryptoKey * key, rmpint * p);
+R_API rboolean r_dsa_pub_key_get_q (const RCryptoKey * key, rmpint * q);
+R_API rboolean r_dsa_pub_key_get_g (const RCryptoKey * key, rmpint * g);
+R_API rboolean r_dsa_pub_key_get_y (const RCryptoKey * key, rmpint * y);
+R_API rboolean r_dsa_priv_key_get_x (const RCryptoKey * key, rmpint * x);
 
 R_END_DECLS
 

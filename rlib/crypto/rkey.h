@@ -23,8 +23,11 @@
 #endif
 
 #include <rlib/rtypes.h>
-#include <rlib/rref.h>
+
 #include <rlib/asn1/rasn1.h>
+#include <rlib/rhash.h>
+#include <rlib/rrand.h>
+#include <rlib/rref.h>
 
 R_BEGIN_DECLS
 
@@ -44,12 +47,14 @@ typedef enum {
   R_CRYPTO_ALGO_DSS = R_CRYPTO_ALGO_DSA,
 } RCryptoAlgorithm;
 
-typedef struct _RCryptoKey RCryptoKey;
+typedef enum {
+  R_CRYPTO_OK                     = 0,
+  R_CRYPTO_INVAL,
+  R_CRYPTO_NOT_AVAILABLE,
+  R_CRYPTO_ERROR
+} RCryptoResult;
 
-typedef rboolean (*RCryptoOperation) (const RCryptoKey * key,
-    rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-typedef RCryptoOperation RCryptoEncrypt;
-typedef RCryptoOperation RCryptoDecrypt;
+typedef struct _RCryptoKey RCryptoKey;
 
 #define r_crypto_key_ref r_ref_ref
 #define r_crypto_key_unref r_ref_unref
@@ -60,6 +65,17 @@ R_API RCryptoAlgorithm r_crypto_key_get_algo (const RCryptoKey * key);
 R_API const rchar * r_crypto_key_get_strtype (const RCryptoKey * key);
 R_API ruint r_crypto_key_get_bitsize (const RCryptoKey * key);
 
+R_API RCryptoResult r_crypto_key_encrypt (const RCryptoKey * key,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize,
+    RPrng * prng);
+R_API RCryptoResult r_crypto_key_decrypt (const RCryptoKey * key,
+    rconstpointer data, rsize size, ruint8 * out, rsize * outsize,
+    RPrng * prng);
+R_API RCryptoResult r_crypto_key_sign (const RCryptoKey * key, RHashType hashtype,
+    const ruint8 * hash, rsize hashsize, ruint8 * sig, rsize * sigsize,
+    RPrng * prng);
+R_API RCryptoResult r_crypto_key_verify (const RCryptoKey * key, RHashType hashtype,
+    const ruint8 * hash, rsize hashsize, const ruint8 * sig, rsize sigsize);
 
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key_file (const rchar * file);
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key (const rchar * data, rsize size);
