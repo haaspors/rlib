@@ -527,8 +527,8 @@ r_rsa_pkcs1v1_5_encrypt (const RCryptoKey * key, RPrng * prng,
   ptr = out;
   *ptr++ = 0;
   *ptr++ = 2;
-  /* FIXME: This should be pseudo random nonzero! */
-  for (; ptr < out + k - (size+1); ptr++) *ptr = 0xff;
+  r_prng_fill_nonzero (prng, ptr, k - size - 3);
+  ptr += k - size - 3;
   *ptr++ = 0;
   r_memcpy (ptr, data, size);
 
