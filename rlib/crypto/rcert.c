@@ -42,7 +42,7 @@ r_crypto_cert_get_strtype (const RCryptoCert * cert)
 
 const ruint8 *
 r_crypto_cert_get_signature (const RCryptoCert * cert,
-    RCryptoSignAlgo * signalgo, rsize * signbits)
+    RHashType * signalgo, rsize * signbits)
 {
   if (signbits != NULL)
     *signbits = cert->signbits;

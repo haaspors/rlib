@@ -65,7 +65,7 @@ struct _RCryptoCert {
   ruint64 valid_to;       /* unix timestamp */
   RCryptoKey * pk;
 
-  RCryptoSignAlgo signalgo;
+  RHashType signalgo;
   const ruint8 * sign;
   rsize signbits;
 };

@@ -368,21 +368,21 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
     if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
       r_asn1_bin_tlv_parse_oid_to_dot (&tlv, &oid) == R_ASN1_DECODER_OK) {
       if (r_str_equals (oid, R_RSA_OID_MD5_WITH_RSA))
-        cert->cert.signalgo = R_CRYPTO_SIGN_ALGO_RSA_MD5;
+        cert->cert.signalgo = R_HASH_TYPE_MD5;
       else if (r_str_equals (oid, R_RSA_OID_SHA1_WITH_RSA))
-        cert->cert.signalgo = R_CRYPTO_SIGN_ALGO_RSA_SHA1;
+        cert->cert.signalgo = R_HASH_TYPE_SHA1;
       else if (r_str_equals (oid, R_RSA_OID_SHA256_WITH_RSA))
-        cert->cert.signalgo = R_CRYPTO_SIGN_ALGO_RSA_SHA256;
+        cert->cert.signalgo = R_HASH_TYPE_SHA256;
       else if (r_str_equals (oid, R_RSA_OID_SHA384_WITH_RSA))
-        cert->cert.signalgo = R_CRYPTO_SIGN_ALGO_RSA_SHA384;
+        cert->cert.signalgo = R_HASH_TYPE_SHA384;
       else if (r_str_equals (oid, R_RSA_OID_SHA512_WITH_RSA))
-        cert->cert.signalgo = R_CRYPTO_SIGN_ALGO_RSA_SHA512;
+        cert->cert.signalgo = R_HASH_TYPE_SHA512;
       else if (r_str_equals (oid, R_RSA_OID_SHA224_WITH_RSA))
-        cert->cert.signalgo = R_CRYPTO_SIGN_ALGO_RSA_SHA224;
+        cert->cert.signalgo = R_HASH_TYPE_SHA224;
       else if (r_str_equals (oid, R_X9CM_OID_DSA_WITH_SHA1))
-        cert->cert.signalgo = R_CRYPTO_SIGN_ALGO_DSA_SHA1;
+        cert->cert.signalgo = R_HASH_TYPE_SHA1;
       else
-        cert->cert.signalgo = R_CRYPTO_SIGN_ALGO_UNKNOWN;
+        cert->cert.signalgo = R_HASH_TYPE_NONE;
       r_free (oid);
       r_asn1_bin_decoder_out (dec, &tlv);
     } else goto beach;

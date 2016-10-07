@@ -25,6 +25,7 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/crypto/rkey.h>
+#include <rlib/rhash.h>
 #include <rlib/rref.h>
 
 R_BEGIN_DECLS
@@ -34,23 +35,12 @@ typedef enum {
   R_CRYPTO_CERT_OPENPGP,
 } RCryptoCertType;
 
-typedef enum {
-  R_CRYPTO_SIGN_ALGO_UNKNOWN =  0,
-  R_CRYPTO_SIGN_ALGO_RSA_MD5,
-  R_CRYPTO_SIGN_ALGO_RSA_SHA1,
-  R_CRYPTO_SIGN_ALGO_RSA_SHA256,
-  R_CRYPTO_SIGN_ALGO_RSA_SHA384,
-  R_CRYPTO_SIGN_ALGO_RSA_SHA512,
-  R_CRYPTO_SIGN_ALGO_RSA_SHA224,
-  R_CRYPTO_SIGN_ALGO_DSA_SHA1,
-} RCryptoSignAlgo;
-
 typedef struct _RCryptoCert RCryptoCert;
 
 R_API RCryptoCertType r_crypto_cert_get_type (const RCryptoCert * cert);
 R_API const rchar * r_crypto_cert_get_strtype (const RCryptoCert * cert);
 R_API const ruint8 * r_crypto_cert_get_signature (const RCryptoCert * cert,
-    RCryptoSignAlgo * signalgo, rsize * signbits);
+    RHashType * signalgo, rsize * signbits);
 R_API ruint64 r_crypto_cert_get_valid_from (const RCryptoCert * cert);
 R_API ruint64 r_crypto_cert_get_valid_to (const RCryptoCert * cert);
 R_API RCryptoKey * r_crypto_cert_get_public_key (const RCryptoCert * cert);
