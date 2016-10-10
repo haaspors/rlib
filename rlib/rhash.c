@@ -126,20 +126,26 @@ r_hash_free (RHash * hash)
 }
 
 rsize
-r_hash_size (RHash * hash)
+r_hash_type_size (RHashType type)
 {
-  switch (hash->type) {
+  switch (type) {
     case R_HASH_TYPE_MD5:
-      return sizeof (hash->hash.md5.data);
+      return R_HASH_MD5_SIZE;
     case R_HASH_TYPE_SHA1:
-      return sizeof (hash->hash.sha1.data);
+      return R_HASH_SHA1_SIZE;
     case R_HASH_TYPE_SHA256:
-      return sizeof (hash->hash.sha256.data);
+      return R_HASH_SHA256_SIZE;
     case R_HASH_TYPE_SHA512:
-      return sizeof (hash->hash.sha512.data);
+      return R_HASH_SHA512_SIZE;
     default:
       return 0;
   }
+}
+
+rsize
+r_hash_size (RHash * hash)
+{
+  return r_hash_type_size (hash->type);
 }
 
 rsize

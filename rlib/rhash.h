@@ -38,6 +38,8 @@ typedef enum {
   R_HASH_TYPE_SHA512,
 } RHashType;
 
+R_API rsize r_hash_type_size (RHashType type);
+
 typedef struct _RHash RHash;
 
 #define r_hash_new_md5()      r_hash_new (R_HASH_TYPE_MD5)
