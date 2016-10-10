@@ -219,7 +219,6 @@ RCryptoKey *
 r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
   RCryptoKey * ret = NULL;
-  rchar * oid = NULL;
 
   if (R_UNLIKELY (dec == NULL || tlv == NULL))
     return NULL;
@@ -228,10 +227,9 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
     return NULL;
 
   if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
-    if (r_asn1_bin_tlv_parse_oid_to_dot (tlv, &oid) == R_ASN1_DECODER_OK &&
-        r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK) {
+    if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
 
-      if (r_str_equals (oid, R_RSA_OID_RSA_ENCRYPTION)) {
+      if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_RSA_ENCRYPTION)) {
         rmpint n, e;
         r_mpint_init (&n);
         r_mpint_init (&e);
@@ -249,12 +247,14 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         }
         r_mpint_clear (&e);
         r_mpint_clear (&n);
-      } else if (r_str_equals (oid, R_X9CM_OID_DSA)) {
+      } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_X9CM_OID_DSA)) {
         rmpint p, q, g, y;
         r_mpint_init (&p);
         r_mpint_init (&q);
         r_mpint_init (&g);
         r_mpint_init (&y);
+
+        r_asn1_bin_decoder_next (dec, tlv);
         if (R_ASN1_BIN_TLV_ID_PC (tlv) == R_ASN1_ID_CONSTRUCTED &&
             r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
           if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_INTEGER) {
@@ -290,7 +290,6 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   }
 
   r_asn1_bin_decoder_out (dec, tlv);
-  r_free (oid);
   return ret;
 }
 

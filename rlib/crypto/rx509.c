@@ -164,8 +164,6 @@ static rboolean
 r_crypto_x509_ext_key_usage (RCryptoX509Cert * cert,
     RAsn1BinDecoder * dec, RAsn1BinTLV * tlv, rboolean critical)
 {
-  rchar * oid;
-
   (void) critical;
 
   do {
@@ -174,23 +172,22 @@ r_crypto_x509_ext_key_usage (RCryptoX509Cert * cert,
     if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
       break;
 
-    if (r_asn1_bin_tlv_parse_oid_to_dot (tlv, &oid) == R_ASN1_DECODER_OK) {
-      if (r_str_equals (oid, R_ID_CE_OID_EXT_KEY_USAGE".0"))
+    if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
+      if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ID_CE_OID_EXT_KEY_USAGE"\x00"))
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_ANY;
-      else if (r_str_equals (oid, R_ID_KP_OID_SERVER_AUTH))
+      else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ID_KP_OID_SERVER_AUTH))
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_SERVER_AUTH;
-      else if (r_str_equals (oid, R_ID_KP_OID_CLIENT_AUTH))
+      else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ID_KP_OID_CLIENT_AUTH))
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_CLIENT_AUTH;
-      else if (r_str_equals (oid, R_ID_KP_OID_CODE_SIGNING))
+      else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ID_KP_OID_CODE_SIGNING))
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_CODE_SIGNING;
-      else if (r_str_equals (oid, R_ID_KP_OID_EMAIL_PROTECTION))
+      else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ID_KP_OID_EMAIL_PROTECTION))
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_EMAIL_PROTECTION;
-      else if (r_str_equals (oid, R_ID_KP_OID_TIME_STAMPING))
+      else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ID_KP_OID_TIME_STAMPING))
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_TIME_STAMPING;
-      else if (r_str_equals (oid, R_ID_KP_OID_OCSP_SIGNING))
+      else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ID_KP_OID_OCSP_SIGNING))
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_OCSP_SIGNING;
 
-      r_free (oid);
     }
   } while (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK);
 
@@ -226,21 +223,21 @@ r_crypto_x509_cert_v3_parse_extensions (RCryptoX509Cert * cert,
     RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
   RAsn1DecoderStatus res;
-  rchar * oid;
   static const struct {
     const rchar * oid;
+    rsize oidsize;
     RCertX509ExtFunc func;
   } exttbl[] = {
-    { R_ID_CE_OID_AUTHORITY_KEY_ID, r_crypto_x509_authority_key_id },
-    { R_ID_CE_OID_SUBJECT_KEY_ID, r_crypto_x509_subject_key_id },
-    { R_ID_CE_OID_BASIC_CONSTRAINTS, r_crypto_x509_basic_constraints },
-    /*{ R_ID_CE_OID_NAME_CONSTRAINTS, r_crypto_x509_name_constraints },*/
-    { R_ID_CE_OID_POLICY_CONSTRAINTS, r_crypto_x509_policy_constraints },
-    { R_ID_CE_OID_KEY_USAGE, r_crypto_x509_key_usage },
-    { R_ID_CE_OID_EXT_KEY_USAGE, r_crypto_x509_ext_key_usage },
-    { R_ID_CE_OID_CERTIFICATE_POLICIES, r_crypto_x509_certificate_policies },
-    /*{ R_ID_CE_OID_SUBJECT_ALT_NAME, r_crypto_x509_subject_alt_name },*/
-    /*{ R_ID_CE_OID_POLICY_MAPPINGS, r_crypto_x509_policy_mappings },*/
+    { R_ASN1_OID_ARGS (R_ID_CE_OID_AUTHORITY_KEY_ID), r_crypto_x509_authority_key_id },
+    { R_ASN1_OID_ARGS (R_ID_CE_OID_SUBJECT_KEY_ID), r_crypto_x509_subject_key_id },
+    { R_ASN1_OID_ARGS (R_ID_CE_OID_BASIC_CONSTRAINTS), r_crypto_x509_basic_constraints },
+    /*{ R_ASN1_OID_ARGS (R_ID_CE_OID_NAME_CONSTRAINTS), r_crypto_x509_name_constraints },*/
+    { R_ASN1_OID_ARGS (R_ID_CE_OID_POLICY_CONSTRAINTS), r_crypto_x509_policy_constraints },
+    { R_ASN1_OID_ARGS (R_ID_CE_OID_KEY_USAGE), r_crypto_x509_key_usage },
+    { R_ASN1_OID_ARGS (R_ID_CE_OID_EXT_KEY_USAGE), r_crypto_x509_ext_key_usage },
+    { R_ASN1_OID_ARGS (R_ID_CE_OID_CERTIFICATE_POLICIES), r_crypto_x509_certificate_policies },
+    /*{ R_ASN1_OID_ARGS (R_ID_CE_OID_SUBJECT_ALT_NAME), r_crypto_x509_subject_alt_name },*/
+    /*{ R_ASN1_OID_ARGS (R_ID_CE_OID_POLICY_MAPPINGS), r_crypto_x509_policy_mappings },*/
     /* TODO */
   };
 
@@ -251,7 +248,9 @@ r_crypto_x509_cert_v3_parse_extensions (RCryptoX509Cert * cert,
     if (R_UNLIKELY (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK))
       break;
 
-    if (r_asn1_bin_tlv_parse_oid_to_dot (tlv, &oid) == R_ASN1_DECODER_OK) {
+    if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
+      const ruint8 * oidp = tlv->value;
+      rsize oidsize = tlv->len;
       rboolean critical = FALSE;
       ruint i;
 
@@ -265,14 +264,14 @@ r_crypto_x509_cert_v3_parse_extensions (RCryptoX509Cert * cert,
       if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING)) {
         r_asn1_bin_decoder_into (dec, tlv);
         for (i = 0; i < R_N_ELEMENTS (exttbl); i++) {
-          if (r_str_equals (oid, exttbl[i].oid)) {
+          if (r_asn1_oid_bin_equals_full (oidp, oidsize,
+                exttbl[i].oid, exttbl[i].oidsize)) {
             exttbl[i].func (cert, dec, tlv, critical);
             break;
           }
         }
         r_asn1_bin_decoder_out (dec, tlv);
       }
-      r_free (oid);
     }
   } while ((res = r_asn1_bin_decoder_out (dec, tlv)) == R_ASN1_DECODER_OK);
 

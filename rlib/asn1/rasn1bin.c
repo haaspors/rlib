@@ -273,42 +273,38 @@ r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot)
 RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_oid_to_hash_type (const RAsn1BinTLV * tlv, RHashType * ht)
 {
-  RAsn1DecoderStatus ret;
-  rchar * oid = NULL;
-
   if (R_UNLIKELY (ht == NULL)) return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)))
+    return R_ASN1_DECODER_WRONG_TYPE;
 
-  if ((ret = r_asn1_bin_tlv_parse_oid_to_dot (tlv, &oid)) == R_ASN1_DECODER_OK) {
-    if (r_str_equals (oid, R_RSA_OID_MD5_WITH_RSA))
-      *ht = R_HASH_TYPE_MD5;
-    else if (r_str_equals (oid, R_RSA_OID_SHA1_WITH_RSA))
-      *ht = R_HASH_TYPE_SHA1;
-    else if (r_str_equals (oid, R_RSA_OID_SHA256_WITH_RSA))
-      *ht = R_HASH_TYPE_SHA256;
-    else if (r_str_equals (oid, R_RSA_OID_SHA384_WITH_RSA))
-      *ht = R_HASH_TYPE_SHA384;
-    else if (r_str_equals (oid, R_RSA_OID_SHA512_WITH_RSA))
-      *ht = R_HASH_TYPE_SHA512;
-    else if (r_str_equals (oid, R_RSA_OID_SHA224_WITH_RSA))
-      *ht = R_HASH_TYPE_SHA224;
-    else if (r_str_equals (oid, R_X9CM_OID_DSA_WITH_SHA1))
-      *ht = R_HASH_TYPE_SHA1;
-    else if (r_str_equals (oid, R_OIW_SECSIG_OID_SHA1_FIPS))
-      *ht = R_HASH_TYPE_SHA1;
-    else if (r_str_equals (oid, R_OIW_SECSIG_OID_SHA1_RSA))
-      *ht = R_HASH_TYPE_SHA1;
-    else if (r_str_equals (oid, R_OIW_SECSIG_OID_SHA1_DSA))
-      *ht = R_HASH_TYPE_SHA1;
-    else if (r_str_equals (oid, R_OIW_SECSIG_OID_MD5_RSA))
-      *ht = R_HASH_TYPE_MD5;
-    else if (r_str_equals (oid, R_OIW_SECSIG_OID_MD5_RSA_SIG))
-      *ht = R_HASH_TYPE_MD5;
-    else
-      *ht = R_HASH_TYPE_NONE;
-    r_free (oid);
-  }
+  if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_MD5_WITH_RSA))
+    *ht = R_HASH_TYPE_MD5;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA1_WITH_RSA))
+    *ht = R_HASH_TYPE_SHA1;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA256_WITH_RSA))
+    *ht = R_HASH_TYPE_SHA256;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA384_WITH_RSA))
+    *ht = R_HASH_TYPE_SHA384;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA512_WITH_RSA))
+    *ht = R_HASH_TYPE_SHA512;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA224_WITH_RSA))
+    *ht = R_HASH_TYPE_SHA224;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_X9CM_OID_DSA_WITH_SHA1))
+    *ht = R_HASH_TYPE_SHA1;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_SHA1_FIPS))
+    *ht = R_HASH_TYPE_SHA1;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_SHA1_RSA))
+    *ht = R_HASH_TYPE_SHA1;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_SHA1_DSA))
+    *ht = R_HASH_TYPE_SHA1;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_MD5_RSA))
+    *ht = R_HASH_TYPE_MD5;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_MD5_RSA_SIG))
+    *ht = R_HASH_TYPE_MD5;
+  else
+    *ht = R_HASH_TYPE_NONE;
 
-  return ret;
+  return R_ASN1_DECODER_OK;;
 }
 
 RAsn1DecoderStatus
@@ -441,33 +437,37 @@ r_asn1_bin_tlv_parse_bit_string_bits (const RAsn1BinTLV * tlv, rsize * bits)
 }
 
 static const rchar *
-r_asn1_oid_to_x500_name (const ruint32 * v, rsize count)
+r_asn1_bin_tlv_parse_x500_name (const RAsn1BinTLV * tlv)
 {
   const struct x500attrtype {
     const rchar * name;
-    ruint32 oid[16];
+    const rchar * oid;
+    rsize oidsize;
   } x500_attr_table[] = {
-    { "CN",     { 2, 5, 4,  3, } }, /* commonName */
-    { "SN",     { 2, 5, 4,  4, } }, /* surname */
-    { "C",      { 2, 5, 4,  6, } }, /* countryName */
-    { "L",      { 2, 5, 4,  7, } }, /* localityName */
-    { "ST",     { 2, 5, 4,  8, } }, /* stateOrProvinceName */
-    { "STREET", { 2, 5, 4,  9, } }, /* streetAddress */
-    { "O",      { 2, 5, 4, 10, } }, /* organizationName */
-    { "OU",     { 2, 5, 4, 11, } }, /* organizationalUnitName */
-    { "UID",    { 0, 9, 2342, 19200300, 100, 1,  1, } }, /* userId */
-    { "DC",     { 0, 9, 2342, 19200300, 100, 1, 25, } }, /* domainComponent */
+    { "CN",     R_ASN1_OID_ARGS (R_ID_AT_OID_COMMON_NAME) },
+    { "SN",     R_ASN1_OID_ARGS (R_ID_AT_OID_SURNAME) },
+    { "C",      R_ASN1_OID_ARGS (R_ID_AT_OID_CUNTRY_NAME) },
+    { "L",      R_ASN1_OID_ARGS (R_ID_AT_OID_LOCALITY_NAME) },
+    { "ST",     R_ASN1_OID_ARGS (R_ID_AT_OID_STATE_OR_PROVINCE_NAME) },
+    { "STREET", R_ASN1_OID_ARGS (R_ID_AT_OID_STREET_ADDRESS) },
+    { "O",      R_ASN1_OID_ARGS (R_ID_AT_OID_ORGANIZATION_NAME) },
+    { "OU",     R_ASN1_OID_ARGS (R_ID_AT_OID_ORGANIZATIONAL_UNIT_NAME) },
+    { "UID",    R_ASN1_OID_ARGS (R_PSS_OID_USER_ID) },
+    { "DC",     R_ASN1_OID_ARGS (R_PSS_OID_DOMAIN_COMPONENT) },
   };
-  rsize i;
 
-  for (i = 0; i < R_N_ELEMENTS (x500_attr_table); i++) {
-    if (r_memcmp (x500_attr_table[i].oid, v, count * sizeof (ruint32)) == 0)
-      return x500_attr_table[i].name;
+  if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
+    rsize i;
+    for (i = 0; i < R_N_ELEMENTS (x500_attr_table); i++) {
+      if (r_asn1_oid_bin_equals_full (tlv->value, tlv->len,
+            x500_attr_table[i].oid, x500_attr_table[i].oidsize)) {
+        return x500_attr_table[i].name;
+      }
+    }
   }
 
   return NULL;
 }
-
 
 static RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_attribute_type_and_value (RAsn1BinDecoder * dec,
@@ -476,15 +476,9 @@ r_asn1_bin_tlv_parse_attribute_type_and_value (RAsn1BinDecoder * dec,
   RAsn1DecoderStatus ret;
   const rchar * t, * v;
   rsize vlen;
-  ruint32 oid[16];
-  rsize count = R_N_ELEMENTS (oid);
 
   /* AttributeType */
-  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER))
-    return R_ASN1_DECODER_WRONG_TYPE;
-  if ((ret = r_asn1_bin_tlv_parse_oid (tlv, oid, &count)) != R_ASN1_DECODER_OK)
-    return ret;
-  if ((t = r_asn1_oid_to_x500_name (oid, count)) == NULL)
+  if ((t = r_asn1_bin_tlv_parse_x500_name (tlv)) == NULL)
     return R_ASN1_DECODER_WRONG_TYPE;
 
   /* AttributeValue */
