@@ -92,6 +92,63 @@ RTEST (rasn1ber, sequence_primitives, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1ber, parse_oid_2_100_3, RTEST_FAST)
+{
+  /* 2.100.3 - From example in X.690 */
+  static ruint8 ber_encoded[] = {
+    0x06, 0x03, 0x81, 0x34, 0x03, /* OBEJCT IDENTIFIER */
+  };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  ruint32 v_oid[8];
+  rsize size_oid = R_N_ELEMENTS (v_oid);
+  rchar * str_oid;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER,
+          ber_encoded, sizeof (ber_encoded))), !=, NULL);
+
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_oid (&tlv, v_oid, &size_oid), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpuint (size_oid, ==, 3);
+  r_assert_cmpuint (v_oid[0], ==, 2);
+  r_assert_cmpuint (v_oid[1], ==, 100);
+  r_assert_cmpuint (v_oid[2], ==, 3);
+
+  r_assert_cmpint (r_asn1_bin_tlv_parse_oid_to_dot (&tlv, &str_oid), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str_oid, ==, "2.100.3");
+  r_free (str_oid);
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
+RTEST (rasn1ber, parse_oid_2_999, RTEST_FAST)
+{
+  /* 2.999 - example?? */
+  static ruint8 ber_encoded[] = {
+    0x06, 0x02, 0x88, 0x37, /* OBEJCT IDENTIFIER */
+  };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  ruint32 v_oid[8];
+  rsize size_oid = R_N_ELEMENTS (v_oid);
+  rchar * str_oid;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER,
+          ber_encoded, sizeof (ber_encoded))), !=, NULL);
+
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_oid (&tlv, v_oid, &size_oid), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpuint (size_oid, ==, 2);
+  r_assert_cmpuint (v_oid[0], ==, 2);
+  r_assert_cmpuint (v_oid[1], ==, 999);
+
+  r_assert_cmpint (r_asn1_bin_tlv_parse_oid_to_dot (&tlv, &str_oid), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str_oid, ==, "2.999");
+  r_free (str_oid);
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
 RTEST (rasn1ber, invalid_decode_args, RTEST_FAST)
 {
   static ruint8 ber_encoded[] = { 0x30, 0x80,

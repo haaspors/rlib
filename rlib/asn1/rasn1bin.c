@@ -230,8 +230,9 @@ r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * len
 
       if (!(*ptr & 0x80)) {
         if (idx == 0) {
-          varray[idx++] = cur / 40;
-          varray[idx++] = cur % 40;
+          ruint32 v;
+          varray[idx++] = v = MIN (cur / 40, 2);
+          varray[idx++] = cur - (v * 40);
         } else {
           if (idx >= *len)
             return R_ASN1_DECODER_OVERFLOW;
