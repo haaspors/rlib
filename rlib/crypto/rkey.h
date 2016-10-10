@@ -51,6 +51,15 @@ typedef enum {
   R_CRYPTO_OK                     = 0,
   R_CRYPTO_INVAL,
   R_CRYPTO_NOT_AVAILABLE,
+  R_CRYPTO_BUFFER_TOO_SMALL,
+  R_CRYPTO_WRONG_TYPE,
+  R_CRYPTO_WRONG_SIZE,
+  R_CRYPTO_INVALID_PADDING,
+  R_CRYPTO_ENCRYPT_FAILED,
+  R_CRYPTO_DECRYPT_FAILED,
+  R_CRYPTO_HASH_FAILED,
+  R_CRYPTO_SIGN_FAILED,
+  R_CRYPTO_VERIFY_FAILED,
   R_CRYPTO_ERROR
 } RCryptoResult;
 
@@ -65,17 +74,15 @@ R_API RCryptoAlgorithm r_crypto_key_get_algo (const RCryptoKey * key);
 R_API const rchar * r_crypto_key_get_strtype (const RCryptoKey * key);
 R_API ruint r_crypto_key_get_bitsize (const RCryptoKey * key);
 
-R_API RCryptoResult r_crypto_key_encrypt (const RCryptoKey * key,
-    rconstpointer data, rsize size, ruint8 * out, rsize * outsize,
-    RPrng * prng);
-R_API RCryptoResult r_crypto_key_decrypt (const RCryptoKey * key,
-    rconstpointer data, rsize size, ruint8 * out, rsize * outsize,
-    RPrng * prng);
-R_API RCryptoResult r_crypto_key_sign (const RCryptoKey * key, RHashType hashtype,
-    const ruint8 * hash, rsize hashsize, ruint8 * sig, rsize * sigsize,
-    RPrng * prng);
+R_API RCryptoResult r_crypto_key_encrypt (const RCryptoKey * key, RPrng * prng,
+    rconstpointer data, rsize size, rpointer out, rsize * outsize);
+R_API RCryptoResult r_crypto_key_decrypt (const RCryptoKey * key, RPrng * prng,
+    rconstpointer data, rsize size, rpointer out, rsize * outsize);
+R_API RCryptoResult r_crypto_key_sign (const RCryptoKey * key, RPrng * prng,
+    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    rpointer sig, rsize * sigsize);
 R_API RCryptoResult r_crypto_key_verify (const RCryptoKey * key, RHashType hashtype,
-    const ruint8 * hash, rsize hashsize, const ruint8 * sig, rsize sigsize);
+    rconstpointer hash, rsize hashsize, rconstpointer sig, rsize sigsize);
 
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key_file (const rchar * file);
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key (const rchar * data, rsize size);

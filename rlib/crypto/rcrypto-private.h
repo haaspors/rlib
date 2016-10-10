@@ -30,13 +30,13 @@
 R_BEGIN_DECLS
 
 typedef RCryptoResult (*RCryptoOperation) (const RCryptoKey * key, RPrng * prng,
-    rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
+    rconstpointer data, rsize size, rpointer, rsize * outsize);
 typedef RCryptoResult (*RCryptoSign) (const RCryptoKey * key, RPrng * prng,
-    RHashType hashtype, const ruint8 * hash, rsize hashsize,
-    ruint8 * sig, rsize * sigsize);
+    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    rpointer, rsize * sigsize);
 typedef RCryptoResult (*RCryptoVerify) (const RCryptoKey * key,
-    RHashType hashtype, const ruint8 * hash, rsize hashsize,
-    const ruint8 * sig, rsize sigsize);
+    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    rconstpointer sig, rsize sigsize);
 
 typedef struct {
   RCryptoAlgorithm algo;

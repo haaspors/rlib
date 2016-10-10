@@ -68,18 +68,35 @@ R_API rboolean r_rsa_priv_key_get_dq (const RCryptoKey * key, rmpint * dq);
 R_API rboolean r_rsa_priv_key_get_qp (const RCryptoKey * key, rmpint * qp);
 
 
-R_API rboolean r_rsa_raw_encrypt (const RCryptoKey * key, RPrng * prng,
+R_API RCryptoResult r_rsa_raw_encrypt (const RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_raw_decrypt (const RCryptoKey * key,
+R_API RCryptoResult r_rsa_raw_decrypt (const RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_oaep_encrypt (const RCryptoKey * key, RPrng * prng,
+
+R_API RCryptoResult r_rsa_oaep_encrypt (const RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_oaep_decrypt (const RCryptoKey * key,
+R_API RCryptoResult r_rsa_oaep_decrypt (const RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_pkcs1v1_5_encrypt (const RCryptoKey * key, RPrng * prng,
+
+R_API RCryptoResult r_rsa_pkcs1v1_5_encrypt (const RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
-R_API rboolean r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
+R_API RCryptoResult r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
+R_API RCryptoResult r_rsa_pkcs1v1_5_sign_msg (const RCryptoKey * key, RPrng * prng,
+    RHashType hashtype, rconstpointer msg, rsize msgsize,
+    rpointer sig, rsize * sigsize);
+R_API RCryptoResult r_rsa_pkcs1v1_5_sign_msg_hash (const RCryptoKey * key, RPrng * prng,
+    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    rpointer sig, rsize * sigsize);
+R_API RCryptoResult r_rsa_pkcs1v1_5_sign_hash (const RCryptoKey * key, RPrng * prng,
+    rconstpointer hash, rsize hashsize, rpointer sig, rsize * sigsize);
+R_API RCryptoResult r_rsa_pkcs1v1_5_verify_msg (const RCryptoKey * key,
+    rconstpointer msg, rsize msgsize, rconstpointer sig, rsize sigsize);
+R_API RCryptoResult r_rsa_pkcs1v1_5_verify_msg_with_hash (const RCryptoKey * key,
+    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    rconstpointer sig, rsize sigsize);
+R_API RCryptoResult r_rsa_pkcs1v1_5_verify_hash (const RCryptoKey * key,
+    rconstpointer hash, rsize hashsize, rconstpointer sig, rsize sigsize);
 
 R_END_DECLS
 

@@ -61,8 +61,8 @@ r_crypto_key_get_bitsize (const RCryptoKey * key)
 }
 
 RCryptoResult
-r_crypto_key_encrypt (const RCryptoKey * key,
-    rconstpointer data, rsize size, ruint8 * out, rsize * outsize, RPrng * prng)
+r_crypto_key_encrypt (const RCryptoKey * key, RPrng * prng,
+    rconstpointer data, rsize size, rpointer out, rsize * outsize)
 {
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (data == NULL)) return R_CRYPTO_INVAL;
@@ -74,8 +74,8 @@ r_crypto_key_encrypt (const RCryptoKey * key,
 }
 
 RCryptoResult
-r_crypto_key_decrypt (const RCryptoKey * key,
-    rconstpointer data, rsize size, ruint8 * out, rsize * outsize, RPrng * prng)
+r_crypto_key_decrypt (const RCryptoKey * key, RPrng * prng,
+    rconstpointer data, rsize size, rpointer out, rsize * outsize)
 {
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (data == NULL)) return R_CRYPTO_INVAL;
@@ -87,9 +87,8 @@ r_crypto_key_decrypt (const RCryptoKey * key,
 }
 
 RCryptoResult
-r_crypto_key_sign (const RCryptoKey * key, RHashType hashtype,
-    const ruint8 * hash, rsize hashsize, ruint8 * sig, rsize * sigsize,
-    RPrng * prng)
+r_crypto_key_sign (const RCryptoKey * key, RPrng * prng, RHashType hashtype,
+    rconstpointer hash, rsize hashsize, rpointer sig, rsize * sigsize)
 {
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (hash == NULL)) return R_CRYPTO_INVAL;
@@ -102,7 +101,7 @@ r_crypto_key_sign (const RCryptoKey * key, RHashType hashtype,
 
 RCryptoResult
 r_crypto_key_verify (const RCryptoKey * key, RHashType hashtype,
-    const ruint8 * hash, rsize hashsize, const ruint8 * sig, rsize sigsize)
+    rconstpointer hash, rsize hashsize, rconstpointer sig, rsize sigsize)
 {
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (hash == NULL)) return R_CRYPTO_INVAL;

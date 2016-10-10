@@ -59,8 +59,8 @@ RTEST (rrsa, decrypt_raw, RTEST_FAST)
   r_mpint_init_str (&e, "65537", NULL, 10);
 
   r_assert_cmpptr ((key = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
-  r_assert (r_rsa_raw_decrypt (key, rsa_encrypted, sizeof (rsa_encrypted),
-        decrypted, &size));
+  r_assert_cmpuint (r_rsa_raw_decrypt (key, rsa_encrypted, sizeof (rsa_encrypted),
+        decrypted, &size), ==, R_CRYPTO_OK);
   r_assert_cmpuint (size, ==, sizeof (expected));
   r_assert_cmpmem (decrypted, ==, expected, sizeof (expected));
 
@@ -93,8 +93,8 @@ RTEST (rrsa, decrypt_pkcs, RTEST_FAST)
   r_mpint_init_str (&e, "65537", NULL, 10);
 
   r_assert_cmpptr ((key = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
-  r_assert (r_rsa_pkcs1v1_5_decrypt (key, rsa_encrypted, sizeof (rsa_encrypted),
-        decrypted, &size));
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt (key, rsa_encrypted, sizeof (rsa_encrypted),
+        decrypted, &size), ==, R_CRYPTO_OK);
   r_assert_cmpuint (size, ==, r_strlen (expected));
   r_assert_cmpmem (decrypted, ==, expected, r_strlen (expected));
 
@@ -130,11 +130,12 @@ RTEST (rrsa, encrypt_decrypt_1024, RTEST_FAST)
 
   r_assert_cmpptr ((key = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
   r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
-  r_assert (r_rsa_pkcs1v1_5_encrypt (key, prng,
-        before, r_strlen (before), intermediate, &size));
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_encrypt (key, prng,
+        before, r_strlen (before), intermediate, &size), ==, R_CRYPTO_OK);
   r_assert_cmpuint (size, ==, 128);
   size = sizeof (after);
-  r_assert (r_rsa_pkcs1v1_5_decrypt (key, intermediate, 128, after, &size));
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt (key,
+        intermediate, 128, after, &size), ==, R_CRYPTO_OK);
 
   r_mpint_clear (&n);
   r_mpint_clear (&d);
@@ -142,6 +143,119 @@ RTEST (rrsa, encrypt_decrypt_1024, RTEST_FAST)
 
   r_prng_unref (prng);
   r_crypto_key_unref (key);
+}
+RTEST_END;
+
+RTEST (rrsa, sign_FIPS_186_3_SHA256, RTEST_FAST)
+{
+  rmpint n, e, d;
+  RCryptoKey * key;
+  ruint8 * msg, * expected, sig[2048];
+  rsize msgsize, expectedsize, sigsize = sizeof (sig);
+  RPrng * prng;
+
+  r_mpint_init_str (&n, "0xcea80475324c1dc8347827818da58bac069d3419c614a6ea1a"
+      "c6a3b510dcd72cc516954905e9fef908d45e13006adf27d467a7d83c111d1a5df15ef2"
+      "93771aefb920032a5bb989f8e4f5e1b05093d3f130f984c07a772a3683f4dc6fb28a96"
+      "815b32123ccdd13954f19d5b8b24a103e771a34c328755c65ed64e1924ffd04d30b214"
+      "2cc262f6e0048fef6dbc652f21479ea1c4b1d66d28f4d46ef7185e390cbfa2e0238058"
+      "2f3188bb94ebbf05d31487a09aff01fcbb4cd4bfd1f0a833b38c11813c84360bb53c7d"
+      "4481031c40bad8713bb6b835cb08098ed15ba31ee4ba728a8c8e10f7294e1b4163b7ae"
+      "e57277bfd881a6f9d43e02c6925aa3a043fb7fb78d", NULL, 16);
+  r_mpint_init_str (&d, "0x0997634c477c1a039d44c810b2aaa3c7862b0b88d3708272e1"
+      "e15f66fc9389709f8a11f3ea6a5af7effa2d01c189c50f0d5bcbe3fa272e56cfc4a4e1"
+      "d388a9dcd65df8628902556c8b6bb6a641709b5a35dd2622c73d4640bfa1359d0e76e1"
+      "f219f8e33eb9bd0b59ec198eb2fccaae0346bd8b401e12e3c67cb629569c185a2e0f35"
+      "a2f741644c1cca5ebb139d77a89a2953fc5e30048c0e619f07c8d21d1e56b8af07193d"
+      "0fdf3f49cd49f2ef3138b5138862f1470bd2d16e34a2b9e7777a6c8c8d4cb94b4e8b5d"
+      "616cd5393753e7b0f31cc7da559ba8e98d888914e334773baf498ad88d9631eb5fe32e"
+      "53a4145bf0ba548bf2b0a50c63f67b14e398a34b0d", NULL, 16);
+  r_mpint_init_str (&e, "0x260445", NULL, 16);
+  r_assert_cmpptr ((key = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+
+  r_assert_cmpptr ((msg = r_str_hex_mem (
+          "0xc43011f3ee88c9c9adcac8bf37221afa31769d347dec705e53aca98993e74606"
+          "591867ccd289ba1b4f19365f983e0c578346da76c5e2228a07e4fc9b3d48071633"
+          "71a52b68b66873201dc7d6b56616ac2e4cb522120787df7f15a5e8763a54c179c6"
+          "35d65816bc19485de3eb35a52040591094fe0e6485a7e0c60e38e7c61551",
+          &msgsize)), !=, NULL);
+  r_assert_cmpptr ((expected = r_str_hex_mem (
+          "0xaa3a4e12eb87596c711c9a22bcabcb9dadffcabcecbd16228889e9bb457d5d22"
+          "571a72f034be4783384f43ce6fffc60534b8331cdd5d7c77f49180bfd194b5fd43"
+          "a508c66d786c558876735894e6a9300952de792f747045e74d87fd50980230707a"
+          "34a4df013ce050bbff0d6f570885c9c7bf8dc499132caee071b41d81ff91b8ce21"
+          "aa2f282cbf52389f239afe1490890be21f9d808b3d70b97efd59c0b60e466088bb"
+          "42714f212bc90db7e942ebcee60e7b107fff44fb3564ff07d6d02850215fd357d8"
+          "97c4d32bef8661689f2d84ff897637fb6d5568a7270e783426b74b7037493e5155"
+          "fd7cb3ddddfd36bd8a9c877d71d2a966057c08263d2939c84987",
+          &expectedsize)), !=, NULL);
+
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_sign_msg (key, prng, R_HASH_TYPE_SHA256,
+        msg, msgsize, sig, &sigsize), ==, R_CRYPTO_OK);
+  r_assert_cmpuint (sigsize, ==, expectedsize);
+  r_assert_cmpmem (sig, ==, expected, sigsize);
+
+  r_mpint_clear (&n);
+  r_mpint_clear (&d);
+  r_mpint_clear (&e);
+
+  r_prng_unref (prng);
+  r_crypto_key_unref (key);
+  r_free (msg);
+  r_free (expected);
+}
+RTEST_END;
+
+RTEST (rrsa, verify_FIPS_186_3_SHA1, RTEST_FAST)
+{
+  rmpint n, e, d;
+  RCryptoKey * key;
+  ruint8 * msg, * expected;
+  rsize msgsize, expectedsize;
+
+  r_mpint_init_str (&n,
+      "0xdd07f43534adefb5407cc163aacc7abe9f93cb749643eaec22a3ef16e77813d77df2"
+      "0e84a755088872fde21d3d3192f9a78d726ef3d0daa9d6bc19daf6822eb834fbf837ed"
+      "03d0f84a7fc7709be382e880e77ba3ce3d91ca1cbf567fc2e62169843489188a128ec8"
+      "53079e7942e6590508ea2faab1cf87b860b21b9546442455", NULL, 16);
+  r_mpint_init_str (&d, "0x00", NULL, 16);
+  r_mpint_init_str (&e, "0xfe3fa1", NULL, 16);
+  r_assert_cmpptr ((msg = r_str_hex_mem (
+          "0x73ef115a1dec6d91e1aa51c5e11708ead45b2419fb0313d9565ff39e1928a78f"
+          "5a662b8c0c91247030f7bc934a5dac9412e99a556d40a6469beb40e7b2ff3c884b"
+          "fd28537bf7dd8d05f45419cd96bb3e90fac8aad3e04eb6190c0eeb59eccfc5af7a"
+          "b1b85264be71c66ac25e53085c70b5565620152c32b0388905b3f73689cf",
+          &msgsize)), !=, NULL);
+  r_assert_cmpptr ((expected = r_str_hex_mem (
+          "0x25493b7d70cc07e9269a248632c2c89c8514fe8298ed84319ec664f01db980e2"
+          "4bbb59eea5867316792fec36cbe9ee9d3c69346b992377f35c08d19de0d6dd3748"
+          "2074cf5d3c5cd2b54d09a3ed296187f4ee5b30926a7aa794c88a2c0f9d09f72143"
+          "6e5a9bd4fef62e20e43095faee7f5f1e6ce87705c27aa5cdb08d50bd2cf0",
+          &expectedsize)), !=, NULL);
+
+  r_assert_cmpptr ((key = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
+
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_verify_msg (key, msg, msgsize,
+        expected, expectedsize), ==, R_CRYPTO_OK);
+  {
+    RHash * h = r_hash_new_sha1 ();
+    ruint8 hash[20];
+    rsize hashsize = sizeof (hash);
+    r_assert (r_hash_update (h, msg, msgsize));
+    r_assert (r_hash_get_data (h, hash, &hashsize));
+    r_assert (r_rsa_pkcs1v1_5_verify_msg_with_hash (key,
+          R_HASH_TYPE_SHA1, hash, hashsize, expected, expectedsize));
+    r_hash_free (h);
+  }
+
+  r_mpint_clear (&n);
+  r_mpint_clear (&d);
+  r_mpint_clear (&e);
+
+  r_crypto_key_unref (key);
+  r_free (msg);
+  r_free (expected);
 }
 RTEST_END;
 

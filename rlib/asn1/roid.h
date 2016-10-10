@@ -158,6 +158,17 @@ R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
 #define R_RSA_OID_PBES2                     R_RSA_OID_PKCS_5".13"
 #define R_RSA_OID_PBMAC1                    R_RSA_OID_PKCS_5".14"
 
+#define R_OIW_OID                           R_ASN1_OID_DOT_ISO_ID_ORG".14"
+#define R_OIW_SECSIG_OID                    R_OIW_OID".3"
+#define R_OIW_SECSIG_OID_MD4_RSA            R_OIW_SECSIG_OID".2.2"
+#define R_OIW_SECSIG_OID_MD5_RSA            R_OIW_SECSIG_OID".2.3"
+#define R_OIW_SECSIG_OID_MD4_RSA2           R_OIW_SECSIG_OID".2.4"
+#define R_OIW_SECSIG_OID_MD2_RSA_SIG        R_OIW_SECSIG_OID".2.24"
+#define R_OIW_SECSIG_OID_MD5_RSA_SIG        R_OIW_SECSIG_OID".2.25"
+#define R_OIW_SECSIG_OID_SHA1_FIPS          R_OIW_SECSIG_OID".2.26"
+#define R_OIW_SECSIG_OID_SHA1_DSA           R_OIW_SECSIG_OID".2.27"
+#define R_OIW_SECSIG_OID_SHA1_RSA           R_OIW_SECSIG_OID".2.29"
+
 #define R_X9CM_OID                                R_ASN1_OID_DOT_ISO_US".10040"
 
 #define R_X9CM_OID_HOLD_INSTRUCTION               R_X9CM_OID".2"
