@@ -290,7 +290,6 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
 
   /* X.509 Certificate */
   if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
-    rchar * oid;
     /* TBSCertificate */
     if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
       /* version - Optional */
@@ -365,27 +364,11 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
     } else goto beach;
 
     /* signatureAlgorithm */
-    if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
-      r_asn1_bin_tlv_parse_oid_to_dot (&tlv, &oid) == R_ASN1_DECODER_OK) {
-      if (r_str_equals (oid, R_RSA_OID_MD5_WITH_RSA))
-        cert->cert.signalgo = R_HASH_TYPE_MD5;
-      else if (r_str_equals (oid, R_RSA_OID_SHA1_WITH_RSA))
-        cert->cert.signalgo = R_HASH_TYPE_SHA1;
-      else if (r_str_equals (oid, R_RSA_OID_SHA256_WITH_RSA))
-        cert->cert.signalgo = R_HASH_TYPE_SHA256;
-      else if (r_str_equals (oid, R_RSA_OID_SHA384_WITH_RSA))
-        cert->cert.signalgo = R_HASH_TYPE_SHA384;
-      else if (r_str_equals (oid, R_RSA_OID_SHA512_WITH_RSA))
-        cert->cert.signalgo = R_HASH_TYPE_SHA512;
-      else if (r_str_equals (oid, R_RSA_OID_SHA224_WITH_RSA))
-        cert->cert.signalgo = R_HASH_TYPE_SHA224;
-      else if (r_str_equals (oid, R_X9CM_OID_DSA_WITH_SHA1))
-        cert->cert.signalgo = R_HASH_TYPE_SHA1;
-      else
-        cert->cert.signalgo = R_HASH_TYPE_NONE;
-      r_free (oid);
-      r_asn1_bin_decoder_out (dec, &tlv);
-    } else goto beach;
+    if (r_asn1_bin_decoder_into (dec, &tlv) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_oid_to_hash_type (&tlv, &cert->cert.signalgo) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_decoder_out (dec, &tlv) != R_ASN1_DECODER_OK) {
+      goto beach;
+    }
 
     /* signature */
     if (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BIT_STRING) &&

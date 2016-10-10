@@ -25,6 +25,7 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/rbitset.h>
+#include <rlib/rhash.h>
 #include <rlib/rmpint.h>
 #include <rlib/rref.h>
 
@@ -124,6 +125,7 @@ R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_integer_u64 (const RAsn1BinTLV * t
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_integer_mpint (const RAsn1BinTLV * tlv, rmpint * value);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * size);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot);
+R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_oid_to_hash_type (const RAsn1BinTLV * tlv, RHashType * ht);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_time (const RAsn1BinTLV * tlv, ruint64 * time);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_bit_string (const RAsn1BinTLV * tlv, RBitset ** bitset);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_bit_string_bits (const RAsn1BinTLV * tlv, rsize * bits);

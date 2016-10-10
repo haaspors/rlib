@@ -270,6 +270,47 @@ r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot)
 }
 
 RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_oid_to_hash_type (const RAsn1BinTLV * tlv, RHashType * ht)
+{
+  RAsn1DecoderStatus ret;
+  rchar * oid = NULL;
+
+  if (R_UNLIKELY (ht == NULL)) return R_ASN1_DECODER_INVALID_ARG;
+
+  if ((ret = r_asn1_bin_tlv_parse_oid_to_dot (tlv, &oid)) == R_ASN1_DECODER_OK) {
+    if (r_str_equals (oid, R_RSA_OID_MD5_WITH_RSA))
+      *ht = R_HASH_TYPE_MD5;
+    else if (r_str_equals (oid, R_RSA_OID_SHA1_WITH_RSA))
+      *ht = R_HASH_TYPE_SHA1;
+    else if (r_str_equals (oid, R_RSA_OID_SHA256_WITH_RSA))
+      *ht = R_HASH_TYPE_SHA256;
+    else if (r_str_equals (oid, R_RSA_OID_SHA384_WITH_RSA))
+      *ht = R_HASH_TYPE_SHA384;
+    else if (r_str_equals (oid, R_RSA_OID_SHA512_WITH_RSA))
+      *ht = R_HASH_TYPE_SHA512;
+    else if (r_str_equals (oid, R_RSA_OID_SHA224_WITH_RSA))
+      *ht = R_HASH_TYPE_SHA224;
+    else if (r_str_equals (oid, R_X9CM_OID_DSA_WITH_SHA1))
+      *ht = R_HASH_TYPE_SHA1;
+    else if (r_str_equals (oid, R_OIW_SECSIG_OID_SHA1_FIPS))
+      *ht = R_HASH_TYPE_SHA1;
+    else if (r_str_equals (oid, R_OIW_SECSIG_OID_SHA1_RSA))
+      *ht = R_HASH_TYPE_SHA1;
+    else if (r_str_equals (oid, R_OIW_SECSIG_OID_SHA1_DSA))
+      *ht = R_HASH_TYPE_SHA1;
+    else if (r_str_equals (oid, R_OIW_SECSIG_OID_MD5_RSA))
+      *ht = R_HASH_TYPE_MD5;
+    else if (r_str_equals (oid, R_OIW_SECSIG_OID_MD5_RSA_SIG))
+      *ht = R_HASH_TYPE_MD5;
+    else
+      *ht = R_HASH_TYPE_NONE;
+    r_free (oid);
+  }
+
+  return ret;
+}
+
+RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_time (const RAsn1BinTLV * tlv, ruint64 * time)
 {
   ruint16 y;
