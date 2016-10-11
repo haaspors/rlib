@@ -146,7 +146,7 @@ RTEST (rrsa, encrypt_decrypt_1024, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rrsa, sign_FIPS_186_3_SHA256, RTEST_FAST)
+RTEST (rrsa, sign_FIPS_186_3_SHA256, RTEST_SLOW)
 {
   rmpint n, e, d;
   RCryptoKey * key;
@@ -207,7 +207,7 @@ RTEST (rrsa, sign_FIPS_186_3_SHA256, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rrsa, verify_FIPS_186_3_SHA1, RTEST_FAST)
+RTEST (rrsa, verify_FIPS_186_3_SHA1, RTEST_SLOW)
 {
   rmpint n, e, d;
   RCryptoKey * key;
