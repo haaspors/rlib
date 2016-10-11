@@ -181,6 +181,12 @@ R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
 #define R_OIW_SECSIG_OID_SHA1_DSA               R_OIW_SECSIG_OID"\x02\x1b"
 #define R_OIW_SECSIG_OID_SHA1_RSA               R_OIW_SECSIG_OID"\x02\x1d"
 
+#define R_US_GOV_OID                            R_ASN1_OID_ISOITU_COUNTRY"\x86\x48\x01\x65"
+#define R_OID_DIGEST_ALG_SHA256                 R_US_GOV_OID"\x03\x04\x02\x01"
+#define R_OID_DIGEST_ALG_SHA384                 R_US_GOV_OID"\x03\x04\x02\x02"
+#define R_OID_DIGEST_ALG_SHA512                 R_US_GOV_OID"\x03\x04\x02\x03"
+#define R_OID_DIGEST_ALG_SHA224                 R_US_GOV_OID"\x03\x04\x02\x04"
+
 #define R_X9CM_OID                              R_ASN1_OID_ISO_US"\xce\x38"
 
 #define R_X9CM_OID_HOLD_INSTRUCTION             R_X9CM_OID"\x02"

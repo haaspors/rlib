@@ -281,6 +281,14 @@ r_asn1_bin_tlv_parse_oid_to_hash_type (const RAsn1BinTLV * tlv, RHashType * ht)
     *ht = R_HASH_TYPE_MD5;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA1_WITH_RSA))
     *ht = R_HASH_TYPE_SHA1;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_DIGEST_ALG_SHA256))
+    *ht = R_HASH_TYPE_SHA256;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_DIGEST_ALG_SHA384))
+    *ht = R_HASH_TYPE_SHA384;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_DIGEST_ALG_SHA512))
+    *ht = R_HASH_TYPE_SHA512;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_DIGEST_ALG_SHA224))
+    *ht = R_HASH_TYPE_SHA224;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA256_WITH_RSA))
     *ht = R_HASH_TYPE_SHA256;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA384_WITH_RSA))
