@@ -67,7 +67,7 @@ struct _RCryptoCert {
 
   RHashType signalgo;
   ruint8 signhash[64];
-  const ruint8 * sign;
+  ruint8 * sign;
   rsize signbits;
 };
 

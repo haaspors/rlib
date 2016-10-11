@@ -26,6 +26,7 @@ r_crypto_cert_destroy (RCryptoCert * cert)
 {
   if (cert->pk != NULL)
     r_crypto_key_unref (cert->pk);
+  r_free (cert->sign);
 }
 
 RCryptoCertType

@@ -388,7 +388,7 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
     /* signature */
     if (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BIT_STRING) &&
         r_asn1_bin_tlv_parse_bit_string_bits (&tlv, &cert->cert.signbits) == R_ASN1_DECODER_OK) {
-      cert->cert.sign = r_asn1_bin_tlv_bit_string_value (&tlv);
+      cert->cert.sign = r_memdup (r_asn1_bin_tlv_bit_string_value (&tlv), cert->cert.signbits / 8);
     } else goto beach;
 
     return TRUE;
