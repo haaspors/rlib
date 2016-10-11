@@ -64,21 +64,21 @@ typedef enum {
 R_API RCryptoCert * r_crypto_x509_cert_new (rconstpointer data, rsize size) R_ATTR_MALLOC;
 R_API RCryptoCert * r_crypto_x509_cert_new_from_asn1 (RAsn1BinDecoder * dec) R_ATTR_MALLOC;
 
-R_API RX509Version r_crypt_x509_cert_version (const RCryptoCert * cert);
-R_API ruint64 r_crypt_x509_cert_serial_number (const RCryptoCert * cert);
-R_API const rchar * r_crypt_x509_cert_issuer (const RCryptoCert * cert);
-R_API const rchar * r_crypt_x509_cert_subject (const RCryptoCert * cert);
-R_API const ruint8 * r_crypt_x509_cert_issuer_unique_id (const RCryptoCert * cert, rsize * size);
-R_API const ruint8 * r_crypt_x509_cert_subject_unique_id (const RCryptoCert * cert, rsize * size);
-R_API const ruint8 * r_crypt_x509_cert_subject_key_id (const RCryptoCert * cert, rsize * size);
-R_API const ruint8 * r_crypt_x509_cert_authority_key_id (const RCryptoCert * cert, rsize * size);
-R_API RX509KeyUsage r_crypt_x509_cert_key_usage (const RCryptoCert * cert);
-R_API RX509ExtKeyUsage r_crypt_x509_cert_ext_key_usage (const RCryptoCert * cert);
-R_API rboolean r_crypt_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy);
+R_API RX509Version r_crypto_x509_cert_version (const RCryptoCert * cert);
+R_API ruint64 r_crypto_x509_cert_serial_number (const RCryptoCert * cert);
+R_API const rchar * r_crypto_x509_cert_issuer (const RCryptoCert * cert);
+R_API const rchar * r_crypto_x509_cert_subject (const RCryptoCert * cert);
+R_API const ruint8 * r_crypto_x509_cert_issuer_unique_id (const RCryptoCert * cert, rsize * size);
+R_API const ruint8 * r_crypto_x509_cert_subject_unique_id (const RCryptoCert * cert, rsize * size);
+R_API const ruint8 * r_crypto_x509_cert_subject_key_id (const RCryptoCert * cert, rsize * size);
+R_API const ruint8 * r_crypto_x509_cert_authority_key_id (const RCryptoCert * cert, rsize * size);
+R_API RX509KeyUsage r_crypto_x509_cert_key_usage (const RCryptoCert * cert);
+R_API RX509ExtKeyUsage r_crypto_x509_cert_ext_key_usage (const RCryptoCert * cert);
+R_API rboolean r_crypto_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy);
 
-R_API rboolean r_crypt_x509_cert_is_ca (const RCryptoCert * cert);
-R_API rboolean r_crypt_x509_cert_is_self_issued (const RCryptoCert * cert);
-R_API rboolean r_crypt_x509_cert_is_self_signed (const RCryptoCert * cert);
+R_API rboolean r_crypto_x509_cert_is_ca (const RCryptoCert * cert);
+R_API rboolean r_crypto_x509_cert_is_self_issued (const RCryptoCert * cert);
+R_API rboolean r_crypto_x509_cert_is_self_signed (const RCryptoCert * cert);
 
 R_API RCryptoResult r_crypto_x509_cert_verify_signature (const RCryptoCert * cert,
     const RCryptoCert * parent);

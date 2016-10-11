@@ -451,31 +451,31 @@ r_crypto_x509_cert_new_from_asn1 (RAsn1BinDecoder * dec)
 }
 
 RX509Version
-r_crypt_x509_cert_version (const RCryptoCert * cert)
+r_crypto_x509_cert_version (const RCryptoCert * cert)
 {
   return ((const RCryptoX509Cert *)cert)->version;
 }
 
 ruint64
-r_crypt_x509_cert_serial_number (const RCryptoCert * cert)
+r_crypto_x509_cert_serial_number (const RCryptoCert * cert)
 {
   return ((const RCryptoX509Cert *)cert)->serial;
 }
 
 const rchar *
-r_crypt_x509_cert_issuer (const RCryptoCert * cert)
+r_crypto_x509_cert_issuer (const RCryptoCert * cert)
 {
   return ((const RCryptoX509Cert *)cert)->issuer;
 }
 
 const rchar *
-r_crypt_x509_cert_subject (const RCryptoCert * cert)
+r_crypto_x509_cert_subject (const RCryptoCert * cert)
 {
   return ((const RCryptoX509Cert *)cert)->subject;
 }
 
 const ruint8 *
-r_crypt_x509_cert_issuer_unique_id (const RCryptoCert * cert, rsize * size)
+r_crypto_x509_cert_issuer_unique_id (const RCryptoCert * cert, rsize * size)
 {
   if (size != NULL)
     *size = ((const RCryptoX509Cert *)cert)->issuerUniqueID.size;
@@ -483,7 +483,7 @@ r_crypt_x509_cert_issuer_unique_id (const RCryptoCert * cert, rsize * size)
 }
 
 const ruint8 *
-r_crypt_x509_cert_subject_unique_id (const RCryptoCert * cert, rsize * size)
+r_crypto_x509_cert_subject_unique_id (const RCryptoCert * cert, rsize * size)
 {
   if (size != NULL)
     *size = ((const RCryptoX509Cert *)cert)->subjectUniqueID.size;
@@ -491,7 +491,7 @@ r_crypt_x509_cert_subject_unique_id (const RCryptoCert * cert, rsize * size)
 }
 
 const ruint8 *
-r_crypt_x509_cert_subject_key_id (const RCryptoCert * cert, rsize * size)
+r_crypto_x509_cert_subject_key_id (const RCryptoCert * cert, rsize * size)
 {
   if (size != NULL)
     *size = ((const RCryptoX509Cert *)cert)->subjectKeyID.size;
@@ -499,7 +499,7 @@ r_crypt_x509_cert_subject_key_id (const RCryptoCert * cert, rsize * size)
 }
 
 const ruint8 *
-r_crypt_x509_cert_authority_key_id (const RCryptoCert * cert, rsize * size)
+r_crypto_x509_cert_authority_key_id (const RCryptoCert * cert, rsize * size)
 {
   if (size != NULL)
     *size = ((const RCryptoX509Cert *)cert)->authorityKeyID.size;
@@ -507,32 +507,32 @@ r_crypt_x509_cert_authority_key_id (const RCryptoCert * cert, rsize * size)
 }
 
 RX509KeyUsage
-r_crypt_x509_cert_key_usage (const RCryptoCert * cert)
+r_crypto_x509_cert_key_usage (const RCryptoCert * cert)
 {
   return ((const RCryptoX509Cert *)cert)->keyUsage;
 }
 
 RX509ExtKeyUsage
-r_crypt_x509_cert_ext_key_usage (const RCryptoCert * cert)
+r_crypto_x509_cert_ext_key_usage (const RCryptoCert * cert)
 {
   return ((const RCryptoX509Cert *)cert)->extKeyUsage;
 }
 
 rboolean
-r_crypt_x509_cert_is_ca (const RCryptoCert * cert)
+r_crypto_x509_cert_is_ca (const RCryptoCert * cert)
 {
   return ((const RCryptoX509Cert *)cert)->ca;
 }
 
 rboolean
-r_crypt_x509_cert_is_self_issued (const RCryptoCert * cert)
+r_crypto_x509_cert_is_self_issued (const RCryptoCert * cert)
 {
   return r_str_equals (((const RCryptoX509Cert *)cert)->issuer,
       ((const RCryptoX509Cert *)cert)->subject);
 }
 
 rboolean
-r_crypt_x509_cert_is_self_signed (const RCryptoCert * cert)
+r_crypto_x509_cert_is_self_signed (const RCryptoCert * cert)
 {
   const RCryptoX509Cert * c = (const RCryptoX509Cert *)cert;
 
@@ -542,7 +542,7 @@ r_crypt_x509_cert_is_self_signed (const RCryptoCert * cert)
 }
 
 rboolean
-r_crypt_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy)
+r_crypto_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy)
 {
   const RCryptoX509Cert * x509 = (const RCryptoX509Cert *)cert;
   RSList * it;

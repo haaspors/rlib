@@ -52,10 +52,10 @@ RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
   r_assert_cmpptr (r_crypto_cert_get_signature (cert, &signalgo, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 1024);
   r_assert_cmpuint (signalgo, ==, R_HASH_TYPE_SHA1);
-  r_assert_cmpuint (r_crypt_x509_cert_version (cert), ==, R_X509_VERSION_V3);
-  r_assert_cmpuint (r_crypt_x509_cert_serial_number (cert), ==, 17);
-  r_assert_cmpstr (r_crypt_x509_cert_issuer (cert),   ==, "CN=Example CA,DC=example,DC=com");
-  r_assert_cmpstr (r_crypt_x509_cert_subject (cert),  ==, "CN=Example CA,DC=example,DC=com");
+  r_assert_cmpuint (r_crypto_x509_cert_version (cert), ==, R_X509_VERSION_V3);
+  r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==, 17);
+  r_assert_cmpstr (r_crypto_x509_cert_issuer (cert),   ==, "CN=Example CA,DC=example,DC=com");
+  r_assert_cmpstr (r_crypto_x509_cert_subject (cert),  ==, "CN=Example CA,DC=example,DC=com");
   r_assert_cmpuint (r_crypto_cert_get_valid_from (cert),  ==, r_time_create_unix_time (2004, 4, 30, 14, 25, 34));
   r_assert_cmpuint (r_crypto_cert_get_valid_to (cert),    ==, r_time_create_unix_time (2005, 4, 30, 14, 25, 34));
 
@@ -65,18 +65,18 @@ RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
   r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 1024);
   r_crypto_key_unref (pk);
 
-  r_assert_cmphex (r_crypt_x509_cert_key_usage (cert), ==,
+  r_assert_cmphex (r_crypto_x509_cert_key_usage (cert), ==,
       R_X509_KEY_USAGE_DIGITAL_SIGNATURE | R_X509_KEY_USAGE_NON_REPUDIATION);
-  r_assert_cmphex (r_crypt_x509_cert_ext_key_usage (cert), ==,
+  r_assert_cmphex (r_crypto_x509_cert_ext_key_usage (cert), ==,
       R_X509_EXT_KEY_USAGE_NONE);
-  r_assert_cmpptr (r_crypt_x509_cert_issuer_unique_id (cert, NULL), ==, NULL);
-  r_assert_cmpptr (r_crypt_x509_cert_subject_unique_id (cert, NULL), ==, NULL);
-  r_assert_cmpptr (r_crypt_x509_cert_subject_key_id (cert, &size), !=, NULL);
+  r_assert_cmpptr (r_crypto_x509_cert_issuer_unique_id (cert, NULL), ==, NULL);
+  r_assert_cmpptr (r_crypto_x509_cert_subject_unique_id (cert, NULL), ==, NULL);
+  r_assert_cmpptr (r_crypto_x509_cert_subject_key_id (cert, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 20);
 
-  r_assert (r_crypt_x509_cert_is_ca (cert));
-  r_assert (r_crypt_x509_cert_is_self_issued (cert));
-  r_assert (r_crypt_x509_cert_is_self_signed (cert));
+  r_assert (r_crypto_x509_cert_is_ca (cert));
+  r_assert (r_crypto_x509_cert_is_self_issued (cert));
+  r_assert (r_crypto_x509_cert_is_self_signed (cert));
 
   /* This is just for fun. Basically SubjectKeyIdentifier is what RFC5280 discribes;
    *  (1) The keyIdentifier is composed of the 160-bit SHA-1 hash of the
@@ -90,7 +90,7 @@ RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
 
     r_assert (r_hash_update (h, x509v3 + 223, 140));
     r_assert (r_hash_get_data (h, sha1, &size));
-    r_assert_cmpmem (r_crypt_x509_cert_subject_key_id (cert, NULL), ==, sha1, size);
+    r_assert_cmpmem (r_crypto_x509_cert_subject_key_id (cert, NULL), ==, sha1, size);
 
     r_hash_free (h);
   }
@@ -173,10 +173,10 @@ RTEST (rcryptocert, valid_x509v3, RTEST_FAST)
   r_assert_cmpptr (r_crypto_cert_get_signature (cert, &signalgo, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 2048);
   r_assert_cmpuint (signalgo, ==, R_HASH_TYPE_SHA256);
-  r_assert_cmpuint (r_crypt_x509_cert_version (cert), ==, R_X509_VERSION_V3);
-  r_assert_cmpuint (r_crypt_x509_cert_serial_number (cert), ==, 1);
-  r_assert_cmpstr (r_crypt_x509_cert_issuer (cert),   ==, "CN=Good CA,O=Test Certificates 2011,C=US");
-  r_assert_cmpstr (r_crypt_x509_cert_subject (cert),  ==, "CN=Valid EE Certificate Test1,O=Test Certificates 2011,C=US");
+  r_assert_cmpuint (r_crypto_x509_cert_version (cert), ==, R_X509_VERSION_V3);
+  r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==, 1);
+  r_assert_cmpstr (r_crypto_x509_cert_issuer (cert),   ==, "CN=Good CA,O=Test Certificates 2011,C=US");
+  r_assert_cmpstr (r_crypto_x509_cert_subject (cert),  ==, "CN=Valid EE Certificate Test1,O=Test Certificates 2011,C=US");
   r_assert_cmpuint (r_crypto_cert_get_valid_from (cert),  ==, r_time_create_unix_time (2010,  1,  1, 8, 30, 0));
   r_assert_cmpuint (r_crypto_cert_get_valid_to (cert),    ==, r_time_create_unix_time (2030, 12, 31, 8, 30, 0));
 
@@ -186,20 +186,20 @@ RTEST (rcryptocert, valid_x509v3, RTEST_FAST)
   r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 2048);
   r_crypto_key_unref (pk);
 
-  r_assert_cmphex (r_crypt_x509_cert_key_usage (cert), ==,
+  r_assert_cmphex (r_crypto_x509_cert_key_usage (cert), ==,
       R_X509_KEY_USAGE_DIGITAL_SIGNATURE | R_X509_KEY_USAGE_NON_REPUDIATION |
       R_X509_KEY_USAGE_KEY_ENCIPHERMENT  | R_X509_KEY_USAGE_DATA_ENCIPHERMENT);
-  r_assert_cmpptr (r_crypt_x509_cert_issuer_unique_id (cert, NULL), ==, NULL);
-  r_assert_cmpptr (r_crypt_x509_cert_subject_unique_id (cert, NULL), ==, NULL);
-  r_assert_cmpptr (r_crypt_x509_cert_subject_key_id (cert, &size), !=, NULL);
+  r_assert_cmpptr (r_crypto_x509_cert_issuer_unique_id (cert, NULL), ==, NULL);
+  r_assert_cmpptr (r_crypto_x509_cert_subject_unique_id (cert, NULL), ==, NULL);
+  r_assert_cmpptr (r_crypto_x509_cert_subject_key_id (cert, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 20);
-  r_assert_cmpptr (r_crypt_x509_cert_authority_key_id (cert, &size), !=, NULL);
+  r_assert_cmpptr (r_crypto_x509_cert_authority_key_id (cert, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 20);
-  r_assert (r_crypt_x509_cert_has_policy (cert, "2.16.840.1.101.3.2.1.48.1")); /* nistTestPolicy1 */
+  r_assert (r_crypto_x509_cert_has_policy (cert, "2.16.840.1.101.3.2.1.48.1")); /* nistTestPolicy1 */
 
-  r_assert (!r_crypt_x509_cert_is_ca (cert));
-  r_assert (!r_crypt_x509_cert_is_self_issued (cert));
-  r_assert (!r_crypt_x509_cert_is_self_signed (cert));
+  r_assert (!r_crypto_x509_cert_is_ca (cert));
+  r_assert (!r_crypto_x509_cert_is_self_issued (cert));
+  r_assert (!r_crypto_x509_cert_is_self_signed (cert));
 
   r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_VERIFY_FAILED);
 
@@ -266,10 +266,10 @@ RTEST (rcryptocert, openssl_gen_x509_rsa_1024, RTEST_FAST)
   r_assert_cmpptr (r_crypto_cert_get_signature (cert, &signalgo, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 1024);
   r_assert_cmpuint (signalgo, ==, R_HASH_TYPE_SHA1);
-  r_assert_cmpuint (r_crypt_x509_cert_version (cert), ==, R_X509_VERSION_V3);
-  r_assert_cmpuint (r_crypt_x509_cert_serial_number (cert), ==, RUINT64_CONSTANT (9471694375470879023));
-  r_assert_cmpstr (r_crypt_x509_cert_issuer (cert),   ==, "CN=ieei,O=82 bits,ST=Some-State,C=NO");
-  r_assert_cmpstr (r_crypt_x509_cert_subject (cert),  ==, "CN=ieei,O=82 bits,ST=Some-State,C=NO");
+  r_assert_cmpuint (r_crypto_x509_cert_version (cert), ==, R_X509_VERSION_V3);
+  r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==, RUINT64_CONSTANT (9471694375470879023));
+  r_assert_cmpstr (r_crypto_x509_cert_issuer (cert),   ==, "CN=ieei,O=82 bits,ST=Some-State,C=NO");
+  r_assert_cmpstr (r_crypto_x509_cert_subject (cert),  ==, "CN=ieei,O=82 bits,ST=Some-State,C=NO");
   r_assert_cmpuint (r_crypto_cert_get_valid_from (cert),  ==, r_time_create_unix_time (2016, 10, 5, 18, 5, 46));
   r_assert_cmpuint (r_crypto_cert_get_valid_to (cert),    ==, r_time_create_unix_time (2016, 11, 4, 18, 5, 46));
 
@@ -279,9 +279,9 @@ RTEST (rcryptocert, openssl_gen_x509_rsa_1024, RTEST_FAST)
   r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 1024);
   r_crypto_key_unref (pk);
 
-  r_assert (r_crypt_x509_cert_is_ca (cert));
-  r_assert (r_crypt_x509_cert_is_self_issued (cert));
-  r_assert (r_crypt_x509_cert_is_self_signed (cert));
+  r_assert (r_crypto_x509_cert_is_ca (cert));
+  r_assert (r_crypto_x509_cert_is_self_issued (cert));
+  r_assert (r_crypto_x509_cert_is_self_signed (cert));
 
   r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_OK);
 
@@ -323,10 +323,10 @@ RTEST (rcryptocert, nodejs_pem_gen_x509_self_signed_rsa_2048_days_1, RTEST_FAST)
   r_assert_cmpptr (r_crypto_cert_get_signature (cert, &signalgo, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 2048);
   r_assert_cmpuint (signalgo, ==, R_HASH_TYPE_SHA256);
-  r_assert_cmpuint (r_crypt_x509_cert_version (cert), ==, R_X509_VERSION_V1);
-  r_assert_cmpuint (r_crypt_x509_cert_serial_number (cert), ==, RUINT64_CONSTANT (17580797759823991962));
-  r_assert_cmpstr (r_crypt_x509_cert_issuer (cert),   ==, "CN=localhost");
-  r_assert_cmpstr (r_crypt_x509_cert_subject (cert),  ==, "CN=localhost");
+  r_assert_cmpuint (r_crypto_x509_cert_version (cert), ==, R_X509_VERSION_V1);
+  r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==, RUINT64_CONSTANT (17580797759823991962));
+  r_assert_cmpstr (r_crypto_x509_cert_issuer (cert),   ==, "CN=localhost");
+  r_assert_cmpstr (r_crypto_x509_cert_subject (cert),  ==, "CN=localhost");
   r_assert_cmpuint (r_crypto_cert_get_valid_from (cert),  ==, r_time_create_unix_time (2016, 10, 5, 21, 3, 55));
   r_assert_cmpuint (r_crypto_cert_get_valid_to (cert),    ==, r_time_create_unix_time (2016, 10, 6, 21, 3, 55));
 
@@ -336,9 +336,9 @@ RTEST (rcryptocert, nodejs_pem_gen_x509_self_signed_rsa_2048_days_1, RTEST_FAST)
   r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 2048);
   r_crypto_key_unref (pk);
 
-  r_assert (!r_crypt_x509_cert_is_ca (cert));
-  r_assert (r_crypt_x509_cert_is_self_issued (cert));
-  r_assert (r_crypt_x509_cert_is_self_signed (cert));
+  r_assert (!r_crypto_x509_cert_is_ca (cert));
+  r_assert (r_crypto_x509_cert_is_self_issued (cert));
+  r_assert (r_crypto_x509_cert_is_self_signed (cert));
 
   r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_OK);
 
