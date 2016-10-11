@@ -95,6 +95,8 @@ RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
     r_hash_free (h);
   }
 
+  r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_OK);
+
   r_crypto_cert_unref (cert);
 }
 RTEST_END;
@@ -199,6 +201,8 @@ RTEST (rcryptocert, valid_x509v3, RTEST_FAST)
   r_assert (!r_crypt_x509_cert_is_self_issued (cert));
   r_assert (!r_crypt_x509_cert_is_self_signed (cert));
 
+  r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_VERIFY_FAILED);
+
   r_crypto_cert_unref (cert);
 }
 RTEST_END;
@@ -279,6 +283,8 @@ RTEST (rcryptocert, openssl_gen_x509_rsa_1024, RTEST_FAST)
   r_assert (r_crypt_x509_cert_is_self_issued (cert));
   r_assert (r_crypt_x509_cert_is_self_signed (cert));
 
+  r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_OK);
+
   r_crypto_cert_unref (cert);
 }
 RTEST_END;
@@ -333,6 +339,8 @@ RTEST (rcryptocert, nodejs_pem_gen_x509_self_signed_rsa_2048_days_1, RTEST_FAST)
   r_assert (!r_crypt_x509_cert_is_ca (cert));
   r_assert (r_crypt_x509_cert_is_self_issued (cert));
   r_assert (r_crypt_x509_cert_is_self_signed (cert));
+
+  r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_OK);
 
   r_crypto_cert_unref (cert);
 }

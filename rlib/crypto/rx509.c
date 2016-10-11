@@ -289,6 +289,10 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
 
   /* X.509 Certificate */
   if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
+    const ruint8 * tbs = tlv.start;
+    rsize tbssize = RPOINTER_TO_SIZE (tlv.value - tlv.start) + tlv.len;
+    RHash * h;
+
     /* TBSCertificate */
     if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
       /* version - Optional */
@@ -368,6 +372,18 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
         r_asn1_bin_decoder_out (dec, &tlv) != R_ASN1_DECODER_OK) {
       goto beach;
     }
+
+    if ((h = r_hash_new (cert->cert.signalgo)) != NULL) {
+      rsize size = sizeof (cert->cert.signhash);
+
+      if (!r_hash_update (h, tbs, tbssize) ||
+          !r_hash_get_data (h, cert->cert.signhash, &size)) {
+        r_hash_free (h);
+        goto beach;
+      }
+
+      r_hash_free (h);
+    } else goto beach;
 
     /* signature */
     if (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BIT_STRING) &&
@@ -537,5 +553,14 @@ r_crypt_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy)
   }
 
   return FALSE;
+}
+
+RCryptoResult
+r_crypto_x509_cert_verify_signature (const RCryptoCert * cert, const RCryptoCert * parent)
+{
+  if (R_UNLIKELY (parent->pk == NULL)) return R_CRYPTO_NOT_AVAILABLE;
+
+  return r_crypto_key_verify (parent->pk, cert->signalgo, cert->signhash,
+      r_hash_type_size (cert->signalgo), cert->sign, cert->signbits / 8);
 }
 

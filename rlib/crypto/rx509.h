@@ -80,6 +80,9 @@ R_API rboolean r_crypt_x509_cert_is_ca (const RCryptoCert * cert);
 R_API rboolean r_crypt_x509_cert_is_self_issued (const RCryptoCert * cert);
 R_API rboolean r_crypt_x509_cert_is_self_signed (const RCryptoCert * cert);
 
+R_API RCryptoResult r_crypto_x509_cert_verify_signature (const RCryptoCert * cert,
+    const RCryptoCert * parent);
+
 R_END_DECLS
 
 #endif /* __R_CRYPTO_X509_H__ */
