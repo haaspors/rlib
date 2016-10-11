@@ -769,7 +769,7 @@ r_rsa_pkcs1v1_5_verify_msg (const RCryptoKey * key,
     RAsn1BinDecoder * dec;
 
     if (*ptr++ != 0x00 || *ptr++ != R_RSA_EMSA_PKCS1)
-      return R_CRYPTO_INVALID_PADDING;
+      return R_CRYPTO_VERIFY_FAILED;
 
     while (ptr < buffer + sigsize && *ptr != 0) ptr++;
     ptr++;
@@ -830,24 +830,34 @@ r_rsa_pkcs1v1_5_verify_msg_with_hash (const RCryptoKey * key,
     RAsn1BinDecoder * dec;
 
     if (*ptr++ != 0x00 || *ptr++ != R_RSA_EMSA_PKCS1)
-      return R_CRYPTO_INVALID_PADDING;
+      return R_CRYPTO_VERIFY_FAILED;
 
     while (ptr < buffer + sigsize && *ptr != 0) ptr++;
     ptr++;
 
-    if ((ret = (dec = r_asn1_bin_decoder_new (R_ASN1_DER, ptr, buffer + sigsize - ptr)) != NULL)) {
+    if ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, ptr, buffer + sigsize - ptr)) != NULL) {
       RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
       RHashType ht;
 
-      if ((ret = (r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK) &&
+      if ((r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK) &&
             (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) &&
             (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) &&
             (r_asn1_bin_tlv_parse_oid_to_hash_type (&tlv, &ht) == R_ASN1_DECODER_OK) &&
-            (r_asn1_bin_decoder_out (dec, &tlv) == R_ASN1_DECODER_OK))) {
-        ret = (hashtype == ht) && (hashsize == tlv.len) &&
-          r_memcmp (tlv.value, hash, hashsize) == 0;
+            (r_asn1_bin_decoder_out (dec, &tlv) == R_ASN1_DECODER_OK)) {
+        if (hashtype != ht)
+          ret = R_CRYPTO_WRONG_TYPE;
+        else if (hashsize != tlv.len)
+          ret = R_CRYPTO_WRONG_SIZE;
+        else if (r_memcmp (tlv.value, hash, hashsize) == 0)
+          ret = R_CRYPTO_OK;
+        else
+          ret = R_CRYPTO_VERIFY_FAILED;
+      } else {
+        ret = R_CRYPTO_VERIFY_FAILED;
       }
       r_asn1_bin_decoder_unref (dec);
+    } else {
+      ret = R_CRYPTO_VERIFY_FAILED;
     }
   }
 
@@ -870,14 +880,14 @@ r_rsa_pkcs1v1_5_verify_hash (const RCryptoKey * key,
     ruint8 * ptr = buffer;
 
     if (*ptr++ != 0x00 || *ptr++ != R_RSA_EMSA_PKCS1)
-      return R_CRYPTO_INVALID_PADDING;
+      return R_CRYPTO_VERIFY_FAILED;
 
     while (ptr < buffer + sigsize && *ptr != 0) ptr++;
     ptr++;
 
     if (ptr - buffer + sigsize != hashsize)
       return R_CRYPTO_BUFFER_TOO_SMALL;
-    ret = r_memcmp (ptr, hash, hashsize) == 0;
+    ret = (r_memcmp (ptr, hash, hashsize) == 0) ? R_CRYPTO_OK : R_CRYPTO_VERIFY_FAILED;
   }
 
   return ret;

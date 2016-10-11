@@ -244,8 +244,8 @@ RTEST (rrsa, verify_FIPS_186_3_SHA1, RTEST_FAST)
     rsize hashsize = sizeof (hash);
     r_assert (r_hash_update (h, msg, msgsize));
     r_assert (r_hash_get_data (h, hash, &hashsize));
-    r_assert (r_rsa_pkcs1v1_5_verify_msg_with_hash (key,
-          R_HASH_TYPE_SHA1, hash, hashsize, expected, expectedsize));
+    r_assert_cmpuint (r_rsa_pkcs1v1_5_verify_msg_with_hash (key,
+          R_HASH_TYPE_SHA1, hash, hashsize, expected, expectedsize), ==, R_CRYPTO_OK);
     r_hash_free (h);
   }
 
