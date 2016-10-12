@@ -333,4 +333,30 @@ RTEST (rtls, parse_dtls_certificate_request, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, parse_dtls_hello_done, RTEST_FAST)
+{
+  static const ruint8 pkt_dtls_hello_done[] = {
+    0x16, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x0c, 0x0e, 0x00, 0x00,
+    0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  };
+
+  RTLSParser parser;
+  RTLSHandshakeType hstype;
+  ruint32 hslen;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init (&parser,
+        pkt_dtls_hello_done, sizeof (pkt_dtls_hello_done)));
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
+  r_assert_cmpuint (parser.epoch, ==, 0);
+  r_assert_cmpuint (parser.seqno, ==, 4);
+  r_assert_cmpuint (parser.fraglen, ==, 12);
+
+  r_assert (r_tls_parser_dtls_is_complete_handshake_fragment (&parser));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_parse_handshake (&parser, &hstype, &hslen));
+  r_assert_cmpuint (hstype, ==, R_TLS_HANDSHAKE_TYPE_SERVER_HELLO_DONE);
+  r_assert_cmpuint (hslen, ==, 0);
+}
+RTEST_END;
 
