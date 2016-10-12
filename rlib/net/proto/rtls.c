@@ -74,6 +74,23 @@ r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size)
   return R_TLS_ERROR_OK;
 }
 
+static RTLSError
+r_tls_parser_parse_handshake_internal (const RTLSParser * parser,
+    RTLSHandshakeType * type, const ruint8 ** body, const ruint8 ** end)
+{
+  if (R_UNLIKELY (parser->content != R_TLS_CONTENT_TYPE_HANDSHAKE))
+    return R_TLS_ERROR_WRONG_TYPE;
+  *type = (RTLSHandshakeType)parser->fragment[0];
+
+  *end = parser->fragment + parser->fraglen;
+  *body = parser->fragment + (8 + 24) / 8;
+  if (r_tls_parser_is_dtls (parser))
+    *body += (16 + 24 + 24) / 8;
+
+  if (R_UNLIKELY (*body > *end)) return R_TLS_ERROR_CORRUPT_RECORD;
+  return R_TLS_ERROR_OK;
+}
+
 RTLSError
 r_tls_parser_parse_handshake_full (const RTLSParser * parser,
     RTLSHandshakeType * type, ruint32 * length, ruint16 * msgseq,
@@ -118,20 +135,15 @@ r_tls_parser_dtls_is_complete_handshake_fragment (const RTLSParser * parser)
 RTLSError
 r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg)
 {
-  const ruint8 * ptr, * end;
   RTLSHandshakeType type;
+  const ruint8 * ptr, * end;
+  RTLSError ret;
 
-  if (R_UNLIKELY (parser->content != R_TLS_CONTENT_TYPE_HANDSHAKE))
-    return R_TLS_ERROR_WRONG_TYPE;
-  type = (RTLSHandshakeType)parser->fragment[0];
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
   if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO &&
         type != R_TLS_HANDSHAKE_TYPE_SERVER_HELLO))
     return R_TLS_ERROR_WRONG_TYPE;
-
-  end = parser->fragment + parser->fraglen;
-  ptr = parser->fragment + (8 + 24) / 8;
-  if (r_tls_parser_is_dtls (parser))
-    ptr += (16 + 24 + 24) / 8;
 
   msg->version = (RTLSVersion)RUINT16_FROM_BE (*(const ruint16 *)ptr);
   ptr += sizeof (ruint16);
@@ -193,19 +205,15 @@ RTLSError
 r_tls_parser_parse_certificate_next (const RTLSParser * parser,
     RTLSCertificate * cert)
 {
+  RTLSHandshakeType type;
   const ruint8 * ptr, * end;
   ruint32 totallen;
+  RTLSError ret;
 
-  if (R_UNLIKELY (parser->content != R_TLS_CONTENT_TYPE_HANDSHAKE))
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_CERTIFICATE))
     return R_TLS_ERROR_WRONG_TYPE;
-  if (R_UNLIKELY ((RTLSHandshakeType)parser->fragment[0] !=
-        R_TLS_HANDSHAKE_TYPE_CERTIFICATE))
-    return R_TLS_ERROR_WRONG_TYPE;
-
-  end = parser->fragment + parser->fraglen;
-  ptr = parser->fragment + (8 + 24) / 8;
-  if (r_tls_parser_is_dtls (parser))
-    ptr += (16 + 24 + 24) / 8;
 
   if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + (24 / 8)) > RPOINTER_TO_SIZE (end)))
     return R_TLS_ERROR_CORRUPT_RECORD;
@@ -225,6 +233,46 @@ r_tls_parser_parse_certificate_next (const RTLSParser * parser,
   }
 
   return R_TLS_ERROR_EOB;
+}
+
+RTLSError
+r_tls_parser_parse_certificate_request (const RTLSParser * parser,
+    RTLSCertReq * req)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end;
+  ruint16 len;
+  RTLSError ret;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint8)) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  req->certtypecount = *ptr++;
+  req->certtype = ptr;
+  ptr += req->certtypecount;
+
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint16)) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  len = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+  req->signschemecount = len / sizeof (ruint16);
+  req->signscheme = ptr + sizeof (ruint16);
+  ptr += sizeof (ruint16) + len;
+
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint16)) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  len = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+  req->cacount = len / sizeof (ruint16);
+  req->ca = ptr + sizeof (ruint16);
+  ptr += sizeof (ruint16) + len;
+
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  else
+    return R_TLS_ERROR_OK;
 }
 
 rboolean

@@ -276,4 +276,61 @@ RTEST (rtls, parse_dtls_certificate, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, parse_dtls_certificate_request, RTEST_FAST)
+{
+  static const ruint8 pkt_dtls_certificate_request[] = {
+    0x16, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x32, 0x0d, 0x00, 0x00,
+    0x26, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x26, 0x03, 0x01, 0x02, 0x40, 0x00, 0x1e, 0x06,
+    0x01, 0x06, 0x02, 0x06, 0x03, 0x05, 0x01, 0x05, 0x02, 0x05, 0x03, 0x04, 0x01, 0x04, 0x02, 0x04,
+    0x03, 0x03, 0x01, 0x03, 0x02, 0x03, 0x03, 0x02, 0x01, 0x02, 0x02, 0x02, 0x03, 0x00, 0x00
+  };
+
+  RTLSParser parser;
+  RTLSHandshakeType hstype;
+  ruint32 hslen;
+  RTLSCertReq req;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init (&parser,
+        pkt_dtls_certificate_request, sizeof (pkt_dtls_certificate_request)));
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
+  r_assert_cmpuint (parser.epoch, ==, 0);
+  r_assert_cmpuint (parser.seqno, ==, 3);
+  r_assert_cmpuint (parser.fraglen, ==, 50);
+
+  r_assert (r_tls_parser_dtls_is_complete_handshake_fragment (&parser));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_parse_handshake (&parser, &hstype, &hslen));
+  r_assert_cmpuint (hstype, ==, R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST);
+  r_assert_cmpuint (hslen, ==, 38);
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_parse_certificate_request (&parser, &req));
+
+  r_assert_cmpuint (req.certtypecount, ==, 3);
+  r_assert_cmphex (r_tls_cert_req_cert_type (&req, 0), ==, R_TLS_CLIENT_CERT_TYPE_RSA_SIGN);
+  r_assert_cmphex (r_tls_cert_req_cert_type (&req, 1), ==, R_TLS_CLIENT_CERT_TYPE_DSS_SIGN);
+  r_assert_cmphex (r_tls_cert_req_cert_type (&req, 2), ==, R_TLS_CLIENT_CERT_TYPE_ECDSA_SIGN);
+
+  r_assert_cmpuint (req.signschemecount, ==, 15);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  0), ==, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA512);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  1), ==, R_TLS_SIGN_SCHEME_DSA_SHA512);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  2), ==, R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  3), ==, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA384);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  4), ==, R_TLS_SIGN_SCHEME_DSA_SHA384);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  5), ==, R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  6), ==, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  7), ==, R_TLS_SIGN_SCHEME_DSA_SHA256);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  8), ==, R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req,  9), ==, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA224);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req, 10), ==, R_TLS_SIGN_SCHEME_DSA_SHA224);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req, 11), ==, R_TLS_SIGN_SCHEME_ECDSA_SECP224R1_SHA224);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req, 12), ==, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA1);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req, 13), ==, R_TLS_SIGN_SCHEME_DSA_SHA1);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req, 14), ==, R_TLS_SIGN_SCHEME_ECDSA_SHA1);
+
+  r_assert_cmpuint (req.cacount, ==, 0);
+}
+RTEST_END;
+
 

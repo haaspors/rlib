@@ -216,16 +216,19 @@ typedef enum {
 typedef enum {
   R_TLS_SIGN_SCHEME_RSA_PKCS1_MD5                       = 0x0101, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA1                      = 0x0201, /* [RFC5246] */
+  R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA224                    = 0x0301, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256                    = 0x0401, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA384                    = 0x0501, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA512                    = 0x0601, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_DSA_MD5                             = 0x0102, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_DSA_SHA1                            = 0x0202, /* [RFC5246] */
+  R_TLS_SIGN_SCHEME_DSA_SHA224                          = 0x0302, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_DSA_SHA256                          = 0x0402, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_DSA_SHA384                          = 0x0502, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_DSA_SHA512                          = 0x0602, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_ECDSA_MD5                           = 0x0103, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_ECDSA_SHA1                          = 0x0203, /* [RFC5246] */
+  R_TLS_SIGN_SCHEME_ECDSA_SECP224R1_SHA224              = 0x0303, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256              = 0x0403, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384              = 0x0503, /* [RFC5246] */
   R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512              = 0x0603, /* [RFC5246] */
@@ -333,6 +336,15 @@ typedef struct {
 } RTLSCertificate;
 #define R_TLS_CERTIFICATE_INIT              { NULL, 0, NULL }
 
+typedef struct {
+  ruint8 certtypecount;
+  const ruint8 * certtype;
+  ruint16 signschemecount;
+  const ruint8 * signscheme;
+  ruint16 cacount;
+  const ruint8 * ca;
+} RTLSCertReq;
+
 R_API RTLSError r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size);
 #define r_tls_parser_is_dtls(parser) ((parser)->version > RUINT16_MAX / 2)
 #define r_tls_parser_parse_handshake(parser, type, length)                    \
@@ -343,6 +355,7 @@ R_API RTLSError r_tls_parser_parse_handshake_full (const RTLSParser * parser,
 R_API rboolean r_tls_parser_dtls_is_complete_handshake_fragment (const RTLSParser * parser);
 R_API RTLSError r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg);
 R_API RTLSError r_tls_parser_parse_certificate_next (const RTLSParser * parser, RTLSCertificate * cert);
+R_API RTLSError r_tls_parser_parse_certificate_request (const RTLSParser * parser, RTLSCertReq * req);
 
 /* Hello msg */
 #define r_tls_hello_msg_cipher_suite_count(msg) ((msg)->cslen / sizeof (ruint16))
@@ -386,6 +399,12 @@ static inline const ruint8 * r_tls_hello_ext_use_srtp_mki (const RTLSHelloExt * 
 
 /* Certificate */
 R_API RCryptoCert * r_tls_certificate_get_cert (const RTLSCertificate * cert);
+
+/* Certificate request */
+static inline RTLSClientCertificateType r_tls_cert_req_cert_type (const RTLSCertReq * req, int n)
+{ return (RTLSClientCertificateType)req->certtype[n]; }
+static inline RTLSSignatureScheme r_tls_cert_req_sign_scheme (const RTLSCertReq * req, int n)
+{ return (RTLSSignatureScheme)RUINT16_FROM_BE (((const ruint16 *)req->signscheme)[n]); }
 
 R_END_DECLS
 
