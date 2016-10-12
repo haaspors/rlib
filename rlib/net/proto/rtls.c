@@ -19,6 +19,21 @@
 #include "config.h"
 #include <rlib/net/proto/rtls.h>
 
+#include <rlib/crypto/rx509.h>
+
+static inline ruint32
+_r_parse_u24 (const ruint8 * ptr)
+{
+  return ((ruint32)ptr[0] << 16) | ((ruint32)ptr[1] <<  8) | ((ruint32)ptr[2]);
+}
+
+static inline ruint64
+_r_parse_u48 (const ruint8 * ptr)
+{
+  return ((ruint64)ptr[0] << 40) | ((ruint64)ptr[1] << 32) | ((ruint64)ptr[2] << 24) |
+         ((ruint64)ptr[3] << 16) | ((ruint64)ptr[4] <<  8) | ((ruint64)ptr[5]);
+}
+
 RTLSError
 r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size)
 {
@@ -48,12 +63,7 @@ r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size)
     if (R_UNLIKELY (parser->version < R_TLS_VERSION_DTLS_1_3)) return R_TLS_ERROR_VERSION;
 
     parser->epoch = RUINT16_FROM_BE (*(const ruint16 *)&parser->buffer[3]);
-    parser->seqno = (((ruint64)parser->buffer[5] << 40) |
-                  ((ruint64)parser->buffer[6] << 32) |
-                  ((ruint64)parser->buffer[7] << 24) |
-                  ((ruint64)parser->buffer[8] << 16) |
-                  ((ruint64)parser->buffer[9] <<  8) |
-                  ((ruint64)parser->buffer[10]     ));
+    parser->seqno = _r_parse_u48 (&parser->buffer[5]);
     parser->fraglen = RUINT16_FROM_BE (*(const ruint16 *)&parser->buffer[11]);
     parser->fragment = &parser->buffer[13];
   }
@@ -77,21 +87,15 @@ r_tls_parser_parse_handshake_full (const RTLSParser * parser,
   if (type != NULL)
     *type = (RTLSHandshakeType)parser->fragment[0];
   if (length != NULL)
-    *length = (((ruint32)parser->fragment[1] << 16) |
-               ((ruint64)parser->fragment[2] <<  8) |
-               ((ruint64)parser->fragment[3]));
+    *length = _r_parse_u24 (&parser->fragment[1]);
   if (r_tls_parser_is_dtls (parser)) {
     if (R_UNLIKELY (parser->fraglen < 12)) return R_TLS_ERROR_BUF_TOO_SMALL;
     if (msgseq != NULL)
       *msgseq = RUINT16_FROM_BE (*(const ruint16 *)&parser->fragment[4]);
     if (fragoff != NULL)
-      *fragoff = (((ruint32)parser->fragment[6] << 16) |
-                 ((ruint64)parser->fragment[7] <<  8) |
-                 ((ruint64)parser->fragment[8]));
+      *fragoff = _r_parse_u24 (&parser->fragment[6]);
     if (fraglen != NULL)
-      *fraglen = (((ruint32)parser->fragment[9] << 16) |
-                 ((ruint64)parser->fragment[10] <<  8) |
-                 ((ruint64)parser->fragment[11]));
+      *fraglen = _r_parse_u24 (&parser->fragment[9]);
   } else {
     if (msgseq != NULL)   *msgseq = 0;
     if (fragoff != NULL)  *fragoff = 0;
@@ -185,6 +189,44 @@ r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg)
   return R_TLS_ERROR_OK;
 }
 
+RTLSError
+r_tls_parser_parse_certificate_next (const RTLSParser * parser,
+    RTLSCertificate * cert)
+{
+  const ruint8 * ptr, * end;
+  ruint32 totallen;
+
+  if (R_UNLIKELY (parser->content != R_TLS_CONTENT_TYPE_HANDSHAKE))
+    return R_TLS_ERROR_WRONG_TYPE;
+  if (R_UNLIKELY ((RTLSHandshakeType)parser->fragment[0] !=
+        R_TLS_HANDSHAKE_TYPE_CERTIFICATE))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  end = parser->fragment + parser->fraglen;
+  ptr = parser->fragment + (8 + 24) / 8;
+  if (r_tls_parser_is_dtls (parser))
+    ptr += (16 + 24 + 24) / 8;
+
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + (24 / 8)) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  if ((totallen = _r_parse_u24 (ptr)) > 0) {
+    ptr = (cert->start != NULL) ? cert->cert + cert->len : ptr + (24 / 8);
+    if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + (24 / 8)) < RPOINTER_TO_SIZE (end))) {
+      cert->start = ptr;
+      cert->len = _r_parse_u24 (cert->start);
+      cert->cert = cert->start + (24 / 8);
+
+      if (R_UNLIKELY (RPOINTER_TO_SIZE (cert->cert + cert->len) > RPOINTER_TO_SIZE (end)))
+        return R_TLS_ERROR_CORRUPT_RECORD;
+      else
+        return R_TLS_ERROR_OK;
+    }
+  }
+
+  return R_TLS_ERROR_EOB;
+}
+
 rboolean
 r_tls_hello_msg_has_cipher_suite (const RTLSHelloMsg * msg, RCipherSuite cs)
 {
@@ -226,5 +268,12 @@ r_tls_hello_msg_extension_next (const RTLSHelloMsg * msg, RTLSHelloExt * ext)
   ext->data = ext->start + R_TLS_HELLO_EXT_HDR_SIZE;
 
   return R_TLS_ERROR_OK;
+}
+
+RCryptoCert *
+r_tls_certificate_get_cert (const RTLSCertificate * cert)
+{
+  if (R_UNLIKELY (cert == NULL)) return NULL;
+  return r_crypto_x509_cert_new (cert->cert, cert->len);
 }
 

@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rciphersuite.h>
 
 R_BEGIN_DECLS
@@ -325,6 +326,13 @@ typedef struct {
 } RTLSHelloExt;
 #define R_TLS_HELLO_EXT_INIT                { NULL, 0, 0, NULL }
 
+typedef struct {
+  const ruint8 * start;
+  ruint32 len;
+  const ruint8 * cert;
+} RTLSCertificate;
+#define R_TLS_CERTIFICATE_INIT              { NULL, 0, NULL }
+
 R_API RTLSError r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size);
 #define r_tls_parser_is_dtls(parser) ((parser)->version > RUINT16_MAX / 2)
 #define r_tls_parser_parse_handshake(parser, type, length)                    \
@@ -334,6 +342,7 @@ R_API RTLSError r_tls_parser_parse_handshake_full (const RTLSParser * parser,
     ruint32 * fragoff, ruint32 * fraglen);
 R_API rboolean r_tls_parser_dtls_is_complete_handshake_fragment (const RTLSParser * parser);
 R_API RTLSError r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg);
+R_API RTLSError r_tls_parser_parse_certificate_next (const RTLSParser * parser, RTLSCertificate * cert);
 
 /* Hello msg */
 #define r_tls_hello_msg_cipher_suite_count(msg) ((msg)->cslen / sizeof (ruint16))
@@ -373,6 +382,10 @@ static inline ruint8 r_tls_hello_ext_use_srtp_mki_size (const RTLSHelloExt * ext
 { return ext->data[sizeof (ruint16) + RUINT16_FROM_BE (*(const ruint16 *)ext->data)]; }
 static inline const ruint8 * r_tls_hello_ext_use_srtp_mki (const RTLSHelloExt * ext)
 { return &ext->data[sizeof (ruint16) + RUINT16_FROM_BE (*(const ruint16 *)ext->data) + sizeof (ruint8)]; }
+
+
+/* Certificate */
+R_API RCryptoCert * r_tls_certificate_get_cert (const RTLSCertificate * cert);
 
 R_END_DECLS
 
