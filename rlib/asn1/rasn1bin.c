@@ -496,6 +496,7 @@ r_asn1_bin_tlv_parse_attribute_type_and_value (RAsn1BinDecoder * dec,
     case R_ASN1_ID_PRINTABLE_STRING:
     case R_ASN1_ID_VISIBLE_STRING:
     case R_ASN1_ID_IA5_STRING:
+    case R_ASN1_ID_UTF8_STRING:
       v = (const rchar *)tlv->value;
       vlen = tlv->len;
       break;
