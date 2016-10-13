@@ -360,3 +360,21 @@ RTEST (rtls, parse_dtls_hello_done, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, parse_dtls_change_cipher_spec, RTEST_FAST)
+{
+  static const ruint8 pkt_dtls_ccs[] = {
+    0x14, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01, 0x01
+  };
+  RTLSParser parser;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init (&parser,
+        pkt_dtls_ccs, sizeof (pkt_dtls_ccs)));
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC);
+  r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
+  r_assert_cmpuint (parser.epoch, ==, 0);
+  r_assert_cmpuint (parser.seqno, ==, 4);
+  r_assert_cmpuint (parser.fraglen, ==, 1);
+  r_assert_cmpuint (parser.fragment[0], ==, 1);
+}
+RTEST_END;
+
