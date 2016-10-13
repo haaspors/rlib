@@ -188,6 +188,9 @@ R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
 #define R_OID_DIGEST_ALG_SHA224                 R_US_GOV_OID"\x03\x04\x02\x04"
 
 #define R_X9CM_OID                              R_ASN1_OID_ISO_US"\xce\x38"
+#define R_ANSI_X9_62_OID                        R_ASN1_OID_ISO_US"\xce\x3d"
+#define R_ANSI_X9_42_OID                        R_ASN1_OID_ISO_US"\xce\x3e"
+#define R_ANSI_X9_52_OID                        R_ASN1_OID_ISO_US"\xce\x3f"
 
 #define R_X9CM_OID_HOLD_INSTRUCTION             R_X9CM_OID"\x02"
 #define R_X9CM_OID_HOLD_INSTRUCTION_NONE        R_OID_X9_HOLD_INSTRUCTION"\x01"
@@ -266,6 +269,28 @@ R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
 #define R_ID_AD_OID_CA_ISSUERS                  R_X509_OID_ID_AD"\x02"
 #define R_ID_AD_OID_CA_TIME_STAMPING            R_X509_OID_ID_AD"\x03"
 #define R_ID_AD_OID_CA_REPOSITORY               R_X509_OID_ID_AD"\x05"
+
+#define R_X9_62_OID_EC_PUB_KEY                  R_ANSI_X9_62_OID"\x02\x01"
+#define R_X9_62_OID_EC_PUB_KEY_RESTRICTED       R_OID_EC_PUB_KEY"\x02"
+
+#define R_CERTICOM_OID                          R_ASN1_OID_ISO_ID_ORG"\x81\x04"
+#define R_CERTICOM_OID_ECDH_PUB_KEY             R_CERTICOM_OID"\x01\x0c"
+
+#define R_EC_GRP_OID_SECP192R1                  R_ANSI_X9_62_OID"\x03\x01\x01"
+#define R_EC_GRP_OID_SECP256R1                  R_ANSI_X9_62_OID"\x03\x01\x07"
+#define R_EC_GRP_OID_SECP224R1                  R_CERTICOM_OID"\x00\x21"
+#define R_EC_GRP_OID_SECP384R1                  R_CERTICOM_OID"\x00\x22"
+#define R_EC_GRP_OID_SECP521R1                  R_CERTICOM_OID"\x00\x23"
+#define R_EC_GRP_OID_SECP192K1                  R_CERTICOM_OID"\x00\x1f"
+#define R_EC_GRP_OID_SECP224K1                  R_CERTICOM_OID"\x00\x20"
+#define R_EC_GRP_OID_SECP256K1                  R_CERTICOM_OID"\x00\x0a"
+
+#define R_X9_62_OID_SIG                         R_ANSI_X9_62_OID"\x04"
+#define R_ECDSA_OID_SHA1                        R_X9_62_OID_SIG"\x01"
+#define R_ECDSA_OID_SHA224                      R_X9_62_OID_SIG"\x03\x01"
+#define R_ECDSA_OID_SHA256                      R_X9_62_OID_SIG"\x03\x02"
+#define R_ECDSA_OID_SHA384                      R_X9_62_OID_SIG"\x03\x03"
+#define R_ECDSA_OID_SHA512                      R_X9_62_OID_SIG"\x03\x04"
 
 R_END_DECLS
 

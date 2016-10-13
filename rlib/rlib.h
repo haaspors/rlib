@@ -73,6 +73,7 @@
 #include <rlib/crypto/rcipher.h>
 #include <rlib/crypto/rciphersuite.h>
 #include <rlib/crypto/rdsa.h>
+#include <rlib/crypto/recc.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rpem.h>
