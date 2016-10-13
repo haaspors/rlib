@@ -358,6 +358,8 @@ R_API RTLSError r_tls_parser_parse_certificate_next (const RTLSParser * parser, 
 R_API RTLSError r_tls_parser_parse_certificate_request (const RTLSParser * parser, RTLSCertReq * req);
 R_API RTLSError r_tls_parser_parse_new_session_ticket (const RTLSParser * parser,
     ruint32 * lifetime, const ruint8 ** ticket, ruint16 * ticketsize);
+R_API RTLSError r_tls_parser_parse_certificate_verify (const RTLSParser * parser,
+    RTLSSignatureScheme * sigscheme, const ruint8 ** sig, ruint16 * sigsize);
 
 /* Hello msg */
 #define r_tls_hello_msg_cipher_suite_count(msg) ((msg)->cslen / sizeof (ruint16))

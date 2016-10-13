@@ -303,6 +303,34 @@ r_tls_parser_parse_new_session_ticket (const RTLSParser * parser,
   return R_TLS_ERROR_OK;
 }
 
+RTLSError
+r_tls_parser_parse_certificate_verify (const RTLSParser * parser,
+    RTLSSignatureScheme * sigscheme, const ruint8 ** sig, ruint16 * sigsize)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end;
+  RTLSError ret;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint16) + sizeof (ruint16)) >
+        RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  if (sigscheme != NULL)
+    *sigscheme = (RTLSSignatureScheme)RUINT16_FROM_BE (*(const ruint16 *)ptr);
+  ptr += sizeof (ruint16);
+  if (sigsize != NULL)
+    *sigsize = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+  if (sig != NULL)
+    *sig = ptr + sizeof (ruint16);
+
+  return R_TLS_ERROR_OK;
+}
+
 rboolean
 r_tls_hello_msg_has_cipher_suite (const RTLSHelloMsg * msg, RCipherSuite cs)
 {
