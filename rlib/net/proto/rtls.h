@@ -356,6 +356,8 @@ R_API rboolean r_tls_parser_dtls_is_complete_handshake_fragment (const RTLSParse
 R_API RTLSError r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg);
 R_API RTLSError r_tls_parser_parse_certificate_next (const RTLSParser * parser, RTLSCertificate * cert);
 R_API RTLSError r_tls_parser_parse_certificate_request (const RTLSParser * parser, RTLSCertReq * req);
+R_API RTLSError r_tls_parser_parse_new_session_ticket (const RTLSParser * parser,
+    ruint32 * lifetime, const ruint8 ** ticket, ruint16 * ticketsize);
 
 /* Hello msg */
 #define r_tls_hello_msg_cipher_suite_count(msg) ((msg)->cslen / sizeof (ruint16))
