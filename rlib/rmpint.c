@@ -47,39 +47,8 @@ r_mpint_init_size (rmpint * mpi, ruint16 digits)
 void
 r_mpint_init_binary (rmpint * mpi, rconstpointer data, rsize size)
 {
-  const ruint8 * src = data;
-  ruint8 * dst;
-  ruint16 digits = (size + sizeof (rmpint_digit) - 1) / sizeof (rmpint_digit);
-  r_mpint_init_size (mpi, digits);
-  mpi->dig_used = digits;
-
-#if R_BYTE_ORDER == R_LITTLE_ENDIAN
-  dst = (ruint8 *)(rpointer)mpi->data;
-  while (size-- > 0)
-    dst[size] = *src++;
-#else
-  dst = (ruint8 *)(rpointer)&mpi->data[digits - 1];
-  switch (size % sizeof (rmpint_digit)) {
-#if 0 /*sizeof (rmpint_digit) >= 8*/
-    case 7: dst[sizeof (rmpint_digit) - 7] = *src++;
-    case 6: dst[sizeof (rmpint_digit) - 6] = *src++;
-    case 5: dst[sizeof (rmpint_digit) - 5] = *src++;
-    case 4: dst[sizeof (rmpint_digit) - 4] = *src++;
-#endif
-#if 1 /*sizeof (rmpint_digit) >= 4*/
-    case 3: dst[sizeof (rmpint_digit) - 3] = *src++;
-    case 2: dst[sizeof (rmpint_digit) - 2] = *src++;
-#endif
-    case 1: dst[sizeof (rmpint_digit) - 1] = *src++;
-  };
-  dst -= sizeof (rmpint_digit);
-  while (dst >= (ruint8 *)(rpointer)mpi->data) {
-    r_memcpy (dst, src, sizeof (rmpint_digit));
-    src -= sizeof (rmpint_digit);
-    dst -= sizeof (rmpint_digit);
-  }
-#endif
-  r_mpint_clamp (mpi);
+  r_memset (mpi, 0, sizeof (rmpint));
+  r_mpint_set_binary (mpi, data, size);
 }
 
 void
@@ -446,6 +415,49 @@ r_mpint_set (rmpint * mpi, const rmpint * b)
 }
 
 void
+r_mpint_set_binary (rmpint * mpi, rconstpointer data, rsize size)
+{
+  const ruint8 * src = data;
+  ruint8 * dst;
+  ruint16 digits;
+
+  if (size == 0) return;
+
+  digits = (size + sizeof (rmpint_digit) - 1) / sizeof (rmpint_digit);
+  r_mpint_ensure_digits (mpi, MAX (digits, RMPINT_DEF_DIGITS));
+  mpi->dig_used = digits;
+  mpi->data[digits - 1] = 0;
+
+#if R_BYTE_ORDER == R_LITTLE_ENDIAN
+  dst = (ruint8 *)(rpointer)mpi->data;
+  while (size-- > 0)
+    dst[size] = *src++;
+#else
+  dst = (ruint8 *)(rpointer)&mpi->data[digits - 1];
+  switch (size % sizeof (rmpint_digit)) {
+#if 0 /*sizeof (rmpint_digit) >= 8*/
+    case 7: dst[sizeof (rmpint_digit) - 7] = *src++;
+    case 6: dst[sizeof (rmpint_digit) - 6] = *src++;
+    case 5: dst[sizeof (rmpint_digit) - 5] = *src++;
+    case 4: dst[sizeof (rmpint_digit) - 4] = *src++;
+#endif
+#if 1 /*sizeof (rmpint_digit) >= 4*/
+    case 3: dst[sizeof (rmpint_digit) - 3] = *src++;
+    case 2: dst[sizeof (rmpint_digit) - 2] = *src++;
+#endif
+    case 1: dst[sizeof (rmpint_digit) - 1] = *src++;
+  };
+  dst -= sizeof (rmpint_digit);
+  while (dst >= (ruint8 *)(rpointer)mpi->data) {
+    r_memcpy (dst, src, sizeof (rmpint_digit));
+    src -= sizeof (rmpint_digit);
+    dst -= sizeof (rmpint_digit);
+  }
+#endif
+  r_mpint_clamp (mpi);
+}
+
+void
 r_mpint_set_i32 (rmpint * mpi, rint32 value)
 {
   r_memset (&mpi->data[1], 0, (mpi->dig_alloc - 1) * sizeof (rmpint_digit));
@@ -463,6 +475,28 @@ r_mpint_set_u32 (rmpint * mpi, ruint32 value)
   r_memset (&mpi->data[1], 0, (mpi->dig_alloc - 1) * sizeof (rmpint_digit));
   mpi->dig_used = value != 0 ? 1 : 0;
   mpi->sign = 0;
+}
+
+void
+r_mpint_set_i64 (rmpint * mpi, rint64 value)
+{
+  if (value >= 0) {
+    r_mpint_set_u64 (mpi, (ruint64)value);
+  } else {
+    r_mpint_set_u64 (mpi, (ruint64)-value);
+    mpi->sign = 1;
+  }
+}
+
+void
+r_mpint_set_u64 (rmpint * mpi, ruint64 value)
+{
+  r_memset (&mpi->data[2], 0, (mpi->dig_alloc - 3) * sizeof (rmpint_digit));
+  mpi->data[1] = (rmpint_digit)(value >> 32);
+  mpi->data[0] = (rmpint_digit)(value & RUINT32_MAX);
+  mpi->dig_used = 2;
+  mpi->sign = 0;
+  r_mpint_clamp (mpi);
 }
 
 ruint32

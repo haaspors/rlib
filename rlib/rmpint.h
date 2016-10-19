@@ -75,6 +75,7 @@ R_API rboolean r_mpint_isprime_t (const rmpint * mpi, ruint t);
 
 R_API void r_mpint_zero (rmpint * mpi);
 R_API void r_mpint_set (rmpint * mpi, const rmpint * b);
+R_API void r_mpint_set_binary (rmpint * mpi, rconstpointer data, rsize size);
 R_API void r_mpint_set_i32 (rmpint * mpi, rint32 value);
 R_API void r_mpint_set_u32 (rmpint * mpi, ruint32 value);
 R_API void r_mpint_set_i64 (rmpint * mpi, rint64 value);
