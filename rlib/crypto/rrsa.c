@@ -334,6 +334,91 @@ r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   return (RCryptoKey *)ret;
 }
 
+RCryptoKey *
+r_rsa_priv_key_new_gen (rsize bits, ruint64 e, RPrng * prng)
+{
+  RRsaPrivKey * ret;
+  rmpint g, p_1, q_1, p_1mulq_1;
+
+  if (R_UNLIKELY (bits < 128)) return NULL;
+  if (R_UNLIKELY (e < 3)) return NULL;
+
+  if ((ret = r_mem_new0 (RRsaPrivKey)) != NULL) {
+    rboolean pq_gcd = FALSE;
+
+    r_rsa_priv_key_init (&ret->pub.key, bits);
+
+    r_mpint_init (&ret->pub.e);
+    r_mpint_set_u64 (&ret->pub.e, e);
+    r_mpint_init (&ret->pub.n);
+    r_mpint_init (&ret->p);
+    r_mpint_init (&ret->q);
+
+    r_mpint_init (&g);
+    r_mpint_init (&p_1);
+    r_mpint_init (&q_1);
+    r_mpint_init (&p_1mulq_1);
+
+    if (prng != NULL)
+      r_prng_ref (prng);
+    else
+      prng = r_rand_prng_new ();
+
+    /* Find two primes p and q where;
+     * GCD (e, (p - 1) * (q - 1)) == 1
+     */
+    do {
+      if (!r_mpint_gen_prime (&ret->p, bits / 2, prng))
+        break;
+
+      if (bits % 2) {
+        if (!r_mpint_gen_prime (&ret->q, (bits / 2) + 1, prng))
+          break;
+      } else {
+        if (!r_mpint_gen_prime (&ret->q, bits / 2, prng))
+          break;
+      }
+
+      if (r_mpint_cmp (&ret->p, &ret->q) == 0)
+        continue;
+      if (!r_mpint_mul (&ret->pub.n, &ret->p, &ret->q))
+        break;
+       if (r_mpint_bits_used (&ret->pub.n) != bits)
+        continue;
+
+      if (!r_mpint_sub_i32 (&p_1, &ret->p, 1) ||
+          !r_mpint_sub_i32 (&q_1, &ret->q, 1) ||
+          !r_mpint_mul (&p_1mulq_1, &p_1, &q_1) ||
+          !r_mpint_gcd (&g, &ret->pub.e, &p_1mulq_1))
+        break;
+    } while (!(pq_gcd = (r_mpint_cmp_i32 (&g, 1) == 0)));
+
+    if (pq_gcd) {
+      r_mpint_init (&ret->d);
+      r_mpint_init (&ret->dp);
+      r_mpint_init (&ret->dq);
+      r_mpint_init (&ret->qp);
+
+      r_mpint_invmod (&ret->qp, &ret->q, &ret->p);        /* qp = q^-1 mod p */
+      r_mpint_invmod (&ret->d, &ret->pub.e, &p_1mulq_1);  /* d  = e^-1 mod ((p - 1) * (q - 1)) */
+      r_mpint_mod (&ret->dp, &ret->d, &p_1);              /* dp = d mod (p - 1) */
+      r_mpint_mod (&ret->dq, &ret->d, &q_1);              /* dq = d mod (q - 1) */
+    } else {
+      r_crypto_key_unref (ret);
+      ret = NULL;
+    }
+
+    r_mpint_clear (&p_1mulq_1);
+    r_mpint_clear (&q_1);
+    r_mpint_clear (&p_1);
+    r_mpint_clear (&g);
+
+    r_prng_unref (prng);
+  }
+
+  return (RCryptoKey *)ret;
+}
+
 rboolean
 r_rsa_pub_key_set_padding (RCryptoKey * key, RRsaPadding padding)
 {

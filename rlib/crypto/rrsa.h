@@ -51,6 +51,9 @@ R_API RCryptoKey * r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
     rconstpointer e, rsize esize, rconstpointer d, rsize dsize) R_ATTR_MALLOC;
 R_API RCryptoKey * r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv) R_ATTR_MALLOC;
 
+R_API RCryptoKey * r_rsa_priv_key_new_gen (rsize bits, ruint64 e,
+    RPrng * prng) R_ATTR_MALLOC;
+
 
 #define r_rsa_priv_key_get_padding r_rsa_pub_key_get_padding
 #define r_rsa_priv_key_set_padding r_rsa_pub_key_set_padding
