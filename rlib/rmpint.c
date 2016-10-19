@@ -295,15 +295,17 @@ r_mpint_prime_miller_rabin (const rmpint * n, const rmpint * a)
   RMpintPrimeTest ret;
 
   r_mpint_init_copy (&n1, n);
-  r_mpint_init (&r);
+  if (!r_mpint_sub_u32 (&n1, &n1, 1)) {
+    r_mpint_clear (&n1);
+    return R_MPINT_ERROR;
+  }
+
   r_mpint_init (&y);
+  r_mpint_init_copy (&r, &n1);
 
-  if (!r_mpint_sub_u32 (&n1, &n1, 1))
-    goto error;
-
+  /* n - 1 = 2**s * r ===> r = (n - 1) / 2**s */
   s = r_mpint_ctz (&n1);
-  r_mpint_set_u32 (&r, 1);
-  if (!r_mpint_shl (&r, &r, s) || !r_mpint_div (&r, NULL, &n1, &r))
+  if (!r_mpint_shr (&r, &r, s))
     goto error;
 
   if (!r_mpint_expmod (&y, a, &r, n))
@@ -349,15 +351,17 @@ r_mpint_prime_miller_rabin_full (const rmpint * n, RPrng * prng)
   RMpintPrimeTest ret;
 
   r_mpint_init_copy (&n1, n);
-  r_mpint_init (&r);
+  if (!r_mpint_sub_u32 (&n1, &n1, 1)) {
+    r_mpint_clear (&n1);
+    return R_MPINT_ERROR;
+  }
+
   r_mpint_init (&a);
+  r_mpint_init_copy (&r, &n1);
 
-  if (!r_mpint_sub_u32 (&n1, &n1, 1))
-    goto error;
-
+  /* n - 1 = 2**s * r ===> r = (n - 1) / 2**s */
   s = r_mpint_ctz (&n1);
-  r_mpint_set_u32 (&r, 1);
-  if (!r_mpint_shl (&r, &r, s) || !r_mpint_div (&r, NULL, &n1, &r))
+  if (!r_mpint_shr (&r, &r, s))
     goto error;
 
   bits = r_mpint_bits_used (n);
