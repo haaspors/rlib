@@ -319,7 +319,7 @@ r_test_get_local_tests_filtered (const rchar * filter, rsize * count)
 typedef struct {
   const RTest * test;
   rsize __i;
-  RClockTime timeout;
+  rboolean notimeout;
   RTestLastPos * lastpos, * failpos;
 } RTestWin32Run;
 
@@ -329,17 +329,17 @@ r_test_run_pseudo_fork (rpointer data)
   const RTestWin32Run * win32run = data;
   RTestRunState ret;
 
-  ret = r_test_run_nofork (win32run->test, win32run->__i, win32run->timeout,
+  ret = r_test_run_nofork (win32run->test, win32run->__i, win32run->notimeout,
       win32run->lastpos, win32run->failpos, NULL);
 
   return RINT_TO_POINTER (ret);
 }
 
 RTestRunState
-r_test_run_fork (const RTest * test, rsize __i, RClockTime timeout,
+r_test_run_fork (const RTest * test, rsize __i, rboolean notimeout,
     RTestLastPos * lastpos, RTestLastPos * failpos, int * pid)
 {
-  RTestWin32Run win32run = { test, __i, timeout, lastpos, failpos };
+  RTestWin32Run win32run = { test, __i, notimeout, lastpos, failpos };
   RTestRunForkCtx ctx = { R_TEST_RUN_STATE_NONE, NULL, NULL, NULL, NULL };
   rpointer res;
 
@@ -420,7 +420,7 @@ r_test_run_fork_cleanup (RTestRunForkCtx * ctx)
 }
 
 RTestRunState
-r_test_run_fork (const RTest * test, rsize __i, RClockTime timeout,
+r_test_run_fork (const RTest * test, rsize __i, rboolean notimeout,
     RTestLastPos * lastpos, RTestLastPos * failpos, int * pidout)
 {
   RTestRunState ret = R_TEST_RUN_STATE_ERROR;
@@ -445,7 +445,7 @@ r_test_run_fork (const RTest * test, rsize __i, RClockTime timeout,
 
     close(fdp[1]);
     *pidout = (int)pid;
-    r_test_run_fork_setup (&ctx, pid, timeout);
+    r_test_run_fork_setup (&ctx, pid, notimeout ? R_CLOCK_TIME_NONE : test->timeout);
     wpid = waitpid (pid, &status, 0);
     r_test_run_fork_cleanup (&ctx);
 
@@ -466,7 +466,7 @@ r_test_run_fork (const RTest * test, rsize __i, RClockTime timeout,
   } else if (pid == 0) {
     RTestRunState res;
     close(fdp[0]);
-    res = r_test_run_nofork (test, __i, timeout, lastpos, failpos, NULL);
+    res = r_test_run_nofork (test, __i, notimeout, lastpos, failpos, NULL);
 
     if (write (fdp[1], lastpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
       R_LOG_WARNING ("Failed to write to pipe to parent (forker)");
@@ -709,7 +709,7 @@ r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
 }
 
 RTestRunState
-r_test_run_nofork (const RTest * test, rsize __i, RClockTime timeout,
+r_test_run_nofork (const RTest * test, rsize __i, rboolean notimeout,
     RTestLastPos * lastpos, RTestLastPos * failpos, int * pid)
 {
   RTestRunState ret = R_TEST_RUN_STATE_ERROR;
@@ -727,7 +727,7 @@ r_test_run_nofork (const RTest * test, rsize __i, RClockTime timeout,
   lastpos->func = R_STRFUNC;
   lastpos->assert = FALSE;
 
-  r_test_run_nofork_setup (&ctx, timeout);
+  r_test_run_nofork_setup (&ctx, notimeout ? R_CLOCK_TIME_NONE : test->timeout);
   R_LOG_DEBUG ("About to run: /%s/%s/%"RSIZE_FMT, test->suite, test->name, __i);
   if ((jmpres = setjmp (ctx.jb)) == 0) {
     _r_test_mark_position (test->name, __i, test->suite, FALSE);
@@ -758,19 +758,22 @@ r_test_run_nofork (const RTest * test, rsize __i, RClockTime timeout,
 RTestReport *
 r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data)
 {
-  typedef RTestRunState (*RTestRunFunc) (const RTest *, rsize, RClockTime,
+  typedef RTestRunState (*RTestRunFunc) (const RTest *, rsize, rboolean,
       RTestLastPos *, RTestLastPos *, int * pid);
   RTestRunFunc runner = r_test_run_nofork;
   rsize defs, total, i;
   const RTest * begin;
   RTestReport * ret;
-  RClockTime timeout;
+  rboolean notimeout;
 
   if (r_getenv ("RNOFORK") == NULL)
     runner = r_test_run_fork;
+  notimeout = (r_getenv ("RNOTIMEOUT") != NULL);
 
-  if (r_proc_is_debugger_attached ())
+  if (r_proc_is_debugger_attached ()) {
     runner = r_test_run_nofork;
+    notimeout = TRUE;
+  }
 
   if (filter != NULL && (begin = r_test_get_local_tests (&defs, &total)) != NULL) {
     ret = r_malloc0 (sizeof (RTestReport) + (sizeof (RTestRun) * total));
@@ -793,7 +796,6 @@ r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data)
       for (it = it_start; it < it_end; it++, run++) {
         run->__i = it;
         run->test = test;
-        timeout = test->timeout;
 
         if (filter (test, it, data)) {
           ret->run++;
@@ -810,8 +812,8 @@ r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data)
 #else
           run->pid = 0;
 #endif
-          run->state = runner (test, it, timeout, &run->lastpos, &run->failpos,
-              &run->pid);
+          run->state = runner (test, it, notimeout,
+              &run->lastpos, &run->failpos, &run->pid);
           run->end = r_time_get_ts_monotonic ();
 
           switch (run->state) {

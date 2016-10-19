@@ -230,9 +230,9 @@ R_API const RTest * r_test_get_local_tests (rsize * tests, rsize * total);
 R_API RSList * r_test_get_local_tests_filtered (const rchar * filter, rsize * count);
 
 R_API RTestRunState r_test_run_fork (const RTest * test, rsize __i,
-    RClockTime timeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);
+    rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);
 R_API RTestRunState r_test_run_nofork (const RTest * test, rsize __i,
-    RClockTime timeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);
+    rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);
 R_API RTestReport * r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data);
 R_API RTestReport * r_test_run_local_tests (RTestType type, const rchar * filter, rboolean ignore_skip);
 
