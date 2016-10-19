@@ -22,7 +22,7 @@
 #error "rmpint-private.h should only be used internally in rlib!"
 #endif
 
-#include <rlib/rtypes.h>
+#include <rlib/rmpint.h>
 
 R_BEGIN_DECLS
 
@@ -38,8 +38,8 @@ R_API_HIDDEN rboolean r_mpint_sub_unsigned (rmpint * dst,
 
 #define RMPINT_N_PRIMES       256
 R_API_HIDDEN const rmpint_digit r_mpint_primes[RMPINT_N_PRIMES];
-R_API_HIDDEN rboolean r_mpint_prime_miller_rabin (const rmpint * n,
-    const rmpint * a, rboolean * ret);
+R_API_HIDDEN RMpintPrimeTest r_mpint_prime_miller_rabin (const rmpint * n, const rmpint * a);
+R_API_HIDDEN RMpintPrimeTest r_mpint_prime_miller_rabin_full (const rmpint * n, RPrng * prng);
 
 R_API_HIDDEN rboolean r_mpint_montgomery_setup (rmpint_digit * mp, const rmpint * m);
 R_API_HIDDEN rboolean r_mpint_montgomery_reduce (rmpint * a, const rmpint * m,

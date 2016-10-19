@@ -24,6 +24,8 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/rrand.h>
+
 R_BEGIN_DECLS
 
 #define RMPINT_DEF_DIGITS     64
@@ -55,9 +57,6 @@ R_API rchar * r_mpint_to_str (const rmpint * mpi);
 #define r_mpint_isodd(mpi)        ((mpi)->dig_used > 0 && (((mpi)->data[0] & 1) == 1))
 #define r_mpint_isneg(mpi)        ((mpi)->dig_used > 0 && (mpi)->sign)
 
-#define r_mpint_isprime(mpi)      r_mpint_isprime_t (mpi, RMPINT_DEF_ISPRIME_T)
-R_API rboolean r_mpint_isprime_t (const rmpint * mpi, ruint t);
-
 #define r_mpint_digits_used(mpi)  (mpi)->dig_used
 #define r_mpint_bytes_used(mpi)   ((ruint)((mpi)->dig_used > 0 ?              \
     (ruint)(((ruint)(mpi)->dig_used * sizeof (rmpint_digit)) -                \
@@ -72,6 +71,20 @@ R_API rboolean r_mpint_isprime_t (const rmpint * mpi, ruint t);
     (mpi)->dig_used--;                                                \
   (mpi)->sign = (mpi)->dig_used > 0 ? (mpi)->sign : 0;                \
 } R_STMT_END
+
+R_API rboolean r_mpint_gen_prime_full (rmpint * mpi, rsize bits, rboolean safe,
+    RPrng * prng);
+#define r_mpint_gen_prime(mpi, bits, prng) r_mpint_gen_prime_full (mpi, bits, FALSE, prng)
+
+typedef enum {
+  R_MPINT_ERROR = -1,
+  R_MPINT_NON_PRIME = 0,
+  R_MPINT_CERTAIN_PRIME,
+  R_MPINT_POSSIBLE_PRIME,
+} RMpintPrimeTest;
+
+R_API RMpintPrimeTest r_mpint_isprime_t (const rmpint * mpi, ruint t);
+#define r_mpint_isprime(mpi) r_mpint_isprime_t (mpi, RMPINT_DEF_ISPRIME_T)
 
 R_API void r_mpint_zero (rmpint * mpi);
 R_API void r_mpint_set (rmpint * mpi, const rmpint * b);

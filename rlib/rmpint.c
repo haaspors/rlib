@@ -17,7 +17,6 @@
  */
 
 #include "config.h"
-#include <rlib/rmpint.h>
 #include "rmpint_private.h"
 #include <rlib/rascii.h>
 #include <rlib/rmem.h>
@@ -288,13 +287,12 @@ const rmpint_digit r_mpint_primes[RMPINT_N_PRIMES] = {
   0x062b, 0x062f, 0x063d, 0x0641, 0x0647, 0x0649, 0x064d, 0x0653
 };
 
-rboolean
-r_mpint_prime_miller_rabin (const rmpint * n, const rmpint * a, rboolean * ret)
+RMpintPrimeTest
+r_mpint_prime_miller_rabin (const rmpint * n, const rmpint * a)
 {
   rmpint n1, r, y;
   ruint32 s, j;
-
-  *ret = FALSE;
+  RMpintPrimeTest ret;
 
   r_mpint_init_copy (&n1, n);
   r_mpint_init (&r);
@@ -305,8 +303,7 @@ r_mpint_prime_miller_rabin (const rmpint * n, const rmpint * a, rboolean * ret)
 
   s = r_mpint_ctz (&n1);
   r_mpint_set_u32 (&r, 1);
-  if (!r_mpint_shl (&r, &r, s) ||
-      !r_mpint_div (&r, NULL, &n1, &r))
+  if (!r_mpint_shl (&r, &r, s) || !r_mpint_div (&r, NULL, &n1, &r))
     goto error;
 
   if (!r_mpint_expmod (&y, a, &r, n))
@@ -317,82 +314,233 @@ r_mpint_prime_miller_rabin (const rmpint * n, const rmpint * a, rboolean * ret)
       if (!r_mpint_mulmod (&y, &y, &y, n))
         goto error;
 
-      if (r_mpint_ucmp_u32 (&y, 1) == 0)
-        goto beach;
+      if (r_mpint_ucmp_u32 (&y, 1) == 0) {
+        ret = R_MPINT_NON_PRIME;
+        goto cleanup;
+      }
     }
 
     if (r_mpint_cmp (&y, &n1) != 0)
-      goto beach;
+      ret = R_MPINT_NON_PRIME;
+    else
+      ret = R_MPINT_POSSIBLE_PRIME;
+  } else {
+    ret = R_MPINT_CERTAIN_PRIME;
   }
 
-  *ret = TRUE;
-beach:
+cleanup:
   r_mpint_clear (&n1);
   r_mpint_clear (&r);
   r_mpint_clear (&y);
-  return TRUE;
+  return ret;
 error:
-  r_mpint_clear (&n1);
-  r_mpint_clear (&r);
-  r_mpint_clear (&y);
-  return FALSE;
+  ret = R_MPINT_ERROR;
+  goto cleanup;
 }
 
-rboolean
-r_mpint_isprime_t (const rmpint * mpi, ruint t)
+RMpintPrimeTest
+r_mpint_prime_miller_rabin_full (const rmpint * n, RPrng * prng)
 {
-  rboolean ret = FALSE;
-  if (R_LIKELY (mpi != NULL)) {
-    rmpint a;
+  ruint rounds, i, bits;
+  rmpint a, n1, r;
+  ruint32 s, j;
+  rsize size;
+  ruint8 * tmp;
+  RMpintPrimeTest ret;
 
-    r_mpint_init (&a);
-    r_mpint_set_u32 (&a, r_mpint_primes[0]);
-    if (r_mpint_ucmp (mpi, &a) < 0)
-      goto beach;
+  r_mpint_init_copy (&n1, n);
+  r_mpint_init (&r);
+  r_mpint_init (&a);
 
-    r_mpint_set_u32 (&a, r_mpint_primes[R_N_ELEMENTS (r_mpint_primes) - 1]);
-    if (r_mpint_ucmp (mpi, &a) <= 0) {
-      int ll = 0, hh = R_N_ELEMENTS (r_mpint_primes);
+  if (!r_mpint_sub_u32 (&n1, &n1, 1))
+    goto error;
 
-      do {
-        int cmpres;
-        int idx = ll + ((hh - ll) / 2);
-        r_mpint_set_u32 (&a, r_mpint_primes[idx]);
-        if ((cmpres = r_mpint_ucmp (mpi, &a)) == 0)
-          goto sweet;
-        else if (cmpres < 0)
-          hh = idx - 1;
-        else
-          ll = idx + 1;
-      } while (ll < hh);
-      if (ll == hh) {
-        r_mpint_set_u32 (&a, r_mpint_primes[hh]);
-        ret = (r_mpint_ucmp (mpi, &a) == 0);
-      }
-      goto beach;
-    } else {
-      ruint i;
+  s = r_mpint_ctz (&n1);
+  r_mpint_set_u32 (&r, 1);
+  if (!r_mpint_shl (&r, &r, s) || !r_mpint_div (&r, NULL, &n1, &r))
+    goto error;
 
-      for (i = 0; i < R_N_ELEMENTS (r_mpint_primes); i++) {
-        if (!r_mpint_mod_u32 (&a, mpi, r_mpint_primes[i]) || r_mpint_iszero (&a))
-          goto beach;
-      }
+  bits = r_mpint_bits_used (n);
+  size = (bits >> 3) + ((bits & 7) ? 1 : 0);
+  tmp = r_alloca (size);
 
-      for (i = 0; i < t && i < R_N_ELEMENTS (r_mpint_primes); i++) {
-        rboolean mr;
-        r_mpint_set_u32 (&a, r_mpint_primes[i]);
-        if (!r_mpint_prime_miller_rabin (mpi, &a, &mr) || !mr)
-          goto beach;
+  if (bits >= 1300)     rounds =  2;
+  else if (bits >= 850) rounds =  3;
+  else if (bits >= 650) rounds =  4;
+  else if (bits >= 350) rounds =  8;
+  else if (bits >= 250) rounds = 12;
+  else if (bits >= 150) rounds = 18;
+  else                  rounds = 27;
+
+  bits = r_mpint_bits_used (&n1);
+  ret = R_MPINT_POSSIBLE_PRIME;
+  for (i = 0; i < rounds; i++) {
+    ruint abits;
+    if (!r_prng_fill (prng, tmp, size))
+      goto error;
+
+    r_mpint_set_binary (&a, tmp, size);
+    if ((abits = r_mpint_bits_used (&a)) > bits) {
+      if (!r_mpint_shr (&a, &a, abits - bits))
+        goto error;
+    }
+    a.data[0] |= 3;
+    if (r_mpint_cmp (&a, &n1) >= 0) {
+      if (!r_mpint_shr (&a, &a, 1))
+        goto error;
+    }
+
+    if (!r_mpint_expmod (&a, &a, &r, n))
+      goto error;
+
+    if (r_mpint_cmp (&a, &n1) == 0 || r_mpint_ucmp_u32 (&a, 1) == 0)
+      continue;
+
+    for (j = 1; j < s && r_mpint_cmp (&a, &n1) != 0; j++) {
+      if (!r_mpint_mulmod (&a, &a, &a, n))
+        goto error;
+
+      if (r_mpint_ucmp_u32 (&a, 1) == 0) {
+        ret = R_MPINT_NON_PRIME;
+        goto cleanup;
       }
     }
 
-sweet:
-    ret = TRUE;
-beach:
-    r_mpint_clear (&a);
+    if (r_mpint_cmp (&a, &n1) != 0) {
+      ret = R_MPINT_NON_PRIME;
+      goto cleanup;
+    }
+  }
+
+cleanup:
+  r_mpint_clear (&n1);
+  r_mpint_clear (&r);
+  r_mpint_clear (&a);
+  return ret;
+error:
+  ret = R_MPINT_ERROR;
+  goto cleanup;
+}
+
+rboolean
+r_mpint_gen_prime_full (rmpint * mpi, rsize bits, rboolean safe, RPrng * prng)
+{
+  rboolean ret = FALSE;
+  if (R_LIKELY (mpi != NULL && bits > 2 && prng != NULL)) {
+    rsize size = (bits >> 3) + ((bits & 7) ? 1 : 0);
+    ruint8 * tmp = r_alloca (size);
+
+    if (r_prng_fill (prng, tmp, size)) {
+      tmp[0] &= 0xff >> ((8 - (bits & 7)) & 7);
+      tmp[0] |= 1 << ((bits - 1) & 7);
+
+      if (!safe) {
+        tmp[size - 1] |= 1;
+        r_mpint_set_binary (mpi, tmp, size);
+        while (!(ret = r_mpint_isprime (mpi)))
+          r_mpint_add_u32 (mpi, mpi, 2);
+      } else {
+        rmpint r, y;
+
+        tmp[size - 1] |= 3;
+        r_mpint_set_binary (mpi, tmp, size);
+        r_mpint_init (&r);
+        r_mpint_init (&y);
+
+        r_mpint_mod_i32 (&r, mpi, 3);
+        if (r_mpint_iszero (&r))
+          r_mpint_add_i32 (mpi, mpi, 8);
+        else if (r_mpint_cmp_i32 (&r, 1))
+          r_mpint_add_i32 (mpi, mpi, 4);
+
+        r_mpint_init_copy (&y, mpi);
+        r_mpint_shr (&y, &y, 1);
+        while (TRUE) {
+          RMpintPrimeTest t;
+          if ((t = r_mpint_isprime_t (mpi, 0)) > R_MPINT_NON_PRIME &&
+              (t = r_mpint_isprime_t (&y, 0)) > R_MPINT_NON_PRIME &&
+              (t = r_mpint_prime_miller_rabin_full (mpi, prng)) > R_MPINT_NON_PRIME &&
+              (t = r_mpint_prime_miller_rabin_full (&y, prng)) > R_MPINT_NON_PRIME) {
+            ret = TRUE;
+            break;
+          }
+
+          if (t != R_MPINT_NON_PRIME)
+            break;
+
+          r_mpint_add_i32 (mpi, mpi, 12);
+          r_mpint_add_i32 (&y, &y, 6);
+        }
+      }
+    }
   }
 
   return ret;
+}
+
+RMpintPrimeTest
+r_mpint_isprime_t (const rmpint * mpi, ruint t)
+{
+  RMpintPrimeTest ret;
+  rmpint a;
+  ruint i;
+
+  if (R_UNLIKELY (mpi == NULL))
+    return R_MPINT_ERROR;
+
+  r_mpint_init (&a);
+  r_mpint_set_u32 (&a, r_mpint_primes[0]);
+  if (r_mpint_ucmp (mpi, &a) < 0)
+    goto nonprime;
+
+  r_mpint_set_u32 (&a, r_mpint_primes[R_N_ELEMENTS (r_mpint_primes) - 1]);
+  if (r_mpint_ucmp (mpi, &a) <= 0) {
+    int ll = 0, hh = R_N_ELEMENTS (r_mpint_primes);
+
+    do {
+      int cmpres;
+      int idx = ll + ((hh - ll) / 2);
+      r_mpint_set_u32 (&a, r_mpint_primes[idx]);
+      if ((cmpres = r_mpint_ucmp (mpi, &a)) == 0)
+        goto isprime;
+      else if (cmpres < 0)
+        hh = idx - 1;
+      else
+        ll = idx + 1;
+    } while (ll < hh);
+    if (ll == hh) {
+      r_mpint_set_u32 (&a, r_mpint_primes[hh]);
+      if (r_mpint_ucmp (mpi, &a) == 0)
+        goto isprime;
+    }
+    goto nonprime;
+  }
+
+  for (i = 0; i < R_N_ELEMENTS (r_mpint_primes); i++) {
+    if (!r_mpint_mod_u32 (&a, mpi, r_mpint_primes[i]))
+      goto error;
+    if (r_mpint_iszero (&a))
+      goto nonprime;
+  }
+
+  ret = R_MPINT_POSSIBLE_PRIME;
+  for (i = 0; i < t && i < R_N_ELEMENTS (r_mpint_primes); i++) {
+    r_mpint_set_u32 (&a, r_mpint_primes[i]);
+    if ((ret = r_mpint_prime_miller_rabin (mpi, &a)) != R_MPINT_POSSIBLE_PRIME)
+      break;
+  }
+
+  r_mpint_clear (&a);
+  return ret;
+isprime:
+  r_mpint_clear (&a);
+  return R_MPINT_CERTAIN_PRIME;
+nonprime:
+  r_mpint_clear (&a);
+  return R_MPINT_NON_PRIME;
+error:
+  r_mpint_clear (&a);
+  return R_MPINT_ERROR;
 }
 
 void

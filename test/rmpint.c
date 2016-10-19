@@ -918,38 +918,98 @@ RTEST (rmpint, isprime, RTEST_FAST)
   rmpint a;
 
   r_mpint_init (&a);
-  r_assert (!r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), ==, R_MPINT_NON_PRIME);
 
   r_mpint_set_u32 (&a, 1);
-  r_assert (!r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), ==, R_MPINT_NON_PRIME);
 
   r_mpint_set_u32 (&a, 2);
-  r_assert (r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), ==, R_MPINT_CERTAIN_PRIME);
 
   r_mpint_set_u32 (&a, 42);
-  r_assert (!r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), ==, R_MPINT_NON_PRIME);
 
   r_mpint_set_u32 (&a, 1201);
-  r_assert (r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), ==, R_MPINT_CERTAIN_PRIME);
 
   r_mpint_set_u32 (&a, 65537);
-  r_assert (r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), >=, R_MPINT_CERTAIN_PRIME);
 
   r_assert (r_mpint_mul (&a, &a, &a));
-  r_assert (!r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), ==, R_MPINT_NON_PRIME);
   r_mpint_clear (&a);
 
   /* Fibonacci prime */
   r_mpint_init_str (&a, "19134702400093278081449423917", NULL, 10);
-  r_assert (r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), >=, R_MPINT_CERTAIN_PRIME);
   r_mpint_clear (&a);
 
   r_mpint_init_str (&a, "9134702400093278081449423917", NULL, 10);
-  r_assert (!r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), ==, R_MPINT_NON_PRIME);
   r_mpint_clear (&a);
 
   r_mpint_init_str (&a, "22584751787583336797527561822649328254745329", NULL, 10);
-  r_assert (r_mpint_isprime (&a));
+  r_assert_cmpint (r_mpint_isprime (&a), >=, R_MPINT_CERTAIN_PRIME);
+  r_mpint_clear (&a);
+}
+RTEST_END;
+
+RTEST (rmpint, gen_prime, RTEST_FAST)
+{
+  rmpint a;
+  RPrng * prng;
+
+  r_mpint_init (&a);
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+
+  r_assert (!r_mpint_gen_prime (NULL, 0, NULL));
+  r_assert (!r_mpint_gen_prime (&a, 0, NULL));
+  r_assert (!r_mpint_gen_prime (&a, 1024, NULL));
+  r_assert (!r_mpint_gen_prime (&a, 0, prng));
+  r_assert (!r_mpint_gen_prime (&a, 2, prng));
+
+  r_assert (r_mpint_gen_prime (&a, 256, prng));
+  r_assert_cmpuint (r_mpint_isprime (&a), >=, R_MPINT_CERTAIN_PRIME);
+
+  r_assert (r_mpint_gen_prime (&a, 3, prng));
+  r_assert_cmpuint (r_mpint_isprime (&a), ==, R_MPINT_CERTAIN_PRIME);
+  r_assert_cmpuint (r_mpint_digits_used (&a), ==, 1);
+  r_assert (r_mpint_cmp_i32 (&a, 5) == 0 || r_mpint_cmp_i32 (&a, 7) == 0);
+
+  r_prng_unref (prng);
+  r_mpint_clear (&a);
+}
+RTEST_END;
+
+RTEST (rmpint, gen_prime_1024bits, RTEST_FASTSLOW)
+{
+  rmpint a;
+  RPrng * prng;
+
+  r_mpint_init (&a);
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+
+  r_assert (r_mpint_gen_prime (&a, 1024, prng));
+  r_assert_cmpuint (r_mpint_isprime (&a), >=, R_MPINT_CERTAIN_PRIME);
+
+  r_prng_unref (prng);
+  r_mpint_clear (&a);
+}
+RTEST_END;
+
+/* FIXME: This is not functioning as expected */
+SKIP_RTEST (rmpint, gen_prime_1024bits_safe, RTEST_FASTSLOW)
+{
+  rmpint a;
+  RPrng * prng;
+
+  r_mpint_init (&a);
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+
+  r_assert (r_mpint_gen_prime_full (&a, 1024, TRUE, prng));
+  r_assert_cmpuint (r_mpint_isprime (&a), >=, R_MPINT_CERTAIN_PRIME);
+
+  r_prng_unref (prng);
   r_mpint_clear (&a);
 }
 RTEST_END;
