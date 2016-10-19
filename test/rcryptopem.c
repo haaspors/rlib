@@ -243,6 +243,62 @@ RTEST (rcryptopem, rsa_privkey, RTEST_FAST)
   r_assert_cmpint (r_mpint_cmp (&mpint, &expected), ==, 0);
   r_mpint_clear (&expected);
   r_mpint_clear (&mpint);
+
+  /* Verify all RSA priv key intermediates */
+  {
+    rmpint qp, dp, dq, q, p, n, e, d, tmp;
+    r_mpint_init (&tmp);
+    r_mpint_init (&d);
+    r_mpint_init (&e);
+    r_mpint_init (&n);
+    r_mpint_init (&q);
+    r_mpint_init (&p);
+    r_mpint_init (&dp);
+    r_mpint_init (&dq);
+    r_mpint_init (&qp);
+
+    r_assert (r_rsa_pub_key_get_n (key, &n));
+    r_assert (r_rsa_pub_key_get_e (key, &e));
+    r_assert (r_rsa_priv_key_get_d (key, &d));
+    r_assert (r_rsa_priv_key_get_q (key, &q));
+    r_assert (r_rsa_priv_key_get_p (key, &p));
+    r_assert (r_rsa_priv_key_get_dp (key, &dp));
+    r_assert (r_rsa_priv_key_get_dq (key, &dq));
+    r_assert (r_rsa_priv_key_get_qp (key, &qp));
+
+    r_assert_cmpuint (r_mpint_isprime (&q), >=, R_MPINT_CERTAIN_PRIME);
+    r_assert_cmpuint (r_mpint_isprime (&p), >=, R_MPINT_CERTAIN_PRIME);
+
+    r_assert (r_mpint_mul (&tmp, &p, &q));
+    r_assert_cmpint (r_mpint_cmp (&tmp, &n), ==, 0);
+
+    r_assert (r_mpint_invmod (&tmp, &q, &p));
+    r_assert_cmpint (r_mpint_cmp (&tmp, &qp), ==, 0);
+
+    r_mpint_sub_i32 (&p, &p, 1);
+    r_mpint_sub_i32 (&q, &q, 1);
+    r_mpint_mul (&tmp, &p, &q);
+    r_assert (r_mpint_invmod (&tmp, &e, &tmp));
+    r_assert_cmpint (r_mpint_cmp (&tmp, &d), ==, 0);
+
+    r_assert (r_mpint_mod (&tmp, &d, &p));
+    r_assert_cmpint (r_mpint_cmp (&tmp, &dp), ==, 0);
+    r_assert (r_mpint_mod (&tmp, &d, &q));
+    r_assert_cmpint (r_mpint_cmp (&tmp, &dq), ==, 0);
+    r_mpint_add_i32 (&p, &p, 1);
+    r_mpint_add_i32 (&q, &q, 1);
+
+    r_mpint_clear (&qp);
+    r_mpint_clear (&dq);
+    r_mpint_clear (&dp);
+    r_mpint_clear (&p);
+    r_mpint_clear (&q);
+    r_mpint_clear (&e);
+    r_mpint_clear (&n);
+    r_mpint_clear (&d);
+    r_mpint_clear (&tmp);
+  }
+
   r_crypto_key_unref (key);
 }
 RTEST_END;
