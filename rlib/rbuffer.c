@@ -565,7 +565,7 @@ r_buffer_map_mem_range (RBuffer * buffer, ruint idx, int mem_count,
 
   if (mem_count < 0)
     mem_count = (int)(buffer->mem_count - idx);
-  else if (idx + (ruint)mem_count >= buffer->mem_count)
+  else if (idx + (ruint)mem_count > buffer->mem_count)
     return FALSE;
 
 #if 0

@@ -589,6 +589,25 @@ RTEST (rbuffer, map_range, RTEST_FAST)
   r_assert (r_buffer_unmap (buf, &info));
   r_assert_cmpuint (r_buffer_mem_count (buf), ==, 4);
 
+  r_assert (r_buffer_map_mem_range (buf, 1, 2, &info, R_MEM_MAP_READ));
+  r_assert (r_buffer_unmap (buf, &info));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rbuffer, map_range_all, RTEST_FAST)
+{
+  RBuffer * buf;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint8 * data;
+
+  r_assert_cmpptr ((data = r_malloc0 (1024)), !=, NULL);
+  r_memset (data + 256, 0x22, 512);
+  r_assert_cmpptr ((buf = r_buffer_new_take (data, 1024)), !=, NULL);
+
+  r_assert (r_buffer_map_mem_range (buf, 0, 1, &info, R_MEM_MAP_READ));
+  r_assert (r_buffer_unmap (buf, &info));
+
   r_buffer_unref (buf);
 }
 RTEST_END;
