@@ -34,44 +34,108 @@ _r_parse_u48 (const ruint8 * ptr)
          ((ruint64)ptr[3] << 16) | ((ruint64)ptr[4] <<  8) | ((ruint64)ptr[5]);
 }
 
+void
+r_tls_parser_clear (RTLSParser * parser)
+{
+  if (R_LIKELY (parser->buf != NULL)) {
+    if (R_LIKELY (parser->fragment.data != NULL))
+      r_buffer_unmap (parser->buf, &parser->fragment);
+    r_buffer_unref (parser->buf);
+    r_memclear (parser, sizeof (RTLSParser));
+  }
+}
+
 RTLSError
 r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size)
 {
+  RBuffer * buffer;
+  RTLSError ret;
+
   if (R_UNLIKELY (parser == NULL)) return R_TLS_ERROR_INVAL;
   if (R_UNLIKELY (buf == NULL)) return R_TLS_ERROR_INVAL;
-  if (R_UNLIKELY (size < 5)) return R_TLS_ERROR_BUF_TOO_SMALL;
+  if (R_UNLIKELY (size == 0)) return R_TLS_ERROR_BUF_TOO_SMALL;
 
-  parser->buffer = buf;
-  parser->bufsize = size;
-  parser->content = (RTLSContentType)parser->buffer[0];
-  if (parser->content < R_TLS_CONTENT_TYPE_FIRST || parser->content > R_TLS_CONTENT_TYPE_LAST)
-    return R_TLS_ERROR_INVALID_RECORD;
+  if ((buffer = r_buffer_new_take (r_memdup (buf, size), size)) != NULL) {
+    ret = r_tls_parser_init_buffer (parser, buffer);
+    r_buffer_unref (buffer);
+  } else {
+    ret = R_TLS_ERROR_INVAL;
+  }
 
-  parser->version = (RTLSVersion)RUINT16_FROM_BE (*(const ruint16 *)&parser->buffer[1]);
+  return ret;
+}
+
+RTLSError
+r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RTLSError ret;
+  rsize fragoff;
+  ruint16 fraglen;
+
+  if (R_UNLIKELY (parser == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (buf == NULL)) return R_TLS_ERROR_INVAL;
+
+  if (!r_buffer_map_byte_range (buf, 0, 5, &info, R_MEM_MAP_READ))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  parser->content = (RTLSContentType)info.data[0];
+  if (parser->content < R_TLS_CONTENT_TYPE_FIRST ||
+      parser->content > R_TLS_CONTENT_TYPE_LAST) {
+    ret = R_TLS_ERROR_INVALID_RECORD;
+    goto beach;
+  }
+
+  parser->version = (RTLSVersion)RUINT16_FROM_BE (*(const ruint16 *)&info.data[1]);
 
   if (!r_tls_parser_is_dtls (parser)) {
-    if (R_UNLIKELY (parser->version < R_TLS_VERSION_TLS_1_0)) return R_TLS_ERROR_VERSION;
-    if (R_UNLIKELY (parser->version > R_TLS_VERSION_TLS_1_3)) return R_TLS_ERROR_VERSION;
+    if (R_UNLIKELY (parser->version < R_TLS_VERSION_TLS_1_0 ||
+          parser->version > R_TLS_VERSION_TLS_1_3)) {
+      ret = R_TLS_ERROR_VERSION;
+      goto beach;
+    }
 
     parser->epoch = 0;
     parser->seqno = 0;
-    parser->fraglen = RUINT16_FROM_BE (*(const ruint16 *)&parser->buffer[3]);
-    parser->fragment = &parser->buffer[5];
+    fragoff = 5;
+    fraglen = RUINT16_FROM_BE (*(const ruint16 *)&info.data[3]);
   } else {
-    if (R_UNLIKELY (size < 13)) return R_TLS_ERROR_BUF_TOO_SMALL;
-    if (R_UNLIKELY (parser->version > R_TLS_VERSION_DTLS_1_0)) return R_TLS_ERROR_VERSION;
-    if (R_UNLIKELY (parser->version < R_TLS_VERSION_DTLS_1_3)) return R_TLS_ERROR_VERSION;
+    RMemMapInfo dtlsext = R_MEM_MAP_INFO_INIT;
 
-    parser->epoch = RUINT16_FROM_BE (*(const ruint16 *)&parser->buffer[3]);
-    parser->seqno = _r_parse_u48 (&parser->buffer[5]);
-    parser->fraglen = RUINT16_FROM_BE (*(const ruint16 *)&parser->buffer[11]);
-    parser->fragment = &parser->buffer[13];
+    if (R_UNLIKELY (parser->version > R_TLS_VERSION_DTLS_1_0 ||
+        parser->version < R_TLS_VERSION_DTLS_1_3)) {
+      ret = R_TLS_ERROR_VERSION;
+      goto beach;
+    }
+
+    if (!r_buffer_map_byte_range (buf, 5, 6 + 2, &dtlsext, R_MEM_MAP_READ)) {
+      ret = R_TLS_ERROR_BUF_TOO_SMALL;
+      goto beach;
+    }
+
+    parser->epoch = RUINT16_FROM_BE (*(const ruint16 *)&info.data[3]);
+    parser->seqno = _r_parse_u48 (&dtlsext.data[0]);
+    fragoff = 13;
+    fraglen = RUINT16_FROM_BE (*(const ruint16 *)&dtlsext.data[6]);
+    r_buffer_unmap (buf, &dtlsext);
   }
 
-  if ((parser->fraglen & 0xc000) > 0) return R_TLS_ERROR_CORRUPT_RECORD;
-  if (parser->fragment + parser->fraglen > parser->buffer + size) return R_TLS_ERROR_BUF_TOO_SMALL;
+  if ((fraglen & 0xc000) > 0) {
+    ret = R_TLS_ERROR_CORRUPT_RECORD;
+    goto beach;
+  }
+  if (!r_buffer_map_byte_range (buf, fragoff, (rssize)fraglen,
+        &parser->fragment, R_MEM_MAP_READ)) {
+    ret = R_TLS_ERROR_BUF_TOO_SMALL;
+    goto beach;
+  }
 
-  return R_TLS_ERROR_OK;
+  ret = R_TLS_ERROR_OK;
+  parser->buf = r_buffer_ref (buf);
+
+beach:
+  r_buffer_unmap (buf, &info);
+  return ret;
 }
 
 static RTLSError
@@ -80,10 +144,10 @@ r_tls_parser_parse_handshake_internal (const RTLSParser * parser,
 {
   if (R_UNLIKELY (parser->content != R_TLS_CONTENT_TYPE_HANDSHAKE))
     return R_TLS_ERROR_WRONG_TYPE;
-  *type = (RTLSHandshakeType)parser->fragment[0];
+  *type = (RTLSHandshakeType)parser->fragment.data[0];
 
-  *end = parser->fragment + parser->fraglen;
-  *body = parser->fragment + (8 + 24) / 8;
+  *end = parser->fragment.data + parser->fragment.size;
+  *body = parser->fragment.data + (8 + 24) / 8;
   if (r_tls_parser_is_dtls (parser))
     *body += (16 + 24 + 24) / 8;
 
@@ -99,20 +163,20 @@ r_tls_parser_parse_handshake_full (const RTLSParser * parser,
   if (R_UNLIKELY (parser == NULL)) return R_TLS_ERROR_INVAL;
   if (R_UNLIKELY (parser->content != R_TLS_CONTENT_TYPE_HANDSHAKE))
     return R_TLS_ERROR_WRONG_TYPE;
-  if (R_UNLIKELY (parser->fraglen < 4)) return R_TLS_ERROR_BUF_TOO_SMALL;
+  if (R_UNLIKELY (parser->fragment.size < 4)) return R_TLS_ERROR_BUF_TOO_SMALL;
 
   if (type != NULL)
-    *type = (RTLSHandshakeType)parser->fragment[0];
+    *type = (RTLSHandshakeType)parser->fragment.data[0];
   if (length != NULL)
-    *length = _r_parse_u24 (&parser->fragment[1]);
+    *length = _r_parse_u24 (&parser->fragment.data[1]);
   if (r_tls_parser_is_dtls (parser)) {
-    if (R_UNLIKELY (parser->fraglen < 12)) return R_TLS_ERROR_BUF_TOO_SMALL;
+    if (R_UNLIKELY (parser->fragment.size < 12)) return R_TLS_ERROR_BUF_TOO_SMALL;
     if (msgseq != NULL)
-      *msgseq = RUINT16_FROM_BE (*(const ruint16 *)&parser->fragment[4]);
+      *msgseq = RUINT16_FROM_BE (*(const ruint16 *)&parser->fragment.data[4]);
     if (fragoff != NULL)
-      *fragoff = _r_parse_u24 (&parser->fragment[6]);
+      *fragoff = _r_parse_u24 (&parser->fragment.data[6]);
     if (fraglen != NULL)
-      *fraglen = _r_parse_u24 (&parser->fragment[9]);
+      *fraglen = _r_parse_u24 (&parser->fragment.data[9]);
   } else {
     if (msgseq != NULL)   *msgseq = 0;
     if (fragoff != NULL)  *fragoff = 0;

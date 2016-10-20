@@ -24,6 +24,8 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/rbuffer.h>
+
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rciphersuite.h>
 
@@ -293,16 +295,15 @@ typedef enum {
 #define R_TLS_HELLO_EXT_HDR_SIZE              (2 * sizeof (ruint16))
 
 typedef struct {
-  rsize bufsize;
-  const ruint8 * buffer;
+  RBuffer * buf;
 
   RTLSContentType content;
   RTLSVersion version;
   ruint16 epoch;                              /* DTLS only */
   ruint64 seqno;                              /* DTLS only */
-  ruint16 fraglen;
-  const ruint8 * fragment;
+  RMemMapInfo fragment;
 } RTLSParser;
+#define R_TLS_PARSER_INIT             { NULL, 0, 0, 0, 0, R_MEM_MAP_INFO_INIT }
 
 typedef struct {
   RTLSVersion version;
@@ -346,6 +347,9 @@ typedef struct {
 } RTLSCertReq;
 
 R_API RTLSError r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size);
+R_API RTLSError r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf);
+R_API void r_tls_parser_clear (RTLSParser * parser);
+
 #define r_tls_parser_is_dtls(parser) ((parser)->version > RUINT16_MAX / 2)
 #define r_tls_parser_parse_handshake(parser, type, length)                    \
   r_tls_parser_parse_handshake_full (parser, type, length, NULL, NULL, NULL)

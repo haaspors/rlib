@@ -3,11 +3,12 @@
 RTEST (rtls, parse_errors, RTEST_FAST)
 {
   static const ruint8 pkt_bogus[] = { 0x16, 0x11, 0x12, 0x00, 0x04 };
-  RTLSParser parser;
+  RTLSParser parser = R_TLS_PARSER_INIT;
 
   r_assert_cmpint (R_TLS_ERROR_INVAL, ==, r_tls_parser_init (NULL, NULL, 0));
   r_assert_cmpint (R_TLS_ERROR_INVAL, ==, r_tls_parser_init (&parser, NULL, 0));
   r_assert_cmpint (R_TLS_ERROR_BUF_TOO_SMALL, ==, r_tls_parser_init (&parser, pkt_bogus, 0));
+  r_assert_cmpint (R_TLS_ERROR_BUF_TOO_SMALL, ==, r_tls_parser_init (&parser, pkt_bogus, 2));
   r_assert_cmpint (R_TLS_ERROR_VERSION, ==, r_tls_parser_init (&parser, pkt_bogus, sizeof (pkt_bogus)));
 }
 RTEST_END;
@@ -27,7 +28,7 @@ RTEST (rtls, parse_dtls_client_hello, RTEST_FAST)
     0x00, 0x07, 0x00, 0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x0b, 0x00, 0x02, 0x01, 0x00, 0x00,
     0x0a, 0x00, 0x08, 0x00, 0x06, 0x00, 0x1d, 0x00, 0x17, 0x00, 0x18
   };
-  RTLSParser parser;
+  RTLSParser parser = R_TLS_PARSER_INIT;
   RTLSHandshakeType hstype;
   ruint32 hslen;
   RTLSHelloMsg msg;
@@ -39,7 +40,7 @@ RTEST (rtls, parse_dtls_client_hello, RTEST_FAST)
   r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_0);
   r_assert_cmpuint (parser.epoch, ==, 0);
   r_assert_cmpuint (parser.seqno, ==, 0);
-  r_assert_cmpuint (parser.fraglen, ==, 158);
+  r_assert_cmpuint (parser.fragment.size, ==, 158);
 
   r_assert (r_tls_parser_dtls_is_complete_handshake_fragment (&parser));
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
@@ -121,6 +122,8 @@ RTEST (rtls, parse_dtls_client_hello, RTEST_FAST)
   r_assert_cmphex (r_tls_hello_ext_supported_group (&ext, 1), ==, R_TLS_SUPPORTED_GROUP_SECP256R1);
   r_assert_cmphex (r_tls_hello_ext_supported_group (&ext, 2), ==, R_TLS_SUPPORTED_GROUP_SECP384R1);
   r_assert_cmpint (R_TLS_ERROR_EOB, ==, r_tls_hello_msg_extension_next (&msg, &ext));
+
+  r_tls_parser_clear (&parser);
 }
 RTEST_END;
 
@@ -133,7 +136,7 @@ RTEST (rtls, parse_tls_server_hello, RTEST_FAST)
     0x15, 0x00, 0x00, 0x00, 0x00, 0xff, 0x01, 0x00, 0x01, 0x00, 0x00, 0x0b, 0x00, 0x04, 0x03, 0x00,
     0x01, 0x02, 0x00, 0x23, 0x00, 0x00
   };
-  RTLSParser parser;
+  RTLSParser parser = R_TLS_PARSER_INIT;
   RTLSHandshakeType hstype;
   ruint32 hslen;
   RTLSHelloMsg msg;
@@ -143,7 +146,7 @@ RTEST (rtls, parse_tls_server_hello, RTEST_FAST)
       r_tls_parser_init (&parser, pkt_tls_server_hallo, sizeof (pkt_tls_server_hallo)));
   r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
   r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_TLS_1_2);
-  r_assert_cmpuint (parser.fraglen, ==, 65);
+  r_assert_cmpuint (parser.fragment.size, ==, 65);
 
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
       r_tls_parser_parse_handshake (&parser, &hstype, &hslen));
@@ -179,6 +182,8 @@ RTEST (rtls, parse_tls_server_hello, RTEST_FAST)
   r_assert_cmpuint (ext.type, ==, R_TLS_EXT_TYPE_SESSION_TICKET);
   r_assert_cmpuint (ext.len, ==, 0);
   r_assert_cmpint (R_TLS_ERROR_EOB, ==, r_tls_hello_msg_extension_next (&msg, &ext));
+
+  r_tls_parser_clear (&parser);
 }
 RTEST_END;
 
@@ -232,7 +237,7 @@ RTEST (rtls, parse_dtls_certificate, RTEST_FAST)
     0xc1, 0x3e, 0x3c, 0x9e, 0x22, 0x0a, 0x85
   };
 
-  RTLSParser parser;
+  RTLSParser parser = R_TLS_PARSER_INIT;
   RTLSHandshakeType hstype;
   ruint32 hslen;
   RTLSCertificate tlscert = R_TLS_CERTIFICATE_INIT;
@@ -245,7 +250,7 @@ RTEST (rtls, parse_dtls_certificate, RTEST_FAST)
   r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
   r_assert_cmpuint (parser.epoch, ==, 0);
   r_assert_cmpuint (parser.seqno, ==, 1);
-  r_assert_cmpuint (parser.fraglen, ==, 698);
+  r_assert_cmpuint (parser.fragment.size, ==, 698);
 
   r_assert (r_tls_parser_dtls_is_complete_handshake_fragment (&parser));
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
@@ -273,6 +278,8 @@ RTEST (rtls, parse_dtls_certificate, RTEST_FAST)
   r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 2048);
 
   r_crypto_key_unref (pk);
+
+  r_tls_parser_clear (&parser);
 }
 RTEST_END;
 
@@ -285,7 +292,7 @@ RTEST (rtls, parse_dtls_certificate_request, RTEST_FAST)
     0x03, 0x03, 0x01, 0x03, 0x02, 0x03, 0x03, 0x02, 0x01, 0x02, 0x02, 0x02, 0x03, 0x00, 0x00
   };
 
-  RTLSParser parser;
+  RTLSParser parser = R_TLS_PARSER_INIT;
   RTLSHandshakeType hstype;
   ruint32 hslen;
   RTLSCertReq req;
@@ -296,7 +303,7 @@ RTEST (rtls, parse_dtls_certificate_request, RTEST_FAST)
   r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
   r_assert_cmpuint (parser.epoch, ==, 0);
   r_assert_cmpuint (parser.seqno, ==, 3);
-  r_assert_cmpuint (parser.fraglen, ==, 50);
+  r_assert_cmpuint (parser.fragment.size, ==, 50);
 
   r_assert (r_tls_parser_dtls_is_complete_handshake_fragment (&parser));
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
@@ -330,6 +337,8 @@ RTEST (rtls, parse_dtls_certificate_request, RTEST_FAST)
   r_assert_cmphex (r_tls_cert_req_sign_scheme (&req, 14), ==, R_TLS_SIGN_SCHEME_ECDSA_SHA1);
 
   r_assert_cmpuint (req.cacount, ==, 0);
+
+  r_tls_parser_clear (&parser);
 }
 RTEST_END;
 
@@ -340,7 +349,7 @@ RTEST (rtls, parse_dtls_hello_done, RTEST_FAST)
     0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
   };
 
-  RTLSParser parser;
+  RTLSParser parser = R_TLS_PARSER_INIT;
   RTLSHandshakeType hstype;
   ruint32 hslen;
 
@@ -350,13 +359,15 @@ RTEST (rtls, parse_dtls_hello_done, RTEST_FAST)
   r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
   r_assert_cmpuint (parser.epoch, ==, 0);
   r_assert_cmpuint (parser.seqno, ==, 4);
-  r_assert_cmpuint (parser.fraglen, ==, 12);
+  r_assert_cmpuint (parser.fragment.size, ==, 12);
 
   r_assert (r_tls_parser_dtls_is_complete_handshake_fragment (&parser));
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
       r_tls_parser_parse_handshake (&parser, &hstype, &hslen));
   r_assert_cmpuint (hstype, ==, R_TLS_HANDSHAKE_TYPE_SERVER_HELLO_DONE);
   r_assert_cmpuint (hslen, ==, 0);
+
+  r_tls_parser_clear (&parser);
 }
 RTEST_END;
 
@@ -365,7 +376,7 @@ RTEST (rtls, parse_dtls_change_cipher_spec, RTEST_FAST)
   static const ruint8 pkt_dtls_ccs[] = {
     0x14, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01, 0x01
   };
-  RTLSParser parser;
+  RTLSParser parser = R_TLS_PARSER_INIT;
 
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init (&parser,
         pkt_dtls_ccs, sizeof (pkt_dtls_ccs)));
@@ -373,8 +384,10 @@ RTEST (rtls, parse_dtls_change_cipher_spec, RTEST_FAST)
   r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
   r_assert_cmpuint (parser.epoch, ==, 0);
   r_assert_cmpuint (parser.seqno, ==, 4);
-  r_assert_cmpuint (parser.fraglen, ==, 1);
-  r_assert_cmpuint (parser.fragment[0], ==, 1);
+  r_assert_cmpuint (parser.fragment.size, ==, 1);
+  r_assert_cmpuint (parser.fragment.data[0], ==, 1);
+
+  r_tls_parser_clear (&parser);
 }
 RTEST_END;
 
@@ -412,7 +425,7 @@ RTEST (rtls, parse_dtls_new_session_ticket, RTEST_FAST)
     0xc7, 0x1a, 0x27, 0x3e, 0xd2, 0x9e, 0xd9, 0x76, 0x69, 0x55, 0xbd, 0xd0, 0xd1, 0x90, 0xc0, 0xd0,
     0x61, 0x38, 0xb0, 0x50, 0x37, 0x26, 0x1d, 0x2a, 0x42, 0xf6, 0x40, 0x02, 0x7c, 0xb9, 0xea
   };
-  RTLSParser parser;
+  RTLSParser parser = R_TLS_PARSER_INIT;
   RTLSHandshakeType hstype;
   ruint32 hslen, lifetime;
   ruint16 ticketsize;
@@ -424,7 +437,7 @@ RTEST (rtls, parse_dtls_new_session_ticket, RTEST_FAST)
   r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
   r_assert_cmpuint (parser.epoch, ==, 0);
   r_assert_cmpuint (parser.seqno, ==, 5);
-  r_assert_cmpuint (parser.fraglen, ==, 466);
+  r_assert_cmpuint (parser.fragment.size, ==, 466);
 
   r_assert (r_tls_parser_dtls_is_complete_handshake_fragment (&parser));
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
@@ -437,6 +450,8 @@ RTEST (rtls, parse_dtls_new_session_ticket, RTEST_FAST)
   r_assert_cmpuint (lifetime, ==, 7200);
   r_assert_cmpuint (ticketsize, ==, 448);
   r_assert_cmpptr (ticket, !=, NULL);
+
+  r_tls_parser_clear (&parser);
 }
 RTEST_END;
 
@@ -451,7 +466,7 @@ RTEST (rtls, parse_dtls_certificate_verify, RTEST_FAST)
     0x50, 0x1a, 0xbc, 0x12, 0xeb, 0x0e, 0x02, 0xeb, 0xed, 0xe9, 0xca, 0xa8, 0xd3, 0xa6, 0x8b, 0xf3,
     0xd9, 0xb2, 0xc8, 0x69, 0xc8
   };
-  RTLSParser parser;
+  RTLSParser parser = R_TLS_PARSER_INIT;
   RTLSHandshakeType hstype;
   ruint32 hslen;
   RTLSSignatureScheme sigscheme;
@@ -464,7 +479,7 @@ RTEST (rtls, parse_dtls_certificate_verify, RTEST_FAST)
   r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
   r_assert_cmpuint (parser.epoch, ==, 0);
   r_assert_cmpuint (parser.seqno, ==, 3);
-  r_assert_cmpuint (parser.fraglen, ==, 88);
+  r_assert_cmpuint (parser.fragment.size, ==, 88);
 
   r_assert (r_tls_parser_dtls_is_complete_handshake_fragment (&parser));
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
@@ -477,6 +492,8 @@ RTEST (rtls, parse_dtls_certificate_verify, RTEST_FAST)
   r_assert_cmphex (sigscheme, ==, R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512);
   r_assert_cmpuint (sigsize, ==, 72);
   r_assert_cmpptr (sig, !=, NULL);
+
+  r_tls_parser_clear (&parser);
 }
 RTEST_END;
 
