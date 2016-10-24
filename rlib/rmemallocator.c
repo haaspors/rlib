@@ -148,7 +148,7 @@ r_system_mem_allocator_view (RMem * mem, rssize offset, rssize size)
     size = mem->size - offset;
     if (R_UNLIKELY (size < 0)) return NULL;
   }
-  if (R_UNLIKELY ((rsize)(offset + size) > mem->allocsize - mem->offset)) return NULL;
+  if (R_UNLIKELY ((rsize)(offset + size) > parent->allocsize - mem->offset)) return NULL;
 
   if ((ret = r_mem_new (RSystemMem)) != NULL) {
     r_system_mem_init (ret, parent->flags | R_MEM_FLAG_READONLY,

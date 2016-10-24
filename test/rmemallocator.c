@@ -212,6 +212,29 @@ RTEST (rmem, view, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmem, view_of_view, RTEST_FAST)
+{
+  RMem * mem, * view, * vview;
+
+  r_assert_cmpptr ((mem = r_mem_allocator_alloc (NULL, 0, 128, 16, 16, 0xff)), !=, NULL);
+  r_assert_cmpuint (mem->offset, ==, 16);
+
+  r_assert_cmpptr ((view = r_mem_view (mem, 32, -1)), !=, NULL);
+  r_assert_cmpptr (view->parent, ==, mem);
+  r_assert_cmpuint (view->size, ==, 96);
+  r_assert_cmpuint (view->offset, ==, 16 + 32);
+
+  r_assert_cmpptr ((vview = r_mem_view (view, 16, -1)), !=, NULL);
+  r_assert_cmpptr (vview->parent, ==, mem);
+  r_assert_cmpuint (vview->size, ==, 80);
+  r_assert_cmpuint (vview->offset, ==, 16 + 32 + 16);
+
+  r_mem_unref (vview);
+  r_mem_unref (view);
+  r_mem_unref (mem);
+}
+RTEST_END;
+
 RTEST (rmem, wrapped, RTEST_FAST)
 {
   RMem * mem;
