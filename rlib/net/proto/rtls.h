@@ -31,6 +31,13 @@
 
 R_BEGIN_DECLS
 
+#define R_TLS_RECORD_HDR_SIZE             5
+#define R_TLS_RECORD_EXTRA_DTLS_SIZE      8
+#define R_TLS_HS_HDR_SIZE                 4
+#define R_TLS_HS_EXTRA_DTLS_SIZE          8
+#define R_DTLS_RECORD_HDR_SIZE            (R_TLS_RECORD_HDR_SIZE + R_TLS_RECORD_EXTRA_DTLS_SIZE)
+#define R_DTLS_HS_HDR_SIZE                (R_TLS_HS_HDR_SIZE + R_TLS_HS_EXTRA_DTLS_SIZE)
+
 typedef enum {
   R_TLS_VERSION_SSL_1_0                                 = 0x0100,
   R_TLS_VERSION_SSL_2_0                                 = 0x0200,
@@ -353,7 +360,8 @@ R_API RTLSError r_tls_parser_init_next (RTLSParser * parser, RBuffer ** buf);
 R_API RBuffer * r_tls_parser_next (RTLSParser * parser);
 R_API void r_tls_parser_clear (RTLSParser * parser);
 
-#define r_tls_parser_is_dtls(parser) ((parser)->version > RUINT16_MAX / 2)
+#define r_tls_version_is_dtls(version) ((version) > RUINT16_MAX / 2)
+#define r_tls_parser_is_dtls(parser) r_tls_version_is_dtls ((parser)->version)
 #define r_tls_parser_parse_handshake(parser, type, length)                    \
   r_tls_parser_parse_handshake_full (parser, type, length, NULL, NULL, NULL)
 R_API RTLSError r_tls_parser_parse_handshake_full (const RTLSParser * parser,
@@ -416,6 +424,14 @@ static inline RTLSClientCertificateType r_tls_cert_req_cert_type (const RTLSCert
 { return (RTLSClientCertificateType)req->certtype[n]; }
 static inline RTLSSignatureScheme r_tls_cert_req_sign_scheme (const RTLSCertReq * req, int n)
 { return (RTLSSignatureScheme)RUINT16_FROM_BE (((const ruint16 *)req->signscheme)[n]); }
+
+
+
+R_API RTLSError r_tls_write_handshake (rpointer data, rsize size,
+    rsize * out, RTLSVersion ver, RTLSHandshakeType type, ruint16 len);
+R_API RTLSError r_dtls_write_handshake (rpointer data, rsize size,
+    rsize * out, RTLSVersion ver, RTLSHandshakeType type, ruint16 len,
+    ruint16 epoch, ruint64 seqno, ruint16 msgseq, ruint32 foff, ruint32 flen);
 
 R_END_DECLS
 

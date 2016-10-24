@@ -342,13 +342,13 @@ RTEST (rtls, parse_dtls_certificate_request, RTEST_FAST)
 }
 RTEST_END;
 
+static const ruint8 pkt_dtls_hello_done[] = {
+  0x16, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x0c, 0x0e, 0x00, 0x00,
+  0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
 RTEST (rtls, parse_dtls_hello_done, RTEST_FAST)
 {
-  static const ruint8 pkt_dtls_hello_done[] = {
-    0x16, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x0c, 0x0e, 0x00, 0x00,
-    0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-  };
-
   RTLSParser parser = R_TLS_PARSER_INIT;
   RTLSHandshakeType hstype;
   ruint32 hslen;
@@ -546,6 +546,43 @@ RTEST (rtls, parse_dtls_multiple, RTEST_FAST)
 
   r_assert_cmpint (R_TLS_ERROR_EOB, ==, r_tls_parser_init_next (&parser, NULL));
   r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
+RTEST (rtls, write_tls_hello_done, RTEST_FAST)
+{
+  static const ruint8 pkt_tls_hello_done[] = {
+    0x16, 0x03, 0x03, 0x00, 0x04, 0x0e, 0x00, 0x00, 0x00
+  };
+  ruint8 data[32];
+  rsize size = sizeof (data);
+
+  r_memclear (data, size);
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_handshake (data, size, &size,
+        R_TLS_VERSION_TLS_1_2, R_TLS_HANDSHAKE_TYPE_SERVER_HELLO_DONE, 0));
+
+  r_assert_cmpuint (size, ==, sizeof (pkt_tls_hello_done));
+  r_assert_cmpmem (pkt_tls_hello_done, ==, data, size);
+}
+RTEST_END;
+
+RTEST (rtls, write_dtls_hello_done, RTEST_FAST)
+{
+  ruint8 data[32];
+  rsize size = sizeof (data);
+  ruint16 epoch = 0;
+  ruint64 seqno = 4;
+  ruint16 msgseq = 4;
+
+  r_memclear (data, size);
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_dtls_write_handshake (data, size, &size,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_SERVER_HELLO_DONE, 0,
+        epoch, seqno, msgseq, 0, 0));
+
+  r_assert_cmpuint (size, ==, sizeof (pkt_dtls_hello_done));
+  r_assert_cmpmem (pkt_dtls_hello_done, ==, data, size);
 }
 RTEST_END;
 
