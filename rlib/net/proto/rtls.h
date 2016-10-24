@@ -296,6 +296,7 @@ typedef enum {
 
 typedef struct {
   RBuffer * buf;
+  rsize recsize;
 
   RTLSContentType content;
   RTLSVersion version;
@@ -303,7 +304,7 @@ typedef struct {
   ruint64 seqno;                              /* DTLS only */
   RMemMapInfo fragment;
 } RTLSParser;
-#define R_TLS_PARSER_INIT             { NULL, 0, 0, 0, 0, R_MEM_MAP_INFO_INIT }
+#define R_TLS_PARSER_INIT           { NULL, 0, 0, 0, 0, 0, R_MEM_MAP_INFO_INIT }
 
 typedef struct {
   RTLSVersion version;
@@ -348,6 +349,7 @@ typedef struct {
 
 R_API RTLSError r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size);
 R_API RTLSError r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf);
+R_API RBuffer * r_tls_parser_next (RTLSParser * parser);
 R_API void r_tls_parser_clear (RTLSParser * parser);
 
 #define r_tls_parser_is_dtls(parser) ((parser)->version > RUINT16_MAX / 2)

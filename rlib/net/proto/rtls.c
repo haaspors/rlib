@@ -132,9 +132,25 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
 
   ret = R_TLS_ERROR_OK;
   parser->buf = r_buffer_ref (buf);
+  parser->recsize = fragoff + fraglen;
 
 beach:
   r_buffer_unmap (buf, &info);
+  return ret;
+}
+
+RBuffer *
+r_tls_parser_next (RTLSParser * parser)
+{
+  RBuffer * ret;
+
+  if ((ret = r_buffer_new ()) != NULL) {
+    if (!r_buffer_append_region_from (ret, parser->buf, parser->recsize, -1)) {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
   return ret;
 }
 
