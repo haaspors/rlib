@@ -518,7 +518,6 @@ RTEST (rtls, parse_dtls_multiple, RTEST_FAST)
     0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
   };
   RTLSParser parser = R_TLS_PARSER_INIT;
-  RBuffer * buf;
 
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init (&parser,
         pkt_dtls_multiple, sizeof (pkt_dtls_multiple)));
@@ -529,11 +528,7 @@ RTEST (rtls, parse_dtls_multiple, RTEST_FAST)
   r_assert_cmpuint (parser.fragment.size, ==, 78);
   r_assert_cmpuint (parser.recsize, ==, 91);
 
-  r_assert_cmpptr ((buf = r_tls_parser_next (&parser)), !=, NULL);
-  r_tls_parser_clear (&parser);
-
-  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init_buffer (&parser, buf));
-  r_buffer_unref (buf);
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init_next (&parser, NULL));
   r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
   r_assert_cmphex (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
   r_assert_cmpuint (parser.epoch, ==, 0);
@@ -541,13 +536,7 @@ RTEST (rtls, parse_dtls_multiple, RTEST_FAST)
   r_assert_cmpuint (parser.fragment.size, ==, 50);
   r_assert_cmpuint (parser.recsize, ==, 63);
 
-  r_assert_cmpuint (r_buffer_get_size (parser.buf), ==, 63 + 25);
-
-  r_assert_cmpptr ((buf = r_tls_parser_next (&parser)), !=, NULL);
-  r_tls_parser_clear (&parser);
-
-  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init_buffer (&parser, buf));
-  r_buffer_unref (buf);
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init_next (&parser, NULL));
   r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
   r_assert_cmphex (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
   r_assert_cmpuint (parser.epoch, ==, 0);
@@ -555,7 +544,7 @@ RTEST (rtls, parse_dtls_multiple, RTEST_FAST)
   r_assert_cmpuint (parser.fragment.size, ==, 12);
   r_assert_cmpuint (parser.recsize, ==, 25);
 
-  r_assert_cmpptr ((buf = r_tls_parser_next (&parser)), ==, NULL);
+  r_assert_cmpint (R_TLS_ERROR_EOB, ==, r_tls_parser_init_next (&parser, NULL));
   r_tls_parser_clear (&parser);
 }
 RTEST_END;

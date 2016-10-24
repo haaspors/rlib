@@ -139,6 +139,29 @@ beach:
   return ret;
 }
 
+RTLSError
+r_tls_parser_init_next (RTLSParser * parser, RBuffer ** buf)
+{
+  RBuffer * next;
+  RTLSError ret;
+
+  if ((next = r_tls_parser_next (parser)) != NULL) {
+    r_tls_parser_clear (parser);
+    ret = r_tls_parser_init_buffer (parser, next);
+    if (buf != NULL)
+      *buf = next;
+    else
+      r_buffer_unref (next);
+  } else {
+    r_tls_parser_clear (parser);
+    ret = R_TLS_ERROR_EOB;
+    if (buf != NULL)
+      *buf = NULL;
+  }
+
+  return ret;
+}
+
 RBuffer *
 r_tls_parser_next (RTLSParser * parser)
 {

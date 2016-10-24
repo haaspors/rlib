@@ -275,8 +275,8 @@ typedef enum {
 } RDTLSSRTPProtectionProfile;
 
 typedef enum {
+  R_TLS_ERROR_EOB                                       =  1,
   R_TLS_ERROR_OK                                        =  0,
-  R_TLS_ERROR_EOB                                       =  0,
   R_TLS_ERROR_INVAL                                     = -1,
   R_TLS_ERROR_INVALID_RECORD                            = -2,
   R_TLS_ERROR_CORRUPT_RECORD                            = -3,
@@ -349,6 +349,7 @@ typedef struct {
 
 R_API RTLSError r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size);
 R_API RTLSError r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf);
+R_API RTLSError r_tls_parser_init_next (RTLSParser * parser, RBuffer ** buf);
 R_API RBuffer * r_tls_parser_next (RTLSParser * parser);
 R_API void r_tls_parser_clear (RTLSParser * parser);
 
