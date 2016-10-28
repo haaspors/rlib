@@ -279,13 +279,13 @@ r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg)
     ptr += msg->cslen + sizeof (ruint16);
     /* Compression methods */
     msg->complen = *ptr++;
-    if (ptr + msg->complen + 2 > end) return R_TLS_ERROR_CORRUPT_RECORD;
+    if (ptr + msg->complen > end) return R_TLS_ERROR_CORRUPT_RECORD;
     msg->compression = ptr;
     ptr += msg->complen;
   } else {
     msg->cookielen = 0;
     msg->cookie = NULL;
-    if (ptr + sizeof (ruint16) + sizeof (ruint8) + sizeof (ruint16) > end)
+    if (ptr + sizeof (ruint16) + sizeof (ruint8) > end)
       return R_TLS_ERROR_CORRUPT_RECORD;
     /* Cipher suite */
     msg->cslen = sizeof (ruint16);
@@ -297,9 +297,15 @@ r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg)
   }
 
   /* Extensions */
-  msg->extlen = RUINT16_FROM_BE (*(const ruint16 *)ptr);
-  if (ptr + msg->extlen > end) return R_TLS_ERROR_CORRUPT_RECORD;
-  msg->ext = &ptr[sizeof (ruint16)];
+  if (ptr + sizeof (ruint16) > end) {
+    msg->extlen = 0;
+    msg->ext = NULL;
+  } else {
+    msg->extlen = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+    ptr += sizeof (ruint16);
+    if (ptr + msg->extlen > end) return R_TLS_ERROR_CORRUPT_RECORD;
+    msg->ext = ptr;
+  }
 
   return R_TLS_ERROR_OK;
 }
