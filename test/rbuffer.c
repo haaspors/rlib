@@ -513,6 +513,42 @@ RTEST (rbuffer, resize, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbuffer, shrink, RTEST_FAST)
+{
+  RBuffer * buf;
+  RMem * mem;
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (!r_buffer_shrink (buf, 256));
+  r_assert (r_buffer_shrink (buf, 0));
+
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 256, 128)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf, mem));
+  r_mem_unref (mem);
+
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 2);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, 256 + 512);
+  r_assert (!r_buffer_shrink (buf, 1024));
+  r_assert (r_buffer_shrink (buf, 512));
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, 256 + 256);
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 2);
+
+  r_assert (r_buffer_shrink (buf, 128));
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, 128);
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 1);
+
+  r_assert (!r_buffer_shrink (buf, 512));
+  r_assert (r_buffer_shrink (buf, 0));
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, 0);
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 0);
+
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rbuffer, map, RTEST_FAST)
 {
   RBuffer * buf;

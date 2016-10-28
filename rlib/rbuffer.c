@@ -554,6 +554,37 @@ r_buffer_resize (RBuffer * buffer, rsize offset, rsize size)
 }
 
 rboolean
+r_buffer_shrink (RBuffer * buffer, rsize size)
+{
+  ruint i;
+
+  if (R_UNLIKELY (buffer == NULL)) return FALSE;
+  if (R_UNLIKELY (size == 0)) {
+    r_buffer_mem_clear (buffer);
+    return TRUE;
+  }
+
+  for (i = 0; i < buffer->mem_count; i++) {
+    if (buffer->mem[i]->size >= size) {
+      if (r_mem_resize (buffer->mem[i], buffer->mem[i]->offset, size)) {
+        ruint j;
+        for (j = i + 1; j < buffer->mem_count; j++) {
+          r_mem_unref (buffer->mem[j]);
+          buffer->mem[j] = NULL;
+        }
+        buffer->mem_count = i + 1;
+        size = 0;
+      }
+      break;
+    }
+
+    size -= buffer->mem[i]->size;
+  }
+
+  return (size == 0);
+}
+
+rboolean
 r_buffer_map_mem_range (RBuffer * buffer, ruint idx, int mem_count,
     RMemMapInfo * info, RMemMapFlags flags)
 {

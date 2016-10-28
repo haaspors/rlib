@@ -74,6 +74,8 @@ R_API RBuffer * r_buffer_merge_takev (RBuffer * a, va_list args) R_ATTR_WARN_UNU
 R_API RBuffer * r_buffer_merge_take_array (RBuffer ** a, ruint count) R_ATTR_WARN_UNUSED_RESULT;
 
 R_API rboolean r_buffer_resize (RBuffer * buffer, rsize offset, rsize size);
+R_API rboolean r_buffer_shrink (RBuffer * buffer, rsize size);
+#define r_buffer_set_size(buf, size) r_buffer_shrink (buf, size)
 
 #define r_buffer_map(buf, info, flags) \
   r_buffer_map_mem_range (buf, 0, -1, info, flags)
