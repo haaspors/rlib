@@ -432,6 +432,9 @@ R_API RTLSError r_tls_write_handshake (rpointer data, rsize size,
 R_API RTLSError r_dtls_write_handshake (rpointer data, rsize size,
     rsize * out, RTLSVersion ver, RTLSHandshakeType type, ruint16 len,
     ruint16 epoch, ruint64 seqno, ruint16 msgseq, ruint32 foff, ruint32 flen);
+R_API RTLSError r_tls_update_handshake_len (rpointer data, rsize size, ruint16 len);
+R_API RTLSError r_dtls_update_handshake_len (rpointer data, rsize size, ruint16 len,
+    ruint32 foff, ruint32 flen);
 
 R_END_DECLS
 

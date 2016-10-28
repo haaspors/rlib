@@ -559,3 +559,48 @@ r_dtls_write_handshake (rpointer data, rsize size, rsize * out,
   return R_TLS_ERROR_OK;
 }
 
+RTLSError
+r_tls_update_handshake_len (rpointer data, rsize size, ruint16 len)
+{
+  ruint hdrlen;
+  ruint8 * p;
+
+  if (R_UNLIKELY (data == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < 9)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  hdrlen = len + R_TLS_HS_HDR_SIZE;
+  p = data;
+  p[3] = (hdrlen  >> 8) & 0xff;
+  p[4] = (hdrlen      ) & 0xff;
+  p[7] = (len     >> 8) & 0xff;
+  p[8] = (len         ) & 0xff;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_dtls_update_handshake_len (rpointer data, rsize size, ruint16 len,
+    ruint32 foff, ruint32 flen)
+{
+  ruint hdrlen;
+  ruint8 * p;
+
+  if (R_UNLIKELY (data == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < 25)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  hdrlen = len + R_DTLS_HS_HDR_SIZE;
+  p = data;
+  p[11] = (hdrlen  >>  8) & 0xff;
+  p[12] = (hdrlen       ) & 0xff;
+  p[15] = (len      >> 8) & 0xff;
+  p[16] = (len          ) & 0xff;
+  p[19] = (foff    >> 16) & 0xff;
+  p[20] = (foff    >>  8) & 0xff;
+  p[21] = (foff         ) & 0xff;
+  p[22] = (flen    >> 16) & 0xff;
+  p[23] = (flen    >>  8) & 0xff;
+  p[24] = (flen         ) & 0xff;
+
+  return R_TLS_ERROR_OK;
+}
+
