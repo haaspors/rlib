@@ -25,6 +25,7 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/rbuffer.h>
+#include <rlib/rrand.h>
 
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rciphersuite.h>
@@ -435,6 +436,11 @@ R_API RTLSError r_dtls_write_handshake (rpointer data, rsize size,
 R_API RTLSError r_tls_update_handshake_len (rpointer data, rsize size, ruint16 len);
 R_API RTLSError r_dtls_update_handshake_len (rpointer data, rsize size, ruint16 len,
     ruint32 foff, ruint32 flen);
+
+R_API RTLSError r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
+    RTLSVersion ver, RPrng * prng, const ruint8 * sid, ruint8 sidsize,
+    RCipherSuite cs, RTLSCompresssionMethod comp);
+#define r_dtls_write_hs_server_hello r_tls_write_hs_server_hello
 
 R_END_DECLS
 
