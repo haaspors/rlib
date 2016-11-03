@@ -335,6 +335,7 @@ r_buffer_append_region_from (RBuffer * buffer, RBuffer * from,
 
   if (R_UNLIKELY (buffer == NULL)) return FALSE;
   if (R_UNLIKELY (from == NULL)) return FALSE;
+  if (R_UNLIKELY (size == 0)) return TRUE;
   if (R_UNLIKELY (from->mem_count == 0)) return TRUE;
 
   for (i = 0; i < from->mem_count && offset >= from->mem[i]->size; i++)
@@ -760,6 +761,10 @@ r_buffer_extract_dup (RBuffer * buffer, rsize offset, rsize size, rsize * dstsiz
 
   if (R_UNLIKELY (buffer == NULL)) return NULL;
   if (R_UNLIKELY (dstsize == NULL)) return NULL;
+  if (R_UNLIKELY (size == 0)) {
+    *dstsize = 0;
+    return NULL;
+  }
 
   dst = r_malloc (size);
   *dstsize = r_buffer_extract (buffer, offset, dst, size);
