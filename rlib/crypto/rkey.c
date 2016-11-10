@@ -113,6 +113,15 @@ r_crypto_key_verify (const RCryptoKey * key, RHashType hashtype,
   return key->algo->verify (key, hashtype, hash, hashsize, sig, sigsize);
 }
 
+RCryptoResult
+r_crypto_key_to_asn1 (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (enc == NULL)) return R_CRYPTO_INVAL;
+
+  return key->algo->export (key, enc);
+}
+
 RCryptoKey *
 r_crypto_key_import_ssh_public_key_file (const rchar * file)
 {

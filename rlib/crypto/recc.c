@@ -48,7 +48,7 @@ r_ecdsa_pub_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo ecdsa_pub_key_info = {
     R_CRYPTO_ALGO_ECDSA, R_ECDSA_STR,
-    NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, NULL
   };
 
   r_ref_init (key, r_ecc_pub_key_free);
@@ -81,7 +81,7 @@ r_ecdh_pub_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo ecdh_pub_key_info = {
     R_CRYPTO_ALGO_ECDH, R_ECDH_STR,
-    NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, NULL
   };
 
   r_ref_init (key, r_ecc_pub_key_free);

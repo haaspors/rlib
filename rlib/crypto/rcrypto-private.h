@@ -37,6 +37,7 @@ typedef RCryptoResult (*RCryptoSign) (const RCryptoKey * key, RPrng * prng,
 typedef RCryptoResult (*RCryptoVerify) (const RCryptoKey * key,
     RHashType hashtype, rconstpointer hash, rsize hashsize,
     rconstpointer sig, rsize sigsize);
+typedef RCryptoResult (*RCryptoKeyExportAsn1) (const RCryptoKey * key, RAsn1BinEncoder * enc);
 
 typedef struct {
   RCryptoAlgorithm algo;
@@ -46,6 +47,7 @@ typedef struct {
   RCryptoOperation decrypt;
   RCryptoSign sign;
   RCryptoVerify verify;
+  RCryptoKeyExportAsn1 export;
 } RCryptoAlgoInfo;
 
 struct _RCryptoKey {

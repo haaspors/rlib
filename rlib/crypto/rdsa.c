@@ -58,7 +58,7 @@ r_dsa_pub_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo dsa_pub_key_info = {
     R_CRYPTO_ALGO_DSA, R_DSA_STR,
-    NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, NULL
   };
 
   r_ref_init (key, r_dsa_pub_key_free);
@@ -83,7 +83,7 @@ r_dsa_priv_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo dsa_priv_key_info = {
     R_CRYPTO_ALGO_DSA, R_DSA_STR,
-    NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, NULL
   };
 
   r_ref_init (key, r_dsa_priv_key_free);

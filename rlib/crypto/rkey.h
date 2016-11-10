@@ -83,6 +83,8 @@ R_API RCryptoResult r_crypto_key_sign (const RCryptoKey * key, RPrng * prng,
     rpointer sig, rsize * sigsize);
 R_API RCryptoResult r_crypto_key_verify (const RCryptoKey * key, RHashType hashtype,
     rconstpointer hash, rsize hashsize, rconstpointer sig, rsize sigsize);
+R_API RCryptoResult r_crypto_key_to_asn1 (const RCryptoKey * key, RAsn1BinEncoder * enc);
+#define r_crypto_key_export r_crypto_key_to_asn1
 
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key_file (const rchar * file);
 R_API RCryptoKey * r_crypto_key_import_ssh_public_key (const rchar * data, rsize size);

@@ -20,6 +20,7 @@
 #include <rlib/crypto/rrsa.h>
 #include <rlib/crypto/rcrypto-private.h>
 
+#include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>
 
 #define R_RSA_EMSA_PKCS1        0x01
@@ -108,6 +109,62 @@ r_rsa_verify (const RCryptoKey * key,
   }
 }
 
+static RCryptoResult
+r_rsa_pub_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  RCryptoResult ret = R_CRYPTO_ERROR;
+
+  ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+
+    if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+      r_asn1_bin_encoder_add_oid_rawsz (enc, R_RSA_OID_RSA_ENCRYPTION);
+      r_asn1_bin_encoder_add_null (enc);
+      r_asn1_bin_encoder_end_constructed (enc);
+    }
+
+    if (r_asn1_bin_encoder_begin_bit_string (enc, 0) == R_ASN1_ENCODER_OK) {
+      if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+        const RRsaPubKey * pk = (const RRsaPubKey *)key;
+        if (r_asn1_bin_encoder_add_integer_mpint (enc, &pk->n) == R_ASN1_ENCODER_OK &&
+            r_asn1_bin_encoder_add_integer_mpint (enc, &pk->e) == R_ASN1_ENCODER_OK) {
+          ret = R_CRYPTO_OK;
+        }
+        r_asn1_bin_encoder_end_constructed (enc);
+      }
+      r_asn1_bin_encoder_end_bit_string (enc);
+    }
+    r_asn1_bin_encoder_end_constructed (enc);
+  }
+
+  return ret;
+}
+
+static RCryptoResult
+r_rsa_priv_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+    const RRsaPrivKey * pk = (const RRsaPrivKey *)key;
+    if (r_asn1_bin_encoder_add_integer_i32 (enc, pk->ver) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->pub.n) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->pub.e) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->d) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->p) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->q) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->dp) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->dq) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->qp) == R_ASN1_ENCODER_OK) {
+      r_asn1_bin_encoder_end_constructed (enc);
+      return R_CRYPTO_OK;
+    }
+
+    r_asn1_bin_encoder_end_constructed (enc); /* end and discard? */
+  }
+
+  return R_CRYPTO_ERROR;
+}
+
 static void
 r_rsa_pub_key_free (rpointer data)
 {
@@ -126,7 +183,7 @@ r_rsa_pub_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo rsa_pub_key_info = {
     R_CRYPTO_ALGO_RSA, R_RSA_STR,
-    r_rsa_encrypt, r_rsa_decrypt, NULL, r_rsa_verify
+    r_rsa_encrypt, r_rsa_decrypt, NULL, r_rsa_verify, r_rsa_pub_key_export,
   };
 
   r_ref_init (key, r_rsa_pub_key_free);
@@ -157,7 +214,7 @@ r_rsa_priv_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo rsa_priv_key_info = {
     R_CRYPTO_ALGO_RSA, R_RSA_STR,
-    r_rsa_encrypt, r_rsa_decrypt, r_rsa_sign, r_rsa_verify
+    r_rsa_encrypt, r_rsa_decrypt, r_rsa_sign, r_rsa_verify, r_rsa_priv_key_export
   };
 
   r_ref_init (key, r_rsa_priv_key_free);
