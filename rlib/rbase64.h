@@ -27,6 +27,7 @@
 R_BEGIN_DECLS
 
 R_API rchar * r_base64_encode (rconstpointer data, rsize size, rsize * outsize) R_ATTR_MALLOC;
+R_API rchar * r_base64_encode_full (rconstpointer data, rsize size, rsize linesize, rsize * outsize) R_ATTR_MALLOC;
 R_API ruint8 * r_base64_decode (const rchar * data, rssize size, rsize * outsize) R_ATTR_MALLOC;
 
 R_END_DECLS

@@ -24,6 +24,55 @@ RTEST (rbase64, encode, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbase64, encode_full_rand, RTEST_FAST)
+{
+  RPrng * prng;
+  ruint8 r[757];
+  rchar * b64;
+  rsize b64size;
+
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+  r_assert (r_prng_fill (prng, r, sizeof (r)));
+  r_prng_unref (prng);
+
+  r_assert_cmpptr ((b64 = r_base64_encode_full (r, sizeof (r), 64, &b64size)), !=, NULL);
+  r_assert_cmpuint (b64size, ==, ((757 + 2) / 3) * 4 + 15);
+  r_assert_cmpuint (r_strlen (b64), ==, b64size);
+  r_free (b64);
+}
+RTEST_END;
+
+RTEST (rbase64, encode_lines, RTEST_FAST)
+{
+  rchar * tmp;
+  rsize out;
+  static rchar rawlong[] = "BAADfoobarCAFebaBE0034asdfbdifdwhfasdhsadk357q3895";
+  static rchar b64long[] =
+    "QkFBRGZvb2JhckNB\n"
+    "RmViYUJFMDAzNGFz\n"
+    "ZGZiZGlmZHdoZmFz\n"
+    "ZGhzYWRrMzU3cTM4\n"
+    "OTU=";
+
+  r_assert_cmpptr (r_base64_encode_full (NULL, 0, 0, NULL), ==, NULL);
+  r_assert_cmpptr (r_base64_encode_full ("foobar", 0, 0, NULL), ==, NULL);
+
+  r_assert_cmpstr ((tmp = r_base64_encode_full ("foobar", 6, 0, NULL)), ==, "Zm9vYmFy");
+  r_free (tmp);
+  r_assert_cmpstr ((tmp = r_base64_encode_full ("foobar", 6, 0, &out)), ==, "Zm9vYmFy");
+  r_assert_cmpuint (out, ==, 8);
+  r_free (tmp);
+
+  r_assert_cmpstr ((tmp = r_base64_encode_full ("BAAD", 4, 3, &out)), ==, "QkFB\nRA==");
+  r_assert_cmpuint (out, ==, 9);
+  r_free (tmp);
+
+  r_assert_cmpstr ((tmp = r_base64_encode_full (rawlong, sizeof (rawlong) - 1, 16, &out)), ==, b64long);
+  r_assert_cmpuint (out, ==, sizeof (b64long) - 1);
+  r_free (tmp);
+}
+RTEST_END;
+
 RTEST (rbase64, decode, RTEST_FAST)
 {
   ruint8 * tmp;
