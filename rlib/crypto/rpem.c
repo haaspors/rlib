@@ -39,6 +39,9 @@
 #define R_PEM_RSAPRIVKEY      "RSA PRIVATE KEY"
 #define R_PEM_ENCPRIVKEY      "ENCRYPTED PRIVATE KEY"
 
+#define R_PEM_BEGIN_PUBKEY    R_PEM_BEGIN_START R_PEM_PUBKEY R_PEM_BEGIN_END "\n"
+#define R_PEM_END_PUBKEY      R_PEM_END_START   R_PEM_PUBKEY R_PEM_END_END   "\n"
+
 struct _RPemParser {
   RRef ref;
 
@@ -320,6 +323,76 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
   } else {
     ret = NULL;
   }
+
+  return ret;
+}
+
+rchar *
+r_pem_write_public_key_dup (const RCryptoKey * key, rsize linesize, rsize * out)
+{
+  rchar * ret;
+  rsize size;
+
+  if (R_UNLIKELY (key == NULL)) return NULL;
+
+  size = 4096; /* FIXME: Calculate max size! */
+
+  if ((ret = r_malloc (size)) != NULL) {
+    if (R_UNLIKELY (!r_pem_write_public_key (key, ret, size, linesize, out))) {
+      r_free (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+rboolean
+r_pem_write_public_key (const RCryptoKey * key,
+    rpointer data, rsize size, rsize linesize, rsize * out)
+{
+  rchar * p;
+  RAsn1BinEncoder * enc;
+  rboolean ret = FALSE;
+
+  if (R_UNLIKELY (key == NULL)) return FALSE;
+  if (R_UNLIKELY (data == NULL)) return FALSE;
+
+  if (R_UNLIKELY ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)) == NULL))
+    return FALSE;
+
+  p = data;
+
+  if (r_crypto_key_to_asn1 (key, enc) == R_CRYPTO_OK) {
+    ruint8 * asn1buf;
+    rsize asn1bufsize;
+
+    /* FIXME: Use RBuffer instead!!! */
+    if ((asn1buf = r_asn1_bin_encoder_get_data (enc, &asn1bufsize)) != NULL) {
+      rchar * b64;
+      rsize b64size;
+
+      if ((b64 = r_base64_encode_full (asn1buf, asn1bufsize, linesize, &b64size)) != NULL) {
+        if (size >= sizeof (R_PEM_BEGIN_PUBKEY) - 1 + b64size + sizeof (R_PEM_END_PUBKEY) - 1) {
+          p = r_stpncpy (p, R_PEM_BEGIN_PUBKEY, sizeof (R_PEM_BEGIN_PUBKEY) - 1);
+          p = r_stpncpy (p, b64, b64size);
+          if (p[-1] != '\n')
+            *p++ = '\n';
+          p = r_stpncpy (p, R_PEM_END_PUBKEY, sizeof (R_PEM_END_PUBKEY));
+
+          ret = TRUE;
+          if (out)
+            *out = RPOINTER_TO_SIZE (p) - RPOINTER_TO_SIZE (data);
+        }
+
+        r_free (b64);
+      }
+
+      r_free (asn1buf);
+    }
+  }
+
+  r_asn1_bin_encoder_unref (enc);
 
   return ret;
 }

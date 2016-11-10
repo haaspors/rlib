@@ -55,7 +55,6 @@ R_API RPemParser * r_pem_parser_new (rconstpointer data, rsize size) R_ATTR_MALL
 
 R_API void r_pem_parser_reset (RPemParser * parser);
 
-/* TODO: Add API for PEM writing */
 
 R_API RPemBlock * r_pem_parser_next_block (RPemParser * parser) R_ATTR_MALLOC;
 #define r_pem_block_ref r_ref_ref
@@ -73,6 +72,12 @@ R_API RAsn1BinDecoder * r_pem_block_get_asn1_decoder (RPemBlock * block);
 
 R_API RCryptoKey * r_pem_block_get_key (RPemBlock * block,
     const rchar * passphrase, rsize ppsize);
+
+
+R_API rchar * r_pem_write_public_key_dup (const RCryptoKey * key,
+    rsize linesize, rsize * out);
+R_API rboolean r_pem_write_public_key (const RCryptoKey * key,
+    rpointer data, rsize size, rsize linesize, rsize * out);
 
 /* TODO: Convenience for certificates */
 

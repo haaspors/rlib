@@ -459,3 +459,30 @@ RTEST (rcryptopem, dsa_pubkey, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rcryptopem, write_rsa_pub_key, RTEST_FAST)
+{
+  RCryptoKey * key;
+  rchar * pem;
+  rsize size;
+  rmpint n, e;
+
+  r_mpint_init_str (&n,
+      "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"
+      "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"
+      "358143b44a35449eb264113121a455bd7fde3fac919e94b56fb9bb4f651cdb23ead439"
+      "d6cd523eb08191e75b35fd13a7419b3090f24787bd4f4e1967", NULL, 16);
+  r_mpint_init_str (&e, "0x10001", NULL, 16);
+
+  r_assert_cmpptr ((key = r_rsa_pub_key_new (&n, &e)), !=, NULL);
+  r_mpint_clear (&n);
+  r_mpint_clear (&e);
+
+  r_assert_cmpptr ((pem = r_pem_write_public_key_dup (key, 76, &size)), !=, NULL);
+  r_assert_cmpuint (sizeof (pem_rsa_pubkey) - 1, ==, size);
+  r_assert_cmpmem (pem_rsa_pubkey, ==, pem, size);
+
+  r_crypto_key_unref (key);
+  r_free (pem);
+}
+RTEST_END;
+
