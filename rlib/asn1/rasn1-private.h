@@ -56,6 +56,17 @@ R_API_HIDDEN RAsn1DecoderStatus r_asn1_der_decoder_next (RAsn1BinDecoder * dec, 
 R_API_HIDDEN RAsn1DecoderStatus r_asn1_der_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 R_API_HIDDEN RAsn1DecoderStatus r_asn1_der_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 
+struct _RAsn1BinEncoder
+{
+  RRef ref;
+  RAsn1EncodingRules enc;
+
+  RBuffer * buf;
+  RSList * stack;
+  rsize offset;
+  RMemMapInfo info;
+};
+
 R_END_DECLS
 
 #endif /* __R_ASN1_PRIVATE_H__ */

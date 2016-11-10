@@ -454,39 +454,6 @@ r_asn1_bin_tlv_parse_bit_string_bits (const RAsn1BinTLV * tlv, rsize * bits)
   return R_ASN1_DECODER_OK;
 }
 
-static const rchar *
-r_asn1_bin_tlv_parse_x500_name (const RAsn1BinTLV * tlv)
-{
-  const struct x500attrtype {
-    const rchar * name;
-    const rchar * oid;
-    rsize oidsize;
-  } x500_attr_table[] = {
-    { "CN",     R_ASN1_OID_ARGS (R_ID_AT_OID_COMMON_NAME) },
-    { "SN",     R_ASN1_OID_ARGS (R_ID_AT_OID_SURNAME) },
-    { "C",      R_ASN1_OID_ARGS (R_ID_AT_OID_CUNTRY_NAME) },
-    { "L",      R_ASN1_OID_ARGS (R_ID_AT_OID_LOCALITY_NAME) },
-    { "ST",     R_ASN1_OID_ARGS (R_ID_AT_OID_STATE_OR_PROVINCE_NAME) },
-    { "STREET", R_ASN1_OID_ARGS (R_ID_AT_OID_STREET_ADDRESS) },
-    { "O",      R_ASN1_OID_ARGS (R_ID_AT_OID_ORGANIZATION_NAME) },
-    { "OU",     R_ASN1_OID_ARGS (R_ID_AT_OID_ORGANIZATIONAL_UNIT_NAME) },
-    { "UID",    R_ASN1_OID_ARGS (R_PSS_OID_USER_ID) },
-    { "DC",     R_ASN1_OID_ARGS (R_PSS_OID_DOMAIN_COMPONENT) },
-  };
-
-  if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
-    rsize i;
-    for (i = 0; i < R_N_ELEMENTS (x500_attr_table); i++) {
-      if (r_asn1_oid_bin_equals_full (tlv->value, tlv->len,
-            x500_attr_table[i].oid, x500_attr_table[i].oidsize)) {
-        return x500_attr_table[i].name;
-      }
-    }
-  }
-
-  return NULL;
-}
-
 static RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_attribute_type_and_value (RAsn1BinDecoder * dec,
     RAsn1BinTLV * tlv, RString * strbld)
@@ -496,7 +463,8 @@ r_asn1_bin_tlv_parse_attribute_type_and_value (RAsn1BinDecoder * dec,
   rsize vlen;
 
   /* AttributeType */
-  if ((t = r_asn1_bin_tlv_parse_x500_name (tlv)) == NULL)
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) ||
+      (t = r_asn1_x500_name_from_oid (tlv->value, tlv->len)) == NULL)
     return R_ASN1_DECODER_WRONG_TYPE;
 
   /* AttributeValue */

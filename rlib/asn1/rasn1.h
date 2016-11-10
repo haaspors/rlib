@@ -25,6 +25,7 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/rbitset.h>
+#include <rlib/rbuffer.h>
 #include <rlib/rhash.h>
 #include <rlib/rmpint.h>
 #include <rlib/rref.h>
@@ -102,6 +103,15 @@ typedef enum {
 #define R_ASN1_DECODER_STATUS_ERROR(s)      ((s) >  R_ASN1_DECODER_OK)
 #define R_ASN1_DECODER_STATUS_SUCCESS(s)    ((s) <= R_ASN1_DECODER_OK)
 
+/* ASN.1 Encoder status */
+typedef enum {
+  R_ASN1_ENCODER_OK                     = 0,
+  R_ASN1_ENCODER_INVALID_ARG,
+  R_ASN1_ENCODER_OOM,
+  R_ASN1_ENCODER_INDEFINITE,
+  R_ASN1_ENCODER_NOT_CONSTRUCTED,
+} RAsn1EncoderStatus;
+
 /* ASN.1 binary Type-Length-Value */
 #define R_ASN1_BIN_TLV_INIT           { NULL, 0, NULL }
 #define R_ASN1_BIN_TLV_ID_CLASS(tlv)  (*(tlv)->start & R_ASN1_ID_CLASS_MASK)
@@ -160,6 +170,47 @@ R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_distinguished_name (RAsn1BinDecode
 /* TODO: Add callback/events based decoder/parser (like a SAX parser) */
 /*R_API rboolean r_asn1_bin_decoder_decode_events (RAsn1BinDecoder * dec,*/
     /*RFunc primary, RFunc start, RFunc end);*/
+
+
+typedef struct _RAsn1BinEncoder RAsn1BinEncoder;
+
+R_API RAsn1BinEncoder * r_asn1_bin_encoder_new (RAsn1EncodingRules enc);
+#define r_asn1_bin_encoder_ref r_ref_ref
+#define r_asn1_bin_encoder_unref r_ref_unref
+
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_begin_constructed (RAsn1BinEncoder * enc, ruint8 id, rsize sizehint);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_begin_bit_string (RAsn1BinEncoder * enc, rsize sizehint);
+#define r_asn1_bin_encoder_begin_octet_string(enc, sizehint)                  \
+  r_asn1_bin_encoder_begin_constructed (enc,                                  \
+      R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OCTET_STRING), \
+      sizehint)
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_end_constructed (RAsn1BinEncoder * enc);
+#define r_asn1_bin_encoder_end_bit_string  r_asn1_bin_encoder_end_constructed
+#define r_asn1_bin_encoder_end_octet_string  r_asn1_bin_encoder_end_constructed
+
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_raw (RAsn1BinEncoder * enc, ruint8 id, rconstpointer data, rsize size);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_null (RAsn1BinEncoder * enc);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_boolean (RAsn1BinEncoder * enc, rboolean value);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_integer_i32 (RAsn1BinEncoder * enc, rint32 value);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_integer_u32 (RAsn1BinEncoder * enc, ruint32 value);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_integer_i64 (RAsn1BinEncoder * enc, rint64 value);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_integer_u64 (RAsn1BinEncoder * enc, ruint64 value);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_integer_mpint (RAsn1BinEncoder * enc, const rmpint * value);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_oid_rawsz (RAsn1BinEncoder * enc, const rchar * rawsz);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_bit_string_raw (RAsn1BinEncoder * enc, const ruint8 * bits, rsize size);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_utc_time (RAsn1BinEncoder * enc, ruint64 time);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_ia5_string (RAsn1BinEncoder * enc, const rchar * dn, rssize size);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_utf8_string (RAsn1BinEncoder * enc, const rchar * dn, rssize size);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_printable_string (RAsn1BinEncoder * enc, const rchar * dn, rssize size);
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_distinguished_name (RAsn1BinEncoder * enc, const rchar * dn);
+
+R_API ruint8 * r_asn1_bin_encoder_get_data (RAsn1BinEncoder * enc, rsize * size) R_ATTR_MALLOC;
+R_API RAsn1EncoderStatus r_asn1_bin_encoder_get_buffer (RAsn1BinEncoder * enc, RBuffer ** buf);
+
+
+
+const rchar * r_asn1_x500_name_from_oid (rconstpointer p, rsize size);
+const rchar * r_asn1_x500_name_to_oid (const rchar * name, rsize size);
 
 R_END_DECLS
 
