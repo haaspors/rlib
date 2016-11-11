@@ -235,6 +235,48 @@ r_time_create_unix_time (ruint16 year, ruint8 month, ruint8 day,
   return days * 86400 + hour * 3600 + minute * 60 + second;
 }
 
+rboolean
+r_time_parse_unix_time (ruint64 time,
+    ruint16 * year, ruint8 * month, ruint8 * day,
+    ruint8 * hour, ruint8 * minute, ruint8 * second)
+{
+  ruint64 a, b, c, d, e, f;
+
+  if (second != NULL)
+    *second = time % 60;
+  time /= 60;
+  if (minute != NULL)
+    *minute = time % 60;
+  time /= 60;
+  if (hour != NULL)
+    *hour = time % 24;
+  time /= 24;
+
+  a = (time * 4 + 102032) / 146097 + 15;
+  b = time + 2442113 + a - (a / 4);
+  c = (20 * b - 2442) / 7305;
+  d = b - 365 * c - (c / 4);
+  e = d * 1000 / 30601;
+  f = d - e * 30 - e * 601 / 1000;
+
+  if (e <= 13) {
+     c -= 4716;
+     e -= 1;
+  } else {
+     c -= 4715;
+     e -= 13;
+  }
+
+  if (year != NULL)
+    *year = c;
+  if (month != NULL)
+    *month = e;
+  if (day != NULL)
+    *day = f;
+
+  return TRUE;
+}
+
 ruint64
 r_time_get_unix_time (void)
 {

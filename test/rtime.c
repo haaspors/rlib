@@ -45,12 +45,12 @@ RTEST (rtime, leap_years, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rtime, create_unix_time, RTEST_FAST)
+RTEST (rtime, unix_time, RTEST_FAST)
 {
   static struct {
     ruint16 y;
     ruint8 m, d;
-    ruint8 h, min, s;
+    ruint8 hh, mm, ss;
     ruint64 expected;
   } cases[] = {
     { 1970,  1,  1,  0,  0,  0,          0 },
@@ -73,15 +73,31 @@ RTEST (rtime, create_unix_time, RTEST_FAST)
     { 2012, 11, 15, 15, 31, 15, 1352993475 },
     { 2009,  7,  8, 23,  5,  6, 1247094306 },
     { 2009,  8, 26,  7, 29, 53, 1251271793 },
-    { 1950,  1,  1,  0,  0,  0,          0 },
   };
 
   rsize i;
 
+  /* r_time_create_unix_time */
   for (i = 0; i < R_N_ELEMENTS (cases); i++) {
     r_assert_cmpuint (cases[i].expected, ==,
         r_time_create_unix_time (cases[i].y, cases[i].m, cases[i].d,
-          cases[i].h, cases[i].min, cases[i].s));
+          cases[i].hh, cases[i].mm, cases[i].ss));
+  }
+  r_assert_cmpuint (0, ==, r_time_create_unix_time (1950, 1, 1, 0, 0, 0));
+
+  /* r_time_parse_unix_time */
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    ruint16 y;
+    ruint8 m, d, hh, mm, ss;
+
+    r_assert (r_time_parse_unix_time (cases[i].expected, &y, &m, &d, &hh, &mm, &ss));
+
+    r_assert_cmpuint (cases[i].y, ==, y);
+    r_assert_cmpuint (cases[i].m, ==, m);
+    r_assert_cmpuint (cases[i].d, ==, d);
+    r_assert_cmpuint (cases[i].hh, ==, hh);
+    r_assert_cmpuint (cases[i].mm, ==, mm);
+    r_assert_cmpuint (cases[i].ss, ==, ss);
   }
 }
 RTEST_END;
