@@ -155,6 +155,32 @@ r_strnchr (const rchar * str, int c, rsize size)
 }
 
 rchar *
+r_strrchr (const rchar * str, int c)
+{
+  if (R_UNLIKELY (str == NULL)) return NULL;
+  return strrchr (str, c);
+}
+
+rchar *
+r_strnrchr (const rchar * str, int c, rsize size)
+{
+#ifndef HAVE_MEMRCHR
+  const rchar * r;
+
+  if (R_UNLIKELY (str == NULL)) return NULL;
+
+  for (r = str + size; r > str; ) {
+    if (*(--r) == (rchar)c)
+      return (rchar *)r;
+  }
+
+  return NULL;
+#else
+  return memrchr (str, c, size);
+#endif
+}
+
+rchar *
 r_strstr (const rchar * str, const rchar * sub)
 {
   if (R_UNLIKELY (str == NULL)) return NULL;

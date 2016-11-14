@@ -145,6 +145,30 @@ RTEST (rstr, cpy, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, strchr, RTEST_FAST)
+{
+  r_assert_cmpptr (r_strchr (NULL, ' '), ==, NULL);
+  r_assert_cmpptr (r_strchr (foobar, ' '), ==, NULL);
+  r_assert_cmpptr (r_strchr (foobar, 255), ==, NULL);
+  r_assert_cmpptr (r_strchr (foobar, 'f'), ==, &foobar[0]);
+  r_assert_cmpptr (r_strchr (foobar, 'o'), ==, &foobar[1]);
+  r_assert_cmpptr (r_strchr (foobar, 'b'), ==, &foobar[3]);
+  r_assert_cmpptr (r_strchr (foobar, 'r'), ==, &foobar[5]);
+}
+RTEST_END;
+
+RTEST (rstr, strrchr, RTEST_FAST)
+{
+  r_assert_cmpptr (r_strrchr (NULL, ' '), ==, NULL);
+  r_assert_cmpptr (r_strrchr (foobar, ' '), ==, NULL);
+  r_assert_cmpptr (r_strrchr (foobar, 255), ==, NULL);
+  r_assert_cmpptr (r_strrchr (foobar, 'f'), ==, &foobar[0]);
+  r_assert_cmpptr (r_strrchr (foobar, 'o'), ==, &foobar[2]);
+  r_assert_cmpptr (r_strrchr (foobar, 'b'), ==, &foobar[3]);
+  r_assert_cmpptr (r_strrchr (foobar, 'r'), ==, &foobar[5]);
+}
+RTEST_END;
+
 RTEST (rstr, strnstr, RTEST_FAST)
 {
   r_assert_cmpptr (r_strnstr (NULL, NULL, 0), ==, NULL);
