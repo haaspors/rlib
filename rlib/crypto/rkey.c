@@ -330,3 +330,43 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   return ret;
 }
 
+RCryptoKey *
+r_crypto_key_from_asn1_private_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
+{
+  RCryptoKey * ret = NULL;
+
+  if (R_UNLIKELY (dec == NULL || tlv == NULL))
+    return NULL;
+
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+
+  /* Skip version */
+  if (r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+
+  if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+    if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
+
+      if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_RSA_ENCRYPTION)) {
+        if (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK &&
+            r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+          ret = r_rsa_priv_key_new_from_asn1 (dec, tlv);
+          r_asn1_bin_decoder_out (dec, tlv);
+        }
+      } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_X9CM_OID_DSA)) {
+        if (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK &&
+            r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+          ret = r_dsa_priv_key_new_from_asn1 (dec, tlv);
+          r_asn1_bin_decoder_out (dec, tlv);
+        }
+      }
+      /* FIXME - Add ECC algo and others! */
+    }
+    r_asn1_bin_decoder_out (dec, tlv);
+  }
+
+  r_asn1_bin_decoder_out (dec, tlv);
+  return ret;
+}
+

@@ -315,7 +315,9 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
       case R_PEM_TYPE_DSA_PRIVATE_KEY:
         ret = r_dsa_priv_key_new_from_asn1 (dec, &tlv);
         break;
-      /* TODO: PRIVATE keys */
+      case R_PEM_TYPE_PRIVATE_KEY:
+        ret = r_crypto_key_from_asn1_private_key (dec, &tlv);
+        break;
       /* TODO: ecnrypted PRIVATE keys */
       default:
         ret = NULL;
