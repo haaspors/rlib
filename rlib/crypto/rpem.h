@@ -49,7 +49,7 @@ typedef enum {
 
 R_API RPemParser * r_pem_parser_new_from_file (const rchar * filename) R_ATTR_MALLOC;
 R_API RPemParser * r_pem_parser_new_from_memfile (RMemFile * file) R_ATTR_MALLOC;
-R_API RPemParser * r_pem_parser_new (rconstpointer data, rsize size) R_ATTR_MALLOC;
+R_API RPemParser * r_pem_parser_new (const rchar * data, rssize size) R_ATTR_MALLOC;
 #define r_pem_parser_ref r_ref_ref
 #define r_pem_parser_unref r_ref_unref
 

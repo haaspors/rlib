@@ -46,7 +46,7 @@ struct _RPemParser {
   RRef ref;
 
   RMemFile * file;
-  const ruint8 * data;
+  const rchar * data;
   rsize size;
 
   rsize offset;
@@ -98,7 +98,7 @@ r_pem_parser_new_from_memfile (RMemFile * file)
   if ((ret = r_mem_new (RPemParser))) {
     r_ref_init (ret, r_pem_parser_free);
     ret->file = r_mem_file_ref (file);
-    ret->data = r_mem_file_get_mem (file);
+    ret->data = (const rchar *)r_mem_file_get_mem (file);
     ret->size = r_mem_file_get_size (file);
     ret->offset = 0;
   }
@@ -107,18 +107,19 @@ r_pem_parser_new_from_memfile (RMemFile * file)
 }
 
 RPemParser *
-r_pem_parser_new (rconstpointer data, rsize size)
+r_pem_parser_new (const rchar * data, rssize size)
 {
   RPemParser * ret;
 
-  if (R_UNLIKELY (data == NULL || size < 32))
-    return NULL;
+  if (R_UNLIKELY (data == NULL)) return NULL;
+  if (size < 0) size = r_strlen (data);
+  if (R_UNLIKELY (size < 32)) return NULL;
 
   if ((ret = r_mem_new (RPemParser))) {
     r_ref_init (ret, r_pem_parser_free);
     ret->file = NULL;
-    ret->data = (const ruint8 *)data;
-    ret->size = size;
+    ret->data = data;
+    ret->size = (rsize)size;
     ret->offset = 0;
   }
 
@@ -174,7 +175,7 @@ r_pem_parser_next_block (RPemParser * parser)
   if (parser->offset >= parser->size)
     return NULL;
 
-  data = (const rchar *)&parser->data[parser->offset];
+  data = &parser->data[parser->offset];
   size = parser->size - parser->offset;
   if ((beg = r_str_ptr_of_str (data, size,
           R_PEM_BEGIN_START, sizeof (R_PEM_BEGIN_START) - 1)) == NULL)
@@ -190,7 +191,7 @@ r_pem_parser_next_block (RPemParser * parser)
   r_free (endstr);
 
   if (end != NULL) {
-    parser->offset = (end - (const rchar *)parser->data) +
+    parser->offset = RPOINTER_TO_SIZE (end - parser->data) +
       sizeof (R_PEM_END_START)-1 + (begend - lbl) + sizeof (R_PEM_END_END)-1;
     if ((ret = r_mem_new (RPemBlock)) != NULL) {
       r_ref_init (ret, r_pem_block_free);
@@ -199,7 +200,7 @@ r_pem_parser_next_block (RPemParser * parser)
       ret->type = r_pem_type_from_label (label);
       ret->begline = beg;
       ret->endline = end;
-      ret->eob = (const rchar *)&parser->data[parser->offset];
+      ret->eob = &parser->data[parser->offset];
 
       ret->blob = begend + sizeof (R_PEM_BEGIN_END) - 1;
       while (r_ascii_isspace (*ret->blob)) ret->blob++;
