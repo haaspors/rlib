@@ -485,3 +485,40 @@ r_pem_write_cert (const RCryptoCert * cert, rpointer data, rsize size,
   return ret;
 }
 
+RCryptoKey *
+r_pem_parse_key_from_data (const rchar * data, rssize size,
+    const rchar * passphrase, rsize ppsize)
+{
+  RPemParser * parser;
+  RCryptoKey * ret = NULL;
+
+  if ((parser = r_pem_parser_new (data, size)) != NULL) {
+    RPemBlock * block;
+    if ((block = r_pem_parser_next_block (parser)) != NULL) {
+      ret = r_pem_block_get_key (block, passphrase, ppsize);
+      r_pem_block_unref (block);
+    }
+    r_pem_parser_unref (parser);
+  }
+
+  return ret;
+}
+
+RCryptoCert *
+r_pem_parse_cert_from_data (const rchar * data, rssize size)
+{
+  RPemParser * parser;
+  RCryptoCert * ret = NULL;
+
+  if ((parser = r_pem_parser_new (data, size)) != NULL) {
+    RPemBlock * block;
+    if ((block = r_pem_parser_next_block (parser)) != NULL) {
+      ret = r_pem_block_get_cert (block);
+      r_pem_block_unref (block);
+    }
+    r_pem_parser_unref (parser);
+  }
+
+  return ret;
+}
+

@@ -23,16 +23,22 @@
 #endif
 
 #include <rlib/rtypes.h>
-#include <rlib/rref.h>
-#include <rlib/rmemfile.h>
 
-#include <rlib/crypto/rkey.h>
+#include <rlib/rmemfile.h>
+#include <rlib/rref.h>
+
 #include <rlib/crypto/rcert.h>
+#include <rlib/crypto/rkey.h>
 
 R_BEGIN_DECLS
 
 typedef struct _RPemParser RPemParser;
 typedef struct _RPemBlock RPemBlock;
+
+/* Convenience API */
+R_API RCryptoKey * r_pem_parse_key_from_data (const rchar * data, rssize size,
+    const rchar * passphrase, rsize ppsize);
+R_API RCryptoCert * r_pem_parse_cert_from_data (const rchar * data, rssize size);
 
 typedef enum {
   R_PEM_TYPE_UNKNOWN                  = -1,
