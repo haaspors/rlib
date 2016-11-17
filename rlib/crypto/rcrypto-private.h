@@ -64,6 +64,8 @@ struct _RCryptoCert {
   RCryptoCertType type;
   const rchar * strtype;
 
+  RBuffer * certdata;
+
   ruint64 valid_from;     /* unix timestamp */
   ruint64 valid_to;       /* unix timestamp */
   RCryptoKey * pk;

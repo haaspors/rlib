@@ -26,7 +26,16 @@ r_crypto_cert_destroy (RCryptoCert * cert)
 {
   if (cert->pk != NULL)
     r_crypto_key_unref (cert->pk);
+  if (cert->certdata != NULL)
+    r_buffer_unref (cert->certdata);
   r_free (cert->sign);
+}
+
+void
+r_crypto_cert_clear_data (RCryptoCert * cert)
+{
+  r_buffer_unref (cert->certdata);
+  cert->certdata = NULL;
 }
 
 RCryptoCertType
@@ -77,5 +86,43 @@ RCryptoResult
 r_crypto_cert_export (const RCryptoCert * cert, RAsn1BinEncoder * enc)
 {
   return cert->export (cert, enc);
+}
+
+RBuffer *
+r_crypto_cert_get_data_buffer (const RCryptoCert * cert)
+{
+  RAsn1BinEncoder * enc;
+  RBuffer * ret = NULL;
+
+  if (R_UNLIKELY (cert == NULL)) return NULL;
+
+  if (cert->certdata != NULL) {
+    ret = r_buffer_ref (cert->certdata);
+  } else if ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)) != NULL) {
+    if (r_crypto_cert_export (cert, enc) == R_CRYPTO_OK)
+      r_asn1_bin_encoder_get_buffer (enc, &ret);
+
+    r_asn1_bin_encoder_unref (enc);
+  }
+
+  return ret;
+}
+
+ruint8 *
+r_crypto_cert_dup_data (const RCryptoCert * cert, rsize * size)
+{
+  ruint8 * ret;
+  RBuffer * buf;
+
+  if (R_UNLIKELY (cert == NULL)) return NULL;
+
+  if ((buf = r_crypto_cert_get_data_buffer (cert)) != NULL) {
+    ret = r_buffer_extract_dup (buf, 0, r_buffer_get_size (buf), size);
+    r_buffer_unref (buf);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
 }
 

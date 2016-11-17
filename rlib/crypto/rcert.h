@@ -25,6 +25,8 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/crypto/rkey.h>
+
+#include <rlib/rbuffer.h>
 #include <rlib/rhash.h>
 #include <rlib/rref.h>
 
@@ -37,6 +39,11 @@ typedef enum {
 
 typedef struct _RCryptoCert RCryptoCert;
 
+#define r_crypto_cert_ref r_ref_ref
+#define r_crypto_cert_unref r_ref_unref
+
+R_API void r_crypto_cert_clear_data (RCryptoCert * cert);
+
 R_API RCryptoCertType r_crypto_cert_get_type (const RCryptoCert * cert);
 R_API const rchar * r_crypto_cert_get_strtype (const RCryptoCert * cert);
 R_API const ruint8 * r_crypto_cert_get_signature (const RCryptoCert * cert,
@@ -44,10 +51,11 @@ R_API const ruint8 * r_crypto_cert_get_signature (const RCryptoCert * cert,
 R_API ruint64 r_crypto_cert_get_valid_from (const RCryptoCert * cert);
 R_API ruint64 r_crypto_cert_get_valid_to (const RCryptoCert * cert);
 R_API RCryptoKey * r_crypto_cert_get_public_key (const RCryptoCert * cert);
+
 R_API RCryptoResult r_crypto_cert_export (const RCryptoCert * cert, RAsn1BinEncoder * enc);
 
-#define r_crypto_cert_ref r_ref_ref
-#define r_crypto_cert_unref r_ref_unref
+R_API RBuffer * r_crypto_cert_get_data_buffer (const RCryptoCert * cert);
+R_API ruint8 * r_crypto_cert_dup_data (const RCryptoCert * cert, rsize * size);
 
 R_END_DECLS
 

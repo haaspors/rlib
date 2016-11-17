@@ -62,7 +62,8 @@ typedef enum {
 } RX509ExtKeyUsage;
 
 R_API RCryptoCert * r_crypto_x509_cert_new (rconstpointer data, rsize size) R_ATTR_MALLOC;
-R_API RCryptoCert * r_crypto_x509_cert_new_from_asn1 (RAsn1BinDecoder * dec) R_ATTR_MALLOC;
+R_API RCryptoCert * r_crypto_x509_cert_new_take (rpointer data, rsize size) R_ATTR_MALLOC;
+R_API RCryptoCert * r_crypto_x509_cert_new_from_buffer (RBuffer * buf) R_ATTR_MALLOC;
 
 R_API RX509Version r_crypto_x509_cert_version (const RCryptoCert * cert);
 R_API ruint64 r_crypto_x509_cert_serial_number (const RCryptoCert * cert);

@@ -872,39 +872,54 @@ RCryptoCert *
 r_crypto_x509_cert_new (rconstpointer data, rsize size)
 {
   RAsn1BinDecoder * dec;
-  RCryptoCert * ret;
+  RCryptoX509Cert * ret;
 
   if ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, data, size)) != NULL) {
-    ret = r_crypto_x509_cert_new_from_asn1 (dec);
+    if ((ret = r_mem_new0 (RCryptoX509Cert)) != NULL) {
+      r_ref_init (ret, r_crypto_x509_cert_free);
+      ret->cert.type = R_CRYPTO_CERT_X509;
+      ret->cert.strtype = "X.509";
+
+      ret->cert.export = r_crypto_x509_cert_export;
+
+      if (!r_crypto_x509_cert_init (ret, dec)) {
+        r_crypto_cert_unref (ret);
+        ret = NULL;
+      }
+    }
     r_asn1_bin_decoder_unref (dec);
   } else {
     ret = NULL;
   }
 
+  return (RCryptoCert *)ret;
+}
+
+RCryptoCert *
+r_crypto_x509_cert_new_take (rpointer data, rsize size)
+{
+  RCryptoCert * ret;
+
+  if ((ret = r_crypto_x509_cert_new (data, size)) != NULL)
+    ret->certdata = r_buffer_new_take (data, size);
+
   return ret;
 }
 
 RCryptoCert *
-r_crypto_x509_cert_new_from_asn1 (RAsn1BinDecoder * dec)
+r_crypto_x509_cert_new_from_buffer (RBuffer * buf)
 {
-  RCryptoX509Cert * ret;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RCryptoCert * ret;
 
-  if (R_UNLIKELY (dec == NULL)) return NULL;
-
-  if ((ret = r_mem_new0 (RCryptoX509Cert)) != NULL) {
-    r_ref_init (ret, r_crypto_x509_cert_free);
-    ret->cert.type = R_CRYPTO_CERT_X509;
-    ret->cert.strtype = "X.509";
-
-    ret->cert.export = r_crypto_x509_cert_export;
-
-    if (!r_crypto_x509_cert_init (ret, dec)) {
-      r_crypto_cert_unref (ret);
-      ret = NULL;
-    }
+  if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
+    if ((ret = r_crypto_x509_cert_new (info.data, info.size)) != NULL)
+      ret->certdata = r_buffer_ref (buf);
+  } else {
+    ret = NULL;
   }
 
-  return (RCryptoCert *)ret;
+  return ret;
 }
 
 RX509Version
