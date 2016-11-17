@@ -38,6 +38,7 @@ typedef RCryptoResult (*RCryptoVerify) (const RCryptoKey * key,
     RHashType hashtype, rconstpointer hash, rsize hashsize,
     rconstpointer sig, rsize sigsize);
 typedef RCryptoResult (*RCryptoKeyExportAsn1) (const RCryptoKey * key, RAsn1BinEncoder * enc);
+typedef RCryptoResult (*RCryptoCertExportAsn1) (const RCryptoCert * cert, RAsn1BinEncoder * enc);
 
 typedef struct {
   RCryptoAlgorithm algo;
@@ -71,6 +72,8 @@ struct _RCryptoCert {
   ruint8 signhash[64];
   ruint8 * sign;
   rsize signbits;
+
+  RCryptoCertExportAsn1 export;
 };
 
 R_API_HIDDEN void r_crypto_key_destroy (RCryptoKey * key);

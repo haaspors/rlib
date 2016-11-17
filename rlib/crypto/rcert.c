@@ -72,3 +72,10 @@ r_crypto_cert_get_public_key (const RCryptoCert * cert)
     return r_crypto_key_ref (cert->pk);
   return NULL;
 }
+
+RCryptoResult
+r_crypto_cert_export (const RCryptoCert * cert, RAsn1BinEncoder * enc)
+{
+  return cert->export (cert, enc);
+}
+

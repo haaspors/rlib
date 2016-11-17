@@ -44,6 +44,7 @@ R_API const ruint8 * r_crypto_cert_get_signature (const RCryptoCert * cert,
 R_API ruint64 r_crypto_cert_get_valid_from (const RCryptoCert * cert);
 R_API ruint64 r_crypto_cert_get_valid_to (const RCryptoCert * cert);
 R_API RCryptoKey * r_crypto_cert_get_public_key (const RCryptoCert * cert);
+R_API RCryptoResult r_crypto_cert_export (const RCryptoCert * cert, RAsn1BinEncoder * enc);
 
 #define r_crypto_cert_ref r_ref_ref
 #define r_crypto_cert_unref r_ref_unref

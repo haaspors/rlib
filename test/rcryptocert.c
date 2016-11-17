@@ -398,3 +398,45 @@ RTEST (rcryptocert, chrome_ec_secp256r1_dtls, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rcryptocert, export, RTEST_FAST)
+{
+  static const rchar * x509_base64 =
+    "MIIC8TCCAdmgAwIBAgIJALoi/+XOQDHjMA0GCSqGSIb3DQEBCwUAMA8xDTALBgNV"
+    "BAMMBHJsaWIwHhcNMTYxMTE1MTMzNjI0WhcNMTcxMTE1MTMzNjI0WjAPMQ0wCwYD"
+    "VQQDDARybGliMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwjolUmQU"
+    "r9Q2FZ7O3qau+Z6+VvuJROvxzjt1aIQLLO/hF0Ya56BZCZD5aKyqQM//fTm97VTb"
+    "CQYBaNg03D20XPDIWmr7EdHxYK+YI+jz7DrWqhM4jwSvvteXXXWD7bVdCq+RyveD"
+    "NrgoGZqL5UCiWS1BWkB9nS/KQtgxrT3hWSOlG1xRh6hfeIy4H2CB3Qk/Q3PHjMcH"
+    "7CKhCj+ctbqR3r2K3BLL3fgZKnfQdCPsZplN8Ey4hSOc/67NQK/yn/S0JgeHmjb8"
+    "D5xbaDiOloOHJJg6dm1QU0UuEpiK2Uda0VR6TGu9Ci05h5U3HoV9CbyAGQhmFSem"
+    "NreAELYv89sMgwIDAQABo1AwTjAdBgNVHQ4EFgQUXFVr3x4Bcglp/MP0ZFEk/Ntz"
+    "wJYwHwYDVR0jBBgwFoAUXFVr3x4Bcglp/MP0ZFEk/NtzwJYwDAYDVR0TBAUwAwEB"
+    "/zANBgkqhkiG9w0BAQsFAAOCAQEAL4ZKyDRXP3+Jr/GN+p6WbFW3tHuhxWxy8rMy"
+    "W7OHX/sHASzJiaEmjtIlPx/7uFFowktEmXyybEmBvYp64UZ2mo2v+CCm+236wPTS"
+    "gGfpcp9nP2RI0VFdJLHuqWapa5CQJZISRAO/tj7UqflOWBohm04EvmJe53JGEq+4"
+    "Dk41kC+z3jVPGHG+jR3uYOw7JCmFT+bt4P5EDxGAKe9eoweLHBJ8vlJ7cUdHhBv1"
+    "BUCMVR86kPZFzHKVQtWNXt26H/khgz7RA/qUSJA17Nk2h0h60b1AbkljkduWWIMZ"
+    "5B2DUz4MEDUHjppHF9+A2q5ZN+25eOYbrkS5Dq50VPNrvd8dSQ==";
+  rsize sizein, sizeout;
+  ruint8 * x509v3in, * x509v3out;
+  RCryptoCert * cert;
+  RAsn1BinEncoder * enc;
+
+  r_assert_cmpptr ((x509v3in = r_base64_decode (x509_base64, -1, &sizein)), !=, NULL);
+  r_assert_cmpptr ((cert = r_crypto_x509_cert_new (x509v3in, sizein)), !=, NULL);
+
+  r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+  r_assert_cmpint (r_crypto_cert_export (cert, enc), ==, R_CRYPTO_OK);
+
+  r_assert_cmpptr ((x509v3out = r_asn1_bin_encoder_get_data (enc, &sizeout)), !=, NULL);
+  r_asn1_bin_encoder_unref (enc);
+
+  r_assert_cmpuint (sizein, ==, sizeout);
+  r_assert_cmpmem (x509v3in, ==, x509v3out, sizeout);
+
+  r_free (x509v3out);
+  r_free (x509v3in);
+  r_crypto_cert_unref (cert);
+}
+RTEST_END;
+
