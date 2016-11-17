@@ -25,7 +25,9 @@
 #include <rlib/rtypes.h>
 #include <rlib/rref.h>
 #include <rlib/rmemfile.h>
+
 #include <rlib/crypto/rkey.h>
+#include <rlib/crypto/rcert.h>
 
 R_BEGIN_DECLS
 
@@ -72,14 +74,17 @@ R_API RAsn1BinDecoder * r_pem_block_get_asn1_decoder (RPemBlock * block);
 
 R_API RCryptoKey * r_pem_block_get_key (RPemBlock * block,
     const rchar * passphrase, rsize ppsize);
+R_API RCryptoCert * r_pem_block_get_cert (RPemBlock * block);
 
 
 R_API rchar * r_pem_write_public_key_dup (const RCryptoKey * key,
     rsize linesize, rsize * out);
 R_API rboolean r_pem_write_public_key (const RCryptoKey * key,
     rpointer data, rsize size, rsize linesize, rsize * out);
-
-/* TODO: Convenience for certificates */
+R_API rchar * r_pem_write_cert_dup (const RCryptoCert * cert,
+    rsize linesize, rsize * out);
+R_API rboolean r_pem_write_cert (const RCryptoCert * cert,
+    rpointer data, rsize size, rsize linesize, rsize * out);
 
 R_END_DECLS
 

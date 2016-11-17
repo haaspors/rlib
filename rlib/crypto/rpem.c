@@ -18,8 +18,11 @@
 
 #include "config.h"
 #include <rlib/crypto/rpem.h>
-#include <rlib/crypto/rrsa.h>
+
 #include <rlib/crypto/rdsa.h>
+#include <rlib/crypto/rrsa.h>
+#include <rlib/crypto/rx509.h>
+
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/rascii.h>
@@ -41,6 +44,8 @@
 
 #define R_PEM_BEGIN_PUBKEY    R_PEM_BEGIN_START R_PEM_PUBKEY R_PEM_BEGIN_END "\n"
 #define R_PEM_END_PUBKEY      R_PEM_END_START   R_PEM_PUBKEY R_PEM_END_END   "\n"
+#define R_PEM_BEGIN_CERT      R_PEM_BEGIN_START R_PEM_CERTIFICATE R_PEM_BEGIN_END "\n"
+#define R_PEM_END_CERT        R_PEM_END_START   R_PEM_CERTIFICATE R_PEM_END_END   "\n"
 
 struct _RPemParser {
   RRef ref;
@@ -303,8 +308,8 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
   (void) passphrase;
   (void) ppsize;
 
-  if ((dec = r_pem_block_get_asn1_decoder (block)) != NULL &&
-      r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK) {
+  if ((dec = r_pem_block_get_asn1_decoder (block)) != NULL) {
+    r_asn1_bin_decoder_next (dec, &tlv);
     switch (r_pem_block_get_type (block)) {
       case R_PEM_TYPE_PUBLIC_KEY:
         ret = r_crypto_key_from_asn1_public_key (dec, &tlv);
@@ -323,6 +328,27 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
         ret = NULL;
     }
     r_asn1_bin_decoder_unref (dec);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+RCryptoCert *
+r_pem_block_get_cert (RPemBlock * block)
+{
+  RCryptoCert * ret;
+  ruint8 * data;
+  rsize size;
+
+  if (R_UNLIKELY (block == NULL)) return NULL;
+  if (R_UNLIKELY (r_pem_block_get_type (block) != R_PEM_TYPE_CERTIFICATE))
+    return NULL;
+
+  if ((data = r_pem_block_decode_base64 (block, &size)) != NULL) {
+    if ((ret = r_crypto_x509_cert_new_take (data, size)) == NULL)
+      r_free (data);
   } else {
     ret = NULL;
   }
@@ -396,6 +422,65 @@ r_pem_write_public_key (const RCryptoKey * key,
   }
 
   r_asn1_bin_encoder_unref (enc);
+
+  return ret;
+}
+
+rchar *
+r_pem_write_cert_dup (const RCryptoCert * cert, rsize linesize, rsize * out)
+{
+  rchar * ret;
+  rsize size;
+
+  if (R_UNLIKELY (cert == NULL)) return NULL;
+
+  size = 4096; /* FIXME: Calculate max size! */
+
+  if ((ret = r_malloc (size)) != NULL) {
+    if (R_UNLIKELY (!r_pem_write_cert (cert, ret, size, linesize, out))) {
+      r_free (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+rboolean
+r_pem_write_cert (const RCryptoCert * cert, rpointer data, rsize size,
+    rsize linesize, rsize * out)
+{
+  RBuffer * buf;
+  rboolean ret = FALSE;
+
+  if ((buf = r_crypto_cert_get_data_buffer (cert)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
+      rchar * b64;
+      rsize b64size;
+
+      if ((b64 = r_base64_encode_full (info.data, info.size, linesize, &b64size)) != NULL) {
+        if (size >= sizeof (R_PEM_BEGIN_CERT) - 1 + b64size + sizeof (R_PEM_END_CERT) - 1) {
+          rchar * p = data;
+
+          p = r_stpncpy (p, R_PEM_BEGIN_CERT, sizeof (R_PEM_BEGIN_CERT) - 1);
+          p = r_stpncpy (p, b64, b64size);
+          if (p[-1] != '\n')
+            *p++ = '\n';
+          p = r_stpncpy (p, R_PEM_END_CERT, sizeof (R_PEM_END_CERT));
+
+          ret = TRUE;
+          if (out)
+            *out = RPOINTER_TO_SIZE (p) - RPOINTER_TO_SIZE (data);
+        }
+
+        r_free (b64);
+      }
+      r_buffer_unmap (buf, &info);
+    }
+    r_buffer_unref (buf);
+  }
 
   return ret;
 }

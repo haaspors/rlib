@@ -486,3 +486,52 @@ RTEST (rcryptopem, write_rsa_pub_key, RTEST_FAST)
 }
 RTEST_END;
 
+const rchar pem_rsa_x509[] =
+  "-----BEGIN CERTIFICATE-----\n"
+  "MIIC8TCCAdmgAwIBAgIJALoi/+XOQDHjMA0GCSqGSIb3DQEBCwUAMA8xDTALBgNV\n"
+  "BAMMBHJsaWIwHhcNMTYxMTE1MTMzNjI0WhcNMTcxMTE1MTMzNjI0WjAPMQ0wCwYD\n"
+  "VQQDDARybGliMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwjolUmQU\n"
+  "r9Q2FZ7O3qau+Z6+VvuJROvxzjt1aIQLLO/hF0Ya56BZCZD5aKyqQM//fTm97VTb\n"
+  "CQYBaNg03D20XPDIWmr7EdHxYK+YI+jz7DrWqhM4jwSvvteXXXWD7bVdCq+RyveD\n"
+  "NrgoGZqL5UCiWS1BWkB9nS/KQtgxrT3hWSOlG1xRh6hfeIy4H2CB3Qk/Q3PHjMcH\n"
+  "7CKhCj+ctbqR3r2K3BLL3fgZKnfQdCPsZplN8Ey4hSOc/67NQK/yn/S0JgeHmjb8\n"
+  "D5xbaDiOloOHJJg6dm1QU0UuEpiK2Uda0VR6TGu9Ci05h5U3HoV9CbyAGQhmFSem\n"
+  "NreAELYv89sMgwIDAQABo1AwTjAdBgNVHQ4EFgQUXFVr3x4Bcglp/MP0ZFEk/Ntz\n"
+  "wJYwHwYDVR0jBBgwFoAUXFVr3x4Bcglp/MP0ZFEk/NtzwJYwDAYDVR0TBAUwAwEB\n"
+  "/zANBgkqhkiG9w0BAQsFAAOCAQEAL4ZKyDRXP3+Jr/GN+p6WbFW3tHuhxWxy8rMy\n"
+  "W7OHX/sHASzJiaEmjtIlPx/7uFFowktEmXyybEmBvYp64UZ2mo2v+CCm+236wPTS\n"
+  "gGfpcp9nP2RI0VFdJLHuqWapa5CQJZISRAO/tj7UqflOWBohm04EvmJe53JGEq+4\n"
+  "Dk41kC+z3jVPGHG+jR3uYOw7JCmFT+bt4P5EDxGAKe9eoweLHBJ8vlJ7cUdHhBv1\n"
+  "BUCMVR86kPZFzHKVQtWNXt26H/khgz7RA/qUSJA17Nk2h0h60b1AbkljkduWWIMZ\n"
+  "5B2DUz4MEDUHjppHF9+A2q5ZN+25eOYbrkS5Dq50VPNrvd8dSQ==\n"
+  "-----END CERTIFICATE-----\n";
+RTEST (rcryptopem, rsa_x509_cert, RTEST_FAST)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoCert * cert;
+  rchar * pemout;
+  rsize size;
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_rsa_x509, sizeof (pem_rsa_x509))), !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), != , NULL);
+  r_assert_cmpuint (r_pem_block_get_type (block), ==, R_PEM_TYPE_CERTIFICATE);
+
+  r_assert_cmpptr ((cert = r_pem_block_get_cert (block)), !=, NULL);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+
+  r_assert_cmpuint (r_crypto_cert_get_type (cert), ==, R_CRYPTO_CERT_X509);
+  r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert),
+      ==, RUINT64_CONSTANT (13412564002735665635));
+
+  r_assert_cmpptr ((pemout = r_pem_write_cert_dup (cert, 64, &size)), !=, NULL);
+  r_crypto_cert_unref (cert);
+
+  r_assert_cmpuint (sizeof (pem_rsa_x509) - 1, ==, size);
+  r_assert_cmpstr (pem_rsa_x509, ==, pemout);
+  r_free (pemout);
+}
+RTEST_END;
+
