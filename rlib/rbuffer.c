@@ -194,8 +194,15 @@ r_buffer_mem_append (RBuffer * buffer, RMem * mem)
 {
   if (R_UNLIKELY (buffer == NULL)) return FALSE;
   if (R_UNLIKELY (mem == NULL)) return FALSE;
-  /* FIXME: Compress memory chunks */
-  if (R_UNLIKELY (buffer->mem_count >= R_BUFFER_MAX_MEM)) return FALSE;
+  if (R_UNLIKELY (buffer->mem_count >= R_BUFFER_MAX_MEM)) {
+    RMem * newmem;
+
+    if ((newmem = r_mem_merge_array (NULL, buffer->mem, buffer->mem_count)) == NULL)
+      return FALSE;
+
+    r_buffer_mem_clear (buffer);
+    buffer->mem[buffer->mem_count++] = newmem;
+  }
 
   buffer->mem[buffer->mem_count++] = r_mem_ref (mem);
   return TRUE;
