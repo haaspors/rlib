@@ -209,6 +209,7 @@ def configure_os_arch(cfg):
     elif cfg.env.DEST_OS == 'none':
         cfg.env.RLIB_OS = 'R_OS_NONE'
     else:
+        cfg.define('_GNU_SOURCE', 1)
         cfg.env.RLIB_OS = 'R_OS_UNIX'
     if cfg.env.DEST_OS == 'linux':
         cfg.env.RLIB_OS_EXTRA = '#define R_OS_LINUX              1'
@@ -356,27 +357,27 @@ def configure_threads(cfg):
             header_name="sys/types.h", mandatory=False)
     if cfg.check(header_name='pthread.h', mandatory=False):
         cfg.env.RLIB_THREAD_LIBS = '-pthread'
-        cfg.check_cc(function_name='pthread_getname_np', defines=['_GNU_SOURCE=1'],
+        cfg.check_cc(function_name='pthread_getname_np',
                 header_name="pthread.h", lib='pthread', mandatory=False)
         cfg.check_cc(
                 fragment=SNIP_PTHREAD_CALL % 'pthread_setname_np (0, "test")',
                 define_name="HAVE_PTHREAD_SETNAME_NP_WITH_TID",
                 msg='Checking for pthread_setname_np (pthread_t, const char*)',
-                defines=['_GNU_SOURCE=1'], lib='pthread', mandatory=False)
+                lib='pthread', mandatory=False)
         cfg.check_cc(
                 fragment=SNIP_PTHREAD_CALL % 'pthread_setname_np ("test")',
                 msg='Checking for pthread_setname_np (const char*)',
                 define_name="HAVE_PTHREAD_SETNAME_NP_WITHOUT_TID",
-                defines=['_GNU_SOURCE=1'], lib='pthread', mandatory=False)
-        cfg.check_cc(function_name='pthread_getthreadid_np', defines=['_GNU_SOURCE=1'],
+                lib='pthread', mandatory=False)
+        cfg.check_cc(function_name='pthread_getthreadid_np',
                 header_name="pthread.h", lib='pthread', mandatory=False)
-        cfg.check_cc(function_name='pthread_threadid_np', defines=['_GNU_SOURCE=1'],
+        cfg.check_cc(function_name='pthread_threadid_np',
                 header_name="pthread.h", lib='pthread', mandatory=False)
-        cfg.check_cc(function_name='pthread_getaffinity_np', defines=['_GNU_SOURCE=1'],
+        cfg.check_cc(function_name='pthread_getaffinity_np',
                 header_name="pthread.h", lib='pthread', mandatory=False)
-        cfg.check_cc(function_name='pthread_setaffinity_np', defines=['_GNU_SOURCE=1'],
+        cfg.check_cc(function_name='pthread_setaffinity_np',
                 header_name="pthread.h", lib='pthread', mandatory=False)
-        cfg.check_cc(function_name='pthread_attr_setaffinity_np', defines=['_GNU_SOURCE=1'],
+        cfg.check_cc(function_name='pthread_attr_setaffinity_np',
                 header_name="pthread.h", lib='pthread', mandatory=False)
 
 def configure_signal(cfg):
