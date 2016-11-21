@@ -212,10 +212,17 @@ r_string_prepend_printf (RString * str, const rchar * fmt, ...)
 rsize
 r_string_prepend_vprintf (RString * str, const rchar * fmt, va_list ap)
 {
-  rchar * cstr = r_strvprintf (fmt, ap);
-  rsize ret = strlen (cstr) + 1;
-  r_string_prepend (str, cstr);
-  r_free (cstr);
+  rchar * cstr;
+  rsize ret;
+
+  if ((cstr = r_strvprintf (fmt, ap)) != NULL) {
+    rsize len = strlen (cstr);
+    if ((ret = r_string_prepend_len (str, cstr, len)) == len)
+      ret++;
+    r_free (cstr);
+  } else {
+    ret = 0;
+  }
 
   return ret;
 }

@@ -116,6 +116,20 @@ RTEST (rstring, prepend_printf, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstring, prepend_printf_sized, RTEST_FAST)
+{
+  static const rchar combined[] = "testorgno";
+  RString * str = r_string_new_sized (256);
+  rchar * cstr;
+
+  r_string_prepend_printf (str, "%s=%.*s",  "CN", 4, &combined[0]);
+  r_string_prepend_printf (str, "%s=%.*s,",  "O", 3, &combined[4]);
+  cstr = r_string_free_keep (str);
+  r_assert_cmpstr (cstr, ==, "O=org,CN=test");
+  r_free (cstr);
+}
+RTEST_END;
+
 RTEST (rstring, insert, RTEST_FAST)
 {
   RString * str = r_string_new ("foobar");
