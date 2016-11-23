@@ -197,6 +197,19 @@ r_tls_parser_parse_handshake_internal (const RTLSParser * parser,
 }
 
 RTLSError
+r_tls_parser_parse_handshake_peek_type (const RTLSParser * parser,
+    RTLSHandshakeType * type)
+{
+  if (R_UNLIKELY (parser == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (type == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (parser->content != R_TLS_CONTENT_TYPE_HANDSHAKE))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  *type = (RTLSHandshakeType)parser->fragment.data[0];
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_parser_parse_handshake_full (const RTLSParser * parser,
     RTLSHandshakeType * type, ruint32 * length, ruint16 * msgseq,
     ruint32 * fragoff, ruint32 * fraglen)

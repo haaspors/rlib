@@ -363,6 +363,8 @@ R_API void r_tls_parser_clear (RTLSParser * parser);
 
 #define r_tls_version_is_dtls(version) ((version) > RUINT16_MAX / 2)
 #define r_tls_parser_is_dtls(parser) r_tls_version_is_dtls ((parser)->version)
+R_API RTLSError r_tls_parser_parse_handshake_peek_type (const RTLSParser * parser,
+    RTLSHandshakeType * type);
 #define r_tls_parser_parse_handshake(parser, type, length)                    \
   r_tls_parser_parse_handshake_full (parser, type, length, NULL, NULL, NULL)
 R_API RTLSError r_tls_parser_parse_handshake_full (const RTLSParser * parser,
