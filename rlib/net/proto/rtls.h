@@ -40,6 +40,7 @@ R_BEGIN_DECLS
 #define R_DTLS_HS_HDR_SIZE                (R_TLS_HS_HDR_SIZE + R_TLS_HS_EXTRA_DTLS_SIZE)
 
 typedef enum {
+  R_TLS_VERSION_UNKNOWN                                 = 0x0000,
   R_TLS_VERSION_SSL_1_0                                 = 0x0100,
   R_TLS_VERSION_SSL_2_0                                 = 0x0200,
   R_TLS_VERSION_SSL_3_0                                 = 0x0300,
@@ -354,6 +355,8 @@ typedef struct {
   ruint16 cacount;
   const ruint8 * ca;
 } RTLSCertReq;
+
+R_API RTLSVersion r_tls_parse_data_shallow (rconstpointer buf, rsize size);
 
 R_API RTLSError r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size);
 R_API RTLSError r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf);

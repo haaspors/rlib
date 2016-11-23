@@ -47,6 +47,43 @@ r_tls_parser_clear (RTLSParser * parser)
   }
 }
 
+RTLSVersion
+r_tls_parse_data_shallow (rconstpointer buf, rsize size)
+{
+  RTLSVersion ret = R_TLS_VERSION_UNKNOWN;
+  const ruint8 * data;
+
+  if ((data = buf) != NULL && size > 5) {
+    RTLSContentType content = (RTLSContentType)data[0];
+    RTLSVersion ver;
+
+    if (content < R_TLS_CONTENT_TYPE_FIRST ||
+        content > R_TLS_CONTENT_TYPE_LAST) {
+      goto beach;
+    }
+
+    ver = (RTLSVersion)RUINT16_FROM_BE (*(const ruint16 *)&data[1]);
+    switch (ver) {
+      case R_TLS_VERSION_SSL_1_0:
+      case R_TLS_VERSION_SSL_2_0:
+      case R_TLS_VERSION_SSL_3_0:
+      case R_TLS_VERSION_TLS_1_0:
+      case R_TLS_VERSION_TLS_1_1:
+      case R_TLS_VERSION_TLS_1_2:
+      case R_TLS_VERSION_TLS_1_3:
+      case R_TLS_VERSION_DTLS_1_0:
+      case R_TLS_VERSION_DTLS_1_2:
+      case R_TLS_VERSION_DTLS_1_3:
+        ret = ver;
+      default:
+        break;
+    }
+  }
+
+beach:
+  return ret;
+}
+
 RTLSError
 r_tls_parser_init (RTLSParser * parser, rconstpointer buf, rsize size)
 {
