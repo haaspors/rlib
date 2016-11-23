@@ -80,6 +80,11 @@ typedef enum {
   R_TLS_CONTENT_TYPE_LAST                               = R_TLS_CONTENT_TYPE_HEARTBEAT
 } RTLSContentType;
 
+typedef enum {
+  R_TLS_ALERT_LEVEL_WARNING                             = 0x01,
+  R_TLS_ALERT_LEVEL_FATAL                               = 0x02,
+} RTLSAlertLevel;
+
 /* http://www.iana.org/assignments/tls-parameters/#tls-parameters-6 */
 typedef enum {
   R_TLS_ALERT_TYPE_CLOSE_NOTIFY                         = 0x00, /* [RFC5246] */
@@ -381,6 +386,9 @@ R_API RTLSError r_tls_parser_parse_new_session_ticket (const RTLSParser * parser
     ruint32 * lifetime, const ruint8 ** ticket, ruint16 * ticketsize);
 R_API RTLSError r_tls_parser_parse_certificate_verify (const RTLSParser * parser,
     RTLSSignatureScheme * sigscheme, const ruint8 ** sig, ruint16 * sigsize);
+
+R_API RTLSError r_tls_parser_parse_alert (const RTLSParser * parser,
+    RTLSAlertLevel * level, RTLSAlertType * type);
 
 /* Hello msg */
 #define r_tls_hello_msg_cipher_suite_count(msg) ((msg)->cslen / sizeof (ruint16))

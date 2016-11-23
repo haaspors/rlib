@@ -549,6 +549,34 @@ RTEST (rtls, parse_dtls_multiple, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, parse_dtls_alert, RTEST_FAST)
+{
+  static const ruint8 pkt_dtls_alert[] = {
+    0x15, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x32
+  };
+
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSAlertLevel lvl;
+  RTLSAlertType typ;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init (&parser,
+        pkt_dtls_alert, sizeof (pkt_dtls_alert)));
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmphex (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
+  r_assert_cmpuint (parser.epoch, ==, 0);
+  r_assert_cmpuint (parser.seqno, ==, 1);
+  r_assert_cmpuint (parser.recsize, ==, 15);
+  r_assert_cmpuint (parser.fragment.size, ==, 2);
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_parse_alert (&parser, &lvl, &typ));
+  r_assert_cmphex (lvl, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmphex (typ, ==, R_TLS_ALERT_TYPE_DECODE_ERROR);
+
+  r_assert_cmpint (R_TLS_ERROR_EOB, ==, r_tls_parser_init_next (&parser, NULL));
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
 RTEST (rtls, write_tls_hello_done, RTEST_FAST)
 {
   static const ruint8 pkt_tls_hello_done[] = {

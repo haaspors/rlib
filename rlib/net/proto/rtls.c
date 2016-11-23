@@ -492,6 +492,24 @@ r_tls_parser_parse_certificate_verify (const RTLSParser * parser,
   return R_TLS_ERROR_OK;
 }
 
+RTLSError
+r_tls_parser_parse_alert (const RTLSParser * parser,
+    RTLSAlertLevel * level, RTLSAlertType * type)
+{
+  if (R_UNLIKELY (parser == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (type == NULL)) return R_TLS_ERROR_INVAL;
+
+  if (R_UNLIKELY (parser->content != R_TLS_CONTENT_TYPE_ALERT))
+    return R_TLS_ERROR_WRONG_TYPE;
+  if (R_UNLIKELY (parser->fragment.size != 2))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  if (level != NULL)
+    *level = parser->fragment.data[0];
+  *type = parser->fragment.data[1];
+  return R_TLS_ERROR_OK;
+}
+
 rboolean
 r_tls_hello_msg_has_cipher_suite (const RTLSHelloMsg * msg, RCipherSuite cs)
 {
