@@ -989,6 +989,19 @@ RTEST (rstr, ascii_xdigit_value, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, ascii_upper_lower, RTEST_FAST)
+{
+  rchar foo[] = "* 12this 453 is foobar?";
+
+  r_assert_cmpstr (r_ascii_make_upper (foo, -1), ==, "* 12THIS 453 IS FOOBAR?");
+  r_assert_cmpstr (foo, ==, "* 12THIS 453 IS FOOBAR?");
+  r_assert_cmpstr (r_ascii_make_lower (foo, -1), ==, "* 12this 453 is foobar?");
+  r_assert_cmpstr (foo, ==, "* 12this 453 is foobar?");
+
+  r_assert_cmpstr (r_ascii_make_upper (foo, 7), ==, "* 12THIs 453 is foobar?");
+}
+RTEST_END;
+
 RTEST (rstr, match_simple_pattern, RTEST_FAST)
 {
   const rchar foo[] = "this is my foobar string?";

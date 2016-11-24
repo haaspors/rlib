@@ -57,6 +57,9 @@ R_API extern const ruint16 r_ascii_table[256];
 R_API rint8 r_ascii_digit_value (rchar c);
 R_API rint8 r_ascii_xdigit_value (rchar c);
 
+R_API rchar * r_ascii_make_upper (rchar * str, rssize len);
+R_API rchar * r_ascii_make_lower (rchar * str, rssize len);
+
 R_END_DECLS
 
 #endif /* __R_ASCII_H__ */

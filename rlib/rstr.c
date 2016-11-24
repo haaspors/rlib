@@ -75,6 +75,37 @@ r_ascii_xdigit_value (rchar c)
   return (rint8)((r_ascii_digit_table[(ruint8)c] >> 8) & 0xff);
 }
 
+rchar *
+r_ascii_make_upper (rchar * str, rssize len)
+{
+  rsize size;
+
+  if (str != NULL && (size = len < 0 ? (rssize)r_strlen (str) : len) > 0) {
+    rchar * it;
+    for (it = str; *it != 0 && size > 0; it++, size--) {
+      if (r_ascii_islower (*it))
+        *it -= 0x20;
+    }
+  }
+
+  return str;
+}
+
+rchar *
+r_ascii_make_lower (rchar * str, rssize len)
+{
+  rsize size;
+
+  if (str != NULL && (size = len < 0 ? (rssize)r_strlen (str) : len) > 0) {
+    rchar * it;
+    for (it = str; *it != 0 && size > 0; it++, size--) {
+      if (r_ascii_isupper (*it))
+        *it += 0x20;
+    }
+  }
+
+  return str;
+}
 
 rsize
 r_strlen (const rchar * str)
