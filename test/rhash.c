@@ -39,6 +39,9 @@ RTEST (rhash, sha1, R_TEST_TYPE_FAST)
       "\x88\x43\xd7\xf9\x24\x16\x21\x1d\xe9\xeb\xb9\x63\xff\x4c\xe2\x81\x25\x93\x28\x78", size);
   r_assert_cmpstr ((hex = r_hash_get_hex (hash)), ==,
       "8843d7f92416211de9ebb963ff4ce28125932878");
+  r_free (hex);
+  r_assert_cmpstr ((hex = r_hash_get_hex_full (hash, ":", 1)), ==,
+      "88:43:d7:f9:24:16:21:1d:e9:eb:b9:63:ff:4c:e2:81:25:93:28:78");
   r_assert (!r_hash_update (hash, "foobar", 6));
 
   r_free (hex);

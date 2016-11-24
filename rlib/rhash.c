@@ -255,6 +255,19 @@ r_hash_get_hex (RHash * hash)
   return NULL;
 }
 
+rchar *
+r_hash_get_hex_full (RHash * hash, const rchar * divider, rsize interval)
+{
+  ruint8 * data;
+  rsize size = R_HASH_MAX_SIZE;
+
+  if (hash != NULL && (data = r_alloca (size)) != NULL &&
+      r_hash_get_data (hash, data, &size))
+    return r_str_mem_hex_full (data, size, divider, interval);
+
+  return NULL;
+}
+
 /**************************************/
 /*                MD5                 */
 /**************************************/

@@ -57,6 +57,8 @@ R_API rsize r_hash_size (RHash * hash);
 R_API rsize r_hash_blocksize (RHash * hash);
 R_API rboolean r_hash_get_data (RHash * hash, ruint8 * data, rsize * size);
 R_API rchar * r_hash_get_hex (RHash * hash);
+R_API rchar * r_hash_get_hex_full (RHash * hash,
+    const rchar * divider, rsize interval);
 
 R_END_DECLS
 
