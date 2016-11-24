@@ -398,7 +398,7 @@ RTEST (rcryptocert, chrome_ec_secp256r1_dtls, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rcryptocert, export, RTEST_FAST)
+RTEST (rcryptocert, export_and_fingerprint, RTEST_FAST)
 {
   static const rchar * x509_base64 =
     "MIIC8TCCAdmgAwIBAgIJALoi/+XOQDHjMA0GCSqGSIb3DQEBCwUAMA8xDTALBgNV"
@@ -421,6 +421,7 @@ RTEST (rcryptocert, export, RTEST_FAST)
   ruint8 * x509v3in, * x509v3out;
   RCryptoCert * cert;
   RAsn1BinEncoder * enc;
+  rchar * fingerprint;
 
   r_assert_cmpptr ((x509v3in = r_base64_decode (x509_base64, -1, &sizein)), !=, NULL);
   r_assert_cmpptr ((cert = r_crypto_x509_cert_new (x509v3in, sizein)), !=, NULL);
@@ -436,6 +437,11 @@ RTEST (rcryptocert, export, RTEST_FAST)
 
   r_free (x509v3out);
   r_free (x509v3in);
+
+  r_assert_cmpstr ((fingerprint = r_crypto_cert_fingerprint_str (cert, R_HASH_TYPE_SHA256, ":", 1)),
+      ==, "74:ac:bd:23:74:28:88:33:67:89:4a:3e:05:12:24:55:c1:1c:71:c4:de:00:c7:47:d3:5d:98:51:36:a8:0a:b8");
+  r_free (fingerprint);
+
   r_crypto_cert_unref (cert);
 }
 RTEST_END;

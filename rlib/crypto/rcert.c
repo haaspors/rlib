@@ -126,3 +126,59 @@ r_crypto_cert_dup_data (const RCryptoCert * cert, rsize * size)
   return ret;
 }
 
+RCryptoResult
+r_crypto_cert_fingerprint (const RCryptoCert * cert,
+    ruint8 * buf, rsize size, RHashType type, rsize * out)
+{
+  RCryptoResult ret;
+  RHash * hash;
+
+  if (R_UNLIKELY (cert == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (buf == NULL)) return R_CRYPTO_INVAL;
+  if (size < r_hash_type_size (type)) return R_CRYPTO_BUFFER_TOO_SMALL;
+
+  ret = R_CRYPTO_ERROR;
+  if ((hash = r_hash_new (type)) != NULL) {
+    RBuffer * b;
+    if ((b = r_crypto_cert_get_data_buffer (cert)) != NULL) {
+      RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+      if (r_buffer_map (b, &info, R_MEM_MAP_READ)) {
+        if (r_hash_update (hash, info.data, info.size) &&
+            r_hash_get_data (hash, buf, out))
+          ret = R_CRYPTO_OK;
+        r_buffer_unmap (b, &info);
+      }
+      r_buffer_unref (b);
+    }
+    r_hash_free (hash);
+  }
+
+  return ret;
+}
+
+rchar *
+r_crypto_cert_fingerprint_str (const RCryptoCert * cert, RHashType type,
+    const rchar * divider, rsize interval)
+{
+  rchar * ret;
+  RHash * hash;
+
+  if (R_UNLIKELY (cert == NULL)) return NULL;
+
+  ret = NULL;
+  if ((hash = r_hash_new (type)) != NULL) {
+    RBuffer * b;
+    if ((b = r_crypto_cert_get_data_buffer (cert)) != NULL) {
+      RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+      if (r_buffer_map (b, &info, R_MEM_MAP_READ)) {
+        if (r_hash_update (hash, info.data, info.size))
+          ret = r_hash_get_hex_full (hash, divider, interval);
+        r_buffer_unmap (b, &info);
+      }
+      r_buffer_unref (b);
+    }
+    r_hash_free (hash);
+  }
+
+  return ret;
+}

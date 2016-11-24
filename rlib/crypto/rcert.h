@@ -56,6 +56,10 @@ R_API RCryptoResult r_crypto_cert_export (const RCryptoCert * cert, RAsn1BinEnco
 
 R_API RBuffer * r_crypto_cert_get_data_buffer (const RCryptoCert * cert);
 R_API ruint8 * r_crypto_cert_dup_data (const RCryptoCert * cert, rsize * size);
+R_API RCryptoResult r_crypto_cert_fingerprint (const RCryptoCert * cert,
+    ruint8 * buf, rsize size, RHashType type, rsize * out);
+R_API rchar * r_crypto_cert_fingerprint_str (const RCryptoCert * cert,
+    RHashType type, const rchar * divider, rsize interval) R_ATTR_MALLOC;
 
 R_END_DECLS
 
