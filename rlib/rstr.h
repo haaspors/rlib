@@ -201,6 +201,8 @@ R_API rboolean r_str_mem_dump (rchar * str, const ruint8 * ptr,
 R_API rchar * r_str_mem_dump_dup (const ruint8 * ptr,
     rsize size, rsize align);
 R_API rchar * r_str_mem_hex (const ruint8 * ptr, rsize size);
+R_API rchar * r_str_mem_hex_full (const ruint8 * ptr, rsize size,
+    const rchar * divider, rsize interval);
 
 R_API rsize r_str_hex_to_binary (const rchar * hex, ruint8 * bin, rsize size);
 R_API ruint8 * r_str_hex_mem (const rchar * hex, rsize * outsize) R_ATTR_MALLOC;

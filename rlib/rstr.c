@@ -1287,6 +1287,43 @@ r_str_mem_hex (const ruint8 * ptr, rsize size)
   return ret;
 }
 
+rchar *
+r_str_mem_hex_full (const ruint8 * ptr, rsize size,
+    const rchar * divider, rsize interval)
+{
+  rchar * ret;
+  rsize asize, dlen;
+
+  if (interval == 0 || (dlen = r_strlen (divider)) == 0)
+    return r_str_mem_hex (ptr, size);
+
+  asize = size * 2 + ((size - 1) / interval) * dlen + 1;
+  if (ptr != NULL && size > 0 && (ret = r_malloc (asize)) != NULL) {
+    static const rchar hex[] = "0123456789abcdef";
+    rchar * dst = ret;
+    rsize i;
+
+    for (i = 0; TRUE; ) {
+      *(dst++) = hex[ptr[i] >> 4];
+      *(dst++) = hex[ptr[i] & 0xf];
+
+      if (++i >= size)
+        break;
+
+      if ((i % interval) == 0) {
+        r_memcpy (dst, divider, dlen);
+        dst += dlen;
+      }
+    }
+
+    *dst = 0;
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
 rsize
 r_str_hex_to_binary (const rchar * hex, ruint8 * bin, rsize size)
 {

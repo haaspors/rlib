@@ -913,6 +913,23 @@ RTEST (rstr, mem_hex, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, mem_hex_full, RTEST_FAST)
+{
+  const ruint8 data[] = { 250, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  rchar * tmp;
+
+  r_assert_cmpptr (r_str_mem_hex_full (NULL, 0, ":", 2), ==, NULL);
+  r_assert_cmpptr (r_str_mem_hex_full (data, 0, ":", 2), ==, NULL);
+  r_assert_cmpstr ((tmp = r_str_mem_hex_full (data, 6, "", 2)), ==, "fa0102030405");
+  r_free (tmp);
+
+  r_assert_cmpstr ((tmp = r_str_mem_hex_full (data, 6, ":", 1)), ==, "fa:01:02:03:04:05");
+  r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_mem_hex_full (data, 9, ", ", 4)), ==, "fa010203, 04050607, 08");
+  r_free (tmp);
+}
+RTEST_END;
+
 RTEST (rstr, hex_mem, RTEST_FAST)
 {
   ruint8 * bin;
