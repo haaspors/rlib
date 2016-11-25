@@ -78,6 +78,21 @@ RTEST (rmem, move, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmem, agg, RTEST_FAST)
+{
+  ruint8 foo[]    = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  ruint8 * p;
+  rsize size;
+
+  r_assert_cmpptr ((p = r_memdup_agg (&size, NULL)), ==, NULL);
+  r_assert_cmpptr ((p = r_memdup_agg (&size, foo, (rsize)5, foo + 4, (rsize)5, NULL)), !=, NULL);
+  r_assert_cmpuint (size, ==, 5 + 5);
+  r_assert_cmpmem (p + 0, ==, foo, 5);
+  r_assert_cmpmem (p + 5, ==, foo + 4, 5);
+  r_free (p);
+}
+RTEST_END;
+
 RTEST (rmem, scan_byte, RTEST_FAST)
 {
   const ruint8 foo[]  = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };

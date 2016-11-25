@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 #if defined(__BIONIC__) && defined (RLIB_HAVE_ALLOCA_H)
 #include <alloca.h>
@@ -84,6 +85,10 @@ R_API rpointer  r_memcpy (void * R_ATTR_RESTRICT dst,
     const void * R_ATTR_RESTRICT src, rsize size);
 R_API rpointer  r_memmove (rpointer dst, rconstpointer src, rsize size);
 R_API rpointer  r_memdup (rconstpointer src, rsize size) R_ATTR_MALLOC;
+R_API rsize     r_memagg (rpointer dst, rsize size, rsize * out, ...) R_ATTR_NULL_TERMINATED;
+R_API rsize     r_memaggv (rpointer dst, rsize size, rsize * out, va_list args);
+R_API rpointer  r_memdup_agg (rsize * out, ...) R_ATTR_NULL_TERMINATED R_ATTR_MALLOC;
+R_API rpointer  r_memdup_aggv (rsize * out, va_list args) R_ATTR_MALLOC;
 
 /* memory scan operations */
 R_API rpointer r_mem_scan_byte (rconstpointer mem, rsize size, ruint8 byte);

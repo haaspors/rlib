@@ -131,6 +131,79 @@ r_memdup (rconstpointer src, rsize size)
   return ret;
 }
 
+rsize
+r_memagg (rpointer dst, rsize size, rsize * out, ...)
+{
+  rsize ret;
+  va_list args;
+
+  va_start (args, out);
+  ret = r_memaggv (dst, size, out, args);
+  va_end (args);
+
+  return ret;
+}
+
+rsize
+r_memaggv (rpointer dst, rsize size, rsize * out, va_list args)
+{
+  rsize ret = 0;
+  rconstpointer p;
+  ruint8 * ptr = dst;
+  rsize c, s = 0;
+
+  while ((p = va_arg (args, rconstpointer)) != NULL &&
+      (c = va_arg (args, rsize)) <= size) {
+    r_memcpy (&ptr[s], p, c);
+    s += c;
+    ret++;
+  }
+
+  if (out != NULL)
+    *out = s;
+
+  return ret;
+}
+
+rpointer
+r_memdup_agg (rsize * out, ...)
+{
+  rpointer ret;
+  va_list args;
+
+  va_start (args, out);
+  ret = r_memdup_aggv (out, args);
+  va_end (args);
+
+  return ret;
+}
+
+rpointer
+r_memdup_aggv (rsize * out, va_list args)
+{
+  va_list ac;
+  rsize size = 0, count = 0;
+  rpointer ret;
+
+  va_copy (ac, args);
+  while (va_arg (ac, rconstpointer) != NULL) {
+    count++;
+    size += va_arg (ac, rsize);
+  }
+  va_end (ac);
+
+  if (R_UNLIKELY (size == 0)) {
+    ret = NULL;
+  } else if ((ret = r_malloc (size)) != NULL) {
+    if (R_UNLIKELY (r_memaggv (ret, size, out, args) != count)) {
+      r_free (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
 rpointer
 r_mem_scan_byte (rconstpointer mem, rsize size, ruint8 byte)
 {
