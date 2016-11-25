@@ -289,15 +289,16 @@ typedef enum {
 } RDTLSSRTPProtectionProfile;
 
 typedef enum {
-  R_TLS_ERROR_EOB                                       =  1,
-  R_TLS_ERROR_OK                                        =  0,
-  R_TLS_ERROR_INVAL                                     = -1,
-  R_TLS_ERROR_INVALID_RECORD                            = -2,
-  R_TLS_ERROR_CORRUPT_RECORD                            = -3,
-  R_TLS_ERROR_BUF_TOO_SMALL                             = -4,
-  R_TLS_ERROR_VERSION                                   = -5,
-  R_TLS_ERROR_WRONG_TYPE                                = -6,
-  R_TLS_ERROR_NOT_DTLS                                  = -7,
+  R_TLS_ERROR_EOB                                       =  0x01,
+  R_TLS_ERROR_OK                                        =  0x00,
+  R_TLS_ERROR_INVAL                                     = -0x01,
+  R_TLS_ERROR_OOM                                       = -0x02,
+  R_TLS_ERROR_INVALID_RECORD                            = -0x03,
+  R_TLS_ERROR_CORRUPT_RECORD                            = -0x04,
+  R_TLS_ERROR_BUF_TOO_SMALL                             = -0x05,
+  R_TLS_ERROR_VERSION                                   = -0x06,
+  R_TLS_ERROR_WRONG_TYPE                                = -0x07,
+  R_TLS_ERROR_NOT_DTLS                                  = -0x08,
 } RTLSError;
 
 typedef enum {
@@ -441,6 +442,19 @@ static inline RTLSClientCertificateType r_tls_cert_req_cert_type (const RTLSCert
 static inline RTLSSignatureScheme r_tls_cert_req_sign_scheme (const RTLSCertReq * req, int n)
 { return (RTLSSignatureScheme)RUINT16_FROM_BE (((const ruint16 *)req->signscheme)[n]); }
 
+typedef RTLSError (*RTLSPrfFunc) (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...);
+
+R_API RTLSError r_tls_1_0_prf (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
+R_API RTLSError r_tls_1_2_prf_sha224 (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
+R_API RTLSError r_tls_1_2_prf_sha256 (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
+R_API RTLSError r_tls_1_2_prf_sha384 (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
+R_API RTLSError r_tls_1_2_prf_sha512 (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
 
 
 R_API RTLSError r_tls_write_handshake (rpointer data, rsize size,

@@ -21,6 +21,7 @@
 
 #include <rlib/rtime.h>
 
+#include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rx509.h>
 
 static inline ruint32
@@ -590,6 +591,119 @@ r_tls_certificate_get_cert (const RTLSCertificate * cert)
 {
   if (R_UNLIKELY (cert == NULL)) return NULL;
   return r_crypto_x509_cert_new (cert->cert, cert->len);
+}
+
+static RTLSError
+r_tls_1_2_prf (RHashType type, ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, va_list args)
+{
+  ruint8 * seed;
+  rsize seedsize;
+  RHmac * hmac;
+  RTLSError ret;
+
+  if (R_UNLIKELY (dst == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (secret == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (secsize == 0)) return R_TLS_ERROR_INVAL;
+
+  if (R_UNLIKELY ((seed = r_memdup_aggv (&seedsize, args)) == NULL))
+    return R_TLS_ERROR_OOM;
+
+  if ((hmac = r_hmac_new (type, secret, secsize)) != NULL) {
+    const rsize hsize = r_hash_type_size (type);
+    ruint8 * scratch = r_alloca (hsize);
+    rsize size = hsize;
+
+    r_hmac_update (hmac, seed, seedsize);
+    r_hmac_get_data (hmac, scratch, &size); /* = A(1) */
+
+    while (dsize > hsize) {
+      r_hmac_reset (hmac);
+      r_hmac_update (hmac, scratch, hsize); /* A(i - 1) */
+      r_hmac_update (hmac, seed, seedsize);
+      r_hmac_get_data (hmac, dst, &size);
+      dst += size;
+      dsize -= size;
+
+      r_hmac_reset (hmac);
+      r_hmac_update (hmac, scratch, hsize); /* A(i - 1) */
+      r_hmac_get_data (hmac, scratch, &size); /* = A(i) */
+    }
+
+    if (dsize > 0) {
+      r_hmac_reset (hmac);
+      r_hmac_update (hmac, scratch, hsize); /* A(i - 1) */
+      r_hmac_update (hmac, seed, seedsize);
+      r_hmac_get_data (hmac, scratch, &size);
+      r_memcpy (dst, scratch, dsize);
+    }
+
+    ret = R_TLS_ERROR_OK;
+
+    r_memclear (scratch, hsize);
+    r_hmac_free (hmac);
+  } else {
+    ret = R_TLS_ERROR_OOM;
+  }
+
+  r_free (seed);
+  return ret;
+}
+
+RTLSError
+r_tls_1_2_prf_sha224 (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...)
+{
+  va_list args;
+  RTLSError ret;
+
+  va_start (args, secsize);
+  ret = r_tls_1_2_prf (R_HASH_TYPE_SHA224, dst, dsize, secret, secsize, args);
+  va_end (args);
+
+  return ret;
+}
+
+RTLSError
+r_tls_1_2_prf_sha256 (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...)
+{
+  va_list args;
+  RTLSError ret;
+
+  va_start (args, secsize);
+  ret = r_tls_1_2_prf (R_HASH_TYPE_SHA256, dst, dsize, secret, secsize, args);
+  va_end (args);
+
+  return ret;
+}
+
+RTLSError
+r_tls_1_2_prf_sha384 (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...)
+{
+  va_list args;
+  RTLSError ret;
+
+  va_start (args, secsize);
+  ret = r_tls_1_2_prf (R_HASH_TYPE_SHA384, dst, dsize, secret, secsize, args);
+  va_end (args);
+
+  return ret;
+}
+
+RTLSError
+r_tls_1_2_prf_sha512 (ruint8 * dst, rsize dsize,
+    const ruint8 * secret, rsize secsize, ...)
+{
+  va_list args;
+  RTLSError ret;
+
+  va_start (args, secsize);
+  ret = r_tls_1_2_prf (R_HASH_TYPE_SHA512, dst, dsize, secret, secsize, args);
+  va_end (args);
+
+  return ret;
 }
 
 
