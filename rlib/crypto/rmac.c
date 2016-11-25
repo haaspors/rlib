@@ -24,6 +24,8 @@
 struct _RHmac {
   RHash * inner;
   RHash * outer;
+  ruint32 * keyblock;
+  rsize blocksize;
 };
 
 RHmac *
@@ -32,31 +34,25 @@ r_hmac_new (RHashType type, rconstpointer key, rsize keysize)
   RHmac * hmac;
 
   if ((hmac = r_mem_new (RHmac)) != NULL) {
-    rsize blocksize, i;
-    ruint32 * keyblock, * block;
-
     hmac->inner = r_hash_new (type);
     hmac->outer = r_hash_new (type);
+    hmac->blocksize = r_hash_blocksize (hmac->inner);
+    hmac->keyblock = r_malloc0 (hmac->blocksize);
 
-    blocksize = r_hash_blocksize (hmac->inner);
-    keyblock = r_alloca0 (blocksize);
-    block = r_alloca (blocksize);
-
-    if (keysize > blocksize) {
-      r_hash_update (hmac->inner, key, keysize);
-      r_hash_get_data (hmac->inner, (ruint8 *)keyblock, &keysize);
-      r_hash_reset (hmac->inner);
-    } else {
-      r_memcpy (keyblock, key, keysize);
+    if (hmac->inner == NULL || hmac->outer == NULL ||
+        hmac->blocksize == 0 || hmac->keyblock == NULL) {
+      r_hmac_free (hmac);
+      return NULL;
     }
 
-    for (i = 0; i < blocksize / sizeof (ruint32); i++)
-      block[i] = keyblock[i] ^ 0x36363636;
-    r_hash_update (hmac->inner, block, blocksize);
+    if (keysize > hmac->blocksize) {
+      r_hash_update (hmac->inner, key, keysize);
+      r_hash_get_data (hmac->inner, (ruint8 *)hmac->keyblock, &keysize);
+    } else {
+      r_memcpy (hmac->keyblock, key, keysize);
+    }
 
-    for (i = 0; i < blocksize / sizeof (ruint32); i++)
-      block[i] = keyblock[i] ^ 0x5c5c5c5c;
-    r_hash_update (hmac->outer, block, blocksize);
+    r_hmac_reset (hmac);
   }
 
   return hmac;
@@ -68,8 +64,27 @@ r_hmac_free (RHmac * hmac)
   if (hmac != NULL) {
     r_hash_free (hmac->inner);
     r_hash_free (hmac->outer);
+    r_free (hmac->keyblock);
     r_free (hmac);
   }
+}
+
+void
+r_hmac_reset (RHmac * hmac)
+{
+  rsize i;
+  ruint32 * block = r_alloca (hmac->blocksize);
+
+  r_hash_reset (hmac->inner);
+  r_hash_reset (hmac->outer);
+
+  for (i = 0; i < hmac->blocksize / sizeof (ruint32); i++)
+    block[i] = hmac->keyblock[i] ^ 0x36363636;
+  r_hash_update (hmac->inner, block, hmac->blocksize);
+
+  for (i = 0; i < hmac->blocksize / sizeof (ruint32); i++)
+    block[i] = hmac->keyblock[i] ^ 0x5c5c5c5c;
+  r_hash_update (hmac->outer, block, hmac->blocksize);
 }
 
 

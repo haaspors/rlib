@@ -32,6 +32,8 @@ typedef struct _RHmac       RHmac;
 R_API RHmac * r_hmac_new (RHashType type, rconstpointer key, rsize keysize) R_ATTR_MALLOC;
 R_API void r_hmac_free (RHmac * hmac);
 
+R_API void r_hmac_reset (RHmac * hmac);
+
 R_API rboolean r_hmac_update (RHmac * hmac, rconstpointer data, rsize size);
 R_API rboolean r_hmac_get_data (RHmac * hmac, ruint8 * data, rsize * size);
 R_API rchar * r_hmac_get_hex (RHmac * hmac);
