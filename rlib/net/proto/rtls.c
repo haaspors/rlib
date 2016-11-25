@@ -493,6 +493,38 @@ r_tls_parser_parse_certificate_verify (const RTLSParser * parser,
 }
 
 RTLSError
+r_tls_parser_parse_client_key_exchange_rsa (const RTLSParser * parser,
+    const ruint8 ** encprems, rsize * size)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end;
+  RTLSError ret;
+  rsize s;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  s = RPOINTER_TO_SIZE (end - ptr);
+  if ((s & 0b11) == 0b10 && RSIZE_POPCOUNT (s) == 2) {
+    ruint16 v16 = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+    if (R_UNLIKELY ((rsize)v16 > s))
+      return R_TLS_ERROR_CORRUPT_RECORD;
+
+    s = (rsize)v16;
+    ptr += sizeof (ruint16);
+  }
+
+  if (encprems != NULL)
+    *encprems = ptr;
+  if (size != NULL)
+    *size = s;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_parser_parse_alert (const RTLSParser * parser,
     RTLSAlertLevel * level, RTLSAlertType * type)
 {
