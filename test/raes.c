@@ -4,11 +4,21 @@ RTEST (raes, new_args, RTEST_FAST)
 {
   ruint8 key[32] = { 0 };
 
-  r_assert_cmpptr (r_cipher_aes_new (0, NULL), ==, NULL);
-  r_assert_cmpptr (r_cipher_aes_new (128, NULL), ==, NULL);
-  r_assert_cmpptr (r_cipher_aes_new (0, key), ==, NULL);
-  r_assert_cmpptr (r_cipher_aes_new (129, key), ==, NULL);
-  r_assert_cmpptr (r_cipher_aes_new (255, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_ECB, 0, NULL), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_ECB, 128, NULL), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_ECB, 0, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_ECB, 129, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_ECB, 255, key), ==, NULL);
+
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CBC, 0, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CBC, 129, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CBC, 255, key), ==, NULL);
+
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CFB, 128, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 128, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CTR, 128, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 128, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CCM, 128, key), ==, NULL);
 }
 RTEST_END;
 
@@ -104,8 +114,8 @@ RTEST_LOOP (raes, ecb_block, RTEST_FAST, 0, R_N_ELEMENTS (ECB_block_test_data))
   r_assert_cmpuint (r_str_hex_to_binary (data->plaintxt, plaintxt, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
   r_assert_cmpuint (r_str_hex_to_binary (data->ciphertxt, ciphertxt, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
 
-  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (data->key)), !=, NULL);
-  r_assert_cmpuint (cipher->keybits, ==, data->keybits);
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_ECB, data->key)), !=, NULL);
+  r_assert_cmpuint (cipher->info->keybits, ==, data->keybits);
 
   /* encrypt */
   r_assert (r_cipher_aes_ecb_encrypt_block (cipher, plaintxt, out));
@@ -157,8 +167,8 @@ RTEST_LOOP (raes, ecb, RTEST_FAST, 0, R_N_ELEMENTS (ECB_mmt_test_data))
   r_assert_cmpptr ((ciphertxt = r_str_hex_mem (data->ciphertxt, &ciphersize)), !=, NULL);
   r_assert_cmpuint (plainsize, ==, ciphersize);
 
-  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (data->key)), !=, NULL);
-  r_assert_cmpuint (cipher->keybits, ==, data->keybits);
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_ECB, data->key)), !=, NULL);
+  r_assert_cmpuint (cipher->info->keybits, ==, data->keybits);
 
   out = r_malloc (ciphersize);
   r_assert_cmpint (r_cipher_aes_ecb_encrypt (cipher, NULL, plaintxt, plainsize, out), ==, R_CRYPTO_CIPHER_OK);
@@ -215,8 +225,8 @@ RTEST_LOOP (raes, cbc, RTEST_FAST, 0, R_N_ELEMENTS (CBC_test_data))
   r_assert_cmpptr ((ciphertxt = r_str_hex_mem (data->ciphertxt, &ciphersize)), !=, NULL);
   r_assert_cmpuint (plainsize, ==, ciphersize);
 
-  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (data->key)), !=, NULL);
-  r_assert_cmpuint (cipher->keybits, ==, data->keybits);
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_CBC, data->key)), !=, NULL);
+  r_assert_cmpuint (cipher->info->keybits, ==, data->keybits);
 
   out = r_malloc (ciphersize);
   r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);

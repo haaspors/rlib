@@ -30,8 +30,15 @@ R_BEGIN_DECLS
 #define R_AES_STR           "AES"
 #define R_AES_BLOCK_BYTES   16
 
-R_API RCryptoCipher * r_cipher_aes_new (ruint bits, const ruint8 * key) R_ATTR_MALLOC;
-R_API RCryptoCipher * r_cipher_aes_new_from_hex (const rchar * hexkey) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_new_from_hex (RCryptoCipherMode mode, const rchar * hexkey) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_128_ecb_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_192_ecb_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_256_ecb_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_128_cbc_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_192_cbc_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_256_cbc_new (const ruint8 * key) R_ATTR_MALLOC;
+
 
 R_API rboolean r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
     const ruint8 plaintxt[R_AES_BLOCK_BYTES], ruint8 ciphertxt[R_AES_BLOCK_BYTES]);

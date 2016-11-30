@@ -67,12 +67,22 @@ typedef RCryptoCipherResult (*RCryptoCipherOperation) (const RCryptoCipher * cip
 typedef RCryptoCipherOperation RCryptoCipherEncrypt;
 typedef RCryptoCipherOperation RCryptoCipherDecrypt;
 
+typedef struct {
+  const rchar *           strtype;
+  RCryptoCipherAlgorithm  type;
+  RCryptoCipherMode       mode;
+  ruint16                 keybits;
+  rsize                   ivsize;
+  rsize                   blocksize;
+
+  /* Cipher operations */
+  RCryptoCipherEncrypt    enc;
+  RCryptoCipherDecrypt    dec;
+} RCryptoCipherInfo;
+
 struct _RCryptoCipher {
   RRef ref;
-  const rchar * strtype;
-  RCryptoCipherAlgorithm algo;
-  ruint keybits;
-  ruint blockbits;
+  const RCryptoCipherInfo * info;
 };
 
 #define r_crypto_cipher_ref r_ref_ref

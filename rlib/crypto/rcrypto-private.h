@@ -26,6 +26,7 @@
 
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rcert.h>
+#include <rlib/crypto/rcipher.h>
 
 R_BEGIN_DECLS
 
@@ -80,6 +81,14 @@ struct _RCryptoCert {
 
 R_API_HIDDEN void r_crypto_key_destroy (RCryptoKey * key);
 R_API_HIDDEN void r_crypto_cert_destroy (RCryptoCert * cert);
+
+R_API_HIDDEN RCryptoCipher * r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key);
+R_API_HIDDEN const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ecb;
+R_API_HIDDEN const RCryptoCipherInfo g__r_crypto_cipher_aes_192_ecb;
+R_API_HIDDEN const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ecb;
+R_API_HIDDEN const RCryptoCipherInfo g__r_crypto_cipher_aes_128_cbc;
+R_API_HIDDEN const RCryptoCipherInfo g__r_crypto_cipher_aes_192_cbc;
+R_API_HIDDEN const RCryptoCipherInfo g__r_crypto_cipher_aes_256_cbc;
 
 R_END_DECLS
 

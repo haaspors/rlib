@@ -56,12 +56,36 @@ typedef struct {
   RCryptoCipher cipher;
 
   ruint8 key[R_AES_MAX_KEY_BYTES];
-  ruint8 iv[R_AES_BLOCK_BYTES];
 
   ruint32 erk[R_AES_BLOCK_BYTES * sizeof (ruint32)];
   ruint32 drk[R_AES_BLOCK_BYTES * sizeof (ruint32)];
   ruint8 rounds;
 } RAesCipher;
+
+const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ecb =  { "AES-128-ECB",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 128, 16, 16,
+  r_cipher_aes_ecb_encrypt, r_cipher_aes_ecb_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_192_ecb = { "AES-192-ECB",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 192, 16, 16,
+  r_cipher_aes_ecb_encrypt, r_cipher_aes_ecb_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ecb = { "AES-256-ECB",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 256, 16, 16,
+  r_cipher_aes_ecb_encrypt, r_cipher_aes_ecb_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_128_cbc = { "AES-128-CBC",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CBC, 128, 16, 16,
+  r_cipher_aes_cbc_encrypt, r_cipher_aes_cbc_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_192_cbc = { "AES-192-CBC",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CBC, 192, 16, 16,
+  r_cipher_aes_cbc_encrypt, r_cipher_aes_cbc_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_256_cbc = { "AES-256-CBC",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CBC, 256, 16, 16,
+  r_cipher_aes_cbc_encrypt, r_cipher_aes_cbc_decrypt
+};
 
 static void
 r_cipher_aes_free (RAesCipher * cipher)
@@ -70,11 +94,10 @@ r_cipher_aes_free (RAesCipher * cipher)
 }
 
 RCryptoCipher *
-r_cipher_aes_new (ruint bits, const ruint8 * key)
+r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
 {
   RAesCipher * ret;
 
-  if (R_UNLIKELY (bits != 128 && bits != 192 && bits != 256)) return NULL;
   if (R_UNLIKELY (key == NULL)) return NULL;
 
   if ((ret = r_mem_new (RAesCipher)) != NULL) {
@@ -82,19 +105,14 @@ r_cipher_aes_new (ruint bits, const ruint8 * key)
     ruint32 * rk, * src;
 
     r_ref_init (ret, r_cipher_aes_free);
-    ret->cipher.strtype = R_AES_STR;
-    ret->cipher.algo = R_CRYPTO_CIPHER_ALGO_AES;
-    ret->cipher.keybits = bits;
-    ret->cipher.blockbits = R_AES_BLOCK_BYTES * 8;
-
-    r_memcpy (ret->key, key, bits / 8);
-    r_memset (ret->iv, 0, R_AES_BLOCK_BYTES);
+    ret->cipher.info = info;
+    r_memcpy (ret->key, key, info->keybits / 8);
 
     rk = ret->erk;
-    for (i = 0; i < bits / 32; i++)
+    for (i = 0; i < info->keybits / 32; i++)
       rk[i] = RUINT32_FROM_LE (*((ruint32 *)&key[i * 4]));
 
-    switch (bits) {
+    switch (info->keybits) {
       case 128:
         ret->rounds = 10;
 
@@ -189,18 +207,95 @@ r_cipher_aes_new (ruint bits, const ruint8 * key)
     *rk++ = *src++;
   }
 
-  return &ret->cipher;
+  return (RCryptoCipher *)ret;
 }
 
 RCryptoCipher *
-r_cipher_aes_new_from_hex (const rchar * hexkey)
+r_cipher_aes_128_ecb_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_128_ecb, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_192_ecb_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_192_ecb, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_256_ecb_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_256_ecb, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_128_cbc_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_128_cbc, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_192_cbc_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_192_cbc, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_256_cbc_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_256_cbc, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
+{
+  switch (bits) {
+    case 128:
+      switch (mode) {
+        case R_CRYPTO_CIPHER_MODE_ECB:
+          return r_cipher_aes_128_ecb_new (key);
+        case R_CRYPTO_CIPHER_MODE_CBC:
+          return r_cipher_aes_128_cbc_new (key);
+        default:
+          break;
+      }
+      break;
+    case 192:
+      switch (mode) {
+        case R_CRYPTO_CIPHER_MODE_ECB:
+          return r_cipher_aes_192_ecb_new (key);
+        case R_CRYPTO_CIPHER_MODE_CBC:
+          return r_cipher_aes_192_cbc_new (key);
+        default:
+          break;
+      }
+      break;
+    case 256:
+      switch (mode) {
+        case R_CRYPTO_CIPHER_MODE_ECB:
+          return r_cipher_aes_256_ecb_new (key);
+        case R_CRYPTO_CIPHER_MODE_CBC:
+          return r_cipher_aes_256_cbc_new (key);
+        default:
+          break;
+      }
+      break;
+    default:
+      break;
+  }
+
+  return NULL;
+}
+
+RCryptoCipher *
+r_cipher_aes_new_from_hex (RCryptoCipherMode mode, const rchar * hexkey)
 {
   RCryptoCipher * ret;
   ruint8 * key;
   rsize size;
 
   if ((key = r_str_hex_mem (hexkey, &size)) != NULL) {
-    ret = r_cipher_aes_new (size * 8, key);
+    ret = r_cipher_aes_new (mode, size * 8, key);
     r_free (key);
   } else {
     ret = NULL;
