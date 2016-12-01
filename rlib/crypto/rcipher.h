@@ -28,8 +28,10 @@
 R_BEGIN_DECLS
 
 typedef enum {
+  R_CRYPTO_CIPHER_ALGO_NONE = 0,
   R_CRYPTO_CIPHER_ALGO_NULL,
   R_CRYPTO_CIPHER_ALGO_AES,
+  R_CRYPTO_CIPHER_ALGO_ARC4,
   R_CRYPTO_CIPHER_ALGO_BLOWFISH,
   R_CRYPTO_CIPHER_ALGO_DES,
   R_CRYPTO_CIPHER_ALGO_3DES,
@@ -37,6 +39,7 @@ typedef enum {
 } RCryptoCipherAlgorithm;
 
 typedef enum {
+  R_CRYPTO_CIPHER_MODE_NONE = 0,
   R_CRYPTO_CIPHER_MODE_ECB,
   R_CRYPTO_CIPHER_MODE_CBC,
   R_CRYPTO_CIPHER_MODE_CFB,
@@ -44,6 +47,7 @@ typedef enum {
   R_CRYPTO_CIPHER_MODE_CTR,
   R_CRYPTO_CIPHER_MODE_GCM,
   R_CRYPTO_CIPHER_MODE_CCM,
+  R_CRYPTO_CIPHER_MODE_STREAM,
 } RCryptoCipherMode;
 
 typedef enum {
@@ -85,9 +89,17 @@ struct _RCryptoCipher {
   const RCryptoCipherInfo * info;
 };
 
+R_API RCryptoCipher * r_crypto_cipher_null_new (/* accept key */) R_ATTR_MALLOC;
+
+R_API RCryptoCipher * r_crypto_cipher_new (const RCryptoCipherInfo * info,
+    const ruint8 * key) R_ATTR_MALLOC;
 #define r_crypto_cipher_ref r_ref_ref
 #define r_crypto_cipher_unref r_ref_unref
 
+R_API RCryptoCipherResult r_crypto_cipher_encrypt (const RCryptoCipher * cipher,
+    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out);
+R_API RCryptoCipherResult r_crypto_cipher_decrypt (const RCryptoCipher * cipher,
+    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out);
 
 R_END_DECLS
 
