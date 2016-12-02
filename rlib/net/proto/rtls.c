@@ -544,7 +544,7 @@ r_tls_parser_parse_alert (const RTLSParser * parser,
 }
 
 rboolean
-r_tls_hello_msg_has_cipher_suite (const RTLSHelloMsg * msg, RCipherSuite cs)
+r_tls_hello_msg_has_cipher_suite (const RTLSHelloMsg * msg, RTLSCipherSuite cs)
 {
   ruint16 i, count;
   count = r_tls_hello_msg_cipher_suite_count (msg);
@@ -829,7 +829,7 @@ r_dtls_update_handshake_len (rpointer data, rsize size, ruint16 len,
 RTLSError
 r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
     RTLSVersion ver, RPrng * prng, const ruint8 * sid, ruint8 sidsize,
-    RCipherSuite cs, RTLSCompresssionMethod comp)
+    RTLSCipherSuite cs, RTLSCompresssionMethod comp)
 {
   ruint8 * p;
   ruint32 ts;

@@ -28,7 +28,7 @@
 #include <rlib/rrand.h>
 
 #include <rlib/crypto/rcert.h>
-#include <rlib/crypto/rciphersuite.h>
+#include <rlib/crypto/rtlsciphersuite.h>
 
 R_BEGIN_DECLS
 
@@ -396,11 +396,11 @@ R_API RTLSError r_tls_parser_parse_alert (const RTLSParser * parser,
 /* Hello msg */
 #define r_tls_hello_msg_cipher_suite_count(msg) ((msg)->cslen / sizeof (ruint16))
 #define r_tls_hello_msg_compression_count(msg)  ((msg)->complen / sizeof (ruint8))
-static inline RCipherSuite r_tls_hello_msg_cipher_suite (const RTLSHelloMsg * msg, int n)
-{ return (RCipherSuite)RUINT16_FROM_BE (((const ruint16 *)msg->cs)[n]); }
+static inline RTLSCipherSuite r_tls_hello_msg_cipher_suite (const RTLSHelloMsg * msg, int n)
+{ return (RTLSCipherSuite)RUINT16_FROM_BE (((const ruint16 *)msg->cs)[n]); }
 static inline RTLSCompresssionMethod r_tls_hello_msg_compression_method (const RTLSHelloMsg * msg, int n)
 { return (RTLSCompresssionMethod)msg->compression[n]; }
-R_API rboolean r_tls_hello_msg_has_cipher_suite (const RTLSHelloMsg * msg, RCipherSuite cs);
+R_API rboolean r_tls_hello_msg_has_cipher_suite (const RTLSHelloMsg * msg, RTLSCipherSuite cs);
 R_API RTLSError r_tls_hello_msg_extension_first (const RTLSHelloMsg * msg, RTLSHelloExt * ext);
 R_API RTLSError r_tls_hello_msg_extension_next (const RTLSHelloMsg * msg, RTLSHelloExt * ext);
 
@@ -468,7 +468,7 @@ R_API RTLSError r_dtls_update_handshake_len (rpointer data, rsize size, ruint16 
 
 R_API RTLSError r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
     RTLSVersion ver, RPrng * prng, const ruint8 * sid, ruint8 sidsize,
-    RCipherSuite cs, RTLSCompresssionMethod comp);
+    RTLSCipherSuite cs, RTLSCompresssionMethod comp);
 #define r_dtls_write_hs_server_hello r_tls_write_hs_server_hello
 
 R_END_DECLS

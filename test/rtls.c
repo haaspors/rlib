@@ -56,25 +56,25 @@ RTEST (rtls, parse_dtls_client_hello, RTEST_FAST)
   r_assert_cmpuint (msg.extlen, ==, 70);
 
   r_assert_cmpuint (r_tls_hello_msg_cipher_suite_count (&msg), ==, 17);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  0), ==, R_CS_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  1), ==, R_CS_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  2), ==, R_CS_TLS_DHE_RSA_WITH_AES_128_GCM_SHA256);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  3), ==, R_CS_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  4), ==, R_CS_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  5), ==, R_CS_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256_OLD);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  6), ==, R_CS_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256_OLD);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  7), ==, R_CS_TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  8), ==, R_CS_TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  9), ==, R_CS_TLS_DHE_RSA_WITH_AES_128_CBC_SHA);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 10), ==, R_CS_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 11), ==, R_CS_TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 12), ==, R_CS_TLS_DHE_RSA_WITH_AES_256_CBC_SHA);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 13), ==, R_CS_TLS_RSA_WITH_AES_128_GCM_SHA256);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 14), ==, R_CS_TLS_RSA_WITH_AES_128_CBC_SHA);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 15), ==, R_CS_TLS_RSA_WITH_AES_256_CBC_SHA);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 16), ==, R_CS_TLS_RSA_WITH_3DES_EDE_CBC_SHA);
-  r_assert (r_tls_hello_msg_has_cipher_suite (&msg, R_CS_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA));
-  r_assert (!r_tls_hello_msg_has_cipher_suite (&msg, R_CS_TLS_ECDHE_PSK_WITH_3DES_EDE_CBC_SHA));
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  0), ==, R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  1), ==, R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  2), ==, R_TLS_CS_DHE_RSA_WITH_AES_128_GCM_SHA256);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  3), ==, R_TLS_CS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  4), ==, R_TLS_CS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  5), ==, R_TLS_CS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256_OLD);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  6), ==, R_TLS_CS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256_OLD);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  7), ==, R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  8), ==, R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  9), ==, R_TLS_CS_DHE_RSA_WITH_AES_128_CBC_SHA);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 10), ==, R_TLS_CS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 11), ==, R_TLS_CS_ECDHE_RSA_WITH_AES_256_CBC_SHA);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 12), ==, R_TLS_CS_DHE_RSA_WITH_AES_256_CBC_SHA);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 13), ==, R_TLS_CS_RSA_WITH_AES_128_GCM_SHA256);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 14), ==, R_TLS_CS_RSA_WITH_AES_128_CBC_SHA);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 15), ==, R_TLS_CS_RSA_WITH_AES_256_CBC_SHA);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 16), ==, R_TLS_CS_RSA_WITH_3DES_EDE_CBC_SHA);
+  r_assert (r_tls_hello_msg_has_cipher_suite (&msg, R_TLS_CS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA));
+  r_assert (!r_tls_hello_msg_has_cipher_suite (&msg, R_TLS_CS_ECDHE_PSK_WITH_3DES_EDE_CBC_SHA));
   r_assert_cmpuint (r_tls_hello_msg_compression_count (&msg), ==, 1);
   r_assert_cmpuint (r_tls_hello_msg_compression_method (&msg, 0), ==, R_TLS_COMPRESSION_NULL);
 
@@ -161,7 +161,7 @@ RTEST (rtls, parse_tls_server_hello, RTEST_FAST)
   r_assert_cmpuint (msg.extlen, ==, 21);
 
   r_assert_cmpuint (r_tls_hello_msg_cipher_suite_count (&msg), ==, 1);
-  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  0), ==, R_CS_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+  r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg,  0), ==, R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
   r_assert_cmpuint (r_tls_hello_msg_compression_count (&msg), ==, 1);
   r_assert_cmpuint (r_tls_hello_msg_compression_method (&msg, 0), ==, R_TLS_COMPRESSION_NULL);
 
