@@ -463,6 +463,69 @@ r_buffer_merge_take_array (RBuffer ** arr, ruint count)
   return ret;
 }
 
+RBuffer *
+r_buffer_replace_byte_range (RBuffer * buffer, rsize offset, rssize size,
+    RBuffer * from)
+{
+  RBuffer * ret;
+
+  if (R_UNLIKELY (buffer == NULL)) return NULL;
+
+  if ((ret = r_buffer_new ()) != NULL) {
+    RMem * mem;
+    ruint i = 0, count;
+    rsize skip;
+
+    /* Append prefix! */
+    if (offset > 0) {
+      if (!r_buffer_mem_find (buffer, 0, offset, &i, &count, NULL))
+        goto error;
+
+      if (count > 0) {
+        for (count = i + count - 1; i < count; i++) {
+          r_buffer_mem_append (ret, buffer->mem[i]);
+          offset -= buffer->mem[i]->size;
+        }
+
+        if ((mem = r_mem_view (buffer->mem[i], 0, offset)) == NULL)
+          goto error;
+        r_buffer_mem_append (ret, mem);
+        r_mem_unref (mem);
+      }
+    }
+
+    /* Append replacement (from) buffer */
+    if (!r_buffer_append_from (ret, from))
+      goto error;
+
+    /* Append suffix */
+    if (size >= 0) {
+      for (skip = (rsize)size + offset;
+          i < buffer->mem_count && skip > buffer->mem[i]->size;
+          i++) {
+        skip -= buffer->mem[i]->size;
+      }
+
+      if (i < buffer->mem_count) {
+        if (skip > 0) {
+          if ((mem = r_mem_view (buffer->mem[i++], skip, -1)) == NULL)
+            goto error;
+          r_buffer_mem_append (ret, mem);
+          r_mem_unref (mem);
+        }
+
+        for (; i < buffer->mem_count; i++)
+          r_buffer_mem_append (ret, buffer->mem[i]);
+      }
+    }
+  }
+
+  return ret;
+error:
+  r_buffer_unref (ret);
+  return NULL;
+}
+
 static rboolean
 r_buffer_resize_fast (RBuffer * buffer, rsize offset, rsize size)
 {

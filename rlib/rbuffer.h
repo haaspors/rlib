@@ -72,6 +72,8 @@ R_API rboolean r_buffer_append_region_from (RBuffer * buffer, RBuffer * from,
 R_API RBuffer * r_buffer_merge_take (RBuffer * a, ...) R_ATTR_NULL_TERMINATED R_ATTR_WARN_UNUSED_RESULT;
 R_API RBuffer * r_buffer_merge_takev (RBuffer * a, va_list args) R_ATTR_WARN_UNUSED_RESULT;
 R_API RBuffer * r_buffer_merge_take_array (RBuffer ** a, ruint count) R_ATTR_WARN_UNUSED_RESULT;
+R_API RBuffer * r_buffer_replace_byte_range (RBuffer * buffer,
+    rsize offset, rssize size, RBuffer * from) R_ATTR_WARN_UNUSED_RESULT;
 
 R_API rboolean r_buffer_resize (RBuffer * buffer, rsize offset, rsize size);
 R_API rboolean r_buffer_shrink (RBuffer * buffer, rsize size);
