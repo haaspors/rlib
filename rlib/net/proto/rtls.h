@@ -425,8 +425,8 @@ static inline RTLSSupportedGroup r_tls_hello_ext_supported_group (const RTLSHell
 /* use_srtp extension */
 static inline ruint16 r_tls_hello_ext_use_srtp_profile_count (const RTLSHelloExt * ext)
 { return RUINT16_FROM_BE (*(const ruint16 *)ext->data) / sizeof (ruint16); }
-static inline ruint16 r_tls_hello_ext_use_srtp_profile(const RTLSHelloExt * ext, int n)
-{ return (RTLSSignatureScheme)RUINT16_FROM_BE (((const ruint16 *)ext->data)[n+1]); }
+static inline RDTLSSRTPProtectionProfile r_tls_hello_ext_use_srtp_profile(const RTLSHelloExt * ext, int n)
+{ return (RDTLSSRTPProtectionProfile)RUINT16_FROM_BE (((const ruint16 *)ext->data)[n+1]); }
 static inline ruint8 r_tls_hello_ext_use_srtp_mki_size (const RTLSHelloExt * ext)
 { return ext->data[sizeof (ruint16) + RUINT16_FROM_BE (*(const ruint16 *)ext->data)]; }
 static inline const ruint8 * r_tls_hello_ext_use_srtp_mki (const RTLSHelloExt * ext)
