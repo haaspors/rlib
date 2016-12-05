@@ -69,6 +69,12 @@ r_hmac_free (RHmac * hmac)
   }
 }
 
+rsize
+r_hmac_size (const RHmac * hmac)
+{
+  return r_hash_size (hmac->inner);
+}
+
 void
 r_hmac_reset (RHmac * hmac)
 {
