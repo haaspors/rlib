@@ -466,8 +466,10 @@ R_API RTLSError r_tls_update_handshake_len (rpointer data, rsize size, ruint16 l
 R_API RTLSError r_dtls_update_handshake_len (rpointer data, rsize size, ruint16 len,
     ruint32 foff, ruint32 flen);
 
+R_API RTLSError r_tls_generate_hello_random (ruint8 randrom[R_TLS_HELLO_RANDOM_BYTES], RPrng * prng);
 R_API RTLSError r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
-    RTLSVersion ver, RPrng * prng, const ruint8 * sid, ruint8 sidsize,
+    RTLSVersion ver, ruint8 srvrand[R_TLS_HELLO_RANDOM_BYTES],
+    const ruint8 * sid, ruint8 sidsize,
     RTLSCipherSuite cs, RTLSCompresssionMethod comp);
 #define r_dtls_write_hs_server_hello r_tls_write_hs_server_hello
 

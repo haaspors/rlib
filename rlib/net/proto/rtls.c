@@ -827,27 +827,44 @@ r_dtls_update_handshake_len (rpointer data, rsize size, ruint16 len,
 }
 
 RTLSError
-r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
-    RTLSVersion ver, RPrng * prng, const ruint8 * sid, ruint8 sidsize,
-    RTLSCipherSuite cs, RTLSCompresssionMethod comp)
+r_tls_generate_hello_random (ruint8 random[R_TLS_HELLO_RANDOM_BYTES],
+    RPrng * prng)
 {
   ruint8 * p;
   ruint32 ts;
+
+  if (R_UNLIKELY (random == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (prng == NULL)) return R_TLS_ERROR_INVAL;
+
+  ts = (ruint32)(r_time_get_unix_time () & RUINT32_MAX);
+  p = random;
+  *p++ = (ts      >> 24) & 0xff;
+  *p++ = (ts      >> 16) & 0xff;
+  *p++ = (ts      >>  8) & 0xff;
+  *p++ = (ts           ) & 0xff;
+  r_prng_fill (prng, p, 28);
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
+    RTLSVersion ver, ruint8 srvrand[R_TLS_HELLO_RANDOM_BYTES],
+    const ruint8 * sid, ruint8 sidsize,
+    RTLSCipherSuite cs, RTLSCompresssionMethod comp)
+{
+  ruint8 * p;
 
   if (R_UNLIKELY (data == NULL)) return R_TLS_ERROR_INVAL;
   if (R_UNLIKELY (size < (rsize)(2 + 4 + 28 + 1 + sidsize + 2 + 1)))
     return R_TLS_ERROR_BUF_TOO_SMALL;
 
   p = data;
-  ts = (ruint32)(r_time_get_unix_time () & RUINT32_MAX);
 
   *p++ = (ver     >>  8) & 0xff;
   *p++ = (ver          ) & 0xff;
-  *p++ = (ts      >> 24) & 0xff;
-  *p++ = (ts      >> 16) & 0xff;
-  *p++ = (ts      >>  8) & 0xff;
-  *p++ = (ts           ) & 0xff;
-  r_prng_fill (prng, p, 28); p += 28;
+  r_memcpy (p, srvrand, R_TLS_HELLO_RANDOM_BYTES);
+  p += R_TLS_HELLO_RANDOM_BYTES;
   *p++ = sidsize;
   r_memcpy (p, sid, sidsize); p += sidsize;
   *p++ = (cs      >>  8) & 0xff;
@@ -856,6 +873,10 @@ r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
 
   if (out != NULL)
     *out = (2 + 4 + 28 + 1 + sidsize + 2 + 1);
+
+  p = data;
+  p += sizeof (ruint16);
+  r_memcpy (srvrand, p, R_TLS_HELLO_RANDOM_BYTES);
 
   return R_TLS_ERROR_OK;
 }
