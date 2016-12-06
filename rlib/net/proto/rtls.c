@@ -110,7 +110,6 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
 {
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
   RTLSError ret;
-  rsize fragoff;
   ruint16 fraglen;
 
   if (R_UNLIKELY (parser == NULL)) return R_TLS_ERROR_INVAL;
@@ -137,7 +136,7 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
 
     parser->epoch = 0;
     parser->seqno = 0;
-    fragoff = 5;
+    parser->offset = 5;
     fraglen = RUINT16_FROM_BE (*(const ruint16 *)&info.data[3]);
   } else {
     RMemMapInfo dtlsext = R_MEM_MAP_INFO_INIT;
@@ -155,7 +154,7 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
 
     parser->epoch = RUINT16_FROM_BE (*(const ruint16 *)&info.data[3]);
     parser->seqno = _r_parse_u48 (&dtlsext.data[0]);
-    fragoff = 13;
+    parser->offset = 13;
     fraglen = RUINT16_FROM_BE (*(const ruint16 *)&dtlsext.data[6]);
     r_buffer_unmap (buf, &dtlsext);
   }
@@ -164,7 +163,7 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
     ret = R_TLS_ERROR_CORRUPT_RECORD;
     goto beach;
   }
-  if (!r_buffer_map_byte_range (buf, fragoff, (rssize)fraglen,
+  if (!r_buffer_map_byte_range (buf, parser->offset, (rssize)fraglen,
         &parser->fragment, R_MEM_MAP_READ)) {
     ret = R_TLS_ERROR_BUF_TOO_SMALL;
     goto beach;
@@ -172,7 +171,7 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
 
   ret = R_TLS_ERROR_OK;
   parser->buf = r_buffer_ref (buf);
-  parser->recsize = fragoff + fraglen;
+  parser->recsize = parser->offset + fraglen;
 
 beach:
   r_buffer_unmap (buf, &info);
@@ -215,6 +214,102 @@ r_tls_parser_next (RTLSParser * parser)
   }
 
   return ret;
+}
+
+RTLSError
+r_tls_parser_decrypt (RTLSParser * parser,
+    const RCryptoCipher * cipher, RHmac * mac)
+{
+  RBuffer * buf, * replace;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rsize contentsize;
+  ruint8 * iv;
+
+  if (R_UNLIKELY (parser == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (cipher == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (cipher->info->type == R_CRYPTO_CIPHER_ALGO_NULL))
+    return R_TLS_ERROR_OK;
+
+  contentsize = parser->fragment.size - cipher->info->ivsize;
+  if ((buf = r_buffer_new_alloc (NULL, contentsize, NULL)) == NULL)
+    return R_TLS_ERROR_OOM;
+
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_WRITE))
+    return R_TLS_ERROR_OOM;
+
+  iv = r_alloca (cipher->info->ivsize);
+  r_memcpy (iv, parser->fragment.data, cipher->info->ivsize);
+  r_crypto_cipher_decrypt (cipher, iv,
+      parser->fragment.data + cipher->info->ivsize, contentsize, info.data);
+
+  if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_CBC) {
+    ruint8 padding;
+
+    if (mac != NULL)
+      contentsize -= r_hmac_size (mac);
+    if ((padding = 1 + info.data[info.size - 1]) < contentsize) {
+      contentsize -= padding;
+
+      if (mac != NULL) {
+        ruint8 scratch[sizeof (ruint64) + sizeof (ruint8) + sizeof (ruint16) + sizeof (ruint16)];
+        rsize macsize = r_hmac_size (mac);
+        ruint8 * macbuf = r_alloca (macsize);
+
+        r_hmac_reset (mac);
+        if (r_tls_parser_is_dtls (parser)) {
+          scratch[0x00] = (parser->epoch  >> 8) & 0xff;
+          scratch[0x01] = (parser->epoch      ) & 0xff;
+        } else {
+          scratch[0x00] = (parser->seqno >> 56) & 0xff;
+          scratch[0x01] = (parser->seqno >> 48) & 0xff;
+        }
+        scratch[0x02] = (parser->seqno   >> 40) & 0xff;
+        scratch[0x03] = (parser->seqno   >> 32) & 0xff;
+        scratch[0x04] = (parser->seqno   >> 24) & 0xff;
+        scratch[0x05] = (parser->seqno   >> 16) & 0xff;
+        scratch[0x06] = (parser->seqno   >>  8) & 0xff;
+        scratch[0x07] = (parser->seqno        ) & 0xff;
+        scratch[0x08] = (parser->content      ) & 0xff;
+        scratch[0x09] = (parser->version >>  8) & 0xff;
+        scratch[0x0a] = (parser->version      ) & 0xff;
+        scratch[0x0b] = (contentsize     >>  8) & 0xff;
+        scratch[0x0c] = (contentsize          ) & 0xff;
+
+        r_hmac_update (mac, &scratch, sizeof (scratch));
+        r_hmac_update (mac, info.data, contentsize);
+
+        if (!r_hmac_get_data (mac, macbuf, &macsize) ||
+            r_memcmp (&info.data[contentsize], macbuf, macsize) != 0) {
+          r_buffer_unmap (buf, &info);
+          return R_TLS_ERROR_INVALID_MAC;
+        }
+      }
+
+      r_buffer_unmap (buf, &info);
+      r_buffer_resize (buf, 0, contentsize);
+    } else {
+      r_buffer_unmap (buf, &info);
+      return R_TLS_ERROR_CORRUPT_RECORD;
+    }
+  } else if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_STREAM) {
+    r_buffer_unmap (buf, &info);
+  } else {
+    r_buffer_unmap (buf, &info);
+  }
+
+  replace = r_buffer_replace_byte_range (parser->buf,
+      parser->offset, parser->fragment.size, buf);
+  r_buffer_unref (buf);
+  r_buffer_unmap (parser->buf, &parser->fragment);
+  r_buffer_unref (parser->buf);
+  parser->buf = replace;
+  parser->recsize = parser->offset + contentsize;
+
+  if (!r_buffer_map_byte_range (parser->buf, parser->offset, (rssize)contentsize,
+        &parser->fragment, R_MEM_MAP_READ))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  return R_TLS_ERROR_OK;
 }
 
 static RTLSError

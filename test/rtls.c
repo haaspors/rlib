@@ -650,6 +650,59 @@ RTEST (rtls, parse_dtls_finished, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, pkt_dtls_finished_encrypted, RTEST_FAST)
+{
+  static const ruint8 pkt_dtls_finished[] = {
+    0x16, 0xfe, 0xfd, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x9d, 0x96, 0x76,
+    0xcd, 0xa1, 0x00, 0x53, 0x13, 0xc7, 0x0a, 0x0d, 0x15, 0xb8, 0x5e, 0xab, 0x98, 0x15, 0x8c, 0xd7,
+    0x2e, 0x1f, 0x1d, 0x58, 0xb2, 0x34, 0x3a, 0x41, 0x90, 0x28, 0xd0, 0x4b, 0x25, 0x1d, 0x26, 0xd8,
+    0xb6, 0xc8, 0x1a, 0xdc, 0x53, 0x7e, 0x37, 0xd8, 0x75, 0xc8, 0x97, 0xcd, 0x8e, 0xe4, 0xdc, 0xe0,
+    0xd3, 0xc9, 0x73, 0x94, 0x43, 0x3d, 0xb8, 0x83, 0xf7, 0xbb, 0x41, 0x63, 0x74,
+  };
+  static const ruint8 aes_128_cbc_key[] = {
+    0x55, 0x31, 0xc8, 0xfe, 0x41, 0x64, 0x94, 0x1d, 0xdd, 0xbd, 0x51, 0x25, 0x24, 0x28, 0xbf, 0xe5
+  };
+  static const ruint8 sha1_mac_key[] = {
+    0xe3, 0xc1, 0x7b, 0x6a, 0x6a, 0x06, 0x31, 0x96, 0xba, 0xc4, 0x26, 0x4a, 0xea, 0x99, 0x26, 0x12,
+    0x4a, 0x4b, 0xe3, 0x2f
+  };
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  const ruint8 * verify_data;
+  rsize size;
+  RCryptoCipher * cipher;
+  RHmac * hmac;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_init (&parser, pkt_dtls_finished, sizeof (pkt_dtls_finished)));
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
+  r_assert_cmpuint (parser.epoch, ==, 1);
+  r_assert_cmpuint (parser.seqno, ==, 0);
+  r_assert_cmpuint (parser.recsize, ==, sizeof (pkt_dtls_finished));
+  r_assert_cmpuint (parser.fragment.size, ==, 64);
+  r_assert_cmpuint (parser.recsize, ==, R_DTLS_RECORD_HDR_SIZE + parser.fragment.size);
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_128_cbc_new (aes_128_cbc_key)), !=, NULL);
+  r_assert_cmpptr ((hmac = r_hmac_new (R_HASH_TYPE_SHA1, sha1_mac_key, sizeof (sha1_mac_key))), !=, NULL);
+
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_parser_parse_finished (&parser, &verify_data, &size),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (size, ==, 12);
+
+  r_assert_cmpuint (parser.fragment.size, ==, 24);
+  r_assert_cmpuint (parser.recsize, ==, sizeof (pkt_dtls_finished) - 40);
+  /* 40 = 16 (IV size) + 20 (MAC size) + 4 (padding) */
+  r_assert_cmpuint (parser.recsize, ==, R_DTLS_RECORD_HDR_SIZE + parser.fragment.size);
+
+  r_crypto_cipher_unref (cipher);
+  r_hmac_free (hmac);
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
 /* PRF test vectors taken from IETF mailing list,
  * email from Joseph Birr-Pixton <jbp at ncipher.com> */
 #if 0

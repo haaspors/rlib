@@ -28,6 +28,8 @@
 #include <rlib/rrand.h>
 
 #include <rlib/crypto/rcert.h>
+#include <rlib/crypto/rcipher.h>
+#include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rtlsciphersuite.h>
 
 R_BEGIN_DECLS
@@ -326,9 +328,10 @@ typedef struct {
   RTLSVersion version;
   ruint16 epoch;                              /* DTLS only */
   ruint64 seqno;                              /* DTLS only */
+  rsize offset;
   RMemMapInfo fragment;
 } RTLSParser;
-#define R_TLS_PARSER_INIT           { NULL, 0, 0, 0, 0, 0, R_MEM_MAP_INFO_INIT }
+#define R_TLS_PARSER_INIT           { NULL, 0, 0, 0, 0, 0, 0, R_MEM_MAP_INFO_INIT }
 
 typedef struct {
   RTLSVersion version;
@@ -379,8 +382,13 @@ R_API RTLSError r_tls_parser_init_next (RTLSParser * parser, RBuffer ** buf);
 R_API RBuffer * r_tls_parser_next (RTLSParser * parser);
 R_API void r_tls_parser_clear (RTLSParser * parser);
 
+R_API RTLSError r_tls_parser_decrypt (RTLSParser * parser,
+    const RCryptoCipher * cipher, RHmac * mac);
+
 #define r_tls_version_is_dtls(version) ((version) > RUINT16_MAX / 2)
 #define r_tls_parser_is_dtls(parser) r_tls_version_is_dtls ((parser)->version)
+R_API rboolean r_tls_parser_dtls_is_complete_handshake_fragment (const RTLSParser * parser);
+
 R_API RTLSError r_tls_parser_parse_handshake_peek_type (const RTLSParser * parser,
     RTLSHandshakeType * type);
 #define r_tls_parser_parse_handshake(parser, type, length)                    \
@@ -388,7 +396,6 @@ R_API RTLSError r_tls_parser_parse_handshake_peek_type (const RTLSParser * parse
 R_API RTLSError r_tls_parser_parse_handshake_full (const RTLSParser * parser,
     RTLSHandshakeType * type, ruint32 * length, ruint16 * msgseq,
     ruint32 * fragoff, ruint32 * fraglen);
-R_API rboolean r_tls_parser_dtls_is_complete_handshake_fragment (const RTLSParser * parser);
 R_API RTLSError r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg);
 R_API RTLSError r_tls_parser_parse_certificate_next (const RTLSParser * parser, RTLSCertificate * cert);
 R_API RTLSError r_tls_parser_parse_certificate_request (const RTLSParser * parser, RTLSCertReq * req);
