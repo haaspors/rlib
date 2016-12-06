@@ -389,6 +389,8 @@ R_API RTLSError r_tls_parser_parse_certificate_verify (const RTLSParser * parser
     RTLSSignatureScheme * sigscheme, const ruint8 ** sig, ruint16 * sigsize);
 R_API RTLSError r_tls_parser_parse_client_key_exchange_rsa (const RTLSParser * parser,
     const ruint8 ** encprems, rsize * size);
+R_API RTLSError r_tls_parser_parse_finished (const RTLSParser * parser,
+    const ruint8 ** verify_data, rsize * size);
 
 R_API RTLSError r_tls_parser_parse_alert (const RTLSParser * parser,
     RTLSAlertLevel * level, RTLSAlertType * type);

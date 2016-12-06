@@ -622,6 +622,34 @@ RTEST (rtls, parse_dtls_client_key_exchange_rsa, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, parse_dtls_finished, RTEST_FAST)
+{
+  static const ruint8 pkt_dtls_finished[] = {
+    0x16, 0xfe, 0xfd, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18,
+    0x14, 0x00, 0x00, 0x0c, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x7b, 0xa5, 0x9f, 0x35,
+    0xf3, 0x2a, 0x8e, 0xf2, 0xbe, 0x47, 0x3d, 0x20,
+  };
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  const ruint8 * verify_data;
+  rsize size;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_init (&parser, pkt_dtls_finished, sizeof (pkt_dtls_finished)));
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
+  r_assert_cmpuint (parser.epoch, ==, 1);
+  r_assert_cmpuint (parser.seqno, ==, 0);
+  r_assert_cmpuint (parser.recsize, ==, sizeof (pkt_dtls_finished));
+  r_assert_cmpuint (parser.fragment.size, ==, 24);
+
+  r_assert_cmpint (r_tls_parser_parse_finished (&parser, &verify_data, &size),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (size, ==, 12);
+
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
 /* PRF test vectors taken from IETF mailing list,
  * email from Joseph Birr-Pixton <jbp at ncipher.com> */
 #if 0
