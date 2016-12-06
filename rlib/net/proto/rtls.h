@@ -280,6 +280,7 @@ typedef enum {
 
 /* http://www.iana.org/assignments/srtp-protection/ */
 typedef enum {
+  R_DTLS_SRTP_NONE                                      = 0x0000,
   R_DTLS_SRTP_AES128_CM_HMAC_SHA1_80                    = 0x0001, /* [RFC5764] */
   R_DTLS_SRTP_AES128_CM_HMAC_SHA1_32                    = 0x0002, /* [RFC5764] */
   R_DTLS_SRTP_NULL_HMAC_SHA1_80                         = 0x0005, /* [RFC5764] */
@@ -289,6 +290,7 @@ typedef enum {
 } RDTLSSRTPProtectionProfile;
 
 typedef enum {
+  R_TLS_ERROR_NOT_NEEDED                                =  0x02,
   R_TLS_ERROR_EOB                                       =  0x01,
   R_TLS_ERROR_OK                                        =  0x00,
   R_TLS_ERROR_INVAL                                     = -0x01,
@@ -299,6 +301,13 @@ typedef enum {
   R_TLS_ERROR_VERSION                                   = -0x06,
   R_TLS_ERROR_WRONG_TYPE                                = -0x07,
   R_TLS_ERROR_NOT_DTLS                                  = -0x08,
+  R_TLS_ERROR_QUEUE_FULL                                = -0x09,
+  R_TLS_ERROR_NO_CERTIFICATE                            = -0x0a,
+  R_TLS_ERROR_CORRUPT_CERTIFICATE                       = -0x0b,
+  R_TLS_ERROR_WRONG_STATE                               = -0x0c,
+  R_TLS_ERROR_HANDSHAKE_FAILURE                         = -0x0d,
+  R_TLS_ERROR_INVALID_MAC                               = -0x0e,
+  R_TLS_ERROR_HS_VERIFICATION_FAILED                    = -0x0f,
 } RTLSError;
 
 typedef enum {
