@@ -46,7 +46,7 @@ typedef struct {
 static void r_md5_hash_init (RMd5Hash * md5);
 static void r_md5_hash_final (RMd5Hash * md5);
 static rboolean r_md5_hash_update (RMd5Hash * md5, rconstpointer data, rsize size);
-static rboolean r_md5_hash_get (RMd5Hash * md5, ruint8 * data, rsize * size);
+static rboolean r_md5_hash_get (const RMd5Hash * md5, ruint8 * data, rsize * size);
 
 /* SHA-1 */
 #define R_HASH_SHA1_SIZE          (160 / 8)
@@ -62,7 +62,7 @@ typedef struct {
 static void r_sha1_hash_init (RSha1Hash * sha1);
 static void r_sha1_hash_final (RSha1Hash * sha1);
 static rboolean r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size);
-static rboolean r_sha1_hash_get (RSha1Hash * sha1, ruint8 * data, rsize * size);
+static rboolean r_sha1_hash_get (const RSha1Hash * sha1, ruint8 * data, rsize * size);
 
 /* SHA-256 */
 #define R_HASH_SHA256_SIZE          (256 / 8)
@@ -78,7 +78,7 @@ typedef struct {
 static void r_sha256_hash_init (RSha256Hash * sha256);
 static void r_sha256_hash_final (RSha256Hash * sha256);
 static rboolean r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size);
-static rboolean r_sha256_hash_get (RSha256Hash * sha256, ruint8 * data, rsize * size);
+static rboolean r_sha256_hash_get (const RSha256Hash * sha256, ruint8 * data, rsize * size);
 
 /* SHA-512 */
 #define R_HASH_SHA512_SIZE          (512 / 8)
@@ -94,7 +94,7 @@ typedef struct {
 static void r_sha512_hash_init (RSha512Hash * sha512);
 static void r_sha512_hash_final (RSha512Hash * sha512);
 static rboolean r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size);
-static rboolean r_sha512_hash_get (RSha512Hash * sha512, ruint8 * data, rsize * size);
+static rboolean r_sha512_hash_get (const RSha512Hash * sha512, ruint8 * data, rsize * size);
 
 struct _RHash {
   RHashType type;
@@ -143,13 +143,13 @@ r_hash_type_size (RHashType type)
 }
 
 rsize
-r_hash_size (RHash * hash)
+r_hash_size (const RHash * hash)
 {
   return r_hash_type_size (hash->type);
 }
 
 rsize
-r_hash_blocksize (RHash * hash)
+r_hash_blocksize (const RHash * hash)
 {
   switch (hash->type) {
     case R_HASH_TYPE_MD5:
@@ -210,32 +210,52 @@ r_hash_update (RHash * hash, rconstpointer data, rsize size)
 }
 
 rboolean
-r_hash_get_data (RHash * hash, ruint8 * data, rsize * size)
+r_hash_finish (RHash * hash)
 {
+  if (!hash->is_final) {
+    switch (hash->type) {
+      case R_HASH_TYPE_MD5:
+        r_md5_hash_final (&hash->hash.md5);
+        break;
+      case R_HASH_TYPE_SHA1:
+        r_sha1_hash_final (&hash->hash.sha1);
+        break;
+      case R_HASH_TYPE_SHA256:
+        r_sha256_hash_final (&hash->hash.sha256);
+        break;
+      case R_HASH_TYPE_SHA512:
+        r_sha512_hash_final (&hash->hash.sha512);
+        break;
+      default:
+        return FALSE;
+    }
+
+    hash->is_final = TRUE;
+  }
+
+  return TRUE;
+}
+
+rboolean
+r_hash_get_data (const RHash * hash, ruint8 * data, rsize * size)
+{
+  if (!hash->is_final) {
+    RHash h;
+
+    r_memcpy (&h, hash, sizeof (RHash));
+    r_hash_finish (&h);
+
+    return r_hash_get_data (&h, data, size);
+  }
+
   switch (hash->type) {
     case R_HASH_TYPE_MD5:
-      if (!hash->is_final) {
-        r_md5_hash_final (&hash->hash.md5);
-        hash->is_final = TRUE;
-      }
       return r_md5_hash_get (&hash->hash.md5, data, size);
     case R_HASH_TYPE_SHA1:
-      if (!hash->is_final) {
-        r_sha1_hash_final (&hash->hash.sha1);
-        hash->is_final = TRUE;
-      }
       return r_sha1_hash_get (&hash->hash.sha1, data, size);
     case R_HASH_TYPE_SHA256:
-      if (!hash->is_final) {
-        r_sha256_hash_final (&hash->hash.sha256);
-        hash->is_final = TRUE;
-      }
       return r_sha256_hash_get (&hash->hash.sha256, data, size);
     case R_HASH_TYPE_SHA512:
-      if (!hash->is_final) {
-        r_sha512_hash_final (&hash->hash.sha512);
-        hash->is_final = TRUE;
-      }
       return r_sha512_hash_get (&hash->hash.sha512, data, size);
     default:
       return FALSE;
@@ -243,7 +263,7 @@ r_hash_get_data (RHash * hash, ruint8 * data, rsize * size)
 }
 
 rchar *
-r_hash_get_hex (RHash * hash)
+r_hash_get_hex (const RHash * hash)
 {
   ruint8 * data;
   rsize size = R_HASH_MAX_SIZE;
@@ -256,7 +276,7 @@ r_hash_get_hex (RHash * hash)
 }
 
 rchar *
-r_hash_get_hex_full (RHash * hash, const rchar * divider, rsize interval)
+r_hash_get_hex_full (const RHash * hash, const rchar * divider, rsize interval)
 {
   ruint8 * data;
   rsize size = R_HASH_MAX_SIZE;
@@ -457,7 +477,7 @@ r_md5_hash_final (RMd5Hash * md5)
 }
 
 static rboolean
-r_md5_hash_get (RMd5Hash * md5, ruint8 * data, rsize * size)
+r_md5_hash_get (const RMd5Hash * md5, ruint8 * data, rsize * size)
 {
   rsize i;
 
@@ -677,7 +697,7 @@ r_sha1_hash_final (RSha1Hash * sha1)
 }
 
 static rboolean
-r_sha1_hash_get (RSha1Hash * sha1, ruint8 * data, rsize * size)
+r_sha1_hash_get (const RSha1Hash * sha1, ruint8 * data, rsize * size)
 {
   rsize i;
 
@@ -883,7 +903,7 @@ r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size)
 }
 
 static rboolean
-r_sha256_hash_get (RSha256Hash * sha256, ruint8 * data, rsize * size)
+r_sha256_hash_get (const RSha256Hash * sha256, ruint8 * data, rsize * size)
 {
   rsize i;
 
@@ -1110,7 +1130,7 @@ r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size)
 }
 
 static rboolean
-r_sha512_hash_get (RSha512Hash * sha512, ruint8 * data, rsize * size)
+r_sha512_hash_get (const RSha512Hash * sha512, ruint8 * data, rsize * size)
 {
   rsize i;
 

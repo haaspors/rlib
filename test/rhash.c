@@ -16,6 +16,9 @@ RTEST (rhash, md5, R_TEST_TYPE_FAST)
       "\x38\x58\xf6\x22\x30\xac\x3c\x91\x5f\x30\x0c\x66\x43\x12\xc6\x3f", size);
   r_assert_cmpstr ((hex = r_hash_get_hex (hash)), ==,
       "3858f62230ac3c915f300c664312c63f");
+  r_assert (r_hash_update (hash, "foobar", 6));
+
+  r_assert (r_hash_finish (hash));
   r_assert (!r_hash_update (hash, "foobar", 6));
 
   r_free (hex);
@@ -42,6 +45,9 @@ RTEST (rhash, sha1, R_TEST_TYPE_FAST)
   r_free (hex);
   r_assert_cmpstr ((hex = r_hash_get_hex_full (hash, ":", 1)), ==,
       "88:43:d7:f9:24:16:21:1d:e9:eb:b9:63:ff:4c:e2:81:25:93:28:78");
+  r_assert (r_hash_update (hash, "foobar", 6));
+
+  r_assert (r_hash_finish (hash));
   r_assert (!r_hash_update (hash, "foobar", 6));
 
   r_free (hex);
@@ -66,6 +72,9 @@ RTEST (rhash, sha256, R_TEST_TYPE_FAST)
       "\x74\xe5\x92\xc2\xfa\x38\x3d\x4a\x39\x60\x71\x4c\xae\xf0\xc4\xf2", size);
   r_assert_cmpstr ((hex = r_hash_get_hex (hash)), ==,
       "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2");
+  r_assert (r_hash_update (hash, "foobar", 6));
+
+  r_assert (r_hash_finish (hash));
   r_assert (!r_hash_update (hash, "foobar", 6));
 
   r_free (hex);
@@ -93,7 +102,11 @@ RTEST (rhash, sha512, R_TEST_TYPE_FAST)
   r_assert_cmpstr ((hex = r_hash_get_hex (hash)), ==,
       "0a50261ebd1a390fed2bf326f2673c145582a6342d523204973d0219337f8161"
       "6a8069b012587cf5635f6925f1b56c360230c19b273500ee013e030601bf2425");
+  r_assert (r_hash_update (hash, "foobar", 6));
+
+  r_assert (r_hash_finish (hash));
   r_assert (!r_hash_update (hash, "foobar", 6));
+
   r_free (hex);
   r_hash_free (hash);
 }
