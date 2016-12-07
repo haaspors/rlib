@@ -312,6 +312,139 @@ r_tls_parser_decrypt (RTLSParser * parser,
   return R_TLS_ERROR_OK;
 }
 
+static RBuffer *
+_r_tls_encrypt_buffer (const ruint8 * buf, rsize bufsize, rsize hdrsize,
+    const RCryptoCipher * cipher, const ruint8 * iv,
+    const ruint8 * mac, rsize macsize)
+{
+  RBuffer * ret = NULL;
+  rsize size;
+  ruint8 padding;
+
+  size = cipher->info->ivsize + (bufsize - hdrsize) + macsize;
+  padding = cipher->info->ivsize - (size % cipher->info->ivsize);
+  size += padding;
+
+  if ((ret = r_buffer_new_alloc (NULL, hdrsize + size, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      ruint8 * ivtmp = r_alloca (cipher->info->ivsize);
+      ruint8 * p = info.data;
+
+      /* record hdr */
+      r_memcpy (p, buf, hdrsize - 2);
+      p += hdrsize - 2;
+      *p++ = (size >> 8) & 0xff;
+      *p++ = (size     ) & 0xff;
+
+      /* IV */
+      r_memcpy (ivtmp, iv, cipher->info->ivsize);
+      r_memcpy (p, iv, cipher->info->ivsize);
+      p += cipher->info->ivsize;
+
+      /* TLSCompressed data */
+      r_memcpy (p, buf + hdrsize, bufsize - hdrsize);
+      p += bufsize - hdrsize;
+
+      /* MAC */
+      r_memcpy (p, mac, macsize);
+      p += macsize;
+
+      /* padding */
+      r_memset (p, padding - 1, padding);
+
+      p = info.data + hdrsize + cipher->info->ivsize;
+      if (r_crypto_cipher_encrypt (cipher, ivtmp,
+          p, size - cipher->info->ivsize, p) != R_CRYPTO_CIPHER_OK)
+        goto mem_error;
+
+      r_buffer_unmap (ret, &info);
+    } else {
+      goto mem_error;
+    }
+  }
+
+  return ret;
+
+mem_error:
+  r_buffer_unref (ret);
+  return NULL;
+}
+
+RBuffer *
+r_dtls_encrypt_buffer (RBuffer * buf, const RCryptoCipher * cipher,
+    const ruint8 * iv, RHmac * hmac)
+{
+  RBuffer * ret;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  if (R_UNLIKELY (buf == NULL)) return NULL;
+  if (R_UNLIKELY (cipher == NULL)) return NULL;
+  if (R_UNLIKELY (hmac == NULL)) return NULL;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
+    rsize macsize = r_hmac_size (hmac);
+    ruint8 * macbuf = r_alloca (macsize);
+    ruint16 fraglen = RUINT16_TO_BE (info.size - R_DTLS_RECORD_HDR_SIZE);
+    ruint16 hdrsize = R_DTLS_RECORD_HDR_SIZE;
+
+    r_hmac_reset (hmac);
+    r_hmac_update (hmac, info.data + 3, sizeof (ruint64)); /* epoch + seqno */
+    r_hmac_update (hmac, info.data, 1 + sizeof (ruint16)); /* type + version */
+    r_hmac_update (hmac, &fraglen, sizeof (ruint16)); /* length */
+    r_hmac_update (hmac, info.data + hdrsize, info.size - hdrsize); /* fragment */
+
+    if (r_hmac_get_data (hmac, macbuf, &macsize)) {
+      ret = _r_tls_encrypt_buffer (info.data, info.size, hdrsize,
+          cipher, iv, macbuf, macsize);
+    } else {
+      ret = NULL;
+    }
+    r_buffer_unmap (buf, &info);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+RBuffer *
+r_tls_encrypt_buffer (RBuffer * buf, ruint64 seqno,
+    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac)
+{
+  RBuffer * ret;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  if (R_UNLIKELY (buf == NULL)) return NULL;
+  if (R_UNLIKELY (cipher == NULL)) return NULL;
+  if (R_UNLIKELY (hmac == NULL)) return NULL;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
+    rsize macsize = r_hmac_size (hmac);
+    ruint8 * macbuf = r_alloca (macsize);
+    ruint16 hdrsize = R_TLS_RECORD_HDR_SIZE;
+
+    seqno = RUINT64_TO_BE (seqno);
+    r_hmac_reset (hmac);
+    r_hmac_update (hmac, &seqno, sizeof (ruint64)); /* seqno */
+    r_hmac_update (hmac, info.data, 5); /* type + version + length */
+    r_hmac_update (hmac, info.data + hdrsize, info.size - hdrsize); /* fragment */
+
+    if (r_hmac_get_data (hmac, macbuf, &macsize)) {
+      ret = _r_tls_encrypt_buffer (info.data, info.size, hdrsize,
+          cipher, iv, macbuf, macsize);
+    } else {
+      ret = NULL;
+    }
+    r_buffer_unmap (buf, &info);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
 static RTLSError
 r_tls_parser_parse_handshake_internal (const RTLSParser * parser,
     RTLSHandshakeType * type, const ruint8 ** body, const ruint8 ** end)

@@ -310,6 +310,7 @@ typedef enum {
   R_TLS_ERROR_HANDSHAKE_FAILURE                         = -0x0d,
   R_TLS_ERROR_INVALID_MAC                               = -0x0e,
   R_TLS_ERROR_HS_VERIFICATION_FAILED                    = -0x0f,
+  R_TLS_ERROR_ENCRYPTION_FAILED                         = -0x10,
 } RTLSError;
 
 typedef enum {
@@ -474,6 +475,11 @@ R_API RTLSError r_tls_1_2_prf_sha384 (ruint8 * dst, rsize dsize,
 R_API RTLSError r_tls_1_2_prf_sha512 (ruint8 * dst, rsize dsize,
     const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
 
+
+R_API RBuffer * r_tls_encrypt_buffer (RBuffer * buf, ruint64 seqno,
+    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac);
+R_API RBuffer * r_dtls_encrypt_buffer (RBuffer * buf,
+    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac);
 
 R_API RTLSError r_tls_write_handshake (rpointer data, rsize size,
     rsize * out, RTLSVersion ver, RTLSHandshakeType type, ruint16 len);
