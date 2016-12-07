@@ -371,11 +371,15 @@ RTEST (rtls, parse_dtls_hello_done, RTEST_FAST)
 }
 RTEST_END;
 
+static const ruint8 pkt_tls_ccs[] = {
+  0x14, 0x03, 0x03, 0x00, 0x01, 0x01
+};
+static const ruint8 pkt_dtls_ccs[] = {
+  0x14, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01, 0x01
+};
+
 RTEST (rtls, parse_dtls_change_cipher_spec, RTEST_FAST)
 {
-  static const ruint8 pkt_dtls_ccs[] = {
-    0x14, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01, 0x01
-  };
   RTLSParser parser = R_TLS_PARSER_INIT;
 
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_init (&parser,
@@ -907,6 +911,38 @@ RTEST (rtls, write_dtls_hello_done, RTEST_FAST)
 
   r_assert_cmpuint (size, ==, sizeof (pkt_dtls_hello_done));
   r_assert_cmpmem (pkt_dtls_hello_done, ==, data, size);
+}
+RTEST_END;
+
+RTEST (rtls, write_tls_change_cipher, RTEST_FAST)
+{
+  ruint8 data[32];
+  rsize size = sizeof (data);
+
+  r_memclear (data, size);
+
+  r_assert_cmpint (r_tls_write_change_cipher (data, size, &size,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpuint (size, ==, sizeof (pkt_tls_ccs));
+  r_assert_cmpmem (pkt_tls_ccs, ==, data, size);
+}
+RTEST_END;
+
+RTEST (rtls, write_dtls_change_cipher, RTEST_FAST)
+{
+  ruint8 data[32];
+  rsize size = sizeof (data);
+  ruint16 epoch = 0;
+  ruint64 seqno = 4;
+
+  r_memclear (data, size);
+
+  r_assert_cmpint (r_dtls_write_change_cipher (data, size, &size,
+        R_TLS_VERSION_DTLS_1_2, epoch, seqno), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpuint (size, ==, sizeof (pkt_dtls_ccs));
+  r_assert_cmpmem (pkt_dtls_ccs, ==, data, size);
 }
 RTEST_END;
 

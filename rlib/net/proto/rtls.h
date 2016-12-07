@@ -491,6 +491,11 @@ R_API RTLSError r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * 
     RTLSCipherSuite cs, RTLSCompresssionMethod comp);
 #define r_dtls_write_hs_server_hello r_tls_write_hs_server_hello
 
+R_API RTLSError r_tls_write_change_cipher (rpointer data, rsize size,
+    rsize * out, RTLSVersion ver);
+R_API RTLSError r_dtls_write_change_cipher (rpointer data, rsize size,
+    rsize * out, RTLSVersion ver, ruint16 epoch, ruint64 seqno);
+
 R_END_DECLS
 
 #endif /* __R_NET_PROTO_TLS_H__ */
