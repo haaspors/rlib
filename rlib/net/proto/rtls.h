@@ -40,6 +40,7 @@ R_BEGIN_DECLS
 #define R_TLS_HS_EXTRA_DTLS_SIZE          8
 #define R_DTLS_RECORD_HDR_SIZE            (R_TLS_RECORD_HDR_SIZE + R_TLS_RECORD_EXTRA_DTLS_SIZE)
 #define R_DTLS_HS_HDR_SIZE                (R_TLS_HS_HDR_SIZE + R_TLS_HS_EXTRA_DTLS_SIZE)
+#define R_TLS_SESSION_TICKET_LIFETIME     7200
 
 typedef enum {
   R_TLS_VERSION_UNKNOWN                                 = 0x0000,
@@ -496,6 +497,10 @@ R_API RTLSError r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * 
     const ruint8 * sid, ruint8 sidsize,
     RTLSCipherSuite cs, RTLSCompresssionMethod comp);
 #define r_dtls_write_hs_server_hello r_tls_write_hs_server_hello
+R_API RTLSError r_tls_write_hs_new_session_ticket (rpointer buf, rsize size, rsize * out,
+    ruint32 lifetime, const ruint8 * ticket, ruint16 tsize);
+#define r_dtls_write_hs_new_session_ticket r_tls_write_hs_new_session_ticket
+
 
 R_API RTLSError r_tls_write_change_cipher (rpointer data, rsize size,
     rsize * out, RTLSVersion ver);

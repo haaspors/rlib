@@ -1127,6 +1127,32 @@ r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
 }
 
 RTLSError
+r_tls_write_hs_new_session_ticket (rpointer data, rsize size, rsize * out,
+    ruint32 lifetime, const ruint8 * ticket, ruint16 tsize)
+{
+  ruint8 * p;
+
+  if (R_UNLIKELY (data == NULL)) return R_TLS_ERROR_INVAL;
+  if (size < (rsize)tsize + sizeof (ruint32) + sizeof (ruint16))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  p = data;
+
+  *p++ = (lifetime  >> 24) & 0xff;
+  *p++ = (lifetime  >> 16) & 0xff;
+  *p++ = (lifetime  >>  8) & 0xff;
+  *p++ = (lifetime       ) & 0xff;
+  *p++ = (tsize     >>  8) & 0xff;
+  *p++ = (tsize          ) & 0xff;
+  r_memcpy (p, ticket, tsize);
+
+  if (out != NULL)
+    *out = sizeof (ruint32) + sizeof (ruint16) + tsize;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_write_change_cipher (rpointer data, rsize size,
     rsize * out, RTLSVersion ver)
 {
