@@ -1098,7 +1098,7 @@ r_tls_generate_hello_random (ruint8 random[R_TLS_HELLO_RANDOM_BYTES],
 
 RTLSError
 r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
-    RTLSVersion ver, ruint8 srvrand[R_TLS_HELLO_RANDOM_BYTES],
+    RTLSVersion ver, const ruint8 srvrand[R_TLS_HELLO_RANDOM_BYTES],
     const ruint8 * sid, ruint8 sidsize,
     RTLSCipherSuite cs, RTLSCompresssionMethod comp)
 {
@@ -1122,10 +1122,6 @@ r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
 
   if (out != NULL)
     *out = (2 + 4 + 28 + 1 + sidsize + 2 + 1);
-
-  p = data;
-  p += sizeof (ruint16);
-  r_memcpy (srvrand, p, R_TLS_HELLO_RANDOM_BYTES);
 
   return R_TLS_ERROR_OK;
 }
