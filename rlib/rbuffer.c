@@ -886,6 +886,28 @@ r_buffer_memset (RBuffer * buffer, rsize offset, ruint8 val, rsize size)
 }
 
 int
+r_buffer_cmp (RBuffer * buf1, rsize offset1, RBuffer * buf2, rsize offset2, rsize size)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  int ret;
+
+  if (R_UNLIKELY (buf1 == NULL)) return -1;
+  if (R_UNLIKELY (buf2 == NULL)) return 1;
+
+  if (r_buffer_map_byte_range (buf2, offset2, size, &info, R_MEM_MAP_READ)) {
+    if (info.size == size)
+      ret = r_buffer_memcmp (buf1, offset1, info.data, info.size);
+    else
+      ret = 42;
+    r_buffer_unmap (buf2, &info);
+  } else {
+    ret = -42;
+  }
+
+  return ret;
+}
+
+int
 r_buffer_memcmp (RBuffer * buffer, rsize offset, rconstpointer mem, rsize size)
 {
   ruint i;

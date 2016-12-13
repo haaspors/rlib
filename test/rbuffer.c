@@ -697,6 +697,58 @@ RTEST (rbuffer, map_bytes, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbuffer, cmp, RTEST_FAST)
+{
+  RBuffer * buf1, * buf2;
+  RMem * mem;
+  ruint8 * data[] = {
+    r_malloc0 (512), r_malloc0 (512), r_malloc0 (512), r_malloc0 (512),
+    r_malloc0 (512), r_malloc0 (512),
+  };
+
+  r_memset (data[0], 0x22, 512);
+  r_memset (data[1], 0x32, 512);
+  r_memset (data[2], 0x42, 512);
+  r_memset (data[3], 0xff, 512);
+  r_memset (data[4], 0x22, 512);
+  r_memset (data[5], 0xff, 512);
+
+  r_assert_cmpptr ((buf1 = r_buffer_new ()), !=, NULL);
+  r_assert_cmpptr ((buf2 = r_buffer_new ()), !=, NULL);
+
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_READONLY, data[0], 512, 256, 128)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf1, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, data[1], 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf1, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, data[2], 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf1, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, data[3], 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf1, mem));
+  r_mem_unref (mem);
+  r_assert_cmpuint (r_buffer_mem_count (buf1), ==, 4);
+  r_assert_cmpuint (r_buffer_get_size (buf1), ==, 3 * 512 + 256);
+
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_READONLY, data[4], 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf2, mem));
+  r_mem_unref (mem);
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, data[5], 512, 512, 0)), !=, NULL);
+  r_assert (r_buffer_mem_append (buf2, mem));
+  r_mem_unref (mem);
+
+  r_assert_cmpint (r_buffer_cmp (buf1, 0, NULL, 0, 256), >, 0);
+  r_assert_cmpint (r_buffer_cmp (NULL, 0, buf2, 0, 256), <, 0);
+  r_assert_cmpint (r_buffer_cmp (buf1, 0, buf2, 0, 256), ==, 0);
+  r_assert_cmpint (r_buffer_cmp (buf1, 512, buf2, 0, 512), !=, 0);
+  r_assert_cmpint (r_buffer_cmp (buf1, 2 * 512 + 256, buf2, 512, 512), ==, 0);
+
+  r_buffer_unref (buf1);
+  r_buffer_unref (buf2);
+}
+RTEST_END;
+
 RTEST (rbuffer, memcmp, RTEST_FAST)
 {
   RBuffer * buf;
