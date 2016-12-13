@@ -273,12 +273,15 @@ r_buffer_mem_clear (RBuffer * buffer)
 }
 
 rboolean
-r_buffer_mem_find (RBuffer * buffer, rsize offset, rsize size,
-    ruint * idx, ruint * mem_count, rsize * mem_offset)
+r_buffer_mem_find (const RBuffer * buffer, rsize offset, rssize size,
+    ruint * idx, ruint * count, rsize * first_offset, rsize * last_size)
 {
   ruint ix, cn;
+  rsize s;
 
   if (R_UNLIKELY (buffer == NULL)) return FALSE;
+
+  s = (size > 0) ? (rsize)size : r_buffer_get_size (buffer);
 
   for (ix = 0; ix < buffer->mem_count; ix++) {
     if (offset < buffer->mem[ix]->size)
@@ -289,12 +292,12 @@ r_buffer_mem_find (RBuffer * buffer, rsize offset, rsize size,
     return FALSE;
 
   cn = ix;
-  if (size > buffer->mem[cn]->size - offset) {
-    size -= buffer->mem[cn++]->size - offset;
+  if (s > buffer->mem[cn]->size - offset) {
+    s -= buffer->mem[cn++]->size - offset;
     for (; cn < buffer->mem_count; cn++) {
-      if (size <= buffer->mem[cn]->size)
+      if (s <= buffer->mem[cn]->size)
         break;
-      size -= buffer->mem[cn]->size;
+      s -= buffer->mem[cn]->size;
     }
     if (cn == buffer->mem_count)
       return FALSE;
@@ -302,10 +305,12 @@ r_buffer_mem_find (RBuffer * buffer, rsize offset, rsize size,
 
   if (idx != NULL)
     *idx = ix;
-  if (mem_count != NULL)
-    *mem_count = cn - ix + 1;
-  if (mem_offset != NULL)
-    *mem_offset = offset;
+  if (count != NULL)
+    *count = cn - ix + 1;
+  if (first_offset != NULL)
+    *first_offset = offset;
+  if (last_size != NULL)
+    *last_size = s;
 
   return TRUE;
 }
@@ -478,7 +483,7 @@ r_buffer_replace_byte_range (RBuffer * buffer, rsize offset, rssize size,
 
     /* Append prefix! */
     if (offset > 0) {
-      if (!r_buffer_mem_find (buffer, 0, offset, &i, &count, NULL))
+      if (!r_buffer_mem_find (buffer, 0, offset, &i, &count, NULL, NULL))
         goto error;
 
       if (count > 0) {
@@ -714,7 +719,7 @@ r_buffer_map_byte_range (RBuffer * buffer, rsize offset, rssize size,
   if (R_UNLIKELY (offset + MAX (size, 0) > max_size)) return FALSE;
 
   msize = size < 0 ? max_size - offset : (rsize)size;
-  if ((ret = r_buffer_mem_find (buffer, offset, msize, &idx, &count, &moff)) &&
+  if ((ret = r_buffer_mem_find (buffer, offset, msize, &idx, &count, &moff, NULL)) &&
       (ret = r_buffer_map_mem_range (buffer, idx, (int)count, info, flags))) {
     info->data += moff;
     info->size = msize;

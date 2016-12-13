@@ -63,8 +63,8 @@ R_API rboolean r_buffer_mem_replace_range (RBuffer * buffer,
 R_API RMem * r_buffer_mem_peek (RBuffer * buffer, ruint idx) R_ATTR_WARN_UNUSED_RESULT;
 R_API RMem * r_buffer_mem_remove (RBuffer * buffer, ruint idx) R_ATTR_WARN_UNUSED_RESULT;
 R_API void r_buffer_mem_clear (RBuffer * buffer);
-R_API rboolean r_buffer_mem_find (RBuffer * buffer, rsize offset, rsize size,
-    ruint * idx, ruint * mem_count, rsize * mem_offset);
+R_API rboolean r_buffer_mem_find (const RBuffer * buffer, rsize offset, rssize size,
+    ruint * idx, ruint * count, rsize * first_offset, rsize * last_size);
 
 R_API rboolean r_buffer_append_from (RBuffer * buffer, RBuffer * from);
 R_API rboolean r_buffer_append_region_from (RBuffer * buffer, RBuffer * from,

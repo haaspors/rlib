@@ -315,10 +315,10 @@ RTEST (rbuffer, mem_find, RTEST_FAST)
   RBuffer * buf;
   RMem * mem;
   ruint idx = 42, count = 42;
-  rsize offset = RSIZE_MAX;
+  rsize offset = RSIZE_MAX, size = RSIZE_MAX;
 
   r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
-  r_assert (!r_buffer_mem_find (buf, 0, 256, &idx, &count, &offset));
+  r_assert (!r_buffer_mem_find (buf, 0, 256, &idx, &count, &offset, &size));
 
   r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, r_malloc0 (512), 512, 256, 128)), !=, NULL);
   r_assert (r_buffer_mem_append (buf, mem));
@@ -334,23 +334,32 @@ RTEST (rbuffer, mem_find, RTEST_FAST)
   r_mem_unref (mem);
   r_assert_cmpuint (r_buffer_mem_count (buf), ==, 4);
 
-  r_assert (!r_buffer_mem_find (buf, 0, 2048+1, &idx, &count, &offset));
-  r_assert (r_buffer_mem_find (buf, 0, 256, NULL, NULL, NULL));
+  r_assert (!r_buffer_mem_find (buf, 0, 2048+1, &idx, &count, &offset, &size));
+  r_assert (r_buffer_mem_find (buf, 0, 256, NULL, NULL, NULL, NULL));
 
-  r_assert (r_buffer_mem_find (buf, 0, 256, &idx, &count, &offset));
+  r_assert (r_buffer_mem_find (buf, 0, 256, &idx, &count, &offset, &size));
   r_assert_cmpuint (idx, ==, 0);
   r_assert_cmpuint (count, ==, 1);
   r_assert_cmpuint (offset, ==, 0);
+  r_assert_cmpuint (size, ==, 256);
 
-  r_assert (r_buffer_mem_find (buf, 1, 256, &idx, &count, &offset));
+  r_assert (r_buffer_mem_find (buf, 1, 256, &idx, &count, &offset, &size));
   r_assert_cmpuint (idx, ==, 0);
   r_assert_cmpuint (count, ==, 2);
-  r_assert_cmpuint (offset, ==, 1);
+  r_assert_cmpuint (offset, ==, 1); /* offset 1 into idx 0 */
+  r_assert_cmpuint (size, ==, 1);   /* size 1 of idx 1 */
 
-  r_assert (r_buffer_mem_find (buf, 256 + 42, 512, &idx, &count, &offset));
+  r_assert (r_buffer_mem_find (buf, 256 + 42, 512, &idx, &count, &offset, &size));
   r_assert_cmpuint (idx, ==, 1);
   r_assert_cmpuint (count, ==, 2);
-  r_assert_cmpuint (offset, ==, 42);
+  r_assert_cmpuint (offset, ==, 42); /* offset 42 into idx 1 */
+  r_assert_cmpuint (size, ==, 42); /* size 42 of idx 2 */
+
+  r_assert (r_buffer_mem_find (buf, 0, -1, &idx, &count, &offset, &size));
+  r_assert_cmpuint (idx, ==, 0);
+  r_assert_cmpuint (count, ==, 4);
+  r_assert_cmpuint (offset, ==, 0);
+  r_assert_cmpuint (size, ==, 512);
 
   r_buffer_unref (buf);
 }
