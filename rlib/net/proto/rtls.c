@@ -222,7 +222,7 @@ r_tls_parser_decrypt (RTLSParser * parser,
 {
   RBuffer * buf, * replace;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
-  rsize contentsize;
+  rsize ivsize, contentsize;
   ruint8 * iv;
 
   if (R_UNLIKELY (parser == NULL)) return R_TLS_ERROR_INVAL;
@@ -230,7 +230,8 @@ r_tls_parser_decrypt (RTLSParser * parser,
   if (R_UNLIKELY (cipher->info->type == R_CRYPTO_CIPHER_ALGO_NULL))
     return R_TLS_ERROR_OK;
 
-  contentsize = parser->fragment.size - cipher->info->ivsize;
+  ivsize = cipher->info->ivsize;
+  contentsize = parser->fragment.size - ivsize;
   if ((buf = r_buffer_new_alloc (NULL, contentsize, NULL)) == NULL)
     return R_TLS_ERROR_OOM;
 
@@ -239,11 +240,10 @@ r_tls_parser_decrypt (RTLSParser * parser,
     return R_TLS_ERROR_OOM;
   }
 
-  iv = r_alloca (cipher->info->ivsize);
-  r_memcpy (iv, parser->fragment.data, cipher->info->ivsize);
-  if (r_crypto_cipher_decrypt (cipher, iv,
-        parser->fragment.data + cipher->info->ivsize,
-        contentsize, info.data) != R_CRYPTO_CIPHER_OK) {
+  iv = r_alloca (ivsize);
+  r_memcpy (iv, parser->fragment.data, ivsize);
+  if (r_crypto_cipher_decrypt (cipher, info.data, info.size,
+        parser->fragment.data + ivsize, iv, ivsize)) {
     r_buffer_unmap (buf, &info);
     r_buffer_unref (buf);
     return R_TLS_ERROR_CORRUPT_RECORD;
@@ -326,18 +326,20 @@ _r_tls_encrypt_buffer (const ruint8 * buf, rsize bufsize, rsize hdrsize,
     const ruint8 * mac, rsize macsize)
 {
   RBuffer * ret = NULL;
-  rsize size;
+  rsize ivsize, size;
   ruint8 padding;
 
-  size = cipher->info->ivsize + (bufsize - hdrsize) + macsize;
-  padding = cipher->info->ivsize - (size % cipher->info->ivsize);
+  ivsize = cipher->info->ivsize;
+  size = ivsize + (bufsize - hdrsize) + macsize;
+  padding = ivsize - (size % ivsize);
   size += padding;
 
   if ((ret = r_buffer_new_alloc (NULL, hdrsize + size, NULL)) != NULL) {
     RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+    RCryptoCipherResult res;
 
     if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
-      ruint8 * ivtmp = r_alloca (cipher->info->ivsize);
+      ruint8 * ivtmp = r_alloca (ivsize);
       ruint8 * p = info.data;
 
       /* record hdr */
@@ -347,9 +349,9 @@ _r_tls_encrypt_buffer (const ruint8 * buf, rsize bufsize, rsize hdrsize,
       *p++ = (size     ) & 0xff;
 
       /* IV */
-      r_memcpy (ivtmp, iv, cipher->info->ivsize);
-      r_memcpy (p, iv, cipher->info->ivsize);
-      p += cipher->info->ivsize;
+      r_memcpy (ivtmp, iv, ivsize);
+      r_memcpy (p, iv, ivsize);
+      p += ivsize;
 
       /* TLSCompressed data */
       r_memcpy (p, buf + hdrsize, bufsize - hdrsize);
@@ -362,22 +364,21 @@ _r_tls_encrypt_buffer (const ruint8 * buf, rsize bufsize, rsize hdrsize,
       /* padding */
       r_memset (p, padding - 1, padding);
 
-      p = info.data + hdrsize + cipher->info->ivsize;
-      if (r_crypto_cipher_encrypt (cipher, ivtmp,
-          p, size - cipher->info->ivsize, p) != R_CRYPTO_CIPHER_OK)
-        goto mem_error;
+      p = info.data + hdrsize + ivsize;
+      res = r_crypto_cipher_encrypt (cipher, p, size - ivsize, p, ivtmp, ivsize);
 
       r_buffer_unmap (ret, &info);
     } else {
-      goto mem_error;
+      res = R_CRYPTO_CIPHER_INVAL;
+    }
+
+    if (res != R_CRYPTO_CIPHER_OK) {
+      r_buffer_unref (ret);
+      ret = NULL;
     }
   }
 
   return ret;
-
-mem_error:
-  r_buffer_unref (ret);
-  return NULL;
 }
 
 RBuffer *

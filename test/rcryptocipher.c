@@ -19,13 +19,13 @@ RTEST (rcipher, null, RTEST_FAST)
 
   r_assert_cmpmem (in, !=, out, sizeof (in));
 
-  r_assert_cmpint (r_crypto_cipher_encrypt (cipher, NULL, in, sizeof (in), out), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpint (r_crypto_cipher_encrypt (cipher, out, sizeof (out), in, NULL, 0), ==, R_CRYPTO_CIPHER_OK);
   r_assert_cmpmem (in, ==, out, sizeof (in));
 
   r_memclear (out, sizeof (out));
   r_assert_cmpmem (in, !=, out, sizeof (in));
 
-  r_assert_cmpint (r_crypto_cipher_decrypt (cipher, NULL, in, sizeof (in), out), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpint (r_crypto_cipher_decrypt (cipher, out, sizeof (out), in, NULL, 0), ==, R_CRYPTO_CIPHER_OK);
   r_assert_cmpmem (in, ==, out, sizeof (in));
 
   r_crypto_cipher_unref (cipher);
@@ -51,12 +51,12 @@ RTEST (rcipher, aes_ecb_simple, RTEST_FAST)
   r_memclear (out, sizeof (out));
   r_assert_cmpptr ((cipher = r_cipher_aes_128_ecb_new (key)), !=, NULL);
 
-  r_assert_cmpint (r_crypto_cipher_encrypt (cipher, NULL,
-        plaintxt, sizeof (plaintxt), out), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpint (r_crypto_cipher_encrypt (cipher, out, sizeof (out),
+        plaintxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
   r_assert_cmpmem (ciphertxt, ==, out, sizeof (out));
 
-  r_assert_cmpint (r_crypto_cipher_decrypt (cipher, NULL,
-        ciphertxt, sizeof (ciphertxt), out), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpint (r_crypto_cipher_decrypt (cipher, out, sizeof (out),
+        ciphertxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
   r_assert_cmpmem (plaintxt, ==, out, sizeof (out));
 
   r_crypto_cipher_unref (cipher);
@@ -86,13 +86,13 @@ RTEST (rcipher, aes_cbc_simple, RTEST_FAST)
   r_memclear (out, sizeof (out));
   r_assert_cmpptr ((cipher = r_cipher_aes_128_cbc_new (key)), !=, NULL);
 
-  r_assert_cmpint (r_crypto_cipher_encrypt (cipher, iv,
-        plaintxt, sizeof (plaintxt), out), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpint (r_crypto_cipher_encrypt (cipher, out, sizeof (out),
+        plaintxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
   r_assert_cmpmem (ciphertxt, ==, out, sizeof (out));
 
   r_memcpy (iv, ivstart, sizeof (iv));
-  r_assert_cmpint (r_crypto_cipher_decrypt (cipher, iv,
-        ciphertxt, sizeof (ciphertxt), out), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpint (r_crypto_cipher_decrypt (cipher, out, sizeof (out),
+        ciphertxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
   r_assert_cmpmem (plaintxt, ==, out, sizeof (out));
 
   r_crypto_cipher_unref (cipher);

@@ -22,13 +22,14 @@
 
 static RCryptoCipherResult
 r_crypto_cipher_null_func (const RCryptoCipher * cipher,
-    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out)
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize)
 {
   (void) cipher;
   (void) iv;
+  (void) ivsize;
 
-  if (out != data)
-    r_memmove (out, data, size);
+  if (dst != data)
+    r_memmove (dst, data, size);
 
   return R_CRYPTO_CIPHER_OK;
 }
@@ -81,17 +82,17 @@ r_crypto_cipher_new (const RCryptoCipherInfo * info, const ruint8 * key)
 
 RCryptoCipherResult
 r_crypto_cipher_encrypt (const RCryptoCipher * cipher,
-    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out)
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize)
 {
   if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
-  return cipher->info->enc (cipher, iv, data, size, out);
+  return cipher->info->enc (cipher, dst, size, data, iv, ivsize);
 }
 
 RCryptoCipherResult
 r_crypto_cipher_decrypt (const RCryptoCipher * cipher,
-    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out)
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize)
 {
   if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
-  return cipher->info->dec (cipher, iv, data, size, out);
+  return cipher->info->dec (cipher, dst, size, data, iv, ivsize);
 }
 

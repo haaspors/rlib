@@ -41,19 +41,19 @@ R_API RCryptoCipher * r_cipher_aes_256_cbc_new (const ruint8 * key) R_ATTR_MALLO
 
 
 R_API rboolean r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
-    const ruint8 plaintxt[R_AES_BLOCK_BYTES], ruint8 ciphertxt[R_AES_BLOCK_BYTES]);
+    ruint8 ciphertxt[R_AES_BLOCK_BYTES], const ruint8 plaintxt[R_AES_BLOCK_BYTES]);
 R_API rboolean r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
-    const ruint8 ciphertxt[R_AES_BLOCK_BYTES], ruint8 plaintxt[R_AES_BLOCK_BYTES]);
+    ruint8 plaintxt[R_AES_BLOCK_BYTES], const ruint8 ciphertxt[R_AES_BLOCK_BYTES]);
 
 R_API RCryptoCipherResult r_cipher_aes_ecb_encrypt (const RCryptoCipher * cipher,
-    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out);
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 R_API RCryptoCipherResult r_cipher_aes_ecb_decrypt (const RCryptoCipher * cipher,
-    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out);
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 
 R_API RCryptoCipherResult r_cipher_aes_cbc_encrypt (const RCryptoCipher * cipher,
-    ruint8 iv[R_AES_BLOCK_BYTES], rconstpointer data, rsize size, ruint8 * out);
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 R_API RCryptoCipherResult r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
-    ruint8 iv[R_AES_BLOCK_BYTES], rconstpointer data, rsize size, ruint8 * out);
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 
 R_END_DECLS
 

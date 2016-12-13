@@ -67,7 +67,7 @@ typedef enum {
 typedef struct _RCryptoCipher RCryptoCipher;
 
 typedef RCryptoCipherResult (*RCryptoCipherOperation) (const RCryptoCipher * cipher,
-    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out);
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 typedef RCryptoCipherOperation RCryptoCipherEncrypt;
 typedef RCryptoCipherOperation RCryptoCipherDecrypt;
 
@@ -97,9 +97,9 @@ R_API RCryptoCipher * r_crypto_cipher_new (const RCryptoCipherInfo * info,
 #define r_crypto_cipher_unref r_ref_unref
 
 R_API RCryptoCipherResult r_crypto_cipher_encrypt (const RCryptoCipher * cipher,
-    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out);
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 R_API RCryptoCipherResult r_crypto_cipher_decrypt (const RCryptoCipher * cipher,
-    ruint8 * iv, rconstpointer data, rsize size, ruint8 * out);
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 
 R_END_DECLS
 
