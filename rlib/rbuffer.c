@@ -94,6 +94,98 @@ r_buffer_new_wrapped (RMemFlags flags, rpointer data,
   return ret;
 }
 
+RBuffer *
+r_buffer_view (RBuffer * from, rsize offset, rssize size)
+{
+  RBuffer * ret;
+  ruint i, c;
+  rsize o, s;
+
+  if (r_buffer_mem_find (from, offset, size, &i, &c, &o, &s)) {
+    RMem * mem;
+
+    ret = r_buffer_new ();
+
+    if (c > 1) {
+      if ((mem = r_mem_view (from->mem[i++], o, -1)) != NULL) {
+        r_buffer_mem_append (ret, mem);
+        r_mem_unref (mem);
+      } else {
+        goto error;
+      }
+      o = 0;
+      for (c--; c > 1; c--) {
+        if ((mem = r_mem_view (from->mem[i++], o, -1)) != NULL) {
+          r_buffer_mem_append (ret, mem);
+          r_mem_unref (mem);
+        } else {
+          goto error;
+        }
+      }
+    }
+
+    if ((mem = r_mem_view (from->mem[i], o, s)) != NULL) {
+      r_buffer_mem_append (ret, mem);
+      r_mem_unref (mem);
+    } else {
+      goto error;
+    }
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+error:
+  r_buffer_unref (ret);
+  return NULL;
+}
+
+RBuffer *
+r_buffer_copy (RBuffer * from, rsize offset, rssize size)
+{
+  RBuffer * ret;
+  ruint i, c;
+  rsize o, s;
+
+  if (r_buffer_mem_find (from, offset, size, &i, &c, &o, &s)) {
+    RMem * mem;
+
+    ret = r_buffer_new ();
+
+    if (c > 1) {
+      if ((mem = r_mem_copy (from->mem[i++], o, -1)) != NULL) {
+        r_buffer_mem_append (ret, mem);
+        r_mem_unref (mem);
+      } else {
+        goto error;
+      }
+      o = 0;
+      for (c--; c > 1; c--) {
+        if ((mem = r_mem_copy (from->mem[i++], o, -1)) != NULL) {
+          r_buffer_mem_append (ret, mem);
+          r_mem_unref (mem);
+        } else {
+          goto error;
+        }
+      }
+    }
+
+    if ((mem = r_mem_copy (from->mem[i], o, s)) != NULL) {
+      r_buffer_mem_append (ret, mem);
+      r_mem_unref (mem);
+    } else {
+      goto error;
+    }
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+error:
+  r_buffer_unref (ret);
+  return NULL;
+}
+
 rboolean
 r_buffer_is_all_writable (const RBuffer * buffer)
 {

@@ -43,6 +43,8 @@ static inline RBuffer * r_buffer_new_take (rpointer data, rsize size)
 {
   return r_buffer_new_wrapped (R_MEM_FLAG_NONE, data, size, size, 0, data, r_free);
 }
+R_API RBuffer * r_buffer_view (RBuffer * from, rsize offset, rssize size);
+R_API RBuffer * r_buffer_copy (RBuffer * from, rsize offset, rssize size);
 
 R_API rboolean r_buffer_is_all_writable (const RBuffer * buffer);
 R_API rboolean r_buffer_mem_is_writable (const RBuffer * buffer, ruint idx);

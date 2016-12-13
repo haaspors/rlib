@@ -54,6 +54,43 @@ RTEST (rbuffer, new_alloc, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbuffer, view, RTEST_FAST)
+{
+  RBuffer * buf, * view;
+
+  r_assert_cmpptr ((buf = r_buffer_new_alloc (NULL, 512, NULL)), !=, NULL);
+  r_assert_cmpuint (r_buffer_memset (buf, 0, 0, 1024), ==, 512);
+
+  r_assert_cmpptr ((view = r_buffer_view (buf, 128, 256)), !=, NULL);
+  r_assert_cmpint (r_buffer_cmp (buf, 128, view, 0, 256), ==, 0);
+
+  r_assert_cmpuint (r_buffer_memset (buf, 0, 42, 1024), ==, 512);
+  r_assert_cmpint (r_buffer_cmp (buf, 128, view, 0, 256), ==, 0);
+
+  r_buffer_unref (view);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rbuffer, copy, RTEST_FAST)
+{
+  RBuffer * buf, * copy;
+
+  r_assert_cmpptr ((buf = r_buffer_new_alloc (NULL, 512, NULL)), !=, NULL);
+  r_assert_cmpuint (r_buffer_memset (buf, 0, 0, 1024), ==, 512);
+
+  r_assert_cmpptr ((copy = r_buffer_copy (buf, 128, 256)), !=, NULL);
+  r_assert_cmpuint (r_buffer_memset (copy, 0, 0, 1024), ==, 256);
+  r_assert_cmpint (r_buffer_cmp (buf, 128, copy, 0, 256), ==, 0);
+
+  r_assert_cmpuint (r_buffer_memset (copy, 0, 42, 1024), ==, 256);
+  r_assert_cmpint (r_buffer_cmp (buf, 128, copy, 0, 256), !=, 0);
+
+  r_buffer_unref (copy);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rbuffer, mem_append, RTEST_FAST)
 {
   RBuffer * buf;
