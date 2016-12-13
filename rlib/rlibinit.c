@@ -40,6 +40,7 @@ R_INITIALIZER (rlib_init)
   r_time_init ();
   r_thread_init ();
   r_test_init ();
+  r_tls_server_init ();
 }
 
 R_DEINITIALIZER (rlib_deinit)

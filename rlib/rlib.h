@@ -18,7 +18,9 @@
 #ifndef __R_LIB_H__
 #define __R_LIB_H__
 
+#ifndef __RLIB_H_INCLUDE_GUARD__
 #define __RLIB_H_INCLUDE_GUARD__
+#endif
 
 #include <rlib/rascii.h>
 #include <rlib/rassert.h>
@@ -65,9 +67,11 @@
 #include <rlib/rtypes.h>
 #include <rlib/runicode.h>
 
+/* ASN.1 */
 #include <rlib/asn1/rasn1.h>
 #include <rlib/asn1/roid.h>
 
+/* CRYPTO */
 #include <rlib/crypto/raes.h>
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rcipher.h>
@@ -80,10 +84,13 @@
 #include <rlib/crypto/rtlsciphersuite.h>
 #include <rlib/crypto/rx509.h>
 
+/* EV */
 #include <rlib/ev/revloop.h>
 #include <rlib/ev/revudp.h>
 
+/* NET */
 #include <rlib/net/proto/rstun.h>
 #include <rlib/net/proto/rtls.h>
+#include <rlib/net/rtlsserver.h>
 
 #endif /* __R_LIB_H__ */
