@@ -234,13 +234,20 @@ r_tls_parser_decrypt (RTLSParser * parser,
   if ((buf = r_buffer_new_alloc (NULL, contentsize, NULL)) == NULL)
     return R_TLS_ERROR_OOM;
 
-  if (!r_buffer_map (buf, &info, R_MEM_MAP_WRITE))
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    r_buffer_unref (buf);
     return R_TLS_ERROR_OOM;
+  }
 
   iv = r_alloca (cipher->info->ivsize);
   r_memcpy (iv, parser->fragment.data, cipher->info->ivsize);
-  r_crypto_cipher_decrypt (cipher, iv,
-      parser->fragment.data + cipher->info->ivsize, contentsize, info.data);
+  if (r_crypto_cipher_decrypt (cipher, iv,
+        parser->fragment.data + cipher->info->ivsize,
+        contentsize, info.data) != R_CRYPTO_CIPHER_OK) {
+    r_buffer_unmap (buf, &info);
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  }
 
   if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_CBC) {
     ruint8 padding;
@@ -289,6 +296,7 @@ r_tls_parser_decrypt (RTLSParser * parser,
       r_buffer_resize (buf, 0, contentsize);
     } else {
       r_buffer_unmap (buf, &info);
+      r_buffer_unref (buf);
       return R_TLS_ERROR_CORRUPT_RECORD;
     }
   } else if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_STREAM) {
