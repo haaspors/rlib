@@ -38,6 +38,9 @@ R_API RCryptoCipher * r_cipher_aes_256_ecb_new (const ruint8 * key) R_ATTR_MALLO
 R_API RCryptoCipher * r_cipher_aes_128_cbc_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_192_cbc_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_256_cbc_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_128_ctr_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_192_ctr_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_256_ctr_new (const ruint8 * key) R_ATTR_MALLOC;
 
 
 R_API rboolean r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
@@ -54,6 +57,10 @@ R_API RCryptoCipherResult r_cipher_aes_cbc_encrypt (const RCryptoCipher * cipher
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 R_API RCryptoCipherResult r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+
+R_API RCryptoCipherResult r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+#define r_cipher_aes_ctr_decrypt r_cipher_aes_ctr_encrypt
 
 R_END_DECLS
 

@@ -14,9 +14,12 @@ RTEST (raes, new_args, RTEST_FAST)
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CBC, 129, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CBC, 255, key), ==, NULL);
 
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CTR, 0, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CTR, 129, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CTR, 255, key), ==, NULL);
+
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CFB, 128, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 128, key), ==, NULL);
-  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CTR, 128, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 128, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CCM, 128, key), ==, NULL);
 }
@@ -235,6 +238,55 @@ RTEST_LOOP (raes, cbc, RTEST_FAST, 0, R_N_ELEMENTS (CBC_test_data))
 
   r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
   r_assert_cmpint (r_cipher_aes_cbc_decrypt (cipher, out, plainsize, ciphertxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, plaintxt, plainsize);
+
+  r_crypto_cipher_unref (cipher);
+  r_free (plaintxt);
+  r_free (ciphertxt);
+  r_free (out);
+}
+RTEST_END;
+
+
+RCryptoCipherTestData CTR_test_data[] = {
+  /* nistspecialpublication800-38a.pdf - F.5 CTR Example Vectors */
+  { 128, "2b7e151628aed2a6abf7158809cf4f3c", "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710", "874d6191b620e3261bef6864990db6ce9806f66b7970fdff8617187bb9fffdff5ae4df3edbd5d35e5b4f09020db03eab1e031dda2fbe03d1792170a0f3009cee" },
+  { 192, "8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b", "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710", "1abc932417521ca24f2b0459fe7e6e0b090339ec0aa6faefd5ccc2c6f4ce8e941e36b26bd1ebc670d1bd1d665620abf74f78a7f6d29809585a97daec58c6b050" },
+  { 256, "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4", "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710", "601ec313775789a5b7a7f504bbf3d228f443e3ca4d62b59aca84e990cacaf5c52b0930daa23de94ce87017ba2d84988ddfc9c58db67aada613c2dd08457941a6" },
+
+  /* Test vectors from RFC3686 */
+ { 128, "ae6852f8121067cc4bf7a5765577f39e", "00000030000000000000000000000001", "53696e676c6520626c6f636b206d7367", "e4095d4fb7a7b3792d6175a3261311b8" },
+ { 128, "7e24067817fae0d743d6ce1f32539163", "006cb6dbc0543b59da48d90b00000001", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "5104a106168a72d9790d41ee8edad388eb2e1efc46da57c8fce630df9141be28" },
+ { 128, "7691be035e5020a8ac6e618529f9a0dc", "00e0017b27777f3f4a1786f000000001", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223", "c1cf48a89f2ffdd9cf4652e9efdb72d74540a42bde6d7836d59a5ceaaef3105325b2072f" },
+ { 192, "16af5b145fc9f579c175f93e3bfb0eed863d06ccfdb78515", "0000004836733c147d6d93cb00000001", "53696e676c6520626c6f636b206d7367", "4b55384fe259c9c84e7935a003cbe928" },
+ { 192, "7c5cb2401b3dc33c19e7340819e0f69c678c3db8e6f6a91a", "0096b03b020c6eadc2cb500d00000001", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "453243fc609b23327edfaafa7131cd9f8490701c5ad4a79cfc1fe0ff42f4fb00" },
+ { 192, "02bf391ee8ecb159b959617b0965279bf59b60a786d3e0fe", "0007bdfd5cbd60278dcc091200000001", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223", "96893fc55e5c722f540b7dd1ddf7e758d288bc95c69165884536c811662f2188abee0935" },
+ { 256, "776beff2851db06f4c8a0542c8696f6c6a81af1eec96b4d37fc1d689e6c1c104", "00000060db5672c97aa8f0b200000001", "53696e676c6520626c6f636b206d7367", "145ad01dbf824ec7560863dc71e3e0c0" },
+ { 256, "f6d66d6bd52d59bb0796365879eff886c66dd51a5b6a99744b50590c87a23884", "00faac24c1585ef15a43d87500000001", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "f05e231b3894612c49ee000b804eb2a9b8306b508f839d6a5530831d9344af1c" },
+ { 256, "ff7a617ce69148e4f1726e2f43581de2aa62d9f805532edff1eed687fb54153d", "001cc5b751a51d70a1c1114800000001", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223", "eb6c52821d0bbbf7ce7594462aca4faab407df866569fd07f48cc0b583d6071f1ec0e6b8" },
+};
+
+RTEST_LOOP (raes, ctr, RTEST_FAST, 0, R_N_ELEMENTS (CTR_test_data))
+{
+  RCryptoCipherTestData * data = &CTR_test_data[__i];
+  RCryptoCipher * cipher;
+  ruint8 * plaintxt, * ciphertxt, * out, iv[R_AES_BLOCK_BYTES];
+  rsize plainsize, ciphersize;
+
+  r_assert_cmpptr ((plaintxt = r_str_hex_mem (data->plaintxt, &plainsize)), !=, NULL);
+  r_assert_cmpptr ((ciphertxt = r_str_hex_mem (data->ciphertxt, &ciphersize)), !=, NULL);
+  r_assert_cmpuint (plainsize, ==, ciphersize);
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_CTR, data->key)), !=, NULL);
+  r_assert_cmpuint (cipher->info->keybits, ==, data->keybits);
+
+  out = r_malloc (ciphersize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
+  r_assert_cmpint (r_cipher_aes_ctr_encrypt (cipher, out, ciphersize, plaintxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, ciphertxt, ciphersize);
+
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
+  r_assert_cmpint (r_cipher_aes_ctr_decrypt (cipher, out, plainsize, ciphertxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
   r_assert_cmpmem (out, ==, plaintxt, plainsize);
 
   r_crypto_cipher_unref (cipher);

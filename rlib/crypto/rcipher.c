@@ -47,6 +47,9 @@ const RCryptoCipherInfo * g__r_crypto_ciphers[] = {
   &g__r_crypto_cipher_aes_128_cbc,
   &g__r_crypto_cipher_aes_192_cbc,
   &g__r_crypto_cipher_aes_256_cbc,
+  &g__r_crypto_cipher_aes_128_ctr,
+  &g__r_crypto_cipher_aes_192_ctr,
+  &g__r_crypto_cipher_aes_256_ctr,
   NULL
 };
 
