@@ -89,6 +89,10 @@ struct _RCryptoCipher {
   const RCryptoCipherInfo * info;
 };
 
+R_API const RCryptoCipherInfo * r_crypto_cipher_find_by_str (const rchar * str);
+R_API const RCryptoCipherInfo * r_crypto_cipher_find_by_type (
+    RCryptoCipherAlgorithm algo, RCryptoCipherMode mode, ruint16 bits);
+
 R_API RCryptoCipher * r_crypto_cipher_null_new (/* accept key */) R_ATTR_MALLOC;
 
 R_API RCryptoCipher * r_crypto_cipher_new (const RCryptoCipherInfo * info,

@@ -7,6 +7,43 @@ RTEST (rcipher, new_args, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rcipher, find_by_type, RTEST_FAST)
+{
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_NULL, R_CRYPTO_CIPHER_MODE_ECB, 128), ==, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_NULL, R_CRYPTO_CIPHER_MODE_CBC, 192), ==, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_NULL, R_CRYPTO_CIPHER_MODE_CTR, 256), ==, NULL);
+
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_NULL, R_CRYPTO_CIPHER_MODE_STREAM, 1), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 128), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 192), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 256), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CBC, 128), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CBC, 192), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CBC, 256), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CTR, 128), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CTR, 192), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_type (R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CTR, 256), !=, NULL);
+}
+RTEST_END;
+
+RTEST (rcipher, find_by_str, RTEST_FAST)
+{
+  r_assert_cmpptr (r_crypto_cipher_find_by_str (NULL), ==, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str (""), ==, NULL);
+
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("NULL"), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("AES-128-ECB"), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("AES-192-ECB"), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("AES-256-ECB"), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("AES-128-CBC"), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("AES-192-CBC"), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("AES-256-CBC"), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("AES-128-CTR"), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("AES-192-CTR"), !=, NULL);
+  r_assert_cmpptr (r_crypto_cipher_find_by_str ("AES-256-CTR"), !=, NULL);
+}
+RTEST_END;
+
 RTEST (rcipher, null, RTEST_FAST)
 {
   RCryptoCipher * cipher;

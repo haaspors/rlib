@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/crypto/rcrypto-private.h>
 
+#include <rlib/rstr.h>
 
 static RCryptoCipherResult
 r_crypto_cipher_null_func (const RCryptoCipher * cipher,
@@ -50,8 +51,40 @@ const RCryptoCipherInfo * g__r_crypto_ciphers[] = {
   &g__r_crypto_cipher_aes_128_ctr,
   &g__r_crypto_cipher_aes_192_ctr,
   &g__r_crypto_cipher_aes_256_ctr,
-  NULL
 };
+
+const RCryptoCipherInfo *
+r_crypto_cipher_find_by_str (const rchar * str)
+{
+  int i, count;
+
+  if (R_UNLIKELY (str == NULL)) return NULL;
+
+  count = R_N_ELEMENTS (g__r_crypto_ciphers);
+  for (i = 0; i < count; i++) {
+    if (r_str_equals (str, g__r_crypto_ciphers[i]->strtype))
+      return g__r_crypto_ciphers[i];
+  }
+
+  return NULL;
+}
+
+const RCryptoCipherInfo *
+r_crypto_cipher_find_by_type (RCryptoCipherAlgorithm algo, RCryptoCipherMode mode, ruint16 bits)
+{
+  int i, count;
+
+  count = R_N_ELEMENTS (g__r_crypto_ciphers);
+  for (i = 0; i < count; i++) {
+    if (algo == g__r_crypto_ciphers[i]->type &&
+        mode == g__r_crypto_ciphers[i]->mode &&
+        (g__r_crypto_ciphers[i]->keybits <= 1 ||
+         bits == g__r_crypto_ciphers[i]->keybits))
+      return g__r_crypto_ciphers[i];
+  }
+
+  return NULL;
+}
 
 RCryptoCipher *
 r_crypto_cipher_null_new ()
