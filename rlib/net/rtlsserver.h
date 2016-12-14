@@ -63,6 +63,10 @@ R_API RTLSError r_tls_server_start (RTLSServer * server, REvLoop * loop,
 R_API rboolean r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer);
 R_API rboolean r_tls_server_send_appdata (RTLSServer * server, RBuffer * buffer);
 
+R_API RTLSError r_tls_server_export_keying_matierial (const RTLSServer * server,
+    ruint8 * material, rsize size, const rchar * label, rsize len,
+    const ruint8 * ctx, rsize ctxsize);
+
 R_END_DECLS
 
 #endif /* __R_NET_TLS_SERVER_H__ */

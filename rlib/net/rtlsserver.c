@@ -1315,3 +1315,26 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
   return TRUE;
 }
 
+RTLSError
+r_tls_server_export_keying_matierial (const RTLSServer * server,
+    ruint8 * material, rsize size, const rchar * label, rsize len,
+    const ruint8 * ctx, rsize ctxsize)
+{
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (material == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size == 0)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (label == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (len == 0)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (server->state <= R_TLS_SERVER_HELLO))
+    return R_TLS_ERROR_WRONG_STATE;
+
+  if (ctxsize == 0)
+    ctx = NULL;
+
+  return server->prf (material, size,
+      server->mastersecret, sizeof (server->mastersecret), label, len,
+      server->hello.random, (rsize)R_TLS_HELLO_RANDOM_BYTES,
+      server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
+      ctx, ctxsize, NULL);
+}
+
