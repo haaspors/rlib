@@ -25,10 +25,12 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/rbuffer.h>
+#include <rlib/rref.h>
 
 R_BEGIN_DECLS
 
 #define R_RTP_VERSION                 0x02
+#define R_RTP_HDR_SIZE                12
 
 /* http://www.iana.org/assignments/rtp-parameters/rtp-parameters.xhtml#rtp-parameters-1 */
 typedef enum {
@@ -85,9 +87,50 @@ typedef enum {
   R_RTCP_PT_SNM             = 213, /* Splicing Notification Message [RFC-ietf-ietf-avtext-splicing-notification-09] */
 } RRTCPPacketType;
 
-
 R_API rboolean r_rtp_is_valid_hdr (rconstpointer buf, rsize size);
 R_API rboolean r_rtcp_is_valid_hdr (rconstpointer buf, rsize size);
+
+typedef struct {
+  RBuffer * buffer;
+
+  RMemMapInfo hdr;
+  RMemMapInfo ext;
+  RMemMapInfo pay;
+} RRTPBuffer;
+#define R_RTP_BUFFER_INIT   { NULL, R_MEM_MAP_INFO_INIT, R_MEM_MAP_INFO_INIT, R_MEM_MAP_INFO_INIT }
+
+typedef enum {
+  R_RTP_BUFFER_MAP_FLAG_SKIP_PADDING  = (R_MEM_MAP_FLAG_LAST << 0),
+  R_RTP_BUFFER_MAP_FLAG_LAST          = (R_MEM_MAP_FLAG_LAST << 8)
+} RRTPBufferMapFlags;
+
+R_API RBuffer * r_buffer_new_rtp_buffer (RBuffer * payload, ruint8 pad, ruint8 cc);
+R_API RBuffer * r_buffer_new_rtp_buffer_take (rpointer payload, rsize size, ruint8 pad, ruint8 cc);
+R_API RBuffer * r_buffer_new_rtp_buffer_alloc (rsize payload, ruint8 pad, ruint8 cc);
+
+R_API rboolean r_rtp_buffer_map (RRTPBuffer * rtp, RBuffer * buf, RMemMapFlags flags);
+R_API rboolean r_rtp_buffer_unmap (RRTPBuffer * rtp, RBuffer * buf);
+
+/* READ / getters */
+R_API rboolean r_rtp_buffer_has_padding (const RRTPBuffer * rtp);
+R_API rboolean r_rtp_buffer_has_extension (const RRTPBuffer * rtp);
+R_API rboolean r_rtp_buffer_has_marker (const RRTPBuffer * rtp);
+R_API ruint32 r_rtp_buffer_get_ssrc (const RRTPBuffer * rtp);
+R_API RRTPPayloadType r_rtp_buffer_get_pt (const RRTPBuffer * rtp);
+R_API ruint16 r_rtp_buffer_get_seq (const RRTPBuffer * rtp);
+R_API ruint32 r_rtp_buffer_get_timestamp (const RRTPBuffer * rtp);
+R_API ruint8 r_rtp_buffer_get_csrc_count (const RRTPBuffer * rtp);
+R_API ruint32 r_rtp_buffer_get_csrc (const RRTPBuffer * rtp, ruint8 n);
+
+/* WRITE / setters */
+R_API void r_rtp_buffer_set_marker (RRTPBuffer * rtp, rboolean marker);
+R_API void r_rtp_buffer_set_ssrc (RRTPBuffer * rtp, ruint32 ssrc);
+R_API void r_rtp_buffer_set_pt (RRTPBuffer * rtp, RRTPPayloadType pt);
+R_API void r_rtp_buffer_set_seq (RRTPBuffer * rtp, ruint16 seq);
+R_API void r_rtp_buffer_set_timestamp (RRTPBuffer * rtp, ruint32 ts);
+/* TODO: padding */
+/* TODO: extension */
+/* TODO: csrc */
 
 R_END_DECLS
 

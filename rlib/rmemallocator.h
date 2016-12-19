@@ -28,6 +28,11 @@
 
 #include <stdarg.h>
 
+/**
+ * The implementation of RMem and RMemAllocator is heavily inspired by the
+ * GStreamer equivalents.
+ */
+
 R_BEGIN_DECLS
 
 typedef enum {
@@ -42,6 +47,7 @@ typedef ruint32 RMemFlags;
 typedef enum {
   R_MEM_MAP_READ      = (1 << 0),
   R_MEM_MAP_WRITE     = (1 << 1),
+  R_MEM_MAP_FLAG_LAST = (1 << 8)
 } RMemMapFlag;
 #define R_MEM_MAP_RW    (R_MEM_MAP_READ | R_MEM_MAP_WRITE)
 typedef ruint32 RMemMapFlags;

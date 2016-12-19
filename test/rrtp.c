@@ -43,3 +43,98 @@ RTEST (rrtcp, is_valid_hdr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtp, new_rtp_buffer, RTEST_FAST)
+{
+  RBuffer * buf, * payload;
+
+  r_assert_cmpptr (r_buffer_new_rtp_buffer (NULL, 0, 0), ==, NULL);
+
+  r_assert_cmpptr ((payload = r_buffer_new_alloc (NULL, 42, NULL)), !=, NULL);
+
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer (payload, 0, 0)), !=, NULL);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, R_RTP_HDR_SIZE + 42);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer (payload, 2, 0)), !=, NULL);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, R_RTP_HDR_SIZE + 42 + 2);
+  r_buffer_unref (buf);
+
+  r_buffer_unref (payload);
+}
+RTEST_END;
+
+RTEST (rrtp, new_rtp_buffer_alloc, RTEST_FAST)
+{
+  RBuffer * buf;
+
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer_alloc (0, 0, 0)), !=, NULL);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, R_RTP_HDR_SIZE);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer_alloc (0, 0, 2)), !=, NULL);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, R_RTP_HDR_SIZE + 2 * sizeof (ruint32));
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer_alloc (0, 8, 0)), !=, NULL);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, R_RTP_HDR_SIZE + 8);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtp, read_plain_hdr_pcmu_payload, RTEST_FAST)
+{
+  RBuffer * buf;
+  RRTPBuffer rtp = R_RTP_BUFFER_INIT;
+
+  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu), sizeof (pkt_rtp_pcmu),
+          0, NULL, NULL)), !=, NULL);
+
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (rtp.hdr.size, ==, R_RTP_HDR_SIZE);
+  r_assert_cmpuint (rtp.ext.data, ==, NULL);
+  r_assert_cmpuint (rtp.pay.size, ==, 160);
+  r_assert_cmpmem (rtp.pay.data, ==, &pkt_rtp_pcmu[R_RTP_HDR_SIZE], rtp.pay.size);
+
+  r_assert (!r_rtp_buffer_has_padding (&rtp));
+  r_assert (!r_rtp_buffer_has_extension (&rtp));
+  r_assert (r_rtp_buffer_has_marker (&rtp));
+
+  r_assert_cmpuint (r_rtp_buffer_get_csrc_count (&rtp), ==, 0);
+  r_assert_cmpuint (r_rtp_buffer_get_pt (&rtp), ==, R_RTP_PT_PCMU);
+  r_assert_cmpuint (r_rtp_buffer_get_seq (&rtp), ==, 37595);
+  r_assert_cmphex (r_rtp_buffer_get_ssrc (&rtp), ==, 0x343da99b);
+  r_assert_cmpuint (r_rtp_buffer_get_timestamp (&rtp), ==, 160);
+
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtp, write_plain_hdr_pcmu_payload, RTEST_FAST)
+{
+  RBuffer * buf, * payload;
+  RRTPBuffer rtp = R_RTP_BUFFER_INIT;
+
+  r_assert_cmpptr ((payload = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu),
+          sizeof (pkt_rtp_pcmu) - R_RTP_HDR_SIZE, R_RTP_HDR_SIZE,
+          NULL, NULL)), !=, NULL);
+
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer (payload, 0, 0)), !=, NULL);
+  r_buffer_unref (payload);
+
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_WRITE));
+  r_rtp_buffer_set_marker (&rtp, TRUE);
+  r_rtp_buffer_set_pt (&rtp, R_RTP_PT_PCMU);
+  r_rtp_buffer_set_seq (&rtp, 37595);
+  r_rtp_buffer_set_ssrc (&rtp, 0x343da99b);
+  r_rtp_buffer_set_timestamp (&rtp, 160);
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
+
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, sizeof (pkt_rtp_pcmu));
+  r_assert_cmpint (r_buffer_memcmp (buf, 0, pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu)), ==, 0);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
