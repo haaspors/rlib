@@ -207,7 +207,7 @@ r_tls_parser_next (RTLSParser * parser)
   RBuffer * ret;
 
   if ((ret = r_buffer_new ()) != NULL) {
-    if (!r_buffer_append_region_from (ret, parser->buf, parser->recsize, -1)) {
+    if (!r_buffer_append_view (ret, parser->buf, parser->recsize, -1)) {
       r_buffer_unref (ret);
       ret = NULL;
     }

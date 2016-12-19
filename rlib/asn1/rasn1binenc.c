@@ -71,7 +71,7 @@ r_asn1_bin_encoder_get_buffer (RAsn1BinEncoder * enc, RBuffer ** buf)
   if (R_UNLIKELY (enc->stack != NULL)) return R_ASN1_ENCODER_INDEFINITE;
   if (R_UNLIKELY ((*buf = r_buffer_new ()) == NULL)) return R_ASN1_ENCODER_OOM;
 
-  if (r_buffer_append_region_from (*buf, enc->buf, (rsize)0, enc->offset))
+  if (r_buffer_append_view (*buf, enc->buf, (rsize)0, enc->offset))
     return R_ASN1_ENCODER_OK;
 
   r_buffer_unref (*buf);
@@ -263,7 +263,7 @@ r_asn1_bin_encoder_end_constructed (RAsn1BinEncoder * enc)
 
       r_buffer_set_size (enc->buf, size);
 
-      r_buffer_append_from (enc->buf, buf);
+      r_buffer_append_mem_from_buffer (enc->buf, buf);
       enc->offset += size;
       r_buffer_unref (buf);
     } else {

@@ -139,7 +139,7 @@ r_test_tls_server_queue_agg (RQueue * q)
 
   if ((ret = r_buffer_new ()) != NULL) {
     while ((cur = r_queue_pop (q)) != NULL) {
-      r_buffer_append_from (ret, cur);
+      r_buffer_append_mem_from_buffer (ret, cur);
       r_buffer_unref (cur);
     }
   }

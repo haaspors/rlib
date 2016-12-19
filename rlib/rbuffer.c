@@ -408,28 +408,22 @@ r_buffer_mem_find (const RBuffer * buffer, rsize offset, rssize size,
 }
 
 rboolean
-r_buffer_append_from (RBuffer * buffer, RBuffer * from)
+r_buffer_append_mem_from_buffer (RBuffer * buffer, RBuffer * from)
 {
   ruint i;
-  RMem * mem;
   rboolean ret;
 
   if (R_UNLIKELY (buffer == NULL)) return FALSE;
   if (R_UNLIKELY (from == NULL)) return FALSE;
 
-  for (i = 0, ret = TRUE; i < from->mem_count && ret; i++) {
-    if ((mem = r_mem_view (from->mem[i], 0, -1)) == NULL)
-      if ((mem = r_mem_copy (from->mem[i], 0, -1)) == NULL)
-        return FALSE;
-    ret = r_buffer_mem_append (buffer, mem);
-    r_mem_unref (mem);
-  }
+  for (i = 0, ret = TRUE; i < from->mem_count && ret; i++)
+    ret = r_buffer_mem_append (buffer, from->mem[i]);
 
   return ret;
 }
 
 rboolean
-r_buffer_append_region_from (RBuffer * buffer, RBuffer * from,
+r_buffer_append_view (RBuffer * buffer, RBuffer * from,
     rsize offset, rssize size)
 {
   ruint i;
@@ -592,7 +586,7 @@ r_buffer_replace_byte_range (RBuffer * buffer, rsize offset, rssize size,
     }
 
     /* Append replacement (from) buffer */
-    if (!r_buffer_append_from (ret, from))
+    if (!r_buffer_append_mem_from_buffer (ret, from))
       goto error;
 
     /* Append suffix */

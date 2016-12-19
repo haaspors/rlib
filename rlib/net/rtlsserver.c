@@ -518,7 +518,7 @@ r_tls_server_write_certificate (RTLSServer * server)
 
       r_buffer_unmap (buf, &info);
       r_buffer_set_size (buf, size);
-      r_buffer_append_from (buf, certbuf);
+      r_buffer_append_mem_from_buffer (buf, certbuf);
 
       r_buffer_map (certbuf, &info, R_MEM_MAP_READ);
       R_LOG_TRACE ("Updating HS hash with ServerCertificate %u bytes",
@@ -1281,7 +1281,7 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
   if (server->inbuf == NULL) {
     server->inbuf = r_buffer_ref (buffer);
   } else {
-    if (R_UNLIKELY (!r_buffer_append_from (server->inbuf, buffer)))
+    if (R_UNLIKELY (!r_buffer_append_mem_from_buffer (server->inbuf, buffer)))
       return FALSE;
   }
 

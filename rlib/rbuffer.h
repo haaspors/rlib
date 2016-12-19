@@ -28,6 +28,12 @@
 
 #include <stdarg.h>
 
+/**
+ * The implementation of RBuffer is heavily inspired by GStreamer equivalent,
+ * namely GstBuffer. RBuffer is an abstraction of memory chunks backed by
+ * different RMemAllocator backends. Default is the system memory allocator.
+ */
+
 R_BEGIN_DECLS
 
 typedef struct _RBuffer RBuffer;
@@ -68,8 +74,8 @@ R_API void r_buffer_mem_clear (RBuffer * buffer);
 R_API rboolean r_buffer_mem_find (const RBuffer * buffer, rsize offset, rssize size,
     ruint * idx, ruint * count, rsize * first_offset, rsize * last_size);
 
-R_API rboolean r_buffer_append_from (RBuffer * buffer, RBuffer * from);
-R_API rboolean r_buffer_append_region_from (RBuffer * buffer, RBuffer * from,
+R_API rboolean r_buffer_append_mem_from_buffer (RBuffer * buffer, RBuffer * from);
+R_API rboolean r_buffer_append_view (RBuffer * buffer, RBuffer * from,
     rsize offset, rssize size);
 R_API RBuffer * r_buffer_merge_take (RBuffer * a, ...) R_ATTR_NULL_TERMINATED R_ATTR_WARN_UNUSED_RESULT;
 R_API RBuffer * r_buffer_merge_takev (RBuffer * a, va_list args) R_ATTR_WARN_UNUSED_RESULT;
