@@ -30,6 +30,7 @@
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rcipher.h>
 #include <rlib/crypto/rmac.h>
+#include <rlib/crypto/rsrtpciphersuite.h>
 #include <rlib/crypto/rtlsciphersuite.h>
 
 R_BEGIN_DECLS
@@ -281,17 +282,6 @@ typedef enum {
   R_TLS_HEARTBEAT_MODE_PEER_NOT_ALLOWED_TO_SEND         = 0x02, /* [RFC6520] */
 } RTLSHeartbeatMode;
 
-/* http://www.iana.org/assignments/srtp-protection/ */
-typedef enum {
-  R_DTLS_SRTP_NONE                                      = 0x0000,
-  R_DTLS_SRTP_AES128_CM_HMAC_SHA1_80                    = 0x0001, /* [RFC5764] */
-  R_DTLS_SRTP_AES128_CM_HMAC_SHA1_32                    = 0x0002, /* [RFC5764] */
-  R_DTLS_SRTP_NULL_HMAC_SHA1_80                         = 0x0005, /* [RFC5764] */
-  R_DTLS_SRTP_NULL_HMAC_SHA1_32                         = 0x0006, /* [RFC5764] */
-  R_DTLS_SRTP_AEAD_AES_128_GCM                          = 0x0007, /* [RFC7714] */
-  R_DTLS_SRTP_AEAD_AES_256_GCM                          = 0x0008, /* [RFC7714] */
-} RDTLSSRTPProtectionProfile;
-
 typedef enum {
   R_TLS_ERROR_NOT_NEEDED                                =  0x02,
   R_TLS_ERROR_EOB                                       =  0x01,
@@ -445,8 +435,8 @@ static inline RTLSSupportedGroup r_tls_hello_ext_supported_group (const RTLSHell
 /* use_srtp extension */
 static inline ruint16 r_tls_hello_ext_use_srtp_profile_count (const RTLSHelloExt * ext)
 { return RUINT16_FROM_BE (*(const ruint16 *)ext->data) / sizeof (ruint16); }
-static inline RDTLSSRTPProtectionProfile r_tls_hello_ext_use_srtp_profile(const RTLSHelloExt * ext, int n)
-{ return (RDTLSSRTPProtectionProfile)RUINT16_FROM_BE (((const ruint16 *)ext->data)[n+1]); }
+static inline RSRTPCipherSuite r_tls_hello_ext_use_srtp_profile(const RTLSHelloExt * ext, int n)
+{ return (RSRTPCipherSuite)RUINT16_FROM_BE (((const ruint16 *)ext->data)[n+1]); }
 static inline ruint8 r_tls_hello_ext_use_srtp_mki_size (const RTLSHelloExt * ext)
 { return ext->data[sizeof (ruint16) + RUINT16_FROM_BE (*(const ruint16 *)ext->data)]; }
 static inline const ruint8 * r_tls_hello_ext_use_srtp_mki (const RTLSHelloExt * ext)

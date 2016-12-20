@@ -75,7 +75,7 @@ struct _RTLSServer {
   rboolean support_renego;
   rboolean support_new_session_ticket;
   rboolean support_ext_master_secret;
-  RDTLSSRTPProtectionProfile dtls_srtp_profile;
+  RSRTPCipherSuite dtls_srtp_profile;
   ruint8 srtp_mki_size;
   const ruint8 * srtp_mki;
   ruint8 * ticket;
@@ -323,7 +323,7 @@ r_tls_server_write_hs_ext_session_ticket (const RTLSServer * server, ruint8 * pt
 static ruint16
 r_tls_server_write_hs_ext_use_srtp (const RTLSServer * server, ruint8 * ptr)
 {
-  if (server->dtls_srtp_profile == R_DTLS_SRTP_NONE)
+  if (server->dtls_srtp_profile == R_SRTP_CS_NONE)
     return 0;
 
   *(ruint16 *)&ptr[0] = RUINT16_TO_BE ((ruint16)R_TLS_EXT_TYPE_USE_SRTP);
@@ -829,7 +829,7 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   server->support_renego = FALSE;
   server->support_new_session_ticket = FALSE;
   server->support_ext_master_secret = FALSE;
-  server->dtls_srtp_profile = R_DTLS_SRTP_NONE;
+  server->dtls_srtp_profile = R_SRTP_CS_NONE;
 
   for (r = r_tls_hello_msg_extension_first (&server->hello, &hsext);
       r == R_TLS_ERROR_OK;
@@ -843,13 +843,14 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
         server->support_new_session_ticket = TRUE;
         break;
       case R_TLS_EXT_TYPE_USE_SRTP:
+        /* FIXME: Use SRTP cipher suite API */
         count = r_tls_hello_ext_use_srtp_profile_count (&hsext);
         for (i = 0; i < count; i++) {
-          if (r_tls_hello_ext_use_srtp_profile (&hsext, i) == R_DTLS_SRTP_AES128_CM_HMAC_SHA1_80) {
-            server->dtls_srtp_profile = R_DTLS_SRTP_AES128_CM_HMAC_SHA1_80;
+          if (r_tls_hello_ext_use_srtp_profile (&hsext, i) == R_SRTP_CS_AES_128_CM_HMAC_SHA1_80) {
+            server->dtls_srtp_profile = R_SRTP_CS_AES_128_CM_HMAC_SHA1_80;
             break;
-          } else if (r_tls_hello_ext_use_srtp_profile (&hsext, i) == R_DTLS_SRTP_AES128_CM_HMAC_SHA1_32) {
-            server->dtls_srtp_profile = R_DTLS_SRTP_AES128_CM_HMAC_SHA1_32;
+          } else if (r_tls_hello_ext_use_srtp_profile (&hsext, i) == R_SRTP_CS_AES_128_CM_HMAC_SHA1_32) {
+            server->dtls_srtp_profile = R_SRTP_CS_AES_128_CM_HMAC_SHA1_32;
           }
         }
         break;
@@ -1375,7 +1376,7 @@ r_tls_server_get_cipher_suite (const RTLSServer * server)
   return server->csinfo;
 }
 
-RDTLSSRTPProtectionProfile
+RSRTPCipherSuite
 r_tls_server_get_dtls_srtp_profile (const RTLSServer * server)
 {
   return server->dtls_srtp_profile;

@@ -297,7 +297,7 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
   r_assert_cmpptr ((csinfo = r_tls_server_get_cipher_suite (fixture->server)), !=, NULL);
   r_assert_cmpstr (csinfo->str, ==, "TLS-RSA-WITH-AES-128-CBC-SHA");
   r_assert_cmphex (r_tls_server_get_dtls_srtp_profile (fixture->server), ==,
-      R_DTLS_SRTP_AES128_CM_HMAC_SHA1_80);
+      R_SRTP_CS_AES_128_CM_HMAC_SHA1_80);
 
   r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
   r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);

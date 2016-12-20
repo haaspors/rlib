@@ -106,8 +106,8 @@ RTEST (rtls, parse_dtls_client_hello, RTEST_FAST)
   r_assert_cmpuint (ext.type, ==, R_TLS_EXT_TYPE_USE_SRTP);
   r_assert_cmpuint (ext.len, ==, 7);
   r_assert_cmpuint (r_tls_hello_ext_use_srtp_profile_count (&ext), ==, 2);
-  r_assert_cmphex (r_tls_hello_ext_use_srtp_profile (&ext, 0), ==, R_DTLS_SRTP_AES128_CM_HMAC_SHA1_32);
-  r_assert_cmphex (r_tls_hello_ext_use_srtp_profile (&ext, 1), ==, R_DTLS_SRTP_AES128_CM_HMAC_SHA1_80);
+  r_assert_cmphex (r_tls_hello_ext_use_srtp_profile (&ext, 0), ==, R_SRTP_CS_AES_128_CM_HMAC_SHA1_32);
+  r_assert_cmphex (r_tls_hello_ext_use_srtp_profile (&ext, 1), ==, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80);
   r_assert_cmpuint (r_tls_hello_ext_use_srtp_mki_size (&ext), ==, 0);
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_hello_msg_extension_next (&msg, &ext));
   r_assert_cmpuint (ext.type, ==, R_TLS_EXT_TYPE_EC_POINT_FORMATS);
