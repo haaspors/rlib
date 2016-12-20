@@ -296,6 +296,8 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
   r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
   r_assert_cmpuint (parser.epoch, ==, 0);
   r_assert_cmpuint (parser.seqno, ==, 3);
+  r_assert_cmpuint (parser.fragment.size, ==, 1);
+  r_assert_cmpuint (parser.fragment.data[0], ==, 1);
 
   r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);

@@ -254,6 +254,7 @@ r_tls_server_cipher_encrypt (RTLSServer * server, RBuffer * buf)
   RBuffer * ret;
   ruint8 * iv = r_alloca (server->server.cipher->info->ivsize);
 
+  R_LOG_TRACE ("Encrypting buffer %p", buf);
   r_prng_fill (server->prng, iv, server->server.cipher->info->ivsize);
   if (r_tls_version_is_dtls (server->version)) {
     ret = r_dtls_encrypt_buffer (buf,
@@ -1172,7 +1173,6 @@ r_tls_server_state_change_cipher (RTLSServer * server, const RTLSParser * parser
       /* enable cipher */
       R_LOG_DEBUG ("cipher enabled (%s)", server->csinfo->str);
       server->decrypt = r_tls_parser_decrypt;
-      server->encrypt = r_tls_server_cipher_encrypt;
       server->client.epoch++;
       server->client.seqno = 0;
       break;
@@ -1203,7 +1203,10 @@ r_tls_server_state_finished (RTLSServer * server, const RTLSParser * parser)
 
       if (r_tls_server_write_new_session_ticket (server) == R_TLS_ERROR_OK)
         server->server.msgseq++;
-      r_tls_server_write_change_cipher (server);
+      if (r_tls_server_write_change_cipher (server) == R_TLS_ERROR_OK) {
+        /* enable cipher */
+        server->encrypt = r_tls_server_cipher_encrypt;
+      }
       if (r_tls_server_write_finished (server) == R_TLS_ERROR_OK)
         server->server.msgseq++;
 
