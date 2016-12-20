@@ -67,6 +67,12 @@ R_API RTLSError r_tls_server_export_keying_matierial (const RTLSServer * server,
     ruint8 * material, rsize size, const rchar * label, rsize len,
     const ruint8 * ctx, rsize ctxsize);
 
+
+R_API RTLSVersion r_tls_server_get_version (const RTLSServer * server);
+R_API const RTLSCipherSuiteInfo * r_tls_server_get_cipher_suite (const RTLSServer * server);
+R_API RDTLSSRTPProtectionProfile r_tls_server_get_dtls_srtp_profile (const RTLSServer * server);
+R_API const ruint8 * r_tls_server_get_dtls_srtp_mki (const RTLSServer * server, ruint8 * size);
+
 R_END_DECLS
 
 #endif /* __R_NET_TLS_SERVER_H__ */

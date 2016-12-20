@@ -206,6 +206,7 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
   RTLSHandshakeType hs;
   ruint32 l;
   ruint16 msgseq;
+  const RTLSCipherSuiteInfo * csinfo;
   static const ruint8 dtls_server_random[] = {
     0x58, 0x49, 0x81, 0x6a, 0x57, 0xc3, 0x49, 0x00, 0x29, 0x52, 0x8f, 0xac, 0xc7, 0x48, 0x57, 0x9e,
     0x26, 0x41, 0x87, 0xa6, 0xde, 0xd2, 0xe6, 0x72, 0x1a, 0x38, 0x08, 0x72, 0xdb, 0xd2, 0x09, 0x94
@@ -288,7 +289,15 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
   r_buffer_unref (buf);
 
   /* ClientKeyExchange, ChangeCipherSpec & Finished */
+  r_assert (!fixture->hs_done);
   r_test_tls_server_incoming_data (pkt_dtls_client_finished);
+  r_assert (fixture->hs_done);
+
+  r_assert_cmphex (r_tls_server_get_version (fixture->server), ==, R_TLS_VERSION_DTLS_1_2);
+  r_assert_cmpptr ((csinfo = r_tls_server_get_cipher_suite (fixture->server)), !=, NULL);
+  r_assert_cmpstr (csinfo->str, ==, "TLS-RSA-WITH-AES-128-CBC-SHA");
+  r_assert_cmphex (r_tls_server_get_dtls_srtp_profile (fixture->server), ==,
+      R_DTLS_SRTP_AES128_CM_HMAC_SHA1_80);
 
   r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
   r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);

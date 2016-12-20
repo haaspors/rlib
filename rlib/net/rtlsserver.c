@@ -1363,3 +1363,30 @@ r_tls_server_export_keying_matierial (const RTLSServer * server,
       ctx, ctxsize, NULL);
 }
 
+RTLSVersion
+r_tls_server_get_version (const RTLSServer * server)
+{
+  return server->version;
+}
+
+const RTLSCipherSuiteInfo *
+r_tls_server_get_cipher_suite (const RTLSServer * server)
+{
+  return server->csinfo;
+}
+
+RDTLSSRTPProtectionProfile
+r_tls_server_get_dtls_srtp_profile (const RTLSServer * server)
+{
+  return server->dtls_srtp_profile;
+}
+
+const ruint8 *
+r_tls_server_get_dtls_srtp_mki (const RTLSServer * server, ruint8 * size)
+{
+  if (size != NULL)
+    *size = server->srtp_mki_size;
+
+  return server->srtp_mki;
+}
+
