@@ -1295,6 +1295,24 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
       if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac)) != R_TLS_ERROR_OK)
         R_LOG_WARNING ("Decryption returned: %d", err);
     }
+
+    if (parser.content == R_TLS_CONTENT_TYPE_ALERT) {
+      RTLSAlertLevel alevel;
+      RTLSAlertType atype;
+
+      if ((err = r_tls_parser_parse_alert (&parser, &alevel, &atype)) == R_TLS_ERROR_OK) {
+        R_LOG_WARNING ("Received Alert, %.2x %.2x", alevel, atype);
+
+        if (alevel == R_TLS_ALERT_LEVEL_FATAL)
+          err = r_tls_server_change_state (server, R_TLS_SERVER_ERROR);
+      } else {
+        R_LOG_WARNING ("Received Alert, unable to parse! %d", err);
+
+        r_tls_server_change_state (server, R_TLS_SERVER_ERROR);
+      }
+      continue;
+    }
+
     do {
       err = statefuncs[server->state] (server, &parser);
     } while (err == R_TLS_ERROR_NOT_NEEDED);
