@@ -1236,11 +1236,15 @@ r_tls_server_state_appdata (RTLSServer * server, const RTLSParser * parser)
 {
   RBuffer * buf;
 
-  if ((buf = r_buffer_view (parser->buf, parser->offset, parser->fragment.size)) != NULL) {
-    server->cb.appdata (server->userdata, buf, server);
-    r_buffer_unref (buf);
+  if (parser->content == R_TLS_CONTENT_TYPE_APPLICATION_DATA) {
+    if ((buf = r_buffer_view (parser->buf, parser->offset, parser->fragment.size)) != NULL) {
+      server->cb.appdata (server->userdata, buf, server);
+      r_buffer_unref (buf);
+    } else {
+      R_LOG_WARNING ("Unable to create view of TLS appdata buffer");
+    }
   } else {
-    R_LOG_WARNING ("Unable to create view of TLS appdata buffer");
+    R_LOG_WARNING ("Received non-app-data record");
   }
 
   return R_TLS_ERROR_OK;
