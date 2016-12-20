@@ -81,6 +81,7 @@
 #include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rpem.h>
 #include <rlib/crypto/rrsa.h>
+#include <rlib/crypto/rsrtpciphersuite.h>
 #include <rlib/crypto/rtlsciphersuite.h>
 #include <rlib/crypto/rx509.h>
 
