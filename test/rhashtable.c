@@ -132,3 +132,38 @@ RTEST (rhashtable, str, RTEST_FAST)
 }
 RTEST_END;
 
+static void
+sum_value_uints (rpointer key, rpointer value, rpointer user)
+{
+  ruint * sum = user;
+
+  (void) key;
+  *sum += RPOINTER_TO_UINT (value);
+}
+
+RTEST (rhashtable, foreach, RTEST_FAST)
+{
+  RHashTable * ht;
+  ruint sum = 0;
+
+  r_assert_cmpptr ((ht = r_hash_table_new (r_str_hash, r_str_equal)), !=, NULL);
+
+  r_assert_cmpint (r_hash_table_insert (ht,
+        "foobar", RUINT_TO_POINTER (8)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_insert (ht,
+        "foo", RUINT_TO_POINTER (42)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_insert (ht,
+        "bar", RUINT_TO_POINTER (16)), ==, R_HASH_TABLE_OK);
+
+  r_hash_table_foreach (ht, sum_value_uints, &sum);
+  r_assert_cmpuint (sum, ==, 8 + 42 + 16);
+
+  r_assert_cmpint (r_hash_table_remove (ht, "foo"), ==, R_HASH_TABLE_OK);
+  sum = 0;
+  r_hash_table_foreach (ht, sum_value_uints, &sum);
+  r_assert_cmpuint (sum, ==, 8 + 16);
+
+  r_hash_table_unref (ht);
+}
+RTEST_END;
+

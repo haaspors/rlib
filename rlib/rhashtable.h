@@ -64,6 +64,8 @@ R_API RHashTableError r_hash_table_remove_full (RHashTable * ht, rconstpointer k
 R_API RHashTableError r_hash_table_steal (RHashTable * ht, rconstpointer key,
     rpointer * keyout, rpointer * valueout);
 
+R_API RHashTableError r_hash_table_foreach (RHashTable * ht, RKeyValueFunc func, rpointer user);
+
 
 /* hash and equal functions */
 R_API rsize r_direct_hash (rconstpointer data);

@@ -410,6 +410,23 @@ r_hash_table_steal (RHashTable * ht, rconstpointer key,
   return R_HASH_TABLE_OK;
 }
 
+RHashTableError
+r_hash_table_foreach (RHashTable * ht, RKeyValueFunc func, rpointer user)
+{
+  rsize i, c;
+
+  if (R_UNLIKELY (ht == NULL)) return R_HASH_TABLE_INVAL;
+  if (R_UNLIKELY (func == NULL)) return R_HASH_TABLE_INVAL;
+
+  c = R_HASH_TABLE_ALLOC_IDX_TO_SIZE (ht->allocidx);
+  for (i = 0; i < c; i++) {
+    if (ht->buckets[i].hash != 0)
+      func (ht->buckets[i].key, ht->buckets[i].val, user);
+  }
+
+  return R_HASH_TABLE_OK;
+}
+
 
 
 rsize

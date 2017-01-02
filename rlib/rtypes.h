@@ -129,6 +129,7 @@ typedef void (*RFunc) (rpointer data, rpointer user);
 typedef int (*RCmpFunc) (rconstpointer a, rconstpointer b);
 typedef rboolean (*REqualFunc) (rconstpointer a, rconstpointer b);
 typedef rsize (*RHashFunc) (rconstpointer key);
+typedef void (*RKeyValueFunc) (rpointer key, rpointer value, rpointer user);
 typedef rboolean (*RFuncReturn) (rpointer data, rpointer user);
 
 R_END_DECLS
