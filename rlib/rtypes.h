@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -126,6 +126,9 @@ typedef rint64                  RClockTimeDiff;
 /* Function prototypes */
 typedef void (*RDestroyNotify) (rpointer ptr);
 typedef void (*RFunc) (rpointer data, rpointer user);
+typedef int (*RCmpFunc) (rconstpointer a, rconstpointer b);
+typedef rboolean (*REqualFunc) (rconstpointer a, rconstpointer b);
+typedef rsize (*RHashFunc) (rconstpointer key);
 typedef rboolean (*RFuncReturn) (rpointer data, rpointer user);
 
 R_END_DECLS
