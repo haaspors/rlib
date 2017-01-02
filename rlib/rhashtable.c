@@ -23,6 +23,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
+#define R_HASH_TABLE_EMPTY                          RSIZE_MAX
 #define R_HASH_TABLE_ALLOC_IDX_TO_SIZE(idx)         ((rsize)1 << (idx + 3))
 
 typedef struct {
@@ -121,19 +122,20 @@ r_hash_table_free (RHashTable * ht)
 
   if (ht->keynotify != NULL && ht->valuenotify != NULL) {
     for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash == 0) continue;
-      ht->keynotify (ht->buckets[i].key);
-      ht->valuenotify (ht->buckets[i].val);
+      if (ht->buckets[i].hash != R_HASH_TABLE_EMPTY) {
+        ht->keynotify (ht->buckets[i].key);
+        ht->valuenotify (ht->buckets[i].val);
+      }
     }
   } else if (ht->valuenotify != NULL) {
     for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash == 0) continue;
-      ht->valuenotify (ht->buckets[i].val);
+      if (ht->buckets[i].hash != R_HASH_TABLE_EMPTY)
+        ht->valuenotify (ht->buckets[i].val);
     }
   } else if (ht->keynotify != NULL) {
     for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash == 0) continue;
-      ht->keynotify (ht->buckets[i].key);
+      if (ht->buckets[i].hash != R_HASH_TABLE_EMPTY)
+        ht->keynotify (ht->buckets[i].key);
     }
   }
 
@@ -145,20 +147,24 @@ static void
 r_hash_table_resize (RHashTable * ht, ruint8 allocidx)
 {
   RHashTableBucket * buckets = ht->buckets;
-  rsize i, oldsize = R_HASH_TABLE_ALLOC_IDX_TO_SIZE (ht->allocidx);
+  rsize i, size;
 
+  size = R_HASH_TABLE_ALLOC_IDX_TO_SIZE (allocidx);
+  ht->buckets = r_mem_new_n (RHashTableBucket, size);
+  for (i = 0; i < size; i++)
+    ht->buckets[i].hash = R_HASH_TABLE_EMPTY;
+
+  size = R_HASH_TABLE_ALLOC_IDX_TO_SIZE (ht->allocidx);
   ht->allocidx = allocidx;
-  ht->buckets = r_mem_new0_n (RHashTableBucket,
-      R_HASH_TABLE_ALLOC_IDX_TO_SIZE (ht->allocidx));
 
-  for (i = 0; i < oldsize; i++) {
+  for (i = 0; i < size; i++) {
     rsize idx, step = 0;
 
-    if (buckets[i].hash == 0)
+    if (buckets[i].hash == R_HASH_TABLE_EMPTY)
       continue;
 
     idx = buckets[i].hash % g__r_hash_table_primes[ht->allocidx];
-    while (ht->buckets[idx].hash != 0) {
+    while (ht->buckets[idx].hash != R_HASH_TABLE_EMPTY) {
       idx += ++step;
       idx &= (R_HASH_TABLE_ALLOC_IDX_TO_SIZE (ht->allocidx) - 1);
     }
@@ -176,12 +182,15 @@ r_hash_table_new_full (RHashFunc hash, REqualFunc equal,
   RHashTable * ret;
 
   if ((ret = r_mem_new (RHashTable)) != NULL) {
+    rsize i, size;
     r_ref_init (ret, r_hash_table_free);
 
     ret->size = 0;
     ret->allocidx = 0;
-    ret->buckets = r_mem_new0_n (RHashTableBucket,
-        R_HASH_TABLE_ALLOC_IDX_TO_SIZE (ret->allocidx));
+    size = R_HASH_TABLE_ALLOC_IDX_TO_SIZE (ret->allocidx);
+    ret->buckets = r_mem_new_n (RHashTableBucket, size);
+    for (i = 0; i < size; i++)
+      ret->buckets[i].hash = R_HASH_TABLE_EMPTY;
     ret->hashfunc = hash != NULL ? hash : r_direct_hash;
     ret->equalfunc = equal;
     ret->keynotify = keynotify;
@@ -207,7 +216,9 @@ static inline rsize
 r_hash_table_hash (RHashTable * ht, rconstpointer key)
 {
   rsize ret = ht->hashfunc (key);
-  return (ret != 0) ? ret : RSIZE_MAX;
+  if (R_UNLIKELY (ret == R_HASH_TABLE_EMPTY))
+    ret++;
+  return ret;
 }
 
 static rsize
@@ -218,7 +229,7 @@ r_hash_table_lookup_bucket (RHashTable * ht, rconstpointer key, rsize * hash)
   *hash = r_hash_table_hash (ht, key);
   idx = *hash % g__r_hash_table_primes[ht->allocidx];
 
-  while (ht->buckets[idx].hash != 0) {
+  while (ht->buckets[idx].hash != R_HASH_TABLE_EMPTY) {
     if (ht->buckets[idx].hash == *hash) {
       if ((ht->equalfunc == NULL && key == ht->buckets[idx].key) ||
           ht->equalfunc (key, ht->buckets[idx].key))
@@ -309,22 +320,22 @@ r_hash_table_remove_all (RHashTable * ht)
 
   if (ht->keynotify != NULL && ht->valuenotify != NULL) {
     for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash == 0) continue;
+      if (ht->buckets[i].hash == R_HASH_TABLE_EMPTY) continue;
       ht->keynotify (ht->buckets[i].key);
       ht->valuenotify (ht->buckets[i].val);
-      r_memclear (&ht->buckets[i], sizeof (RHashTableBucket));
+      ht->buckets[i].hash = R_HASH_TABLE_EMPTY;
     }
   } else if (ht->valuenotify != NULL) {
     for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash == 0) continue;
+      if (ht->buckets[i].hash == R_HASH_TABLE_EMPTY) continue;
       ht->valuenotify (ht->buckets[i].val);
-      r_memclear (&ht->buckets[i], sizeof (RHashTableBucket));
+      ht->buckets[i].hash = R_HASH_TABLE_EMPTY;
     }
   } else if (ht->keynotify != NULL) {
     for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash == 0) continue;
+      if (ht->buckets[i].hash == R_HASH_TABLE_EMPTY) continue;
       ht->keynotify (ht->buckets[i].key);
-      r_memclear (&ht->buckets[i], sizeof (RHashTableBucket));
+      ht->buckets[i].hash = R_HASH_TABLE_EMPTY;
     }
   }
 
@@ -346,7 +357,7 @@ r_hash_table_remove (RHashTable * ht, rconstpointer key)
     ht->keynotify (ht->buckets[idx].key);
   if (ht->valuenotify != NULL)
     ht->valuenotify (ht->buckets[idx].val);
-  r_memclear (&ht->buckets[idx], sizeof (RHashTableBucket));
+  ht->buckets[idx].hash = R_HASH_TABLE_EMPTY;
 
   ht->size--;
   return R_HASH_TABLE_OK;
@@ -377,7 +388,7 @@ r_hash_table_remove_full (RHashTable * ht, rconstpointer key,
     ht->keynotify (ht->buckets[idx].key);
   if (ht->valuenotify != NULL)
     ht->valuenotify (ht->buckets[idx].val);
-  r_memclear (&ht->buckets[idx], sizeof (RHashTableBucket));
+  ht->buckets[idx].hash = R_HASH_TABLE_EMPTY;
 
   ht->size--;
   return R_HASH_TABLE_OK;
@@ -404,7 +415,7 @@ r_hash_table_steal (RHashTable * ht, rconstpointer key,
     *keyout = ht->buckets[idx].key;
   if (valueout != NULL)
     *valueout = ht->buckets[idx].val;
-  r_memclear (&ht->buckets[idx], sizeof (RHashTableBucket));
+  ht->buckets[idx].hash = R_HASH_TABLE_EMPTY;
 
   ht->size--;
   return R_HASH_TABLE_OK;
@@ -420,7 +431,7 @@ r_hash_table_foreach (RHashTable * ht, RKeyValueFunc func, rpointer user)
 
   c = R_HASH_TABLE_ALLOC_IDX_TO_SIZE (ht->allocidx);
   for (i = 0; i < c; i++) {
-    if (ht->buckets[i].hash != 0)
+    if (ht->buckets[i].hash != R_HASH_TABLE_EMPTY)
       func (ht->buckets[i].key, ht->buckets[i].val, user);
   }
 
