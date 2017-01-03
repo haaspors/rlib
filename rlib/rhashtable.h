@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/rhashfuncs.h>
 #include <rlib/rref.h>
 
 R_BEGIN_DECLS
@@ -65,13 +66,6 @@ R_API RHashTableError r_hash_table_steal (RHashTable * ht, rconstpointer key,
     rpointer * keyout, rpointer * valueout);
 
 R_API RHashTableError r_hash_table_foreach (RHashTable * ht, RKeyValueFunc func, rpointer user);
-
-
-/* hash and equal functions */
-R_API rsize r_direct_hash (rconstpointer data);
-R_API rboolean r_direct_equal (rconstpointer a, rconstpointer b);
-R_API rsize r_str_hash (rconstpointer data);
-R_API rboolean r_str_equal (rconstpointer a, rconstpointer b);
 
 R_END_DECLS
 

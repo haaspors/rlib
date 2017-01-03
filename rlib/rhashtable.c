@@ -19,9 +19,9 @@
 #include "config.h"
 
 #include <rlib/rhashtable.h>
+#include <rlib/rhash-private.h>
 
 #include <rlib/rmem.h>
-#include <rlib/rstr.h>
 
 #define R_HASH_TABLE_EMPTY                          RSIZE_MAX
 #define R_HASH_TABLE_ALLOC_IDX_TO_SIZE(idx)         ((rsize)1 << (idx + 3))
@@ -46,8 +46,8 @@ struct _RHashTable {
   RDestroyNotify valuenotify;
 };
 
-static const rsize g__r_hash_table_primes[] = {
-                                        5,
+const rsize r_hash_size_primes[RLIB_SIZEOF_SIZE_T * 8 - 2] = {
+                                        7,
                                        11,
                                        23,
                                        47,
@@ -163,7 +163,7 @@ r_hash_table_resize (RHashTable * ht, ruint8 allocidx)
     if (buckets[i].hash == R_HASH_TABLE_EMPTY)
       continue;
 
-    idx = buckets[i].hash % g__r_hash_table_primes[ht->allocidx];
+    idx = buckets[i].hash % r_hash_size_primes[ht->allocidx];
     while (ht->buckets[idx].hash != R_HASH_TABLE_EMPTY) {
       idx += ++step;
       idx &= (R_HASH_TABLE_ALLOC_IDX_TO_SIZE (ht->allocidx) - 1);
@@ -227,7 +227,7 @@ r_hash_table_lookup_bucket (RHashTable * ht, rconstpointer key, rsize * hash)
   rsize idx, step = 0;
 
   *hash = r_hash_table_hash (ht, key);
-  idx = *hash % g__r_hash_table_primes[ht->allocidx];
+  idx = *hash % r_hash_size_primes[ht->allocidx];
 
   while (ht->buckets[idx].hash != R_HASH_TABLE_EMPTY) {
     if (ht->buckets[idx].hash == *hash) {
@@ -436,42 +436,5 @@ r_hash_table_foreach (RHashTable * ht, RKeyValueFunc func, rpointer user)
   }
 
   return R_HASH_TABLE_OK;
-}
-
-
-
-rsize
-r_direct_hash (rconstpointer data)
-{
-  return RPOINTER_TO_SIZE (data);
-}
-
-rboolean
-r_direct_equal (rconstpointer a, rconstpointer b)
-{
-  return *((const rsize *) a) == *((const rsize *) b);
-}
-
-
-/*
- * Based upon the commonly used algorithm posted
- * by Daniel Bernstein to comp.lang.c mailinglist.
- */
-rsize
-r_str_hash (rconstpointer data)
-{
-  const signed char * p;
-  rsize ret = 5381;
-
-  for (p = data; *p != 0; p++)
-    ret = (ret << 5) + ret + *p;
-
-  return ret;
-}
-
-rboolean
-r_str_equal (rconstpointer a, rconstpointer b)
-{
-  return r_str_equals (a, b);
 }
 
