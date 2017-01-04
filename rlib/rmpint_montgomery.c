@@ -17,8 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/rmpint.h>
-#include "rmpint_private.h"
+#include "rmpint-private.h"
 
 rboolean
 r_mpint_montgomery_setup (rmpint_digit * mp, const rmpint * m)

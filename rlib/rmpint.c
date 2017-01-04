@@ -17,7 +17,8 @@
  */
 
 #include "config.h"
-#include "rmpint_private.h"
+#include "rmpint-private.h"
+
 #include <rlib/rascii.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
