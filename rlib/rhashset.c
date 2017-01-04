@@ -17,9 +17,9 @@
  */
 
 #include "config.h"
+#include "rhash-private.h"
 
 #include <rlib/rhashset.h>
-#include <rlib/rhash-private.h>
 
 #include <rlib/rmem.h>
 

@@ -17,9 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/crypto/rcert.h>
-
-#include <rlib/crypto/rcrypto-private.h>
+#include "rcrypto-private.h"
 
 void
 r_crypto_cert_destroy (RCryptoCert * cert)

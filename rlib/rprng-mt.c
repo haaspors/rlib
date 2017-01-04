@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/rprng-private.h>
+#include "rprng-private.h"
 
 /* mt19937 - 64bit version */
 

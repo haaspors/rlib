@@ -17,8 +17,9 @@
  */
 
 #include "config.h"
+#include "rcrypto-private.h"
+
 #include <rlib/crypto/rdsa.h>
-#include <rlib/crypto/rcrypto-private.h>
 
 #include <rlib/rmem.h>
 

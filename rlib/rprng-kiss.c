@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/rprng-private.h>
+#include "rprng-private.h"
 
 #define R_PRNG_KISS_X(prng) (prng)->data.u64[0]
 #define R_PRNG_KISS_Y(prng) (prng)->data.u64[1]

@@ -17,7 +17,8 @@
  */
 
 #include "config.h"
-#include <rlib/rprng-private.h>
+#include "rprng-private.h"
+
 #include <rlib/rmem.h>
 #include <rlib/rtime.h>
 #ifdef R_OS_WIN32

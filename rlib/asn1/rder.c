@@ -17,7 +17,8 @@
  */
 
 #include "config.h"
-#include <rlib/asn1/rasn1-private.h>
+#include "rasn1-private.h"
+
 #include <rlib/rmem.h>
 
 static RAsn1DecoderStatus

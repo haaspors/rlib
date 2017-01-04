@@ -17,8 +17,9 @@
  */
 
 #include "config.h"
+#include "rcrypto-private.h"
+
 #include <rlib/crypto/recc.h>
-#include <rlib/crypto/rcrypto-private.h>
 
 #include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>

@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/crypto/rcrypto-private.h>
+#include "rcrypto-private.h"
 
 #include <rlib/crypto/rsrtpciphersuite.h>
 
