@@ -37,7 +37,7 @@ R_API_HIDDEN rboolean r_mpint_sub_unsigned (rmpint * dst,
     const rmpint * a, const rmpint * b);
 
 #define RMPINT_N_PRIMES       256
-R_API_HIDDEN const rmpint_digit r_mpint_primes[RMPINT_N_PRIMES];
+R_API_HIDDEN extern const rmpint_digit r_mpint_primes[RMPINT_N_PRIMES];
 R_API_HIDDEN RMpintPrimeTest r_mpint_prime_miller_rabin (const rmpint * n, const rmpint * a);
 R_API_HIDDEN RMpintPrimeTest r_mpint_prime_miller_rabin_full (const rmpint * n, RPrng * prng);
 
