@@ -37,6 +37,7 @@
 #include <rlib/rfs.h>
 #include <rlib/rhash.h>
 #include <rlib/rhashfuncs.h>
+#include <rlib/rhashset.h>
 #include <rlib/rhashtable.h>
 #include <rlib/rhzrptr.h>
 #include <rlib/rlist.h>

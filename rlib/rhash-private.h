@@ -24,6 +24,8 @@
 
 #include <rlib/rtypes.h>
 
+#define R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE(idx)     ((rsize)1 << (idx + 3))
+
 R_BEGIN_DECLS
 
 R_API_HIDDEN extern const rsize r_hash_size_primes[RLIB_SIZEOF_SIZE_T * 8 - 2];

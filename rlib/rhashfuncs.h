@@ -24,6 +24,8 @@
 
 #include <rlib/rtypes.h>
 
+#define R_HASH_EMPTY                            RSIZE_MAX
+
 R_BEGIN_DECLS
 
 R_API rsize r_direct_hash (rconstpointer data);
