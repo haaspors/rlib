@@ -363,3 +363,30 @@ r_rtp_buffer_set_timestamp (RRTPBuffer * rtp, ruint32 ts)
   hdr->timestamp = RUINT32_TO_BE (ts);
 }
 
+ruint64
+r_rtp_estimate_seq_idx (ruint16 seq, ruint64 curidx)
+{
+  if (curidx > R_RTP_SEQ_MEDIAN) {
+    const ruint32 curroc = (ruint32)(curidx >> 16);
+    const ruint16 curseq = (ruint16)(curidx);
+
+    if (curseq < R_RTP_SEQ_MEDIAN) {
+      if (curseq + R_RTP_SEQ_MEDIAN < seq)
+        return (((ruint64)curroc - 1) << 16) | seq;
+    } else {
+      if (curseq - R_RTP_SEQ_MEDIAN > seq)
+        return (((ruint64)curroc + 1) << 16) | seq;
+    }
+
+    return (((ruint64)curroc) << 16) | seq;
+  } else {
+    return (ruint64)seq;
+  }
+}
+
+ruint64
+r_rtp_buffer_estimate_seq_idx (RRTPBuffer * rtp, ruint64 curidx)
+{
+  return r_rtp_estimate_seq_idx (r_rtp_buffer_get_seq (rtp), curidx);
+}
+

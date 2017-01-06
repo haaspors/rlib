@@ -31,6 +31,8 @@ R_BEGIN_DECLS
 
 #define R_RTP_VERSION                 0x02
 #define R_RTP_HDR_SIZE                12
+#define R_RTP_SEQ_MEDIAN              0x8000
+
 
 /* http://www.iana.org/assignments/rtp-parameters/rtp-parameters.xhtml#rtp-parameters-1 */
 typedef enum {
@@ -131,6 +133,10 @@ R_API void r_rtp_buffer_set_timestamp (RRTPBuffer * rtp, ruint32 ts);
 /* TODO: padding */
 /* TODO: extension */
 /* TODO: csrc */
+
+
+R_API ruint64 r_rtp_estimate_seq_idx (ruint16 seq, ruint64 curidx);
+R_API ruint64 r_rtp_buffer_estimate_seq_idx (RRTPBuffer * rtp, ruint64 curidx);
 
 R_END_DECLS
 

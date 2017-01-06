@@ -138,3 +138,36 @@ RTEST (rrtp, write_plain_hdr_pcmu_payload, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtp, estimate_seq_idx, RTEST_FAST)
+{
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (0, 0), ==, 0);
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (R_RTP_SEQ_MEDIAN, 0), ==, R_RTP_SEQ_MEDIAN);
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (RUINT16_MAX, 0), ==, RUINT16_MAX);
+
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (0, R_RTP_SEQ_MEDIAN), ==, 0);
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (0, R_RTP_SEQ_MEDIAN + 1), ==, 0x10000);
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (0, RUINT16_MAX), ==, 0x10000);
+
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (RUINT16_MAX, RUINT16_MAX), ==, RUINT16_MAX);
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (RUINT16_MAX, RUINT16_MAX + 1), ==, RUINT16_MAX);
+
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (100, (10 << 16) |  99), ==, (10 << 16) | 100);
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (100, (10 << 16) | 100), ==, (10 << 16) | 100);
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (100, (10 << 16) | 101), ==, (10 << 16) | 100);
+
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (R_RTP_SEQ_MEDIAN,
+        (10 << 16) | 100), ==, (10 << 16) | R_RTP_SEQ_MEDIAN);
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (R_RTP_SEQ_MEDIAN + 1,
+        (10 << 16) | 100), ==, (10 << 16) | (R_RTP_SEQ_MEDIAN + 1));
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (R_RTP_SEQ_MEDIAN + 200,
+        (10 << 16) | 100), ==, ( 9 << 16) | (R_RTP_SEQ_MEDIAN + 200));
+
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (R_RTP_SEQ_MEDIAN + 100,
+        (10 << 16) | (R_RTP_SEQ_MEDIAN + 100)), ==, (10 << 16) | (R_RTP_SEQ_MEDIAN + 100));
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (RUINT16_MAX,
+        (10 << 16) | (R_RTP_SEQ_MEDIAN + 100)), ==, (10 << 16) | RUINT16_MAX);
+  r_assert_cmpuint (r_rtp_estimate_seq_idx (99,
+        (10 << 16) | (R_RTP_SEQ_MEDIAN + 100)), ==, (11 << 16) | 99);
+}
+RTEST_END;
+
