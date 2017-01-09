@@ -60,8 +60,11 @@ typedef struct {
   rsize saltbits;
 
   RHashType auth;
+  rsize authprefixlen;
   rsize srtp_tagbits;
   rsize srtcp_tagbits;
+
+  const RCryptoCipherInfo * kdprf;
 } RSRTPCipherSuiteInfo;
 
 R_API rboolean r_srtp_cipher_suite_is_supported (RSRTPCipherSuite suite);

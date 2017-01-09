@@ -26,18 +26,23 @@
 /* This list should be sorted on preference! */
 static const RSRTPCipherSuiteInfo g__r_srtp_cipher_suites[] = {
   { R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, "SRTP-AES-128-CM-HMAC-SHA1-80",
-    &g__r_crypto_cipher_aes_128_ctr, 112, R_HASH_TYPE_SHA1, 80, 80 },
+    &g__r_crypto_cipher_aes_128_ctr, 112, R_HASH_TYPE_SHA1, 0, 80, 80,
+    &g__r_crypto_cipher_aes_128_ctr },
   { R_SRTP_CS_AES_128_CM_HMAC_SHA1_32, "SRTP-AES-128-CM-HMAC-SHA1-32",
-    &g__r_crypto_cipher_aes_128_ctr, 112, R_HASH_TYPE_SHA1, 32, 80 },
+    &g__r_crypto_cipher_aes_128_ctr, 112, R_HASH_TYPE_SHA1, 0, 32, 80,
+    &g__r_crypto_cipher_aes_128_ctr },
 
   { R_SRTP_CS_NULL_HMAC_SHA1_80, "SRTP-NULL-HMAC-SHA1-80",
-    &g__r_crypto_null_cipher, 0, R_HASH_TYPE_SHA1, 80, 80 },
+    &g__r_crypto_null_cipher, 0, R_HASH_TYPE_SHA1, 0, 80, 80,
+    &g__r_crypto_cipher_aes_128_ctr },
   { R_SRTP_CS_NULL_HMAC_SHA1_32, "SRTP-NULL-HMAC-SHA1-32",
-    &g__r_crypto_null_cipher, 0, R_HASH_TYPE_SHA1, 32, 80 },
+    &g__r_crypto_null_cipher, 0, R_HASH_TYPE_SHA1, 0, 32, 80,
+    &g__r_crypto_cipher_aes_128_ctr },
 
   /* Should be the last in our list */
   { R_SRTP_CS_NULL_NULL, "SRTP-NULL-NULL",
-    &g__r_crypto_null_cipher, 0, R_HASH_TYPE_NONE, 0, 0 },
+    &g__r_crypto_null_cipher, 0, R_HASH_TYPE_NONE, 0, 0, 0,
+    &g__r_crypto_cipher_aes_128_ctr /* ?? */ },
 };
 
 rboolean
