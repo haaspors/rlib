@@ -547,6 +547,7 @@ r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
   const ruint8 * ptr;
   int i;
   rsize bsize = size;
+  ruint8 scratch[R_AES_BLOCK_BYTES];
 
   if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
   if (R_UNLIKELY (data == NULL)) return R_CRYPTO_CIPHER_INVAL;
@@ -557,9 +558,9 @@ r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
   bsize -= size;
 
   for (ptr = data; ptr < ((ruint8 *)data) + bsize; ptr += R_AES_BLOCK_BYTES, dst += R_AES_BLOCK_BYTES) {
-    r_cipher_aes_ecb_encrypt_block (cipher, dst, iv);
+    r_cipher_aes_ecb_encrypt_block (cipher, scratch, iv);
     for (i = 0; i < R_AES_BLOCK_BYTES; i++)
-      dst[i] ^= ptr[i];
+      dst[i] = scratch[i] ^ ptr[i];
     for (i = R_AES_BLOCK_BYTES; i > 0; i--) {
       if (++iv[i - 1] != 0)
         break;
@@ -567,8 +568,6 @@ r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
   }
 
   if (size > 0) {
-    ruint8 scratch[R_AES_BLOCK_BYTES];
-
     r_cipher_aes_ecb_encrypt_block (cipher, scratch, iv);
     for (i = 0; i < (int)size; i++)
       dst[i] = scratch[i] ^ ptr[i];
