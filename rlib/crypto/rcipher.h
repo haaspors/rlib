@@ -60,6 +60,7 @@ typedef enum {
 
 typedef enum {
   R_CRYPTO_CIPHER_OK = 0,
+  R_CRYPTO_CIPHER_OOM,
   R_CRYPTO_CIPHER_INVAL,
   R_CRYPTO_CIPHER_WRONG_BLOCK_SIZE,
 } RCryptoCipherResult;

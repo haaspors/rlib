@@ -36,6 +36,7 @@ R_INITIALIZER (rlib_init)
   r_ev_loop_init ();
   r_mem_allocator_init ();
   r_networking_init ();
+  r_srtp_init ();
   r_task_queue_init ();
   r_time_init ();
   r_thread_init ();

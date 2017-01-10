@@ -96,6 +96,7 @@
 #include <rlib/net/proto/rrtp.h>
 #include <rlib/net/proto/rstun.h>
 #include <rlib/net/proto/rtls.h>
+#include <rlib/net/rsrtp.h>
 #include <rlib/net/rtlsserver.h>
 
 #endif /* __R_LIB_H__ */

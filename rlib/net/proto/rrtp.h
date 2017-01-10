@@ -33,6 +33,11 @@ R_BEGIN_DECLS
 #define R_RTP_HDR_SIZE                12
 #define R_RTP_SEQ_MEDIAN              0x8000
 
+#define R_RTP_PT_FMT                  RUINT8_FMT
+#define R_RTP_SSRC_FMT                ".8"RINT32_MODIFIER"x"
+#define R_RTP_SEQ_FMT                 ".4"RINT16_MODIFIER"x"
+#define R_RTP_SEQIDX_FMT              ".12"RINT64_MODIFIER"x"
+
 
 /* http://www.iana.org/assignments/rtp-parameters/rtp-parameters.xhtml#rtp-parameters-1 */
 typedef enum {

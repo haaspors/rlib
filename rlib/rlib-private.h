@@ -37,6 +37,8 @@ R_API_HIDDEN void r_mem_allocator_deinit (void);
 R_API_HIDDEN void r_networking_init (void);
 R_API_HIDDEN void r_networking_deinit (void);
 
+R_API_HIDDEN void r_srtp_init (void);
+
 R_API_HIDDEN void r_task_queue_init (void);
 
 R_API_HIDDEN void r_test_init (void);
@@ -45,6 +47,7 @@ R_API_HIDDEN void r_thread_init (void);
 R_API_HIDDEN void r_thread_deinit (void);
 
 R_API_HIDDEN void r_time_init (void);
+
 R_API_HIDDEN void r_tls_server_init (void);
 
 R_API_HIDDEN R_LOG_CATEGORY_DEFINE_EXTERN (rlib_logcat);
