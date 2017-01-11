@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -39,6 +39,13 @@ R_BEGIN_DECLS
 #define R_RTP_SEQIDX_FMT              ".12"RINT64_MODIFIER"x"
 
 
+R_API rboolean r_rtp_is_valid_hdr (rconstpointer buf, rsize size);
+R_API rboolean r_rtcp_is_valid_hdr (rconstpointer buf, rsize size);
+
+
+/******************************************************************************/
+/* RTP                                                                        */
+/******************************************************************************/
 /* http://www.iana.org/assignments/rtp-parameters/rtp-parameters.xhtml#rtp-parameters-1 */
 typedef enum {
   R_RTP_PT_PCMU             =   0, /*  8000 (mono)    [RFC3551] */
@@ -72,31 +79,6 @@ typedef enum {
 
 #define R_RTP_PT_IS_DYNAMIC(pt)  ((pt) >= R_RTP_PT_DYNAMIC_FIRST && (pt) <= R_RTP_PT_DYNAMIC_LAST)
 
-/* http://www.iana.org/assignments/rtp-parameters/rtp-parameters.xhtml#rtp-parameters-4 */
-typedef enum {
-  /* Reserved 192 (Historic-FIR)  [RFC2032] */
-  /* Reserved 193 (Historic-NACK) [RFC2032] */
-  R_RTCP_PT_SMPTETC         = 194, /* SMPTE time-code mapping       [RFC5484] */
-  R_RTCP_PT_IJ              = 195, /* Extended inter-arrival jitter report [RFC5450] */
-  R_RTCP_PT_SR              = 200, /* sender report                 [RFC3550] */
-  R_RTCP_PT_RR              = 201, /* receiver report               [RFC3550] */
-  R_RTCP_PT_SDES            = 202, /* source description            [RFC3550] */
-  R_RTCP_PT_BYE             = 203, /* goodbye                       [RFC3550] */
-  R_RTCP_PT_APP             = 204, /* application-defined           [RFC3550] */
-  R_RTCP_PT_RTPFB           = 205, /* Generic RTP Feedback          [RFC4585] */
-  R_RTCP_PT_PSFB            = 206, /* payload-specific              [RFC4585] */
-  R_RTCP_PT_XR              = 207, /* extended report               [RFC3611] */
-  R_RTCP_PT_AVB             = 208, /* AVB RTCP packet ["Standard for Layer 3 Transport Protocol for Time Sensitive Applications in Local Area Networks." Work in progress.] */
-  R_RTCP_PT_RSI             = 209, /* Receiver Summary Information  [RFC5760] */
-  R_RTCP_PT_TOKEN           = 210, /* Port Mapping                  [RFC6284] */
-  R_RTCP_PT_IDMS            = 211, /* DMS Settings                  [RFC7272] */
-  R_RTCP_PT_RGRS            = 212, /* eporting Group Reporting Sources [RFC-ietf-avtcore-rtp-multi-stream-optimisation-12] */
-  R_RTCP_PT_SNM             = 213, /* Splicing Notification Message [RFC-ietf-ietf-avtext-splicing-notification-09] */
-} RRTCPPacketType;
-
-R_API rboolean r_rtp_is_valid_hdr (rconstpointer buf, rsize size);
-R_API rboolean r_rtcp_is_valid_hdr (rconstpointer buf, rsize size);
-
 typedef struct {
   RBuffer * buffer;
 
@@ -110,6 +92,7 @@ typedef enum {
   R_RTP_BUFFER_MAP_FLAG_SKIP_PADDING  = (R_MEM_MAP_FLAG_LAST << 0),
   R_RTP_BUFFER_MAP_FLAG_LAST          = (R_MEM_MAP_FLAG_LAST << 8)
 } RRTPBufferMapFlags;
+
 
 R_API RBuffer * r_buffer_new_rtp_buffer (RBuffer * payload, ruint8 pad, ruint8 cc);
 R_API RBuffer * r_buffer_new_rtp_buffer_take (rpointer payload, rsize size, ruint8 pad, ruint8 cc);
@@ -142,6 +125,142 @@ R_API void r_rtp_buffer_set_timestamp (RRTPBuffer * rtp, ruint32 ts);
 
 R_API ruint64 r_rtp_estimate_seq_idx (ruint16 seq, ruint64 curidx);
 R_API ruint64 r_rtp_buffer_estimate_seq_idx (RRTPBuffer * rtp, ruint64 curidx);
+
+
+/******************************************************************************/
+/* RTCP                                                                       */
+/******************************************************************************/
+/* http://www.iana.org/assignments/rtp-parameters/rtp-parameters.xhtml#rtp-parameters-4 */
+typedef enum {
+  /* Reserved 192 (Historic-FIR)  [RFC2032] */
+  /* Reserved 193 (Historic-NACK) [RFC2032] */
+  R_RTCP_PT_SMPTETC         = 194, /* SMPTE time-code mapping       [RFC5484] */
+  R_RTCP_PT_IJ              = 195, /* Extended inter-arrival jitter report [RFC5450] */
+  R_RTCP_PT_SR              = 200, /* sender report                 [RFC3550] */
+  R_RTCP_PT_RR              = 201, /* receiver report               [RFC3550] */
+  R_RTCP_PT_SDES            = 202, /* source description            [RFC3550] */
+  R_RTCP_PT_BYE             = 203, /* goodbye                       [RFC3550] */
+  R_RTCP_PT_APP             = 204, /* application-defined           [RFC3550] */
+  R_RTCP_PT_RTPFB           = 205, /* Generic RTP Feedback          [RFC4585] */
+  R_RTCP_PT_PSFB            = 206, /* payload-specific              [RFC4585] */
+  R_RTCP_PT_XR              = 207, /* extended report               [RFC3611] */
+  R_RTCP_PT_AVB             = 208, /* AVB RTCP packet ["Standard for Layer 3 Transport Protocol for Time Sensitive Applications in Local Area Networks." Work in progress.] */
+  R_RTCP_PT_RSI             = 209, /* Receiver Summary Information  [RFC5760] */
+  R_RTCP_PT_TOKEN           = 210, /* Port Mapping                  [RFC6284] */
+  R_RTCP_PT_IDMS            = 211, /* DMS Settings                  [RFC7272] */
+  R_RTCP_PT_RGRS            = 212, /* eporting Group Reporting Sources [RFC-ietf-avtcore-rtp-multi-stream-optimisation-12] */
+  R_RTCP_PT_SNM             = 213, /* Splicing Notification Message [RFC-ietf-ietf-avtext-splicing-notification-09] */
+} RRTCPPacketType;
+
+typedef enum {
+  R_RTCP_SDES_ZERO     = 0x00,
+  R_RTCP_SDES_CNAME    = 0x01,
+  R_RTCP_SDES_NAME     = 0x02,
+  R_RTCP_SDES_EMAIL    = 0x03,
+  R_RTCP_SDES_PHONE    = 0x04,
+  R_RTCP_SDES_LOC      = 0x05,
+  R_RTCP_SDES_TOOL     = 0x06,
+  R_RTCP_SDES_NOTE     = 0x07,
+  R_RTCP_SDES_PRIV     = 0x08,
+  R_RTCP_SDES_MAX      = 0x09,
+  R_RTCP_SDES_UNKNOWN  = 0xff
+} RRTCPSDESType;
+
+typedef enum {
+  R_RTCP_PARSE_ZERO = -1,
+  R_RTCP_PARSE_OK   =  0,
+  R_RTCP_PARSE_INVAL,
+  R_RTCP_PARSE_WRONG_PT,
+  R_RTCP_PARSE_OVERFLOW,
+  R_RTCP_PARSE_UNEXPECTED,
+  R_RTCP_PARSE_BUF_TOO_SMALL,
+} RRTCPParseResult;
+
+
+typedef struct {
+  RBuffer * buffer;
+  RMemMapInfo info;
+} RRTCPBuffer;
+#define R_RTCP_BUFFER_INIT   { NULL, R_MEM_MAP_INFO_INIT }
+
+typedef struct _RRTCPPacket RRTCPPacket;
+typedef struct _RRTCPSDESChunk RRTCPSDESChunk;
+
+typedef struct {
+  ruint32 ssrc;
+  ruint32 rtptime;
+  ruint64 ntptime;
+  ruint32 packets;
+  ruint32 bytes;
+} RRTCPSenderInfo;
+
+typedef struct {
+  ruint32 ssrc;
+  ruint8 fractionlost;
+  rint32 packetslost;
+  ruint32 exthighestseq;
+  ruint32 jitter;
+  ruint32 lsr;
+  ruint32 dlsr;
+} RRTCPReportBlock;
+
+typedef struct {
+  RRTCPSDESType type;
+  ruint8 len;
+  ruint8 * data;
+} RRTCPSDESItem;
+#define R_RTCP_SDES_ITEM_INIT     { R_RTCP_SDES_UNKNOWN, 0, NULL }
+
+/* TODO: Add construction/writing of RTCP buffers and packets */
+
+R_API rboolean r_rtcp_buffer_map (RRTCPBuffer * rtcp, RBuffer * buf, RMemMapFlags flags);
+R_API rboolean r_rtcp_buffer_unmap (RRTCPBuffer * rtcp, RBuffer * buf);
+
+R_API ruint r_rtcp_buffer_get_packet_count (const RRTCPBuffer * rtcp);
+#define r_rtcp_buffer_get_first_packet(rtcp) r_rtcp_buffer_get_next_packet (rtcp, NULL)
+R_API RRTCPPacket * r_rtcp_buffer_get_next_packet (RRTCPBuffer * rtcp, const RRTCPPacket * packet);
+
+/* Packet header */
+R_API rboolean r_rtcp_packet_has_padding (const RRTCPPacket * packet);
+R_API ruint8 r_rtcp_packet_get_count (const RRTCPPacket * packet);
+R_API RRTCPPacketType r_rtcp_packet_get_type (const RRTCPPacket * packet);
+R_API ruint r_rtcp_packet_get_length (const RRTCPPacket * packet);
+
+/* Sender Report (SR) */
+R_API rboolean r_rtcp_packet_sr_get_sender_info (const RRTCPPacket * packet,
+    RRTCPSenderInfo * srinfo);
+#define r_rtcp_packet_sr_get_rb_count       r_rtcp_packet_get_count
+R_API rboolean r_rtcp_packet_sr_get_report_block (const RRTCPPacket * packet,
+    ruint8 idx, RRTCPReportBlock * rb);
+
+/* Receiver Report (RR) */
+R_API ruint32 r_rtcp_packet_rr_get_ssrc (const RRTCPPacket * packet);
+#define r_rtcp_packet_rr_get_rb_count       r_rtcp_packet_get_count
+#define r_rtcp_packet_rr_get_report_block   r_rtcp_packet_sr_get_report_block
+
+/* Source Description (SDES) */
+#define r_rtcp_packet_sdes_get_chunk_count  r_rtcp_packet_get_count
+#define r_rtcp_packet_sdes_get_first_chunk(packet) r_rtcp_packet_sdes_get_next_chunk (packet, NULL)
+R_API RRTCPSDESChunk * r_rtcp_packet_sdes_get_next_chunk (RRTCPPacket * packet,
+    RRTCPSDESChunk * chunk);
+R_API ruint32 r_rtcp_packet_sdes_chunk_get_ssrc (const RRTCPPacket * packet,
+    const RRTCPSDESChunk * chunk);
+R_API RRTCPParseResult r_rtcp_packet_sdes_chunk_get_next_item (const RRTCPPacket * packet,
+    RRTCPSDESChunk * chunk, RRTCPSDESItem * item);
+
+/* BYE */
+#define r_rtcp_packet_bye_get_ssrc_count  r_rtcp_packet_get_count
+R_API ruint32 r_rtcp_packet_bye_get_ssrc (const RRTCPPacket * packet, ruint8 idx);
+R_API RRTCPParseResult r_rtcp_packet_bye_get_reason (const RRTCPPacket * packet,
+    rchar * reason, rsize len, ruint8 * out);
+
+/* APP */
+#define r_rtcp_packet_app_get_subtype     r_rtcp_packet_get_count
+R_API ruint32 r_rtcp_packet_app_get_ssrc (const RRTCPPacket * packet);
+R_API const rchar * r_rtcp_packet_app_get_name (const RRTCPPacket * packet);
+R_API const ruint8 * r_rtcp_packet_app_get_data (const RRTCPPacket * packet, ruint16 * size);
+
+/* TODO: Feedback */
 
 R_END_DECLS
 

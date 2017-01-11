@@ -26,20 +26,18 @@ static const ruint8 pkt_rtcp_sr_sdes[] = {
   0x6e, 0x6e, 0x65, 0x6c, 0x00, 0x00, 0x00, 0x00
 };
 
+static const ruint8 pkt_rtcp_rr_bye[] = {
+  0x81, 0xc9, 0x00, 0x07, 0x16, 0x6a, 0xe2, 0x87, 0x87, 0x54, 0x14, 0xdb, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x16, 0x4c, 0x00, 0x00, 0x02, 0x02, 0xb9, 0x41, 0x7d, 0x6a, 0x00, 0x05, 0xbc, 0x26,
+  0x81, 0xcb, 0x00, 0x01, 0x16, 0x6a, 0xe2, 0x87
+};
+
 
 RTEST (rrtp, is_valid_hdr, RTEST_FAST)
 {
   r_assert (!r_rtp_is_valid_hdr (pkt_stun, sizeof (pkt_stun)));
   r_assert (r_rtp_is_valid_hdr (pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu)));
   r_assert (!r_rtp_is_valid_hdr (pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes)));
-}
-RTEST_END;
-
-RTEST (rrtcp, is_valid_hdr, RTEST_FAST)
-{
-  r_assert (!r_rtcp_is_valid_hdr (pkt_stun, sizeof (pkt_stun)));
-  r_assert (!r_rtcp_is_valid_hdr (pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu)));
-  r_assert (r_rtcp_is_valid_hdr (pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes)));
 }
 RTEST_END;
 
@@ -168,6 +166,128 @@ RTEST (rrtp, estimate_seq_idx, RTEST_FAST)
         (10 << 16) | (R_RTP_SEQ_MEDIAN + 100)), ==, (10 << 16) | RUINT16_MAX);
   r_assert_cmpuint (r_rtp_estimate_seq_idx (99,
         (10 << 16) | (R_RTP_SEQ_MEDIAN + 100)), ==, (11 << 16) | 99);
+}
+RTEST_END;
+
+RTEST (rrtcp, is_valid_hdr, RTEST_FAST)
+{
+  r_assert (!r_rtcp_is_valid_hdr (pkt_stun, sizeof (pkt_stun)));
+  r_assert (!r_rtcp_is_valid_hdr (pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu)));
+  r_assert (r_rtcp_is_valid_hdr (pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes)));
+}
+RTEST_END;
+
+RTEST (rrtcp, sr_sdes_compound_packet, RTEST_FAST)
+{
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * packet;
+  RRTCPSenderInfo srinfo;
+  RRTCPReportBlock rb;
+  RRTCPSDESChunk * chunk;
+  RRTCPSDESItem item = R_RTCP_SDES_ITEM_INIT;
+
+  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes), sizeof (pkt_rtcp_sr_sdes),
+          0, NULL, NULL)), !=, NULL);
+
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 2);
+
+  r_assert_cmpptr ((packet = r_rtcp_buffer_get_first_packet (&rtcp)), !=, NULL);
+  r_assert (!r_rtcp_packet_has_padding (packet));
+  r_assert_cmpuint (r_rtcp_packet_get_count (packet), ==, 0);
+  r_assert_cmpint (r_rtcp_packet_get_type (packet), ==, R_RTCP_PT_SR);
+  r_assert_cmpuint (r_rtcp_packet_get_length (packet), ==, 28);
+
+  /* Sender report */
+  r_assert (r_rtcp_packet_sr_get_sender_info (packet, &srinfo));
+  r_assert_cmphex (srinfo.ssrc, ==, 0xf3cb2001);
+  r_assert_cmpuint (srinfo.ntptime, ==, RUINT64_CONSTANT (0x83ab03a1eb020b3a));
+  r_assert_cmpuint (srinfo.rtptime, ==, 0x9420);
+  r_assert_cmpuint (srinfo.packets, ==, 0x9e);
+  r_assert_cmpuint (srinfo.bytes, ==, 0x9b88);
+
+  r_assert (!r_rtcp_packet_sr_get_report_block (packet, 0, &rb));
+
+  /* SDES */
+  r_assert_cmpptr ((packet = r_rtcp_buffer_get_next_packet (&rtcp, packet)), !=, NULL);
+  r_assert (!r_rtcp_packet_has_padding (packet));
+  r_assert_cmpuint (r_rtcp_packet_get_count (packet), ==, 1);
+  r_assert_cmpint (r_rtcp_packet_get_type (packet), ==, R_RTCP_PT_SDES);
+  r_assert_cmpuint (r_rtcp_packet_get_length (packet), ==, 24);
+
+  r_assert_cmpptr ((chunk = r_rtcp_packet_sdes_get_first_chunk (packet)), !=, NULL);
+  r_assert_cmphex (r_rtcp_packet_sdes_chunk_get_ssrc (packet, chunk), ==, 0xf3cb2001);
+  r_assert_cmpint (r_rtcp_packet_sdes_chunk_get_next_item (packet, chunk, &item), ==, R_RTCP_PARSE_OK);
+  r_assert_cmphex (item.type, ==, R_RTCP_SDES_CNAME);
+  r_assert_cmpuint (item.len, ==, 10);
+  r_assert_cmpmem (item.data, ==, "outChannel", item.len);
+
+  r_assert_cmpint (r_rtcp_packet_sdes_chunk_get_next_item (packet, chunk, &item), ==, R_RTCP_PARSE_ZERO);
+  r_assert_cmpptr (r_rtcp_packet_sdes_get_next_chunk (packet, chunk), ==, NULL);
+
+  r_assert_cmpptr ((packet = r_rtcp_buffer_get_next_packet (&rtcp, packet)), ==, NULL);
+
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtcp, rr_bye_compound_packet, RTEST_FAST)
+{
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * packet;
+  RRTCPReportBlock rb;
+  rchar reason[255];
+  ruint8 rlen;
+
+  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)pkt_rtcp_rr_bye, sizeof (pkt_rtcp_rr_bye), sizeof (pkt_rtcp_rr_bye),
+          0, NULL, NULL)), !=, NULL);
+
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 2);
+
+  /* Sender report */
+  r_assert_cmpptr ((packet = r_rtcp_buffer_get_first_packet (&rtcp)), !=, NULL);
+  r_assert (!r_rtcp_packet_has_padding (packet));
+  r_assert_cmpuint (r_rtcp_packet_get_count (packet), ==, 1);
+  r_assert_cmpint (r_rtcp_packet_get_type (packet), ==, R_RTCP_PT_RR);
+  r_assert_cmpuint (r_rtcp_packet_get_length (packet), ==, 32);
+
+  r_assert_cmphex (r_rtcp_packet_rr_get_ssrc (packet), ==, 0x166ae287);
+  r_assert (r_rtcp_packet_sr_get_report_block (packet, 0, &rb));
+  r_assert_cmphex (rb.ssrc, ==, 0x875414db);
+  r_assert_cmpuint (rb.fractionlost, ==, 0);
+  r_assert_cmpint (rb.packetslost, ==, 0);
+  r_assert_cmpuint (rb.exthighestseq, ==, 5708);
+  r_assert_cmpuint (rb.jitter, ==, 514);
+  r_assert_cmpuint (rb.lsr, ==, 3108076906);
+  r_assert_cmpuint (rb.dlsr, ==, 375846);
+
+  r_assert (!r_rtcp_packet_sr_get_report_block (packet, 1, &rb));
+
+  /* Bye */
+  r_assert_cmpptr ((packet = r_rtcp_buffer_get_next_packet (&rtcp, packet)), !=, NULL);
+  r_assert (!r_rtcp_packet_has_padding (packet));
+  r_assert_cmpuint (r_rtcp_packet_get_count (packet), ==, 1);
+  r_assert_cmpint (r_rtcp_packet_get_type (packet), ==, R_RTCP_PT_BYE);
+  r_assert_cmpuint (r_rtcp_packet_get_length (packet), ==, 8);
+
+  r_assert_cmphex (r_rtcp_packet_bye_get_ssrc (packet, 0), ==, 0x166ae287);
+  r_assert_cmphex (r_rtcp_packet_bye_get_ssrc (packet, 1), ==, 0x0);
+  r_assert_cmpint (r_rtcp_packet_bye_get_reason (packet,
+        reason, sizeof (reason), &rlen), ==, R_RTCP_PARSE_ZERO);
+  r_assert_cmpuint (rlen, ==, 0);
+
+  r_assert_cmpptr ((packet = r_rtcp_buffer_get_next_packet (&rtcp, packet)), ==, NULL);
+
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
 }
 RTEST_END;
 

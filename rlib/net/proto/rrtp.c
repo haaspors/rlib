@@ -19,9 +19,6 @@
 #include "config.h"
 #include <rlib/net/proto/rrtp.h>
 
-#define R_RTCP_MINSIZE                (2 * sizeof (ruint32))
-#define R_RTCP_VERSION_MASK            0xc0
-
 typedef struct {
 #if R_BYTE_ORDER == R_LITTLE_ENDIAN
   ruint cc:4; /* CSRC count */
@@ -76,24 +73,6 @@ r_rtp_is_valid_hdr (rconstpointer buf, rsize size)
 
   /* Padding */
   /* skip checking for last octet as this might be encrypted */
-
-  return size >= minsize;
-}
-
-rboolean
-r_rtcp_is_valid_hdr (rconstpointer buf, rsize size)
-{
-  const ruint8 * p = buf;
-  rsize minsize = R_RTCP_MINSIZE;
-
-  if (R_UNLIKELY (buf == NULL)) return FALSE;
-  if (R_UNLIKELY (size < minsize)) return FALSE;
-  if (R_UNLIKELY (((p[0] & R_RTCP_VERSION_MASK) >> 6) != R_RTP_VERSION)) return FALSE;
-  if (R_UNLIKELY ((p[1] & 0x80) == 0)) return FALSE;
-
-  /* SKIP SR/RR check to support reduced size RTCP */
-  /* SKIP padding bit check if first packet of compound packet */
-  minsize = (RUINT16_FROM_BE (*(const ruint16 *)&p[2]) + 1) * sizeof (ruint32);
 
   return size >= minsize;
 }
