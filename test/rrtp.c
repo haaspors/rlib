@@ -32,6 +32,17 @@ static const ruint8 pkt_rtcp_rr_bye[] = {
   0x81, 0xcb, 0x00, 0x01, 0x16, 0x6a, 0xe2, 0x87
 };
 
+static const ruint8 pkt_rtp_opus[] = {
+  0x90, 0x6f, 0x3d, 0x82, 0x76, 0x95, 0x0f, 0x20, 0xcf, 0xe9, 0x0c, 0xfe, 0xbe, 0xde, 0x00, 0x02,
+  0x32, 0x64, 0x9f, 0xf9, 0x10, 0x97, 0x00, 0x00, 0xaa, 0x59, 0x08, 0xeb, 0x1b, 0xcd, 0xc4, 0xeb,
+  0xec, 0x72, 0x2d, 0xd9, 0x37, 0xd5, 0x92, 0x86, 0x4e, 0xd7, 0x8d, 0x6f, 0xed, 0xbf, 0x42, 0x67,
+  0xfc, 0x12, 0xfb, 0x0f, 0x2a, 0xb5, 0xad, 0xb2, 0xcb, 0x32, 0x4a, 0x49, 0x63, 0x3c, 0x19, 0x4c,
+  0xe3, 0x18, 0xe1, 0x53, 0xc0, 0x70, 0x4d, 0x84, 0x3c, 0x36, 0xfa, 0xfe, 0xf8, 0x93, 0x5c, 0x78,
+  0x0e, 0x73, 0xcf, 0x9d, 0x4b, 0x9e, 0x42, 0x17, 0x89, 0xba, 0x18, 0xaa, 0xbb, 0xbb, 0x15, 0x33,
+  0x6a, 0x2d, 0xd6, 0x86, 0x0b, 0x21, 0xf5, 0x63, 0x17, 0x17, 0xef, 0x8e, 0x83, 0x13, 0x04, 0xe6,
+  0x8d, 0xd2, 0xcd, 0x56, 0x46, 0x95, 0xa1, 0x50, 0xf2, 0xda, 0x90, 0x36, 0x89, 0xc8
+};
+
 
 RTEST (rrtp, is_valid_hdr, RTEST_FAST)
 {
@@ -93,6 +104,7 @@ RTEST (rrtp, read_plain_hdr_pcmu_payload, RTEST_FAST)
   r_assert_cmpuint (rtp.ext.data, ==, NULL);
   r_assert_cmpuint (rtp.pay.size, ==, 160);
   r_assert_cmpmem (rtp.pay.data, ==, &pkt_rtp_pcmu[R_RTP_HDR_SIZE], rtp.pay.size);
+  r_assert_cmpuint (rtp.hdr.size + rtp.ext.size + rtp.pay.size, ==, sizeof (pkt_rtp_pcmu));
 
   r_assert (!r_rtp_buffer_has_padding (&rtp));
   r_assert (!r_rtp_buffer_has_extension (&rtp));
@@ -132,6 +144,38 @@ RTEST (rrtp, write_plain_hdr_pcmu_payload, RTEST_FAST)
 
   r_assert_cmpuint (r_buffer_get_size (buf), ==, sizeof (pkt_rtp_pcmu));
   r_assert_cmpint (r_buffer_memcmp (buf, 0, pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu)), ==, 0);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtp, read_ext_hdr_opus_payload, RTEST_FAST)
+{
+  RBuffer * buf;
+  RRTPBuffer rtp = R_RTP_BUFFER_INIT;
+
+  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)pkt_rtp_opus, sizeof (pkt_rtp_opus), sizeof (pkt_rtp_opus),
+          0, NULL, NULL)), !=, NULL);
+
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (rtp.hdr.size, ==, R_RTP_HDR_SIZE);
+  r_assert_cmpuint (rtp.ext.size, ==, 12);
+  r_assert_cmpmem (rtp.ext.data, ==, &pkt_rtp_opus[R_RTP_HDR_SIZE], rtp.ext.size);
+  r_assert_cmpuint (rtp.pay.size, ==, 102);
+  r_assert_cmpmem (rtp.pay.data, ==, &pkt_rtp_opus[R_RTP_HDR_SIZE + rtp.ext.size], rtp.ext.size);
+  r_assert_cmpuint (rtp.hdr.size + rtp.ext.size + rtp.pay.size, ==, sizeof (pkt_rtp_opus));
+
+  r_assert (!r_rtp_buffer_has_padding (&rtp));
+  r_assert (r_rtp_buffer_has_extension (&rtp));
+  r_assert (!r_rtp_buffer_has_marker (&rtp));
+
+  r_assert_cmpuint (r_rtp_buffer_get_csrc_count (&rtp), ==, 0);
+  r_assert_cmpuint (r_rtp_buffer_get_pt (&rtp), ==, 111);
+  r_assert_cmpuint (r_rtp_buffer_get_seq (&rtp), ==, 0x3d82);
+  r_assert_cmphex (r_rtp_buffer_get_ssrc (&rtp), ==, 0xcfe90cfe);
+  r_assert_cmpuint (r_rtp_buffer_get_timestamp (&rtp), ==, 0x76950f20);
+
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
   r_buffer_unref (buf);
 }
 RTEST_END;

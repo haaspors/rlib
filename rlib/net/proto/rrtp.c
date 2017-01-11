@@ -43,22 +43,20 @@ typedef struct {
   ruint32 csrclist[];    /* optional CSRC list, 32 bits each */
 } RRTPHdr;
 
+#define r_rtp_hdr_is_valid(hdr) \
+  (hdr->v == R_RTP_VERSION && (hdr->pt < 72 || hdr->pt > 76))
+
 rboolean
 r_rtp_is_valid_hdr (rconstpointer buf, rsize size)
 {
   const RRTPHdr * hdr;
   rsize minsize = R_RTP_HDR_SIZE;
 
-  if (R_UNLIKELY (buf == NULL)) return FALSE;
   if (R_UNLIKELY (size < minsize)) return FALSE;
-  hdr = buf;
+  if (R_UNLIKELY ((hdr = buf) == NULL)) return FALSE;
 
-  /* version check */
-  if (R_UNLIKELY (hdr->v != R_RTP_VERSION))
-    return FALSE;
-
-  /* check for reserved PT to avoid RTCP conflict */
-  if (R_UNLIKELY (hdr->pt >= 72 && hdr->pt <= 76))
+  /* version hdr */
+  if (R_UNLIKELY (!r_rtp_hdr_is_valid (hdr)))
     return FALSE;
 
   minsize += hdr->cc * sizeof (ruint32);
@@ -179,8 +177,8 @@ r_rtp_buffer_map (RRTPBuffer * rtp, RBuffer * buf, RMemMapFlags flags)
   if (R_UNLIKELY (rtp->buffer != NULL)) return FALSE;
 
   if ((ret = r_buffer_map_byte_range (buf, 0, R_RTP_HDR_SIZE, &rtp->hdr, flags))) {
-    if ((ret = r_rtp_is_valid_hdr (rtp->hdr.data, rtp->hdr.size))) {
-      const RRTPHdr * hdr = (const RRTPHdr *)rtp->hdr.data;
+    const RRTPHdr * hdr = (const RRTPHdr *)rtp->hdr.data;
+    if ((ret = r_rtp_hdr_is_valid (hdr))) {
       rsize size;
 
       if (hdr->cc > 0) {
