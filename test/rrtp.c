@@ -95,9 +95,7 @@ RTEST (rrtp, read_plain_hdr_pcmu_payload, RTEST_FAST)
   RBuffer * buf;
   RRTPBuffer rtp = R_RTP_BUFFER_INIT;
 
-  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
-          (rpointer)pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu), sizeof (pkt_rtp_pcmu),
-          0, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu))), !=, NULL);
 
   r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
   r_assert_cmpuint (rtp.hdr.size, ==, R_RTP_HDR_SIZE);
@@ -126,10 +124,8 @@ RTEST (rrtp, write_plain_hdr_pcmu_payload, RTEST_FAST)
   RBuffer * buf, * payload;
   RRTPBuffer rtp = R_RTP_BUFFER_INIT;
 
-  r_assert_cmpptr ((payload = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
-          (rpointer)pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu),
-          sizeof (pkt_rtp_pcmu) - R_RTP_HDR_SIZE, R_RTP_HDR_SIZE,
-          NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((payload = r_buffer_new_dup (
+          pkt_rtp_pcmu + R_RTP_HDR_SIZE, sizeof (pkt_rtp_pcmu) - R_RTP_HDR_SIZE)), !=, NULL);
 
   r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer (payload, 0, 0)), !=, NULL);
   r_buffer_unref (payload);
@@ -153,9 +149,7 @@ RTEST (rrtp, read_ext_hdr_opus_payload, RTEST_FAST)
   RBuffer * buf;
   RRTPBuffer rtp = R_RTP_BUFFER_INIT;
 
-  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
-          (rpointer)pkt_rtp_opus, sizeof (pkt_rtp_opus), sizeof (pkt_rtp_opus),
-          0, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtp_opus, sizeof (pkt_rtp_opus))), !=, NULL);
 
   r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
   r_assert_cmpuint (rtp.hdr.size, ==, R_RTP_HDR_SIZE);
@@ -231,9 +225,7 @@ RTEST (rrtcp, sr_sdes_compound_packet, RTEST_FAST)
   RRTCPSDESChunk * chunk;
   RRTCPSDESItem item = R_RTCP_SDES_ITEM_INIT;
 
-  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
-          (rpointer)pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes), sizeof (pkt_rtcp_sr_sdes),
-          0, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes))), !=, NULL);
 
   r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
 
@@ -288,15 +280,13 @@ RTEST (rrtcp, rr_bye_compound_packet, RTEST_FAST)
   rchar reason[255];
   ruint8 rlen;
 
-  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
-          (rpointer)pkt_rtcp_rr_bye, sizeof (pkt_rtcp_rr_bye), sizeof (pkt_rtcp_rr_bye),
-          0, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtcp_rr_bye, sizeof (pkt_rtcp_rr_bye))), !=, NULL);
 
   r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
 
   r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 2);
 
-  /* Sender report */
+  /* Receiver report */
   r_assert_cmpptr ((packet = r_rtcp_buffer_get_first_packet (&rtcp)), !=, NULL);
   r_assert (!r_rtcp_packet_has_padding (packet));
   r_assert_cmpuint (r_rtcp_packet_get_count (packet), ==, 1);
@@ -304,7 +294,7 @@ RTEST (rrtcp, rr_bye_compound_packet, RTEST_FAST)
   r_assert_cmpuint (r_rtcp_packet_get_length (packet), ==, 32);
 
   r_assert_cmphex (r_rtcp_packet_rr_get_ssrc (packet), ==, 0x166ae287);
-  r_assert (r_rtcp_packet_sr_get_report_block (packet, 0, &rb));
+  r_assert (r_rtcp_packet_rr_get_report_block (packet, 0, &rb));
   r_assert_cmphex (rb.ssrc, ==, 0x875414db);
   r_assert_cmpuint (rb.fractionlost, ==, 0);
   r_assert_cmpint (rb.packetslost, ==, 0);
@@ -313,7 +303,7 @@ RTEST (rrtcp, rr_bye_compound_packet, RTEST_FAST)
   r_assert_cmpuint (rb.lsr, ==, 3108076906);
   r_assert_cmpuint (rb.dlsr, ==, 375846);
 
-  r_assert (!r_rtcp_packet_sr_get_report_block (packet, 1, &rb));
+  r_assert (!r_rtcp_packet_rr_get_report_block (packet, 1, &rb));
 
   /* Bye */
   r_assert_cmpptr ((packet = r_rtcp_buffer_get_next_packet (&rtcp, packet)), !=, NULL);
