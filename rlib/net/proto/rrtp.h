@@ -225,6 +225,7 @@ R_API rboolean r_rtcp_packet_has_padding (const RRTCPPacket * packet);
 R_API ruint8 r_rtcp_packet_get_count (const RRTCPPacket * packet);
 R_API RRTCPPacketType r_rtcp_packet_get_type (const RRTCPPacket * packet);
 R_API ruint r_rtcp_packet_get_length (const RRTCPPacket * packet);
+R_API ruint32 r_rtcp_packet_get_ssrc (const RRTCPPacket * packet);
 
 /* Sender Report (SR) */
 R_API rboolean r_rtcp_packet_sr_get_sender_info (const RRTCPPacket * packet,

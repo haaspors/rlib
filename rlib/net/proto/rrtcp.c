@@ -151,6 +151,13 @@ r_rtcp_packet_get_length (const RRTCPPacket * p)
   return ((ruint)RUINT16_FROM_BE (p->len) + 1) * sizeof (ruint32);
 }
 
+ruint32
+r_rtcp_packet_get_ssrc (const RRTCPPacket * packet)
+{
+  const ruint8 * ptr = packet->data;
+  return RUINT32_TO_BE (*(const ruint32 *)&ptr[0]);
+}
+
 rboolean
 r_rtcp_packet_sr_get_sender_info (const RRTCPPacket * packet,
     RRTCPSenderInfo * srinfo)
