@@ -39,6 +39,27 @@ RTEST (rbuffer, new_wrapped, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbuffer, new_dup, RTEST_FAST)
+{
+  RBuffer * buf;
+  static const ruint8 testdata[] = {
+    0x81, 0xca, 0x00, 0x05, 0xf3, 0xcb, 0x20, 0x01, 0x01, 0x0a, 0x6f, 0x75, 0x74, 0x43, 0x68, 0x61,
+    0x81, 0xca, 0x00, 0x05, 0xf3, 0xcb, 0x20, 0x01, 0x01, 0x0a, 0x6f, 0x75, 0x74, 0x43, 0x68, 0x61,
+  };
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (testdata, sizeof (testdata))), !=, NULL);
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 1);
+  r_assert_cmpuint (r_buffer_get_allocsize (buf), ==, sizeof (testdata));
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, sizeof (testdata));
+  r_assert_cmpuint (r_buffer_get_offset (buf), ==, 0);
+  r_assert (r_buffer_is_all_writable (buf));
+
+  r_assert_cmpint (r_buffer_memcmp (buf, 0, testdata, sizeof (testdata)), ==, 0);
+
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rbuffer, new_alloc, RTEST_FAST)
 {
   RBuffer * buf;
