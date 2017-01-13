@@ -112,3 +112,76 @@ RTEST (rhash, sha512, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rhash, md5_fill_block, R_TEST_TYPE_FAST)
+{
+  RHash * hash = r_hash_new_md5 ();
+  ruint8 data[32];
+  rsize i, size = sizeof (data);
+  rchar * hex;
+
+  for (i = 0; i < r_hash_blocksize (hash); i += 8)
+    r_assert (r_hash_update (hash, "foobar64", 8));
+  r_assert (r_hash_get_data (hash, data, &size));
+  r_assert_cmpuint (size, ==, r_hash_size (hash));
+  r_assert_cmpstr ((hex = r_hash_get_hex (hash)), ==,
+      "57c58653b9d1fe7485d4754c24ae50ef");
+  r_free (hex);
+  r_hash_free (hash);
+}
+RTEST_END;
+
+RTEST (rhash, sha1_fill_block, R_TEST_TYPE_FAST)
+{
+  RHash * hash = r_hash_new_sha1 ();
+  ruint8 data[32];
+  rsize i, size = sizeof (data);
+  rchar * hex;
+
+  for (i = 0; i < r_hash_blocksize (hash); i += 8)
+    r_assert (r_hash_update (hash, "foobar64", 8));
+  r_assert (r_hash_get_data (hash, data, &size));
+  r_assert_cmpuint (size, ==, r_hash_size (hash));
+  r_assert_cmpstr ((hex = r_hash_get_hex (hash)), ==,
+      "44ad860c45a831da1edf9ceb0d3c259d52efe68e");
+  r_free (hex);
+  r_hash_free (hash);
+}
+RTEST_END;
+
+RTEST (rhash, sha256_fill_block, R_TEST_TYPE_FAST)
+{
+  RHash * hash = r_hash_new_sha256 ();
+  ruint8 data[32];
+  rsize i, size = sizeof (data);
+  rchar * hex;
+
+  for (i = 0; i < r_hash_blocksize (hash); i += 8)
+    r_assert (r_hash_update (hash, "foobar64", 8));
+  r_assert (r_hash_get_data (hash, data, &size));
+  r_assert_cmpuint (size, ==, r_hash_size (hash));
+  r_assert_cmpstr ((hex = r_hash_get_hex (hash)), ==,
+      "c937e19346c302d51371e5df65cea11ed71c6f58678adc27fe1a55ace8167aa6");
+  r_free (hex);
+  r_hash_free (hash);
+}
+RTEST_END;
+
+RTEST (rhash, sha512_fill_block, R_TEST_TYPE_FAST)
+{
+  RHash * hash = r_hash_new_sha512 ();
+  ruint8 data[64];
+  rsize i, size = sizeof (data);
+  rchar * hex;
+
+  for (i = 0; i < r_hash_blocksize (hash); i += 8)
+    r_assert (r_hash_update (hash, "foobar64", 8));
+  r_assert (r_hash_get_data (hash, data, &size));
+  r_assert_cmpuint (size, ==, r_hash_size (hash));
+  r_assert_cmpstr ((hex = r_hash_get_hex (hash)), ==,
+      "265927b8379557541f940d2dd259ee89a55381804514b758be3dab33f981e8389"
+      "27e08ffc73ae538d581b65a2eb706459817ff51172742a9e1cf832b0727cc66");
+  r_free (hex);
+  r_hash_free (hash);
+}
+RTEST_END;
+

@@ -426,7 +426,7 @@ r_md5_hash_update (RMd5Hash * md5, rconstpointer data, rsize size)
   md5->len += size;
   if (md5->bufsize > 0) {
     rsize s = sizeof (md5->buffer) - md5->bufsize;
-    if (s < size) {
+    if (s <= size) {
       r_memcpy (&md5->buffer[md5->bufsize], ptr, s);
       ptr += s;
       size -= s;
@@ -646,7 +646,7 @@ r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size)
   sha1->len += size;
   if (sha1->bufsize > 0) {
     rsize s = sizeof (sha1->buffer) - sha1->bufsize;
-    if (s < size) {
+    if (s <= size) {
       r_memcpy (&sha1->buffer[sha1->bufsize], ptr, s);
       ptr += s;
       size -= s;
@@ -877,7 +877,7 @@ r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size)
   sha256->len += size;
   if (sha256->bufsize > 0) {
     rsize s = sizeof (sha256->buffer) - sha256->bufsize;
-    if (s < size) {
+    if (s <= size) {
       r_memcpy (&sha256->buffer[sha256->bufsize], ptr, s);
       ptr += s;
       size -= s;
@@ -1104,7 +1104,7 @@ r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size)
 
   if (sha512->bufsize > 0) {
     rsize s = sizeof (sha512->buffer) - sha512->bufsize;
-    if (s < size) {
+    if (s <= size) {
       r_memcpy (&sha512->buffer[sha512->bufsize], ptr, s);
       ptr += s;
       size -= s;
