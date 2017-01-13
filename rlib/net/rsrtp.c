@@ -30,6 +30,7 @@
 
 #define R_SRTP_MAX_SALT_SIZE      16
 #define R_SRTP_WINDOW_SIZE        1024
+#define R_SRTCP_E_BIT             0x80000000
 
 #define R_SRTP_ERRRET(errval, lbl)            \
   R_STMT_START {                              \
@@ -623,6 +624,241 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
 
 beach_map:
     r_rtp_buffer_unmap (&rtp, packet);
+  } else {
+    err = R_SRTP_ERROR_BAD_RTP_HDR;
+  }
+
+beach:
+  if (errout != NULL)
+    *errout = err;
+  return ret;
+}
+
+RBuffer *
+r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
+{
+  RSRTPError err;
+  RBuffer * ret = NULL;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+
+  if (R_UNLIKELY (ctx == NULL)) R_SRTP_ERRRET (R_SRTP_ERROR_INVAL, beach);
+  if (R_UNLIKELY (packet == NULL)) R_SRTP_ERRRET (R_SRTP_ERROR_INVAL, beach);
+
+  if (r_rtcp_buffer_map (&rtcp, packet, R_MEM_MAP_READ)) {
+    RRTCPPacket * rtcppacket;
+    RSRTPStream * stream;
+
+    if ((rtcppacket = r_rtcp_buffer_get_first_packet (&rtcp)) != NULL &&
+        (stream = r_srtp_get_stream (ctx, r_rtcp_packet_get_ssrc (rtcppacket))) != NULL) {
+      rsize tagsize, newsize;
+      ruint32 idx;
+
+      if (R_UNLIKELY (stream->dir != R_SRTP_DIRECTION_OUTBOUND)) {
+        if (stream->dir == R_SRTP_DIRECTION_UNKNOWN) {
+          stream->dir = R_SRTP_DIRECTION_OUTBOUND;
+        } else {
+          R_LOG_INFO ("ssrc (0x%.8x) collision?", stream->ssrc);
+          err = R_SRTP_ERROR_WRONG_DIRECTION;
+          goto beach_map;
+        }
+      }
+
+      if ((idx = (ruint32)++stream->rtcp.index) >= R_SRTCP_E_BIT) {
+        R_LOG_INFO ("ssrc (0x%.8x) collision?", stream->ssrc);
+        err = R_SRTP_ERROR_WRONG_DIRECTION;
+        goto beach_map;
+      }
+
+      if (stream->cctx->csinfo->authprefixlen > 0) {
+        /* FIXME: Handle keystream prefix */
+        R_LOG_ERROR ("SRTP Auth prefix not implmented yet...");
+        err = R_SRTP_ERROR_INTERNAL;
+        goto beach_map;
+      }
+
+      tagsize = stream->cctx->csinfo->srtp_tagbits / 8;
+      newsize = rtcp.info.size + sizeof (ruint32) + tagsize + stream->rtpmkisize;
+      if ((ret = r_buffer_new_alloc (NULL, newsize, NULL)) != NULL) {
+        RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+        if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+          rsize ivsize = stream->rtcp.cipher->info->ivsize;
+          ruint8 * iv = r_alloca0 (ivsize);
+          ruint8 * ptr = info.data;
+
+          r_memcpy (ptr, rtcp.info.data, 2 * sizeof (ruint32));
+          ptr += 2 * sizeof (ruint32);
+
+          r_srtp_state_create_iv (iv, ivsize, &stream->rtcp, stream->ssrc, idx);
+
+          R_LOG_TRACE ("Encrypting %u bytes", (ruint)(rtcp.info.size - 2 * sizeof (ruint32)));
+          r_crypto_cipher_encrypt (stream->rtcp.cipher, ptr,
+              rtcp.info.size - 2 * sizeof (ruint32), rtcp.info.data + 2 * sizeof (ruint32),
+              iv, ivsize);
+          ptr += rtcp.info.size - 2 * sizeof (ruint32);
+
+          if (stream->rtcp.cipher->info->type > R_CRYPTO_CIPHER_ALGO_NULL)
+            *(ruint32 *)ptr = RUINT32_TO_BE ((ruint32)idx | R_SRTCP_E_BIT);
+          else
+            *(ruint32 *)ptr = RUINT32_TO_BE ((ruint32)idx);
+          ptr += sizeof (ruint32);
+
+          if (stream->rtpmkisize > 0) {
+            /* FIXME: insert mki */
+          }
+
+          /* add auth tag */
+          if (stream->rtcp.mac != NULL && tagsize > 0) {
+            r_hmac_reset (stream->rtcp.mac);
+            if (r_hmac_update (stream->rtcp.mac, info.data,
+                  info.size - stream->rtpmkisize - tagsize)) {
+              ruint8 calctag[32];
+              rsize calcsize = sizeof (calctag);
+
+              r_hmac_get_data (stream->rtcp.mac, calctag, &calcsize);
+              r_memcpy (info.data + info.size - tagsize, calctag, tagsize);
+            } else {
+              R_LOG_ERROR ("HMAC update for SRTP auth failed");
+              err = R_SRTP_ERROR_INTERNAL;
+              goto beach_map;
+            }
+          }
+
+          err = R_SRTP_ERROR_OK;
+          r_buffer_unmap (ret, &info);
+        } else {
+          err = R_SRTP_ERROR_INTERNAL;
+        }
+      } else {
+        err = R_SRTP_ERROR_OOM;
+      }
+    } else {
+      err = R_SRTP_ERROR_NO_CRYPTO_CTX;
+    }
+
+beach_map:
+    r_rtcp_buffer_unmap (&rtcp, packet);
+  } else {
+    err = R_SRTP_ERROR_BAD_RTP_HDR;
+  }
+
+beach:
+  if (errout != NULL)
+    *errout = err;
+  return ret;
+}
+
+RBuffer *
+r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
+{
+  RSRTPError err;
+  RBuffer * ret = NULL;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+
+  if (R_UNLIKELY (ctx == NULL)) R_SRTP_ERRRET (R_SRTP_ERROR_INVAL, beach);
+  if (R_UNLIKELY (packet == NULL)) R_SRTP_ERRRET (R_SRTP_ERROR_INVAL, beach);
+
+  if (r_rtcp_buffer_map (&rtcp, packet, R_MEM_MAP_READ)) {
+    RRTCPPacket * rtcppacket;
+    RSRTPStream * stream;
+
+    if ((rtcppacket = r_rtcp_buffer_get_first_packet (&rtcp)) != NULL &&
+        (stream = r_srtp_get_stream (ctx, r_rtcp_packet_get_ssrc (rtcppacket))) != NULL) {
+      rsize tagsize = stream->cctx->csinfo->srtp_tagbits / 8;
+      const ruint8 * authtag = rtcp.info.data + rtcp.info.size - tagsize;
+      const ruint8 * srtpidx = authtag - stream->rtpmkisize - sizeof (ruint32);
+      ruint32 idx;
+
+      if (R_UNLIKELY (stream->dir != R_SRTP_DIRECTION_INBOUND)) {
+        if (stream->dir == R_SRTP_DIRECTION_UNKNOWN) {
+          stream->dir = R_SRTP_DIRECTION_INBOUND;
+        } else {
+          R_LOG_INFO ("ssrc (0x%.8x) collision?", stream->ssrc);
+          err = R_SRTP_ERROR_WRONG_DIRECTION;
+          goto beach_map;
+        }
+      }
+
+      idx = RUINT32_TO_BE (*(const ruint32 *)srtpidx);
+      if (idx & R_SRTCP_E_BIT) {
+        if (stream->rtcp.cipher->info->type <= R_CRYPTO_CIPHER_ALGO_NULL) {
+          R_LOG_INFO ("ssrc (0x%.8x) idx (0x%.8x) SRTCP e-bit mismatch",
+              stream->ssrc, idx);
+          err = R_SRTP_ERROR_E_BIT_MISMATCH;
+          goto beach_map;
+        }
+        idx &= ~R_SRTCP_E_BIT;
+      } else {
+        if (stream->rtcp.cipher->info->type > R_CRYPTO_CIPHER_ALGO_NULL) {
+          R_LOG_INFO ("ssrc (0x%.8x) idx (0x%.8x) SRTCP e-bit mismatch",
+              stream->ssrc, idx);
+          err = R_SRTP_ERROR_E_BIT_MISMATCH;
+          goto beach_map;
+        }
+      }
+
+      if ((err = r_srtp_stream_replay_check (&stream->rtcp, idx, stream->ssrc)) == R_SRTP_ERROR_OK) {
+        rsize newsize = srtpidx - rtcp.info.data;
+
+        if (stream->cctx->csinfo->authprefixlen > 0) {
+          /* FIXME: Handle keystream prefix */
+          R_LOG_ERROR ("SRTP Auth prefix not implmented yet...");
+          err = R_SRTP_ERROR_INTERNAL;
+          goto beach_map;
+        }
+
+        if (stream->rtcp.mac != NULL && tagsize > 0) {
+          ruint8 calctag[32];
+          rsize calcsize = sizeof (calctag);
+
+          r_hmac_reset (stream->rtcp.mac);
+          if (r_hmac_update (stream->rtcp.mac, rtcp.info.data, newsize + sizeof (ruint32)) &&
+              r_hmac_get_data (stream->rtcp.mac, calctag, &calcsize)) {
+            if (R_UNLIKELY (r_memcmp (authtag, calctag, tagsize) != 0)) {
+              R_LOG_INFO ("stream: 0x%.8x - SRTP auth failed for idx 0x%"R_RTP_SEQIDX_FMT,
+                  stream->ssrc, (ruint64)idx);
+              err = R_SRTP_ERROR_AUTH;
+              goto beach_map;
+            }
+          } else {
+            R_LOG_ERROR ("HMAC update for SRTP auth failed");
+            err = R_SRTP_ERROR_INTERNAL;
+            goto beach_map;
+          }
+        }
+
+        if ((ret = r_buffer_new_alloc (NULL, newsize, NULL)) != NULL) {
+          RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+          if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+            rsize ivsize = stream->rtcp.cipher->info->ivsize;
+            ruint8 * iv = r_alloca0 (ivsize);
+
+            r_srtp_state_create_iv (iv, ivsize, &stream->rtcp, stream->ssrc, idx);
+
+            /* Copy header and ssrc */
+            r_memcpy (info.data, rtcp.info.data, 2 * sizeof (ruint32));
+
+            R_LOG_TRACE ("Decrypting %u bytes", (ruint)info.size);
+            r_crypto_cipher_decrypt (stream->rtcp.cipher,
+                info.data + 2 * sizeof (ruint32), info.size - 2 * sizeof (ruint32),
+                rtcp.info.data + 2 * sizeof (ruint32), iv, ivsize);
+            r_buffer_unmap (ret, &info);
+          } else {
+            err = R_SRTP_ERROR_INTERNAL;
+          }
+        } else {
+          err = R_SRTP_ERROR_OOM;
+        }
+
+        r_srtp_stream_rtp_replay_add (&stream->rtcp, idx);
+      }
+    } else {
+      err = R_SRTP_ERROR_NO_CRYPTO_CTX;
+    }
+
+beach_map:
+    r_rtcp_buffer_unmap (&rtcp, packet);
   } else {
     err = R_SRTP_ERROR_BAD_RTP_HDR;
   }

@@ -29,6 +29,21 @@ static const ruint8 pkt_rtp_opus[] = {
   0x22, 0x66, 0x28
 };
 
+static const ruint8 pkt_srtcp_aes_128_cm[] = {
+  0x80, 0xc8, 0x00, 0x06, 0xb4, 0x76, 0x82, 0x3a, 0x47, 0x9b, 0xb7, 0x9d, 0x9e, 0x09, 0x15, 0xca,
+  0x10, 0x80, 0x43, 0x20, 0x32, 0x7d, 0x42, 0xd9, 0xc9, 0x49, 0xe8, 0x6b, 0x1f, 0xd1, 0x78, 0xe2,
+  0xd7, 0xc3, 0x7e, 0x3b, 0x23, 0x6d, 0x4b, 0x99, 0x96, 0x81, 0x5a, 0x7d, 0xbb, 0x18, 0x17, 0xf8,
+  0x57, 0x3e, 0xe4, 0x3a, 0x02, 0xce, 0xb6, 0x24, 0x80, 0x00, 0x00, 0x01, 0x65, 0x89, 0xe9, 0xde,
+  0x21, 0x01, 0x61, 0xb5, 0xde, 0xbe
+};
+
+static const ruint8 pkt_rtcp_sr_sdes[] = {
+  0x80, 0xc8, 0x00, 0x06, 0xb4, 0x76, 0x82, 0x3a, 0xdc, 0x23, 0x27, 0xb2, 0xac, 0x34, 0x8f, 0x54,
+  0x55, 0x50, 0xcd, 0x92, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x01, 0x75, 0x81, 0xca, 0x00, 0x06,
+  0xb4, 0x76, 0x82, 0x3a, 0x01, 0x10, 0x63, 0x65, 0x69, 0x4e, 0x4c, 0x6d, 0x79, 0x36, 0x56, 0x48,
+  0x53, 0x45, 0x35, 0x4a, 0x61, 0x37, 0x00, 0x00
+};
+
 RTEST (rsrtp, no_crypto_ctx, RTEST_FAST)
 {
   RSRTPCtx * ctx;
@@ -39,6 +54,11 @@ RTEST (rsrtp, no_crypto_ctx, RTEST_FAST)
 
   r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtp_opus, sizeof (pkt_rtp_opus))), !=, NULL);
   r_assert_cmpptr (r_srtp_encrypt_rtp (ctx, buf, &err), ==, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes))), !=, NULL);
+  r_assert_cmpptr (r_srtp_encrypt_rtcp (ctx, buf, &err), ==, NULL);
   r_assert_cmpint (err, ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
   r_buffer_unref (buf);
 
@@ -109,6 +129,88 @@ RTEST (rsrtp, encrypt_aes_128_cm, RTEST_FAST)
   /* Replaying the packet should yield R_SRTP_ERROR_REPLAYED */
   r_assert_cmpptr ((res = r_srtp_encrypt_rtp (ctx, buf, &err)), ==, NULL);
   r_assert_cmpint (err, ==, R_SRTP_ERROR_REPLAYED);
+
+  r_buffer_unref (buf);
+  r_srtp_ctx_unref (ctx);
+}
+RTEST_END;
+
+RTEST (rsrtcp, decrypt_aes_128_cm, RTEST_FAST)
+{
+  RSRTPCtx * ctx;
+  RBuffer * buf, * res;
+  RSRTPError err;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * packet;
+  RRTCPSenderInfo srinfo;
+  RRTCPSDESChunk * chunk;
+  RRTCPSDESItem item = R_RTCP_SDES_ITEM_INIT;
+
+  r_assert_cmpptr ((ctx = r_srtp_ctx_new ()), !=, NULL);
+
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc (ctx, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey), ==, R_SRTP_ERROR_OK);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_srtcp_aes_128_cm, sizeof (pkt_srtcp_aes_128_cm))), !=, NULL);
+
+  r_assert_cmpptr ((res = r_srtp_decrypt_rtcp (ctx, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_buffer_memcmp (res, 0, pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes)), ==, 0);
+
+
+  r_assert (r_rtcp_buffer_map (&rtcp, res, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 2);
+  r_assert_cmpptr ((packet = r_rtcp_buffer_get_first_packet (&rtcp)), !=, NULL);
+  r_assert_cmpint (r_rtcp_packet_get_type (packet), ==, R_RTCP_PT_SR);
+  r_assert_cmpuint (r_rtcp_packet_get_count (packet), ==, 0);
+  r_assert (r_rtcp_packet_sr_get_sender_info (packet, &srinfo));
+  r_assert_cmphex (srinfo.ssrc, ==, ssrc);
+  r_assert_cmpuint (srinfo.ntptime, ==, RUINT64_CONSTANT (0xdc2327b2ac348f54));
+  r_assert_cmpuint (srinfo.rtptime, ==, 0x5550cd92);
+  r_assert_cmpuint (srinfo.packets, ==, 5);
+  r_assert_cmpuint (srinfo.bytes, ==, 0x0175);
+
+  r_assert_cmpptr ((packet = r_rtcp_buffer_get_next_packet (&rtcp, packet)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_count (packet), ==, 1);
+  r_assert_cmpint (r_rtcp_packet_get_type (packet), ==, R_RTCP_PT_SDES);
+  r_assert_cmpptr ((chunk = r_rtcp_packet_sdes_get_first_chunk (packet)), !=, NULL);
+  r_assert_cmphex (r_rtcp_packet_sdes_chunk_get_ssrc (packet, chunk), ==, 0xb476823a);
+  r_assert_cmpint (r_rtcp_packet_sdes_chunk_get_next_item (packet, chunk, &item), ==, R_RTCP_PARSE_OK);
+  r_assert_cmphex (item.type, ==, R_RTCP_SDES_CNAME);
+  r_assert_cmpuint (item.len, ==, 16);
+  r_assert_cmpmem (item.data, ==, cname, item.len);
+
+  r_assert (r_rtcp_buffer_unmap (&rtcp, res));
+  r_buffer_unref (res);
+
+  /* Replaying the packet should yield R_SRTP_ERROR_REPLAYED */
+  r_assert_cmpptr ((res = r_srtp_decrypt_rtcp (ctx, buf, &err)), ==, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_REPLAYED);
+
+  r_buffer_unref (buf);
+  r_srtp_ctx_unref (ctx);
+}
+RTEST_END;
+
+RTEST (rsrtcp, encrypt_aes_128_cm, RTEST_FAST)
+{
+  RSRTPCtx * ctx;
+  RBuffer * buf, * res;
+  RSRTPError err;
+
+  r_assert_cmpptr ((ctx = r_srtp_ctx_new ()), !=, NULL);
+
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc (ctx, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey), ==, R_SRTP_ERROR_OK);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes))), !=, NULL);
+
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtcp (ctx, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_assert_cmpuint (r_buffer_get_size (res), ==, sizeof (pkt_srtcp_aes_128_cm));
+  r_assert_cmpint (r_buffer_memcmp (res, 0, pkt_srtcp_aes_128_cm,
+        sizeof (pkt_srtcp_aes_128_cm)), ==, 0);
+  r_buffer_unref (res);
 
   r_buffer_unref (buf);
   r_srtp_ctx_unref (ctx);

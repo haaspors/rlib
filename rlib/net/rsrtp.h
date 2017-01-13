@@ -48,6 +48,7 @@ typedef enum {
   R_SRTP_ERROR_REPLAYED,
   R_SRTP_ERROR_REPLAY_TOO_OLD,
   R_SRTP_ERROR_AUTH,
+  R_SRTP_ERROR_E_BIT_MISMATCH,
 } RSRTPError;
 
 typedef struct _RSRTPCtx RSRTPCtx;
@@ -63,6 +64,8 @@ R_API RSRTPError r_srtp_add_crypto_context_with_filter (RSRTPCtx * ctx,
 
 R_API RBuffer * r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * err) R_ATTR_WARN_UNUSED_RESULT;
 R_API RBuffer * r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * err) R_ATTR_WARN_UNUSED_RESULT;
+R_API RBuffer * r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * err) R_ATTR_WARN_UNUSED_RESULT;
+R_API RBuffer * r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * err) R_ATTR_WARN_UNUSED_RESULT;
 
 R_END_DECLS
 
