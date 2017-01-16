@@ -55,6 +55,35 @@ RTEST (rmsgdigest, sha1, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rmsgdigest, sha224, R_TEST_TYPE_FAST)
+{
+  RMsgDigest * md = r_msg_digest_new_sha224 ();
+  ruint8 data[32];
+  rsize size;
+  rchar * hex;
+
+  r_assert_cmpuint (r_msg_digest_size (md),       ==, 224 / 8);
+  r_assert_cmpuint (r_msg_digest_blocksize (md),  ==, 512 / 8);
+  r_assert (r_msg_digest_update (md, "foobar", 6));
+  r_assert (r_msg_digest_get_data (md, data, sizeof (data), &size));
+  r_assert_cmpuint (size, ==, r_msg_digest_size (md));
+  r_assert_cmpmem (data, ==,
+      "\xde\x76\xc3\xe5\x67\xfc\xa9\xd2\x46\xf5\xf8\xd3\xb2\xe7\x04\xa3\x8c\x3c\x5e\x25\x89\x88\xab\x52\x5f\x94\x1d\xb8", size);
+  r_assert_cmpstr ((hex = r_msg_digest_get_hex (md)), ==,
+      "de76c3e567fca9d246f5f8d3b2e704a38c3c5e258988ab525f941db8");
+  r_free (hex);
+  r_assert_cmpstr ((hex = r_msg_digest_get_hex_full (md, ":", 1)), ==,
+      "de:76:c3:e5:67:fc:a9:d2:46:f5:f8:d3:b2:e7:04:a3:8c:3c:5e:25:89:88:ab:52:5f:94:1d:b8");
+  r_assert (r_msg_digest_update (md, "foobar", 6));
+
+  r_assert (r_msg_digest_finish (md));
+  r_assert (!r_msg_digest_update (md, "foobar", 6));
+
+  r_free (hex);
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
 RTEST (rmsgdigest, sha256, R_TEST_TYPE_FAST)
 {
   RMsgDigest * md = r_msg_digest_new_sha256 ();
@@ -72,6 +101,37 @@ RTEST (rmsgdigest, sha256, R_TEST_TYPE_FAST)
       "\x74\xe5\x92\xc2\xfa\x38\x3d\x4a\x39\x60\x71\x4c\xae\xf0\xc4\xf2", size);
   r_assert_cmpstr ((hex = r_msg_digest_get_hex (md)), ==,
       "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2");
+  r_assert (r_msg_digest_update (md, "foobar", 6));
+
+  r_assert (r_msg_digest_finish (md));
+  r_assert (!r_msg_digest_update (md, "foobar", 6));
+
+  r_free (hex);
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, sha384, R_TEST_TYPE_FAST)
+{
+  RMsgDigest * md = r_msg_digest_new_sha384 ();
+  ruint8 data[64];
+  rsize size;
+  rchar * hex;
+
+  r_assert_cmpuint (r_msg_digest_size (md),       ==, 384 / 8);
+  r_assert_cmpuint (r_msg_digest_blocksize (md),  ==, 1024 / 8);
+  r_assert (r_msg_digest_update (md, "foobar", 6));
+  r_assert (r_msg_digest_get_data (md, data, sizeof (data), &size));
+  r_assert_cmpuint (size, ==, r_msg_digest_size (md));
+  r_assert_cmpmem (data, ==,
+      "\x3c\x9c\x30\xd9\xf6\x65\xe7\x4d\x51\x5c\x84\x29"
+      "\x60\xd4\xa4\x51\xc8\x3a\x01\x25\xfd\x3d\xe7\x39"
+      "\x2d\x7b\x37\x23\x1a\xf1\x0c\x72\xea\x58\xae\xdf"
+      "\xcd\xf8\x9a\x57\x65\xbf\x90\x2a\xf9\x3e\xcf\x06", size);
+  r_assert_cmpstr ((hex = r_msg_digest_get_hex (md)), ==,
+      "3c9c30d9f665e74d515c842960d4a451c83a0125fd3de739"
+      "2d7b37231af10c72ea58aedfcdf89a5765bf902af93ecf06");
+
   r_assert (r_msg_digest_update (md, "foobar", 6));
 
   r_assert (r_msg_digest_finish (md));

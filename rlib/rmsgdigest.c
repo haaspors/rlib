@@ -69,6 +69,11 @@ static rboolean r_sha1_final (RMsgDigest * md);
 static rboolean r_sha1_update (RMsgDigest * md, rconstpointer data, rsize size);
 static rboolean r_sha1_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
 
+/* SHA-224 */
+#define R_SHA224_SIZE          (224 / 8)
+static void r_sha224_init (RMsgDigest * md);
+static rboolean r_sha224_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
+
 /* SHA-256 */
 #define R_SHA256_SIZE          (256 / 8)
 #define R_SHA256_WORD_SIZE     (R_SHA256_SIZE / sizeof (ruint32))
@@ -84,6 +89,11 @@ static void r_sha256_init (RMsgDigest * md);
 static rboolean r_sha256_final (RMsgDigest * md);
 static rboolean r_sha256_update (RMsgDigest * md, rconstpointer data, rsize size);
 static rboolean r_sha256_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
+
+/* SHA-384 */
+#define R_SHA384_SIZE          (384 / 8)
+static void r_sha384_init (RMsgDigest * md);
+static rboolean r_sha384_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
 
 /* SHA-512 */
 #define R_SHA512_SIZE          (512 / 8)
@@ -145,8 +155,12 @@ r_msg_digest_type_size (RMsgDigestType type)
       return R_MD5_SIZE;
     case R_MSG_DIGEST_TYPE_SHA1:
       return R_SHA1_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA224:
+      return R_SHA224_SIZE;
     case R_MSG_DIGEST_TYPE_SHA256:
       return R_SHA256_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA384:
+      return R_SHA384_SIZE;
     case R_MSG_DIGEST_TYPE_SHA512:
       return R_SHA512_SIZE;
     default:
@@ -161,11 +175,13 @@ r_msg_digest_type_blocksize (RMsgDigestType type)
     case R_MSG_DIGEST_TYPE_MD5:
       return R_MD5_BLOCK_SIZE;
     case R_MSG_DIGEST_TYPE_SHA1:
-      return R_MD5_BLOCK_SIZE;
+      return R_SHA1_BLOCK_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA224:
     case R_MSG_DIGEST_TYPE_SHA256:
-      return R_MD5_BLOCK_SIZE;
+      return R_SHA256_BLOCK_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA384:
     case R_MSG_DIGEST_TYPE_SHA512:
-      return R_MD5_BLOCK_SIZE;
+      return R_SHA512_BLOCK_SIZE;
     default:
       return 0;
   }
@@ -728,6 +744,65 @@ r_sha1_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 }
 
 /**************************************/
+/*              SHA-224               */
+/**************************************/
+RMsgDigest *
+r_msg_digest_new_sha224 (void)
+{
+  RMsgDigest * ret;
+  rsize mdsize = sizeof (RMsgDigest) + sizeof (RSha256);
+
+  if ((ret = r_malloc (mdsize)) != NULL) {
+    ret->type = R_MSG_DIGEST_TYPE_SHA224;
+    ret->is_final = FALSE;
+    ret->mdsize = mdsize;
+    ret->blocksize = R_SHA256_BLOCK_SIZE;
+    ret->init = r_sha224_init;
+    ret->final = r_sha256_final;
+    ret->update = r_sha256_update;
+    ret->get = r_sha224_get;
+
+    ret->init (ret);
+  }
+
+  return ret;
+}
+
+void
+r_sha224_init (RMsgDigest * md)
+{
+  RSha256 * sha224 = (RSha256 *)(md + 1);
+  sha224->bufsize = 0;
+  sha224->len = 0;
+  sha224->data[0] = 0xc1059ed8;
+  sha224->data[1] = 0x367cd507;
+  sha224->data[2] = 0x3070dd17;
+  sha224->data[3] = 0xf70e5939;
+  sha224->data[4] = 0xffc00b31;
+  sha224->data[5] = 0x68581511;
+  sha224->data[6] = 0x64f98fa7;
+  sha224->data[7] = 0xbefa4fa4;
+}
+
+rboolean
+r_sha224_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
+{
+  const RSha256 * sha224;
+  rsize i;
+
+  if (R_UNLIKELY (data == NULL || size < R_SHA224_SIZE))
+    return FALSE;
+
+  sha224 = (const RSha256 *)(md + 1);
+  for (i = 0; i < R_SHA224_SIZE / sizeof (ruint32); i++)
+    ((ruint32 *)data)[i] = RUINT32_TO_BE (sha224->data[i]);
+  if (out != NULL)
+    *out = R_SHA224_SIZE;
+
+  return TRUE;
+}
+
+/**************************************/
 /*              SHA-256               */
 /**************************************/
 RMsgDigest *
@@ -959,6 +1034,65 @@ r_sha256_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
     ((ruint32 *)data)[i] = RUINT32_TO_BE (sha256->data[i]);
   if (out != NULL)
     *out = R_SHA256_SIZE;
+
+  return TRUE;
+}
+
+/**************************************/
+/*              SHA-384               */
+/**************************************/
+RMsgDigest *
+r_msg_digest_new_sha384 (void)
+{
+  RMsgDigest * ret;
+  rsize mdsize = sizeof (RMsgDigest) + sizeof (RSha512);
+
+  if ((ret = r_malloc (mdsize)) != NULL) {
+    ret->type = R_MSG_DIGEST_TYPE_SHA384;
+    ret->is_final = FALSE;
+    ret->mdsize = mdsize;
+    ret->blocksize = R_SHA512_BLOCK_SIZE;
+    ret->init = r_sha384_init;
+    ret->final = r_sha512_final;
+    ret->update = r_sha512_update;
+    ret->get = r_sha384_get;
+
+    ret->init (ret);
+  }
+
+  return ret;
+}
+
+void
+r_sha384_init (RMsgDigest * md)
+{
+  RSha512 * sha384 = (RSha512 *)(md + 1);
+  sha384->bufsize = 0;
+  sha384->len[0] = sha384->len[1] = 0;
+  sha384->data[0] = RUINT64_CONSTANT (0xcbbb9d5dc1059ed8);
+  sha384->data[1] = RUINT64_CONSTANT (0x629a292a367cd507);
+  sha384->data[2] = RUINT64_CONSTANT (0x9159015a3070dd17);
+  sha384->data[3] = RUINT64_CONSTANT (0x152fecd8f70e5939);
+  sha384->data[4] = RUINT64_CONSTANT (0x67332667ffc00b31);
+  sha384->data[5] = RUINT64_CONSTANT (0x8eb44a8768581511);
+  sha384->data[6] = RUINT64_CONSTANT (0xdb0c2e0d64f98fa7);
+  sha384->data[7] = RUINT64_CONSTANT (0x47b5481dbefa4fa4);
+}
+
+rboolean
+r_sha384_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
+{
+  const RSha512 * sha384;
+  rsize i;
+
+  if (R_UNLIKELY (data == NULL || size < R_SHA384_SIZE))
+    return FALSE;
+
+  sha384 = (const RSha512 *)(md + 1);
+  for (i = 0; i < R_SHA384_SIZE / sizeof (ruint64); i++)
+    ((ruint64 *)data)[i] = RUINT64_TO_BE (sha384->data[i]);
+  if (out != NULL)
+    *out = R_SHA384_SIZE;
 
   return TRUE;
 }
