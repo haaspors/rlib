@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/rhash.h>
+#include <rlib/rmsgdigest.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 

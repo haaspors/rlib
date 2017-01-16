@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2017  Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -15,8 +15,8 @@
  * License along with this library.
  * See the COPYING file at the root of the source repository.
  */
-#ifndef __R_HASH_H__
-#define __R_HASH_H__
+#ifndef __R_MSG_DIGEST_H__
+#define __R_MSG_DIGEST_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
 #error "#include <rlib.h> only pelase."
@@ -68,5 +68,5 @@ R_API rchar * r_hash_get_hex_full (const RHash * hash,
 
 R_END_DECLS
 
-#endif /* __R_HASH_H__ */
+#endif /* __R_MSG_DIGEST_H__ */
 

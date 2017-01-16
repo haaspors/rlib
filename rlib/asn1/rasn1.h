@@ -26,7 +26,7 @@
 
 #include <rlib/rbitset.h>
 #include <rlib/rbuffer.h>
-#include <rlib/rhash.h>
+#include <rlib/rmsgdigest.h>
 #include <rlib/rmpint.h>
 #include <rlib/rref.h>
 

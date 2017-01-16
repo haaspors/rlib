@@ -21,7 +21,6 @@
 
 #include <rlib/rtime.h>
 
-#include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rx509.h>
 
 static inline ruint32

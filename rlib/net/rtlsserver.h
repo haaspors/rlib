@@ -24,7 +24,6 @@
 
 #include <rlib/rtypes.h>
 
-#include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rtlsciphersuite.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/ev/revloop.h>

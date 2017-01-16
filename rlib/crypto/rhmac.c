@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,8 @@
  */
 
 #include "config.h"
-#include <rlib/crypto/rmac.h>
+#include <rlib/crypto/rhmac.h>
+
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 

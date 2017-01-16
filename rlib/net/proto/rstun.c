@@ -20,7 +20,7 @@
 #include <rlib/net/proto/rstun.h>
 
 #include <rlib/rcrc.h>
-#include <rlib/crypto/rmac.h>
+#include <rlib/crypto/rhmac.h>
 #include <rlib/rmem.h>
 
 rboolean

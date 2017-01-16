@@ -29,7 +29,7 @@
 
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rcipher.h>
-#include <rlib/crypto/rmac.h>
+#include <rlib/crypto/rhmac.h>
 #include <rlib/crypto/rsrtpciphersuite.h>
 #include <rlib/crypto/rtlsciphersuite.h>
 

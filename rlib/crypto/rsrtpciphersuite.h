@@ -25,7 +25,7 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/crypto/rcipher.h>
-#include <rlib/rhash.h>
+#include <rlib/rmsgdigest.h>
 
 R_BEGIN_DECLS
 

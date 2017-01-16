@@ -27,7 +27,7 @@
 #include <rlib/crypto/rkey.h>
 
 #include <rlib/rbuffer.h>
-#include <rlib/rhash.h>
+#include <rlib/rmsgdigest.h>
 #include <rlib/rref.h>
 
 R_BEGIN_DECLS

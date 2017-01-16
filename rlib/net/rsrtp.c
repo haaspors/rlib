@@ -21,7 +21,7 @@
 #include <rlib/net/rsrtp.h>
 
 #include <rlib/crypto/rcipher.h>
-#include <rlib/crypto/rmac.h>
+#include <rlib/crypto/rhmac.h>
 
 #include <rlib/rbitset.h>
 #include <rlib/rhashtable.h>

@@ -20,8 +20,6 @@
 #include "../rlib-private.h"
 #include <rlib/net/rtlsserver.h>
 
-#include <rlib/crypto/rcipher.h>
-#include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rx509.h>
 
 #include <rlib/rmem.h>

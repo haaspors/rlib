@@ -25,7 +25,7 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/asn1/rasn1.h>
-#include <rlib/rhash.h>
+#include <rlib/rmsgdigest.h>
 #include <rlib/rrand.h>
 #include <rlib/rref.h>
 

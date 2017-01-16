@@ -35,7 +35,6 @@
 #include <rlib/rfd.h>
 #include <rlib/rfile.h>
 #include <rlib/rfs.h>
-#include <rlib/rhash.h>
 #include <rlib/rhashfuncs.h>
 #include <rlib/rhashset.h>
 #include <rlib/rhashtable.h>
@@ -49,6 +48,7 @@
 #include <rlib/rmemfile.h>
 #include <rlib/rmodule.h>
 #include <rlib/rmpint.h>
+#include <rlib/rmsgdigest.h>
 #include <rlib/roptparse.h>
 #include <rlib/rproc.h>
 #include <rlib/rqueue.h>
@@ -80,8 +80,8 @@
 #include <rlib/crypto/rcipher.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/recc.h>
+#include <rlib/crypto/rhmac.h>
 #include <rlib/crypto/rkey.h>
-#include <rlib/crypto/rmac.h>
 #include <rlib/crypto/rpem.h>
 #include <rlib/crypto/rrsa.h>
 #include <rlib/crypto/rsrtpciphersuite.h>

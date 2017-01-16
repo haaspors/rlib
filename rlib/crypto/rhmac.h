@@ -23,7 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
-#include <rlib/rhash.h>
+#include <rlib/rmsgdigest.h>
 
 R_BEGIN_DECLS
 
