@@ -390,7 +390,7 @@ typedef struct {
 
   RKeyExchangeType key_exchange;
   const RCryptoCipherInfo * cipher;
-  RHashType mac;
+  RMsgDigestType mac;
 } RTLSCipherSuiteInfo;
 
 R_API rboolean r_tls_cipher_suite_is_supported (RTLSCipherSuite suite);

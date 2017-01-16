@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -271,56 +271,56 @@ r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot)
 }
 
 RAsn1DecoderStatus
-r_asn1_bin_tlv_parse_oid_to_hash_type (const RAsn1BinTLV * tlv, RHashType * ht)
+r_asn1_bin_tlv_parse_oid_to_msg_digest_type (const RAsn1BinTLV * tlv, RMsgDigestType * mdtype)
 {
-  if (R_UNLIKELY (ht == NULL)) return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (mdtype == NULL)) return R_ASN1_DECODER_INVALID_ARG;
   if (R_UNLIKELY (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)))
     return R_ASN1_DECODER_WRONG_TYPE;
 
   if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_MD5_WITH_RSA))
-    *ht = R_HASH_TYPE_MD5;
+    *mdtype = R_MSG_DIGEST_TYPE_MD5;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA1_WITH_RSA))
-    *ht = R_HASH_TYPE_SHA1;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA1;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_DIGEST_ALG_SHA256))
-    *ht = R_HASH_TYPE_SHA256;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA256;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_DIGEST_ALG_SHA384))
-    *ht = R_HASH_TYPE_SHA384;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA384;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_DIGEST_ALG_SHA512))
-    *ht = R_HASH_TYPE_SHA512;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA512;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_DIGEST_ALG_SHA224))
-    *ht = R_HASH_TYPE_SHA224;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA224;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA256_WITH_RSA))
-    *ht = R_HASH_TYPE_SHA256;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA256;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA384_WITH_RSA))
-    *ht = R_HASH_TYPE_SHA384;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA384;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA512_WITH_RSA))
-    *ht = R_HASH_TYPE_SHA512;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA512;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_SHA224_WITH_RSA))
-    *ht = R_HASH_TYPE_SHA224;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA224;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_X9CM_OID_DSA_WITH_SHA1))
-    *ht = R_HASH_TYPE_SHA1;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA1;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_SHA1_FIPS))
-    *ht = R_HASH_TYPE_SHA1;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA1;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_SHA1_RSA))
-    *ht = R_HASH_TYPE_SHA1;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA1;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_SHA1_DSA))
-    *ht = R_HASH_TYPE_SHA1;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA1;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_MD5_RSA))
-    *ht = R_HASH_TYPE_MD5;
+    *mdtype = R_MSG_DIGEST_TYPE_MD5;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OIW_SECSIG_OID_MD5_RSA_SIG))
-    *ht = R_HASH_TYPE_MD5;
+    *mdtype = R_MSG_DIGEST_TYPE_MD5;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ECDSA_OID_SHA1))
-    *ht = R_HASH_TYPE_SHA1;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA1;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ECDSA_OID_SHA224))
-    *ht = R_HASH_TYPE_SHA224;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA224;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ECDSA_OID_SHA256))
-    *ht = R_HASH_TYPE_SHA256;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA256;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ECDSA_OID_SHA384))
-    *ht = R_HASH_TYPE_SHA384;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA384;
   else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ECDSA_OID_SHA512))
-    *ht = R_HASH_TYPE_SHA512;
+    *mdtype = R_MSG_DIGEST_TYPE_SHA512;
   else
-    *ht = R_HASH_TYPE_NONE;
+    *mdtype = R_MSG_DIGEST_TYPE_NONE;
 
   return R_ASN1_DECODER_OK;;
 }

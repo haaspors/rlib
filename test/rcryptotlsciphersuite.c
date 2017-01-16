@@ -38,7 +38,7 @@ RTEST (rtlsciphersuite, get_info, RTEST_FAST)
   r_assert_cmpuint (info->cipher->keybits, ==, 128);
   r_assert_cmpuint (info->cipher->ivsize, ==, 16);
   r_assert_cmpuint (info->cipher->blocksize, ==, R_AES_BLOCK_BYTES);
-  r_assert_cmpint (info->mac, ==, R_HASH_TYPE_SHA256);
+  r_assert_cmpint (info->mac, ==, R_MSG_DIGEST_TYPE_SHA256);
 
   r_assert_cmpptr ((info = r_tls_cipher_suite_get_info (R_TLS_CS_NULL_WITH_NULL_NULL)), !=, NULL);
   r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_NULL);
@@ -47,7 +47,7 @@ RTEST (rtlsciphersuite, get_info, RTEST_FAST)
   r_assert_cmpuint (info->cipher->keybits, ==, 0);
   r_assert_cmpuint (info->cipher->ivsize, ==, 0);
   r_assert_cmpuint (info->cipher->blocksize, ==, 1);
-  r_assert_cmpint (info->mac, ==, R_HASH_TYPE_NONE);
+  r_assert_cmpint (info->mac, ==, R_MSG_DIGEST_TYPE_NONE);
 }
 RTEST_END;
 

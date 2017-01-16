@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -80,16 +80,16 @@ r_rsa_decrypt (const RCryptoKey * key, RPrng * prng,
 }
 
 static RCryptoResult
-r_rsa_sign (const RCryptoKey * key, RPrng * prng, RHashType hashtype,
+r_rsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
     rconstpointer hash, rsize hashsize, rpointer sig, rsize * sigsize)
 {
   switch (((const RRsaPubKey *)key)->padding) {
     case R_RSA_PADDING_PKCS1_V15:
       return r_rsa_pkcs1v1_5_sign_msg_hash (key, prng,
-          hashtype, hash, hashsize, sig, sigsize);
+          mdtype, hash, hashsize, sig, sigsize);
     case R_RSA_PADDING_PKCS1_V21:
       /*return r_rsa_oaep_sign_msg_hash (key, prng,
-          hashtype, hash, hashsize, sig, sigsize);*/
+          mdtype, hash, hashsize, sig, sigsize);*/
     default:
       return R_CRYPTO_NOT_AVAILABLE;
   }
@@ -97,12 +97,12 @@ r_rsa_sign (const RCryptoKey * key, RPrng * prng, RHashType hashtype,
 
 static RCryptoResult
 r_rsa_verify (const RCryptoKey * key,
-    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rconstpointer sig, rsize sigsize)
 {
   switch (((const RRsaPubKey *)key)->padding) {
     case R_RSA_PADDING_PKCS1_V15:
-      return r_rsa_pkcs1v1_5_verify_msg_with_hash (key, hashtype, hash, hashsize, sig, sigsize);
+      return r_rsa_pkcs1v1_5_verify_msg_with_hash (key, mdtype, hash, hashsize, sig, sigsize);
     case R_RSA_PADDING_PKCS1_V21:
       /*return r_rsa_oaep_decrypt (key, data, size, out, outsize);*/
     default:
@@ -754,26 +754,26 @@ r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
 
 RCryptoResult
 r_rsa_pkcs1v1_5_sign_msg (const RCryptoKey * key, RPrng * prng,
-    RHashType hashtype, rconstpointer msg, rsize msgsize,
+    RMsgDigestType mdtype, rconstpointer msg, rsize msgsize,
     rpointer sig, rsize * sigsize)
 {
-  RHash * h;
+  RMsgDigest * md;
   RCryptoResult ret;
 
   if (R_UNLIKELY (msg == NULL || msgsize == 0))
     return R_CRYPTO_INVAL;
 
-  if ((h = r_hash_new (hashtype)) != NULL) {
-    rsize hashsize = r_hash_size (h);
+  if ((md = r_msg_digest_new (mdtype)) != NULL) {
+    rsize hashsize = r_msg_digest_size (md);
     ruint8 * hash = r_alloca (hashsize);
 
-    if (r_hash_update (h, msg, msgsize) && r_hash_get_data (h, hash, &hashsize)) {
-      ret = r_rsa_pkcs1v1_5_sign_msg_hash (key, prng, hashtype, hash, hashsize, sig, sigsize);
+    if (r_msg_digest_update (md, msg, msgsize) && r_msg_digest_get_data (md, hash, hashsize, NULL)) {
+      ret = r_rsa_pkcs1v1_5_sign_msg_hash (key, prng, mdtype, hash, hashsize, sig, sigsize);
     } else {
       ret = R_CRYPTO_HASH_FAILED;
     }
 
-    r_hash_free (h);
+    r_msg_digest_free (md);
   } else {
     ret = R_CRYPTO_WRONG_TYPE;
   }
@@ -782,25 +782,25 @@ r_rsa_pkcs1v1_5_sign_msg (const RCryptoKey * key, RPrng * prng,
 }
 
 static rsize
-r_rsa_oid_from_hashtype (RHashType hashtype, ruint8 oid[16])
+r_rsa_oid_from_msg_digest (RMsgDigestType mdtype, ruint8 oid[16])
 {
-  switch (hashtype) {
-    case R_HASH_TYPE_MD5: /* 1.2.840.113549.1.1.4  */
+  switch (mdtype) {
+    case R_MSG_DIGEST_TYPE_MD5: /* 1.2.840.113549.1.1.4  */
       r_memcpy (oid, "\x2a\x86\x48\x86\xf7\x0d\x01\x01\x04", 9);
       return 9;
-    case R_HASH_TYPE_SHA1: /* 1.3.14.3.2.26  */
+    case R_MSG_DIGEST_TYPE_SHA1: /* 1.3.14.3.2.26  */
       r_memcpy (oid, "\x2b\x0e\x03\x02\x1a", 9);
       return 5;
-    case R_HASH_TYPE_SHA256: /* 2.16.840.1.101.3.4.2.1  */
+    case R_MSG_DIGEST_TYPE_SHA256: /* 2.16.840.1.101.3.4.2.1  */
       r_memcpy (oid, "\x60\x86\x48\x01\x65\x03\x04\x02\x01", 9);
       return 9;
-    case R_HASH_TYPE_SHA384: /* 2.16.840.1.101.3.4.2.2  */
+    case R_MSG_DIGEST_TYPE_SHA384: /* 2.16.840.1.101.3.4.2.2  */
       r_memcpy (oid, "\x60\x86\x48\x01\x65\x03\x04\x02\x02", 9);
       return 9;
-    case R_HASH_TYPE_SHA512: /* 2.16.840.1.101.3.4.2.3  */
+    case R_MSG_DIGEST_TYPE_SHA512: /* 2.16.840.1.101.3.4.2.3  */
       r_memcpy (oid, "\x60\x86\x48\x01\x65\x03\x04\x02\x03", 9);
       return 9;
-    case R_HASH_TYPE_SHA224: /* 2.16.840.1.101.3.4.2.4  */
+    case R_MSG_DIGEST_TYPE_SHA224: /* 2.16.840.1.101.3.4.2.4  */
       r_memcpy (oid, "\x60\x86\x48\x01\x65\x03\x04\x02\x04", 9);
       return 9;
     default:
@@ -811,7 +811,7 @@ r_rsa_oid_from_hashtype (RHashType hashtype, ruint8 oid[16])
 
 RCryptoResult
 r_rsa_pkcs1v1_5_sign_msg_hash (const RCryptoKey * key, RPrng * prng,
-    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rpointer sig, rsize * sigsize)
 {
   rsize k, oidsize;
@@ -827,7 +827,7 @@ r_rsa_pkcs1v1_5_sign_msg_hash (const RCryptoKey * key, RPrng * prng,
 
   if (*sigsize < (k = r_crypto_key_get_bitsize (key) / 8))
     return R_CRYPTO_BUFFER_TOO_SMALL;
-  if ((oidsize = r_rsa_oid_from_hashtype (hashtype, oidbuf)) == 0)
+  if ((oidsize = r_rsa_oid_from_msg_digest (mdtype, oidbuf)) == 0)
     return R_CRYPTO_HASH_FAILED;
   if (R_UNLIKELY (hashsize + oidsize + 10 + 3 > k))
     return R_CRYPTO_BUFFER_TOO_SMALL;
@@ -919,29 +919,29 @@ r_rsa_pkcs1v1_5_verify_msg (const RCryptoKey * key,
 
     if ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, ptr, buffer + sigsize - ptr)) != NULL) {
       RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
-      RHashType ht;
+      RMsgDigestType mdtype;
 
       if ((r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK) &&
             (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) &&
             (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) &&
-            (r_asn1_bin_tlv_parse_oid_to_hash_type (&tlv, &ht) == R_ASN1_DECODER_OK) &&
+            (r_asn1_bin_tlv_parse_oid_to_msg_digest_type (&tlv, &mdtype) == R_ASN1_DECODER_OK) &&
             (r_asn1_bin_decoder_out (dec, &tlv) == R_ASN1_DECODER_OK)) {
-        RHash * h;
+        RMsgDigest * md;
         rsize hashsize;
 
-        if ((h = r_hash_new (ht)) == NULL) {
+        if ((md = r_msg_digest_new (mdtype)) == NULL) {
           /* FIXME: Support all hash types! */
           ret = R_CRYPTO_NOT_AVAILABLE;
-        } else if ((hashsize = r_hash_size (h)) == tlv.len) {
+        } else if ((hashsize = r_msg_digest_size (md)) == tlv.len) {
           ruint8 * hash = r_alloca (hashsize);
-          ret = (r_hash_update (h, msg, msgsize) &&
-            r_hash_get_data (h, hash, &hashsize) &&
+          ret = (r_msg_digest_update (md, msg, msgsize) &&
+            r_msg_digest_get_data (md, hash, hashsize, NULL) &&
             r_memcmp (tlv.value, hash, hashsize) == 0) ? R_CRYPTO_OK : R_CRYPTO_VERIFY_FAILED;
         } else {
           ret = R_CRYPTO_WRONG_SIZE;
         }
 
-        r_hash_free (h);
+        r_msg_digest_free (md);
       } else {
         ret = R_CRYPTO_VERIFY_FAILED;
       }
@@ -957,7 +957,7 @@ r_rsa_pkcs1v1_5_verify_msg (const RCryptoKey * key,
 
 RCryptoResult
 r_rsa_pkcs1v1_5_verify_msg_with_hash (const RCryptoKey * key,
-    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rconstpointer sig, rsize sigsize)
 {
   RCryptoResult ret;
@@ -980,14 +980,14 @@ r_rsa_pkcs1v1_5_verify_msg_with_hash (const RCryptoKey * key,
 
     if ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, ptr, buffer + sigsize - ptr)) != NULL) {
       RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
-      RHashType ht;
+      RMsgDigestType md;
 
       if ((r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK) &&
             (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) &&
             (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) &&
-            (r_asn1_bin_tlv_parse_oid_to_hash_type (&tlv, &ht) == R_ASN1_DECODER_OK) &&
+            (r_asn1_bin_tlv_parse_oid_to_msg_digest_type (&tlv, &md) == R_ASN1_DECODER_OK) &&
             (r_asn1_bin_decoder_out (dec, &tlv) == R_ASN1_DECODER_OK)) {
-        if (hashtype != ht)
+        if (mdtype != md)
           ret = R_CRYPTO_WRONG_TYPE;
         else if (hashsize != tlv.len)
           ret = R_CRYPTO_WRONG_SIZE;

@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -284,7 +284,7 @@ r_tls_parser_decrypt (RTLSParser * parser,
         r_hmac_update (mac, &scratch, sizeof (scratch));
         r_hmac_update (mac, info.data, contentsize);
 
-        if (!r_hmac_get_data (mac, macbuf, &macsize) ||
+        if (!r_hmac_get_data (mac, macbuf, macsize, &macsize) ||
             r_memcmp (&info.data[contentsize], macbuf, macsize) != 0) {
           r_buffer_unmap (buf, &info);
           return R_TLS_ERROR_INVALID_MAC;
@@ -403,7 +403,7 @@ r_dtls_encrypt_buffer (RBuffer * buf, const RCryptoCipher * cipher,
     r_hmac_update (hmac, &fraglen, sizeof (ruint16)); /* length */
     r_hmac_update (hmac, info.data + hdrsize, info.size - hdrsize); /* fragment */
 
-    if (r_hmac_get_data (hmac, macbuf, &macsize)) {
+    if (r_hmac_get_data (hmac, macbuf, macsize, &macsize)) {
       ret = _r_tls_encrypt_buffer (info.data, info.size, hdrsize,
           cipher, iv, macbuf, macsize);
     } else {
@@ -439,7 +439,7 @@ r_tls_encrypt_buffer (RBuffer * buf, ruint64 seqno,
     r_hmac_update (hmac, info.data, 5); /* type + version + length */
     r_hmac_update (hmac, info.data + hdrsize, info.size - hdrsize); /* fragment */
 
-    if (r_hmac_get_data (hmac, macbuf, &macsize)) {
+    if (r_hmac_get_data (hmac, macbuf, macsize, &macsize)) {
       ret = _r_tls_encrypt_buffer (info.data, info.size, hdrsize,
           cipher, iv, macbuf, macsize);
     } else {
@@ -851,7 +851,7 @@ r_tls_certificate_get_cert (const RTLSCertificate * cert)
 }
 
 static RTLSError
-r_tls_1_2_prf (RHashType type, ruint8 * dst, rsize dsize,
+r_tls_1_2_prf (RMsgDigestType type, ruint8 * dst, rsize dsize,
     const ruint8 * secret, rsize secsize, va_list args)
 {
   ruint8 * seed;
@@ -867,37 +867,37 @@ r_tls_1_2_prf (RHashType type, ruint8 * dst, rsize dsize,
     return R_TLS_ERROR_OOM;
 
   if ((hmac = r_hmac_new (type, secret, secsize)) != NULL) {
-    const rsize hsize = r_hash_type_size (type);
-    ruint8 * scratch = r_alloca (hsize);
-    rsize size = hsize;
+    const rsize mdsize = r_msg_digest_type_size (type);
+    ruint8 * scratch = r_alloca (mdsize);
+    rsize size;
 
     r_hmac_update (hmac, seed, seedsize);
-    r_hmac_get_data (hmac, scratch, &size); /* = A(1) */
+    r_hmac_get_data (hmac, scratch, mdsize, &size); /* = A(1) */
 
-    while (dsize > hsize) {
+    while (dsize > mdsize) {
       r_hmac_reset (hmac);
-      r_hmac_update (hmac, scratch, hsize); /* A(i - 1) */
+      r_hmac_update (hmac, scratch, mdsize); /* A(i - 1) */
       r_hmac_update (hmac, seed, seedsize);
-      r_hmac_get_data (hmac, dst, &size);
+      r_hmac_get_data (hmac, dst, mdsize, &size);
       dst += size;
       dsize -= size;
 
       r_hmac_reset (hmac);
-      r_hmac_update (hmac, scratch, hsize); /* A(i - 1) */
-      r_hmac_get_data (hmac, scratch, &size); /* = A(i) */
+      r_hmac_update (hmac, scratch, mdsize); /* A(i - 1) */
+      r_hmac_get_data (hmac, scratch, mdsize, &size); /* = A(i) */
     }
 
     if (dsize > 0) {
       r_hmac_reset (hmac);
-      r_hmac_update (hmac, scratch, hsize); /* A(i - 1) */
+      r_hmac_update (hmac, scratch, mdsize); /* A(i - 1) */
       r_hmac_update (hmac, seed, seedsize);
-      r_hmac_get_data (hmac, scratch, &size);
+      r_hmac_get_data (hmac, scratch, mdsize, &size);
       r_memcpy (dst, scratch, dsize);
     }
 
     ret = R_TLS_ERROR_OK;
 
-    r_memclear (scratch, hsize);
+    r_memclear (scratch, mdsize);
     r_hmac_free (hmac);
   } else {
     ret = R_TLS_ERROR_OOM;
@@ -915,7 +915,7 @@ r_tls_1_2_prf_sha224 (ruint8 * dst, rsize dsize,
   RTLSError ret;
 
   va_start (args, secsize);
-  ret = r_tls_1_2_prf (R_HASH_TYPE_SHA224, dst, dsize, secret, secsize, args);
+  ret = r_tls_1_2_prf (R_MSG_DIGEST_TYPE_SHA224, dst, dsize, secret, secsize, args);
   va_end (args);
 
   return ret;
@@ -929,7 +929,7 @@ r_tls_1_2_prf_sha256 (ruint8 * dst, rsize dsize,
   RTLSError ret;
 
   va_start (args, secsize);
-  ret = r_tls_1_2_prf (R_HASH_TYPE_SHA256, dst, dsize, secret, secsize, args);
+  ret = r_tls_1_2_prf (R_MSG_DIGEST_TYPE_SHA256, dst, dsize, secret, secsize, args);
   va_end (args);
 
   return ret;
@@ -943,7 +943,7 @@ r_tls_1_2_prf_sha384 (ruint8 * dst, rsize dsize,
   RTLSError ret;
 
   va_start (args, secsize);
-  ret = r_tls_1_2_prf (R_HASH_TYPE_SHA384, dst, dsize, secret, secsize, args);
+  ret = r_tls_1_2_prf (R_MSG_DIGEST_TYPE_SHA384, dst, dsize, secret, secsize, args);
   va_end (args);
 
   return ret;
@@ -957,7 +957,7 @@ r_tls_1_2_prf_sha512 (ruint8 * dst, rsize dsize,
   RTLSError ret;
 
   va_start (args, secsize);
-  ret = r_tls_1_2_prf (R_HASH_TYPE_SHA512, dst, dsize, secret, secsize, args);
+  ret = r_tls_1_2_prf (R_MSG_DIGEST_TYPE_SHA512, dst, dsize, secret, secsize, args);
   va_end (args);
 
   return ret;

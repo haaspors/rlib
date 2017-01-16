@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -292,7 +292,7 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
   if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
     const ruint8 * tbs = tlv.start;
     rsize tbssize = RPOINTER_TO_SIZE (tlv.value - tlv.start) + tlv.len;
-    RHash * h;
+    RMsgDigest * md;
 
     /* TBSCertificate */
     if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
@@ -369,21 +369,19 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
 
     /* signatureAlgorithm */
     if (r_asn1_bin_decoder_into (dec, &tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_oid_to_hash_type (&tlv, &cert->cert.signalgo) != R_ASN1_DECODER_OK ||
+        r_asn1_bin_tlv_parse_oid_to_msg_digest_type (&tlv, &cert->cert.signalgo) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_out (dec, &tlv) != R_ASN1_DECODER_OK) {
       goto beach;
     }
 
-    if ((h = r_hash_new (cert->cert.signalgo)) != NULL) {
-      rsize size = sizeof (cert->cert.signhash);
-
-      if (!r_hash_update (h, tbs, tbssize) ||
-          !r_hash_get_data (h, cert->cert.signhash, &size)) {
-        r_hash_free (h);
+    if ((md = r_msg_digest_new (cert->cert.signalgo)) != NULL) {
+      if (!r_msg_digest_update (md, tbs, tbssize) ||
+          !r_msg_digest_get_data (md, cert->cert.signhash, sizeof (cert->cert.signhash), NULL)) {
+        r_msg_digest_free (md);
         goto beach;
       }
 
-      r_hash_free (h);
+      r_msg_digest_free (md);
     } else goto beach;
 
     /* signature */
@@ -677,22 +675,22 @@ r_crypto_x509_write_ext_certificate_policies (const RCryptoX509Cert * cert,
 }
 
 static const rchar *
-r_rsa_signalgo_get_asn1_oid (RHashType signalgo)
+r_rsa_signalgo_get_asn1_oid (RMsgDigestType signalgo)
 {
   switch (signalgo) {
-    case R_HASH_TYPE_MD2:
+    case R_MSG_DIGEST_TYPE_MD2:
       return R_RSA_OID_MD2_WITH_RSA;
-    case R_HASH_TYPE_MD5:
+    case R_MSG_DIGEST_TYPE_MD5:
       return R_RSA_OID_MD5_WITH_RSA;
-    case R_HASH_TYPE_SHA1:
+    case R_MSG_DIGEST_TYPE_SHA1:
       return R_RSA_OID_SHA1_WITH_RSA;
-    case R_HASH_TYPE_SHA256:
+    case R_MSG_DIGEST_TYPE_SHA256:
       return R_RSA_OID_SHA256_WITH_RSA;
-    case R_HASH_TYPE_SHA384:
+    case R_MSG_DIGEST_TYPE_SHA384:
       return R_RSA_OID_SHA384_WITH_RSA;
-    case R_HASH_TYPE_SHA512:
+    case R_MSG_DIGEST_TYPE_SHA512:
       return R_RSA_OID_SHA512_WITH_RSA;
-    case R_HASH_TYPE_SHA224:
+    case R_MSG_DIGEST_TYPE_SHA224:
       return R_RSA_OID_SHA224_WITH_RSA;
     default:
       break;
@@ -702,7 +700,7 @@ r_rsa_signalgo_get_asn1_oid (RHashType signalgo)
 }
 
 static const rchar *
-r_crypto_cert_get_asn1_oid_signalgo (RCryptoAlgorithm cryptoalgo, RHashType signalgo)
+r_crypto_cert_get_asn1_oid_signalgo (RCryptoAlgorithm cryptoalgo, RMsgDigestType signalgo)
 {
   switch (cryptoalgo) {
     case R_CRYPTO_ALGO_RSA:
@@ -1034,6 +1032,6 @@ r_crypto_x509_cert_verify_signature (const RCryptoCert * cert, const RCryptoCert
   if (R_UNLIKELY (parent->pk == NULL)) return R_CRYPTO_NOT_AVAILABLE;
 
   return r_crypto_key_verify (parent->pk, cert->signalgo, cert->signhash,
-      r_hash_type_size (cert->signalgo), cert->sign, cert->signbits / 8);
+      r_msg_digest_type_size (cert->signalgo), cert->sign, cert->signbits / 8);
 }
 

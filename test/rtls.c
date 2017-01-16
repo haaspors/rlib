@@ -687,7 +687,7 @@ RTEST (rtls, pkt_dtls_finished_encrypted, RTEST_FAST)
   r_assert_cmpuint (parser.recsize, ==, R_DTLS_RECORD_HDR_SIZE + parser.fragment.size);
 
   r_assert_cmpptr ((cipher = r_cipher_aes_128_cbc_new (aes_128_cbc_key)), !=, NULL);
-  r_assert_cmpptr ((hmac = r_hmac_new (R_HASH_TYPE_SHA1, sha1_mac_key, sizeof (sha1_mac_key))), !=, NULL);
+  r_assert_cmpptr ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, sha1_mac_key, sizeof (sha1_mac_key))), !=, NULL);
 
   r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac),
       ==, R_TLS_ERROR_OK);
@@ -976,7 +976,7 @@ RTEST (rtls, dtls_encrypt, RTEST_FAST)
   RTLSParser parser = R_TLS_PARSER_INIT;
 
   r_assert_cmpptr ((cipher = r_cipher_aes_128_cbc_new (aes_128_cbc_key)), !=, NULL);
-  r_assert_cmpptr ((hmac = r_hmac_new (R_HASH_TYPE_SHA1, sha1_mac_key, sizeof (sha1_mac_key))), !=, NULL);
+  r_assert_cmpptr ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, sha1_mac_key, sizeof (sha1_mac_key))), !=, NULL);
 
   r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE, (rpointer)plaintxt, sizeof (plaintxt), sizeof (plaintxt), 0, NULL, NULL)), !=, NULL);
   r_assert_cmpptr ((encbuf = r_dtls_encrypt_buffer (buf, cipher, iv, hmac)), !=, NULL);

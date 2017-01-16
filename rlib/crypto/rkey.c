@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -88,7 +88,7 @@ r_crypto_key_decrypt (const RCryptoKey * key, RPrng * prng,
 }
 
 RCryptoResult
-r_crypto_key_sign (const RCryptoKey * key, RPrng * prng, RHashType hashtype,
+r_crypto_key_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
     rconstpointer hash, rsize hashsize, rpointer sig, rsize * sigsize)
 {
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
@@ -97,11 +97,11 @@ r_crypto_key_sign (const RCryptoKey * key, RPrng * prng, RHashType hashtype,
   if (R_UNLIKELY (prng == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (key->algo->sign == NULL)) return R_CRYPTO_NOT_AVAILABLE;
 
-  return key->algo->sign (key, prng, hashtype, hash, hashsize, sig, sigsize);
+  return key->algo->sign (key, prng, mdtype, hash, hashsize, sig, sigsize);
 }
 
 RCryptoResult
-r_crypto_key_verify (const RCryptoKey * key, RHashType hashtype,
+r_crypto_key_verify (const RCryptoKey * key, RMsgDigestType mdtype,
     rconstpointer hash, rsize hashsize, rconstpointer sig, rsize sigsize)
 {
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
@@ -109,7 +109,7 @@ r_crypto_key_verify (const RCryptoKey * key, RHashType hashtype,
   if (R_UNLIKELY (sig == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (key->algo->verify == NULL)) return R_CRYPTO_NOT_AVAILABLE;
 
-  return key->algo->verify (key, hashtype, hash, hashsize, sig, sigsize);
+  return key->algo->verify (key, mdtype, hash, hashsize, sig, sigsize);
 }
 
 RCryptoResult

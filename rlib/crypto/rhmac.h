@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -29,14 +29,14 @@ R_BEGIN_DECLS
 
 typedef struct _RHmac       RHmac;
 
-R_API RHmac * r_hmac_new (RHashType type, rconstpointer key, rsize keysize) R_ATTR_MALLOC;
+R_API RHmac * r_hmac_new (RMsgDigestType type, rconstpointer key, rsize keysize) R_ATTR_MALLOC;
 R_API void r_hmac_free (RHmac * hmac);
 
 R_API rsize r_hmac_size (const RHmac * hmac);
 R_API void r_hmac_reset (RHmac * hmac);
 
 R_API rboolean r_hmac_update (RHmac * hmac, rconstpointer data, rsize size);
-R_API rboolean r_hmac_get_data (RHmac * hmac, ruint8 * data, rsize * size);
+R_API rboolean r_hmac_get_data (RHmac * hmac, ruint8 * data, rsize size, rsize * out);
 R_API rchar * r_hmac_get_hex (RHmac * hmac);
 
 R_END_DECLS

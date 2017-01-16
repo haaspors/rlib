@@ -158,7 +158,7 @@ r_srtp_state_init (RSRTPState * state, ruint lbloffset,
   if ((ret = r_srtp_kdprf_generate (scratch, csinfo->cipher->keybits / 8, kdprf,
       lbloffset + R_SRTP_KDPRF_LABEL_RTP_ENCRYPTION, state->index, kdr,
       salt, saltsize)) == R_CRYPTO_CIPHER_OK) {
-    rsize authsize = r_hash_type_size (csinfo->auth);
+    rsize authsize = r_msg_digest_type_size (csinfo->auth);
     if ((state->cipher = r_crypto_cipher_new (csinfo->cipher, scratch)) == NULL) {
       ret = R_CRYPTO_CIPHER_OOM;
     } else if ((ret = r_srtp_kdprf_generate (scratch, authsize, kdprf,
@@ -484,9 +484,9 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
                   r_hmac_update (stream->rtp.mac, info.data, rtp.pay.size) &&
                   r_hmac_update (stream->rtp.mac, &roc, sizeof (ruint32))) {
                 ruint8 calctag[32];
-                rsize calcsize = sizeof (calctag);
+                rsize calcsize;
 
-                r_hmac_get_data (stream->rtp.mac, calctag, &calcsize);
+                r_hmac_get_data (stream->rtp.mac, calctag, sizeof (calctag), &calcsize);
                 r_memcpy (info.data + payloadsize - tagsize, calctag, tagsize);
               } else {
                 R_LOG_ERROR ("HMAC update for SRTP auth failed");
@@ -567,7 +567,7 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
         if (stream->rtp.mac != NULL && tagsize > 0) {
           ruint8 * authtag = rtp.pay.data + rtp.pay.size - tagsize;
           ruint8 calctag[32];
-          rsize calcsize = sizeof (calctag);
+          rsize calcsize;
           ruint32 roc = RUINT32_TO_BE ((ruint32)(idx >> 16));
 
           r_hmac_reset (stream->rtp.mac);
@@ -576,7 +576,7 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
                r_hmac_update (stream->rtp.mac, rtp.ext.data, rtp.ext.size)) &&
               r_hmac_update (stream->rtp.mac, rtp.pay.data, payloadsize) &&
               r_hmac_update (stream->rtp.mac, &roc, sizeof (ruint32)) &&
-              r_hmac_get_data (stream->rtp.mac, calctag, &calcsize)) {
+              r_hmac_get_data (stream->rtp.mac, calctag, sizeof (calctag), &calcsize)) {
             if (R_UNLIKELY (r_memcmp (authtag, calctag, tagsize) != 0)) {
               R_LOG_INFO ("stream: 0x%.8x - SRTP auth failed for idx 0x%"R_RTP_SEQIDX_FMT,
                   stream->ssrc, idx);
@@ -713,9 +713,9 @@ r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
             if (r_hmac_update (stream->rtcp.mac, info.data,
                   info.size - stream->rtpmkisize - tagsize)) {
               ruint8 calctag[32];
-              rsize calcsize = sizeof (calctag);
+              rsize calcsize;
 
-              r_hmac_get_data (stream->rtcp.mac, calctag, &calcsize);
+              r_hmac_get_data (stream->rtcp.mac, calctag, sizeof (calctag), &calcsize);
               r_memcpy (info.data + info.size - tagsize, calctag, tagsize);
             } else {
               R_LOG_ERROR ("HMAC update for SRTP auth failed");
@@ -809,11 +809,11 @@ r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
 
         if (stream->rtcp.mac != NULL && tagsize > 0) {
           ruint8 calctag[32];
-          rsize calcsize = sizeof (calctag);
+          rsize calcsize;
 
           r_hmac_reset (stream->rtcp.mac);
           if (r_hmac_update (stream->rtcp.mac, rtcp.info.data, newsize + sizeof (ruint32)) &&
-              r_hmac_get_data (stream->rtcp.mac, calctag, &calcsize)) {
+              r_hmac_get_data (stream->rtcp.mac, calctag, sizeof (calctag), &calcsize)) {
             if (R_UNLIKELY (r_memcmp (authtag, calctag, tagsize) != 0)) {
               R_LOG_INFO ("stream: 0x%.8x - SRTP auth failed for idx 0x%"R_RTP_SEQIDX_FMT,
                   stream->ssrc, (ruint64)idx);

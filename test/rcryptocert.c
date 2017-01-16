@@ -43,7 +43,7 @@ RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
   };
   RCryptoCert * cert;
   RCryptoKey * pk;
-  RHashType signalgo;
+  RMsgDigestType signalgo;
   rsize size;
 
   r_assert_cmpptr ((cert = r_crypto_x509_cert_new (x509v3, sizeof (x509v3))), !=, NULL);
@@ -51,7 +51,7 @@ RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
   r_assert_cmpstr (r_crypto_cert_get_strtype (cert), ==, "X.509");
   r_assert_cmpptr (r_crypto_cert_get_signature (cert, &signalgo, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 1024);
-  r_assert_cmpuint (signalgo, ==, R_HASH_TYPE_SHA1);
+  r_assert_cmpuint (signalgo, ==, R_MSG_DIGEST_TYPE_SHA1);
   r_assert_cmpuint (r_crypto_x509_cert_version (cert), ==, R_X509_VERSION_V3);
   r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==, 17);
   r_assert_cmpstr (r_crypto_x509_cert_issuer (cert),   ==, "CN=Example CA,DC=example,DC=com");
@@ -84,15 +84,14 @@ RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
    *       length, and number of unused bits).
    */
   {
-    RHash * h = r_hash_new_sha1 ();
+    RMsgDigest * md = r_sha1_new ();
     ruint8 sha1[20];
-    size = sizeof (sha1);
 
-    r_assert (r_hash_update (h, x509v3 + 223, 140));
-    r_assert (r_hash_get_data (h, sha1, &size));
+    r_assert (r_msg_digest_update (md, x509v3 + 223, 140));
+    r_assert (r_msg_digest_get_data (md, sha1, sizeof (sha1), &size));
     r_assert_cmpmem (r_crypto_x509_cert_subject_key_id (cert, NULL), ==, sha1, size);
 
-    r_hash_free (h);
+    r_msg_digest_free (md);
   }
 
   r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_OK);
@@ -163,7 +162,7 @@ RTEST (rcryptocert, valid_x509v3, RTEST_FAST)
   };
   RCryptoCert * cert;
   RCryptoKey * pk;
-  RHashType signalgo;
+  RMsgDigestType signalgo;
   rsize size;
 
 
@@ -172,7 +171,7 @@ RTEST (rcryptocert, valid_x509v3, RTEST_FAST)
   r_assert_cmpstr (r_crypto_cert_get_strtype (cert), ==, "X.509");
   r_assert_cmpptr (r_crypto_cert_get_signature (cert, &signalgo, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 2048);
-  r_assert_cmpuint (signalgo, ==, R_HASH_TYPE_SHA256);
+  r_assert_cmpuint (signalgo, ==, R_MSG_DIGEST_TYPE_SHA256);
   r_assert_cmpuint (r_crypto_x509_cert_version (cert), ==, R_X509_VERSION_V3);
   r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==, 1);
   r_assert_cmpstr (r_crypto_x509_cert_issuer (cert),   ==, "CN=Good CA,O=Test Certificates 2011,C=US");
@@ -257,7 +256,7 @@ RTEST (rcryptocert, openssl_gen_x509_rsa_1024, RTEST_FAST)
   };
   RCryptoCert * cert;
   RCryptoKey * pk;
-  RHashType signalgo;
+  RMsgDigestType signalgo;
   rsize size;
 
   r_assert_cmpptr ((cert = r_crypto_x509_cert_new (x509v3, sizeof (x509v3))), !=, NULL);
@@ -265,7 +264,7 @@ RTEST (rcryptocert, openssl_gen_x509_rsa_1024, RTEST_FAST)
   r_assert_cmpstr (r_crypto_cert_get_strtype (cert), ==, "X.509");
   r_assert_cmpptr (r_crypto_cert_get_signature (cert, &signalgo, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 1024);
-  r_assert_cmpuint (signalgo, ==, R_HASH_TYPE_SHA1);
+  r_assert_cmpuint (signalgo, ==, R_MSG_DIGEST_TYPE_SHA1);
   r_assert_cmpuint (r_crypto_x509_cert_version (cert), ==, R_X509_VERSION_V3);
   r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==, RUINT64_CONSTANT (9471694375470879023));
   r_assert_cmpstr (r_crypto_x509_cert_issuer (cert),   ==, "CN=ieei,O=82 bits,ST=Some-State,C=NO");
@@ -311,7 +310,7 @@ RTEST (rcryptocert, nodejs_pem_gen_x509_self_signed_rsa_2048_days_1, RTEST_FAST)
   ruint8 * x509v3;
   RCryptoCert * cert;
   RCryptoKey * pk;
-  RHashType signalgo;
+  RMsgDigestType signalgo;
 
   r_assert_cmpptr ((x509v3 = r_base64_decode (x509_base64, -1, &size)), !=, NULL);
 
@@ -322,7 +321,7 @@ RTEST (rcryptocert, nodejs_pem_gen_x509_self_signed_rsa_2048_days_1, RTEST_FAST)
   r_assert_cmpstr (r_crypto_cert_get_strtype (cert), ==, "X.509");
   r_assert_cmpptr (r_crypto_cert_get_signature (cert, &signalgo, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 2048);
-  r_assert_cmpuint (signalgo, ==, R_HASH_TYPE_SHA256);
+  r_assert_cmpuint (signalgo, ==, R_MSG_DIGEST_TYPE_SHA256);
   r_assert_cmpuint (r_crypto_x509_cert_version (cert), ==, R_X509_VERSION_V1);
   r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==, RUINT64_CONSTANT (17580797759823991962));
   r_assert_cmpstr (r_crypto_x509_cert_issuer (cert),   ==, "CN=localhost");
@@ -371,7 +370,7 @@ RTEST (rcryptocert, chrome_ec_secp256r1_dtls, RTEST_FAST)
 
   RCryptoCert * cert;
   RCryptoKey * pk;
-  RHashType signalgo;
+  RMsgDigestType signalgo;
   rsize size;
 
   r_assert_cmpptr ((cert = r_crypto_x509_cert_new (x509v3, sizeof (x509v3))), !=, NULL);
@@ -379,7 +378,7 @@ RTEST (rcryptocert, chrome_ec_secp256r1_dtls, RTEST_FAST)
   r_assert_cmpstr (r_crypto_cert_get_strtype (cert), ==, "X.509");
   r_assert_cmpptr (r_crypto_cert_get_signature (cert, &signalgo, &size), !=, NULL);
   r_assert_cmpuint (size, ==, 568);
-  r_assert_cmpuint (signalgo, ==, R_HASH_TYPE_SHA256);
+  r_assert_cmpuint (signalgo, ==, R_MSG_DIGEST_TYPE_SHA256);
   r_assert_cmpuint (r_crypto_x509_cert_version (cert), ==, R_X509_VERSION_V3);
   r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==, RUINT64_CONSTANT (10701905757333968641));
   r_assert_cmpstr (r_crypto_x509_cert_issuer (cert),   ==, "CN=WebRTC");
@@ -438,7 +437,7 @@ RTEST (rcryptocert, export_and_fingerprint, RTEST_FAST)
   r_free (x509v3out);
   r_free (x509v3in);
 
-  r_assert_cmpstr ((fingerprint = r_crypto_cert_fingerprint_str (cert, R_HASH_TYPE_SHA256, ":", 1)),
+  r_assert_cmpstr ((fingerprint = r_crypto_cert_fingerprint_str (cert, R_MSG_DIGEST_TYPE_SHA256, ":", 1)),
       ==, "74:ac:bd:23:74:28:88:33:67:89:4a:3e:05:12:24:55:c1:1c:71:c4:de:00:c7:47:d3:5d:98:51:36:a8:0a:b8");
   r_free (fingerprint);
 

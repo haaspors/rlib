@@ -26,20 +26,20 @@
 /* This list should be sorted on preference! */
 static const RTLSCipherSuiteInfo g__r_cipher_suites[] = {
   { R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, "TLS-RSA-WITH-AES-128-CBC-SHA",
-    R_KEY_EXCHANGE_RSA, &g__r_crypto_cipher_aes_128_cbc, R_HASH_TYPE_SHA1 },
+    R_KEY_EXCHANGE_RSA, &g__r_crypto_cipher_aes_128_cbc, R_MSG_DIGEST_TYPE_SHA1 },
   { R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256, "TLS-RSA-WITH-AES-128-CBC-SHA256",
-    R_KEY_EXCHANGE_RSA, &g__r_crypto_cipher_aes_128_cbc, R_HASH_TYPE_SHA256 },
+    R_KEY_EXCHANGE_RSA, &g__r_crypto_cipher_aes_128_cbc, R_MSG_DIGEST_TYPE_SHA256 },
 
   { R_TLS_CS_RSA_WITH_NULL_SHA, "TLS-RSA-WITH-NULL-SHA",
-    R_KEY_EXCHANGE_RSA, &g__r_crypto_null_cipher, R_HASH_TYPE_SHA1 },
+    R_KEY_EXCHANGE_RSA, &g__r_crypto_null_cipher, R_MSG_DIGEST_TYPE_SHA1 },
   { R_TLS_CS_RSA_WITH_NULL_SHA256, "TLS-RSA-WITH-NULL-SHA256",
-    R_KEY_EXCHANGE_RSA, &g__r_crypto_null_cipher, R_HASH_TYPE_SHA256 },
+    R_KEY_EXCHANGE_RSA, &g__r_crypto_null_cipher, R_MSG_DIGEST_TYPE_SHA256 },
   { R_TLS_CS_RSA_WITH_NULL_MD5, "TLS-RSA-WITH-NULL-MD5",
-    R_KEY_EXCHANGE_RSA, &g__r_crypto_null_cipher, R_HASH_TYPE_MD5 },
+    R_KEY_EXCHANGE_RSA, &g__r_crypto_null_cipher, R_MSG_DIGEST_TYPE_MD5 },
 
   /* Should be the last in our list */
   { R_TLS_CS_NULL_WITH_NULL_NULL, "TLS-NULL-WITH-NULL-NULL",
-    R_KEY_EXCHANGE_NULL, &g__r_crypto_null_cipher, R_HASH_TYPE_NONE },
+    R_KEY_EXCHANGE_NULL, &g__r_crypto_null_cipher, R_MSG_DIGEST_TYPE_NONE },
 };
 
 rboolean

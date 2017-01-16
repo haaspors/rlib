@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -62,7 +62,7 @@ struct _RTLSServer {
   RTLSHelloMsg hello;
   RBuffer * hellobuf;
 
-  RHash * hshash;
+  RMsgDigest * hshash;
   ruint8 mastersecret[48];
   ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES];
   rboolean servrandompinned;
@@ -138,6 +138,7 @@ r_tls_server_free (RTLSServer * server)
   if (server->server.cipher != NULL)
     r_crypto_cipher_unref (server->server.cipher);
   r_free (server->server.fixediv);
+  r_msg_digest_free (server->hshash);
 
   r_free (server->ticket);
   r_queue_clear (&server->qsend, r_buffer_unref);
@@ -414,7 +415,7 @@ r_tls_server_write_hello (RTLSServer * server)
       if (ret == R_TLS_ERROR_OK) {
         R_LOG_TRACE ("Updating HS hash with ServerHello %u bytes",
             (ruint)(size - hdrsize));
-        r_hash_update (server->hshash, info.data + hdrsize, size - hdrsize);
+        r_msg_digest_update (server->hshash, info.data + hdrsize, size - hdrsize);
       }
     }
     r_buffer_unmap (buf, &info);
@@ -459,7 +460,7 @@ r_tls_server_write_hello_done (RTLSServer * server)
     if (ret == R_TLS_ERROR_OK) {
       R_LOG_TRACE ("Updating HS hash with ServerHelloDone %u bytes",
           (ruint)(size - hdrsize));
-      r_hash_update (server->hshash, info.data + hdrsize, size - hdrsize);
+      r_msg_digest_update (server->hshash, info.data + hdrsize, size - hdrsize);
     }
     r_buffer_unmap (buf, &info);
     r_buffer_set_size (buf, size);
@@ -513,7 +514,7 @@ r_tls_server_write_certificate (RTLSServer * server)
       _r_write_u24 (&info.data[size], 24 / 8 + certsize); size += 24 / 8;
       _r_write_u24 (&info.data[size],          certsize); size += 24 / 8;
 
-      r_hash_update (server->hshash, info.data + hdrsize, size - hdrsize);
+      r_msg_digest_update (server->hshash, info.data + hdrsize, size - hdrsize);
 
       r_buffer_unmap (buf, &info);
       r_buffer_set_size (buf, size);
@@ -522,7 +523,7 @@ r_tls_server_write_certificate (RTLSServer * server)
       r_buffer_map (certbuf, &info, R_MEM_MAP_READ);
       R_LOG_TRACE ("Updating HS hash with ServerCertificate %u bytes",
           (ruint)(size - hdrsize + info.size));
-      r_hash_update (server->hshash, info.data, info.size);
+      r_msg_digest_update (server->hshash, info.data, info.size);
       r_buffer_unmap (certbuf, &info);
 
       ret = r_tls_server_send_record (server, buf);
@@ -657,11 +658,11 @@ r_tls_server_write_finished (RTLSServer * server)
     return R_TLS_ERROR_OOM;
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
-    rsize verifysize = 12, hashsize = r_hash_size (server->hshash);
+    rsize verifysize = 12, hashsize = r_msg_digest_size (server->hshash);
     ruint8 * hash = r_alloca (hashsize);
 
-    if (r_hash_finish (server->hshash) &&
-        r_hash_get_data (server->hshash, hash, &hashsize)) {
+    if (r_msg_digest_finish (server->hshash) &&
+        r_msg_digest_get_data (server->hshash, hash, hashsize, NULL)) {
       if (r_tls_version_is_dtls (server->version)) {
         ret = r_dtls_write_handshake (info.data, info.size, &size,
             server->version, R_TLS_HANDSHAKE_TYPE_FINISHED, verifysize,
@@ -790,7 +791,7 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
     case R_TLS_VERSION_DTLS_1_2:
     case R_TLS_VERSION_TLS_1_2:
       server->prf = r_tls_1_2_prf_sha256;
-      server->hshash = r_hash_new_sha256 ();
+      server->hshash = r_sha256_new ();
       break;
 #if 0
     case R_TLS_VERSION_DTLS_1_0:
@@ -799,21 +800,21 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
       break;
     case R_TLS_VERSION_SSL_3_0:
       switch (server->csinfo->mac) {
-        case R_HASH_TYPE_SHA256:
+        case R_MSG_DIGEST_TYPE_SHA256:
           server->prf = r_tls_1_2_prf_sha256;
-          server->hshash = r_hash_new_sha256 ();
+          server->hshash = r_sha256_new ();
           break;
-        case R_HASH_TYPE_SHA512:
+        case R_MSG_DIGEST_TYPE_SHA512:
           server->prf = r_tls_1_2_prf_sha512;
-          server->hshash = r_hash_new_sha512 ();
+          server->hshash = r_sha512_new ();
           break;
-        case R_HASH_TYPE_SHA224:
+        case R_MSG_DIGEST_TYPE_SHA224:
           server->prf = r_tls_1_2_prf_sha224;
-          server->hshash = r_hash_new_sha224 ();
+          server->hshash = r_sha224_new ();
           break;
-        case R_HASH_TYPE_SHA384:
+        case R_MSG_DIGEST_TYPE_SHA384:
           server->prf = r_tls_1_2_prf_sha384;
-          server->hshash = r_hash_new_sha384 ();
+          server->hshash = r_sha384_new ();
           break;
         default:
           return R_TLS_ERROR_WRONG_STATE;
@@ -948,7 +949,7 @@ r_tls_server_expand_master_secret (RTLSServer * server)
     rsize size;
 
     /* MAC */
-    if ((size = r_hash_type_size (server->csinfo->mac)) > 0) {
+    if ((size = r_msg_digest_type_size (server->csinfo->mac)) > 0) {
       R_LOG_DEBUG ("HMAC (%d) from keyblock of size %u", server->csinfo->mac, (ruint)size);
       server->client.hmac = r_hmac_new (server->csinfo->mac, ptr, size); ptr += size;
       server->server.hmac = r_hmac_new (server->csinfo->mac, ptr, size); ptr += size;
@@ -980,9 +981,9 @@ r_tls_server_parse_finished (RTLSServer * server, const RTLSParser * parser)
   if ((ret = r_tls_parser_parse_finished (parser, &verify_data, &size)) == R_TLS_ERROR_OK) {
     if (size >= 12) {
       ruint8 * verify_calc = r_alloca (size);
-      rsize hashsize = r_hash_size (server->hshash);
+      rsize hashsize = r_msg_digest_size (server->hshash);
       ruint8 * hash = r_alloca (hashsize);
-      r_hash_get_data (server->hshash, hash, &hashsize);
+      r_msg_digest_get_data (server->hshash, hash, hashsize, NULL);
 
       if ((ret = server->prf (verify_calc, size,
             server->mastersecret, sizeof (server->mastersecret),
@@ -1045,7 +1046,7 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
     case R_TLS_ERROR_OK:
       R_LOG_TRACE ("Updating HS hash with ClientHello %u bytes",
           (ruint)parser->fragment.size);
-      r_hash_update (server->hshash, parser->fragment.data, parser->fragment.size);
+      r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
 
       if (r_tls_server_write_hello (server) == R_TLS_ERROR_OK)
         server->server.msgseq++;
@@ -1104,7 +1105,7 @@ r_tls_server_state_certificate (RTLSServer * server, const RTLSParser * parser)
     case R_TLS_ERROR_OK:
       R_LOG_TRACE ("Updating HS hash with ClientCertificate %u bytes",
           (ruint)parser->fragment.size);
-      r_hash_update (server->hshash, parser->fragment.data, parser->fragment.size);
+      r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
     case R_TLS_ERROR_NOT_NEEDED:
       break;
     case R_TLS_ERROR_NO_CERTIFICATE:
@@ -1141,7 +1142,7 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
     case R_TLS_ERROR_OK:
       R_LOG_TRACE ("Updating HS hash with ClientKeyExchange %u bytes",
           (ruint)parser->fragment.size);
-      r_hash_update (server->hshash, parser->fragment.data, parser->fragment.size);
+      r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
       r_tls_server_expand_master_secret (server);
       break;
     case R_TLS_ERROR_CORRUPT_RECORD:
@@ -1198,7 +1199,7 @@ r_tls_server_state_finished (RTLSServer * server, const RTLSParser * parser)
     case R_TLS_ERROR_OK:
       R_LOG_TRACE ("Updating HS hash with ClientFinished %u bytes",
           (ruint)parser->fragment.size);
-      r_hash_update (server->hshash, parser->fragment.data, parser->fragment.size);
+      r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
 
       if (r_tls_server_write_new_session_ticket (server) == R_TLS_ERROR_OK)
         server->server.msgseq++;
@@ -1209,7 +1210,7 @@ r_tls_server_state_finished (RTLSServer * server, const RTLSParser * parser)
       if (r_tls_server_write_finished (server) == R_TLS_ERROR_OK)
         server->server.msgseq++;
 
-      r_hash_free (server->hshash);
+      r_msg_digest_free (server->hshash);
       server->hshash = NULL;
       if (server->cb.handshake_done != NULL)
         server->cb.handshake_done (server->userdata, server);

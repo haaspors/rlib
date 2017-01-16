@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -33,10 +33,10 @@ R_BEGIN_DECLS
 typedef RCryptoResult (*RCryptoOperation) (const RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, rpointer, rsize * outsize);
 typedef RCryptoResult (*RCryptoSign) (const RCryptoKey * key, RPrng * prng,
-    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rpointer, rsize * sigsize);
 typedef RCryptoResult (*RCryptoVerify) (const RCryptoKey * key,
-    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rconstpointer sig, rsize sigsize);
 typedef RCryptoResult (*RCryptoKeyExportAsn1) (const RCryptoKey * key, RAsn1BinEncoder * enc);
 typedef RCryptoResult (*RCryptoCertExportAsn1) (const RCryptoCert * cert, RAsn1BinEncoder * enc);
@@ -71,7 +71,7 @@ struct _RCryptoCert {
   ruint64 valid_to;       /* unix timestamp */
   RCryptoKey * pk;
 
-  RHashType signalgo;
+  RMsgDigestType signalgo;
   ruint8 signhash[64];
   ruint8 * sign;
   rsize signbits;

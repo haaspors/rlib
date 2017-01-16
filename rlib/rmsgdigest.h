@@ -27,43 +27,52 @@
 R_BEGIN_DECLS
 
 typedef enum {
-  R_HASH_TYPE_NONE,
-  R_HASH_TYPE_MD2,
-  R_HASH_TYPE_MD4,
-  R_HASH_TYPE_MD5,
-  R_HASH_TYPE_SHA1,
-  R_HASH_TYPE_SHA224,
-  R_HASH_TYPE_SHA256,
-  R_HASH_TYPE_SHA384,
-  R_HASH_TYPE_SHA512,
-} RHashType;
+  R_MSG_DIGEST_TYPE_NONE,
+  R_MSG_DIGEST_TYPE_MD2,
+  R_MSG_DIGEST_TYPE_MD4,
+  R_MSG_DIGEST_TYPE_MD5,
+  R_MSG_DIGEST_TYPE_SHA1,
+  R_MSG_DIGEST_TYPE_SHA224,
+  R_MSG_DIGEST_TYPE_SHA256,
+  R_MSG_DIGEST_TYPE_SHA384,
+  R_MSG_DIGEST_TYPE_SHA512,
+} RMsgDigestType;
 
-R_API rsize r_hash_type_size (RHashType type);
+R_API rsize r_msg_digest_type_size (RMsgDigestType type);
+R_API rsize r_msg_digest_type_blocksize (RMsgDigestType type);
 
-typedef struct _RHash RHash;
+typedef struct _RMsgDigest RMsgDigest;
 
-#define r_hash_new_md2()      r_hash_new (R_HASH_TYPE_MD2)
-#define r_hash_new_md4()      r_hash_new (R_HASH_TYPE_MD4)
-#define r_hash_new_md5()      r_hash_new (R_HASH_TYPE_MD5)
-#define r_hash_new_sha1()     r_hash_new (R_HASH_TYPE_SHA1)
-#define r_hash_new_sha224()   r_hash_new (R_HASH_TYPE_SHA224)
-#define r_hash_new_sha256()   r_hash_new (R_HASH_TYPE_SHA256)
-#define r_hash_new_sha384()   r_hash_new (R_HASH_TYPE_SHA384)
-#define r_hash_new_sha512()   r_hash_new (R_HASH_TYPE_SHA512)
+R_API RMsgDigest * r_msg_digest_new (RMsgDigestType type);
+R_API void r_msg_digest_free (RMsgDigest * md);
 
-R_API RHash * r_hash_new (RHashType type);
-R_API void r_hash_free (RHash * hash);
+R_API RMsgDigest * r_msg_digest_new_md2 (void);
+R_API RMsgDigest * r_msg_digest_new_md4 (void);
+R_API RMsgDigest * r_msg_digest_new_md5 (void);
+R_API RMsgDigest * r_msg_digest_new_sha1 (void);
+R_API RMsgDigest * r_msg_digest_new_sha224 (void);
+R_API RMsgDigest * r_msg_digest_new_sha256 (void);
+R_API RMsgDigest * r_msg_digest_new_sha384 (void);
+R_API RMsgDigest * r_msg_digest_new_sha512 (void);
+#define r_md2_new r_msg_digest_new_md2
+#define r_md4_new r_msg_digest_new_md4
+#define r_md5_new r_msg_digest_new_md5
+#define r_sha1_new r_msg_digest_new_sha1
+#define r_sha224_new r_msg_digest_new_sha224
+#define r_sha256_new r_msg_digest_new_sha256
+#define r_sha384_new r_msg_digest_new_sha384
+#define r_sha512_new r_msg_digest_new_sha512
 
-R_API rsize r_hash_size (const RHash * hash);
-R_API rsize r_hash_blocksize (const RHash * hash);
+R_API rsize r_msg_digest_size (const RMsgDigest * md);
+R_API rsize r_msg_digest_blocksize (const RMsgDigest * md);
 
-R_API void r_hash_reset (RHash * hash);
-R_API rboolean r_hash_update (RHash * hash, rconstpointer data, rsize size);
-R_API rboolean r_hash_finish (RHash * hash);
+R_API void r_msg_digest_reset (RMsgDigest * md);
+R_API rboolean r_msg_digest_update (RMsgDigest * md, rconstpointer data, rsize size);
+R_API rboolean r_msg_digest_finish (RMsgDigest * md);
 
-R_API rboolean r_hash_get_data (const RHash * hash, ruint8 * data, rsize * size);
-R_API rchar * r_hash_get_hex (const RHash * hash);
-R_API rchar * r_hash_get_hex_full (const RHash * hash,
+R_API rboolean r_msg_digest_get_data (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
+R_API rchar * r_msg_digest_get_hex (const RMsgDigest * md);
+R_API rchar * r_msg_digest_get_hex_full (const RMsgDigest * md,
     const rchar * divider, rsize interval);
 
 R_END_DECLS

@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -86,17 +86,17 @@ R_API RCryptoResult r_rsa_pkcs1v1_5_encrypt (const RCryptoKey * key, RPrng * prn
 R_API RCryptoResult r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
 R_API RCryptoResult r_rsa_pkcs1v1_5_sign_msg (const RCryptoKey * key, RPrng * prng,
-    RHashType hashtype, rconstpointer msg, rsize msgsize,
+    RMsgDigestType mdtype, rconstpointer msg, rsize msgsize,
     rpointer sig, rsize * sigsize);
 R_API RCryptoResult r_rsa_pkcs1v1_5_sign_msg_hash (const RCryptoKey * key, RPrng * prng,
-    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rpointer sig, rsize * sigsize);
 R_API RCryptoResult r_rsa_pkcs1v1_5_sign_hash (const RCryptoKey * key, RPrng * prng,
     rconstpointer hash, rsize hashsize, rpointer sig, rsize * sigsize);
 R_API RCryptoResult r_rsa_pkcs1v1_5_verify_msg (const RCryptoKey * key,
     rconstpointer msg, rsize msgsize, rconstpointer sig, rsize sigsize);
 R_API RCryptoResult r_rsa_pkcs1v1_5_verify_msg_with_hash (const RCryptoKey * key,
-    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rconstpointer sig, rsize sigsize);
 R_API RCryptoResult r_rsa_pkcs1v1_5_verify_hash (const RCryptoKey * key,
     rconstpointer hash, rsize hashsize, rconstpointer sig, rsize sigsize);

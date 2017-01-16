@@ -59,7 +59,7 @@ typedef struct {
   const RCryptoCipherInfo * cipher;
   rsize saltbits;
 
-  RHashType auth;
+  RMsgDigestType auth;
   rsize authprefixlen;
   rsize srtp_tagbits;
   rsize srtcp_tagbits;

@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -140,10 +140,10 @@ r_stun_msg_add_message_integrity_short_cred (RStunMsgCtx * ctx,
     ruint16 l = ctx->used_size + R_STUN_ATTR_TLV_HEADER_SIZE + tlv.len - R_STUN_HEADER_SIZE;
     *(ruint16 *)&ctx->buf[R_STUN_MSGLEN_OFFSET] = RUINT16_TO_BE (l);
 
-    if ((hmac = r_hmac_new (R_HASH_TYPE_SHA1, key, keysize)) != NULL) {
-      rsize datasize = R_STUN_MSG_INTEGRITY_SIZE;
+    if ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, key, keysize)) != NULL) {
+      rsize datasize;
       if (r_hmac_update (hmac, ctx->buf, ctx->used_size) &&
-          r_hmac_get_data (hmac, val, &datasize))
+          r_hmac_get_data (hmac, val, sizeof (val), &datasize))
         ret = r_stun_msg_add_attribute (ctx, &tlv);
       r_hmac_free (hmac);
     }
@@ -313,9 +313,9 @@ r_stun_msg_check_integrity_short_cred (rconstpointer buf,
   len = (ruint16)(tlv->start - (const ruint8 *)buf);
   if (R_UNLIKELY (len <= R_STUN_HEADER_SIZE)) return FALSE;
 
-  if ((hmac = r_hmac_new (R_HASH_TYPE_SHA1, key, keysize)) != NULL) {
+  if ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, key, keysize)) != NULL) {
     ruint8 data[R_STUN_MSG_INTEGRITY_SIZE];
-    rsize datasize = R_STUN_MSG_INTEGRITY_SIZE;
+    rsize datasize;
     ruint16 be = RUINT16_TO_BE ((ruint16)len +
         R_STUN_ATTR_TLV_HEADER_SIZE + tlv->len - R_STUN_HEADER_SIZE);
 
@@ -323,7 +323,7 @@ r_stun_msg_check_integrity_short_cred (rconstpointer buf,
           r_hmac_update (hmac, &be, sizeof (ruint16)) &&
           r_hmac_update (hmac, ((const ruint8 *)buf) + R_STUN_MAGIC_COOKIE_OFFSET,
             len - (R_STUN_MSGLEN_OFFSET + sizeof (ruint16))) &&
-          r_hmac_get_data (hmac, data, &datasize)))
+          r_hmac_get_data (hmac, data, sizeof (data), &datasize)))
       ret = r_memcmp (data, tlv->value, tlv->len) == 0;
     r_hmac_free (hmac);
   } else {

@@ -220,7 +220,7 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
   };
 
   r_assert_cmpptr ((cipher = r_cipher_aes_128_cbc_new (server_enc_key)), !=, NULL);
-  r_assert_cmpptr ((hmac = r_hmac_new (R_HASH_TYPE_SHA1, server_mac_key, sizeof (server_mac_key))), !=, NULL);
+  r_assert_cmpptr ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, server_mac_key, sizeof (server_mac_key))), !=, NULL);
 
   r_assert_cmpint (r_tls_server_set_random (fixture->server, dtls_server_random),
       ==, R_TLS_ERROR_OK);

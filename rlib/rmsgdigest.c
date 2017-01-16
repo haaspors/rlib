@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -18,11 +18,11 @@
 
 #include "config.h"
 #include <rlib/rmsgdigest.h>
+
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-#define R_HASH_MAX_SIZE         (1024 / 8)
-
+/* FIXME: Move or use stuff from rmacros.h?? */
 #define RUINT32_SHL(x, n)       (((x) & RUINT32_MAX) << (n))
 #define RUINT32_SHR(x, n)       (((x) & RUINT32_MAX) >> (n))
 #define RUINT32_ROTL(x, n)      (RUINT32_SHL (x, n) | RUINT32_SHR (x, 32-(n)))
@@ -32,257 +32,214 @@
 #define RUINT64_ROTL(x, n)      (RUINT64_SHL (x, n) | RUINT64_SHR (x, 64-(n)))
 #define RUINT64_ROTR(x, n)      (RUINT64_SHR (x, n) | RUINT64_SHL (x, 64-(n)))
 
+typedef     void (*RMDInit) (RMsgDigest * md);
+typedef rboolean (*RMDFinal) (RMsgDigest * md);
+typedef rboolean (*RMDUpdate) (RMsgDigest * md, rconstpointer data, rsize size);
+typedef rboolean (*RMDGet) (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
+
 /* MD5 */
-#define R_HASH_MD5_SIZE         (128 / 8)
-#define R_HASH_MD5_WORD_SIZE    (R_HASH_MD5_SIZE / sizeof (ruint32))
-#define R_HASH_MD5_BLOCK_SIZE   (512 / 8)
+#define R_MD5_SIZE         (128 / 8)
+#define R_MD5_WORD_SIZE    (R_MD5_SIZE / sizeof (ruint32))
+#define R_MD5_BLOCK_SIZE   (512 / 8)
 typedef struct {
-  ruint32 data[R_HASH_MD5_WORD_SIZE];
+  ruint32 data[R_MD5_WORD_SIZE];
   ruint64 len;
 
-  ruint8 buffer[R_HASH_MD5_BLOCK_SIZE];
+  ruint8 buffer[R_MD5_BLOCK_SIZE];
   rsize bufsize;
-} RMd5Hash;
-static void r_md5_hash_init (RMd5Hash * md5);
-static void r_md5_hash_final (RMd5Hash * md5);
-static rboolean r_md5_hash_update (RMd5Hash * md5, rconstpointer data, rsize size);
-static rboolean r_md5_hash_get (const RMd5Hash * md5, ruint8 * data, rsize * size);
+} RMd5;
+static void r_md5_init (RMsgDigest * md);
+static rboolean r_md5_final (RMsgDigest * md);
+static rboolean r_md5_update (RMsgDigest * md, rconstpointer data, rsize size);
+static rboolean r_md5_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
 
 /* SHA-1 */
-#define R_HASH_SHA1_SIZE          (160 / 8)
-#define R_HASH_SHA1_WORD_SIZE     (R_HASH_SHA1_SIZE / sizeof (ruint32))
-#define R_HASH_SHA1_BLOCK_SIZE    (512 / 8)
+#define R_SHA1_SIZE          (160 / 8)
+#define R_SHA1_WORD_SIZE     (R_SHA1_SIZE / sizeof (ruint32))
+#define R_SHA1_BLOCK_SIZE    (512 / 8)
 typedef struct {
-  ruint32 data[R_HASH_SHA1_WORD_SIZE];
+  ruint32 data[R_SHA1_WORD_SIZE];
   ruint64 len;
 
-  ruint8 buffer[R_HASH_SHA1_BLOCK_SIZE];
+  ruint8 buffer[R_SHA1_BLOCK_SIZE];
   rsize bufsize;
-} RSha1Hash;
-static void r_sha1_hash_init (RSha1Hash * sha1);
-static void r_sha1_hash_final (RSha1Hash * sha1);
-static rboolean r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size);
-static rboolean r_sha1_hash_get (const RSha1Hash * sha1, ruint8 * data, rsize * size);
+} RSha1;
+static void r_sha1_init (RMsgDigest * md);
+static rboolean r_sha1_final (RMsgDigest * md);
+static rboolean r_sha1_update (RMsgDigest * md, rconstpointer data, rsize size);
+static rboolean r_sha1_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
 
 /* SHA-256 */
-#define R_HASH_SHA256_SIZE          (256 / 8)
-#define R_HASH_SHA256_WORD_SIZE     (R_HASH_SHA256_SIZE / sizeof (ruint32))
-#define R_HASH_SHA256_BLOCK_SIZE    (512 / 8)
+#define R_SHA256_SIZE          (256 / 8)
+#define R_SHA256_WORD_SIZE     (R_SHA256_SIZE / sizeof (ruint32))
+#define R_SHA256_BLOCK_SIZE    (512 / 8)
 typedef struct {
-  ruint32 data[R_HASH_SHA256_WORD_SIZE];
+  ruint32 data[R_SHA256_WORD_SIZE];
   ruint64 len;
 
-  ruint8 buffer[R_HASH_SHA256_BLOCK_SIZE];
+  ruint8 buffer[R_SHA256_BLOCK_SIZE];
   rsize bufsize;
-} RSha256Hash;
-static void r_sha256_hash_init (RSha256Hash * sha256);
-static void r_sha256_hash_final (RSha256Hash * sha256);
-static rboolean r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size);
-static rboolean r_sha256_hash_get (const RSha256Hash * sha256, ruint8 * data, rsize * size);
+} RSha256;
+static void r_sha256_init (RMsgDigest * md);
+static rboolean r_sha256_final (RMsgDigest * md);
+static rboolean r_sha256_update (RMsgDigest * md, rconstpointer data, rsize size);
+static rboolean r_sha256_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
 
 /* SHA-512 */
-#define R_HASH_SHA512_SIZE          (512 / 8)
-#define R_HASH_SHA512_WORD_SIZE     (R_HASH_SHA512_SIZE / sizeof (ruint64))
-#define R_HASH_SHA512_BLOCK_SIZE    (1024 / 8)
+#define R_SHA512_SIZE          (512 / 8)
+#define R_SHA512_WORD_SIZE     (R_SHA512_SIZE / sizeof (ruint64))
+#define R_SHA512_BLOCK_SIZE    (1024 / 8)
 typedef struct {
-  ruint64 data[R_HASH_SHA512_WORD_SIZE];
+  ruint64 data[R_SHA512_WORD_SIZE];
   ruint64 len[2];
 
-  ruint8 buffer[R_HASH_SHA512_BLOCK_SIZE];
+  ruint8 buffer[R_SHA512_BLOCK_SIZE];
   rsize bufsize;
-} RSha512Hash;
-static void r_sha512_hash_init (RSha512Hash * sha512);
-static void r_sha512_hash_final (RSha512Hash * sha512);
-static rboolean r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size);
-static rboolean r_sha512_hash_get (const RSha512Hash * sha512, ruint8 * data, rsize * size);
+} RSha512;
+static void r_sha512_init (RMsgDigest * md);
+static rboolean r_sha512_final (RMsgDigest * md);
+static rboolean r_sha512_update (RMsgDigest * md, rconstpointer data, rsize size);
+static rboolean r_sha512_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
 
-struct _RHash {
-  RHashType type;
+struct _RMsgDigest {
+  RMsgDigestType type;
   rboolean is_final;
 
-  union {
-    RMd5Hash md5;
-    RSha1Hash sha1;
-    RSha256Hash sha256;
-    RSha512Hash sha512;
-  } hash;
+  rsize mdsize;
+  rsize blocksize;
+  RMDInit init;
+  RMDFinal final;
+  RMDUpdate update;
+  RMDGet get;
 };
 
-RHash *
-r_hash_new (RHashType type)
-{
-  RHash * ret;
-  if ((ret = r_mem_new0 (RHash)) != NULL) {
-    ret->type = type;
-    r_hash_reset (ret);
-  }
-  return ret;
-}
-
-void
-r_hash_free (RHash * hash)
-{
-  r_free (hash);
-}
-
-rsize
-r_hash_type_size (RHashType type)
+RMsgDigest *
+r_msg_digest_new (RMsgDigestType type)
 {
   switch (type) {
-    case R_HASH_TYPE_MD5:
-      return R_HASH_MD5_SIZE;
-    case R_HASH_TYPE_SHA1:
-      return R_HASH_SHA1_SIZE;
-    case R_HASH_TYPE_SHA256:
-      return R_HASH_SHA256_SIZE;
-    case R_HASH_TYPE_SHA512:
-      return R_HASH_SHA512_SIZE;
+    case R_MSG_DIGEST_TYPE_MD5:
+      return r_msg_digest_new_md5 ();
+    case R_MSG_DIGEST_TYPE_SHA1:
+      return r_msg_digest_new_sha1 ();
+    case R_MSG_DIGEST_TYPE_SHA256:
+      return r_msg_digest_new_sha256 ();
+    case R_MSG_DIGEST_TYPE_SHA512:
+      return r_msg_digest_new_sha512 ();
     default:
-      return 0;
+      break;
   }
-}
-
-rsize
-r_hash_size (const RHash * hash)
-{
-  return r_hash_type_size (hash->type);
-}
-
-rsize
-r_hash_blocksize (const RHash * hash)
-{
-  switch (hash->type) {
-    case R_HASH_TYPE_MD5:
-      return sizeof (hash->hash.md5.buffer);
-    case R_HASH_TYPE_SHA1:
-      return sizeof (hash->hash.sha1.buffer);
-    case R_HASH_TYPE_SHA256:
-      return sizeof (hash->hash.sha256.buffer);
-    case R_HASH_TYPE_SHA512:
-      return sizeof (hash->hash.sha512.buffer);
-    default:
-      return 0;
-  }
+  return NULL;
 }
 
 void
-r_hash_reset (RHash * hash)
+r_msg_digest_free (RMsgDigest * md)
 {
-  hash->is_final = FALSE;
+  r_free (md);
+}
 
-  switch (hash->type) {
-    case R_HASH_TYPE_MD5:
-      r_md5_hash_init (&hash->hash.md5);
-      break;
-    case R_HASH_TYPE_SHA1:
-      r_sha1_hash_init (&hash->hash.sha1);
-      break;
-    case R_HASH_TYPE_SHA256:
-      r_sha256_hash_init (&hash->hash.sha256);
-      break;
-    case R_HASH_TYPE_SHA512:
-      r_sha512_hash_init (&hash->hash.sha512);
-      break;
+rsize
+r_msg_digest_type_size (RMsgDigestType type)
+{
+  switch (type) {
+    case R_MSG_DIGEST_TYPE_MD5:
+      return R_MD5_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA1:
+      return R_SHA1_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA256:
+      return R_SHA256_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA512:
+      return R_SHA512_SIZE;
     default:
-      break;
+      return 0;
   }
 }
 
-rboolean
-r_hash_update (RHash * hash, rconstpointer data, rsize size)
+rsize
+r_msg_digest_type_blocksize (RMsgDigestType type)
 {
-  if (!hash->is_final) {
-    switch (hash->type) {
-      case R_HASH_TYPE_MD5:
-        return r_md5_hash_update (&hash->hash.md5, data, size);
-      case R_HASH_TYPE_SHA1:
-        return r_sha1_hash_update (&hash->hash.sha1, data, size);
-      case R_HASH_TYPE_SHA256:
-        return r_sha256_hash_update (&hash->hash.sha256, data, size);
-      case R_HASH_TYPE_SHA512:
-        return r_sha512_hash_update (&hash->hash.sha512, data, size);
-      default:
-        break;
-    }
-  }
-
-  return FALSE;
-}
-
-rboolean
-r_hash_finish (RHash * hash)
-{
-  if (!hash->is_final) {
-    switch (hash->type) {
-      case R_HASH_TYPE_MD5:
-        r_md5_hash_final (&hash->hash.md5);
-        break;
-      case R_HASH_TYPE_SHA1:
-        r_sha1_hash_final (&hash->hash.sha1);
-        break;
-      case R_HASH_TYPE_SHA256:
-        r_sha256_hash_final (&hash->hash.sha256);
-        break;
-      case R_HASH_TYPE_SHA512:
-        r_sha512_hash_final (&hash->hash.sha512);
-        break;
-      default:
-        return FALSE;
-    }
-
-    hash->is_final = TRUE;
-  }
-
-  return TRUE;
-}
-
-rboolean
-r_hash_get_data (const RHash * hash, ruint8 * data, rsize * size)
-{
-  if (!hash->is_final) {
-    RHash h;
-
-    r_memcpy (&h, hash, sizeof (RHash));
-    r_hash_finish (&h);
-
-    return r_hash_get_data (&h, data, size);
-  }
-
-  switch (hash->type) {
-    case R_HASH_TYPE_MD5:
-      return r_md5_hash_get (&hash->hash.md5, data, size);
-    case R_HASH_TYPE_SHA1:
-      return r_sha1_hash_get (&hash->hash.sha1, data, size);
-    case R_HASH_TYPE_SHA256:
-      return r_sha256_hash_get (&hash->hash.sha256, data, size);
-    case R_HASH_TYPE_SHA512:
-      return r_sha512_hash_get (&hash->hash.sha512, data, size);
+  switch (type) {
+    case R_MSG_DIGEST_TYPE_MD5:
+      return R_MD5_BLOCK_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA1:
+      return R_MD5_BLOCK_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA256:
+      return R_MD5_BLOCK_SIZE;
+    case R_MSG_DIGEST_TYPE_SHA512:
+      return R_MD5_BLOCK_SIZE;
     default:
-      return FALSE;
+      return 0;
   }
+}
+
+rsize
+r_msg_digest_size (const RMsgDigest * md)
+{
+  return r_msg_digest_type_size (md->type);
+}
+
+rsize
+r_msg_digest_blocksize (const RMsgDigest * md)
+{
+  return md->blocksize;
+}
+
+void
+r_msg_digest_reset (RMsgDigest * md)
+{
+  md->is_final = FALSE;
+  md->init (md);
+}
+
+rboolean
+r_msg_digest_update (RMsgDigest * md, rconstpointer data, rsize size)
+{
+  return (!md->is_final) ?  md->update (md, data, size) : FALSE;
+}
+
+rboolean
+r_msg_digest_finish (RMsgDigest * md)
+{
+  if (!md->is_final)
+    md->is_final = md->final (md);
+
+  return md->is_final;
+}
+
+rboolean
+r_msg_digest_get_data (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
+{
+  if (!md->is_final) {
+    RMsgDigest * h = (RMsgDigest *) r_alloca (md->mdsize);
+
+    r_memcpy (h, md, md->mdsize);
+    r_msg_digest_finish (h);
+
+    return md->get (h, data, size, out);
+  }
+
+  return md->get (md, data, size, out);
 }
 
 rchar *
-r_hash_get_hex (const RHash * hash)
+r_msg_digest_get_hex (const RMsgDigest * md)
 {
-  ruint8 * data;
-  rsize size = R_HASH_MAX_SIZE;
+  ruint8 data[128];
+  rsize size;
 
-  if (hash != NULL && (data = r_alloca (size)) != NULL &&
-      r_hash_get_data (hash, data, &size))
+  if (md != NULL && r_msg_digest_get_data (md, data, sizeof (data), &size))
     return r_str_mem_hex (data, size);
 
   return NULL;
 }
 
 rchar *
-r_hash_get_hex_full (const RHash * hash, const rchar * divider, rsize interval)
+r_msg_digest_get_hex_full (const RMsgDigest * md,
+    const rchar * divider, rsize interval)
 {
-  ruint8 * data;
-  rsize size = R_HASH_MAX_SIZE;
+  ruint8 data[128];
+  rsize size;
 
-  if (hash != NULL && (data = r_alloca (size)) != NULL &&
-      r_hash_get_data (hash, data, &size))
+  if (md != NULL && r_msg_digest_get_data (md, data, sizeof (data), &size))
     return r_str_mem_hex_full (data, size, divider, interval);
 
   return NULL;
@@ -291,9 +248,32 @@ r_hash_get_hex_full (const RHash * hash, const rchar * divider, rsize interval)
 /**************************************/
 /*                MD5                 */
 /**************************************/
-static void
-r_md5_hash_init (RMd5Hash * md5)
+RMsgDigest *
+r_msg_digest_new_md5 (void)
 {
+  RMsgDigest * ret;
+  rsize mdsize = sizeof (RMsgDigest) + sizeof (RMd5);
+
+  if ((ret = r_malloc (mdsize)) != NULL) {
+    ret->type = R_MSG_DIGEST_TYPE_MD5;
+    ret->is_final = FALSE;
+    ret->mdsize = mdsize;
+    ret->blocksize = R_MD5_BLOCK_SIZE;
+    ret->init = r_md5_init;
+    ret->final = r_md5_final;
+    ret->update = r_md5_update;
+    ret->get = r_md5_get;
+
+    ret->init (ret);
+  }
+
+  return ret;
+}
+
+static void
+r_md5_init (RMsgDigest * md)
+{
+  RMd5 * md5 = (RMd5 *)(md + 1);
   md5->bufsize = 0;
   md5->len = 0;
   md5->data[0] = 0x67452301;
@@ -303,12 +283,12 @@ r_md5_hash_init (RMd5Hash * md5)
 }
 
 static void
-r_md5_hash_update_block (RMd5Hash * md5, const ruint8 * data)
+r_md5_update_block (RMd5 * md5, const ruint8 * data)
 {
-  ruint32 a, b, c, d, x[R_HASH_MD5_BLOCK_SIZE / sizeof (ruint32)];
+  ruint32 a, b, c, d, x[R_MD5_BLOCK_SIZE / sizeof (ruint32)];
   rsize i;
 
-  for (i = 0; i < R_HASH_MD5_BLOCK_SIZE / sizeof (ruint32); i++)
+  for (i = 0; i < R_MD5_BLOCK_SIZE / sizeof (ruint32); i++)
     x[i] = RUINT32_FROM_LE (((ruint32 *)data)[i]);
 
   a = md5->data[0];
@@ -415,14 +395,16 @@ r_md5_hash_update_block (RMd5Hash * md5, const ruint8 * data)
 }
 
 static rboolean
-r_md5_hash_update (RMd5Hash * md5, rconstpointer data, rsize size)
+r_md5_update (RMsgDigest * md, rconstpointer data, rsize size)
 {
+  RMd5 * md5;
   const ruint8 * ptr;
 
-  if (R_UNLIKELY (md5 == NULL || data == NULL))
+  if (R_UNLIKELY (md == NULL || data == NULL))
     return FALSE;
 
   ptr = data;
+  md5 = (RMd5 *)(md + 1);
   md5->len += size;
   if (md5->bufsize > 0) {
     rsize s = sizeof (md5->buffer) - md5->bufsize;
@@ -431,7 +413,7 @@ r_md5_hash_update (RMd5Hash * md5, rconstpointer data, rsize size)
       ptr += s;
       size -= s;
       md5->bufsize = 0;
-      r_md5_hash_update_block (md5, md5->buffer);
+      r_md5_update_block (md5, md5->buffer);
       r_memset (md5->buffer, 0, sizeof (md5->buffer));
     } else {
       r_memcpy (&md5->buffer[md5->bufsize], ptr, size);
@@ -440,9 +422,9 @@ r_md5_hash_update (RMd5Hash * md5, rconstpointer data, rsize size)
     }
   }
 
-  for (; size >= R_HASH_MD5_BLOCK_SIZE; size -= R_HASH_MD5_BLOCK_SIZE) {
-    r_md5_hash_update_block (md5, ptr);
-    ptr += R_HASH_MD5_BLOCK_SIZE;
+  for (; size >= R_MD5_BLOCK_SIZE; size -= R_MD5_BLOCK_SIZE) {
+    r_md5_update_block (md5, ptr);
+    ptr += R_MD5_BLOCK_SIZE;
   }
 
   if ((md5->bufsize = size) > 0)
@@ -451,9 +433,10 @@ r_md5_hash_update (RMd5Hash * md5, rconstpointer data, rsize size)
   return TRUE;
 }
 
-static void
-r_md5_hash_final (RMd5Hash * md5)
+static rboolean
+r_md5_final (RMsgDigest * md)
 {
+  RMd5 * md5 = (RMd5 *)(md + 1);
   rsize bufsize = md5->bufsize;
   ruint8 * ptr;
 
@@ -466,27 +449,30 @@ r_md5_hash_final (RMd5Hash * md5)
     rsize s = sizeof (md5->buffer) - bufsize;
     r_memset (&ptr[bufsize], 0, s);
 
-    r_md5_hash_update_block (md5, md5->buffer);
+    r_md5_update_block (md5, md5->buffer);
     r_memset (md5->buffer, 0, sizeof (md5->buffer));
-    ptr = r_alloca0 (R_HASH_MD5_BLOCK_SIZE);
+    ptr = r_alloca0 (R_MD5_BLOCK_SIZE);
   }
 
-  *(ruint64 *)(&ptr[R_HASH_MD5_BLOCK_SIZE - sizeof (ruint64)]) =
+  *(ruint64 *)(&ptr[R_MD5_BLOCK_SIZE - sizeof (ruint64)]) =
     RUINT64_TO_LE (md5->len << 3);
-  r_md5_hash_update_block (md5, ptr);
+  r_md5_update_block (md5, ptr);
+  return TRUE;
 }
 
 static rboolean
-r_md5_hash_get (const RMd5Hash * md5, ruint8 * data, rsize * size)
+r_md5_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 {
+  const RMd5 * md5 = (const RMd5 *)(md + 1);
   rsize i;
 
-  if (R_UNLIKELY (data == NULL || size == NULL || *size < R_HASH_MD5_SIZE))
+  if (R_UNLIKELY (data == NULL || size < R_MD5_SIZE))
     return FALSE;
 
-  for (i = 0; i < R_HASH_MD5_SIZE / sizeof (ruint32); i++)
+  for (i = 0; i < R_MD5_SIZE / sizeof (ruint32); i++)
     ((ruint32 *)data)[i] = RUINT32_TO_LE (md5->data[i]);
-  *size = R_HASH_MD5_SIZE;
+  if (out != NULL)
+    *out = R_MD5_SIZE;
 
   return TRUE;
 }
@@ -494,9 +480,32 @@ r_md5_hash_get (const RMd5Hash * md5, ruint8 * data, rsize * size)
 /**************************************/
 /*               SHA1                 */
 /**************************************/
-static void
-r_sha1_hash_init (RSha1Hash * sha1)
+RMsgDigest *
+r_msg_digest_new_sha1 (void)
 {
+  RMsgDigest * ret;
+  rsize mdsize = sizeof (RMsgDigest) + sizeof (RSha1);
+
+  if ((ret = r_malloc (mdsize)) != NULL) {
+    ret->type = R_MSG_DIGEST_TYPE_SHA1;
+    ret->is_final = FALSE;
+    ret->mdsize = mdsize;
+    ret->blocksize = R_SHA1_BLOCK_SIZE;
+    ret->init = r_sha1_init;
+    ret->final = r_sha1_final;
+    ret->update = r_sha1_update;
+    ret->get = r_sha1_get;
+
+    ret->init (ret);
+  }
+
+  return ret;
+}
+
+static void
+r_sha1_init (RMsgDigest * md)
+{
+  RSha1 * sha1 = (RSha1 *)(md + 1);
   sha1->bufsize = 0;
   sha1->len = 0;
   sha1->data[0] = 0x67452301;
@@ -507,12 +516,12 @@ r_sha1_hash_init (RSha1Hash * sha1)
 }
 
 static void
-r_sha1_hash_update_block (RSha1Hash * sha1, const ruint8 * data)
+r_sha1_update_block (RSha1 * sha1, const ruint8 * data)
 {
-  ruint32 a, b, c, d, e, x[R_HASH_SHA1_BLOCK_SIZE / sizeof (ruint32)];
+  ruint32 a, b, c, d, e, x[R_SHA1_BLOCK_SIZE / sizeof (ruint32)];
   rsize i;
 
-  for (i = 0; i < R_HASH_SHA1_BLOCK_SIZE / sizeof (ruint32); i++)
+  for (i = 0; i < R_SHA1_BLOCK_SIZE / sizeof (ruint32); i++)
     x[i] = RUINT32_FROM_BE (((ruint32 *)data)[i]);
 
   a = sha1->data[0];
@@ -635,14 +644,16 @@ r_sha1_hash_update_block (RSha1Hash * sha1, const ruint8 * data)
 }
 
 static rboolean
-r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size)
+r_sha1_update (RMsgDigest * md, rconstpointer data, rsize size)
 {
+  RSha1 * sha1;
   const ruint8 * ptr;
 
-  if (R_UNLIKELY (sha1 == NULL || data == NULL))
+  if (R_UNLIKELY (md == NULL || data == NULL))
     return FALSE;
 
   ptr = data;
+  sha1 = (RSha1 *)(md + 1);
   sha1->len += size;
   if (sha1->bufsize > 0) {
     rsize s = sizeof (sha1->buffer) - sha1->bufsize;
@@ -651,7 +662,7 @@ r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size)
       ptr += s;
       size -= s;
       sha1->bufsize = 0;
-      r_sha1_hash_update_block (sha1, sha1->buffer);
+      r_sha1_update_block (sha1, sha1->buffer);
       r_memset (sha1->buffer, 0, sizeof (sha1->buffer));
     } else {
       r_memcpy (&sha1->buffer[sha1->bufsize], ptr, size);
@@ -660,9 +671,9 @@ r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size)
     }
   }
 
-  for (; size >= R_HASH_SHA1_BLOCK_SIZE; size -= R_HASH_SHA1_BLOCK_SIZE) {
-    r_sha1_hash_update_block (sha1, ptr);
-    ptr += R_HASH_SHA1_BLOCK_SIZE;
+  for (; size >= R_SHA1_BLOCK_SIZE; size -= R_SHA1_BLOCK_SIZE) {
+    r_sha1_update_block (sha1, ptr);
+    ptr += R_SHA1_BLOCK_SIZE;
   }
 
   if ((sha1->bufsize = size) > 0)
@@ -671,9 +682,10 @@ r_sha1_hash_update (RSha1Hash * sha1, rconstpointer data, rsize size)
   return TRUE;
 }
 
-static void
-r_sha1_hash_final (RSha1Hash * sha1)
+static rboolean
+r_sha1_final (RMsgDigest * md)
 {
+  RSha1 * sha1 = (RSha1 *)(md + 1);
   rsize bufsize = sha1->bufsize;
   ruint8 * ptr;
 
@@ -686,27 +698,31 @@ r_sha1_hash_final (RSha1Hash * sha1)
     rsize s = sizeof (sha1->buffer) - bufsize;
     r_memset (&ptr[bufsize], 0, s);
 
-    r_sha1_hash_update_block (sha1, sha1->buffer);
+    r_sha1_update_block (sha1, sha1->buffer);
     r_memset (sha1->buffer, 0, sizeof (sha1->buffer));
-    ptr = r_alloca0 (R_HASH_SHA1_BLOCK_SIZE);
+    ptr = r_alloca0 (R_SHA1_BLOCK_SIZE);
   }
 
-  *(ruint64 *)(&ptr[R_HASH_SHA1_BLOCK_SIZE - sizeof (ruint64)]) =
+  *(ruint64 *)(&ptr[R_SHA1_BLOCK_SIZE - sizeof (ruint64)]) =
     RUINT64_TO_BE (sha1->len << 3);
-  r_sha1_hash_update_block (sha1, ptr);
+  r_sha1_update_block (sha1, ptr);
+  return TRUE;
 }
 
 static rboolean
-r_sha1_hash_get (const RSha1Hash * sha1, ruint8 * data, rsize * size)
+r_sha1_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 {
+  const RSha1 * sha1;
   rsize i;
 
-  if (R_UNLIKELY (data == NULL || size == NULL || *size < R_HASH_SHA1_SIZE))
+  if (R_UNLIKELY (data == NULL || size < R_SHA1_SIZE))
     return FALSE;
 
-  for (i = 0; i < R_HASH_SHA1_SIZE / sizeof (ruint32); i++)
+  sha1 = (const RSha1 *)(md + 1);
+  for (i = 0; i < R_SHA1_SIZE / sizeof (ruint32); i++)
     ((ruint32 *)data)[i] = RUINT32_TO_BE (sha1->data[i]);
-  *size = R_HASH_SHA1_SIZE;
+  if (out != NULL)
+    *out = R_SHA1_SIZE;
 
   return TRUE;
 }
@@ -714,9 +730,32 @@ r_sha1_hash_get (const RSha1Hash * sha1, ruint8 * data, rsize * size)
 /**************************************/
 /*              SHA-256               */
 /**************************************/
-static void
-r_sha256_hash_init (RSha256Hash * sha256)
+RMsgDigest *
+r_msg_digest_new_sha256 (void)
 {
+  RMsgDigest * ret;
+  rsize mdsize = sizeof (RMsgDigest) + sizeof (RSha256);
+
+  if ((ret = r_malloc (mdsize)) != NULL) {
+    ret->type = R_MSG_DIGEST_TYPE_SHA256;
+    ret->is_final = FALSE;
+    ret->mdsize = mdsize;
+    ret->blocksize = R_SHA256_BLOCK_SIZE;
+    ret->init = r_sha256_init;
+    ret->final = r_sha256_final;
+    ret->update = r_sha256_update;
+    ret->get = r_sha256_get;
+
+    ret->init (ret);
+  }
+
+  return ret;
+}
+
+static void
+r_sha256_init (RMsgDigest * md)
+{
+  RSha256 * sha256 = (RSha256 *)(md + 1);
   sha256->bufsize = 0;
   sha256->len = 0;
   sha256->data[0] = 0x6a09e667;
@@ -730,13 +769,13 @@ r_sha256_hash_init (RSha256Hash * sha256)
 }
 
 static void
-r_sha256_hash_update_block (RSha256Hash * sha256, const ruint8 * data)
+r_sha256_update_block (RSha256 * sha256, const ruint8 * data)
 {
   ruint32 a, b, c, d, e, f, g, h;
-  ruint32 x[R_HASH_SHA256_BLOCK_SIZE / sizeof (ruint32)];
+  ruint32 x[R_SHA256_BLOCK_SIZE / sizeof (ruint32)];
   rsize i;
 
-  for (i = 0; i < R_HASH_SHA256_BLOCK_SIZE / sizeof (ruint32); i++)
+  for (i = 0; i < R_SHA256_BLOCK_SIZE / sizeof (ruint32); i++)
     x[i] = RUINT32_FROM_BE (((ruint32 *)data)[i]);
 
   a = sha256->data[0];
@@ -840,9 +879,10 @@ r_sha256_hash_update_block (RSha256Hash * sha256, const ruint8 * data)
   sha256->data[7] += h;
 }
 
-static void
-r_sha256_hash_final (RSha256Hash * sha256)
+static rboolean
+r_sha256_final (RMsgDigest * md)
 {
+  RSha256 * sha256 = (RSha256 *)(md + 1);
   rsize bufsize = sha256->bufsize;
   ruint8 * ptr;
 
@@ -855,25 +895,28 @@ r_sha256_hash_final (RSha256Hash * sha256)
     rsize s = sizeof (sha256->buffer) - bufsize;
     r_memset (&ptr[bufsize], 0, s);
 
-    r_sha256_hash_update_block (sha256, sha256->buffer);
+    r_sha256_update_block (sha256, sha256->buffer);
     r_memset (sha256->buffer, 0, sizeof (sha256->buffer));
-    ptr = r_alloca0 (R_HASH_SHA256_BLOCK_SIZE);
+    ptr = r_alloca0 (R_SHA256_BLOCK_SIZE);
   }
 
-  *(ruint64 *)(&ptr[R_HASH_SHA256_BLOCK_SIZE - sizeof (ruint64)]) =
+  *(ruint64 *)(&ptr[R_SHA256_BLOCK_SIZE - sizeof (ruint64)]) =
     RUINT64_TO_BE (sha256->len << 3);
-  r_sha256_hash_update_block (sha256, ptr);
+  r_sha256_update_block (sha256, ptr);
+  return TRUE;
 }
 
 static rboolean
-r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size)
+r_sha256_update (RMsgDigest * md, rconstpointer data, rsize size)
 {
+  RSha256 * sha256;
   const ruint8 * ptr;
 
-  if (R_UNLIKELY (sha256 == NULL || data == NULL))
+  if (R_UNLIKELY (md == NULL || data == NULL))
     return FALSE;
 
   ptr = data;
+  sha256 = (RSha256 *)(md + 1);
   sha256->len += size;
   if (sha256->bufsize > 0) {
     rsize s = sizeof (sha256->buffer) - sha256->bufsize;
@@ -882,7 +925,7 @@ r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size)
       ptr += s;
       size -= s;
       sha256->bufsize = 0;
-      r_sha256_hash_update_block (sha256, sha256->buffer);
+      r_sha256_update_block (sha256, sha256->buffer);
       r_memset (sha256->buffer, 0, sizeof (sha256->buffer));
     } else {
       r_memcpy (&sha256->buffer[sha256->bufsize], ptr, size);
@@ -891,9 +934,9 @@ r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size)
     }
   }
 
-  for (; size >= R_HASH_SHA256_BLOCK_SIZE; size -= R_HASH_SHA256_BLOCK_SIZE) {
-    r_sha256_hash_update_block (sha256, ptr);
-    ptr += R_HASH_SHA256_BLOCK_SIZE;
+  for (; size >= R_SHA256_BLOCK_SIZE; size -= R_SHA256_BLOCK_SIZE) {
+    r_sha256_update_block (sha256, ptr);
+    ptr += R_SHA256_BLOCK_SIZE;
   }
 
   if ((sha256->bufsize = size) > 0)
@@ -903,16 +946,19 @@ r_sha256_hash_update (RSha256Hash * sha256, rconstpointer data, rsize size)
 }
 
 static rboolean
-r_sha256_hash_get (const RSha256Hash * sha256, ruint8 * data, rsize * size)
+r_sha256_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 {
+  const RSha256 * sha256;
   rsize i;
 
-  if (R_UNLIKELY (data == NULL || size == NULL || *size < R_HASH_SHA256_SIZE))
+  if (R_UNLIKELY (data == NULL || size < R_SHA256_SIZE))
     return FALSE;
 
-  for (i = 0; i < R_HASH_SHA256_SIZE / sizeof (ruint32); i++)
+  sha256 = (const RSha256 *)(md + 1);
+  for (i = 0; i < R_SHA256_SIZE / sizeof (ruint32); i++)
     ((ruint32 *)data)[i] = RUINT32_TO_BE (sha256->data[i]);
-  *size = R_HASH_SHA256_SIZE;
+  if (out != NULL)
+    *out = R_SHA256_SIZE;
 
   return TRUE;
 }
@@ -920,9 +966,31 @@ r_sha256_hash_get (const RSha256Hash * sha256, ruint8 * data, rsize * size)
 /**************************************/
 /*              SHA-512               */
 /**************************************/
-static void
-r_sha512_hash_init (RSha512Hash * sha512)
+RMsgDigest *
+r_msg_digest_new_sha512 (void)
 {
+  RMsgDigest * ret;
+  rsize mdsize = sizeof (RMsgDigest) + sizeof (RSha512);
+
+  if ((ret = r_malloc (mdsize)) != NULL) {
+    ret->type = R_MSG_DIGEST_TYPE_SHA512;
+    ret->is_final = FALSE;
+    ret->mdsize = mdsize;
+    ret->blocksize = R_SHA512_BLOCK_SIZE;
+    ret->init = r_sha512_init;
+    ret->final = r_sha512_final;
+    ret->update = r_sha512_update;
+    ret->get = r_sha512_get;
+
+    ret->init (ret);
+  }
+
+  return ret;
+}
+static void
+r_sha512_init (RMsgDigest * md)
+{
+  RSha512 * sha512 = (RSha512 *)(md + 1);
   sha512->bufsize = 0;
   sha512->len[0] = sha512->len[1] = 0;
   sha512->data[0] = RUINT64_CONSTANT (0x6a09e667f3bcc908);
@@ -936,13 +1004,13 @@ r_sha512_hash_init (RSha512Hash * sha512)
 }
 
 static void
-r_sha512_hash_update_block (RSha512Hash * sha512, const ruint8 * data)
+r_sha512_update_block (RSha512 * sha512, const ruint8 * data)
 {
   ruint64 a, b, c, d, e, f, g, h;
-  ruint64 x[R_HASH_SHA512_BLOCK_SIZE / sizeof (ruint64)];
+  ruint64 x[R_SHA512_BLOCK_SIZE / sizeof (ruint64)];
   rsize i;
 
-  for (i = 0; i < R_HASH_SHA512_BLOCK_SIZE / sizeof (ruint64); i++)
+  for (i = 0; i < R_SHA512_BLOCK_SIZE / sizeof (ruint64); i++)
     x[i] = RUINT64_FROM_BE (((ruint64 *)data)[i]);
 
   a = sha512->data[0];
@@ -1062,9 +1130,10 @@ r_sha512_hash_update_block (RSha512Hash * sha512, const ruint8 * data)
   sha512->data[7] += h;
 }
 
-static void
-r_sha512_hash_final (RSha512Hash * sha512)
+static rboolean
+r_sha512_final (RMsgDigest * md)
 {
+  RSha512 * sha512 = (RSha512 *)(md + 1);
   rsize bufsize = sha512->bufsize;
   ruint8 * ptr;
 
@@ -1077,27 +1146,30 @@ r_sha512_hash_final (RSha512Hash * sha512)
     rsize s = sizeof (sha512->buffer) - bufsize;
     r_memset (&ptr[bufsize], 0, s);
 
-    r_sha512_hash_update_block (sha512, sha512->buffer);
+    r_sha512_update_block (sha512, sha512->buffer);
     r_memset (sha512->buffer, 0, sizeof (sha512->buffer));
-    ptr = r_alloca0 (R_HASH_SHA512_BLOCK_SIZE);
+    ptr = r_alloca0 (R_SHA512_BLOCK_SIZE);
   }
 
-  *(ruint64 *)(&ptr[R_HASH_SHA512_BLOCK_SIZE - 1*sizeof (ruint64)]) =
+  *(ruint64 *)(&ptr[R_SHA512_BLOCK_SIZE - 1*sizeof (ruint64)]) =
     RUINT64_TO_BE (sha512->len[0] << 3);
-  *(ruint64 *)(&ptr[R_HASH_SHA512_BLOCK_SIZE - 2*sizeof (ruint64)]) =
+  *(ruint64 *)(&ptr[R_SHA512_BLOCK_SIZE - 2*sizeof (ruint64)]) =
     RUINT64_TO_BE ((sha512->len[1] << 3) | (sha512->len[0] >> 61));
-  r_sha512_hash_update_block (sha512, ptr);
+  r_sha512_update_block (sha512, ptr);
+  return TRUE;
 }
 
 static rboolean
-r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size)
+r_sha512_update (RMsgDigest * md, rconstpointer data, rsize size)
 {
+  RSha512 * sha512;
   const ruint8 * ptr;
 
-  if (R_UNLIKELY (sha512 == NULL || data == NULL))
+  if (R_UNLIKELY (md == NULL || data == NULL))
     return FALSE;
 
   ptr = data;
+  sha512 = (RSha512 *)(md + 1);
   sha512->len[0] += size;
   if (R_UNLIKELY (sha512->len[0] < size))
     sha512->len[1]++;
@@ -1109,7 +1181,7 @@ r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size)
       ptr += s;
       size -= s;
       sha512->bufsize = 0;
-      r_sha512_hash_update_block (sha512, sha512->buffer);
+      r_sha512_update_block (sha512, sha512->buffer);
       r_memset (sha512->buffer, 0, sizeof (sha512->buffer));
     } else {
       r_memcpy (&sha512->buffer[sha512->bufsize], ptr, size);
@@ -1118,9 +1190,9 @@ r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size)
     }
   }
 
-  for (; size >= R_HASH_SHA512_BLOCK_SIZE; size -= R_HASH_SHA512_BLOCK_SIZE) {
-    r_sha512_hash_update_block (sha512, ptr);
-    ptr += R_HASH_SHA512_BLOCK_SIZE;
+  for (; size >= R_SHA512_BLOCK_SIZE; size -= R_SHA512_BLOCK_SIZE) {
+    r_sha512_update_block (sha512, ptr);
+    ptr += R_SHA512_BLOCK_SIZE;
   }
 
   if ((sha512->bufsize = size) > 0)
@@ -1130,16 +1202,19 @@ r_sha512_hash_update (RSha512Hash * sha512, rconstpointer data, rsize size)
 }
 
 static rboolean
-r_sha512_hash_get (const RSha512Hash * sha512, ruint8 * data, rsize * size)
+r_sha512_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 {
+  const RSha512 * sha512;
   rsize i;
 
-  if (R_UNLIKELY (data == NULL || size == NULL || *size < R_HASH_SHA512_SIZE))
+  if (R_UNLIKELY (data == NULL || size < R_SHA512_SIZE))
     return FALSE;
 
-  for (i = 0; i < R_HASH_SHA512_SIZE / sizeof (ruint64); i++)
+  sha512 = (const RSha512 *)(md + 1);
+  for (i = 0; i < R_SHA512_SIZE / sizeof (ruint64); i++)
     ((ruint64 *)data)[i] = RUINT64_TO_BE (sha512->data[i]);
-  *size = R_HASH_SHA512_SIZE;
+  if (out != NULL)
+    *out = R_SHA512_SIZE;
 
   return TRUE;
 }

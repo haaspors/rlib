@@ -33,7 +33,7 @@ RTEST (rsrtpciphersuite, get_info, RTEST_FAST)
   r_assert_cmpuint (info->cipher->ivsize, ==, 16);
   r_assert_cmpuint (info->cipher->blocksize, ==, R_AES_BLOCK_BYTES);
   r_assert_cmpint (info->saltbits, ==, 112);
-  r_assert_cmpint (info->auth, ==, R_HASH_TYPE_SHA1);
+  r_assert_cmpint (info->auth, ==, R_MSG_DIGEST_TYPE_SHA1);
   r_assert_cmpint (info->srtp_tagbits, ==, 80);
   r_assert_cmpint (info->srtcp_tagbits, ==, 80);
 
@@ -45,7 +45,7 @@ RTEST (rsrtpciphersuite, get_info, RTEST_FAST)
   r_assert_cmpuint (info->cipher->ivsize, ==, 16);
   r_assert_cmpuint (info->cipher->blocksize, ==, R_AES_BLOCK_BYTES);
   r_assert_cmpint (info->saltbits, ==, 112);
-  r_assert_cmpint (info->auth, ==, R_HASH_TYPE_SHA1);
+  r_assert_cmpint (info->auth, ==, R_MSG_DIGEST_TYPE_SHA1);
   r_assert_cmpint (info->srtp_tagbits, ==, 32);
   r_assert_cmpint (info->srtcp_tagbits, ==, 80);
 
@@ -56,7 +56,7 @@ RTEST (rsrtpciphersuite, get_info, RTEST_FAST)
   r_assert_cmpuint (info->cipher->ivsize, ==, 0);
   r_assert_cmpuint (info->cipher->blocksize, ==, 1);
   r_assert_cmpint (info->saltbits, ==, 0);
-  r_assert_cmpint (info->auth, ==, R_HASH_TYPE_NONE);
+  r_assert_cmpint (info->auth, ==, R_MSG_DIGEST_TYPE_NONE);
   r_assert_cmpint (info->srtp_tagbits, ==, 0);
   r_assert_cmpint (info->srtcp_tagbits, ==, 0);
 }

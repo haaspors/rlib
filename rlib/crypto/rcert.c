@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -50,7 +50,7 @@ r_crypto_cert_get_strtype (const RCryptoCert * cert)
 
 const ruint8 *
 r_crypto_cert_get_signature (const RCryptoCert * cert,
-    RHashType * signalgo, rsize * signbits)
+    RMsgDigestType * signalgo, rsize * signbits)
 {
   if (signbits != NULL)
     *signbits = cert->signbits;
@@ -126,56 +126,56 @@ r_crypto_cert_dup_data (const RCryptoCert * cert, rsize * size)
 
 RCryptoResult
 r_crypto_cert_fingerprint (const RCryptoCert * cert,
-    ruint8 * buf, rsize size, RHashType type, rsize * out)
+    ruint8 * buf, rsize size, RMsgDigestType type, rsize * out)
 {
   RCryptoResult ret;
-  RHash * hash;
+  RMsgDigest * md;
 
   if (R_UNLIKELY (cert == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (buf == NULL)) return R_CRYPTO_INVAL;
-  if (size < r_hash_type_size (type)) return R_CRYPTO_BUFFER_TOO_SMALL;
+  if (size < r_msg_digest_type_size (type)) return R_CRYPTO_BUFFER_TOO_SMALL;
 
   ret = R_CRYPTO_ERROR;
-  if ((hash = r_hash_new (type)) != NULL) {
+  if ((md = r_msg_digest_new (type)) != NULL) {
     RBuffer * b;
     if ((b = r_crypto_cert_get_data_buffer (cert)) != NULL) {
       RMemMapInfo info = R_MEM_MAP_INFO_INIT;
       if (r_buffer_map (b, &info, R_MEM_MAP_READ)) {
-        if (r_hash_update (hash, info.data, info.size) &&
-            r_hash_get_data (hash, buf, out))
+        if (r_msg_digest_update (md, info.data, info.size) &&
+            r_msg_digest_get_data (md, buf, size, out))
           ret = R_CRYPTO_OK;
         r_buffer_unmap (b, &info);
       }
       r_buffer_unref (b);
     }
-    r_hash_free (hash);
+    r_msg_digest_free (md);
   }
 
   return ret;
 }
 
 rchar *
-r_crypto_cert_fingerprint_str (const RCryptoCert * cert, RHashType type,
+r_crypto_cert_fingerprint_str (const RCryptoCert * cert, RMsgDigestType type,
     const rchar * divider, rsize interval)
 {
   rchar * ret;
-  RHash * hash;
+  RMsgDigest * md;
 
   if (R_UNLIKELY (cert == NULL)) return NULL;
 
   ret = NULL;
-  if ((hash = r_hash_new (type)) != NULL) {
+  if ((md = r_msg_digest_new (type)) != NULL) {
     RBuffer * b;
     if ((b = r_crypto_cert_get_data_buffer (cert)) != NULL) {
       RMemMapInfo info = R_MEM_MAP_INFO_INIT;
       if (r_buffer_map (b, &info, R_MEM_MAP_READ)) {
-        if (r_hash_update (hash, info.data, info.size))
-          ret = r_hash_get_hex_full (hash, divider, interval);
+        if (r_msg_digest_update (md, info.data, info.size))
+          ret = r_msg_digest_get_hex_full (md, divider, interval);
         r_buffer_unmap (b, &info);
       }
       r_buffer_unref (b);
     }
-    r_hash_free (hash);
+    r_msg_digest_free (md);
   }
 
   return ret;

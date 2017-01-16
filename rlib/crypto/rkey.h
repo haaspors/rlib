@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -79,9 +79,9 @@ R_API RCryptoResult r_crypto_key_encrypt (const RCryptoKey * key, RPrng * prng,
 R_API RCryptoResult r_crypto_key_decrypt (const RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, rpointer out, rsize * outsize);
 R_API RCryptoResult r_crypto_key_sign (const RCryptoKey * key, RPrng * prng,
-    RHashType hashtype, rconstpointer hash, rsize hashsize,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rpointer sig, rsize * sigsize);
-R_API RCryptoResult r_crypto_key_verify (const RCryptoKey * key, RHashType hashtype,
+R_API RCryptoResult r_crypto_key_verify (const RCryptoKey * key, RMsgDigestType mdtype,
     rconstpointer hash, rsize hashsize, rconstpointer sig, rsize sigsize);
 R_API RCryptoResult r_crypto_key_to_asn1 (const RCryptoKey * key, RAsn1BinEncoder * enc);
 #define r_crypto_key_export r_crypto_key_to_asn1

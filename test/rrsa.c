@@ -191,7 +191,7 @@ RTEST (rrsa, sign_FIPS_186_3_SHA256, RTEST_SLOW)
           "fd7cb3ddddfd36bd8a9c877d71d2a966057c08263d2939c84987",
           &expectedsize)), !=, NULL);
 
-  r_assert_cmpuint (r_rsa_pkcs1v1_5_sign_msg (key, prng, R_HASH_TYPE_SHA256,
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_sign_msg (key, prng, R_MSG_DIGEST_TYPE_SHA256,
         msg, msgsize, sig, &sigsize), ==, R_CRYPTO_OK);
   r_assert_cmpuint (sigsize, ==, expectedsize);
   r_assert_cmpmem (sig, ==, expected, sigsize);
@@ -239,14 +239,14 @@ RTEST (rrsa, verify_FIPS_186_3_SHA1, RTEST_SLOW)
   r_assert_cmpuint (r_rsa_pkcs1v1_5_verify_msg (key, msg, msgsize,
         expected, expectedsize), ==, R_CRYPTO_OK);
   {
-    RHash * h = r_hash_new_sha1 ();
+    RMsgDigest * md = r_sha1_new ();
     ruint8 hash[20];
-    rsize hashsize = sizeof (hash);
-    r_assert (r_hash_update (h, msg, msgsize));
-    r_assert (r_hash_get_data (h, hash, &hashsize));
+    rsize hashsize;
+    r_assert (r_msg_digest_update (md, msg, msgsize));
+    r_assert (r_msg_digest_get_data (md, hash, sizeof (hash), &hashsize));
     r_assert_cmpuint (r_rsa_pkcs1v1_5_verify_msg_with_hash (key,
-          R_HASH_TYPE_SHA1, hash, hashsize, expected, expectedsize), ==, R_CRYPTO_OK);
-    r_hash_free (h);
+          R_MSG_DIGEST_TYPE_SHA1, hash, hashsize, expected, expectedsize), ==, R_CRYPTO_OK);
+    r_msg_digest_free (md);
   }
 
   r_mpint_clear (&n);
