@@ -95,9 +95,9 @@ struct _RTLSServer {
   RQueue qsend;
 };
 
-#define R_LOG_CAT_DEFAULT &tlsservcat
-R_LOG_CATEGORY_DEFINE_STATIC (tlsservcat, "rtlsserver", "RLib TLS Server",
+R_LOG_CATEGORY_DEFINE_STATIC (tlsservcat, "tlsserver", "RLib TLS Server",
     R_CLR_FG_WHITE | R_CLR_BG_MAGENTA | R_CLR_FMT_BOLD);
+#define R_LOG_CAT_DEFAULT &tlsservcat
 
 static inline void
 _r_write_u24 (ruint8 * ptr, ruint32 u24)

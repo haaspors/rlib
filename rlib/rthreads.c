@@ -91,8 +91,9 @@ typedef struct tagTHREADNAME_INFO
 #pragma pack(pop)
 #endif
 
+R_LOG_CATEGORY_DEFINE_STATIC (rthreadcat, "thread", "RLib threads",
+    R_CLR_BG_YELLOW | R_CLR_FMT_BOLD);
 #define R_LOG_CAT_DEFAULT &rthreadcat
-R_LOG_CATEGORY_DEFINE_STATIC (rthreadcat, "rthread", "RLib threads", R_CLR_BG_YELLOW | R_CLR_FMT_BOLD);
 
 /******************************************************************************/
 /*  INIT/DEINIT                                                               */

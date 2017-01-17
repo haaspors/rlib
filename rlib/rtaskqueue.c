@@ -25,8 +25,9 @@
 #include <rlib/rsys.h>
 #include <rlib/rthreadpool.h>
 
+R_LOG_CATEGORY_DEFINE_STATIC (tqcat, "taskqueue", "RLib TaskQueue",
+    R_CLR_BG_BLUE);
 #define R_LOG_CAT_DEFAULT &tqcat
-R_LOG_CATEGORY_DEFINE_STATIC (tqcat, "rtaskqueue", "RLib TaskQueue", R_CLR_BG_BLUE);
 
 static RTss  g__r_task_queue_tss = R_TSS_INIT (NULL);
 

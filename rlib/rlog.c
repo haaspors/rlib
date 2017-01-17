@@ -37,7 +37,7 @@
 
 
 rauint _r_log_level_min = R_LOG_LEVEL_DEFAULT;
-R_LOG_CATEGORY_DEFINE (_r_log_cat_assert, "*** assert ***", "Assertions logger",
+R_LOG_CATEGORY_DEFINE (_r_log_cat_assert, "assert", "Assertions logger",
     R_CLR_FMT_BOLD | R_CLR_BG_RED);
 
 static ruint g__r_log_level_default = R_LOG_LEVEL_DEFAULT;

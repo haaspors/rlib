@@ -24,7 +24,7 @@
 #include <windows.h>
 #endif
 
-R_LOG_CATEGORY_DEFINE (rlib_logcat, "*** rlib   ***", "Internal RLib logger",
+R_LOG_CATEGORY_DEFINE (rlib_logcat, "rlib", "Internal RLib logger",
     R_CLR_BG_CYAN | R_CLR_FMT_BOLD);
 
 R_INITIALIZER (rlib_init)

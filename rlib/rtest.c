@@ -118,7 +118,7 @@ static RTestRunNoForkCtx *  g__r_test_nofork_ctx = NULL;
 static void r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx);
 
 
-R_LOG_CATEGORY_DEFINE_STATIC (rtest_logcat, "*** rtest  ***", "Test logger",
+R_LOG_CATEGORY_DEFINE_STATIC (rtest_logcat, "test", "Test logger",
     R_CLR_BG_MAGENTA | R_CLR_FMT_BOLD);
 #define R_LOG_CAT_DEFAULT &rtest_logcat
 
