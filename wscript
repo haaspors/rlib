@@ -278,6 +278,7 @@ def configure_headers(cfg):
     cfg.check(header_name='netinet/in.h', mandatory=False)
     cfg.check(header_name='sys/ioctl.h', mandatory=False)
     cfg.check(header_name='sys/socket.h', mandatory=False)
+    cfg.check(header_name='netdb.h', mandatory=False)
     cfg.check(header_name='sys/sysctl.h', mandatory=False)
     if cfg.env.DEST_OS == 'linux':
         cfg.check(header_name='sys/eventfd.h')
@@ -408,18 +409,26 @@ def configure_networking(cfg):
     cfg.check_cc(function_name='inet_ntop',
             header_name="arpa/inet.h", mandatory=False)
     if cfg.env.DEST_OS == 'win32':
+        socket_h = 'winsock2.h'
+        netdb_h = 'ws2tcpip.h'
         cfg.env.R_AF_UNIX       = 1;
-        cfg.env.R_AF_INET       = cfg.compute_int('AF_INET', header_name='winsock2.h', guess=2) or 2;
-        cfg.env.R_AF_INET6      = cfg.compute_int('AF_INET6', header_name='winsock2.h', guess=23) or 'R_SOCKET_FAMILY_NONE';
-        cfg.env.R_AF_IRDA       = cfg.compute_int('AF_IRDA', header_name='winsock2.h', guess=26) or 'R_SOCKET_FAMILY_NONE';
         cfg.env.R_AF_BLUETOOTH  = cfg.compute_int('AF_BTH', header_name='winsock2.h', guess=32) or 'R_SOCKET_FAMILY_NONE';
     else:
+        socket_h = 'sys/socket.h'
+        netdb_h = 'netdb.h'
         cfg.env.R_AF_UNIX       = cfg.compute_int('AF_UNIX', header_name='sys/socket.h', guess=1) or 1;
-        cfg.env.R_AF_INET       = cfg.compute_int('AF_INET', header_name='sys/socket.h', guess=2) or 2;
-        cfg.env.R_AF_INET6      = cfg.compute_int('AF_INET6', header_name='sys/socket.h', guess=10) or 'R_SOCKET_FAMILY_NONE';
-        cfg.env.R_AF_IRDA       = cfg.compute_int('AF_IRDA', header_name='sys/socket.h', guess=23) or 'R_SOCKET_FAMILY_NONE';
         cfg.env.R_AF_BLUETOOTH  = cfg.compute_int('AF_BLUETOOTH', header_name='sys/socket.h', guess=31) or 'R_SOCKET_FAMILY_NONE';
 
+    cfg.env.R_AF_INET       = cfg.compute_int('AF_INET', header_name=socket_h, guess=2) or 2;
+    cfg.env.R_AF_INET6      = cfg.compute_int('AF_INET6', header_name=socket_h, guess=23) or 'R_SOCKET_FAMILY_NONE';
+    cfg.env.R_AF_IRDA       = cfg.compute_int('AF_IRDA', header_name=socket_h, guess=26) or 'R_SOCKET_FAMILY_NONE';
+
+    cfg.env.R_AI_PASSIVE    = cfg.compute_int('AI_PASSIVE', header_name=netdb_h, guess=1) or 0;
+    cfg.env.R_AI_CANONNAME  = cfg.compute_int('AI_CANONNAME', header_name=netdb_h, guess=2) or 0;
+    cfg.env.R_AI_NUMERICHOST= cfg.compute_int('AI_NUMERICHOST', header_name=netdb_h, guess=4) or 0;
+    cfg.env.R_AI_V4MAPPED   = cfg.compute_int('AI_V4MAPPED', header_name=netdb_h, guess=8) or 0;
+    cfg.env.R_AI_ALL        = cfg.compute_int('AI_ALL', header_name=netdb_h, guess=16) or 0;
+    cfg.env.R_AI_ADDRCONFIG = cfg.compute_int('AI_ADDRCONFIG', header_name=netdb_h, guess=32) or 0;
 
 def configure_sizeof(cfg):
     sizeof_short = cfg.check_sizeof('short', guess=2)

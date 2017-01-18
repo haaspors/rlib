@@ -90,6 +90,7 @@
 
 /* EV */
 #include <rlib/ev/revloop.h>
+#include <rlib/ev/revresolve.h>
 #include <rlib/ev/revudp.h>
 
 /* NET */

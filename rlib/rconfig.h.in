@@ -87,6 +87,13 @@ typedef unsigned @RINTPTR_TYPE@ ruintptr;
 #define R_AF_IRDA               @R_AF_IRDA@
 #define R_AF_BLUETOOTH          @R_AF_BLUETOOTH@
 
+#define R_AI_PASSIVE            @R_AI_PASSIVE@
+#define R_AI_CANONNAME          @R_AI_CANONNAME@
+#define R_AI_NUMERICHOST        @R_AI_NUMERICHOST@
+#define R_AI_V4MAPPED           @R_AI_V4MAPPED@
+#define R_AI_ALL                @R_AI_ALL@
+#define R_AI_ADDRCONFIG         @R_AI_ADDRCONFIG@
+
 #define @RLIB_OS@               1
 @RLIB_OS_EXTRA@
 #define @RLIB_ARCH@             1
