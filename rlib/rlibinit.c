@@ -31,7 +31,8 @@ R_INITIALIZER (rlib_init)
 {
   r_log_init ();
   r_log_category_register (&rlib_logcat);
-  r_log_category_set_threshold (&rlib_logcat, R_LOG_LEVEL_WARNING);
+  if (rlib_logcat.threshold < R_LOG_LEVEL_WARNING)
+    r_log_category_set_threshold (&rlib_logcat, R_LOG_LEVEL_WARNING);
 
   r_ev_loop_init ();
   r_mem_allocator_init ();
