@@ -197,6 +197,79 @@ RTEST (rtaskqueue, allocate_manually, RTEST_FAST)
 }
 RTEST_END;
 
+typedef struct {
+  RMutex mutex;
+  RCond cond;
+  rboolean func_running, wait;
+} RTQWaitCtx;
+
+static void
+wait_func (rpointer data, RTaskQueue * tq, RTask * task)
+{
+  RTQWaitCtx * wctx = data;
+  (void) tq;
+  (void) task;
+
+  r_mutex_lock (&wctx->mutex);
+  wctx->func_running = TRUE;
+  r_cond_signal (&wctx->cond);
+  while (wctx->wait)
+    r_cond_wait (&wctx->cond, &wctx->mutex);
+  wctx->func_running = FALSE;
+  r_mutex_unlock (&wctx->mutex);
+}
+
+
+RTEST (rtaskqueue, cancel_task, RTEST_FAST)
+{
+  RTaskQueue * tq;
+  RTask * t;
+  rauint counter;
+  RTQWaitCtx wctx;
+
+  r_atomic_uint_store (&counter, 0);
+  r_assert_cmpptr ((tq = r_task_queue_new_simple (1)), !=, NULL);
+  r_assert_cmpptr ((t = r_task_queue_allocate (tq, simple_adder, &counter, NULL)), !=, NULL);
+
+  r_assert (!r_task_cancel (t, TRUE));
+  r_assert (r_task_queue_add_task (tq, t));
+  r_assert (r_task_cancel (t, TRUE));
+  r_assert_cmpuint (r_atomic_uint_load (&counter), <=, 1);
+  r_task_unref (t);
+
+  r_atomic_uint_store (&counter, 0);
+  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
+  r_assert (r_task_cancel (t, TRUE));
+  r_assert_cmpuint (r_atomic_uint_load (&counter), <=, 1);
+  r_task_unref (t);
+
+  r_mutex_init (&wctx.mutex);
+  r_cond_init (&wctx.cond);
+  wctx.func_running = FALSE;
+  wctx.wait = TRUE;
+
+  r_assert_cmpptr ((t = r_task_queue_add (tq, wait_func, &wctx, NULL)), !=, NULL);
+  r_mutex_lock (&wctx.mutex);
+  while (!wctx.func_running)
+    r_cond_wait (&wctx.cond, &wctx.mutex);
+
+  wctx.wait = FALSE;
+  r_cond_signal (&wctx.cond);
+  r_assert (wctx.func_running);
+  r_mutex_unlock (&wctx.mutex);
+
+  /* Cancel and make sure task is finished! */
+  r_assert (r_task_cancel (t, TRUE));
+  r_assert (!wctx.func_running);
+  r_task_unref (t);
+
+  r_cond_clear (&wctx.cond);
+  r_mutex_clear (&wctx.mutex);
+
+  r_task_queue_unref (tq);
+}
+RTEST_END;
+
 RTEST (rtaskqueue, per_numa, RTEST_FAST)
 {
   RTaskQueue * tq;
@@ -204,7 +277,6 @@ RTEST (rtaskqueue, per_numa, RTEST_FAST)
   RTask * t;
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr (r_task_queue_new_simple (0), ==, NULL);
   r_assert_cmpptr ((tq = r_task_queue_new_per_numa_simple (2)), !=, NULL);
   r_assert_cmpuint (r_task_queue_group_count (tq), ==, r_sys_node_count ());
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_node_count () * 2);
