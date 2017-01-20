@@ -616,8 +616,13 @@ r_socket_receive_message (RSocket * socket, RSocketAddress * address,
 #ifdef HAVE_WINSOCK2
   bufs = r_alloca (mem_count * sizeof (WSABUF));
 #else
-  msg.msg_name = &address->addr;
-  msg.msg_namelen = address->addrlen;
+  if (address != NULL) {
+    msg.msg_name = &address->addr;
+    msg.msg_namelen = address->addrlen;
+  } else {
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+  }
   msg.msg_iov = r_alloca (mem_count * sizeof (struct iovec));
   msg.msg_iovlen = mem_count;
   msg.msg_control = NULL;
@@ -651,14 +656,20 @@ r_socket_receive_message (RSocket * socket, RSocketAddress * address,
 
 #ifdef HAVE_WINSOCK2
   winrecv = winflags = 0;
-  res = WSARecvFrom (socket->handle, bufs, mem_count, &winrecv, &winflags,
-      (struct sockaddr *)&address->addr, &address->addrlen, NULL, NULL);
+  if (address != NULL) {
+    res = WSARecvFrom (socket->handle, bufs, mem_count, &winrecv, &winflags,
+        (struct sockaddr *)&address->addr, &address->addrlen, NULL, NULL);
+  } else {
+    res = WSARecvFrom (socket->handle, bufs, mem_count, &winrecv, &winflags,
+        NULL, 0, NULL, NULL);
+  }
   b = res != SOCKET_ERROR ? (rsize)winrecv : 0;
 #else
   do {
     res = recvmsg (socket->handle, &msg, 0);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
-  address->addrlen = msg.msg_namelen;
+  if (address != NULL)
+    address->addrlen = msg.msg_namelen;
   b = res > 0 ? (rsize)res : 0;
 #endif
 
@@ -754,8 +765,13 @@ r_socket_send_message (RSocket * socket, const RSocketAddress * address,
 #ifdef HAVE_WINSOCK2
   bufs = r_alloca (mem_count * sizeof (WSABUF));
 #else
-  msg.msg_name = (rpointer)&address->addr;
-  msg.msg_namelen = address->addrlen;
+  if (address != NULL) {
+    msg.msg_name = (rpointer)&address->addr;
+    msg.msg_namelen = address->addrlen;
+  } else {
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+  }
   msg.msg_iovlen = mem_count;
   msg.msg_iov = r_alloca (msg.msg_iovlen * sizeof (struct iovec));
   msg.msg_control = NULL;
@@ -789,8 +805,14 @@ r_socket_send_message (RSocket * socket, const RSocketAddress * address,
 
 #ifdef HAVE_WINSOCK2
   winsent = 0;
-  res = WSASendTo (socket->handle, bufs, mem_count, &winsent, 0,
-      (const struct sockaddr *)&address->addr, (int)address->addrlen, NULL, NULL);
+  if (address != NULL) {
+    res = WSASendTo (socket->handle, bufs, mem_count, &winsent, 0,
+        (const struct sockaddr *)&address->addr, (int)address->addrlen,
+        NULL, NULL);
+  } else {
+    res = WSASendTo (socket->handle, bufs, mem_count, &winsent, 0, NULL, 0,
+        NULL, NULL);
+  }
 #else
   do {
     res = sendmsg (socket->handle, &msg, 0);
