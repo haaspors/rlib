@@ -120,8 +120,7 @@ R_API RSocketStatus r_socket_close (RSocket * socket);
 R_API RSocketStatus r_socket_bind (RSocket * socket, const RSocketAddress * address, rboolean reuse);
 #define r_socket_listen(s)  r_socket_listen_full (s, R_SOCKET_DEFAULT_BACKLOG)
 R_API RSocketStatus r_socket_listen_full (RSocket * socket, ruint8 backlog);
-R_API RSocketStatus r_socket_accept (RSocket * socket, RSocket ** newsock);
-R_API RSocket * r_socket_accept_simple (RSocket * socket);
+R_API RSocket * r_socket_accept (RSocket * socket, RSocketStatus * res);
 R_API RSocketStatus r_socket_connect (RSocket * socket, const RSocketAddress * address);
 R_API RSocketStatus r_socket_shutdown (RSocket * socket, rboolean rx, rboolean tx);
 

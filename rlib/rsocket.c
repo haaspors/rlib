@@ -453,12 +453,17 @@ r_socket_listen_full (RSocket * socket, ruint8 backlog)
   return r_socket_errno_to_socket_status ();
 }
 
-RSocketStatus
-r_socket_accept (RSocket * socket, RSocket ** newsock)
+RSocket *
+r_socket_accept (RSocket * socket, RSocketStatus * res)
 {
   RSocketHandle handle;
+  RSocket * ret;
 
-  if (R_UNLIKELY (newsock == NULL)) return R_SOCKET_INVAL;
+  if (R_UNLIKELY (socket == NULL)) {
+    if (res != NULL)
+      *res = R_SOCKET_INVAL;
+    return NULL;
+  }
 
   /* FIXME: Use accept4 ?? */
   do {
@@ -466,36 +471,36 @@ r_socket_accept (RSocket * socket, RSocket ** newsock)
   } while (handle == R_SOCKET_HANDLE_INVALID && R_SOCKET_ERRNO == EINTR);
 
   if (handle != R_SOCKET_HANDLE_INVALID) {
-    if ((*newsock = r_socket_new_with_handle (handle)) != NULL) {
-      (*newsock)->family = socket->family;
-      (*newsock)->type = socket->type;
-      (*newsock)->proto = socket->proto;
+    if ((ret = r_socket_new_with_handle (handle)) != NULL) {
+      ret->family = socket->family;
+      ret->type = socket->type;
+      ret->proto = socket->proto;
 
-      (*newsock)->flags |= R_SOCKET_FLAG_CONNECTED;
+      ret->flags |= R_SOCKET_FLAG_CONNECTED;
 #ifdef HAVE_WINSOCK2
       WSAEventSelect (handle, NULL, 0);
 #endif
 #ifdef R_OS_UNIX
       r_fd_unix_set_cloexec (handle, TRUE);
 #endif
-      return R_SOCKET_OK;
+    } else {
+      r_socket_handle_close (handle);
+      if (res != NULL)
+        *res = R_SOCKET_OOM;
+      return NULL;
     }
-
-    r_socket_handle_close (handle);
-    return R_SOCKET_OOM;
+  } else {
+    ret = NULL;
   }
 
-  return r_socket_errno_to_socket_status ();
-}
+  if (res != NULL) {
+    if (ret == NULL)
+      *res = r_socket_errno_to_socket_status ();
+    else
+      *res = R_SOCKET_OK;
+  }
 
-RSocket *
-r_socket_accept_simple (RSocket * socket)
-{
-  RSocket * newsock;
-  if (r_socket_accept (socket, &newsock) == R_SOCKET_OK)
-    return newsock;
-
-  return NULL;
+  return ret;
 }
 
 RSocketStatus

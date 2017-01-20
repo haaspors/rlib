@@ -137,13 +137,12 @@ RTEST_END;
 
 RTEST (rsocket, accept, RTEST_FAST | RTEST_SYSTEM)
 {
-  RSocket * socket, * newsock = NULL;
+  RSocket * socket;
   RSocketAddress * addr;
+  RSocketStatus res;
 
   r_assert_cmpptr ((socket = r_socket_new (R_SOCKET_FAMILY_IPV4,
           R_SOCKET_TYPE_STREAM, R_SOCKET_PROTOCOL_TCP)), !=, NULL);
-
-  r_assert_cmpint (r_socket_accept (socket, NULL), ==, R_SOCKET_INVAL);
 
   r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
   r_assert_cmpint (r_socket_bind (socket, addr, TRUE), ==, R_SOCKET_OK);
@@ -151,7 +150,8 @@ RTEST (rsocket, accept, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpint (r_socket_listen (socket), ==, R_SOCKET_OK);
   /* Sockets should be created in non-blocking mode, so this should block! */
-  r_assert_cmpint (r_socket_accept (socket, &newsock), ==, R_SOCKET_WOULD_BLOCK);
+  r_assert_cmpptr (r_socket_accept (socket, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_SOCKET_WOULD_BLOCK);
 
   r_assert_cmpint (r_socket_close (socket), ==, R_SOCKET_OK);
   r_socket_unref (socket);
@@ -177,7 +177,7 @@ RTEST (rsocket, shutdown, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpint (r_socket_connect (consock, addr), ==, R_SOCKET_WOULD_BLOCK);
   r_assert (r_socket_set_blocking (lissock, TRUE));
-  r_assert_cmpptr ((asock = r_socket_accept_simple (lissock)), !=, NULL);
+  r_assert_cmpptr ((asock = r_socket_accept (lissock, NULL)), !=, NULL);
   r_assert_cmpint (r_socket_close (lissock), ==, R_SOCKET_OK);
   r_socket_unref (lissock);
   r_socket_address_unref (addr);
@@ -191,6 +191,13 @@ RTEST (rsocket, shutdown, RTEST_FAST | RTEST_SYSTEM)
   r_socket_unref (asock);
 }
 RTEST_END;
+
+static rpointer
+rsocket_test_accept (rpointer data)
+{
+  RSocket * s = data;
+  return r_socket_accept (s, NULL);
+}
 
 RTEST (rsocket, listen_connect_accept, RTEST_FAST | RTEST_SYSTEM)
 {
@@ -215,7 +222,7 @@ RTEST (rsocket, listen_connect_accept, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpint (r_socket_bind (lissock, addr, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_listen (lissock), ==, R_SOCKET_OK);
 
-  r_assert_cmpptr ((accept_thread = r_thread_new (NULL, (RThreadFunc)r_socket_accept_simple, lissock)), !=, NULL);
+  r_assert_cmpptr ((accept_thread = r_thread_new (NULL, rsocket_test_accept, lissock)), !=, NULL);
   r_assert_cmpint (r_socket_connect (consock, addr), ==, R_SOCKET_OK);
 
   r_assert_cmpptr ((asock = r_thread_join (accept_thread)), !=, NULL);
@@ -255,7 +262,7 @@ RTEST (rsocket, send_recv, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpint (r_socket_connect (consock, addr), ==, R_SOCKET_WOULD_BLOCK);
   r_assert (r_socket_set_blocking (lissock, TRUE));
-  r_assert_cmpptr ((asock = r_socket_accept_simple (lissock)), !=, NULL);
+  r_assert_cmpptr ((asock = r_socket_accept (lissock, NULL)), !=, NULL);
   r_assert_cmpint (r_socket_close (lissock), ==, R_SOCKET_OK);
   r_socket_unref (lissock);
   r_socket_address_unref (addr);
