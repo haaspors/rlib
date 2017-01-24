@@ -25,6 +25,48 @@
 #include <rlib/rmem.h>
 
 
+static inline RSocketStatus
+r_socket_err_to_socket_status (int err)
+{
+  switch (err) {
+#ifdef WSAEWOULDBLOCK
+    case WSAEWOULDBLOCK:
+    case WSAEINPROGRESS:
+#endif
+    case EAGAIN:
+    case EINPROGRESS:
+#if EWOULDBLOCK != EAGAIN
+    case EWOULDBLOCK:
+#endif
+      return R_SOCKET_WOULD_BLOCK;
+    case ECANCELED:
+      return R_SOCKET_CANCELED;
+    case EDESTADDRREQ:
+      return R_SOCKET_NOT_BOUND;
+#ifdef WSAENOTCONN
+    case WSAENOTCONN:
+#endif
+    case ENOTCONN:
+      return R_SOCKET_NOT_CONNECTED;
+#ifdef WSAEOPNOTSUPP
+    case WSAEOPNOTSUPP:
+#endif
+    case EOPNOTSUPP:
+      return R_SOCKET_INVALID_OP;
+    case 0:
+      return R_SOCKET_OK;
+    default:
+      return R_SOCKET_ERROR;
+  }
+}
+
+static inline RSocketStatus
+r_socket_errno_to_socket_status (void)
+{
+  return r_socket_err_to_socket_status (R_SOCKET_ERRNO);
+}
+
+
 static rboolean
 r_socket_handle_close (RSocketHandle handle)
 {
@@ -175,6 +217,14 @@ r_socket_get_option (RSocket * socket, int level, int optname, int * value)
 #endif
 
   return TRUE;
+}
+
+RSocketStatus
+r_socket_get_error (RSocket * socket)
+{
+  int val = -1;
+  r_socket_get_option (socket, SOL_SOCKET, SO_ERROR, &val);
+  return r_socket_err_to_socket_status (val);
 }
 
 rboolean
@@ -375,39 +425,6 @@ r_socket_set_ttl (RSocket * socket, ruint ttl)
 }
 
 
-
-static inline RSocketStatus
-r_socket_errno_to_socket_status (void)
-{
-  int e;
-
-  switch ((e = R_SOCKET_ERRNO)) {
-#ifdef WSAEWOULDBLOCK
-    case WSAEWOULDBLOCK:
-    case WSAEINPROGRESS:
-#endif
-    case EAGAIN:
-    case EINPROGRESS:
-#if EWOULDBLOCK != EAGAIN
-    case EWOULDBLOCK:
-#endif
-      return R_SOCKET_WOULD_BLOCK;
-    case EDESTADDRREQ:
-      return R_SOCKET_NOT_BOUND;
-#ifdef WSAENOTCONN
-    case WSAENOTCONN:
-#endif
-    case ENOTCONN:
-      return R_SOCKET_NOT_CONNECTED;
-#ifdef WSAEOPNOTSUPP
-    case WSAEOPNOTSUPP:
-#endif
-    case EOPNOTSUPP:
-      return R_SOCKET_INVALID_OP;
-    default:
-      return R_SOCKET_ERROR;
-  }
-}
 
 RSocketStatus
 r_socket_close (RSocket * socket)

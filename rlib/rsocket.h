@@ -67,6 +67,7 @@ typedef enum {
   R_SOCKET_INVALID_OP       = -4,
   R_SOCKET_NOT_BOUND        = -5,
   R_SOCKET_NOT_CONNECTED    = -6,
+  R_SOCKET_CANCELED         = -7,
 } RSocketStatus;
 
 #if 0
@@ -101,6 +102,7 @@ R_API RSocketAddress * r_socket_get_local_address (RSocket * socket);
 R_API RSocketAddress * r_socket_get_remote_address (RSocket * socket);
 
 R_API rboolean r_socket_get_option (RSocket * socket, int level, int optname, int * value);
+R_API RSocketStatus r_socket_get_error (RSocket * socket);
 R_API rboolean r_socket_get_blocking (RSocket * socket);
 R_API rboolean r_socket_get_broadcast (RSocket * socket);
 R_API rboolean r_socket_get_keepalive (RSocket * socket);
