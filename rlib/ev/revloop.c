@@ -582,6 +582,13 @@ r_ev_loop_add_callback (REvLoop * loop, rboolean pri,
   return TRUE;
 }
 
+void
+r_ev_loop_add_cb_after (REvLoop * loop, RFunc func,
+    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify)
+{
+  r_cbqueue_push (&loop->acbs, func, data, datanotify, user, usernotify);
+}
+
 rboolean
 r_ev_loop_add_callback_at (REvLoop * loop, RClockEntry ** timer,
     RClockTime deadline, REvFunc cb, rpointer data, RDestroyNotify datanotify)
@@ -778,11 +785,11 @@ r_ev_io_clear (REvIO * evio)
     R_LOG_ERROR ("REvIO instance "R_EV_IO_FORMAT" still active when freeing",
         R_EV_IO_ARGS (evio));
     r_queue_remove_link (&evio->loop->active, evio->alnk);
-    if (R_EV_IO_IS_CHANGING (evio))
-      r_queue_remove_link (&evio->loop->chg, evio->chglnk);
-
-    evio->alnk = evio->chglnk = NULL;
   }
+
+  if (R_EV_IO_IS_CHANGING (evio))
+    r_queue_remove_link (&evio->loop->chg, evio->chglnk);
+  evio->alnk = evio->chglnk = NULL;
 
   r_cbqueue_clear (&evio->iocbq);
 
@@ -839,6 +846,8 @@ r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
   if (R_UNLIKELY (io_cb == NULL)) return FALSE;
   if (R_UNLIKELY (evio->loop->stop_request)) return FALSE;
 
+  R_LOG_TRACE ("loop %p start evio "R_EV_IO_FORMAT" %4x + %x",
+      evio->loop, R_EV_IO_ARGS (evio), evio->events, events);
   ret = r_cbqueue_push (&evio->iocbq, (RFunc)io_cb, data, datanotify,
       RUINT_TO_POINTER (events), NULL);
   if (!R_EV_IO_IS_CHANGING (evio) && (evio->events & events) != events)
@@ -856,6 +865,8 @@ r_ev_io_stop (REvIO * evio, rpointer ctx)
   if (R_UNLIKELY (evio == NULL)) return FALSE;
   if (R_UNLIKELY (ctx == NULL)) return FALSE;
 
+  R_LOG_TRACE ("loop %p stop evio "R_EV_IO_FORMAT" %4x - %x",
+      evio->loop, R_EV_IO_ARGS (evio), evio->events, RPOINTER_TO_UINT (((RCBList *)ctx)->user));
   r_cbqueue_remove_link (&evio->iocbq, ctx);
 
   if (R_EV_IO_IS_ACTIVE (evio)) {
@@ -879,17 +890,18 @@ r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
 {
   if (R_UNLIKELY (evio == NULL)) return FALSE;
 
+  R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT, evio->loop, R_EV_IO_ARGS (evio));
+
   if (evio->handle != R_EV_HANDLE_INVALID) {
     r_ev_handle_close (evio->handle);
     evio->handle = R_EV_HANDLE_INVALID;
   }
 
-  if (R_EV_IO_IS_ACTIVE (evio)) {
+  if (R_EV_IO_IS_ACTIVE (evio))
     r_queue_remove_link (&evio->loop->active, evio->alnk);
-    if (R_EV_IO_IS_CHANGING (evio))
-      r_queue_remove_link (&evio->loop->chg, evio->chglnk);
-    evio->alnk = evio->chglnk = NULL;
-  }
+  if (R_EV_IO_IS_CHANGING (evio))
+    r_queue_remove_link (&evio->loop->chg, evio->chglnk);
+  evio->alnk = evio->chglnk = NULL;
 
   r_cbqueue_push (&evio->loop->acbs, (RFunc)close_cb,
       data, datanotify, r_ev_io_ref (evio), r_ev_io_unref);

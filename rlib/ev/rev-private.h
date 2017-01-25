@@ -35,6 +35,9 @@ R_BEGIN_DECLS
 #define R_EV_LOOP_MAX_EVENTS              1024
 #define R_EV_LOOP_DEFAULT_TASK_THREADS    r_sys_cpu_physical_count ()
 
+R_API_HIDDEN void r_ev_loop_add_cb_after (REvLoop * loop, RFunc func,
+    rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+
 struct _REvIO {
   RRef ref;
 
