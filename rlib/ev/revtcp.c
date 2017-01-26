@@ -24,6 +24,8 @@
 
 #include <rlib/rmem.h>
 
+#define R_LOG_CAT_DEFAULT &revlogcat
+
 typedef struct {
   RBuffer * buf;
   REvTCPBufferFunc done;
@@ -106,6 +108,8 @@ r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotif
 {
   rboolean ret;
 
+  R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT,
+      evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
   r_ev_tcp_recv_stop (evtcp);
 
   if (evtcp->send_iocb_ctx != NULL) {
@@ -183,6 +187,7 @@ r_ev_tcp_connected_cb (rpointer data, REvIOEvents events, REvIO * evio)
         evio, NULL, evtcp->connect_iocb_ctx, NULL);
     evtcp->connect_iocb_ctx = NULL;
 
+    R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT, evio->loop, R_EV_IO_ARGS (evio));
     evtcp->connected (data, evtcp, r_socket_get_error (evtcp->socket));
   }
 }
@@ -198,9 +203,12 @@ r_ev_tcp_connect (REvTCP * evtcp, const RSocketAddress * address,
 
   if ((ret = r_socket_connect (evtcp->socket, address)) >= R_SOCKET_OK) {
     evtcp->connected = connected;
+    R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT, evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
     if ((evtcp->connect_iocb_ctx = r_ev_io_start (&evtcp->evio, R_EV_IO_WRITABLE,
         r_ev_tcp_connected_cb, data, datanotify)) == NULL) {
       /* FIXME: What to do about this? */
+      R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT,
+          evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
       abort ();
     }
   }
@@ -217,6 +225,8 @@ r_ev_tcp_listen_cb (rpointer data, REvIOEvents events, REvIO * evio)
   (void) events;
 
   while ((newtcp = r_ev_tcp_accept (ltcp, &res)) != NULL) {
+    R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT" accept "R_EV_IO_FORMAT,
+        evio->loop, R_EV_IO_ARGS (evio), R_EV_IO_ARGS (newtcp));
     ltcp->connection (data, newtcp, ltcp);
     r_ev_tcp_unref (newtcp);
   }
@@ -237,9 +247,13 @@ r_ev_tcp_listen (REvTCP * evtcp, ruint8 backlog,
 
   if ((ret = r_socket_listen_full (evtcp->socket, backlog)) >= R_SOCKET_OK) {
     evtcp->connection = connection;
+    R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT,
+        evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
     if ((evtcp->listen_iocb_ctx = r_ev_io_start (&evtcp->evio, R_EV_IO_READABLE,
         r_ev_tcp_listen_cb, data, datanotify)) == NULL) {
       /* FIXME: What to do about this? */
+      R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT,
+          evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
       abort ();
     }
   }
@@ -277,8 +291,12 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
     switch (res) {
       case R_SOCKET_OK:
         if (size > 0) {
+          R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT,
+              evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
           evtcp->recv (evtcp->recv_data, buf, evtcp);
         } else {
+          R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT" EOF",
+              evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
           evtcp->recv (evtcp->recv_data, NULL, evtcp);
           r_ev_loop_add_cb_after (evtcp->evio.loop, (RFunc)r_ev_io_stop,
               evtcp, NULL, evtcp->recv_iocb_ctx, NULL);
@@ -299,8 +317,11 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
   } while (res == R_SOCKET_OK);
 
   /* FIXME: What do we do when something fails and we are unable to drain socket? */
-  if (res != R_SOCKET_WOULD_BLOCK)
+  if (res != R_SOCKET_WOULD_BLOCK) {
+    R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" res %d",
+        evtcp->evio.loop, R_EV_IO_ARGS (evtcp), res);
     abort ();
+  }
 }
 
 static void r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio);
@@ -314,6 +335,8 @@ r_ev_tcp_send_iocb (REvTCP * evtcp)
 
   while ((ctx = r_queue_peek (&evtcp->qsend)) != NULL) {
     res = r_socket_send_message (evtcp->socket, NULL, ctx->buf, &sent);
+    R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT" res %d sent %"RSIZE_FMT,
+        evtcp->evio.loop, R_EV_IO_ARGS (evtcp), res, sent);
     if (res == R_SOCKET_OK) {
       r_queue_pop (&evtcp->qsend);
       if (ctx->done != NULL)
@@ -327,6 +350,8 @@ r_ev_tcp_send_iocb (REvTCP * evtcp)
       break;
     } else {
       /* FIXME: What do we do when something fails and we are unable to drain send queue? */
+      R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" res %d",
+          evtcp->evio.loop, R_EV_IO_ARGS (evtcp), res);
       abort ();
     }
   }
@@ -335,7 +360,8 @@ r_ev_tcp_send_iocb (REvTCP * evtcp)
 static void
 r_ev_tcp_error_iocb (REvTCP * evtcp)
 {
-  (void) evtcp;
+  R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT,
+      evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
   /* TODO */
   abort ();
 }
@@ -457,6 +483,8 @@ r_ev_tcp_send (REvTCP * evtcp, RBuffer * buf,
     ctx->datanotify = datanotify;
     r_queue_push (&evtcp->qsend, ctx);
 
+    R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT" buf %p",
+        evtcp->evio.loop, R_EV_IO_ARGS (evtcp), buf);
     if (r_queue_size (&evtcp->qsend) == 1) {
       ret = r_ev_loop_add_callback (evtcp->evio.loop, TRUE,
           (REvFunc)r_ev_tcp_send_iocb, r_ev_tcp_ref (evtcp), r_ev_tcp_unref);

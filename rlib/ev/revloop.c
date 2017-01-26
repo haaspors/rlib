@@ -43,14 +43,14 @@
 #endif
 #include <errno.h>
 
-R_LOG_CATEGORY_DEFINE_STATIC (evloopcat, "evloop", "RLib EvLoop",
+R_LOG_CATEGORY_DEFINE (revlogcat, "ev", "RLib EvLoop",
     R_CLR_BG_CYAN | R_CLR_FG_RED | R_CLR_FMT_BOLD);
-#define R_LOG_CAT_DEFAULT &evloopcat
+#define R_LOG_CAT_DEFAULT &revlogcat
 
 void
 r_ev_loop_init (void)
 {
-  r_log_category_register (&evloopcat);
+  r_log_category_register (&revlogcat);
 }
 
 void

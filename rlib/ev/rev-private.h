@@ -27,10 +27,13 @@
 #include <rlib/ev/revloop.h>
 #include <rlib/rfd.h>
 #include <rlib/rlist.h>
+#include <rlib/rlog.h>
 #include <rlib/rsys.h>
 #include <rlib/rqueue.h>
 
 R_BEGIN_DECLS
+
+R_API_HIDDEN R_LOG_CATEGORY_DEFINE_EXTERN (revlogcat);
 
 #define R_EV_LOOP_MAX_EVENTS              1024
 #define R_EV_LOOP_DEFAULT_TASK_THREADS    r_sys_cpu_physical_count ()
@@ -51,7 +54,7 @@ struct _REvIO {
 };
 
 #define R_EV_IO_FORMAT        "%p [%"R_EV_HANDLE_FMT"]"
-#define R_EV_IO_ARGS(evio)    evio, (evio != NULL ? evio->handle : R_EV_HANDLE_INVALID)
+#define R_EV_IO_ARGS(evio)    evio, (evio != NULL ? ((REvIO *)evio)->handle : R_EV_HANDLE_INVALID)
 
 #define R_EV_IO_IS_ACTIVE(evio) ((evio->alnk) != NULL)
 #define R_EV_IO_IS_CHANGING(evio) ((evio->chglnk) != NULL)
