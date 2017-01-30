@@ -194,7 +194,7 @@ map_error:
 
 
 static RMemAllocator g__r_mem_allocator_system = {
-  { 0, NULL },
+  R_REF_STATIC_INIT (NULL),
   R_MEM_ALLOCATOR_SYSTEM, R_MEM_ALLOCATOR_SYSTEM_ALIGNMASK,
   r_system_mem_allocator_alloc,
   r_system_mem_allocator_free,

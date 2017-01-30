@@ -137,7 +137,7 @@ r_system_clock_wait (RClock * clock, RClockTime ts)
 }
 
 static RClock g__r_sysclock = {
-  { 0, r_clock_clear },
+  R_REF_STATIC_INIT (r_clock_clear),
   (RClockGetTimeFunc)r_time_get_ts_monotonic,
   r_system_clock_wait,
 

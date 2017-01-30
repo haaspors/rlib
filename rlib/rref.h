@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -29,17 +29,23 @@ R_BEGIN_DECLS
 
 typedef struct _RRef {
   rauint refcount;
+  raptr weaklst;
   RDestroyNotify notify;
 } RRef;
 
 #define r_ref_refcount(ref) r_atomic_uint_load (&((RRef *)ref)->refcount)
+#define R_REF_STATIC_INIT(destroy)        { 0, 0, (RDestroyNotify)destroy }
 #define r_ref_init(self, destroy)         R_STMT_START {                      \
   r_atomic_uint_store (&((RRef *)self)->refcount, 1);                         \
+  r_atomic_ptr_store (&((RRef *)self)->weaklst, NULL);                        \
   ((RRef *)self)->notify = (RDestroyNotify)destroy;                           \
 } R_STMT_END
 
 R_API rpointer r_ref_ref (rpointer ref);
 R_API void r_ref_unref (rpointer ref);
+
+R_API rpointer r_ref_weak_ref (rpointer ref, RFunc notify, rpointer data);
+R_API void r_ref_weak_unref (rpointer ref, RFunc notify, rpointer data);
 
 R_END_DECLS
 
