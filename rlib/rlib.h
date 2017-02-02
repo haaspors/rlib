@@ -69,6 +69,7 @@
 #include <rlib/rtty.h>
 #include <rlib/rtypes.h>
 #include <rlib/runicode.h>
+#include <rlib/ruri.h>
 
 /* ASN.1 */
 #include <rlib/asn1/rasn1.h>
