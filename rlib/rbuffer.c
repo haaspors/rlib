@@ -872,16 +872,17 @@ r_buffer_fill (RBuffer * buffer, rsize offset, rconstpointer src, rsize size)
 }
 
 rsize
-r_buffer_extract (RBuffer * buffer, rsize offset, rpointer dst, rsize size)
+r_buffer_extract (RBuffer * buffer, rsize offset, rpointer dst, rssize size)
 {
   ruint i;
-  rsize ret, msize;
+  rsize ret, msize, esize;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
   ruint8 * ptr;
 
   if (R_UNLIKELY (buffer == NULL)) return 0;
   if (R_UNLIKELY (dst == NULL)) return 0;
-  if (R_UNLIKELY (size == 0)) return 0;
+  esize = (size >= 0) ? (rsize)size : r_buffer_get_size (buffer);
+  if (R_UNLIKELY (esize == 0)) return 0;
 
   for (i = 0; i < buffer->mem_count && offset >= buffer->mem[i]->size; i++)
     offset -= buffer->mem[i]->size;
@@ -892,22 +893,22 @@ r_buffer_extract (RBuffer * buffer, rsize offset, rpointer dst, rsize size)
     return 0;
 
   ptr = dst;
-  msize = MIN (size, info.size - offset);
+  msize = MIN (esize, info.size - offset);
   r_memcpy (ptr, info.data + offset, msize);
   r_mem_unmap (buffer->mem[i], &info);
-  size -= msize;
+  esize -= msize;
   ret = msize;
   ptr += msize;
 
-  for (i++; i < buffer->mem_count && size > 0; i++) {
+  for (i++; i < buffer->mem_count && esize > 0; i++) {
     if (!r_mem_map (buffer->mem[i], &info, R_MEM_MAP_READ))
       break;
 
-    msize = MIN (info.size, size);
+    msize = MIN (info.size, esize);
     r_memcpy (ptr, info.data, msize);
     r_mem_unmap (buffer->mem[i], &info);
 
-    size -= msize;
+    esize -= msize;
     ret += msize;
     ptr += msize;
   }
@@ -916,19 +917,22 @@ r_buffer_extract (RBuffer * buffer, rsize offset, rpointer dst, rsize size)
 }
 
 rpointer
-r_buffer_extract_dup (RBuffer * buffer, rsize offset, rsize size, rsize * dstsize)
+r_buffer_extract_dup (RBuffer * buffer, rsize offset, rssize size, rsize * dstsize)
 {
   rpointer dst;
+  rsize esize;
 
   if (R_UNLIKELY (buffer == NULL)) return NULL;
   if (R_UNLIKELY (dstsize == NULL)) return NULL;
-  if (R_UNLIKELY (size == 0)) {
+
+  esize = (size < 0) ? r_buffer_get_size (buffer) : (rsize)size;
+  if (R_UNLIKELY (esize == 0)) {
     *dstsize = 0;
     return NULL;
   }
 
-  dst = r_malloc (size);
-  *dstsize = r_buffer_extract (buffer, offset, dst, size);
+  dst = r_malloc (esize);
+  *dstsize = r_buffer_extract (buffer, offset, dst, esize);
   return dst;
 }
 

@@ -96,8 +96,9 @@ R_API rboolean r_buffer_map_byte_range (RBuffer * buffer, rsize offset, rssize s
 R_API rboolean r_buffer_unmap (RBuffer * buffer, RMemMapInfo * info);
 
 R_API rsize r_buffer_fill (RBuffer * buffer, rsize offset, rconstpointer src, rsize size);
-R_API rsize r_buffer_extract (RBuffer * buffer, rsize offset, rpointer dst, rsize size);
-R_API rpointer r_buffer_extract_dup (RBuffer * buffer, rsize offset, rsize size, rsize * dstsize);
+R_API rsize r_buffer_extract (RBuffer * buffer, rsize offset, rpointer dst, rssize size);
+R_API rpointer r_buffer_extract_dup (RBuffer * buffer, rsize offset, rssize size, rsize * dstsize);
+#define r_buffer_extract_dup_all(buf, dstsize) r_buffer_extract_dup (buf, 0, -1, dstsize)
 R_API int   r_buffer_cmp (RBuffer * buf1, rsize offset1, RBuffer * buf2, rsize offset2, rsize size);
 R_API int   r_buffer_memcmp (RBuffer * buffer, rsize offset, rconstpointer mem, rsize size);
 R_API rsize r_buffer_memset (RBuffer * buffer, rsize offset, ruint8 val, rsize size);

@@ -55,7 +55,7 @@ r_asn1_bin_encoder_get_data (RAsn1BinEncoder * enc, rsize * size)
   ruint8 * ret = NULL;
 
   if (r_asn1_bin_encoder_get_buffer (enc, &buf) == R_ASN1_ENCODER_OK) {
-    ret = r_buffer_extract_dup (buf, 0, r_buffer_get_size (buf), size);
+    ret = r_buffer_extract_dup_all (buf, size);
     r_buffer_unref (buf);
   }
 

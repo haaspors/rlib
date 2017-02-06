@@ -115,7 +115,7 @@ r_crypto_cert_dup_data (const RCryptoCert * cert, rsize * size)
   if (R_UNLIKELY (cert == NULL)) return NULL;
 
   if ((buf = r_crypto_cert_get_data_buffer (cert)) != NULL) {
-    ret = r_buffer_extract_dup (buf, 0, r_buffer_get_size (buf), size);
+    ret = r_buffer_extract_dup_all (buf, size);
     r_buffer_unref (buf);
   } else {
     ret = NULL;
