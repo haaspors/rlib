@@ -253,7 +253,7 @@ restart:
       rsize i, dsize = (end - start) / (last - first);
 
       for (i = first; i < last; i++) {
-        result->token[i].ptr_data = (ruint8 *)start + i * dsize;
+        result->token[i].ptr_data = (ruint8 *)start + (i - first) * dsize;
         result->token[i].size = dsize;
       }
       result->token[i - 1].size = end - (const ruint8 *)result->token[i - 1].ptr_data;

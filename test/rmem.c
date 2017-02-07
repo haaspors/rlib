@@ -204,7 +204,28 @@ RTEST (rmem, scan_pattern, RTEST_FAST)
   r_assert_cmpuint (res->token[5].size, ==, 1);
   r_assert_cmpuint (res->token[6].size, ==, 1);
   r_free (res);
+}
+RTEST_END;
 
+RTEST (rmem, scan_pattern_str, RTEST_FAST)
+{
+  RMemScanResult * res;
+  static const rchar * reqline = "GET /api/ HTTP/1.1\r\n";
+
+  r_assert_cmpuint (r_mem_scan_pattern (reqline, r_strlen (reqline),
+        "*20*20*0D0A", &res), ==, R_MEM_SCAN_RESULT_OK);
+  r_assert_cmpuint (res->tokens, ==, 6);
+  r_assert_cmpptr (res->token[0].ptr_data, ==, &reqline[0]);
+  r_assert_cmpuint (res->token[0].size, ==, 3);
+  r_assert_cmpuint (res->token[1].size, ==, 1);
+  r_assert_cmpptr (res->token[2].ptr_data, ==, &reqline[4]);
+  r_assert_cmpuint (res->token[2].size, ==, 5);
+  r_assert_cmpuint (res->token[3].size, ==, 1);
+  r_assert_cmpptr (res->token[4].ptr_data, ==, &reqline[10]);
+  r_assert_cmpuint (res->token[4].size, ==, 8);
+  r_assert_cmpptr (res->token[5].ptr_data, ==, &reqline[18]);
+  r_assert_cmpuint (res->token[5].size, ==, 2);
+  r_free (res);
 }
 RTEST_END;
 
