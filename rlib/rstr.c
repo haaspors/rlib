@@ -905,7 +905,7 @@ r_vasprintf (rchar ** str, const rchar * fmt, va_list args)
     }
   }
 #else
-#pragma message ("r_str_vprintf not implemented")
+#pragma message ("r_vasprintf not implemented")
   (void) fmt;
   (void) args;
   *str = NULL;
