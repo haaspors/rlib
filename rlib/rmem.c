@@ -242,7 +242,7 @@ r_mem_scan_data (rconstpointer mem, rsize size,
     ruint8 byte = *(const ruint8 *)data;
 
     while (ptr < end) {
-      if ((ptr = (rpointer)r_mem_scan_byte (ptr, size - datasize, byte)) == NULL)
+      if ((ptr = (rpointer)r_mem_scan_byte (ptr, size - datasize + 1, byte)) == NULL)
         break;
       if (r_memcmp (ptr, data, datasize) == 0)
         return (rpointer)ptr;

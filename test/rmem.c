@@ -134,6 +134,7 @@ RTEST (rmem, scan_data, RTEST_FAST)
   r_assert_cmpptr (r_mem_scan_data (data, sizeof (data), foo, sizeof (foo)), ==, NULL);
   r_assert_cmpptr (r_mem_scan_data (foo, sizeof (foo), data + 1, sizeof (data) - 1), ==, &foo[8]);
   r_assert_cmpptr (r_mem_scan_data (foo, sizeof (foo) - 2, data, sizeof (data)), ==, NULL);
+  r_assert_cmpptr (r_mem_scan_data (foo, sizeof (foo) - 1, data, sizeof (data)), ==, &foo[7]);
 }
 RTEST_END;
 
