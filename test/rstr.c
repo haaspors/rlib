@@ -559,6 +559,8 @@ RTEST_END;
 RTEST (rstr, dup, RTEST_FAST)
 {
   rchar * tmp;
+  static rchar foobar_no_0[] = { 'f', 'o', 'o', 'b', 'a', 'r' };
+  static rchar foobar_0_yes[] = { 'f', 'o', 'o', 'b', 'a', 'r', 0, 'y', 'e', 's' };
 
   /* strdup */
   r_assert_cmpptr (r_strdup (NULL), ==, NULL);
@@ -577,6 +579,12 @@ RTEST (rstr, dup, RTEST_FAST)
   r_assert_cmpptr ((tmp = r_strndup (foobar, 3)), !=, NULL);
   r_assert_cmpptr (tmp, !=, foobar);
   r_assert_cmpstr (tmp, ==, foo);
+  r_free (tmp);
+  r_assert_cmpptr ((tmp = r_strndup (foobar_no_0, sizeof (foobar_no_0))), !=, NULL);
+  r_assert_cmpstr (tmp, ==, foobar);
+  r_free (tmp);
+  r_assert_cmpptr ((tmp = r_strndup (foobar_0_yes, sizeof (foobar_0_yes))), !=, NULL);
+  r_assert_cmpstr (tmp, ==, foobar);
   r_free (tmp);
 }
 RTEST_END;

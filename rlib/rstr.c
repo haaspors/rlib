@@ -732,14 +732,15 @@ r_strdup (const rchar * str)
 }
 
 rchar *
-r_strndup (const rchar * str, rsize n)
+r_strndup (const rchar * str, rsize size)
 {
   rchar * ret;
 
   if (R_LIKELY (str != NULL)) {
-    rsize size = strlen (str);
-    if (n < size)
-      size = n;
+    const rchar * end;
+
+    if ((end = r_strnchr (str, 0, size)) != NULL)
+      size = RPOINTER_TO_SIZE (end - str);
 
     ret = r_malloc (size + 1);
     memcpy (ret, str, size);
