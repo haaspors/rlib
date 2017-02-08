@@ -1001,6 +1001,18 @@ RTEST (rstr, ascii_upper_lower, RTEST_FAST)
 {
   rchar foo[] = "* 12this 453 is foobar?";
 
+  r_assert_cmpint (r_ascii_upper (';'), ==, ';');
+  r_assert_cmpint (r_ascii_upper ('a'), ==, 'A');
+  r_assert_cmpint (r_ascii_upper ('A'), ==, 'A');
+  r_assert_cmpint (r_ascii_upper ('x'), ==, 'X');
+  r_assert_cmpint (r_ascii_upper ('X'), ==, 'X');
+
+  r_assert_cmpint (r_ascii_lower (';'), ==, ';');
+  r_assert_cmpint (r_ascii_lower ('a'), ==, 'a');
+  r_assert_cmpint (r_ascii_lower ('A'), ==, 'a');
+  r_assert_cmpint (r_ascii_lower ('x'), ==, 'x');
+  r_assert_cmpint (r_ascii_lower ('X'), ==, 'x');
+
   r_assert_cmpstr (r_ascii_make_upper (foo, -1), ==, "* 12THIS 453 IS FOOBAR?");
   r_assert_cmpstr (foo, ==, "* 12THIS 453 IS FOOBAR?");
   r_assert_cmpstr (r_ascii_make_lower (foo, -1), ==, "* 12this 453 is foobar?");
