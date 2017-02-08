@@ -419,6 +419,12 @@ RTEST (rbuffer, mem_find, RTEST_FAST)
   r_assert_cmpuint (offset, ==, 0);
   r_assert_cmpuint (size, ==, 512);
 
+  r_assert (r_buffer_mem_find (buf, 512, -1, &idx, &count, &offset, &size));
+  r_assert_cmpuint (idx, ==, 1);
+  r_assert_cmpuint (count, ==, 3);
+  r_assert_cmpuint (offset, ==, 256);
+  r_assert_cmpuint (size, ==, 512);
+
   r_buffer_unref (buf);
 }
 RTEST_END;

@@ -373,7 +373,7 @@ r_buffer_mem_find (const RBuffer * buffer, rsize offset, rssize size,
 
   if (R_UNLIKELY (buffer == NULL)) return FALSE;
 
-  s = (size > 0) ? (rsize)size : r_buffer_get_size (buffer);
+  s = (size >= 0) ? (rsize)size : r_buffer_get_size (buffer) - offset;
 
   for (ix = 0; ix < buffer->mem_count; ix++) {
     if (offset < buffer->mem[ix]->size)
