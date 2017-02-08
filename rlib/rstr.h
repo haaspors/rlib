@@ -33,7 +33,9 @@ R_API rsize r_strlen (const rchar * str);
 
 /* Compare strings */
 R_API int r_strcmp (const rchar * a, const rchar * b);
+R_API int r_strcasecmp (const rchar * a, const rchar * b);
 R_API int r_strncmp (const rchar * a, const rchar * b, rsize len);
+R_API int r_strncasecmp (const rchar * a, const rchar * b, rsize len);
 #define r_str_equals(a,b) (r_strcmp (a, b) == 0)
 
 R_API rboolean r_str_has_prefix (const rchar * str, const rchar * prefix);
@@ -56,9 +58,12 @@ R_API rchar * r_str_ptr_of_c_any (const rchar * str, rssize strsize,
 R_API rchar * r_str_ptr_of_str (const rchar * str, rssize strsize,
     const rchar * sub, rssize subsize);
 R_API rssize r_str_idx_of_c (const rchar * str, rssize strsize, rchar c);
+R_API rssize r_str_idx_of_c_case (const rchar * str, rssize strsize, rchar c);
 R_API rssize r_str_idx_of_c_any (const rchar * str, rssize strsize,
     const rchar * c, rssize chars);
 R_API rssize r_str_idx_of_str (const rchar * str, rssize strsize,
+    const rchar * sub, rssize subsize);
+R_API rssize r_str_idx_of_str_case (const rchar * str, rssize strsize,
     const rchar * sub, rssize subsize);
 
 /* Copy and concatenate */

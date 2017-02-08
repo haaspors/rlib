@@ -321,6 +321,15 @@ def configure_string(cfg):
             header_name="string.h", mandatory=False)
     cfg.check_cc(function_name='stpncpy',
             header_name="string.h", mandatory=False)
+    if cfg.env.DEST_OS == 'win32':
+        cfg.check_cc(function_name='_stricmp',
+                header_name="string.h", mandatory=False)
+        cfg.check_cc(function_name='_strnicmp',
+                header_name="string.h", mandatory=False)
+    cfg.check_cc(function_name='strcasecmp',
+            header_name="string.h", mandatory=False)
+    cfg.check_cc(function_name='strncasecmp',
+            header_name="string.h", mandatory=False)
     cfg.check_cc(function_name='strnstr',
             header_name="string.h", mandatory=False)
     cfg.check_cc(function_name='memrchr',

@@ -123,11 +123,39 @@ r_strcmp (const rchar * a, const rchar * b)
 }
 
 int
+r_strcasecmp (const rchar * a, const rchar * b)
+{
+  if (R_UNLIKELY (a == NULL)) return -(a != b);
+  if (R_UNLIKELY (b == NULL)) return a != b;
+#if defined (HAVE__STRICMP)
+  return _stricmp (a, b);
+#elif defined (HAVE_STRCASECMP)
+  return strcasecmp (a, b);
+#else
+#error "no case insensitive string compare function"
+#endif
+}
+
+int
 r_strncmp (const rchar * a, const rchar * b, rsize len)
 {
   if (R_UNLIKELY (a == NULL)) return -(a != b);
   if (R_UNLIKELY (b == NULL)) return a != b;
   return strncmp (a, b, len);
+}
+
+int
+r_strncasecmp (const rchar * a, const rchar * b, rsize len)
+{
+  if (R_UNLIKELY (a == NULL)) return -(a != b);
+  if (R_UNLIKELY (b == NULL)) return a != b;
+#if defined (HAVE__STRNICMP)
+  return _strnicmp (a, b, len);
+#elif defined (HAVE_STRNCASECMP)
+  return strncasecmp (a, b, len);
+#else
+#error "no case insensitive string compare function"
+#endif
 }
 
 rboolean
@@ -313,6 +341,21 @@ r_str_idx_of_c (const rchar * str, rssize strsize, rchar c)
 }
 
 rssize
+r_str_idx_of_c_case (const rchar * str, rssize strsize, rchar c)
+{
+  rchar ch[2] = { c, c };
+
+  if (r_ascii_islower (c))
+    ch[1] -= 0x20;
+  else if (r_ascii_isupper (c))
+    ch[1] += 0x20;
+  else
+    return r_str_idx_of_c (str, strsize, c);
+
+  return r_str_idx_of_c_any (str, strsize, ch, 2);
+}
+
+rssize
 r_str_idx_of_c_any (const rchar * str, rssize strsize,
     const rchar * c, rssize chars)
 {
@@ -338,7 +381,7 @@ rssize
 r_str_idx_of_str (const rchar * str, rssize strsize,
     const rchar * sub, rssize subsize)
 {
-  rssize ret;
+  rssize ret, idx;
 
   if (strsize < 0) strsize = (rssize) r_strlen (str);
   if (subsize < 0) subsize = (rssize) r_strlen (sub);
@@ -349,10 +392,38 @@ r_str_idx_of_str (const rchar * str, rssize strsize,
     return r_str_idx_of_c (str, strsize, *sub);
 
   ret = 0;
-  while ((ret += r_str_idx_of_c (str+ret, strsize-ret, *sub)) >= 0) {
+  while ((idx = r_str_idx_of_c (str+ret, strsize-ret, *sub)) >= 0) {
+    ret += idx;
     if (strsize - ret < subsize) break;
 
     if (r_strncmp (&str[ret+1], &sub[1], subsize - 1) == 0)
+      return ret;
+    ret++;
+  }
+
+  return -1;
+}
+
+rssize
+r_str_idx_of_str_case (const rchar * str, rssize strsize,
+    const rchar * sub, rssize subsize)
+{
+  rssize ret, idx;
+
+  if (strsize < 0) strsize = (rssize) r_strlen (str);
+  if (subsize < 0) subsize = (rssize) r_strlen (sub);
+
+  if (R_UNLIKELY (subsize <= 0))
+    return -1;
+  if (subsize == 1)
+    return r_str_idx_of_c_case (str, strsize, *sub);
+
+  ret = 0;
+  while ((idx = r_str_idx_of_c_case (str+ret, strsize-ret, *sub)) >= 0) {
+    ret += idx;
+    if (strsize - ret < subsize) break;
+
+    if (r_strncasecmp (&str[ret+1], &sub[1], subsize - 1) == 0)
       return ret;
     ret++;
   }

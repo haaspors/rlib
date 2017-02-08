@@ -1,8 +1,11 @@
 #include <rlib/rlib.h>
 
 static const rchar foobar[] = "foobar";
+static const rchar FOOBAR[] = "FOOBAR";
 static const rchar foo[] = "foo";
+static const rchar FOO[] = "FOO";
 static const rchar bar[] = "bar";
+static const rchar BAR[] = "BAR";
 static const rchar foobar_padding[] = "\t\n \rfoobar\r \t\n";
 
 RTEST (rstr, len, RTEST_FAST)
@@ -37,6 +40,30 @@ RTEST (rstr, cmp, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, casecmp, RTEST_FAST)
+{
+  r_assert_cmpint (r_strcasecmp (NULL, NULL), ==, 0);
+  r_assert_cmpint (r_strcasecmp (NULL, foobar), <, 0);
+  r_assert_cmpint (r_strcasecmp (foobar, NULL), >, 0);
+  r_assert_cmpint (r_strcasecmp (foobar, foobar), ==, 0);
+  r_assert_cmpint (r_strcasecmp (foobar, FOOBAR), ==, 0);
+  r_assert_cmpint (r_strcasecmp (foobar, bar), >, 0);
+  r_assert_cmpint (r_strcasecmp (bar, foobar), <, 0);
+  r_assert_cmpint (r_strcasecmp (foobar, foo), >, 0);
+  r_assert_cmpint (r_strcasecmp (foobar, FOO), >, 0);
+
+  r_assert_cmpint (r_strncasecmp (NULL, NULL, 0), ==, 0);
+  r_assert_cmpint (r_strncasecmp (NULL, foobar, 6), <, 0);
+  r_assert_cmpint (r_strncasecmp (foobar, NULL, 6), >, 0);
+  r_assert_cmpint (r_strncasecmp (foobar, foobar, 6), ==, 0);
+  r_assert_cmpint (r_strncasecmp (foobar, FOOBAR, 6), ==, 0);
+  r_assert_cmpint (r_strncasecmp (foobar, bar, 3), >, 0);
+  r_assert_cmpint (r_strncasecmp (bar, foobar, 3), <, 0);
+  r_assert_cmpint (r_strncasecmp (foobar, foo, 3), ==, 0);
+  r_assert_cmpint (r_strncasecmp (foobar, FOO, 3), ==, 0);
+}
+RTEST_END;
+
 RTEST (rstr, prefix_suffix, RTEST_FAST)
 {
   r_assert ( r_str_has_prefix (foobar, foo));
@@ -60,8 +87,22 @@ RTEST (rstr, idx_of_c, RTEST_FAST)
   r_assert_cmpint (r_str_idx_of_c (foobar, -1, 'f'), ==, 0);
   r_assert_cmpint (r_str_idx_of_c (foobar, -1, 'F'), ==, -1);
   r_assert_cmpint (r_str_idx_of_c (foobar, -1, 'a'), ==, 4);
+  r_assert_cmpint (r_str_idx_of_c (foobar, -1, 'A'), ==, -1);
   r_assert_cmpint (r_str_idx_of_c (foobar, -1, 0), ==, -1);
   r_assert_cmpint (r_str_idx_of_c (foobar, sizeof (foobar), 0), ==, 6);
+}
+RTEST_END;
+
+RTEST (rstr, idx_of_c_case, RTEST_FAST)
+{
+  r_assert_cmpint (r_str_idx_of_c_case (NULL, 0, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c_case (foobar, 0, 'f'), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c_case (foobar, -1, 'f'), ==, 0);
+  r_assert_cmpint (r_str_idx_of_c_case (foobar, -1, 'F'), ==, 0);
+  r_assert_cmpint (r_str_idx_of_c_case (foobar, -1, 'a'), ==, 4);
+  r_assert_cmpint (r_str_idx_of_c_case (foobar, -1, 'A'), ==, 4);
+  r_assert_cmpint (r_str_idx_of_c_case (foobar, -1, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_c_case (foobar, sizeof (foobar), 0), ==, 6);
 }
 RTEST_END;
 
@@ -89,6 +130,33 @@ RTEST (rstr, idx_of_str, RTEST_FAST)
   r_assert_cmpint (r_str_idx_of_str (foobar, -1, bar, -1), ==, 3);
   r_assert_cmpint (r_str_idx_of_str ("---BEGIN PRIVATE KEY-----", -1,
         "-----BEGIN", -1), ==, -1);
+
+  r_assert_cmpint (r_str_idx_of_str ("fobrfbfoobar", -1, foo, -1), ==, 6);
+  r_assert_cmpint (r_str_idx_of_str ("fobrfbfoobar", -1, FOO, -1), <, 0);
+  r_assert_cmpint (r_str_idx_of_str ("fobrfbfoobar", -1, bar, -1), ==, 9);
+  r_assert_cmpint (r_str_idx_of_str ("fobrfbfoobar", -1, BAR, -1), <, 0);
+}
+RTEST_END;
+
+RTEST (rstr, idx_of_str_case, RTEST_FAST)
+{
+  r_assert_cmpint (r_str_idx_of_str_case (NULL, 0, NULL, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_str_case (foobar, 0, NULL, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_str_case (foobar, -1, NULL, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_str_case (foobar, -1, foo, 0), ==, -1);
+  r_assert_cmpint (r_str_idx_of_str_case (foobar, -1, foo, -1), ==, 0);
+  r_assert_cmpint (r_str_idx_of_str_case (FOOBAR, -1, foo, -1), ==, 0);
+  r_assert_cmpint (r_str_idx_of_str_case (foobar, -1, bar, -1), ==, 3);
+  r_assert_cmpint (r_str_idx_of_str_case (foobar, -1, BAR, -1), ==, 3);
+  r_assert_cmpint (r_str_idx_of_str_case ("---BEGIN PRIVATE KEY-----", -1,
+        "-----BEGIN", -1), ==, -1);
+  r_assert_cmpint (r_str_idx_of_str_case ("-----BEGIN PRIVATE KEY-----", -1,
+        "-----begIn", -1), ==, 0);
+
+  r_assert_cmpint (r_str_idx_of_str_case ("fobrfbfoobar", -1, foo, -1), ==, 6);
+  r_assert_cmpint (r_str_idx_of_str_case ("fobrfbfoobar", -1, FOO, -1), ==, 6);
+  r_assert_cmpint (r_str_idx_of_str_case ("fobrfbfoobar", -1, bar, -1), ==, 9);
+  r_assert_cmpint (r_str_idx_of_str_case ("fobrfbfoobar", -1, BAR, -1), ==, 9);
 }
 RTEST_END;
 
