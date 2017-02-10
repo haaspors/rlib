@@ -65,8 +65,8 @@ r_proc_is_debugger_attached (void)
           rchar * tracer_pid;
 
           buf[num_read] = 0;
-          if ((tracer_pid = strstr (buf, "TracerPid:")) != NULL)
-            ret = atoi (tracer_pid + sizeof ("TracerPid:") - 1) != 0;
+          if ((tracer_pid = r_strstr (buf, "TracerPid:")) != NULL)
+            ret = r_str_to_int (tracer_pid + R_STR_SIZEOF ("TracerPid:"), NULL, 10, NULL) != 0;
       }
       r_fd_close (fd);
     }

@@ -29,6 +29,9 @@
 
 R_BEGIN_DECLS
 
+#define R_STR_SIZEOF(str) sizeof (str) - 1
+#define R_STR_WITH_SIZE_ARGS(str) (str), R_STR_SIZEOF (str)
+
 R_API rsize r_strlen (const rchar * str);
 
 /* Compare strings */

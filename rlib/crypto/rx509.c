@@ -229,16 +229,16 @@ r_crypto_x509_cert_v3_parse_extensions (RCryptoX509Cert * cert,
     rsize oidsize;
     RCertX509ExtFunc func;
   } exttbl[] = {
-    { R_ASN1_OID_ARGS (R_ID_CE_OID_AUTHORITY_KEY_ID), r_crypto_x509_authority_key_id },
-    { R_ASN1_OID_ARGS (R_ID_CE_OID_SUBJECT_KEY_ID), r_crypto_x509_subject_key_id },
-    { R_ASN1_OID_ARGS (R_ID_CE_OID_BASIC_CONSTRAINTS), r_crypto_x509_basic_constraints },
-    /*{ R_ASN1_OID_ARGS (R_ID_CE_OID_NAME_CONSTRAINTS), r_crypto_x509_name_constraints },*/
-    { R_ASN1_OID_ARGS (R_ID_CE_OID_POLICY_CONSTRAINTS), r_crypto_x509_policy_constraints },
-    { R_ASN1_OID_ARGS (R_ID_CE_OID_KEY_USAGE), r_crypto_x509_key_usage },
-    { R_ASN1_OID_ARGS (R_ID_CE_OID_EXT_KEY_USAGE), r_crypto_x509_ext_key_usage },
-    { R_ASN1_OID_ARGS (R_ID_CE_OID_CERTIFICATE_POLICIES), r_crypto_x509_certificate_policies },
-    /*{ R_ASN1_OID_ARGS (R_ID_CE_OID_SUBJECT_ALT_NAME), r_crypto_x509_subject_alt_name },*/
-    /*{ R_ASN1_OID_ARGS (R_ID_CE_OID_POLICY_MAPPINGS), r_crypto_x509_policy_mappings },*/
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_AUTHORITY_KEY_ID), r_crypto_x509_authority_key_id },
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_SUBJECT_KEY_ID), r_crypto_x509_subject_key_id },
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_BASIC_CONSTRAINTS), r_crypto_x509_basic_constraints },
+    /*{ R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_NAME_CONSTRAINTS), r_crypto_x509_name_constraints },*/
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_POLICY_CONSTRAINTS), r_crypto_x509_policy_constraints },
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_KEY_USAGE), r_crypto_x509_key_usage },
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_EXT_KEY_USAGE), r_crypto_x509_ext_key_usage },
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_CERTIFICATE_POLICIES), r_crypto_x509_certificate_policies },
+    /*{ R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_SUBJECT_ALT_NAME), r_crypto_x509_subject_alt_name },*/
+    /*{ R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_POLICY_MAPPINGS), r_crypto_x509_policy_mappings },*/
     /* TODO */
   };
 

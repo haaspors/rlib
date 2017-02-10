@@ -24,6 +24,7 @@
 
 #include <rlib/rmem.h>
 #include <rlib/rqueue.h>
+#include <rlib/rstr.h>
 
 typedef enum {
   R_TLS_SERVER_INITIAL = 0,
@@ -675,7 +676,7 @@ r_tls_server_write_finished (RTLSServer * server)
       if (ret == R_TLS_ERROR_OK &&
           (ret = server->prf (info.data + size, verifysize,
                               server->mastersecret, sizeof (server->mastersecret),
-                              "server finished", sizeof ("server finished") - 1,
+                              R_STR_WITH_SIZE_ARGS ("server finished"),
                               hash, hashsize, NULL)) == R_TLS_ERROR_OK) {
         r_buffer_unmap (buf, &info);
         size += verifysize;
@@ -919,7 +920,7 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
 
     /* convert to mastersecret */
     ret = server->prf (server->mastersecret, sizeof (server->mastersecret),
-        pms, sizeof (pms), "master secret", sizeof ("master secret") - 1,
+        pms, sizeof (pms), R_STR_WITH_SIZE_ARGS ("master secret"),
         server->hello.random, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         NULL);
@@ -941,7 +942,7 @@ r_tls_server_expand_master_secret (RTLSServer * server)
 
   if (server->prf (keyblock, sizeof (keyblock),
         server->mastersecret, sizeof (server->mastersecret),
-        "key expansion", sizeof ("key expansion") - 1,
+        R_STR_WITH_SIZE_ARGS ("key expansion"),
         server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         server->hello.random, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         NULL) == R_TLS_ERROR_OK) {
@@ -987,7 +988,7 @@ r_tls_server_parse_finished (RTLSServer * server, const RTLSParser * parser)
 
       if ((ret = server->prf (verify_calc, size,
             server->mastersecret, sizeof (server->mastersecret),
-            "client finished", sizeof ("client finished") - 1,
+            R_STR_WITH_SIZE_ARGS ("client finished"),
             hash, hashsize, NULL)) == R_TLS_ERROR_OK) {
         if (r_memcmp (verify_calc, verify_data, size) != 0) {
           R_LOG_WARNING ("Handshake NOT verified");

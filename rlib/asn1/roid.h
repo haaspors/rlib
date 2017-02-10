@@ -24,14 +24,14 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/rstr.h>
+
 R_BEGIN_DECLS
 
-#define R_ASN1_OID_SIZEOF(oid)                      (sizeof (oid) - 1)
-#define R_ASN1_OID_ARGS(oid)                        oid, R_ASN1_OID_SIZEOF (oid)
 #define r_asn1_oid_bin_cmp_full(buf, bufsize, oid, oidsize) (bufsize == oidsize ?  \
     r_memcmp (buf, oid, bufsize) : ((int)bufsize - (int)oidsize))
-#define r_asn1_oid_bin_cmp(buf, bufsize, oid) (bufsize == R_ASN1_OID_SIZEOF(oid) ?  \
-    r_memcmp (buf, oid, bufsize) : ((int)bufsize - (int)R_ASN1_OID_SIZEOF(oid)))
+#define r_asn1_oid_bin_cmp(buf, bufsize, oid) (bufsize == R_STR_SIZEOF(oid) ?  \
+    r_memcmp (buf, oid, bufsize) : ((int)bufsize - (int)R_STR_SIZEOF(oid)))
 #define r_asn1_oid_bin_equals_full(buf, bufsize, oid, oidsize)                \
     (r_asn1_oid_bin_cmp_full (buf, bufsize, oid, oidsize) == 0)
 #define r_asn1_oid_bin_equals(buf, bufsize, oid)                              \
