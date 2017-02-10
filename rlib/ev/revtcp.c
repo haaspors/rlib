@@ -78,7 +78,7 @@ r_ev_tcp_new_with_socket (RSocket * socket, REvLoop * loop)
   REvTCP * ret;
 
   if ((ret = r_mem_new0 (REvTCP)) != NULL) {
-    r_ev_io_init (&ret->evio, loop, socket->handle,
+    r_ev_io_init (&ret->evio, loop, (REvHandle)socket->handle,
         (RDestroyNotify)r_ev_tcp_free);
     ret->socket = socket;
     r_queue_init (&ret->qsend);
