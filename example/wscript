@@ -5,8 +5,8 @@ def build(bld):
     if bld.env.BUILD_BIN:
         for f in bld.path.ant_glob('*.c'):
             bld.program(
-                    source      = str(f),
-                    target      = str(f)[:-2],
+                    source      = [f],
+                    target      = str(f.name)[:-2],
                     use         = bld.env.RLIB_INTERNAL_USE,
                     includes    = '..',
                     install_path= None)

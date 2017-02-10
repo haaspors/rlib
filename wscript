@@ -80,7 +80,9 @@ def configure(cfg):
         cfg.env.RLIB_INTERNAL_USE = STLIBNAME + ' RTEST'
 
     if cfg.env['CC_NAME'] == 'msvc':
-        cfg.env.CPPFLAGS += ['/Zi', '/FS'] #, '/Wall']
+        cfg.env.CPPFLAGS += ['/Zi'] #, '/Wall']
+        if float(cfg.env['MSVC_VERSION']) >= 12.0:
+            cfg.env.CPPFLAGS += ['/FS']
     else:
         cfg.env.CPPFLAGS += ['-Wall', '-Werror', '-Wextra']
         cfg.env.CFLAGS += ['-fvisibility=hidden']
@@ -569,6 +571,8 @@ def str2bool(s):
 def build_summary(cfg):
     print('\nBuild summary')
     cfg.msg('Prefix', cfg.env.PREFIX, color='GREEN')
+    if cfg.env.CC_NAME == 'msvc':
+        cfg.msg('MSVC', str(cfg.env.MSVC_COMPILER) + ' ' + str(cfg.env.MSVC_VERSION), color='CYAN')
     cfg.msg('Building for dest/host arch', cfg.env.DEST_CPU, color='CYAN')
     cfg.msg('Building for dest/host OS', cfg.env.DEST_OS, color='CYAN')
     build_summary_item(cfg, 'Support threads', not cfg.env.NOTHREAD, 'GREEN', 'RED')
