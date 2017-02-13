@@ -57,27 +57,24 @@ r_http_create_empty_header_buffer (void)
   return r_buffer_new_wrapped (R_MEM_FLAG_NONE, "\r\n", 3, 2, 0, NULL, NULL);
 }
 
-static RMemScanResult *
-r_http_parse_start_line (rconstpointer data, rsize size, RMemScanResultType * res)
+static RStrMatchResult *
+r_http_parse_start_line (rconstpointer data, rsize size)
 {
-  RMemScanResult * ret;
-  RMemScanResultType err;
+  RStrMatchResult * ret;
 
-  if ((err = r_mem_scan_pattern (data, size, "*20*20*0A", &ret)) == R_MEM_SCAN_RESULT_OK) {
+  if (r_str_match_pattern (data, size, "* * *\n*", &ret) == R_STR_MATCH_RESULT_OK) {
     /* Old HTTP/1.0 implementations may inject CRLF */
-    if (((const rchar *)ret->token[0].ptr_data)[0] == '\r' &&
-        ((const rchar *)ret->token[0].ptr_data)[1] == '\n') {
-      ret->token[0].ptr_data = RSIZE_TO_POINTER (RPOINTER_TO_SIZE (ret->token[0].ptr_data) + 2);
-      ret->token[0].size -= 2;
+    if (ret->token[0].chunk.str[0] == '\r' && ret->token[0].chunk.str[1] == '\n') {
+      ret->token[0].chunk.str += 2;
+      ret->token[0].chunk.size -= 2;
     }
     /* Support start line with either CRLF or only LF */
-    while (((const rchar *)ret->token[4].ptr_data)[ret->token[4].size - 1] == '\r')
-      ret->token[4].size--;
+    while (ret->token[4].chunk.str[ret->token[4].chunk.size - 1] == '\r')
+      ret->token[4].chunk.size--;
   } else {
     ret = NULL;
   }
 
-  if (res != NULL) *res = err;
   return ret;
 }
 
@@ -361,21 +358,19 @@ r_http_request_parse (rconstpointer data, rsize size,
     RHttpMethod * method, RStrChunk * target, RStrChunk * ver,
     rsize * hdroff, rsize * hdrsize, rsize * bodyoff, rsize * bodysize)
 {
-  RMemScanResult * scanres;
+  RStrMatchResult * sres;
   rssize idx;
   const rchar * tenc, * clen;
   rsize tencsize, clensize;
 
   /* Request line */
-  if ((scanres = r_http_parse_start_line (data, size, NULL)) != NULL) {
-    *method = r_http_method_parse (scanres->token[0].ptr_data,
-        scanres->token[0].size);
-    target->str = scanres->token[2].ptr_data;
-    target->size = scanres->token[2].size;
-    ver->str = scanres->token[4].ptr_data;
-    ver->size = scanres->token[4].size;
-    *hdroff = RPOINTER_TO_SIZE (scanres->end) - RPOINTER_TO_SIZE (scanres->ptr);
-    r_free (scanres);
+  if ((sres = r_http_parse_start_line (data, size)) != NULL) {
+    *method = r_http_method_parse (sres->token[0].chunk.str,
+        sres->token[0].chunk.size);
+    *target = sres->token[2].chunk;
+    *ver = sres->token[4].chunk;
+    *hdroff = RPOINTER_TO_SIZE (sres->token[6].chunk.str) - RPOINTER_TO_SIZE (data);
+    r_free (sres);
   } else {
     return R_HTTP_DECODE_ERROR;
   }
@@ -529,25 +524,23 @@ r_http_response_parse (rconstpointer data, rsize size, RHttpMethod reqmethod,
     RStrChunk * ver, RHttpStatus * status, RStrChunk * phrase,
     rsize * hdroff, rsize * hdrsize, rsize * bodyoff, rsize * bodysize)
 {
-  RMemScanResult * scanres;
+  RStrMatchResult * sres;
   rssize idx;
   const rchar * tenc, * clen;
   rsize tencsize, clensize;
   int s;
 
   /* Status line */
-  if ((scanres = r_http_parse_start_line (data, size, NULL)) != NULL &&
-      (s = r_str_to_int (scanres->token[2].ptr_data, NULL, 10, NULL)) > (int)R_HTTP_STATUS_MIN &&
+  if ((sres = r_http_parse_start_line (data, size)) != NULL &&
+      (s = r_str_to_int (sres->token[2].chunk.str, NULL, 10, NULL)) > (int)R_HTTP_STATUS_MIN &&
       (s <= (int)R_HTTP_STATUS_MAX)) {
-    ver->str = scanres->token[0].ptr_data;
-    ver->size = scanres->token[0].size;
+    *ver = sres->token[0].chunk;
     *status = (RHttpStatus)s;
-    phrase->str = scanres->token[4].ptr_data;
-    phrase->size = scanres->token[4].size;
-    *hdroff = RPOINTER_TO_SIZE (scanres->end) - RPOINTER_TO_SIZE (scanres->ptr);
-    r_free (scanres);
+    *phrase = sres->token[4].chunk;
+    *hdroff = RPOINTER_TO_SIZE (sres->token[6].chunk.str) - RPOINTER_TO_SIZE (data);
+    r_free (sres);
   } else {
-    r_free (scanres);
+    r_free (sres);
     return R_HTTP_DECODE_ERROR;
   }
 
@@ -659,10 +652,10 @@ r_http_response_get_phrase (const RHttpResponse * res)
   rchar * ret = NULL;
 
   if (r_buffer_map (res->msg.start, &info, R_MEM_MAP_READ)) {
-    RMemScanResult * sres;
+    RStrMatchResult * sres;
 
-    if ((sres = r_http_parse_start_line (info.data, info.size, NULL)) != NULL) {
-      ret = r_strndup (sres->token[4].ptr_data, sres->token[4].size);
+    if ((sres = r_http_parse_start_line (info.data, info.size)) != NULL) {
+      ret = r_strndup (sres->token[4].chunk.str, sres->token[4].chunk.size);
       r_free (sres);
     }
 
