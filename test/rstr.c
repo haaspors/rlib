@@ -1146,3 +1146,24 @@ RTEST (rstr, match_pattern, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, match_http_request_line, RTEST_FAST)
+{
+  RStrMatchResult * res;
+
+  r_assert_cmpint (r_str_match_pattern (
+        R_STR_WITH_SIZE_ARGS ("GET / HTTP/1.1\r\nHost: example.org\r\n\r\n"),
+        "* * *\n*", &res), ==, R_STR_MATCH_RESULT_OK);
+  r_assert_cmpuint (res->tokens, ==, 7);
+  r_assert_cmpuint (res->token[0].chunk.size, ==, 3);
+  r_assert_cmpmem (res->token[0].chunk.str, ==, "GET", 3);
+  r_assert_cmpuint (res->token[2].chunk.size, ==, 1);
+  r_assert_cmpmem (res->token[2].chunk.str, ==, "/", 1);
+  r_assert_cmpuint (res->token[4].chunk.size, ==, 9);
+  r_assert_cmpmem (res->token[4].chunk.str, ==, "HTTP/1.1\r", 1);
+  r_assert_cmpuint (res->token[6].chunk.size, >, 4);
+  r_assert_cmpmem (res->token[6].chunk.str, ==, "Host", 4);
+
+  r_free (res);
+}
+RTEST_END;
+

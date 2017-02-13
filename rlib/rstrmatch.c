@@ -242,9 +242,8 @@ r_str_match_token_bytes (const rchar * str, rsize size, const RStrMatchToken * t
     if (pattern[0] == '\\') pattern++;
     *ptr++ = *pattern++;
   }
-  *ptr = 0;
 
-  return r_strnstr (str, match, size);
+  return r_str_ptr_of_str (str, size, match, token->chunk.size);
 }
 
 RStrMatchResultType
