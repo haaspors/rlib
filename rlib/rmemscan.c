@@ -81,19 +81,6 @@ r_mem_scan_pattern_next_token (const rchar * pattern,
   return ret;
 }
 
-static void
-r_mem_scan_token_build_bytes (const RMemScanToken * token, ruint8 * bytes)
-{
-  const rchar * pattern = token->ptr_pattern;
-  rsize i;
-  for (i = 0; i < token->size; i++) {
-    while (r_ascii_isspace (*pattern)) pattern++;
-    *bytes++ = (ruint8)r_ascii_xdigit_value (pattern[0]) << 4 |
-      (ruint8)r_ascii_xdigit_value (pattern[1]);
-    pattern += 2;
-  }
-}
-
 static rsize
 r_mem_scan_validate_pattern (const rchar * pattern)
 {
@@ -120,7 +107,7 @@ r_mem_scan_result_longest_token (RMemScanResult * result, RMemTokenType type)
 
   for (i = 0; i < result->tokens; i++) {
     if (result->token[i].type == type) {
-      if (ret == NULL || result->token[i].size > ret->size)
+      if (ret == NULL || result->token[i].chunk.size > ret->chunk.size)
         ret = &result->token[i];
     }
   }
@@ -143,11 +130,17 @@ r_mem_scan_result_next_token (RMemScanResult * result, RMemTokenType type, rsize
 static ruint8 *
 r_mem_scan_token_bytes (rconstpointer mem, rsize size, const RMemScanToken * token)
 {
-  rsize msize = token->size;
-  ruint8 * match = r_alloca (msize);
+  ruint8 * ptr, * match = r_alloca (token->chunk.size);
+  const rchar * pattern;
+  rsize i;
 
-  r_mem_scan_token_build_bytes (token, match);
-  return r_mem_scan_data (mem, size, match, msize);
+  for (i = 0, ptr = match, pattern = token->pattern; i < token->chunk.size; i++, pattern += 2) {
+    while (r_ascii_isspace (*pattern)) pattern++;
+    *ptr++ = (ruint8)r_ascii_xdigit_value (pattern[0]) << 4 |
+      (ruint8)r_ascii_xdigit_value (pattern[1]);
+  }
+
+  return r_mem_scan_data (mem, size, match, token->chunk.size);
 }
 
 static rboolean
@@ -160,18 +153,18 @@ r_mem_scan_wild_backward (RMemScanResult * result, rsize first, rsize idx,
 
     switch (token->type) {
       case R_MEM_TOKEN_WILDCARD_SIZED:
-        if (start + token->size > cur)
+        if (start + token->chunk.size > cur)
           return FALSE;
-        cur -= token->size;
-        token->ptr_data = (ruint8 *)cur;
+        cur -= token->chunk.size;
+        token->chunk.data = (ruint8 *)cur;
         break;
       case R_MEM_TOKEN_WILDCARD:
         if (i == first) {
-          token->ptr_data = (ruint8 *)start;
-          token->size = cur - start;
+          token->chunk.data = (ruint8 *)start;
+          token->chunk.size = cur - start;
         } else {
-          token->ptr_data = (ruint8 *)cur;
-          token->size = 0;
+          token->chunk.data = (ruint8 *)cur;
+          token->chunk.size = 0;
         }
         break;
       default:
@@ -190,19 +183,15 @@ r_mem_scan_wild_forward (RMemScanResult * result, rsize first, rsize last,
   for (i = first; i < last; i++) {
     RMemScanToken * token = &result->token[i];
 
-    token->ptr_data = (ruint8 *)cur;
+    token->chunk.data = (ruint8 *)cur;
     switch (token->type) {
       case R_MEM_TOKEN_WILDCARD_SIZED:
-        if (cur + token->size > end)
+        if (cur + token->chunk.size > end)
           return FALSE;
-        cur += token->size;
+        cur += token->chunk.size;
         break;
       case R_MEM_TOKEN_WILDCARD:
-        if (i + 1 == last) {
-          token->size = end - cur;
-        } else {
-          token->size = 0;
-        }
+        token->chunk.size = (i + 1 == last) ? end - cur : 0;
         break;
       default:
         return FALSE;
@@ -220,32 +209,32 @@ r_mem_scan_wild_fill (RMemScanResult * result, rsize first, rsize last,
 
 restart:
   while (first < last && result->token[first].type == R_MEM_TOKEN_WILDCARD_SIZED) {
-    if (start + result->token[first].size > end)
+    if (start + result->token[first].chunk.size > end)
       return FALSE;
-    result->token[first].ptr_data = (ruint8 *)start;
-    start += result->token[first].size;
+    result->token[first].chunk.data = (ruint8 *)start;
+    start += result->token[first].chunk.size;
     first++;
   }
 
   while (first < last && result->token[last - 1].type == R_MEM_TOKEN_WILDCARD_SIZED) {
     last--;
-    if (end - result->token[last].size < start)
+    if (end - result->token[last].chunk.size < start)
       return FALSE;
-    end -= result->token[last].size;
-    result->token[last].ptr_data = (ruint8 *)end;
+    end -= result->token[last].chunk.size;
+    result->token[last].chunk.data = (ruint8 *)end;
   }
 
   if (first < last) {
     if ((idx = r_mem_scan_result_next_token (result, R_MEM_TOKEN_WILDCARD_SIZED, first)) < last) {
       while (first < last && result->token[first].type == R_MEM_TOKEN_WILDCARD) {
-        result->token[first].ptr_data = (ruint8 *)start;
-        result->token[first].size = 0;
+        result->token[first].chunk.data = (ruint8 *)start;
+        result->token[first].chunk.size = 0;
         first++;
       }
       while (first < last && result->token[last - 1].type == R_MEM_TOKEN_WILDCARD) {
         last--;
-        result->token[last].ptr_data = (ruint8 *)end;
-        result->token[last].size = 0;
+        result->token[last].chunk.data = (ruint8 *)end;
+        result->token[last].chunk.size = 0;
       }
 
       goto restart;
@@ -253,10 +242,10 @@ restart:
       rsize i, dsize = (end - start) / (last - first);
 
       for (i = first; i < last; i++) {
-        result->token[i].ptr_data = (ruint8 *)start + (i - first) * dsize;
-        result->token[i].size = dsize;
+        result->token[i].chunk.data = (ruint8 *)start + (i - first) * dsize;
+        result->token[i].chunk.size = dsize;
       }
-      result->token[i - 1].size = end - (const ruint8 *)result->token[i - 1].ptr_data;
+      result->token[i - 1].chunk.size = end - (const ruint8 *)result->token[i - 1].chunk.data;
     }
   }
 
@@ -288,9 +277,9 @@ r_mem_scan_pattern (rconstpointer mem, rsize size,
     /* Setup tokens based on pattern */
     for (i = 0; i < tokens && *pattern != 0; i++) {
       t = &(*result)->token[i];
-      t->ptr_pattern = pattern;
-      t->ptr_data = NULL;
-      t->type = r_mem_scan_pattern_next_token (pattern, &t->size, &pattern);
+      t->pattern = pattern;
+      t->chunk.data = NULL;
+      t->type = r_mem_scan_pattern_next_token (pattern, &t->chunk.size, &pattern);
     }
 
     if ((first = r_mem_scan_result_next_token (*result, R_MEM_TOKEN_BYTES, 0)) < tokens) {
@@ -306,7 +295,7 @@ r_mem_scan_pattern (rconstpointer mem, rsize size,
         if ((ptr = r_mem_scan_token_bytes (wrkmem, wsize, &(*result)->token[first])) == NULL)
           goto beach;
 
-        (*result)->token[first].ptr_data = ptr;
+        (*result)->token[first].chunk.data = ptr;
         wrkmem = ptr + 1;
         wsize = size - (wrkmem - (const ruint8 *)mem);
 
@@ -314,7 +303,7 @@ r_mem_scan_pattern (rconstpointer mem, rsize size,
         if (!r_mem_scan_wild_backward (*result, 0, first, mem, ptr))
           continue;
 
-        ptr += (*result)->token[first].size;
+        ptr += (*result)->token[first].chunk.size;
         cur = first + 1;
         while ((next = r_mem_scan_result_next_token (*result, R_MEM_TOKEN_BYTES, cur)) < tokens) {
           while (TRUE) {
@@ -322,9 +311,9 @@ r_mem_scan_pattern (rconstpointer mem, rsize size,
             if ((nptr = r_mem_scan_token_bytes (ptr, wsize - (ptr - wrkmem), &(*result)->token[next])) == NULL)
               goto beach;
 
-            (*result)->token[next].ptr_data = nptr;
+            (*result)->token[next].chunk.data = nptr;
             if (r_mem_scan_wild_fill (*result, cur, next, ptr, nptr)) {
-              ptr = nptr + (*result)->token[next].size;
+              ptr = nptr + (*result)->token[next].chunk.size;
               break;
             }
 
@@ -344,10 +333,10 @@ r_mem_scan_pattern (rconstpointer mem, rsize size,
     }
 
     if (ret == R_MEM_SCAN_RESULT_OK) {
-      (*result)->ptr = (*result)->token[0].ptr_data;
+      (*result)->ptr = (*result)->token[0].chunk.data;
       (*result)->end = RSIZE_TO_POINTER (
-          RPOINTER_TO_SIZE ((*result)->token[tokens-1].ptr_data) +
-          (*result)->token[tokens-1].size);
+          RPOINTER_TO_SIZE ((*result)->token[tokens-1].chunk.data) +
+          (*result)->token[tokens-1].chunk.size);
     } else {
       r_free (*result);
       *result = NULL;

@@ -47,6 +47,12 @@ R_END_DECLS
 
 R_BEGIN_DECLS
 
+typedef struct {
+  ruint8 * data;
+  rsize size;
+} RMemChunk;
+
+
 /* Stack allocations */
 #define r_alloca(size)        alloca (size)
 #define r_alloca0(size)       r_memclear (r_alloca (size), size)
@@ -116,10 +122,9 @@ typedef enum {
 } RMemScanResultType;
 
 typedef struct _RMemScanToken {
-  const rchar * ptr_pattern;
-  rpointer ptr_data;
-  rsize size;
   RMemTokenType type;
+  const rchar * pattern;
+  RMemChunk chunk;
 } RMemScanToken;
 
 typedef struct _RMemScanResult {
