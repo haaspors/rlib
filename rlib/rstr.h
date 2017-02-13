@@ -32,6 +32,11 @@ R_BEGIN_DECLS
 #define R_STR_SIZEOF(str) sizeof (str) - 1
 #define R_STR_WITH_SIZE_ARGS(str) (str), R_STR_SIZEOF (str)
 
+typedef struct {
+  rchar * str;
+  rsize size;
+} RStrChunk;
+
 R_API rsize r_strlen (const rchar * str);
 
 /* Compare strings */
@@ -173,10 +178,9 @@ typedef enum {
 } RStrMatchResultType;
 
 typedef struct _RStrMatchToken {
-  const rchar * ptr_pattern;
-  rchar * ptr_data;
-  rsize size;
   RStrTokenType type;
+  const rchar * pattern;
+  RStrChunk chunk;
 } RStrMatchToken;
 
 typedef struct _RStrMatchResult {

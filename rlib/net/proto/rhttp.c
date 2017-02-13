@@ -27,11 +27,6 @@ static const rchar * r_http_method_supported[] = {
   "GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE",
 };
 
-typedef struct {
-  rchar * str;
-  rsize size;
-} RStrSizedBuf;
-
 struct _RHttpMsg {
   RRef ref;
 
@@ -363,7 +358,7 @@ r_http_method_parse (rpointer data, rsize size)
 
 static RHttpError
 r_http_request_parse (rconstpointer data, rsize size,
-    RHttpMethod * method, RStrSizedBuf * target, RStrSizedBuf * ver,
+    RHttpMethod * method, RStrChunk * target, RStrChunk * ver,
     rsize * hdroff, rsize * hdrsize, rsize * bodyoff, rsize * bodysize)
 {
   RMemScanResult * scanres;
@@ -435,7 +430,7 @@ r_http_request_new_from_buffer (RBuffer * buf, RHttpError * err,
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
     RHttpMethod method;
-    RStrSizedBuf strrequest, strver;
+    RStrChunk strrequest, strver;
     rsize hdroff, hdrsize, bodyoff, bodysize, hostsize;
     const rchar * host;
 
@@ -531,7 +526,7 @@ r_http_response_new (RHttpRequest * req,
 
 static RHttpError
 r_http_response_parse (rconstpointer data, rsize size, RHttpMethod reqmethod,
-    RStrSizedBuf * ver, RHttpStatus * status, RStrSizedBuf * phrase,
+    RStrChunk * ver, RHttpStatus * status, RStrChunk * phrase,
     rsize * hdroff, rsize * hdrsize, rsize * bodyoff, rsize * bodysize)
 {
   RMemScanResult * scanres;
@@ -620,7 +615,7 @@ r_http_response_new_from_buffer (RHttpRequest * req,
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
     rsize hdroff, hdrsize, bodyoff, bodysize;
-    RStrSizedBuf strphrase, strver;
+    RStrChunk strphrase, strver;
     RHttpStatus status;
 
     if ((res = r_http_response_parse (info.data, info.size,

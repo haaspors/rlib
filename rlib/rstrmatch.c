@@ -56,18 +56,18 @@ r_str_match_wild_backward (RStrMatchResult * result, rsize first, rsize idx,
 
     switch (token->type) {
       case R_STR_TOKEN_WILDCARD_SIZED:
-        if (start + token->size > cur)
+        if (start + token->chunk.size > cur)
           return FALSE;
-        cur -= token->size;
-        token->ptr_data = (rchar *)cur;
+        cur -= token->chunk.size;
+        token->chunk.str = (rchar *)cur;
         break;
       case R_STR_TOKEN_WILDCARD:
         if (i == first) {
-          token->ptr_data = (rchar *)start;
-          token->size = cur - start;
+          token->chunk.str = (rchar *)start;
+          token->chunk.size = cur - start;
         } else {
-          token->ptr_data = (rchar *)cur;
-          token->size = 0;
+          token->chunk.str = (rchar *)cur;
+          token->chunk.size = 0;
         }
         break;
       default:
@@ -88,19 +88,19 @@ r_str_match_wild_forward (RStrMatchResult * result, rsize first, rsize last,
   for (i = first; i < last; i++) {
     RStrMatchToken * token = &result->token[i];
 
-    token->ptr_data = (rchar *)cur;
+    token->chunk.str = (rchar *)cur;
     switch (token->type) {
       case R_STR_TOKEN_WILDCARD_SIZED:
-        if (cur + token->size > end)
+        if (cur + token->chunk.size > end)
           return FALSE;
-        cur += token->size;
+        cur += token->chunk.size;
         ret = TRUE;
         break;
       case R_STR_TOKEN_WILDCARD:
         if (i + 1 == last) {
-          token->size = end - cur;
+          token->chunk.size = end - cur;
         } else {
-          token->size = 0;
+          token->chunk.size = 0;
         }
         break;
       default:
@@ -120,32 +120,32 @@ r_str_match_wild_fill (RStrMatchResult * result, rsize first, rsize last,
 
 restart:
   while (first < last && result->token[first].type == R_STR_TOKEN_WILDCARD_SIZED) {
-    if (start + result->token[first].size > end)
+    if (start + result->token[first].chunk.size > end)
       return FALSE;
-    result->token[first].ptr_data = (rchar *)start;
-    start += result->token[first].size;
+    result->token[first].chunk.str = (rchar *)start;
+    start += result->token[first].chunk.size;
     first++;
   }
 
   while (first < last && result->token[last - 1].type == R_STR_TOKEN_WILDCARD_SIZED) {
     last--;
-    if (end - result->token[last].size < start)
+    if (end - result->token[last].chunk.size < start)
       return FALSE;
-    end -= result->token[last].size;
-    result->token[last].ptr_data = (rchar *)end;
+    end -= result->token[last].chunk.size;
+    result->token[last].chunk.str = (rchar *)end;
   }
 
   if (first < last) {
     if ((idx = r_str_match_result_next_token (result, R_STR_TOKEN_WILDCARD_SIZED, first)) < last) {
       while (first < last && result->token[first].type == R_STR_TOKEN_WILDCARD) {
-        result->token[first].ptr_data = (rchar *)start;
-        result->token[first].size = 0;
+        result->token[first].chunk.str = (rchar *)start;
+        result->token[first].chunk.size = 0;
         first++;
       }
       while (first < last && result->token[last - 1].type == R_STR_TOKEN_WILDCARD) {
         last--;
-        result->token[last].ptr_data = (rchar *)end;
-        result->token[last].size = 0;
+        result->token[last].chunk.str = (rchar *)end;
+        result->token[last].chunk.size = 0;
       }
 
       goto restart;
@@ -153,10 +153,10 @@ restart:
       rsize i, dsize = (end - start) / (last - first);
 
       for (i = first; i < last; i++) {
-        result->token[i].ptr_data = (rchar *)start + (i - first) * dsize;
-        result->token[i].size = dsize;
+        result->token[i].chunk.str = (rchar *)start + (i - first) * dsize;
+        result->token[i].chunk.size = dsize;
       }
-      result->token[i - 1].size = end - (const rchar *)result->token[i - 1].ptr_data;
+      result->token[i - 1].chunk.size = end - (const rchar *)result->token[i - 1].chunk.str;
     }
   }
 
@@ -234,11 +234,11 @@ r_str_match_validate_pattern (const rchar * pattern)
 static rchar *
 r_str_match_token_bytes (const rchar * str, rsize size, const RStrMatchToken * token)
 {
-  rchar * ptr, * match = r_alloca (token->size);
-  const rchar * pattern = token->ptr_pattern;
+  rchar * ptr, * match = r_alloca (token->chunk.size);
+  const rchar * pattern = token->pattern;
   rsize i;
 
-  for (i = 0, ptr = match; i < token->size; i++) {
+  for (i = 0, ptr = match; i < token->chunk.size; i++) {
     if (pattern[0] == '\\') pattern++;
     *ptr++ = *pattern++;
   }
@@ -274,9 +274,9 @@ r_str_match_pattern (const rchar * str, rssize size,
     /* Setup tokens based on pattern */
     for (i = 0; i < tokens && *pattern != 0; i++) {
       t = &(*result)->token[i];
-      t->ptr_pattern = pattern;
-      t->ptr_data = NULL;
-      t->type = r_str_match_pattern_next_token (pattern, &t->size, &pattern);
+      t->pattern = pattern;
+      t->chunk.str = NULL;
+      t->type = r_str_match_pattern_next_token (pattern, &t->chunk.size, &pattern);
     }
 
     if ((first = r_str_match_result_next_token (*result, R_STR_TOKEN_CHARS, 0)) < tokens) {
@@ -291,7 +291,7 @@ r_str_match_pattern (const rchar * str, rssize size,
         if ((ptr = r_str_match_token_bytes (wrkstr, wsize, &(*result)->token[first])) == NULL)
           goto beach;
 
-        (*result)->token[first].ptr_data = ptr;
+        (*result)->token[first].chunk.str = ptr;
         wrkstr = ptr + 1;
         wsize = size - (wrkstr - (const rchar *)str);
 
@@ -302,7 +302,7 @@ r_str_match_pattern (const rchar * str, rssize size,
           continue;
         }
 
-        ptr += (*result)->token[first].size;
+        ptr += (*result)->token[first].chunk.size;
         cur = first + 1;
         while ((next = r_str_match_result_next_token (*result, R_STR_TOKEN_CHARS, cur)) < tokens) {
           while (TRUE) {
@@ -310,9 +310,9 @@ r_str_match_pattern (const rchar * str, rssize size,
             if ((nptr = r_str_match_token_bytes (ptr, wsize - (ptr - wrkstr), &(*result)->token[next])) == NULL)
               goto beach;
 
-            (*result)->token[next].ptr_data = nptr;
+            (*result)->token[next].chunk.str = nptr;
             if (r_str_match_wild_fill (*result, cur, next, ptr, nptr)) {
-              ptr = nptr + (*result)->token[next].size;
+              ptr = nptr + (*result)->token[next].chunk.size;
               break;
             }
 
@@ -336,9 +336,9 @@ r_str_match_pattern (const rchar * str, rssize size,
     }
 
     if (ret == R_STR_MATCH_RESULT_OK) {
-      (*result)->ptr = (*result)->token[0].ptr_data;
-      (*result)->end = (*result)->token[tokens-1].ptr_data +
-          (*result)->token[tokens-1].size;
+      (*result)->ptr = (*result)->token[0].chunk.str;
+      (*result)->end = (*result)->token[tokens-1].chunk.str +
+          (*result)->token[tokens-1].chunk.size;
     } else {
       r_free (*result);
       *result = NULL;

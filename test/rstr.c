@@ -1122,26 +1122,26 @@ RTEST (rstr, match_pattern, RTEST_FAST)
 
   r_assert_cmpuint (r_str_match_pattern (foo, -1, "*", &res), ==, R_STR_MATCH_RESULT_OK);
   r_assert_cmpuint (res->tokens, ==, 1);
-  r_assert_cmpuint (res->token[0].size, ==, r_strlen (foo));
-  r_assert_cmpptr (res->token[0].ptr_data, ==, &foo[0]);
+  r_assert_cmpuint (res->token[0].chunk.size, ==, r_strlen (foo));
+  r_assert_cmpptr (res->token[0].chunk.str, ==, &foo[0]);
   r_free (res);
 
   r_assert_cmpuint (r_str_match_pattern (foo, -1, "this?is*foobar*\\?", &res), ==, R_MEM_SCAN_RESULT_OK);
   r_assert_cmpuint (res->tokens, ==, 7);
-  r_assert_cmpuint (res->token[0].size, ==, 4);
-  r_assert_cmpuint (res->token[1].size, ==, 1);
-  r_assert_cmpuint (res->token[2].size, ==, 2);
-  r_assert_cmpuint (res->token[3].size, ==, 4);
-  r_assert_cmpuint (res->token[4].size, ==, 6);
-  r_assert_cmpuint (res->token[5].size, ==, 7);
-  r_assert_cmpuint (res->token[6].size, ==, 1);
-  r_assert_cmpptr (res->token[0].ptr_data, ==, &foo[0]);
-  r_assert_cmpptr (res->token[1].ptr_data, ==, &foo[4]);
-  r_assert_cmpptr (res->token[2].ptr_data, ==, &foo[5]);
-  r_assert_cmpptr (res->token[3].ptr_data, ==, &foo[7]);
-  r_assert_cmpptr (res->token[4].ptr_data, ==, &foo[11]);
-  r_assert_cmpptr (res->token[5].ptr_data, ==, &foo[17]);
-  r_assert_cmpptr (res->token[6].ptr_data, ==, &foo[24]);
+  r_assert_cmpuint (res->token[0].chunk.size, ==, 4);
+  r_assert_cmpuint (res->token[1].chunk.size, ==, 1);
+  r_assert_cmpuint (res->token[2].chunk.size, ==, 2);
+  r_assert_cmpuint (res->token[3].chunk.size, ==, 4);
+  r_assert_cmpuint (res->token[4].chunk.size, ==, 6);
+  r_assert_cmpuint (res->token[5].chunk.size, ==, 7);
+  r_assert_cmpuint (res->token[6].chunk.size, ==, 1);
+  r_assert_cmpptr (res->token[0].chunk.str, ==, &foo[0]);
+  r_assert_cmpptr (res->token[1].chunk.str, ==, &foo[4]);
+  r_assert_cmpptr (res->token[2].chunk.str, ==, &foo[5]);
+  r_assert_cmpptr (res->token[3].chunk.str, ==, &foo[7]);
+  r_assert_cmpptr (res->token[4].chunk.str, ==, &foo[11]);
+  r_assert_cmpptr (res->token[5].chunk.str, ==, &foo[17]);
+  r_assert_cmpptr (res->token[6].chunk.str, ==, &foo[24]);
   r_free (res);
 }
 RTEST_END;
