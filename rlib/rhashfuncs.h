@@ -31,6 +31,7 @@ R_BEGIN_DECLS
 R_API rsize r_direct_hash (rconstpointer data);
 R_API rboolean r_direct_equal (rconstpointer a, rconstpointer b);
 R_API rsize r_str_hash (rconstpointer data);
+R_API rsize r_str_hash_sized (const rchar * data, rssize size);
 R_API rboolean r_str_equal (rconstpointer a, rconstpointer b);
 
 R_END_DECLS

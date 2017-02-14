@@ -52,6 +52,24 @@ r_str_hash (rconstpointer data)
   return ret;
 }
 
+rsize
+r_str_hash_sized (const rchar * data, rssize size)
+{
+  rsize ret = 5381;
+
+  if (size > 0) {
+    const signed char * p;
+
+    for (p = (const signed char *)data; size-- > 0; p++)
+      ret = (ret << 5) + ret + *p;
+
+  } else if (size < 0) {
+    ret = r_str_hash (data);
+  }
+
+  return ret;
+}
+
 rboolean
 r_str_equal (rconstpointer a, rconstpointer b)
 {
