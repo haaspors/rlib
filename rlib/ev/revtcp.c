@@ -103,6 +103,19 @@ r_ev_tcp_new (RSocketFamily family, REvLoop * loop)
   return ret;
 }
 
+REvTCP *
+r_ev_tcp_new_bind (const RSocketAddress * addr, REvLoop * loop)
+{
+  REvTCP * ret;
+
+  if (R_UNLIKELY (addr == NULL)) return NULL;
+
+  if ((ret = r_ev_tcp_new (r_socket_address_get_family (addr), loop)) != NULL)
+    r_socket_bind (ret->socket, addr, TRUE);
+
+  return ret;
+}
+
 rboolean
 r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotify datanotify)
 {

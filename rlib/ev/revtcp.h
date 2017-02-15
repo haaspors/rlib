@@ -39,6 +39,7 @@ typedef void (*REvTCPConnectedFunc) (rpointer data, REvTCP * evtcp, int status);
 typedef void (*REvTCPConnectionReadyFunc) (rpointer data, REvTCP * newtcp, REvTCP * listening);
 
 R_API REvTCP * r_ev_tcp_new (RSocketFamily family, REvLoop * loop);
+R_API REvTCP * r_ev_tcp_new_bind (const RSocketAddress * addr, REvLoop * loop);
 R_API rboolean r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb,
     rpointer data, RDestroyNotify datanotify);
 #define r_ev_tcp_ref r_ref_ref
