@@ -52,6 +52,7 @@
 #include <rlib/rmsgdigest.h>
 #include <rlib/roptparse.h>
 #include <rlib/rproc.h>
+#include <rlib/rptrarray.h>
 #include <rlib/rqueue.h>
 #include <rlib/rrand.h>
 #include <rlib/rref.h>
