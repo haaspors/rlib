@@ -42,8 +42,10 @@ R_API rsize r_dir_tree_node_count (const RDirTree * tree);
 #define r_dir_tree_get_root(tree) r_dir_tree_get (tree, NULL, 0)
 R_API RDirTreeNode * r_dir_tree_get (RDirTree * tree, const rchar * path, rssize size);
 R_API RDirTreeNode * r_dir_tree_create (RDirTree * tree, const rchar * path, rssize size);
-R_API RDirTreeNode * r_dir_tree_set (RDirTree * tree, const rchar * path, rssize size,
-    rpointer data, RDestroyNotify notify) R_ATTR_WARN_UNUSED_RESULT;
+#define r_dir_tree_set(tree, path, size, data, notify) \
+  r_dir_tree_set_full (tree, path, size, data, notify, NULL)
+R_API RDirTreeNode * r_dir_tree_set_full (RDirTree * tree, const rchar * path, rssize size,
+    rpointer data, RDestroyNotify notify, RFunc func) R_ATTR_WARN_UNUSED_RESULT;
 #define r_dir_tree_clear_node(tree, path) r_dir_tree_set (tree, path, NULL, NULL)
 
 R_API void r_dir_tree_remove_node_full (RDirTree * tree, RDirTreeNode * node);
@@ -53,12 +55,14 @@ R_API void r_dir_tree_remove_node_full (RDirTree * tree, RDirTreeNode * node);
   r_dir_tree_remove_node_full (tree, r_dir_tree_get_root (tree))
 
 R_API rpointer r_dir_tree_node_get (RDirTreeNode * node);
-R_API rpointer r_dir_tree_node_set (RDirTreeNode * node,
-    rpointer data, RDestroyNotify notify);
+#define r_dir_tree_node_set(node, data, notify) r_dir_tree_node_set_full (node, data, notify, NULL)
+R_API rpointer r_dir_tree_node_set_full (RDirTreeNode * node,
+    rpointer data, RDestroyNotify notify, RFunc func);
 #define r_dir_tree_node_clear(node) r_dir_tree_node_set (node, NULL, NULL)
-R_API RDirTreeNode * r_dir_tree_node_parent (RDirTreeNode * node);
-R_API const rchar * r_dir_tree_node_name (RDirTreeNode * node);
-R_API rchar * r_dir_tree_node_path (RDirTreeNode * node);
+R_API RFunc r_dir_tree_node_func (const RDirTreeNode * node);
+R_API RDirTreeNode * r_dir_tree_node_parent (const RDirTreeNode * node);
+R_API const rchar * r_dir_tree_node_name (const RDirTreeNode * node);
+R_API rchar * r_dir_tree_node_path (const RDirTreeNode * node);
 
 R_END_DECLS
 

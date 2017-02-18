@@ -31,6 +31,7 @@ struct _RDirTreeNode {
   rsize challoc;
   RDirTreeNode ** children;
 
+  RFunc func;
   rpointer data;
   RDestroyNotify notify;
 
@@ -156,15 +157,15 @@ r_dir_tree_create (RDirTree * tree, const rchar * path, rssize size)
 }
 
 RDirTreeNode *
-r_dir_tree_set (RDirTree * tree, const rchar * path, rssize size,
-    rpointer data, RDestroyNotify notify)
+r_dir_tree_set_full (RDirTree * tree, const rchar * path, rssize size,
+    rpointer data, RDestroyNotify notify, RFunc func)
 {
   RDirTreeNode * ret = NULL;
   rsize psize = (size < 0) ? r_strlen (path) : (rsize)size;
 
   if ((ret = r_dir_tree_node_find_node (&tree->root,
       r_str_hash_sized (path, psize), path, psize, tree)) != NULL) {
-    r_dir_tree_node_set (ret, data, notify);
+    r_dir_tree_node_set_full (ret, data, notify, func);
   }
 
   return ret;
@@ -236,8 +237,8 @@ r_dir_tree_node_get (RDirTreeNode * node)
 }
 
 rpointer
-r_dir_tree_node_set (RDirTreeNode * node,
-    rpointer data, RDestroyNotify notify)
+r_dir_tree_node_set_full (RDirTreeNode * node,
+    rpointer data, RDestroyNotify notify, RFunc func)
 {
   rpointer ret = node->data;
 
@@ -245,25 +246,32 @@ r_dir_tree_node_set (RDirTreeNode * node,
     node->notify (node->data);
   node->notify = notify;
   node->data = data;
+  node->func = func;
 
   return ret;
 }
 
+RFunc
+r_dir_tree_node_func (const RDirTreeNode * node)
+{
+  return node->func;
+}
+
 RDirTreeNode *
-r_dir_tree_node_parent (RDirTreeNode * node)
+r_dir_tree_node_parent (const RDirTreeNode * node)
 {
   return node->parent;
 }
 
 const rchar *
-r_dir_tree_node_name (RDirTreeNode * node)
+r_dir_tree_node_name (const RDirTreeNode * node)
 {
   return node->name;
 }
 
 
 static rsize
-r_dir_tree_node_build_path (RDirTreeNode * node, RString * str)
+r_dir_tree_node_build_path (const RDirTreeNode * node, RString * str)
 {
   rsize ret = 0; /* Lets hope the compiler uses a register! */
 
@@ -276,7 +284,7 @@ r_dir_tree_node_build_path (RDirTreeNode * node, RString * str)
 }
 
 rchar *
-r_dir_tree_node_path (RDirTreeNode * node)
+r_dir_tree_node_path (const RDirTreeNode * node)
 {
   RString * str = r_string_new_sized (64);
 

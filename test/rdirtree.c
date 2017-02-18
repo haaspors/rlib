@@ -4,12 +4,17 @@
 RTEST (rdirtree, set, RTEST_FAST)
 {
   RDirTree * tree;
+  RDirTreeNode * node;
 
   r_assert_cmpptr ((tree = r_dir_tree_new ()), !=, NULL);
 
   r_assert_cmpuint (r_dir_tree_node_count (tree), ==, 1);
-  r_assert_cmpptr (r_dir_tree_set (tree, "/foo/bar", -1, r_malloc0 (42), r_free), !=, NULL);
-  r_assert_cmpuint (r_dir_tree_node_count (tree), ==, 1 + 2);
+  r_assert_cmpptr ((node = r_dir_tree_set (tree, "/foo/bar", -1, r_malloc0 (42), r_free)), !=, NULL);
+  r_assert_cmpptr (r_dir_tree_node_func (node), ==, NULL);
+
+  r_assert_cmpptr ((node = r_dir_tree_set_full (tree, "/foo/func/bar", -1, r_malloc0 (42), r_free, (RFunc)r_free)), !=, NULL);
+  r_assert_cmpuint (r_dir_tree_node_count (tree), ==, 1 + 2 + 2);
+  r_assert_cmpptr (r_dir_tree_node_func (node), ==, r_free);
 
   r_dir_tree_unref (tree);
 }
