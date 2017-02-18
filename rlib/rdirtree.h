@@ -41,6 +41,7 @@ R_API rsize r_dir_tree_node_count (const RDirTree * tree);
 
 #define r_dir_tree_get_root(tree) r_dir_tree_get (tree, NULL, 0)
 R_API RDirTreeNode * r_dir_tree_get (RDirTree * tree, const rchar * path, rssize size);
+R_API RDirTreeNode * r_dir_tree_get_or_any_parent (RDirTree * tree, const rchar * path, rssize size);
 R_API RDirTreeNode * r_dir_tree_create (RDirTree * tree, const rchar * path, rssize size);
 #define r_dir_tree_set(tree, path, size, data, notify) \
   r_dir_tree_set_full (tree, path, size, data, notify, NULL)

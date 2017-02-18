@@ -101,7 +101,7 @@ r_dir_tree_add_node (RDirTree * tree, RDirTreeNode * node, RDirTreeNode * parent
 
 static RDirTreeNode *
 r_dir_tree_node_find_node (RDirTreeNode * node,
-    rsize hash, const rchar * path, rsize psize, RDirTree * tree)
+    rsize hash, const rchar * path, rsize psize, RDirTree * tree, rboolean exact)
 {
   const rchar * next;
   rsize poff = 0, i, nsize;
@@ -132,7 +132,8 @@ r_dir_tree_node_find_node (RDirTreeNode * node,
           r_dir_tree_node_new (path + poff, nsize), node);
       poff += nsize;
     } else {
-      node = NULL;
+      if (exact)
+        node = NULL;
       break;
     }
   }
@@ -145,7 +146,15 @@ r_dir_tree_get (RDirTree * tree, const rchar * path, rssize size)
 {
   rsize psize = (size < 0) ? r_strlen (path) : (rsize)size;
   return r_dir_tree_node_find_node (&tree->root,
-      r_str_hash_sized (path, psize), path, psize, NULL);
+      r_str_hash_sized (path, psize), path, psize, NULL, TRUE);
+}
+
+RDirTreeNode *
+r_dir_tree_get_or_any_parent (RDirTree * tree, const rchar * path, rssize size)
+{
+  rsize psize = (size < 0) ? r_strlen (path) : (rsize)size;
+  return r_dir_tree_node_find_node (&tree->root,
+      r_str_hash_sized (path, psize), path, psize, NULL, FALSE);
 }
 
 RDirTreeNode *
@@ -153,7 +162,7 @@ r_dir_tree_create (RDirTree * tree, const rchar * path, rssize size)
 {
   rsize psize = (size < 0) ? r_strlen (path) : (rsize)size;
   return r_dir_tree_node_find_node (&tree->root,
-      r_str_hash_sized (path, psize), path, psize, tree);
+      r_str_hash_sized (path, psize), path, psize, tree, TRUE);
 }
 
 RDirTreeNode *
@@ -164,7 +173,7 @@ r_dir_tree_set_full (RDirTree * tree, const rchar * path, rssize size,
   rsize psize = (size < 0) ? r_strlen (path) : (rsize)size;
 
   if ((ret = r_dir_tree_node_find_node (&tree->root,
-      r_str_hash_sized (path, psize), path, psize, tree)) != NULL) {
+      r_str_hash_sized (path, psize), path, psize, tree, TRUE)) != NULL) {
     r_dir_tree_node_set_full (ret, data, notify, func);
   }
 
