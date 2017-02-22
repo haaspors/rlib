@@ -145,6 +145,7 @@ R_API RHttpRequest * r_http_request_new_with_uri (RHttpMethod method,
     RUri * uri, const rchar * ver, RHttpError * err) R_ATTR_MALLOC;
 R_API RHttpRequest * r_http_request_new_from_buffer (RBuffer * buf,
     RHttpError * err, RBuffer ** remainder) R_ATTR_MALLOC;
+#define r_http_request_get_buffer(req) r_http_msg_get_buffer ((RHttpMsg *)req)
 R_API RHttpMethod r_http_request_get_method (const RHttpRequest * req);
 R_API RUri * r_http_request_get_uri (RHttpRequest * req);
 #define r_http_request_get_header(req, field, size) r_http_msg_get_header ((RHttpMsg *)req, field, size)
@@ -164,6 +165,7 @@ R_API RHttpResponse * r_http_response_new (RHttpRequest * req,
 R_API RHttpResponse * r_http_response_new_from_buffer (RHttpRequest * req,
     RBuffer * buf, RHttpError * err, RBuffer ** remainder) R_ATTR_MALLOC;
 R_API RHttpStatus r_http_response_get_status (const RHttpResponse * res);
+#define r_http_response_get_buffer(res) r_http_msg_get_buffer ((RHttpMsg *)res)
 R_API rchar * r_http_response_get_phrase (const RHttpResponse * res) R_ATTR_MALLOC;
 R_API RHttpRequest * r_http_response_get_request (RHttpResponse * res);
 #define r_http_response_get_header(res, field, size) r_http_msg_get_header ((RHttpMsg *)res, field, size)

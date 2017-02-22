@@ -120,6 +120,25 @@ RTEST (rhttp, new_request_from_buffer, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rhttp, request_get_buffer, RTEST_FAST)
+{
+  RBuffer * orig, * buf;
+  RHttpRequest * req;
+  RHttpError err;
+
+  r_assert_cmpptr ((orig = r_buffer_new_dup (http_get_request, sizeof (http_get_request) - 1)), !=, NULL);
+  r_assert_cmpptr ((req = r_http_request_new_from_buffer (orig, &err, NULL)), !=, NULL);
+  r_assert_cmpint (err, ==, R_HTTP_OK);
+
+  r_assert_cmpptr ((buf = r_http_request_get_buffer (req)), !=, NULL);
+  r_assert_cmpint (r_buffer_cmp (orig, 0, buf, 0, r_buffer_get_size (buf)), ==, 0);
+
+  r_buffer_unref (buf);
+  r_buffer_unref (orig);
+  r_http_request_unref (req);
+}
+RTEST_END;
+
 RTEST (rhttp, new_200_response, RTEST_FAST)
 {
   RHttpResponse * res;
