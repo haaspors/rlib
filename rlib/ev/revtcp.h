@@ -64,6 +64,7 @@ R_API rboolean r_ev_tcp_task_recv_start (REvTCP * evtcp, ruint taskgroup,
     REvTCPBufferAllocFunc alloc, REvTCPBufferFunc recv,
     rpointer data, RDestroyNotify datanotify);
 R_API rboolean r_ev_tcp_recv_stop (REvTCP * evtcp);
+#define r_ev_tcp_send_and_forget(evtcp, buf) r_ev_tcp_send (evtcp, buf, NULL, NULL, NULL)
 R_API rboolean r_ev_tcp_send (REvTCP * evtcp, RBuffer * buf,
     REvTCPBufferFunc done, rpointer data, RDestroyNotify datanotify);
 R_API rboolean r_ev_tcp_send_take (REvTCP * evtcp, rpointer buffer, rsize size,
