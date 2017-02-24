@@ -185,6 +185,20 @@ r_socket_address_cmp (const RSocketAddress * a, const RSocketAddress * b)
   return ret;
 }
 
+rchar *
+r_socket_address_to_str (const RSocketAddress * addr)
+{
+  switch (addr->addr.ss_family) {
+    case R_SOCKET_FAMILY_IPV4:
+      return r_socket_address_ipv4_to_str (addr, TRUE);
+    /*FIXME case R_SOCKET_FAMILY_IPV6:*/
+    default:
+      break;
+  }
+
+  return r_strdup ("<UNKNOWN>");
+}
+
 ruint16
 r_socket_address_ipv4_get_port (const RSocketAddress * addr)
 {

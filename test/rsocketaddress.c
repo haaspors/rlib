@@ -99,4 +99,19 @@ RTEST (rsocketaddress, copy, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsocketaddress, to_str, RTEST_FAST)
+{
+  RSocketAddress * addr;
+  rchar * tmp;
+
+  /* ipv4 */
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint32 (INADDR_LOOPBACK, 42)), !=, NULL);
+  r_assert_cmpstr ((tmp = r_socket_address_to_str (addr)), ==, "127.0.0.1:42"); r_free (tmp);
+  r_socket_address_unref (addr);
+
+  /* ipv6 */
+  /* FIXME */
+}
+RTEST_END;
+
 
