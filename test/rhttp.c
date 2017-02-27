@@ -184,5 +184,30 @@ RTEST (rhttp, new_response_from_buffer, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rhttp, response_get_buffer, RTEST_FAST)
+{
+  RBuffer * buf;
+  RHttpResponse * res;
+  static const rchar http_200_ok[] = "HTTP/1.1 200 OK\r\n\r\n";
+  static const rchar http_404_not_found[] = "HTTP/1.1 404 Not Found\r\n\r\n";
+
+  r_assert_cmpptr ((res = r_http_response_new (NULL,
+          R_HTTP_STATUS_OK, "OK", NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_OK);
+  r_assert_cmpptr ((buf = r_http_request_get_buffer (res)), !=, NULL);
+  r_assert_cmpint (r_buffer_memcmp (buf, 0, R_STR_WITH_SIZE_ARGS (http_200_ok)), ==, 0);
+  r_buffer_unref (buf);
+  r_http_response_unref (res);
+
+  r_assert_cmpptr ((res = r_http_response_new (NULL,
+          R_HTTP_STATUS_NOT_FOUND, NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_NOT_FOUND);
+  r_assert_cmpptr ((buf = r_http_request_get_buffer (res)), !=, NULL);
+  r_assert_cmpint (r_buffer_memcmp (buf, 0, R_STR_WITH_SIZE_ARGS (http_404_not_found)), ==, 0);
+  r_buffer_unref (buf);
+  r_http_response_unref (res);
+}
+RTEST_END;
+
 /* TODO: Add tests for various request->reponse patterns! */
 

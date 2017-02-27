@@ -27,6 +27,91 @@ static const rchar * r_http_method_supported[] = {
   "GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE",
 };
 
+static const rchar * r_http_status_phrase[][99] = {
+  { "" },
+  { /* 1xx */
+    "Continue",
+    "Switching Protocols",
+    "Processing",
+  },
+  { /* 2xx */
+    "OK",
+    "Created",
+    "Accepted",
+    "Non-Authoritative Information",
+    "No Content",
+    "Reset Content",
+    "Partial Content",
+    "Multi Status",
+    "Already Reported",
+    NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    "IM Used", /* 226 */
+  },
+  { /* 3xx */
+    "Multiple Choices",
+    "Moved Permanently",
+    "Found",
+    "See Other",
+    "Not Modified",
+    "Use Proxy",
+    NULL,
+    "Temporary Redirect",
+    "Permanent Redirect",
+  },
+  { /* 4xx */
+    "Bad Request",
+    "Unauthorized",
+    "Payment Required",
+    "Forbidden",
+    "Not Found",
+    "Method Not Allowed",
+    "Not Acceptable",
+    "Proxy Authentication Required",
+    "Request Timeout",
+    "Conflict",
+    "Gone",
+    "Length Required",
+    "Precondition Failed",
+    "Payload Too Large",
+    "URI Too Long",
+    "Unsupported Media Type",
+    "Range Not Satisfiable",
+    "Expectation Failed",
+    "Teapot",
+    NULL, NULL, NULL,
+    "Unprocessable Entity",
+    "Locked",
+    "Failed Dependency",
+    NULL,
+    "Upgrade Required", /* 426 */
+    NULL,
+    "Precondition Required",
+    "Too Many Requests",
+    NULL,
+    "Request Header Fields Too Large",
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL,
+    "Unavailable For Legal Reasons",
+  },
+  { /* 5xx */
+    "Internal Server Error",
+    "Not Implemented",
+    "Bad Gateway",
+    "Service Unavailable",
+    "Gateway Timeout",
+    "HTTP Version Not Supported",
+    "Variant Also Negotiates",
+    "Insufficient Storage",
+    "Loop Detected",
+    NULL,
+    "Not Extended",
+    "Network Authentication Required",
+  },
+};
+
 struct _RHttpMsg {
   RRef ref;
 
@@ -474,6 +559,18 @@ r_http_request_get_uri (RHttpRequest * req)
   return r_uri_ref (req->uri);
 }
 
+static const rchar *
+r_http_status_get_phrase (RHttpStatus status)
+{
+  ruint i = (ruint)status / 100;
+  ruint j = (ruint)status % 100;
+
+  if (R_UNLIKELY (i >= R_N_ELEMENTS (r_http_status_phrase) ||
+        r_http_status_phrase[i][j] == NULL))
+    i = j = 0;
+
+  return r_http_status_phrase[i][j];
+}
 
 
 static RBuffer *
@@ -483,7 +580,9 @@ r_http_create_status_line (RHttpStatus status, const rchar * phrase,
   rchar * line;
 
   line = r_strprintf ("HTTP/%s %.3d %s\r\n",
-      ver, (int)status, phrase != NULL ? phrase : "");
+      ver != NULL ? ver : "1.1",
+      (int)status,
+      phrase != NULL ? phrase : r_http_status_get_phrase (status));
 
   return r_buffer_new_take (line, r_strlen (line));
 }
