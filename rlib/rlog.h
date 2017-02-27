@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/ratomic.h>
+#include <rlib/rbuffer.h>
 #include <rlib/rclr.h>
 #include <stdarg.h>
 
@@ -95,6 +96,9 @@ R_API void r_log_msg (RLogCategory * cat, RLogLevel lvl,
 R_API void r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,
     rconstpointer ptr, rsize size, rsize bytesperline);
+R_API void r_log_buf_dump (RLogCategory * cat, RLogLevel lvl,
+    const rchar * file, ruint line, const rchar * func,
+    RBuffer * buf, rsize bytesperline);
 
 #define R_LOG_CAT_LEVEL(cat,lvl,...) R_STMT_START {                           \
   _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE);               \
@@ -125,6 +129,12 @@ R_API void r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
     r_log_mem_dump ((cat), (lvl), __FILE__, __LINE__, R_STRFUNC, ptr, size, 16);\
 } R_STMT_END
 #define R_LOG_MEM_DUMP(lvl,ptr,size)  R_LOG_CAT_LEVEL_MEM_DUMP (R_LOG_CAT_DEFAULT, lvl, ptr, size)
+#define R_LOG_CAT_LEVEL_BUF_DUMP(cat,lvl,buf) R_STMT_START {             \
+  _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE);               \
+  if (R_UNLIKELY (lvl <= R_LOG_LEVEL_MAX && (int)lvl<=(int)_r_log_level_min)) \
+    r_log_buf_dump ((cat), (lvl), __FILE__, __LINE__, R_STRFUNC, buf, 16);\
+} R_STMT_END
+#define R_LOG_BUF_DUMP(lvl,buf)       R_LOG_CAT_LEVEL_BUF_DUMP (R_LOG_CAT_DEFAULT, lvl, buf)
 
 R_API void r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,

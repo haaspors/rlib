@@ -319,6 +319,23 @@ r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
   }
 }
 
+void
+r_log_buf_dump (RLogCategory * cat, RLogLevel lvl,
+    const rchar * file, ruint line, const rchar * func,
+    RBuffer * buf, rsize bytesperline)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  if (R_UNLIKELY (cat == NULL))
+    abort ();
+  if (lvl > cat->threshold && !g__r_log_ignore_threshold)
+    return;
+
+  r_buffer_map (buf, &info, R_MEM_MAP_READ);
+  r_log_mem_dump (cat, lvl, file, line, func, info.data, info.size, bytesperline);
+  r_buffer_unmap (buf, &info);
+}
+
 RLogFunc
 r_log_override_default_handler (RLogFunc func, rpointer data, rpointer * old)
 {
