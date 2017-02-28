@@ -308,17 +308,24 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
               evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
           evtcp->recv (evtcp->recv_data, buf, evtcp);
         } else {
-          R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT" EOF",
+          R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT" EOS",
               evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
-          evtcp->recv (evtcp->recv_data, NULL, evtcp);
+
+          /* Almost like r_ev_tcp_recv_stop */
           r_ev_loop_add_cb_after (evtcp->evio.loop, (RFunc)r_ev_io_stop,
-              evtcp, NULL, evtcp->recv_iocb_ctx, NULL);
+              r_ev_tcp_ref (evtcp), r_ev_tcp_unref,
+              evtcp->recv_iocb_ctx, NULL);
           evtcp->recv_iocb_ctx = NULL;
-          r_ev_tcp_recv_stop (evtcp);
           if (evtcp->recv_task != NULL) {
             r_task_unref (evtcp->recv_task);
             evtcp->recv_task = NULL;
           }
+
+          /* Lastly call recv handler.
+           * Be aware that handler might close and even unref
+           * Allthough we should have a ref becuase r_ev_io_stop above
+           */
+          evtcp->recv (evtcp->recv_data, NULL, evtcp);
           return;
         }
         break;
