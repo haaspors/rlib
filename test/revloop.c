@@ -416,3 +416,26 @@ RTEST (revloop, add_task_with_taskgroup, RTEST_FAST)
 RTEST_END;
 #endif
 
+RTEST (revio, user, RTEST_FAST)
+{
+  REvLoop * loop;
+  RClock * clock;
+  REvIO * evio;
+  rpointer data;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  /* dummy fd/handle 42 */
+  r_assert_cmpptr ((evio = r_ev_loop_init_handle (loop, R_EV_HANDLE_INVALID)), !=, NULL);
+  r_assert_cmpptr (r_ev_io_get_user (evio), ==, NULL);
+
+  r_assert_cmpptr ((data = r_malloc (42)), !=, NULL);
+  r_ev_io_set_user (evio, data, r_free);
+  r_assert_cmpptr (r_ev_io_get_user (evio), ==, data);
+  r_ev_io_unref (evio);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+

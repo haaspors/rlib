@@ -51,6 +51,9 @@ struct _REvIO {
   REvHandle handle;
   REvIOEvents events;
   RCBQueue iocbq;
+
+  rpointer user;
+  RDestroyNotify usernotify;
 };
 
 #define R_EV_IO_FORMAT        "%p [%"R_EV_HANDLE_FMT"]"

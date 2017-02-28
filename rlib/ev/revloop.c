@@ -787,6 +787,9 @@ r_ev_io_clear (REvIO * evio)
     r_queue_remove_link (&evio->loop->active, evio->alnk);
   }
 
+  if (evio->usernotify != NULL)
+    evio->usernotify (evio->user);
+
   if (R_EV_IO_IS_CHANGING (evio))
     r_queue_remove_link (&evio->loop->chg, evio->chglnk);
   evio->alnk = evio->chglnk = NULL;
@@ -833,6 +836,21 @@ r_ev_loop_init_handle (REvLoop * loop, REvHandle handle)
     r_ev_io_init (ret, loop, handle, (RDestroyNotify)r_ev_io_free);
 
   return ret;
+}
+
+void
+r_ev_io_set_user (REvIO * evio, rpointer user, RDestroyNotify notify)
+{
+  if (evio->usernotify != NULL)
+    evio->usernotify (evio->user);
+  evio->user = user;
+  evio->usernotify = notify;
+}
+
+rpointer
+r_ev_io_get_user (REvIO * evio)
+{
+  return evio->user;
 }
 
 rpointer
