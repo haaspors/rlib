@@ -96,10 +96,10 @@ def configure(cfg):
     cfg.setenv(DBGVAR, env=common_env)
     cfg.env.detach()
     if cfg.env['CC_NAME'] == 'msvc':
-        cfg.env.CFLAGS += ['/MDd', '/Od']
+        cfg.env.CFLAGS += ['/MDd', '/Od', '/GS', '/Gs']
         cfg.env.LINKFLAGS += ['/DEBUG']
     else:
-        cfg.env.CFLAGS += ['-g']
+        cfg.env.CFLAGS += ['-g', '-fstack-protector-strong']
     cfg.define('DEBUG', 1)
     cfg.write_config_header(DBGVAR+'/config.h')
 
