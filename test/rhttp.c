@@ -139,6 +139,43 @@ RTEST (rhttp, request_get_buffer, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rhttp, body_buffer, RTEST_FAST)
+{
+  RHttpRequest * req;
+  RBuffer * buf;
+
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://github.com/ieei/rlib", NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((buf = r_http_request_get_body_buffer (req)), ==, NULL);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("foobar"))), !=, NULL);
+  r_assert_cmpint (r_http_request_set_body_buffer (req, buf), ==, R_HTTP_OK);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_http_request_get_buffer (req)), !=, NULL);
+  r_assert_cmpint (r_buffer_memcmp (buf, 0,
+        R_STR_WITH_SIZE_ARGS ("GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\nfoobar")), ==, 0);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("\n1337"))), !=, NULL);
+  r_assert_cmpint (r_http_request_append_body_buffer (req, buf), ==, R_HTTP_OK);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_http_request_get_buffer (req)), !=, NULL);
+  r_assert_cmpint (r_buffer_memcmp (buf, 0,
+        R_STR_WITH_SIZE_ARGS ("GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\nfoobar\n1337")), ==, 0);
+  r_buffer_unref (buf);
+
+  r_assert_cmpint (r_http_request_set_body_buffer (req, NULL), ==, R_HTTP_OK);
+  r_assert_cmpptr ((buf = r_http_request_get_buffer (req)), !=, NULL);
+  r_assert_cmpint (r_buffer_memcmp (buf, 0,
+        R_STR_WITH_SIZE_ARGS ("GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\n")), ==, 0);
+  r_buffer_unref (buf);
+
+  r_http_request_unref (req);
+}
+RTEST_END;
+
 RTEST (rhttp, new_200_response, RTEST_FAST)
 {
   RHttpResponse * res;

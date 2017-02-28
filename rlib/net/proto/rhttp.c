@@ -215,13 +215,29 @@ r_http_msg_get_body_buffer (RHttpMsg * msg)
 }
 
 RHttpError
-r_http_msg_set_body (RHttpMsg * msg, RBuffer * buf)
+r_http_msg_set_body_buffer (RHttpMsg * msg, RBuffer * buf)
 {
   if (R_UNLIKELY (msg == NULL)) return R_HTTP_INVAL;
 
   if (msg->body != NULL)
     r_buffer_unref (msg->body);
-  msg->body = r_buffer_ref (buf);
+  if (buf != NULL)
+    r_buffer_ref (buf);
+  msg->body = buf;
+
+  return R_HTTP_OK;
+}
+
+RHttpError
+r_http_msg_append_body_buffer (RHttpMsg * msg, RBuffer * buf)
+{
+  if (R_UNLIKELY (msg == NULL)) return R_HTTP_INVAL;
+  if (R_UNLIKELY (buf == NULL)) return R_HTTP_INVAL;
+
+  if (msg->body == NULL)
+    msg->body = r_buffer_ref (buf);
+  else
+    r_buffer_append_mem_from_buffer (msg->body, buf);
 
   return R_HTTP_OK;
 }

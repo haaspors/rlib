@@ -129,7 +129,8 @@ typedef struct _RHttpMsg RHttpMsg;
 R_API RBuffer * r_http_msg_get_buffer (RHttpMsg * msg) R_ATTR_WARN_UNUSED_RESULT;
 R_API rchar * r_http_msg_get_body (RHttpMsg * msg, rsize * size) R_ATTR_MALLOC;
 R_API RBuffer * r_http_msg_get_body_buffer (RHttpMsg * msg) R_ATTR_WARN_UNUSED_RESULT;
-R_API RHttpError r_http_msg_set_body (RHttpMsg * msg, RBuffer * buf);
+R_API RHttpError r_http_msg_set_body_buffer (RHttpMsg * msg, RBuffer * buf);
+R_API RHttpError r_http_msg_append_body_buffer (RHttpMsg * msg, RBuffer * buf);
 R_API rboolean r_http_msg_has_header (RHttpMsg * msg, const rchar * field, rssize size);
 R_API rchar * r_http_msg_get_header (RHttpMsg * msg, const rchar * field, rssize size);
 rboolean r_http_msg_add_header (RHttpMsg * msg,
@@ -152,7 +153,8 @@ R_API RUri * r_http_request_get_uri (RHttpRequest * req);
 #define r_http_request_add_header(req, field, fsize, value, vsize) r_http_msg_add_header ((RHttpMsg *)req, field, fsize, value, vsize)
 #define r_http_request_get_body(req, size) r_http_msg_get_body ((RHttpMsg *)req, size)
 #define r_http_request_get_body_buffer(req) r_http_msg_get_body_buffer ((RHttpMsg *)req)
-#define r_http_request_set_body(req, buf) r_http_msg_set_body ((RHttpMsg *)req, buf)
+#define r_http_request_set_body_buffer(req, buf) r_http_msg_set_body_buffer ((RHttpMsg *)req, buf)
+#define r_http_request_append_body_buffer(req, buf) r_http_msg_append_body_buffer ((RHttpMsg *)req, buf)
 
 
 typedef struct _RHttpResponse RHttpResponse;
@@ -172,7 +174,8 @@ R_API RHttpRequest * r_http_response_get_request (RHttpResponse * res);
 #define r_http_response_add_header(res, field, fsize, value, vsize) r_http_msg_add_header ((RHttpMsg *)res, field, fsize, value, vsize)
 #define r_http_response_get_body(res, size) r_http_msg_get_body ((RHttpMsg *)res, size)
 #define r_http_response_get_body_buffer(res) r_http_msg_get_body_buffer ((RHttpMsg *)res)
-#define r_http_response_set_body(res, buf) r_http_msg_set_body ((RHttpMsg *)res, buf)
+#define r_http_response_set_body_buffer(res, buf) r_http_msg_set_body_buffer ((RHttpMsg *)res, buf)
+#define r_http_response_append_body_buffer(res, buf) r_http_msg_append_body_buffer ((RHttpMsg *)res, buf)
 
 R_END_DECLS
 
