@@ -41,6 +41,9 @@ R_API rsize r_ptr_array_size (const RPtrArray * array);
 R_API rsize r_ptr_array_alloc_size (const RPtrArray * array);
 R_API rpointer r_ptr_array_get (RPtrArray * array, rsize idx);
 
+#define r_ptr_array_find(array, data) r_ptr_array_find_range (array, data, 0, -1)
+R_API rsize r_ptr_array_find_range (RPtrArray * array, rpointer data, rsize idx, rssize size);
+
 R_API rsize r_ptr_array_add (RPtrArray * array,
     rpointer data, RDestroyNotify notify);
 /* FIXME */
@@ -64,6 +67,13 @@ R_API rsize r_ptr_array_remove_idx_fast_full (RPtrArray * array, rsize idx,
 R_API rsize r_ptr_array_remove_idx_clear_full (RPtrArray * array, rsize idx,
     RFunc func, rpointer user);
 
+#define r_ptr_array_remove_first_full(array, data, func, user) r_ptr_array_remove_idx_full (array, r_ptr_array_find (array, data), func, user)
+#define r_ptr_array_remove_first_fast_full(array, data, func, user) r_ptr_array_remove_idx_fast_full (array, r_ptr_array_find (array, data), func, user)
+#define r_ptr_array_remove_first_clear_full(array, data, func, user) r_ptr_array_remove_idx_clear_full (array, r_ptr_array_find (array, data), func, user)
+#define r_ptr_array_remove_first(array, data) r_ptr_array_remove_first_full (array, data, NULL, NULL)
+#define r_ptr_array_remove_first_fast(array, data) r_ptr_array_remove_first_fast_full (array, data, NULL, NULL)
+#define r_ptr_array_remove_first_clear(array, data) r_ptr_array_remove_first_clear_full (array, data, NULL, NULL)
+
 #define r_ptr_array_remove_range(array, idx, inc) r_ptr_array_remove_range_full (array, idx, inc, NULL, NULL)
 #define r_ptr_array_remove_range_fast(array, idx, inc) r_ptr_array_remove_range_fast_full (array, idx, inc, NULL, NULL)
 #define r_ptr_array_remove_range_clear(array, idx, inc) r_ptr_array_remove_range_clear_full (array, idx, inc, NULL, NULL)
@@ -73,9 +83,6 @@ R_API rsize r_ptr_array_remove_range_fast_full (RPtrArray * array,
     rsize idx, rssize size, RFunc func, rpointer user);
 R_API rsize r_ptr_array_remove_range_clear_full (RPtrArray * array,
     rsize idx, rssize size, RFunc func, rpointer user);
-
-#define r_ptr_array_find(array, data) r_ptr_array_find_range (array, data, 0, -1)
-R_API rsize r_ptr_array_find_range (RPtrArray * array, rpointer data, rsize idx, rssize size);
 
 #define r_ptr_array_foreach(array, func, user) r_ptr_array_foreach_range (array, 0, -1, func, user)
 R_API rsize r_ptr_array_foreach_range (RPtrArray * array, rsize idx, rssize size,
