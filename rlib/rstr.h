@@ -32,10 +32,12 @@ R_BEGIN_DECLS
 #define R_STR_SIZEOF(str) sizeof (str) - 1
 #define R_STR_WITH_SIZE_ARGS(str) (str), R_STR_SIZEOF (str)
 
-typedef struct {
-  rchar * str;
-  rsize size;
-} RStrChunk;
+typedef enum {
+  R_STR_PARSE_OK,
+  R_STR_PARSE_RANGE,
+  R_STR_PARSE_INVAL,
+} RStrParse;
+
 
 R_API rsize r_strlen (const rchar * str);
 
@@ -96,6 +98,25 @@ R_API rchar * r_str_strip (rchar * str, const rchar * chars);
 R_API const rchar * r_str_lstrip (const rchar * str, const rchar * chars);
 R_API rchar * r_str_tstrip (rchar * str, const rchar * chars);
 
+/* String chunk */
+typedef struct {
+  rchar * str;
+  rsize size;
+} RStrChunk;
+#define R_STR_CHUNK_INIT        { NULL, 0 }
+#define r_str_chunk_dup(chunk)  r_strndup ((chunk)->str, (chunk)->size)
+
+/* Key-Value string chunks */
+typedef struct {
+  RStrChunk key;
+  RStrChunk val;
+} RStrKV;
+#define R_STR_KV_INIT           { R_STR_CHUNK_INIT, R_STR_CHUNK_INIT }
+#define r_str_kv_dup_key(kv)    r_str_chunk_dup (&(kv)->key)
+#define r_str_kv_dup_value(kv)  r_str_chunk_dup (&(kv)->val)
+R_API RStrParse r_str_kv_parse (RStrKV * kv, const rchar * str, rssize size,
+    const rchar * delim, const rchar ** endptr);
+
 /* Join and split */
 R_API rchar * r_strjoin_dup (const rchar * delim, ...) R_ATTR_NULL_TERMINATED;
 R_API rchar * r_strjoinv_dup (const rchar * delim, va_list args);
@@ -104,11 +125,6 @@ R_API rchar * r_strnjoinv (rchar * str, rsize size, const rchar * delim, va_list
 R_API rchar ** r_strsplit (const rchar * str, const rchar * delim, rsize max);
 
 /* Parsing from string to numbers (integers and floats) */
-typedef enum {
-  R_STR_PARSE_OK,
-  R_STR_PARSE_RANGE,
-  R_STR_PARSE_INVAL,
-} RStrParse;
 R_API rint8   r_str_to_int8   (const rchar * str, const rchar ** endptr,
     ruint base, RStrParse * res);
 R_API ruint8  r_str_to_uint8  (const rchar * str, const rchar ** endptr,

@@ -1199,6 +1199,34 @@ r_strsplit (const rchar * str, const rchar * delim, rsize max)
   return ret;
 }
 
+RStrParse
+r_str_kv_parse (RStrKV * kv, const rchar * str, rssize size,
+    const rchar * delim, const rchar ** endptr)
+{
+  rchar * ptr;
+  rsize dsize;
+
+  if (R_UNLIKELY (kv == NULL)) return R_STR_PARSE_INVAL;
+  if (R_UNLIKELY (str == NULL)) return R_STR_PARSE_INVAL;
+  if (R_UNLIKELY (delim == NULL)) return R_STR_PARSE_INVAL;
+
+  dsize = r_strlen (delim);
+  if ((ptr = r_str_ptr_of_str (str, size, delim, dsize)) != NULL) {
+    const rchar * end = str + ((size < 0) ? r_strlen (str) : (rsize)size);
+
+    kv->key.str = (rchar *)r_str_lwstrip (str);
+    kv->key.size = ptr - kv->key.str;
+    kv->val.str = (rchar *)r_str_lwstrip (ptr + dsize);
+    kv->val.size = end - kv->val.str;
+
+    if (endptr != NULL)
+      *endptr = end;
+    return R_STR_PARSE_OK;
+  }
+
+  return R_STR_PARSE_RANGE;
+}
+
 rchar *
 r_strjoin_dup (const rchar * delim, ...)
 {

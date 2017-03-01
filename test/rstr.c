@@ -1167,3 +1167,28 @@ RTEST (rstr, match_http_request_line, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, kv_parse, RTEST_FAST)
+{
+  RStrKV kv = R_STR_KV_INIT;
+
+  r_assert_cmpint (r_str_kv_parse (NULL, "foo:bar", -1, ":", NULL), ==, R_STR_PARSE_INVAL);
+  r_assert_cmpint (r_str_kv_parse (&kv, NULL, -1, ":", NULL), ==, R_STR_PARSE_INVAL);
+  r_assert_cmpint (r_str_kv_parse (&kv, "foo:bar", -1, ":", NULL), ==, R_STR_PARSE_OK);
+  r_assert_cmpint (r_str_kv_parse (&kv, "foo:bar", 5, ":", NULL), ==, R_STR_PARSE_OK);
+  r_assert_cmpint (r_str_kv_parse (&kv, "foo: bar", -1, "=", NULL), ==, R_STR_PARSE_RANGE);
+  r_assert_cmpint (r_str_kv_parse (&kv, R_STR_WITH_SIZE_ARGS ("foo\0: bar"), ":", NULL), ==, R_STR_PARSE_OK);
+}
+RTEST_END;
+
+RTEST (rstr, kv_dup, RTEST_FAST)
+{
+  RStrKV kv = R_STR_KV_INIT;
+  rchar * tmp;
+
+  r_assert_cmpint (r_str_kv_parse (&kv, "foo= bar", -1, "=", NULL), ==, R_STR_PARSE_OK);
+
+  r_assert_cmpstr ((tmp = r_str_kv_dup_key (&kv)), ==, "foo"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_value (&kv)), ==, "bar"); r_free (tmp);
+}
+RTEST_END;
+
