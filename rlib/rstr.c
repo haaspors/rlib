@@ -1200,6 +1200,33 @@ r_strsplit (const rchar * str, const rchar * delim, rsize max)
 }
 
 RStrParse
+r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line)
+{
+  rssize offset;
+  rsize max;
+
+  if (R_UNLIKELY (buf == NULL)) return R_STR_PARSE_INVAL;
+  if (R_UNLIKELY (line == NULL)) return R_STR_PARSE_INVAL;
+  if (R_UNLIKELY (buf->str == NULL || buf->size == 0)) return R_STR_PARSE_INVAL;
+  if (line->str != NULL) {
+    if (R_UNLIKELY (line->str < buf->str)) return R_STR_PARSE_INVAL;
+    if (line->str + line->size >= buf->str + buf->size)
+      return R_STR_PARSE_RANGE;
+  }
+
+  line->str = (rchar *)r_str_lwstrip ((line->str != NULL) ? line->str + line->size : buf->str);
+
+  max = buf->size - RPOINTER_TO_SIZE (line->str - buf->str);
+  offset = r_str_idx_of_c (line->str, max, '\n');
+  line->size = offset >= 0 ? (rsize)offset : max;
+
+  while (line->size > 0 && r_ascii_isspace (line->str[line->size - 1]))
+    line->size--;
+
+  return R_STR_PARSE_OK;
+}
+
+RStrParse
 r_str_kv_parse (RStrKV * kv, const rchar * str, rssize size,
     const rchar * delim, const rchar ** endptr)
 {

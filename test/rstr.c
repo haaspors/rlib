@@ -1167,6 +1167,26 @@ RTEST (rstr, match_http_request_line, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, chunk_next_line, RTEST_FAST)
+{
+  RStrChunk a = { R_STR_WITH_SIZE_ARGS ("foo\r\nbar\nfoobar") };
+  RStrChunk b = R_STR_CHUNK_INIT;
+
+  r_assert_cmpint (r_str_chunk_next_line (NULL, NULL), ==, R_STR_PARSE_INVAL);
+  r_assert_cmpint (r_str_chunk_next_line (&a, NULL), ==, R_STR_PARSE_INVAL);
+  r_assert_cmpint (r_str_chunk_next_line (NULL, &b), ==, R_STR_PARSE_INVAL);
+  r_assert_cmpint (r_str_chunk_next_line (&b, &b), ==, R_STR_PARSE_INVAL);
+
+  r_assert_cmpint (r_str_chunk_next_line (&a, &b), ==, R_STR_PARSE_OK);
+  r_assert_cmpptr (b.str, ==, a.str); r_assert_cmpuint (b.size, ==, 3);
+  r_assert_cmpint (r_str_chunk_next_line (&a, &b), ==, R_STR_PARSE_OK);
+  r_assert_cmpptr (b.str, ==, a.str + 5); r_assert_cmpuint (b.size, ==, 3);
+  r_assert_cmpint (r_str_chunk_next_line (&a, &b), ==, R_STR_PARSE_OK);
+  r_assert_cmpptr (b.str, ==, a.str + 9); r_assert_cmpuint (b.size, ==, 6);
+  r_assert_cmpint (r_str_chunk_next_line (&a, &b), ==, R_STR_PARSE_RANGE);
+}
+RTEST_END;
+
 RTEST (rstr, kv_parse, RTEST_FAST)
 {
   RStrKV kv = R_STR_KV_INIT;

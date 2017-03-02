@@ -105,6 +105,7 @@ typedef struct {
 } RStrChunk;
 #define R_STR_CHUNK_INIT        { NULL, 0 }
 #define r_str_chunk_dup(chunk)  r_strndup ((chunk)->str, (chunk)->size)
+R_API RStrParse r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line);
 
 /* Key-Value string chunks */
 typedef struct {
