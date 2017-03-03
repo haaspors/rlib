@@ -1212,3 +1212,29 @@ RTEST (rstr, kv_dup, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, kv_is_key, RTEST_FAST)
+{
+  RStrKV kv = R_STR_KV_INIT;
+
+  r_assert_cmpint (r_str_kv_parse (&kv, "foo= bar", -1, "=", NULL), ==, R_STR_PARSE_OK);
+
+  r_assert (!r_str_kv_is_key (&kv, "bar", -1));
+  r_assert (r_str_kv_is_key (&kv, "foo", -1));
+  r_assert (!r_str_kv_is_key (&kv, "foo", 1));
+  r_assert (!r_str_kv_is_key (&kv, "foo", 4));
+}
+RTEST_END;
+
+RTEST (rstr, kv_is_value, RTEST_FAST)
+{
+  RStrKV kv = R_STR_KV_INIT;
+
+  r_assert_cmpint (r_str_kv_parse (&kv, "foo= bar", -1, "=", NULL), ==, R_STR_PARSE_OK);
+
+  r_assert (!r_str_kv_is_value (&kv, "foo", -1));
+  r_assert (r_str_kv_is_value (&kv, "bar", -1));
+  r_assert (!r_str_kv_is_value (&kv, "bar", 1));
+  r_assert (!r_str_kv_is_value (&kv, "bar", 4));
+}
+RTEST_END;
+

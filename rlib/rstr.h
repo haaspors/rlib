@@ -117,6 +117,8 @@ typedef struct {
 #define r_str_kv_dup_value(kv)  r_str_chunk_dup (&(kv)->val)
 R_API RStrParse r_str_kv_parse (RStrKV * kv, const rchar * str, rssize size,
     const rchar * delim, const rchar ** endptr);
+R_API rboolean r_str_kv_is_key (RStrKV * kv, const rchar * key, rssize size);
+R_API rboolean r_str_kv_is_value (RStrKV * kv, const rchar * val, rssize size);
 
 /* Join and split */
 R_API rchar * r_strjoin_dup (const rchar * delim, ...) R_ATTR_NULL_TERMINATED;

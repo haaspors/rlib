@@ -1254,6 +1254,32 @@ r_str_kv_parse (RStrKV * kv, const rchar * str, rssize size,
   return R_STR_PARSE_RANGE;
 }
 
+rboolean
+r_str_kv_is_key (RStrKV * kv, const rchar * key, rssize size)
+{
+  rsize len;
+
+  if (R_UNLIKELY (kv == NULL)) return FALSE;
+  if (R_UNLIKELY (key == NULL)) return FALSE;
+
+  if ((len = size < 0 ? r_strlen (key) : (rsize)size) != kv->key.size)
+    return FALSE;
+  return r_strncmp (kv->key.str, key, len) == 0;
+}
+
+rboolean
+r_str_kv_is_value (RStrKV * kv, const rchar * val, rssize size)
+{
+  rsize len;
+
+  if (R_UNLIKELY (kv == NULL)) return FALSE;
+  if (R_UNLIKELY (val == NULL)) return FALSE;
+
+  if ((len = size < 0 ? r_strlen (val) : (rsize)size) != kv->val.size)
+    return FALSE;
+  return r_strncmp (kv->val.str, val, len) == 0;
+}
+
 rchar *
 r_strjoin_dup (const rchar * delim, ...)
 {
