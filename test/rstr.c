@@ -1187,6 +1187,37 @@ RTEST (rstr, chunk_next_line, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, chunk_split, RTEST_FAST)
+{
+  static const RStrChunk orig = { R_STR_WITH_SIZE_ARGS ("foo-bar - foobar") };
+  RStrChunk a;
+  RStrChunk r[4];
+
+  r_memcpy (&a, &orig, sizeof (RStrChunk));
+  r_assert_cmpuint (r_str_chunk_split (NULL, NULL, &r[0], NULL), ==, 0);
+  r_assert_cmpuint (r_str_chunk_split (&a, NULL, &r[0], NULL), ==, 0);
+  r_assert_cmpuint (r_str_chunk_split (&a, NULL, &r[0], NULL), ==, 0);
+  r_assert_cmpuint (r_str_chunk_split (&a, "-", NULL), ==, 0);
+
+  r_assert_cmpuint (r_str_chunk_split (&a, "-", &r[0], NULL), ==, 1);
+  r_assert_cmpptr (r[0].str, ==, orig.str);
+  r_assert_cmpuint (r[0].size, ==, 3);
+  r_assert_cmpptr (a.str, ==, orig.str + 4);
+  r_assert_cmpuint (a.size, ==, 12);
+
+  r_memcpy (&a, &orig, sizeof (RStrChunk));
+  r_assert_cmpuint (r_str_chunk_split (&a, "-",
+        &r[0], &r[1], &r[2], &r[3], NULL), ==, 3);
+  r_assert_cmpuint (a.size, ==, 0);
+  r_assert_cmpptr (r[0].str, ==, orig.str);
+  r_assert_cmpuint (r[0].size, ==, 3);
+  r_assert_cmpptr (r[1].str, ==, orig.str + 4);
+  r_assert_cmpuint (r[1].size, ==, 4);
+  r_assert_cmpptr (r[2].str, ==, orig.str + 9);
+  r_assert_cmpuint (r[2].size, ==, 7);
+}
+RTEST_END;
+
 RTEST (rstr, kv_parse, RTEST_FAST)
 {
   RStrKV kv = R_STR_KV_INIT;

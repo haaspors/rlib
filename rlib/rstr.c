@@ -1226,6 +1226,47 @@ r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line)
   return R_STR_PARSE_OK;
 }
 
+ruint
+r_str_chunk_split (RStrChunk * buf, const rchar * delim, ...)
+{
+  ruint ret;
+  va_list args;
+
+  va_start (args, delim);
+  ret = r_str_chunk_splitv (buf, delim, args);
+  va_end (args);
+
+  return ret;
+}
+
+ruint
+r_str_chunk_splitv (RStrChunk * buf, const rchar * delim, va_list args)
+{
+  ruint ret = 0;
+  RStrChunk * cur;
+  rssize s;
+
+  if (R_UNLIKELY (buf == NULL)) return 0;
+  if (R_UNLIKELY (delim == NULL)) return 0;
+
+  while (buf->size > 0 && (cur = va_arg (args, RStrChunk *)) != NULL) {
+    ret++;
+
+    if ((s = r_str_idx_of_str (buf->str, buf->size, delim, -1)) < 0) {
+      r_memcpy (cur, buf, sizeof (RStrChunk));
+      buf->str += buf->size;
+      buf->size = 0;
+    } else {
+      cur->str = buf->str;
+      cur->size = s++;
+      buf->str += s;
+      buf->size -= s;
+    }
+  }
+
+  return ret;
+}
+
 RStrParse
 r_str_kv_parse (RStrKV * kv, const rchar * str, rssize size,
     const rchar * delim, const rchar ** endptr)
