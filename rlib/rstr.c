@@ -1267,6 +1267,19 @@ r_str_chunk_splitv (RStrChunk * buf, const rchar * delim, va_list args)
   return ret;
 }
 
+void
+r_str_chunk_wstrip (RStrChunk * buf)
+{
+  while (buf->size > 0 && r_ascii_isspace (buf->str[0])) {
+    buf->str++;
+    buf->size--;
+  }
+  while (buf->size > 0 && (buf->str[buf->size - 1] == 0 ||
+        r_ascii_isspace (buf->str[buf->size - 1]))) {
+    buf->size--;
+  }
+}
+
 RStrParse
 r_str_kv_parse (RStrKV * kv, const rchar * str, rssize size,
     const rchar * delim, const rchar ** endptr)

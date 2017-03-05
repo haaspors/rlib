@@ -108,6 +108,7 @@ typedef struct {
 R_API RStrParse r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line);
 R_API ruint r_str_chunk_split (RStrChunk * buf, const rchar * delim, ...) R_ATTR_NULL_TERMINATED;
 R_API ruint r_str_chunk_splitv (RStrChunk * buf, const rchar * delim, va_list args);
+R_API void r_str_chunk_wstrip (RStrChunk * buf);
 
 /* Key-Value string chunks */
 typedef struct {

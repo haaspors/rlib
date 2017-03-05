@@ -1218,6 +1218,29 @@ RTEST (rstr, chunk_split, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, chunk_wstrip, RTEST_FAST)
+{
+  RStrChunk a = { R_STR_WITH_SIZE_ARGS ("test") };
+  RStrChunk b = { R_STR_WITH_SIZE_ARGS ("\r\ntest \t") };
+  RStrChunk c = { R_STR_WITH_SIZE_ARGS (" test ") };
+  RStrChunk d = { R_STR_WITH_SIZE_ARGS ("test \0\r") };
+
+  r_str_chunk_wstrip (&a);
+  r_str_chunk_wstrip (&b);
+  r_str_chunk_wstrip (&c);
+  r_str_chunk_wstrip (&d);
+
+  r_assert_cmpuint (a.size, ==, 4);
+  r_assert_cmpuint (b.size, ==, 4);
+  r_assert_cmpuint (c.size, ==, 4);
+  r_assert_cmpuint (d.size, ==, 4);
+  r_assert_cmpmem ("test", ==, a.str, a.size);
+  r_assert_cmpmem ("test", ==, b.str, b.size);
+  r_assert_cmpmem ("test", ==, c.str, c.size);
+  r_assert_cmpmem ("test", ==, d.str, d.size);
+}
+RTEST_END;
+
 RTEST (rstr, kv_parse, RTEST_FAST)
 {
   RStrKV kv = R_STR_KV_INIT;
