@@ -1199,6 +1199,16 @@ r_strsplit (const rchar * str, const rchar * delim, rsize max)
   return ret;
 }
 
+int
+r_str_chunk_cmp (RStrChunk * buf, const rchar * str, rssize size)
+{
+  int ret;
+  if (size < 0) size = (rssize)r_strlen (str);
+  if ((ret = (int)(size - buf->size)) == 0)
+    ret = r_memcmp (buf->str, str, size);
+  return ret;
+}
+
 RStrParse
 r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line)
 {
