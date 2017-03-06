@@ -572,7 +572,9 @@ def build_summary(cfg):
     print('\nBuild summary')
     cfg.msg('Prefix', cfg.env.PREFIX, color='GREEN')
     if cfg.env.CC_NAME == 'msvc':
-        cfg.msg('MSVC', str(cfg.env.MSVC_COMPILER) + ' ' + str(cfg.env.MSVC_VERSION), color='CYAN')
+        cfg.msg('Compiler', str(cfg.env.CC_NAME) + ' ' + str(cfg.env.MSVC_VERSION) + '(' + str(cfg.env.MSVC_COMPILER) + ')', color='CYAN')
+    else:
+        cfg.msg('Compiler', str(cfg.env.CC_NAME) + ' ' + '.'.join(cfg.env.CC_VERSION), color='CYAN')
     cfg.msg('Building for dest/host arch', cfg.env.DEST_CPU, color='CYAN')
     cfg.msg('Building for dest/host OS', cfg.env.DEST_OS, color='CYAN')
     build_summary_item(cfg, 'Support threads', not cfg.env.NOTHREAD, 'GREEN', 'RED')
