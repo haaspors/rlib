@@ -1181,7 +1181,7 @@ RTEST_END;
 
 RTEST (rstr, chunk_next_line, RTEST_FAST)
 {
-  RStrChunk a = { R_STR_WITH_SIZE_ARGS ("foo\r\nbar\nfoobar") };
+  RStrChunk a = { R_STR_WITH_SIZE_ARGS ("foo\r\nbar\nfoobar\r\n") };
   RStrChunk b = R_STR_CHUNK_INIT;
 
   r_assert_cmpint (r_str_chunk_next_line (NULL, NULL), ==, R_STR_PARSE_INVAL);
@@ -1236,16 +1236,19 @@ RTEST (rstr, chunk_wstrip, RTEST_FAST)
   RStrChunk b = { R_STR_WITH_SIZE_ARGS ("\r\ntest \t") };
   RStrChunk c = { R_STR_WITH_SIZE_ARGS (" test ") };
   RStrChunk d = { R_STR_WITH_SIZE_ARGS ("test \0\r") };
+  RStrChunk e = { R_STR_WITH_SIZE_ARGS ("\r\n\t  \0 \r") };
 
   r_str_chunk_wstrip (&a);
   r_str_chunk_wstrip (&b);
   r_str_chunk_wstrip (&c);
   r_str_chunk_wstrip (&d);
+  r_str_chunk_wstrip (&e);
 
   r_assert_cmpuint (a.size, ==, 4);
   r_assert_cmpuint (b.size, ==, 4);
   r_assert_cmpuint (c.size, ==, 4);
   r_assert_cmpuint (d.size, ==, 4);
+  r_assert_cmpuint (e.size, ==, 0);
   r_assert_cmpmem ("test", ==, a.str, a.size);
   r_assert_cmpmem ("test", ==, b.str, b.size);
   r_assert_cmpmem ("test", ==, c.str, c.size);

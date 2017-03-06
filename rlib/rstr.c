@@ -1218,13 +1218,18 @@ r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line)
   if (R_UNLIKELY (buf == NULL)) return R_STR_PARSE_INVAL;
   if (R_UNLIKELY (line == NULL)) return R_STR_PARSE_INVAL;
   if (R_UNLIKELY (buf->str == NULL || buf->size == 0)) return R_STR_PARSE_INVAL;
+
   if (line->str != NULL) {
     if (R_UNLIKELY (line->str < buf->str)) return R_STR_PARSE_INVAL;
-    if (line->str + line->size >= buf->str + buf->size)
+    line->str += line->size;
+    if (line->str >= buf->str + buf->size)
       return R_STR_PARSE_RANGE;
+    line->size = buf->size - RPOINTER_TO_SIZE (line->str - buf->str);
+  } else {
+    *line = *buf;
   }
 
-  line->str = (rchar *)r_str_lwstrip ((line->str != NULL) ? line->str + line->size : buf->str);
+  r_str_chunk_wstrip (line);
 
   max = buf->size - RPOINTER_TO_SIZE (line->str - buf->str);
   offset = r_str_idx_of_c (line->str, max, '\n');
@@ -1233,7 +1238,7 @@ r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line)
   while (line->size > 0 && r_ascii_isspace (line->str[line->size - 1]))
     line->size--;
 
-  return R_STR_PARSE_OK;
+  return line->size > 0 ? R_STR_PARSE_OK : R_STR_PARSE_RANGE;
 }
 
 ruint
