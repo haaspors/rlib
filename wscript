@@ -99,7 +99,15 @@ def configure(cfg):
         cfg.env.CFLAGS += ['/MDd', '/Od', '/GS', '/Gs']
         cfg.env.LINKFLAGS += ['/DEBUG']
     else:
-        cfg.env.CFLAGS += ['-g', '-fstack-protector-strong']
+        cfg.env.CFLAGS += ['-g']
+        if cfg.env['CC_NAME'] == 'clang':
+            cfg.env.CFLAGS += ['-fstack-protector-strong']
+        elif cfg.env['CC_NAME'] == 'gcc':
+            if int(cfg.env['CC_VERSION'][0]) >= 5:
+                cfg.env.CFLAGS += ['-fstack-protector-strong']
+            else:
+                cfg.env.CFLAGS += ['-fstack-protector']
+
     cfg.define('DEBUG', 1)
     cfg.write_config_header(DBGVAR+'/config.h')
 
