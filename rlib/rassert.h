@@ -38,6 +38,8 @@ R_BEGIN_DECLS
 #define r_assert_cmpfloat(n1, cmp, n2)          _R_ASSERT_CMP (n1,cmp,n2,rfloat,"%.9f",#n1,#n2)
 #define r_assert_cmpdouble(n1, cmp, n2)         _R_ASSERT_CMP (n1,cmp,n2,rdouble,"%.9f",#n1,#n2)
 #define r_assert_cmpstr(s1, cmp, s2)            _R_ASSERT_CMPSTR (s1, cmp, s2, #s1, #s2)
+#define r_assert_cmpstrn(s1, cmp, s2, s)        _R_ASSERT_CMPSTRN (s1, cmp, s2, s, #s1, #s2)
+#define r_assert_cmpstrsize(s1, l1, cmp, s2, l2)_R_ASSERT_CMPSTRSIZE (s1, l1, cmp, s2, l2, #s1, #s2)
 #define r_assert_cmpmem(m1, cmp, m2, s)         _R_ASSERT_CMPMEM (m1, cmp, m2, s, #m1, #m2)
 
 /* NOTE that r_assert_log* uses the RLogKeepLast framework which could affect performance */

@@ -28,6 +28,15 @@ RTEST (rtest, asserts, RTEST_FAST)
   r_assert_cmpfloat (3.14, ==, 3.1400);
 
   r_assert_cmpstr ("Hello", !=, "Foobar");
+
+  r_assert_cmpstrn ("Hello", !=, "Foobar", 3);
+  r_assert_cmpstrn ("Hello", !=, "Foobar", 5);
+  r_assert_cmpstrn ("Foo", ==, "Foobar", 3);
+  r_assert_cmpstrn ("foo", !=, "Foobar", 3);
+
+  r_assert_cmpstrsize ("Hello", 5, !=, "Foobar", 6);
+  r_assert_cmpstrsize ("Hello", -1, !=, "Foobar", -1);
+  r_assert_cmpstrsize ("Hello", -1, ==, "Hello", -1);
 }
 RTEST_END;
 

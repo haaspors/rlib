@@ -75,8 +75,30 @@
 } R_STMT_END
 #define _R_ASSERT_CMPSTR(s1, cmp, s2, r1, r2)   R_STMT_START {                \
   const rchar * __s1 = (s1), * __s2 = (s2);                                   \
-  _R_ASSERT_STMT (r_strcmp (__s1, __s2) cmp 0, "%s %s %s", "\"%s\" %s \"%s\"",\
-      r1, #cmp, r2, __s1, #cmp, __s2);                                        \
+  _R_ASSERT_STMT (r_strcmp (__s1, __s2) cmp 0,                                \
+      "%s %s %s", "\"%s\" %s \"%s\"", r1, #cmp, r2, __s1, #cmp, __s2);        \
+} R_STMT_END
+#define _R_ASSERT_CMPSTRN(s1, cmp, s2, s, r1, r2)   R_STMT_START {            \
+  const rchar * __s1 = (s1), * __s2 = (s2);                                   \
+  rsize __s = s;                                                              \
+  _R_ASSERT_STMT (r_strncmp (__s1, __s2, __s) cmp 0,                          \
+      "%s %s %s (%s)", "\"%.*s\" %s \"%.*s\"",                                \
+      r1, #cmp, r2, #s, (int)__s, __s1, #cmp, (int)__s, __s2);                \
+} R_STMT_END
+#define _R_ASSERT_CMPSTRSIZE(s1, l1, cmp, s2, l2, r1, r2)   R_STMT_START {    \
+  const rchar * __s1 = (s1), * __s2 = (s2);                                   \
+  rssize __l1 = (l1), __l2 = (l2);                                            \
+  if (__l1 < 0) __l1 = r_strlen (__s1);                                       \
+  if (__l2 < 0) __l2 = r_strlen (__s2);                                       \
+  if (__l1 == __l2) {                                                         \
+    _R_ASSERT_STMT (r_strncmp (__s1, __s2, __l1) cmp 0,                       \
+        "%s (%s) %s %s (%s)", "\"%.*s\" %s \"%.*s\"",                         \
+        r1, #l1, #cmp, r2, #l2, (int)__l1, __s1, #cmp, (int)__l2, __s2);      \
+  } else {                                                                    \
+    _R_ASSERT_STMT (__l1 cmp __l2,                                            \
+        "%s (%s) %s %s (%s)", "\"%.*s\" %s \"%.*s\"",                         \
+        r1, #l1, #cmp, r2, #l2, (int)__l1, __s1, #cmp, (int)__l2, __s2);      \
+  }                                                                           \
 } R_STMT_END
 #define _R_ASSERT_CMPMEM(m1, cmp, m2, s, r1, r2)   R_STMT_START {             \
   const ruint8 * __m1 = (const ruint8 *)(m1), * __m2 = (const ruint8 *)(m2);  \
