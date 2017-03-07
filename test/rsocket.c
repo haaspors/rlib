@@ -381,8 +381,8 @@ RTEST (rsocket, sendmsg_recvmsg, RTEST_FAST | RTEST_SYSTEM)
     r_assert_cmpuint (r_buffer_get_size (buf2), ==, size);
 
     r_assert (r_socket_address_is_equal (srcaddr, addr1));
-    r_assert_cmpint (r_buffer_memcmp (buf2, 0, txbuf[0], 256), ==, 0);
-    r_assert_cmpint (r_buffer_memcmp (buf2, 256, txbuf[1], 512), ==, 0);
+    r_assert_cmpbufmem (buf2, 0, 256, ==, txbuf[0], 256);
+    r_assert_cmpbufmem (buf2, 256, -1, ==, txbuf[1], 512);
 
     r_buffer_unref (buf1);
     r_buffer_unref (buf2);

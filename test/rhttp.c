@@ -131,7 +131,7 @@ RTEST (rhttp, request_get_buffer, RTEST_FAST)
   r_assert_cmpint (err, ==, R_HTTP_OK);
 
   r_assert_cmpptr ((buf = r_http_request_get_buffer (req)), !=, NULL);
-  r_assert_cmpint (r_buffer_cmp (orig, 0, buf, 0, r_buffer_get_size (buf)), ==, 0);
+  r_assert_cmpbufsize (orig, 0, -1, ==, buf, 0, -1);
 
   r_buffer_unref (buf);
   r_buffer_unref (orig);
@@ -153,8 +153,7 @@ RTEST (rhttp, body_buffer, RTEST_FAST)
   r_buffer_unref (buf);
 
   r_assert_cmpptr ((buf = r_http_request_get_buffer (req)), !=, NULL);
-  r_assert_cmpint (r_buffer_memcmp (buf, 0,
-        R_STR_WITH_SIZE_ARGS ("GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\nfoobar")), ==, 0);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\nfoobar");
   r_buffer_unref (buf);
 
   r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("\n1337"))), !=, NULL);
@@ -162,14 +161,12 @@ RTEST (rhttp, body_buffer, RTEST_FAST)
   r_buffer_unref (buf);
 
   r_assert_cmpptr ((buf = r_http_request_get_buffer (req)), !=, NULL);
-  r_assert_cmpint (r_buffer_memcmp (buf, 0,
-        R_STR_WITH_SIZE_ARGS ("GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\nfoobar\n1337")), ==, 0);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\nfoobar\n1337");
   r_buffer_unref (buf);
 
   r_assert_cmpint (r_http_request_set_body_buffer (req, NULL), ==, R_HTTP_OK);
   r_assert_cmpptr ((buf = r_http_request_get_buffer (req)), !=, NULL);
-  r_assert_cmpint (r_buffer_memcmp (buf, 0,
-        R_STR_WITH_SIZE_ARGS ("GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\n")), ==, 0);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\n");
   r_buffer_unref (buf);
 
   r_http_request_unref (req);
@@ -232,7 +229,7 @@ RTEST (rhttp, response_get_buffer, RTEST_FAST)
           R_HTTP_STATUS_OK, "OK", NULL, NULL)), !=, NULL);
   r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_OK);
   r_assert_cmpptr ((buf = r_http_request_get_buffer (res)), !=, NULL);
-  r_assert_cmpint (r_buffer_memcmp (buf, 0, R_STR_WITH_SIZE_ARGS (http_200_ok)), ==, 0);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, http_200_ok);
   r_buffer_unref (buf);
   r_http_response_unref (res);
 
@@ -240,7 +237,7 @@ RTEST (rhttp, response_get_buffer, RTEST_FAST)
           R_HTTP_STATUS_NOT_FOUND, NULL, NULL, NULL)), !=, NULL);
   r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_NOT_FOUND);
   r_assert_cmpptr ((buf = r_http_request_get_buffer (res)), !=, NULL);
-  r_assert_cmpint (r_buffer_memcmp (buf, 0, R_STR_WITH_SIZE_ARGS (http_404_not_found)), ==, 0);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, http_404_not_found);
   r_buffer_unref (buf);
   r_http_response_unref (res);
 }

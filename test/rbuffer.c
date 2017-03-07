@@ -54,7 +54,7 @@ RTEST (rbuffer, new_dup, RTEST_FAST)
   r_assert_cmpuint (r_buffer_get_offset (buf), ==, 0);
   r_assert (r_buffer_is_all_writable (buf));
 
-  r_assert_cmpint (r_buffer_memcmp (buf, 0, testdata, sizeof (testdata)), ==, 0);
+  r_assert_cmpbufmem (buf, 0, -1, ==, testdata, sizeof (testdata));
 
   r_buffer_unref (buf);
 }
@@ -1025,25 +1025,24 @@ RTEST (rbuffer, replace_byte_range, RTEST_FAST)
   r_assert (r_buffer_mem_append (buf, mem));
   r_mem_unref (mem);
   r_assert_cmpuint (r_buffer_mem_count (buf), ==, 4);
-  r_assert_cmpuint (r_buffer_get_size (buf), ==, 256 + 3 * 512);
 
-  r_assert_cmpint (r_buffer_memcmp (buf, 0, data[0], 256), ==, 0);
-  r_assert_cmpint (r_buffer_memcmp (buf, 256, data[1], 512), ==, 0);
-  r_assert_cmpint (r_buffer_memcmp (buf, 768, data[2], 512), ==, 0);
-  r_assert_cmpint (r_buffer_memcmp (buf, 1280, data[3], 512), ==, 0);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, 256 + 3 * 512);
+  r_assert_cmpbufmem (buf,    0, 256, ==, data[0], 256);
+  r_assert_cmpbufmem (buf,  256, 512, ==, data[1], 512);
+  r_assert_cmpbufmem (buf,  768, 512, ==, data[2], 512);
+  r_assert_cmpbufmem (buf, 1280,  -1, ==, data[3], 512);
 
   r_assert_cmpptr ((from = r_buffer_new_take (data[4], 512)), !=, NULL);
-
   r_assert_cmpptr ((out = r_buffer_replace_byte_range (buf, 512, 512, from)), !=, NULL);
   r_buffer_unref (from);
   r_buffer_unref (buf);
 
   r_assert_cmpuint (r_buffer_get_size (out), ==, 256 + 256 + 512 + 256 + 512);
-  r_assert_cmpint (r_buffer_memcmp (out, 0, data[0], 256), ==, 0);
-  r_assert_cmpint (r_buffer_memcmp (out, 256, data[1], 256), ==, 0);
-  r_assert_cmpint (r_buffer_memcmp (out, 512, data[4], 512), ==, 0);
-  r_assert_cmpint (r_buffer_memcmp (out, 1024, data[2], 256), ==, 0);
-  r_assert_cmpint (r_buffer_memcmp (out, 1280, data[3], 512), ==, 0);
+  r_assert_cmpbufmem (out,    0, 256, ==, data[0], 256);
+  r_assert_cmpbufmem (out,  256, 256, ==, data[1], 256);
+  r_assert_cmpbufmem (out,  512, 512, ==, data[4], 512);
+  r_assert_cmpbufmem (out, 1024, 256, ==, data[2], 256);
+  r_assert_cmpbufmem (out, 1280,  -1, ==, data[3], 512);
 
   r_buffer_unref (out);
 }

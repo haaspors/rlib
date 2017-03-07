@@ -982,7 +982,7 @@ RTEST (rtls, dtls_encrypt, RTEST_FAST)
   r_assert_cmpptr ((encbuf = r_dtls_encrypt_buffer (buf, cipher, iv, hmac)), !=, NULL);
   r_buffer_unref (buf);
 
-  r_assert_cmpint (r_buffer_memcmp (encbuf, 0, expected, sizeof (expected)), ==, 0);
+  r_assert_cmpbufmem (encbuf, 0, -1, ==, expected, sizeof (expected));
 
   r_assert_cmpint (r_tls_parser_init_buffer (&parser, encbuf), ==, R_TLS_ERROR_OK);
   r_buffer_unref (encbuf);

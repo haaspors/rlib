@@ -139,7 +139,7 @@ RTEST (rrtp, write_plain_hdr_pcmu_payload, RTEST_FAST)
   r_assert (r_rtp_buffer_unmap (&rtp, buf));
 
   r_assert_cmpuint (r_buffer_get_size (buf), ==, sizeof (pkt_rtp_pcmu));
-  r_assert_cmpint (r_buffer_memcmp (buf, 0, pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu)), ==, 0);
+  r_assert_cmpbufmem (buf, 0, -1, ==, pkt_rtp_pcmu, sizeof (pkt_rtp_pcmu));
   r_buffer_unref (buf);
 }
 RTEST_END;

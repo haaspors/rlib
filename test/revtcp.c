@@ -70,7 +70,7 @@ RTEST (revtcp, listen_connect_accept_send_recv, RTEST_FAST | RTEST_SYSTEM)
     r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE), >, 0);
   r_assert (r_ev_tcp_recv_stop (servcli));
 
-  r_assert_cmpint (r_buffer_memcmp (buf, 0, "foobar", 6), ==, 0);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "foobar");
   r_buffer_unref (buf);
 
   r_assert (r_ev_tcp_close (client, NULL, NULL, NULL));

@@ -40,6 +40,33 @@ RTEST (rtest, asserts, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtest, assert_cmpbuf, RTEST_FAST)
+{
+  RBuffer * a, * b, * c;
+
+  r_assert_cmpptr ((a = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("Hello"))), !=, NULL);
+  r_assert_cmpptr ((b = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("Foobar"))), !=, NULL);
+  r_assert_cmpptr ((c = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("Foo"))), !=, NULL);
+
+  r_assert_cmpbuf (a, 0, ==, a, 0, 5);
+  r_assert_cmpbuf (a, 0, !=, b, 0, 5);
+  r_assert_cmpbuf (a, 0, ==, b, 0, 0);
+
+  r_assert_cmpbufsize (a, 0, 5, ==, a, 0, 5);
+  r_assert_cmpbufsize (a, 0, -1, ==, a, 0, -1);
+  r_assert_cmpbufsize (a, 0, 3, !=, a, 0, 5);
+  r_assert_cmpbufsize (a, 0, -1, !=, b, 0, -1);
+  r_assert_cmpbufsize (b, 0, 3, ==, c, 0, 3);
+
+  r_assert_cmpbufmem (b, 0, -1, ==, "Foobar", 6);
+  r_assert_cmpbufmem (b, 0, -1, !=, "Hello", 5);
+
+  r_buffer_unref (a);
+  r_buffer_unref (b);
+  r_buffer_unref (c);
+}
+RTEST_END;
+
 RTEST (rtest, sym_spacing, RTEST_FAST)
 {
   const RTest * test1 = &_RTEST_DATA_NAME (rtest, asserts);
@@ -81,7 +108,7 @@ RTEST (rtest, local_tests_filtered, RTEST_FAST)
   r_assert_cmpptr (r_slist_data (res), ==, &_RTEST_DATA_NAME (rtest, local_tests_filtered));
   r_slist_destroy (res);
   r_assert_cmpptr ((res = r_test_get_local_tests_filtered ("/rtest/*", &count)), !=, NULL);
-  r_assert_cmpuint (count, ==, 5);
+  r_assert_cmpuint (count, ==, 6);
   r_slist_destroy (res);
 }
 RTEST_END;

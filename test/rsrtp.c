@@ -92,9 +92,7 @@ RTEST (rsrtp, decrypt_aes_128_cm, RTEST_FAST)
 
   r_assert_cmpptr ((res = r_srtp_decrypt_rtp (ctx, buf, &err)), !=, NULL);
   r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
-  r_assert_cmpuint (r_buffer_get_size (res), ==, sizeof (pkt_rtp_opus));
-  r_assert_cmpint (r_buffer_memcmp (res, 0, pkt_rtp_opus,
-        sizeof (pkt_rtp_opus)), ==, 0);
+  r_assert_cmpbufmem (res, 0, -1, ==, pkt_rtp_opus, sizeof (pkt_rtp_opus));
   r_buffer_unref (res);
 
   /* Replaying the packet should yield R_SRTP_ERROR_REPLAYED */
@@ -121,9 +119,7 @@ RTEST (rsrtp, encrypt_aes_128_cm, RTEST_FAST)
 
   r_assert_cmpptr ((res = r_srtp_encrypt_rtp (ctx, buf, &err)), !=, NULL);
   r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
-  r_assert_cmpuint (r_buffer_get_size (res), ==, sizeof (pkt_srtp_aes_128_cm_opus));
-  r_assert_cmpint (r_buffer_memcmp (res, 0, pkt_srtp_aes_128_cm_opus,
-        sizeof (pkt_srtp_aes_128_cm_opus)), ==, 0);
+  r_assert_cmpbufmem (res, 0, -1, ==, pkt_srtp_aes_128_cm_opus, sizeof (pkt_srtp_aes_128_cm_opus));
   r_buffer_unref (res);
 
   /* Replaying the packet should yield R_SRTP_ERROR_REPLAYED */
@@ -155,7 +151,7 @@ RTEST (rsrtcp, decrypt_aes_128_cm, RTEST_FAST)
 
   r_assert_cmpptr ((res = r_srtp_decrypt_rtcp (ctx, buf, &err)), !=, NULL);
   r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
-  r_assert_cmpint (r_buffer_memcmp (res, 0, pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes)), ==, 0);
+  r_assert_cmpbufmem (res, 0, -1, ==, pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes));
 
 
   r_assert (r_rtcp_buffer_map (&rtcp, res, R_MEM_MAP_READ));
@@ -207,9 +203,7 @@ RTEST (rsrtcp, encrypt_aes_128_cm, RTEST_FAST)
 
   r_assert_cmpptr ((res = r_srtp_encrypt_rtcp (ctx, buf, &err)), !=, NULL);
   r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
-  r_assert_cmpuint (r_buffer_get_size (res), ==, sizeof (pkt_srtcp_aes_128_cm));
-  r_assert_cmpint (r_buffer_memcmp (res, 0, pkt_srtcp_aes_128_cm,
-        sizeof (pkt_srtcp_aes_128_cm)), ==, 0);
+  r_assert_cmpbufmem (res, 0, -1, ==, pkt_srtcp_aes_128_cm, sizeof (pkt_srtcp_aes_128_cm));
   r_buffer_unref (res);
 
   r_buffer_unref (buf);
