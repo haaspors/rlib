@@ -22,17 +22,17 @@
 #include <rlib/rmem.h>
 
 static void
-r_sdp_timing_clear (RSdpTimingBuf * time)
+r_sdp_time_clear (RSdpTimeBuf * time)
 {
   r_free (time->repeat); time->repeat = NULL;
 }
 
 static void
-r_sdp_media_clear (RSdpMediaBuf * media)
+r_sdp_media_buf_clear (RSdpMediaBuf * media)
 {
   r_free (media->fmt); media->fmt = NULL;
-  r_free (media->connection); media->connection = NULL;
-  r_free (media->bandwidth); media->bandwidth = NULL;
+  r_free (media->conn); media->conn = NULL;
+  r_free (media->bw); media->bw = NULL;
   r_free (media->attrib); media->attrib = NULL;
 }
 
@@ -43,14 +43,14 @@ r_sdp_buf_clear (RSdpBuf * sdp)
 
   r_free (sdp->email); sdp->email = NULL;
   r_free (sdp->phone); sdp->phone = NULL;
-  r_free (sdp->bandwidth); sdp->bandwidth = NULL;
+  r_free (sdp->bw); sdp->bw = NULL;
   for (i = 0; i < sdp->tcount; i++)
-    r_sdp_timing_clear (&sdp->timing[i]);
-  r_free (sdp->timing); sdp->timing = NULL;
+    r_sdp_time_clear (&sdp->time[i]);
+  r_free (sdp->time); sdp->time = NULL;
   r_free (sdp->zone); sdp->zone = NULL;
   r_free (sdp->attrib); sdp->attrib = NULL;
   for (i = 0; i < sdp->mcount; i++)
-    r_sdp_media_clear (&sdp->media[i]);
+    r_sdp_media_buf_clear (&sdp->media[i]);
   r_free (sdp->media); sdp->media = NULL;
 }
 
@@ -165,29 +165,29 @@ r_sdp_connection_parse (RSdpConnectionBuf * conn, rchar * str, rsize size)
 }
 
 static RSdpResult
-r_sdp_bandwidth_parse (RStrKV * bandwidth, rchar * str, rsize size)
+r_sdp_bandwidth_parse (RStrKV * bw, rchar * str, rsize size)
 {
-  return r_str_kv_parse (bandwidth, str, size, ":", NULL) == R_STR_PARSE_OK ?
+  return r_str_kv_parse (bw, str, size, ":", NULL) == R_STR_PARSE_OK ?
     R_SDP_OK : R_SDP_BAD_DATA;
 }
 
 static RSdpResult
-r_sdp_timing_parse (RSdpTimingBuf * timing, rchar * str, rsize size)
+r_sdp_time_parse (RSdpTimeBuf * time, rchar * str, rsize size)
 {
   rchar * p = str;
   rssize s;
 
-  timing->rcount = 0;
-  timing->repeat = NULL;
+  time->rcount = 0;
+  time->repeat = NULL;
 
   if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), ' ')) < 0)
     return R_SDP_BAD_DATA;
-  timing->start.str = p;
-  timing->start.size = (rsize)s;
+  time->start.str = p;
+  time->start.size = (rsize)s;
 
   p = (rchar *)r_str_lwstrip (p + s);
-  timing->stop.str = p;
-  timing->stop.size = size - RPOINTER_TO_SIZE (p - str);
+  time->stop.str = p;
+  time->stop.size = size - RPOINTER_TO_SIZE (p - str);
 
   return R_SDP_OK;
 }
@@ -281,8 +281,8 @@ r_sdp_media_parse (RSdpMediaBuf * media, RStrChunk * chunk, RStrChunk * line)
   while (ret == R_SDP_OK &&
       r_sdp_message_line_parse_value (&tmp, line, 'c') == R_SDP_OK) {
     media->ccount++;
-    media->connection = r_realloc (media->connection, media->ccount * sizeof (RSdpConnectionBuf));
-    if ((ret = r_sdp_connection_parse (&media->connection[media->ccount - 1], tmp.str, tmp.size)) != R_SDP_OK)
+    media->conn = r_realloc (media->conn, media->ccount * sizeof (RSdpConnectionBuf));
+    if ((ret = r_sdp_connection_parse (&media->conn[media->ccount - 1], tmp.str, tmp.size)) != R_SDP_OK)
       goto done;
     if ((ret = r_sdp_parse_next_valid_line (chunk, line)) != R_SDP_OK)
       goto done;
@@ -292,8 +292,8 @@ r_sdp_media_parse (RSdpMediaBuf * media, RStrChunk * chunk, RStrChunk * line)
   while (ret == R_SDP_OK &&
       r_sdp_message_line_parse_value (&tmp, line, 'b') == R_SDP_OK) {
     media->bcount++;
-    media->bandwidth = r_realloc (media->bandwidth, media->bcount * sizeof (RStrKV));
-    if ((ret = r_sdp_bandwidth_parse (&media->bandwidth[media->bcount - 1], tmp.str, tmp.size)) != R_SDP_OK)
+    media->bw = r_realloc (media->bw, media->bcount * sizeof (RStrKV));
+    if ((ret = r_sdp_bandwidth_parse (&media->bw[media->bcount - 1], tmp.str, tmp.size)) != R_SDP_OK)
       goto done;
     if ((ret = r_sdp_parse_next_valid_line (chunk, line)) != R_SDP_OK)
       goto done;
@@ -400,7 +400,7 @@ r_sdp_buffer_map (RSdpBuf * sdp, RBuffer * buf)
   /* c= OPTIONAL */
   if (ret == R_SDP_OK &&
       r_sdp_message_line_parse_value (&tmp, &line, 'c') == R_SDP_OK) {
-    if ((ret = r_sdp_connection_parse (&sdp->connection, tmp.str, tmp.size)) != R_SDP_OK)
+    if ((ret = r_sdp_connection_parse (&sdp->conn, tmp.str, tmp.size)) != R_SDP_OK)
       goto error;
     if ((ret = r_sdp_parse_next_valid_line (&chunk, &line)) > R_SDP_OK)
       goto error;
@@ -410,8 +410,8 @@ r_sdp_buffer_map (RSdpBuf * sdp, RBuffer * buf)
   while (ret == R_SDP_OK &&
       r_sdp_message_line_parse_value (&tmp, &line, 'b') == R_SDP_OK) {
     sdp->bcount++;
-    sdp->bandwidth = r_realloc (sdp->bandwidth, sdp->bcount * sizeof (RStrKV));
-    if ((ret = r_sdp_bandwidth_parse (&sdp->bandwidth[sdp->bcount - 1], tmp.str, tmp.size)) != R_SDP_OK)
+    sdp->bw = r_realloc (sdp->bw, sdp->bcount * sizeof (RStrKV));
+    if ((ret = r_sdp_bandwidth_parse (&sdp->bw[sdp->bcount - 1], tmp.str, tmp.size)) != R_SDP_OK)
       goto error;
     if ((ret = r_sdp_parse_next_valid_line (&chunk, &line)) > R_SDP_OK)
       goto error;
@@ -420,19 +420,19 @@ r_sdp_buffer_map (RSdpBuf * sdp, RBuffer * buf)
   /* t= OPTIONAL */
   while (ret == R_SDP_OK &&
       r_sdp_message_line_parse_value (&tmp, &line, 't') == R_SDP_OK) {
-    RSdpTimingBuf * timing;
+    RSdpTimeBuf * time;
     sdp->tcount++;
-    sdp->timing = r_realloc (sdp->timing, sdp->tcount * sizeof (RSdpTimingBuf));
-    timing = &sdp->timing[sdp->tcount - 1];
-    if ((ret = r_sdp_timing_parse (timing, tmp.str, tmp.size)) != R_SDP_OK)
+    sdp->time = r_realloc (sdp->time, sdp->tcount * sizeof (RSdpTimeBuf));
+    time = &sdp->time[sdp->tcount - 1];
+    if ((ret = r_sdp_time_parse (time, tmp.str, tmp.size)) != R_SDP_OK)
       goto error;
     if ((ret = r_sdp_parse_next_valid_line (&chunk, &line)) > R_SDP_OK)
       goto error;
     while (ret == R_SDP_OK &&
         r_sdp_message_line_parse_value (&tmp, &line, 't') == R_SDP_OK) {
-      timing->rcount++;
-      timing->repeat = r_realloc (timing->repeat, timing->rcount * sizeof (RStrChunk));
-      timing->repeat[timing->rcount - 1] = tmp;
+      time->rcount++;
+      time->repeat = r_realloc (time->repeat, time->rcount * sizeof (RStrChunk));
+      time->repeat[time->rcount - 1] = tmp;
       if ((ret = r_sdp_parse_next_valid_line (&chunk, &line)) > R_SDP_OK)
         goto error;
     }

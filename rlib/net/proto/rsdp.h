@@ -76,11 +76,11 @@ typedef struct {
   RStrChunk stop;
   rsize rcount;
   RStrChunk * repeat;
-} RSdpTimingBuf;
-#define r_sdp_timing_buf_start(time)                r_str_chunk_dup (&(time)->start)
-#define r_sdp_timing_buf_stop(time)                 r_str_chunk_dup (&(time)->stop)
-#define r_sdp_timing_buf_repeat_count(time)         (time)->rcount
-#define r_sdp_timing_buf_repeat(time, idx)          r_str_chunk_dup (&(time)->repeat[idx])
+} RSdpTimeBuf;
+#define r_sdp_time_buf_start(time)                  r_str_chunk_dup (&(time)->start)
+#define r_sdp_time_buf_stop(time)                   r_str_chunk_dup (&(time)->stop)
+#define r_sdp_time_buf_repeat_count(time)           (time)->rcount
+#define r_sdp_time_buf_repeat(time, idx)            r_str_chunk_dup (&(time)->repeat[idx])
 
 R_API RSdpResult r_sdp_attrib_check (const RStrKV * attrib, rsize acount,
     const rchar * field, rssize fsize);
@@ -96,9 +96,9 @@ typedef struct {
   RStrChunk * fmt;
   RStrChunk info;
   rsize ccount;
-  RSdpConnectionBuf * connection;
+  RSdpConnectionBuf * conn;
   rsize bcount;
-  RStrKV * bandwidth;
+  RStrKV * bw;
   RStrKV key;
   rsize acount;
   RStrKV * attrib;
@@ -113,14 +113,14 @@ typedef struct {
 R_API rssize r_sdp_media_buf_find_fmt (const RSdpMediaBuf * media, const rchar * fmt, rssize size);
 #define r_sdp_media_buf_info(media)                 r_str_chunk_dup (&(media)->info)
 #define r_sdp_media_buf_conn_count(media)           (media)->ccount
-#define r_sdp_media_buf_conn_nettype(media)         r_sdp_connection_buf_nettype (&(media)->connection)
-#define r_sdp_media_buf_conn_addrtype(media)        r_sdp_connection_buf_addrtype (&(media)->connection)
-#define r_sdp_media_buf_conn_addr(media)            r_sdp_connection_buf_addr (&(media)->connection)
-#define r_sdp_media_buf_conn_ttl(media)             r_sdp_connection_buf_ttl (&(media)->connection)
-#define r_sdp_media_buf_conn_addrcount(media)       r_sdp_connection_buf_addrcount (&(media)->connection)
+#define r_sdp_media_buf_conn_nettype(media, idx)    r_sdp_connection_buf_nettype (&(media)->conn[idx])
+#define r_sdp_media_buf_conn_addrtype(media, idx)   r_sdp_connection_buf_addrtype (&(media)->conn[idx])
+#define r_sdp_media_buf_conn_addr(media, idx)       r_sdp_connection_buf_addr (&(media)->conn[idx])
+#define r_sdp_media_buf_conn_ttl(media, idx)        r_sdp_connection_buf_ttl (&(media)->conn[idx])
+#define r_sdp_media_buf_conn_addrcount(media, idx)  r_sdp_connection_buf_addrcount (&(media)->conn[idx])
 #define r_sdp_media_buf_bandwidth_count(media)      (media)->bcount
-#define r_sdp_media_buf_bandwidth_type(media)       r_str_kv_dup_key (&(media)->bandwidth[idx])
-#define r_sdp_media_buf_bandwidth_kbps(media)       r_str_to_uint ((media)->bandwidth[idx].val.str, NULL, 10, NULL)
+#define r_sdp_media_buf_bandwidth_type(media, idx)  r_str_kv_dup_key (&(media)->bw[idx])
+#define r_sdp_media_buf_bandwidth_kbps(media, idx)  r_str_to_uint ((media)->bw[idx].val.str, NULL, 10, NULL)
 /* FIXME: bw based CT, AS, TIAS */
 #define r_sdp_media_buf_key_method(media)           r_str_kv_dup_key (&(media)->key)
 #define r_sdp_media_buf_key_data(media)             r_str_kv_dup_value (&(media)->key)
@@ -163,11 +163,11 @@ typedef struct {
   RStrChunk * email;
   rsize pcount;
   RStrChunk * phone;
-  RSdpConnectionBuf connection;
+  RSdpConnectionBuf conn;
   rsize bcount;
-  RStrKV * bandwidth;
+  RStrKV * bw;
   rsize tcount;
-  RSdpTimingBuf * timing;
+  RSdpTimeBuf * time;
   rsize zcount;
   RStrKV * zone;
   RStrKV key;
@@ -197,7 +197,7 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_email_count(buf)                  (buf)->ecount
 #define r_sdp_buf_phone_count(buf)                  (buf)->pcount
 #define r_sdp_buf_bandwidth_count(buf)              (buf)->bcount
-#define r_sdp_buf_timing_count(buf)                 (buf)->tcount
+#define r_sdp_buf_time_count(buf)                   (buf)->tcount
 #define r_sdp_buf_time_zone_count(buf)              (buf)->zcount
 #define r_sdp_buf_attrib_count(buf)                 (buf)->acount
 #define r_sdp_buf_media_count(buf)                  (buf)->mcount
@@ -205,20 +205,20 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_email(buf, idx)                   r_str_chunk_dup (&(buf)->email[idx])
 #define r_sdp_buf_phone(buf, idx)                   r_str_chunk_dup (&(buf)->phone[idx])
 
-#define r_sdp_buf_conn_nettype(buf)                 r_sdp_connection_buf_nettype (&(buf)->connection)
-#define r_sdp_buf_conn_addrtype(buf)                r_sdp_connection_buf_addrtype (&(buf)->connection)
-#define r_sdp_buf_conn_addr(buf)                    r_sdp_connection_buf_addr (&(buf)->connection)
-#define r_sdp_buf_conn_ttl(buf)                     r_sdp_connection_buf_ttl (&(buf)->connection)
-#define r_sdp_buf_conn_addrcount(buf)               r_sdp_connection_buf_addrcount (&(buf)->connection)
+#define r_sdp_buf_conn_nettype(buf)                 r_sdp_connection_buf_nettype (&(buf)->conn)
+#define r_sdp_buf_conn_addrtype(buf)                r_sdp_connection_buf_addrtype (&(buf)->conn)
+#define r_sdp_buf_conn_addr(buf)                    r_sdp_connection_buf_addr (&(buf)->conn)
+#define r_sdp_buf_conn_ttl(buf)                     r_sdp_connection_buf_ttl (&(buf)->conn)
+#define r_sdp_buf_conn_addrcount(buf)               r_sdp_connection_buf_addrcount (&(buf)->conn)
 
-#define r_sdp_buf_bandwidth_type(buf, idx)          r_str_kv_dup_key (&(buf)->bandwidth[idx])
-#define r_sdp_buf_bandwidth_kbps(buf, idx)          r_str_to_uint ((buf)->bandwidth[idx].val.str, NULL, 10, NULL)
+#define r_sdp_buf_bandwidth_type(buf, idx)          r_str_kv_dup_key (&(buf)->bw[idx])
+#define r_sdp_buf_bandwidth_kbps(buf, idx)          r_str_to_uint ((buf)->bw[idx].val.str, NULL, 10, NULL)
 /* FIXME: bw based CT, AS, TIAS */
 
-#define r_sdp_buf_timing_start(buf, idx)            r_sdp_timing_buf_start (&(buf)->timing[idx])
-#define r_sdp_buf_timing_stop(buf, idx)             r_sdp_timing_buf_stop (&(buf)->timing[idx])
-#define r_sdp_buf_timing_repeat_count(buf, idx)     r_sdp_timing_buf_repeat_count (&(buf)->timing[idx])
-#define r_sdp_buf_timing_repeat(buf, idx, ridx)     r_sdp_timing_buf_repeat (&(buf)->timing[idx], ridx)
+#define r_sdp_buf_time_start(buf, idx)              r_sdp_time_buf_start (&(buf)->time[idx])
+#define r_sdp_buf_time_stop(buf, idx)               r_sdp_time_buf_stop (&(buf)->time[idx])
+#define r_sdp_buf_time_repeat_count(buf, idx)       r_sdp_time_buf_repeat_count (&(buf)->time[idx])
+#define r_sdp_buf_time_repeat(buf, idx, ridx)       r_sdp_time_buf_repeat (&(buf)->time[idx], ridx)
 
 #define r_sdp_buf_zone_time_str(buf, idx)           r_str_kv_dup_key (&(buf)->zone[idx])
 #define r_sdp_buf_zone_time_uint(buf, idx)          r_str_to_uint ((buf)->zone[idx].key.str, NULL, 10, NULL)
@@ -232,27 +232,27 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_attrib(buf, s, f, fsize)          r_sdp_attrib ((buf)->attrib, (buf)->acount, s, f, fsize)
 
 /* media lines */
-#define r_sdp_buf_media_type(buf, idx)              r_sdp_media_buf_type (&(buf)->media[idx])
-#define r_sdp_buf_media_port(buf, idx)              r_sdp_media_buf_port (&(buf)->media[idx])
-#define r_sdp_buf_media_portcount(buf, idx)         r_sdp_media_buf_portcount (&(buf)->media[idx])
-#define r_sdp_buf_media_proto(buf, idx)             r_sdp_media_buf_proto (&(buf)->media[idx])
-#define r_sdp_buf_media_fmt_count(buf, idx)         r_sdp_media_buf_fmt_count (&(buf)->media[idx])
-#define r_sdp_buf_media_fmt(buf, idx, fidx)         r_sdp_media_buf_fmt (&(buf)->media[idx], fidx)
-#define r_sdp_buf_media_fmt_uint(buf, idx, fidx)    r_sdp_media_buf_fmt_uint (&(buf)->media[idx], fidx)
-#define r_sdp_buf_media_info(buf, idx)              r_sdp_media_buf_info (&(buf)->media[idx])
-#define r_sdp_buf_media_conn_count(buf, idx)        r_sdp_media_buf_conn_count (&(buf)->media[idx])
-#define r_sdp_buf_media_conn_nettype(buf, idx)      r_sdp_media_buf_conn_nettype (&(buf)->media[idx])
-#define r_sdp_buf_media_conn_addrtype(buf, idx)     r_sdp_media_buf_conn_addrtype (&(buf)->media[idx])
-#define r_sdp_buf_media_conn_addr(buf, idx)         r_sdp_media_buf_conn_addr (&(buf)->media[idx])
-#define r_sdp_buf_media_conn_ttl(buf, idx)          r_sdp_media_buf_conn_ttl (&(buf)->media[idx])
-#define r_sdp_buf_media_conn_addrcount(buf, idx)    r_sdp_media_buf_conn_addrcount (&(buf)->media[idx])
-#define r_sdp_buf_media_bandwidth_count(buf, idx)   r_sdp_media_buf_bandwidth_count (&(buf)->media[idx])
-#define r_sdp_buf_media_bandwidth_type(buf, idx)    r_sdp_media_buf_bandwidth_type (&(buf)->media[idx])
-#define r_sdp_buf_media_bandwidth_kbps(buf, idx)    r_sdp_media_buf_bandwidth_kbps (&(buf)->media[idx])
+#define r_sdp_buf_media_type(buf, idx)                  r_sdp_media_buf_type (&(buf)->media[idx])
+#define r_sdp_buf_media_port(buf, idx)                  r_sdp_media_buf_port (&(buf)->media[idx])
+#define r_sdp_buf_media_portcount(buf, idx)             r_sdp_media_buf_portcount (&(buf)->media[idx])
+#define r_sdp_buf_media_proto(buf, idx)                 r_sdp_media_buf_proto (&(buf)->media[idx])
+#define r_sdp_buf_media_fmt_count(buf, idx)             r_sdp_media_buf_fmt_count (&(buf)->media[idx])
+#define r_sdp_buf_media_fmt(buf, idx, fidx)             r_sdp_media_buf_fmt (&(buf)->media[idx], fidx)
+#define r_sdp_buf_media_fmt_uint(buf, idx, fidx)        r_sdp_media_buf_fmt_uint (&(buf)->media[idx], fidx)
+#define r_sdp_buf_media_info(buf, idx)                  r_sdp_media_buf_info (&(buf)->media[idx])
+#define r_sdp_buf_media_conn_count(buf, idx)            r_sdp_media_buf_conn_count (&(buf)->media[idx])
+#define r_sdp_buf_media_conn_nettype(buf, idx, cidx)    r_sdp_media_buf_conn_nettype (&(buf)->media[idx], cidx)
+#define r_sdp_buf_media_conn_addrtype(buf, idx, cidx)   r_sdp_media_buf_conn_addrtype (&(buf)->media[idx], cidx)
+#define r_sdp_buf_media_conn_addr(buf, idx, cidx)       r_sdp_media_buf_conn_addr (&(buf)->media[idx], cidx)
+#define r_sdp_buf_media_conn_ttl(buf, idx, cidx)        r_sdp_media_buf_conn_ttl (&(buf)->media[idx], cidx)
+#define r_sdp_buf_media_conn_addrcount(buf, idx, cidx)  r_sdp_media_buf_conn_addrcount (&(buf)->media[idx], cidx)
+#define r_sdp_buf_media_bandwidth_count(buf, idx)       r_sdp_media_buf_bandwidth_count (&(buf)->media[idx])
+#define r_sdp_buf_media_bandwidth_type(buf, idx, bidx)  r_sdp_media_buf_bandwidth_type (&(buf)->media[idx], bidx)
+#define r_sdp_buf_media_bandwidth_kbps(buf, idx, bidx)  r_sdp_media_buf_bandwidth_kbps (&(buf)->media[idx], bidx)
 /* FIXME: bw based CT, AS, TIAS */
-#define r_sdp_buf_media_key_method(buf, idx)        r_sdp_media_buf_key_method (&(buf)->media[idx])
-#define r_sdp_buf_media_key_data(buf, idx)          r_sdp_media_buf_key_data (&(buf)->media[idx])
-#define r_sdp_buf_media_attrib_count(buf, idx)      r_sdp_media_buf_attrib_count (&(buf)->media[idx])
+#define r_sdp_buf_media_key_method(buf, idx)            r_sdp_media_buf_key_method (&(buf)->media[idx])
+#define r_sdp_buf_media_key_data(buf, idx)              r_sdp_media_buf_key_data (&(buf)->media[idx])
+#define r_sdp_buf_media_attrib_count(buf, idx)          r_sdp_media_buf_attrib_count (&(buf)->media[idx])
 #define r_sdp_buf_media_has_attrib(buf, idx, f, fsize)  r_sdp_media_buf_has_attrib (&(buf)->media[idx], f, fsize)
 #define r_sdp_buf_media_attrib(buf, idx, s, f, fsize)   r_sdp_media_buf_attrib (&(buf)->media[idx], s, f, fsize)
 #define r_sdp_buf_media_rtpmap_for_fmt(buf, idx, fmt, fsize, attrib) \
