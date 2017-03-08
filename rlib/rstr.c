@@ -1200,7 +1200,7 @@ r_strsplit (const rchar * str, const rchar * delim, rsize max)
 }
 
 int
-r_str_chunk_cmp (RStrChunk * buf, const rchar * str, rssize size)
+r_str_chunk_cmp (const RStrChunk * buf, const rchar * str, rssize size)
 {
   int ret;
   if (size < 0) size = (rssize)r_strlen (str);
