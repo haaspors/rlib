@@ -381,6 +381,9 @@ RTEST (rstr, to_int32_base0, RTEST_FAST)
   r_assert_cmpint (r_str_to_int32 ("0", &e, 0, &res), ==, 0);
   r_assert_cmpint (res, ==, R_STR_PARSE_OK);
   r_assert_cmpstr (e, ==, "");
+  r_assert_cmpint (r_str_to_int32 ("0", &e, 10, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr (e, ==, "");
   r_assert_cmpint (r_str_to_int32 ("-4200000e", &e, 0, &res), ==, -4200000);
   r_assert_cmpint (res, ==, R_STR_PARSE_OK);
   r_assert_cmpstr (e, ==, "e");
