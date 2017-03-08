@@ -20,6 +20,889 @@
 #include <rlib/net/proto/rsdp.h>
 
 #include <rlib/rmem.h>
+#include <rlib/rptrarray.h>
+#include <rlib/rstring.h>
+
+typedef struct {
+  rchar * nettype;
+  rchar * addrtype;
+  rchar * addr;
+  ruint ttl;
+  ruint addrcount;
+} RSdpConn;
+
+typedef struct {
+  ruint64 start, stop;
+  RPtrArray * repeat;
+} RSdpTime;
+
+typedef struct {
+  RStrKV kv;
+  rchar data[0];
+} RSdpAttrib;
+
+struct _RSdpMedia {
+  RRef ref;
+
+  rchar * type;
+  ruint port;
+  ruint portcount;
+  rchar * proto;
+
+  RPtrArray * fmt;
+
+  rchar * info;
+  RPtrArray * conn;
+  RPtrArray * bw;
+  RSdpAttrib * key;
+  RPtrArray * attrib;
+};
+
+struct _RSdpMsg {
+  RRef ref;
+
+  rchar * ver;
+  rchar * username;
+  rchar * sid;
+  rchar * sver;
+  rchar * origin_nt;
+  rchar * origin_at;
+  rchar * origin_addr;
+  rchar * name;
+  rchar * info;
+  RUri * uri;
+  RPtrArray * email;
+  RPtrArray * phone;
+  RSdpConn conn;
+  RPtrArray * bw;
+  RPtrArray * time;
+  RPtrArray * zone;
+  RSdpAttrib * key;
+  RPtrArray * attrib;
+  RPtrArray * media;
+};
+
+static void
+r_sdp_msg_free (RSdpMsg * msg)
+{
+  r_free (msg->ver);
+  r_free (msg->username);
+  r_free (msg->sid);
+  r_free (msg->sver);
+  r_free (msg->origin_nt);
+  r_free (msg->origin_at);
+  r_free (msg->origin_addr);
+  r_free (msg->name);
+  r_free (msg->info);
+  if (msg->uri != NULL)
+    r_uri_unref (msg->uri);
+  r_ptr_array_unref (msg->email);
+  r_ptr_array_unref (msg->phone);
+  r_free (msg->conn.nettype);
+  r_free (msg->conn.addrtype);
+  r_free (msg->conn.addr);
+  r_ptr_array_unref (msg->bw);
+  r_ptr_array_unref (msg->time);
+  r_ptr_array_unref (msg->zone);
+  r_free (msg->key);
+  r_ptr_array_unref (msg->attrib);
+  r_ptr_array_unref (msg->media);
+  r_free (msg);
+}
+
+RSdpMsg *
+r_sdp_msg_new (void)
+{
+  RSdpMsg * ret;
+
+  if ((ret = r_mem_new0 (RSdpMsg)) != NULL) {
+    r_ref_init (ret, r_sdp_msg_free);
+
+    ret->email = r_ptr_array_new ();
+    ret->phone = r_ptr_array_new ();
+    ret->bw = r_ptr_array_new ();
+    ret->time = r_ptr_array_new ();
+    ret->zone = r_ptr_array_new ();
+    ret->attrib = r_ptr_array_new ();
+    ret->media = r_ptr_array_new ();
+  }
+
+  return ret;
+}
+
+RSdpMsg *
+r_sdp_msg_new_from_sdp_buffer (const RSdpBuf * buf)
+{
+  RSdpMsg * ret;
+
+  if ((ret = r_sdp_msg_new ()) != NULL) {
+    RUri * uri;
+    rsize i, j;
+
+    r_sdp_msg_set_version (ret, buf->ver.str, buf->ver.size);
+    r_sdp_msg_set_originator (ret,
+        buf->orig.username.str, buf->orig.username.size,
+        buf->orig.sess_id.str, buf->orig.sess_id.size,
+        buf->orig.sess_version.str, buf->orig.sess_version.size,
+        buf->orig.nettype.str, buf->orig.nettype.size,
+        buf->orig.addrtype.str, buf->orig.addrtype.size,
+        buf->orig.addr.str, buf->orig.addr.size);
+    r_sdp_msg_set_session_name (ret,
+        buf->session_name.str, buf->session_name.size);
+    r_sdp_msg_set_session_info (ret,
+        buf->session_info.str, buf->session_info.size);
+    if (buf->uri.str != NULL &&
+        (uri = r_uri_new_escaped (buf->uri.str, buf->uri.size)) != NULL) {
+      r_sdp_msg_set_uri (ret, uri);
+      r_uri_unref (uri);
+    }
+    for (i = 0; i < buf->ecount; i++)
+      r_sdp_msg_add_email (ret, buf->email[i].str, buf->email[i].size);
+    for (i = 0; i < buf->pcount; i++)
+      r_sdp_msg_add_phone (ret, buf->phone[i].str, buf->phone[i].size);
+    if (buf->conn.addrcount > 0) {
+      r_sdp_msg_set_connection_full (ret,
+          buf->conn.nettype.str, buf->conn.nettype.size,
+          buf->conn.addrtype.str, buf->conn.addrtype.size,
+          buf->conn.addr.str, buf->conn.addr.size,
+          buf->conn.ttl, buf->conn.addrcount);
+    }
+    for (i = 0; i < buf->bcount; i++) {
+      r_sdp_msg_add_bandwidth (ret, buf->bw[i].key.str, buf->bw[i].key.size,
+          r_sdp_buf_bandwidth_kbps (buf, i));
+    }
+    for (i = 0; i < buf->tcount; i++) {
+      r_sdp_msg_add_time (ret,
+          r_str_to_uint (buf->time[i].start.str, NULL, 10, NULL),
+          r_str_to_uint (buf->time[i].stop.str, NULL, 10, NULL));
+      /* FIXME: Repeat lines */
+    }
+    for (i = 0; i < buf->zcount; i++) {
+      /* FIXME: r_sdp_msg_add_time_zone (ret, ); */
+    }
+    r_sdp_msg_set_key (ret,
+        buf->key.key.str, buf->key.key.size,
+        buf->key.val.str, buf->key.val.size);
+    for (i = 0; i < buf->acount; i++) {
+      r_sdp_msg_add_attribute (ret,
+          buf->attrib[i].key.str, buf->attrib[i].key.size,
+          buf->attrib[i].val.str, buf->attrib[i].val.size);
+    }
+    for (j = 0; j < buf->mcount; j++) {
+      RSdpMedia * media;
+
+      if (R_UNLIKELY ((media = r_sdp_msg_add_media_full (ret,
+                buf->media[j].type.str, buf->media[j].type.size,
+                buf->media[j].port, buf->media[j].portcount,
+                buf->media[j].proto.str, buf->media[j].proto.size)) == NULL))
+        continue;
+
+      for (i = 0; i < buf->media[j].fmtcount; i++)
+        r_ptr_array_add (media->fmt, r_sdp_buf_media_fmt (buf, j, i), r_free);
+      r_sdp_media_set_media_info (media,
+          buf->media[j].info.str, buf->media[j].info.size);
+      for (i = 0; i < buf->media[j].ccount; i++) {
+        r_sdp_media_add_connection_full (media,
+            buf->media[j].conn[i].nettype.str,  buf->media[j].conn[i].nettype.size,
+            buf->media[j].conn[i].addrtype.str, buf->media[j].conn[i].addrtype.size,
+            buf->media[j].conn[i].addr.str,     buf->media[j].conn[i].addr.size,
+            r_sdp_buf_media_conn_ttl (buf, j, i),
+            r_sdp_buf_media_conn_addrcount (buf, j, i));
+      }
+      for (i = 0; i < buf->media[j].bcount; i++) {
+        r_sdp_media_add_bandwidth (media,
+            buf->media[j].bw[i].key.str, buf->media[j].bw[i].key.size,
+            r_sdp_buf_media_bandwidth_kbps (buf, j, i));
+      }
+      r_sdp_media_set_key (media,
+          buf->media[j].key.key.str, buf->media[j].key.key.size,
+          buf->media[j].key.val.str, buf->media[j].key.val.size);
+      for (i = 0; i < buf->media[j].acount; i++) {
+        r_sdp_media_add_attribute (media,
+            buf->media[j].attrib[i].key.str, buf->media[j].attrib[i].key.size,
+            buf->media[j].attrib[i].val.str, buf->media[j].attrib[i].val.size);
+      }
+      r_sdp_media_unref (media);
+    }
+  }
+
+  return ret;
+}
+
+static void
+_r_sdp_msg_add_e_line (rpointer data, rpointer user)
+{
+  r_string_append_printf (user, "e=%s\r\n", (rchar *)data);
+}
+
+static void
+_r_sdp_msg_add_p_line (rpointer data, rpointer user)
+{
+  r_string_append_printf (user, "p=%s\r\n", (rchar *)data);
+}
+
+static void
+_r_sdp_msg_add_netaddr (RString * str, const rchar * nettype,
+    const rchar * addrtype, const rchar * addr)
+{
+  if (addr != NULL)
+    r_string_append_printf (str, "%s %s %s", nettype, addrtype, addr);
+  else
+    r_string_append (str, "IN IP4 0.0.0.0");
+}
+
+static void
+_r_sdp_msg_add_c_line (rpointer data, rpointer user)
+{
+  const RSdpConn * c = data;
+
+  r_string_append (user, "c=");
+  _r_sdp_msg_add_netaddr (user, c->nettype, c->addrtype, c->addr);
+  if (c->addr != NULL && c->addrtype != NULL) {
+    if (c->ttl > 0 && r_str_equals (c->addrtype, "IP4"))
+      r_string_append_printf (user, "/%u", c->ttl);
+    if (c->addrcount > 1)
+      r_string_append_printf (user, "/%u", c->addrcount);
+  }
+  r_string_append (user, "\r\n");
+}
+
+static void
+_r_sdp_msg_add_b_line (rpointer data, rpointer user)
+{
+  r_string_append_printf (user, "b=%s\r\n", ((const RSdpAttrib *)data)->data);
+}
+
+static void
+_r_sdp_msg_add_k_line (rpointer data, rpointer user)
+{
+  r_string_append_printf (user, "k=%s\r\n", ((const RSdpAttrib *)data)->data);
+}
+
+static void
+_r_sdp_msg_add_r_line (rpointer data, rpointer user)
+{
+  /* TODO */
+  (void) data;
+  r_string_append (user, "r=??\r\n");
+}
+
+static void
+_r_sdp_msg_add_t_line (rpointer data, rpointer user)
+{
+  const RSdpTime * t = data;
+  r_string_append_printf (user, "t=%"RSIZE_FMT" %"RSIZE_FMT"\r\n",
+      t->start, t->stop);
+  r_ptr_array_foreach (t->repeat, _r_sdp_msg_add_r_line, user);
+}
+
+static void
+_r_sdp_msg_add_z_line (rpointer data, rpointer user)
+{
+  /* TODO */
+  (void) data;
+  r_string_append (user, "z=??\r\n");
+}
+
+static void
+_r_sdp_msg_add_a_line (rpointer data, rpointer user)
+{
+  r_string_append_printf (user, "a=%s\r\n", ((const RSdpAttrib *)data)->data);
+}
+
+static void
+_r_sdp_media_add_fmt (rpointer data, rpointer user)
+{
+  r_string_append_printf (user, " %s", (rchar *)data);
+}
+
+static void
+_r_sdp_msg_add_m_line (rpointer data, rpointer user)
+{
+  const RSdpMedia * m = data;
+  if (m->portcount <= 1)
+    r_string_append_printf (user, "m=%s %u %s", m->type, m->port, m->proto);
+  else
+    r_string_append_printf (user, "m=%s %u/%u %s", m->type, m->port, m->portcount, m->proto);
+  r_ptr_array_foreach (m->fmt, _r_sdp_media_add_fmt, user);
+  r_string_append (user, "\r\n");
+
+  /* i= */
+  if (m->info != NULL)
+    r_string_append_printf (user, "i=%s\r\n", m->info);
+
+  /* c= */
+  r_ptr_array_foreach (m->conn, _r_sdp_msg_add_c_line, user);
+  /* b= */
+  r_ptr_array_foreach (m->bw, _r_sdp_msg_add_b_line, user);
+  /* k= */
+  if (m->key != NULL)
+    _r_sdp_msg_add_k_line (m->key, user);
+  /* a= */
+  r_ptr_array_foreach (m->attrib, _r_sdp_msg_add_a_line, user);
+}
+
+RBuffer *
+r_sdp_msg_to_buffer (const RSdpMsg * msg)
+{
+  RBuffer * ret;
+
+  if ((ret = r_buffer_new ()) != NULL) {
+    RString * str;
+
+    if ((str = r_string_new_sized (4096)) != NULL) {
+      rsize alloc, size;
+      rpointer data;
+      RMem * mem;
+
+      /* v= */
+      if (msg->ver != NULL)
+        r_string_append_printf (str, "v=%s\r\n", msg->ver);
+      else
+        r_string_append (str, "v=0\r\n");
+
+      /* o= */
+      r_string_append_printf (str, "o=%s %s %s ",
+          (msg->username != NULL) ? msg->username : "-",
+          (msg->sid != NULL)      ? msg->sid      : "0", /* FIXME: default? */
+          (msg->sver != NULL)     ? msg->sver     : "0");
+      _r_sdp_msg_add_netaddr (str, msg->origin_nt, msg->origin_at, msg->origin_addr);
+      r_string_append (str, "\r\n");
+
+      /* s= */
+      if (msg->name != NULL)
+        r_string_append_printf (str, "s=%s\r\n", msg->name);
+      else
+        r_string_append (str, "s=-\r\n");
+
+      /* i= */
+      if (msg->info != NULL)
+        r_string_append_printf (str, "i=%s\r\n", msg->info);
+
+      /* u= */
+      if (msg->uri != NULL) {
+        rchar * u;
+        if ((u = r_uri_get_escaped (msg->uri)) != NULL) {
+          r_string_append_printf (str, "u=%s\r\n", u);
+          r_free (u);
+        }
+      }
+
+      /* e= */
+      r_ptr_array_foreach (msg->email, _r_sdp_msg_add_e_line, str);
+      /* p= */
+      r_ptr_array_foreach (msg->phone, _r_sdp_msg_add_p_line, str);
+      /* c= */
+      if (msg->conn.addrcount > 0)
+        _r_sdp_msg_add_c_line ((rpointer)&msg->conn, str);
+      /* b= */
+      r_ptr_array_foreach (msg->bw, _r_sdp_msg_add_b_line, str);
+      /* t= */
+      r_ptr_array_foreach (msg->time, _r_sdp_msg_add_t_line, str);
+      /* z= */
+      r_ptr_array_foreach (msg->zone, _r_sdp_msg_add_z_line, str);
+      /* k= */
+      if (msg->key != NULL)
+        _r_sdp_msg_add_k_line (msg->key, str);
+      /* a= */
+      r_ptr_array_foreach (msg->attrib, _r_sdp_msg_add_a_line, str);
+      /* m= */
+      r_ptr_array_foreach (msg->media, _r_sdp_msg_add_m_line, str);
+
+      size = r_string_length (str);
+      alloc = r_string_alloc_size (str);
+      data = r_string_free_keep (str);
+      if ((mem = r_mem_new_take (R_MEM_FLAG_NONE, data, alloc, size, 0)) == NULL ||
+          !r_buffer_mem_append (ret, mem)) {
+        r_buffer_unref (ret);
+        ret = NULL;
+      }
+      if (mem != NULL)
+        r_mem_unref (mem);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+RSdpResult
+r_sdp_msg_set_version (RSdpMsg * msg, const rchar * ver, rssize size)
+{
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+
+  r_free (msg->ver);
+  msg->ver = r_strdup_size (ver, size);
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_set_originator (RSdpMsg * msg,
+    const rchar * username, rssize usize,
+    const rchar * sid, rssize sidsize, const rchar * sver, rssize sversize,
+    const rchar * nettype, rssize ntsize,
+    const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize)
+{
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+
+  r_free (msg->username);
+  msg->username = r_strdup_size (username, usize);
+  r_free (msg->sid);
+  msg->sid = r_strdup_size (sid, sidsize);
+  r_free (msg->sver);
+  msg->sver = r_strdup_size (sver, sversize);
+
+  r_free (msg->origin_nt);
+  msg->origin_nt = r_strdup_size (nettype, ntsize);
+  r_free (msg->origin_at);
+  msg->origin_at = r_strdup_size (addrtype, atsize);
+  r_free (msg->origin_addr);
+  msg->origin_addr = r_strdup_size (addr, asize);
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_set_session_name (RSdpMsg * msg,
+    const rchar * name, rssize size)
+{
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+
+  r_free (msg->name);
+  msg->name = r_strdup_size (name, size);
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_set_session_info (RSdpMsg * msg,
+    const rchar * info, rssize size)
+{
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+
+  r_free (msg->info);
+  msg->info = r_strdup_size (info, size);
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_set_uri (RSdpMsg * msg, RUri * uri)
+{
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+
+  if (msg->uri != NULL)
+    r_uri_unref (msg->uri);
+  if (uri != NULL)
+    r_uri_ref (uri);
+  msg->uri = uri;
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_add_email (RSdpMsg * msg, const rchar * email, rssize size)
+{
+  rchar * e;
+
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (email == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (size == 0)) return R_SDP_INVAL;
+  if (R_UNLIKELY (email[0] == 0)) return R_SDP_INVAL;
+
+  if ((e = r_strdup_size (email, size)) != NULL) {
+    r_ptr_array_add (msg->email, e, r_free);
+    return R_SDP_OK;
+  }
+
+  return R_SDP_OOM;
+}
+
+RSdpResult
+r_sdp_msg_add_phone (RSdpMsg * msg, const rchar * phone, rssize size)
+{
+  rchar * p;
+
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (phone == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (size == 0)) return R_SDP_INVAL;
+  if (R_UNLIKELY (phone[0] == 0)) return R_SDP_INVAL;
+
+  if ((p = r_strdup_size (phone, size)) != NULL) {
+    r_ptr_array_add (msg->phone, p, r_free);
+    return R_SDP_OK;
+  }
+
+  return R_SDP_OOM;
+}
+
+RSdpResult
+r_sdp_msg_clear_connection (RSdpMsg * msg, rboolean def)
+{
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+
+  r_free (msg->conn.nettype);
+  r_free (msg->conn.addrtype);
+  r_free (msg->conn.addr);
+  r_memclear (&msg->conn, sizeof (RSdpConn));
+  msg->conn.addrcount = def ? 1 : 0;
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_set_connection_full (RSdpMsg * msg,
+    const rchar * nettype, rssize ntsize,
+    const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize,
+    ruint ttl, ruint addrcount)
+{
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (addr == NULL)) return R_SDP_INVAL;
+
+  r_free (msg->conn.nettype);
+  msg->conn.nettype = r_strdup_size (nettype, ntsize);
+  r_free (msg->conn.addrtype);
+  msg->conn.addrtype = r_strdup_size (addrtype, atsize);
+  r_free (msg->conn.addr);
+  msg->conn.addr = r_strdup_size (addr, asize);
+  msg->conn.addrcount = addrcount;
+  msg->conn.ttl = ttl;
+  return R_SDP_OK;
+}
+
+static RSdpAttrib *
+r_sdp_attrib_new (const rchar * key, rssize ksize,
+    const rchar * value, rssize vsize)
+{
+  RSdpAttrib * ret;
+
+  if (ksize < 0) ksize = (rssize)r_strlen (key);
+  if (value == NULL)
+    vsize = 0;
+  else if (vsize < 0)
+    vsize = (rssize)r_strlen (value);
+
+  if  ((ret = r_malloc (sizeof (RSdpAttrib) + ksize + 1 + vsize + 1)) != NULL) {
+    if (vsize > 0) {
+      r_sprintf (ret->data, "%.*s:%.*s", (int)ksize, key, (int)vsize, value);
+      ret->kv.val.str = ret->data + ksize + 1;
+      ret->kv.val.size = ksize;
+    } else {
+      r_sprintf (ret->data, "%.*s", (int)ksize, key);
+      r_memclear (&ret->kv.val, sizeof (RStrChunk));
+    }
+    ret->kv.key.str = ret->data;
+    ret->kv.key.size = ksize;
+  }
+
+  return ret;
+}
+
+RSdpResult
+r_sdp_msg_add_bandwidth (RSdpMsg * msg,
+    const rchar * type, rssize tsize, ruint kbps)
+{
+  rchar * v;
+  RSdpAttrib * bw;
+
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (type == NULL)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY ((v = r_strprintf ("%u", kbps)) == NULL))
+    return R_SDP_OOM;
+
+  bw = r_sdp_attrib_new (type, tsize, v, -1);
+  r_free (v);
+  if (R_UNLIKELY (bw == NULL))
+    return R_SDP_OOM;
+
+  r_ptr_array_add (msg->bw, bw, r_free);
+  return R_SDP_OK;
+}
+
+static void
+r_sdp_time_free (rpointer data)
+{
+  r_ptr_array_unref (((RSdpTime *)data)->repeat);
+  r_free (data);
+}
+
+RSdpResult
+r_sdp_msg_add_time (RSdpMsg * msg, ruint64 start, ruint64 stop)
+{
+  RSdpTime * t;
+
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY ((t = r_mem_new (RSdpTime)) == NULL))
+    return R_SDP_OOM;
+
+  t->start = start;
+  t->stop = stop;
+  if (R_UNLIKELY ((t->repeat = r_ptr_array_new ()) == NULL)) {
+    r_free (t);
+    return R_SDP_OOM;
+  }
+  r_ptr_array_add (msg->time, t, r_sdp_time_free);
+
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_set_key (RSdpMsg * msg,
+    const rchar * method, rssize msize, const rchar * data, rssize size)
+{
+  RSdpAttrib * key;
+
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+
+  if (method != NULL) {
+    if (R_UNLIKELY ((key = r_sdp_attrib_new (method, msize, data, size)) == NULL))
+      return R_SDP_OOM;
+  } else {
+    key = NULL;
+  }
+
+  if (msg->key != NULL)
+    r_free (msg->key);
+  msg->key = key;
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_add_attribute (RSdpMsg * msg,
+    const rchar * key, rssize ksize, const rchar * value, rssize vsize)
+{
+  RSdpAttrib * a;
+
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (key == NULL)) return R_SDP_INVAL;
+  if (ksize < 0) ksize = (rssize)r_strlen (key);
+  if (R_UNLIKELY (ksize == 0)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY ((a = r_sdp_attrib_new (key, ksize, value, vsize)) == NULL))
+    return R_SDP_OOM;
+
+  r_ptr_array_add (msg->attrib, a, r_free);
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_add_media (RSdpMsg * msg, RSdpMedia * media)
+{
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+
+  r_ptr_array_add (msg->media, r_sdp_media_ref (media), r_sdp_media_unref);
+  return R_SDP_OK;
+}
+
+RSdpMedia *
+r_sdp_msg_add_media_full (RSdpMsg * msg, const rchar * type, rssize tsize,
+    ruint port, ruint portcount, const rchar * proto, rssize psize)
+{
+  RSdpMedia * ret;
+
+  if (R_UNLIKELY (msg == NULL)) return NULL;
+  if (R_UNLIKELY (type == NULL)) return NULL;
+  if (R_UNLIKELY (proto == NULL)) return NULL;
+
+  if ((ret = r_sdp_media_new_full (type, tsize, port, portcount, proto, psize)) != NULL)
+    r_ptr_array_add (msg->media, r_sdp_media_ref (ret), r_sdp_media_unref);
+
+  return ret;
+}
+
+
+static void
+r_sdp_media_free (RSdpMedia * media)
+{
+  r_free (media->type);
+  r_free (media->proto);
+  r_ptr_array_unref (media->fmt);
+  r_free (media->info);
+  r_ptr_array_unref (media->conn);
+  r_ptr_array_unref (media->bw);
+  r_free (media->key);
+  r_ptr_array_unref (media->attrib);
+  r_free (media);
+}
+
+RSdpMedia *
+r_sdp_media_new (void)
+{
+  RSdpMedia * ret;
+
+  if ((ret = r_mem_new0 (RSdpMedia)) != NULL) {
+    r_ref_init (ret, r_sdp_media_free);
+    ret->fmt = r_ptr_array_new ();
+    ret->conn = r_ptr_array_new ();
+    ret->bw = r_ptr_array_new ();
+    ret->attrib = r_ptr_array_new ();
+  }
+
+  return ret;
+}
+
+RSdpMedia *
+r_sdp_media_new_full (const rchar * type, rssize tsize,
+    ruint port, ruint portcount, const rchar * proto, rssize psize)
+{
+  RSdpMedia * ret;
+
+  if ((ret = r_sdp_media_new ()) != NULL) {
+    ret->type = r_strdup_size (type, tsize);
+    ret->port = port;
+    ret->portcount = portcount;
+    ret->proto = r_strdup_size (proto, psize);
+  }
+
+  return ret;
+}
+
+RSdpResult
+r_sdp_media_add_rtp_fmt (RSdpMedia * media,
+    RRTPPayloadType pt, const rchar * enc, rssize esize,
+    ruint rate, ruint params)
+{
+  rchar * fmt;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (pt > R_RTP_PT_DYNAMIC_LAST)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY ((fmt = r_strprintf ("%"RUINT8_FMT, (ruint8)pt)) == NULL))
+    return R_SDP_OOM;
+
+  if (enc != NULL) {
+    rchar * v;
+
+    if (esize < 0)
+      esize = (rssize)r_strlen (enc);
+    if (params > 1)
+      v = r_strprintf ("%s %.*s/%u/%u", fmt, (int)esize, enc, rate, params);
+    else
+      v = r_strprintf ("%s %.*s/%u", fmt, (int)esize, enc, rate);
+
+    if (R_UNLIKELY (v == NULL)) {
+      r_free (fmt);
+      return R_SDP_OOM;
+    }
+
+    r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("rtpmap"), v, -1);
+    r_free (v);
+  }
+
+  r_ptr_array_add (media->fmt, fmt, r_free);
+  return R_SDP_OK;
+}
+
+static void
+r_sdp_conn_free (rpointer data)
+{
+  RSdpConn * conn = data;
+
+  r_free (conn->nettype);
+  r_free (conn->addrtype);
+  r_free (conn->addr);
+  r_free (data);
+}
+
+RSdpResult
+r_sdp_media_add_connection_full (RSdpMedia * media,
+    const rchar * nettype, rssize ntsize,
+    const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize,
+    ruint ttl, ruint addrcount)
+{
+  RSdpConn * conn;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (addr == NULL)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY ((conn = r_mem_new (RSdpConn)) == NULL))
+    return R_SDP_OOM;
+
+  conn->nettype = r_strdup_size (nettype, ntsize);
+  conn->addrtype = r_strdup_size (addrtype, atsize);
+  conn->addr = r_strdup_size (addr, asize);
+  conn->addrcount = addrcount;
+  conn->ttl = ttl;
+
+  r_ptr_array_add (media->conn, conn, r_sdp_conn_free);
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_media_set_media_info (RSdpMedia * media,
+    const rchar * info, rssize size)
+{
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+
+  r_free (media->info);
+  media->info = r_strdup_size (info, size);
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_media_add_bandwidth (RSdpMedia * media,
+    const rchar * type, rssize tsize, ruint kbps)
+{
+  rchar * v;
+  RSdpAttrib * bw;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (type == NULL)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY ((v = r_strprintf ("%u", kbps)) == NULL))
+    return R_SDP_OOM;
+
+  bw = r_sdp_attrib_new (type, tsize, v, -1);
+  r_free (v);
+  if (R_UNLIKELY (bw == NULL))
+    return R_SDP_OOM;
+
+  r_ptr_array_add (media->bw, bw, r_free);
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_media_set_key (RSdpMedia * media,
+    const rchar * method, rssize msize, const rchar * data, rssize size)
+{
+  RSdpAttrib * key;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+
+  if (method != NULL) {
+    if (R_UNLIKELY ((key = r_sdp_attrib_new (method, msize, data, size)) == NULL))
+      return R_SDP_OOM;
+  } else {
+    key = NULL;
+  }
+
+  if (media->key != NULL)
+    r_free (media->key);
+  media->key = key;
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_media_add_attribute (RSdpMedia * media,
+    const rchar * key, rssize ksize, const rchar * value, rssize vsize)
+{
+  RSdpAttrib * a;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (key == NULL)) return R_SDP_INVAL;
+  if (ksize < 0) ksize = r_strlen (key);
+  if (R_UNLIKELY (ksize == 0)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY ((a = r_sdp_attrib_new (key, ksize, value, vsize)) == NULL))
+    return R_SDP_OOM;
+
+  r_ptr_array_add (media->attrib, a, r_free);
+  return R_SDP_OK;
+}
+
+
+
+
+
 
 static void
 r_sdp_time_clear (RSdpTimeBuf * time)

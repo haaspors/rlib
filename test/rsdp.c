@@ -137,7 +137,7 @@ static const rchar sdp_chrome_webrtc_offer[] =
   "s=-\r\n"
   "t=0 0\r\n"
   "a=group:BUNDLE audio\r\n"
-  "a=msid-semantic: WMS tb3X62H7DwsD9WSJ9Shkiq0PjmXg7YdDXf3C\r\n"
+  "a=msid-semantic:WMS tb3X62H7DwsD9WSJ9Shkiq0PjmXg7YdDXf3C\r\n"
   "m=audio 9 UDP/TLS/RTP/SAVPF 111 103 104 9 0 8 106 105 13 126\r\n"
   "c=IN IP4 0.0.0.0\r\n"
   "a=rtcp:9 IN IP4 0.0.0.0\r\n"
@@ -234,6 +234,63 @@ RTEST (rsdp, chrome_webrtc_offer, RTEST_FAST)
   r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "transport-cc"); r_free (tmp);
 
   r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rsdp, msg_replicate_rfc, RTEST_FAST)
+{
+  RSdpMsg * msg;
+  RBuffer * buf;
+  RUri * uri;
+  RSdpMedia * m;
+
+  r_assert_cmpptr ((msg = r_sdp_msg_new ()), !=, NULL);
+
+  r_assert_cmpint (r_sdp_msg_set_originator (msg,
+        "jdoe", -1, "2890844526", -1, "2890842807", -1,
+        "IN", 2, "IP4", 3, "10.47.16.5", -1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_set_session_name (msg, "SDP Seminar", -1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_set_session_info (msg, "A Seminar on the session description protocol", -1), ==, R_SDP_OK);
+  r_assert_cmpptr ((uri = r_uri_new_escaped ("http://www.example.com/seminars/sdp.pdf", -1)), !=, NULL);
+  r_assert_cmpint (r_sdp_msg_set_uri (msg, uri), ==, R_SDP_OK);
+  r_uri_unref (uri);
+  r_assert_cmpint (r_sdp_msg_add_email (msg, "j.doe@example.com (Jane Doe)", -1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_set_connection_full (msg, "IN", 2, "IP4", 3, "224.2.17.12", -1, 127, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_add_time (msg, RUINT64_CONSTANT (2873397496), RUINT64_CONSTANT (2873404696)), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_add_attribute (msg, "recvonly", -1, NULL, 0), ==, R_SDP_OK);
+  r_assert_cmpptr ((m = r_sdp_msg_add_media_full (msg, "audio", -1, 49170, 1, "RTP/AVP", -1)), !=, NULL);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt_static (m, R_RTP_PT_PCMU), ==, R_SDP_OK);
+  r_sdp_media_unref (m);
+  r_assert_cmpptr ((m = r_sdp_msg_add_media_full (msg, "video", -1, 51372, 1, "RTP/AVP", -1)), !=, NULL);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, R_RTP_PT_DYNAMIC_FIRST + 3,
+        R_STR_WITH_SIZE_ARGS ("h263-1998"), 90000, 0), ==, R_SDP_OK);
+  r_sdp_media_unref (m);
+
+  r_assert_cmpptr ((buf = r_sdp_msg_to_buffer (msg)), !=, NULL);
+  r_sdp_msg_unref (msg);
+
+  r_assert_cmpbufmem (buf, 0, -1, ==, sdp_rfc, sizeof (sdp_rfc) - 1);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rsdp, msg_from_sdp_buffer, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+  RSdpMsg * msg;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+  r_assert_cmpptr ((msg = r_sdp_msg_new_from_sdp_buffer (&sdp)), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_sdp_msg_to_buffer (msg)), !=, NULL);
+  r_sdp_msg_unref (msg);
+
+  r_assert_cmpbufmem (buf, 0, -1, ==, sdp_chrome_webrtc_offer, R_STR_SIZEOF (sdp_chrome_webrtc_offer));
   r_buffer_unref (buf);
 }
 RTEST_END;

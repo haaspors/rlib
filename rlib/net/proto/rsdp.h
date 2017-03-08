@@ -29,6 +29,8 @@
 #include <rlib/rstr.h>
 #include <rlib/ruri.h>
 
+#include <rlib/net/proto/rrtp.h>
+
 R_BEGIN_DECLS
 
 typedef enum {
@@ -43,6 +45,86 @@ typedef enum {
   R_SDP_MORE_DATA,
 } RSdpResult;
 
+typedef struct _RSdpBuf RSdpBuf; /* Fwd decl because of RSdpMsg API */
+
+/* RSdpMsg API */
+typedef struct _RSdpMsg RSdpMsg;
+typedef struct _RSdpMedia RSdpMedia;
+
+R_API RSdpMsg * r_sdp_msg_new (void) R_ATTR_MALLOC;
+R_API RSdpMsg * r_sdp_msg_new_from_sdp_buffer (const RSdpBuf * buf) R_ATTR_MALLOC;
+#define r_sdp_msg_ref     r_ref_ref
+#define r_sdp_msg_unref   r_ref_unref
+
+R_API RBuffer * r_sdp_msg_to_buffer (const RSdpMsg * msg);
+
+R_API RSdpResult r_sdp_msg_set_version (RSdpMsg * msg,
+    const rchar * ver, rssize size);
+R_API RSdpResult r_sdp_msg_set_originator (RSdpMsg * msg,
+    const rchar * username, rssize usize,
+    const rchar * sid, rssize sidsize, const rchar * sver, rssize sversize,
+    const rchar * nettype, rssize nsize,
+    const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize);
+R_API RSdpResult r_sdp_msg_set_session_name (RSdpMsg * msg,
+    const rchar * name, rssize size);
+R_API RSdpResult r_sdp_msg_set_session_info (RSdpMsg * msg,
+    const rchar * info, rssize size);
+R_API RSdpResult r_sdp_msg_set_uri (RSdpMsg * msg, RUri * uri);
+R_API RSdpResult r_sdp_msg_add_email (RSdpMsg * msg,
+    const rchar * email, rssize size);
+R_API RSdpResult r_sdp_msg_add_phone (RSdpMsg * msg,
+    const rchar * phone, rssize size);
+R_API RSdpResult r_sdp_msg_clear_connection (RSdpMsg * msg, rboolean def);
+#define r_sdp_msg_set_connection_unicast(msg, addr)                           \
+  r_sdp_msg_set_connection_full (msg, addr, 0, 1)
+R_API RSdpResult r_sdp_msg_set_connection_full (RSdpMsg * msg,
+    const rchar * nettype, rssize nsize,
+    const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize,
+    ruint ttl, ruint addrcount);
+R_API RSdpResult r_sdp_msg_add_bandwidth (RSdpMsg * msg,
+    const rchar * type, rssize tsize, ruint kbps);
+R_API RSdpResult r_sdp_msg_add_time (RSdpMsg * msg, ruint64 start, ruint64 stop);
+/* FIXME R_API RSdpResult r_sdp_msg_add_repeat (RSdpMsg * msg, rsize timeidx, ); */
+/* FIXME R_API RSdpResult r_sdp_msg_add_time_zone (RSdpMsg * msg, ruint64 time, ruint64 offset); */
+R_API RSdpResult r_sdp_msg_set_key (RSdpMsg * msg,
+    const rchar * method, rssize msize, const rchar * data, rssize size);
+R_API RSdpResult r_sdp_msg_add_attribute (RSdpMsg * msg,
+    const rchar * key, rssize ksize, const rchar * value, rssize vsize);
+
+R_API RSdpResult r_sdp_msg_add_media (RSdpMsg * msg, RSdpMedia * media);
+R_API RSdpMedia * r_sdp_msg_add_media_full (RSdpMsg * msg,
+    const rchar * type, rssize tsize, ruint port, ruint portcount,
+    const rchar * proto, rssize psize);
+
+
+R_API RSdpMedia * r_sdp_media_new (void) R_ATTR_MALLOC;
+R_API RSdpMedia * r_sdp_media_new_full (const rchar * type, rssize tsize,
+    ruint port, ruint portcount, const rchar * proto, rssize psize) R_ATTR_MALLOC;
+#define r_sdp_media_ref     r_ref_ref
+#define r_sdp_media_unref   r_ref_unref
+
+R_API RSdpResult r_sdp_media_add_rtp_fmt (RSdpMedia * media,
+    RRTPPayloadType pt, const rchar * enc, rssize esize,
+    ruint rate, ruint params);
+#define r_sdp_media_add_rtp_fmt_static(m, pt) r_sdp_media_add_rtp_fmt (m, pt, NULL, 0, 0, 0)
+#define r_sdp_medida_add_connection_unicast(media, addr)                      \
+  r_sdp_media_add_connection_full (media, addr, 0, 1)
+R_API RSdpResult r_sdp_media_add_connection_full (RSdpMedia * media,
+    const rchar * nettype, rssize nsize,
+    const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize,
+    ruint ttl, ruint addrcount);
+R_API RSdpResult r_sdp_media_set_media_info (RSdpMedia * media,
+    const rchar * info, rssize size);
+R_API RSdpResult r_sdp_media_add_bandwidth (RSdpMedia * media,
+    const rchar * type, rssize tsize, ruint kbps);
+R_API RSdpResult r_sdp_media_set_key (RSdpMedia * media,
+    const rchar * method, rssize msize, const rchar * data, rssize size);
+R_API RSdpResult r_sdp_media_add_attribute (RSdpMedia * media,
+    const rchar * key, rssize ksize, const rchar * value, rssize vsize);
+
+
+
+/* Parsing API */
 typedef struct {
   RStrChunk username;
   RStrChunk sess_id;
@@ -151,7 +233,7 @@ R_API RSdpResult r_sdp_media_buf_fmtidx_specific_attrib (const RSdpMediaBuf * me
   r_sdp_media_buf_fmtidx_specific_attrib (media, fmtidx,                      \
       R_STR_WITH_SIZE_ARGS ("fmtp"), attrib)
 
-typedef struct {
+struct _RSdpBuf {
   RMemMapInfo info;
 
   RStrChunk ver;
@@ -176,7 +258,7 @@ typedef struct {
 
   rsize mcount;
   RSdpMediaBuf * media;
-} RSdpBuf;
+};
 
 R_API RSdpResult r_sdp_buffer_map (RSdpBuf * sdp, RBuffer * buf);
 R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
