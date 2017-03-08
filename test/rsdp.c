@@ -1,6 +1,7 @@
 #include <rlib/rlib.h>
 
-static const rchar sdp_rfc[] = "v=0\r\n"
+static const rchar sdp_rfc_4566[] =
+  "v=0\r\n"
   "o=jdoe 2890844526 2890842807 IN IP4 10.47.16.5\r\n"
   "s=SDP Seminar\r\n"
   "i=A Seminar on the session description protocol\r\n"
@@ -13,8 +14,25 @@ static const rchar sdp_rfc[] = "v=0\r\n"
   "m=video 51372 RTP/AVP 99\r\n"
   "a=rtpmap:99 h263-1998/90000\r\n";
 
+static const rchar sdp_rfc_3264[] =
+  "v=0\r\n"
+  "o=alice 2890844526 2890844527 IN IP4 host.anywhere.com\r\n"
+  "s=\r\n"
+  "c=IN IP4 host.anywhere.com\r\n"
+  "t=0 0\r\n"
+  "m=audio 49170 RTP/AVP 0\r\n"
+  "a=rtpmap:0 PCMU/8000\r\n"
+  "m=video 0 RTP/AVP 31\r\n"
+  "a=rtpmap:31 H261/90000\r\n"
+  "m=video 53000 RTP/AVP 32\r\n"
+  "a=rtpmap:32 MPV/90000\r\n"
+  "m=audio 53122 RTP/AVP 110\r\n"
+  "a=rtpmap:110 telephone-events/8000\r\n"
+  "a=sendonly\r\n";
 
-RTEST (rsdp, from_rfc, RTEST_FAST)
+
+
+RTEST (rsdp, from_rfc_4566, RTEST_FAST)
 {
   RBuffer * buf;
   RSdpBuf sdp;
@@ -24,7 +42,7 @@ RTEST (rsdp, from_rfc, RTEST_FAST)
   r_assert_cmpint (r_sdp_buffer_map (NULL, NULL), ==, R_SDP_INVAL);
   r_assert_cmpint (r_sdp_buffer_map (&sdp, NULL), ==, R_SDP_INVAL);
 
-  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_rfc))), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_rfc_4566))), !=, NULL);
   r_assert_cmpint (r_sdp_buffer_map (NULL, buf), ==, R_SDP_INVAL);
   r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
 
@@ -90,6 +108,81 @@ RTEST (rsdp, from_rfc, RTEST_FAST)
   r_assert_cmpint (r_sdp_buffer_unmap (NULL, NULL), ==, R_SDP_INVAL);
   r_assert_cmpint (r_sdp_buffer_unmap (&sdp, NULL), ==, R_SDP_INVAL);
   r_assert_cmpint (r_sdp_buffer_unmap (NULL, buf), ==, R_SDP_INVAL);
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rsdp, from_rfc_3264, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+  rchar * tmp;
+  RStrChunk a = R_STR_CHUNK_INIT;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_rfc_3264))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+
+  r_assert_cmpstr ((tmp = r_sdp_buf_version (&sdp)), ==, "0"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_username (&sdp)), ==, "alice"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_id (&sdp)), ==, "2890844526"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_version (&sdp)), ==, "2890844527"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_nettype (&sdp)), ==, "IN"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_addrtype (&sdp)), ==, "IP4"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_addr (&sdp)), ==, "host.anywhere.com"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_session_name (&sdp)), ==, ""); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_session_info (&sdp)), ==, NULL);
+  r_assert_cmpuint (r_sdp_buf_email_count (&sdp), ==, 0);
+  r_assert_cmpuint (r_sdp_buf_phone_count (&sdp), ==, 0);
+  r_assert_cmpuint (r_sdp_buf_bandwidth_count (&sdp), ==, 0);
+  r_assert_cmpuint (r_sdp_buf_time_count (&sdp), ==, 1);
+  r_assert_cmpstr ((tmp = r_sdp_buf_time_start (&sdp, 0)), ==, "0"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_time_stop (&sdp, 0)), ==, "0"); r_free (tmp);
+  r_assert_cmpuint (r_sdp_buf_time_repeat_count (&sdp, 0), ==, 0);
+  r_assert_cmpuint (r_sdp_buf_time_zone_count (&sdp), ==, 0);
+  r_assert_cmpuint (r_sdp_buf_attrib_count (&sdp), ==, 0);
+  r_assert_cmpuint (r_sdp_buf_media_count (&sdp), ==, 4);
+  r_assert_cmpstr ((tmp = r_sdp_buf_media_type (&sdp, 0)), ==, "audio"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_media_type (&sdp, 1)), ==, "video"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_media_type (&sdp, 2)), ==, "video"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_media_type (&sdp, 3)), ==, "audio"); r_free (tmp);
+  r_assert_cmpuint (r_sdp_buf_media_port (&sdp, 0), ==, 49170);
+  r_assert_cmpuint (r_sdp_buf_media_port (&sdp, 1), ==, 0);
+  r_assert_cmpuint (r_sdp_buf_media_port (&sdp, 2), ==, 53000);
+  r_assert_cmpuint (r_sdp_buf_media_port (&sdp, 3), ==, 53122);
+  r_assert_cmpuint (r_sdp_buf_media_portcount (&sdp, 0), ==, 1);
+  r_assert_cmpuint (r_sdp_buf_media_portcount (&sdp, 1), ==, 1);
+  r_assert_cmpuint (r_sdp_buf_media_portcount (&sdp, 2), ==, 1);
+  r_assert_cmpuint (r_sdp_buf_media_portcount (&sdp, 3), ==, 1);
+  r_assert_cmpstr ((tmp = r_sdp_buf_media_proto (&sdp, 0)), ==, "RTP/AVP"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_media_proto (&sdp, 1)), ==, "RTP/AVP"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_media_proto (&sdp, 2)), ==, "RTP/AVP"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_media_proto (&sdp, 3)), ==, "RTP/AVP"); r_free (tmp);
+  r_assert_cmpuint (r_sdp_buf_media_fmt_count (&sdp, 0), ==, 1);
+  r_assert_cmpuint (r_sdp_buf_media_fmt_count (&sdp, 1), ==, 1);
+  r_assert_cmpuint (r_sdp_buf_media_fmt_count (&sdp, 2), ==, 1);
+  r_assert_cmpuint (r_sdp_buf_media_fmt_count (&sdp, 3), ==, 1);
+  r_assert_cmpuint (r_sdp_buf_media_fmt_uint (&sdp, 0, 0), ==, 0);
+  r_assert_cmpuint (r_sdp_buf_media_fmt_uint (&sdp, 1, 0), ==, 31);
+  r_assert_cmpuint (r_sdp_buf_media_fmt_uint (&sdp, 2, 0), ==, 32);
+  r_assert_cmpuint (r_sdp_buf_media_fmt_uint (&sdp, 3, 0), ==, 110);
+  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 0, "recvonly", -1), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 1, "recvonly", -1), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 2, "recvonly", -1), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 3, "recvonly", -1), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 0, "sendonly", -1), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 1, "sendonly", -1), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 2, "sendonly", -1), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 3, "sendonly", -1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_buf_media_rtpmap_for_fmt_idx (&sdp, 0, 0, &a), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "PCMU/8000"); r_free (tmp);
+  r_assert_cmpint (r_sdp_buf_media_rtpmap_for_fmt_idx (&sdp, 1, 0, &a), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "H261/90000"); r_free (tmp);
+  r_assert_cmpint (r_sdp_buf_media_rtpmap_for_fmt_idx (&sdp, 2, 0, &a), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "MPV/90000"); r_free (tmp);
+  r_assert_cmpint (r_sdp_buf_media_rtpmap_for_fmt_idx (&sdp, 3, 0, &a), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "telephone-events/8000"); r_free (tmp);
+
   r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
   r_buffer_unref (buf);
 }
@@ -238,7 +331,7 @@ RTEST (rsdp, chrome_webrtc_offer, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rsdp, msg_replicate_rfc, RTEST_FAST)
+RTEST (rsdp, msg_replicate_rfc_4566, RTEST_FAST)
 {
   RSdpMsg * msg;
   RBuffer * buf;
@@ -270,7 +363,7 @@ RTEST (rsdp, msg_replicate_rfc, RTEST_FAST)
   r_assert_cmpptr ((buf = r_sdp_msg_to_buffer (msg)), !=, NULL);
   r_sdp_msg_unref (msg);
 
-  r_assert_cmpbufmem (buf, 0, -1, ==, sdp_rfc, sizeof (sdp_rfc) - 1);
+  r_assert_cmpbufmem (buf, 0, -1, ==, sdp_rfc_4566, R_STR_SIZEOF (sdp_rfc_4566));
   r_buffer_unref (buf);
 }
 RTEST_END;
