@@ -654,6 +654,12 @@ RTEST (rstr, dup, RTEST_FAST)
   r_assert_cmpptr ((tmp = r_strndup (foobar_0_yes, sizeof (foobar_0_yes))), !=, NULL);
   r_assert_cmpstr (tmp, ==, foobar);
   r_free (tmp);
+
+  /* strdup_size */
+  r_assert_cmpptr (r_strdup_size (NULL, -1), ==, NULL);
+  r_assert_cmpstr ((tmp = r_strdup_size (foobar, 0)), ==, ""); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_strdup_size (foobar, 3)), ==, foo); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_strdup_size (foobar, -1)), ==, foobar); r_free (tmp);
 }
 RTEST_END;
 

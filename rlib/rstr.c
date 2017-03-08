@@ -824,6 +824,23 @@ r_strndup (const rchar * str, rsize size)
 }
 
 rchar *
+r_strdup_size (const rchar * str, rssize size)
+{
+  rchar * ret;
+
+  if (str != NULL) {
+    if (size < 0)
+      ret = r_strdup (str);
+    else
+      ret = r_strndup (str, (rsize)size);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+rchar *
 r_strdup_wstrip (const rchar * str)
 {
   rchar * ret;

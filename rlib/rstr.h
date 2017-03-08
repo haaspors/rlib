@@ -85,6 +85,7 @@ R_API rchar * r_stpcpy (rchar * dst, const rchar * src);
 R_API rchar * r_stpncpy (rchar * dst, const rchar * src, rsize len);
 
 R_API rchar * r_strdup (const rchar * str);
+R_API rchar * r_strdup_size (const rchar * str, rssize size);
 R_API rchar * r_strndup (const rchar * str, rsize n);
 R_API rchar * r_strdup_wstrip (const rchar * str);
 R_API rchar * r_strdup_strip (const rchar * str, const rchar * chars);
