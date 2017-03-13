@@ -109,7 +109,7 @@ def configure(cfg):
                 cfg.env.CFLAGS += ['-fstack-protector']
 
     cfg.define('DEBUG', 1)
-    cfg.write_config_header(DBGVAR+'/config.h')
+    cfg.write_config_header(DBGVAR+'/include/config.h')
 
     # RELEASE
     cfg.setenv(RELVAR, env=common_env)
@@ -119,7 +119,7 @@ def configure(cfg):
     else:
         cfg.env.CFLAGS += ['-O2']
     cfg.define('NDEBUG', 1)
-    cfg.write_config_header(RELVAR+'/config.h')
+    cfg.write_config_header(RELVAR+'/include/config.h')
 
     build_summary(cfg)
 
@@ -134,7 +134,7 @@ def build(bld):
 
     bld(    features    = 'subst',
             source      = 'rlib/rconfig.h.in',
-            target      = 'rlib/rconfig.h',
+            target      = 'include/rlib/rconfig.h',
             install_path= '${PREFIX}/include/rlib')
 
     privlibs = []
@@ -150,7 +150,7 @@ def build(bld):
                 source      = bld.path.ant_glob('rlib/**/*.c'),
                 target      = SHLIBNAME,
                 vnum        = APIVERSION,
-                includes    = [ '.' ],
+                includes    = [ 'include', '.' ],
                 defines     = [ 'RLIB_COMPILATION', 'RLIB_SHLIB' ],
                 use         = 'M DL PTHREAD RT KERNEL32 ADVAPI32')
         bld(    features    = 'subst',
@@ -164,7 +164,7 @@ def build(bld):
                 source      = bld.path.ant_glob('rlib/**/*.c'),
                 target      = STLIBNAME,
                 install_path= '${LIBDIR}',
-                includes    = [ '.' ],
+                includes    = [ 'include', '.' ],
                 defines     = [ 'RLIB_COMPILATION', 'RLIB_STLIB' ],
                 use         = 'M DL PTHREAD RT')
         bld(    features    = 'subst',
@@ -175,8 +175,8 @@ def build(bld):
                 RLIB_EXTRA_LIBS = ' '.join(privlibs),
                 install_path= '${LIBDIR}/pkgconfig')
 
-    bld.install_files('${PREFIX}/include',
-            bld.path.ant_glob('rlib/**/*.h', excl = [ 'rlib/**/*private.h' ]),
+    bld.install_files('${PREFIX}',
+            bld.path.ant_glob('include/rlib/**/*.h'),
             relative_trick=True)
 
     bld.recurse('bench example test')

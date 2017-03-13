@@ -9,5 +9,5 @@ def build(bld):
 
     if bld.env.BUILD_BIN:
         bld.program(features='test', source=bld.path.ant_glob('*.c', excl=excl),
-                target='rlibtest', use=bld.env.RLIB_INTERNAL_USE, includes='..')
+                target='rlibtest', use=bld.env.RLIB_INTERNAL_USE, includes='../include')
 

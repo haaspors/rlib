@@ -8,6 +8,6 @@ def build(bld):
                     source      = [f],
                     target      = str(f.name)[:-2],
                     use         = bld.env.RLIB_INTERNAL_USE,
-                    includes    = '..',
+                    includes    = '../include',
                     install_path= None)
 
