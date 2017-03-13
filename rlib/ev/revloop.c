@@ -32,7 +32,7 @@
 #ifdef HAVE_KQUEUE
 #include <sys/event.h>
 #endif
-#ifdef HAVE_EPOLL
+#ifdef HAVE_SYS_EPOLL_H
 #include <sys/epoll.h>
 #endif
 #ifdef HAVE_SYS_EVENTFD_H
@@ -74,7 +74,7 @@ r_ev_handle_close (REvHandle handle)
 #endif
 }
 
-#ifdef HAVE_EPOLL
+#ifdef HAVE_EPOLL_CTL
 static void r_ev_loop_eventfd_io_cb (rpointer data, REvIOEvents events, REvIO * evio);
 #endif
 
@@ -90,7 +90,7 @@ struct _REvLoop {
   rauint tqitems;
   RCBQueue dcbs;
   RMutex done_mutex;
-#ifdef HAVE_EPOLL
+#ifdef HAVE_EPOLL_CTL
   REvIO evio_wakeup;
 #ifdef HAVE_EVENTFD
   int evfd;
@@ -131,7 +131,7 @@ r_ev_loop_free (REvLoop * loop)
   r_mutex_unlock (&loop->done_mutex);
   r_mutex_clear (&loop->done_mutex);
 
-#ifdef HAVE_EPOLL
+#ifdef HAVE_EPOLL_CTL
 #ifdef HAVE_EVENTFD
     r_ev_handle_close (loop->evfd);
 #else
@@ -169,7 +169,7 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
   r_mutex_init (&loop->done_mutex);
 
 #if defined (R_OS_WIN32)
-#elif defined (HAVE_EPOLL)
+#elif defined (HAVE_EPOLL_CTL)
   if ((loop->evhandle = epoll_create1 (0)) != R_EV_HANDLE_INVALID) {
     struct epoll_event ev;
     REvHandle fd;
@@ -313,7 +313,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
   /* TODO: Implement win32 backend */
   ret = -1;
   goto beach;
-#elif defined (HAVE_EPOLL)
+#elif defined (HAVE_EPOLL_CTL)
   struct epoll_event events[R_EV_LOOP_MAX_EVENTS], * ev = events;
 
   /* FIXME: clear->pop! which makes us able to move stuff back on the queue */
@@ -620,7 +620,7 @@ r_ev_loop_cancel_timer (REvLoop * loop, RClockEntry * timer)
   return r_clock_cancel_entry (loop->clock, timer);
 }
 
-#ifdef HAVE_EPOLL
+#ifdef HAVE_EPOLL_CTL
 static void
 r_ev_loop_eventfd_io_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
@@ -659,7 +659,7 @@ r_ev_loop_wakeup (REvLoop * loop)
 {
 #if defined (R_OS_WIN32)
   R_LOG_DEBUG ("loop %p wakeup!", loop);
-#elif defined (HAVE_EPOLL)
+#elif defined (HAVE_EPOLL_CTL)
   ruint64 buf = r_atomic_uint_load (&loop->tqitems);
   int res;
 #ifdef HAVE_EVENTFD
