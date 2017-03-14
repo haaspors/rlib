@@ -12,27 +12,34 @@ env:
   global:
     - secure: "fKqQXaILVkLVxGKZImTZtCUGr8YXdmNU2VRl+tPBJE866pt1X6FXJ4IVnbE32NTsWiBvkmgy0Y690wF9Lt5L4DatIrINLBTVnHsWjsO8F1kpfTYsK00umXdbj0W0Paba9JH/6erYsEKWrfoR38Hpxt8X+rgZlEO/E+0DDzq8gITdslh3jVp+6wxML5krCQ3KvGQs4KNKHVWhJNVuNYF/DyQmzfBJ98djijL9foC1QrxsuB6KOo93bBiHCYv8Cx0GYFhXFmqDlTqeiioBvu0NMnNBlMm9HXRN6H46RW6L+BnV8trYtuFppXKEquihoGs2wN27FNFs5+N+b/tsSc8lhgEMJcOaDIMPvBEHkcLjpiVDyV9tbsqW9EAWe6vhjlF5CKYxNiEpI1rSSD0dzLdeRV7nDRa1YZDr+v9AbBkrBZSLnQxQBx67B9paNDl+rAOHpl2GbOJaZ7WSdABZWH26LDv9Tav1mIKkKS2McdnYkWajyJH+IIlgtdwATXYlFtwCj51QBLgyd20YuLOFu7oso2bpXJ9pBg1nqCOFCpSfOxhAhEDR2Hv9PCkCJWch20+fLHUqwG62dUHkpsoPKh3Vlxs9bQ1MU5XdkAtIbnbVlKgdcP7jL0GYGZG+WR3s8L2cbToNYtlM2ii1ZvYQe5UCt+PBRqqa9kTBOLzHi64Nd/4="
   matrix:
-    - VARIANT=debug   WAFCMD=test VG_OPT=--valgrind
-    - VARIANT=release WAFCMD=test VG_OPT=--valgrind
-    - VARIANT=debug   WAFCMD=test VG_OPT=
-    - VARIANT=release WAFCMD=test VG_OPT=
-    - VARIANT=release WAFCMD=bench VG_OPT=
+    - BLDTYPE=debug   VALGRIND=yes
+    - BLDTYPE=release VALGRIND=yes
+    - BLDTYPE=debug   VALGRIND=no
+    - BLDTYPE=release VALGRIND=no
 
 matrix:
   exclude:
     - os: osx
-      env: VARIANT=debug   WAFCMD=test VG_OPT=--valgrind
+      env: BLDTYPE=debug   VALGRIND=yes
     - os: osx
-      env: VARIANT=release WAFCMD=test VG_OPT=--valgrind
-    - compiler: clang
-      env: VARIANT=release WAFCMD=bench VG_OPT=
+      env: BLDTYPE=release VALGRIND=yes
 
 before_install:
-  - test "$TRAVIS_BRANCH" != "coverity_scan" || test "$TRAVIS_OS_NAME" = "linux" -a "$VARIANT" = "release" -a "$CC" = "gcc" -a -z "$VG_OPT" || exit 0
+  - test "$TRAVIS_BRANCH" != "coverity_scan" || test "$TRAVIS_OS_NAME" = "linux" -a "$BLDTYPE" = "release" -a "$CC" = "gcc" -a -z "$VG_OPT" || exit 0
+  - export PATH="`pwd`/build:${PATH}"
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update && brew install python3 ninja; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then wget https://github.com/ninja-build/ninja/releases/download/v1.7.2/ninja-linux.zip && unzip -q ninja-linux.zip -d build; fi
+  - pip3 install meson
+
 script:
   - test "$TRAVIS_BRANCH" != "coverity_scan" || exit 0
-  - python waf configure
-  - python waf --variant=${VARIANT} ${WAFCMD} ${VG_OPT}
+  - meson --buildtype=${BLDTYPE} build
+  - ninja -C build
+  - if [[ "$VALGRIND" == "no" ]]; then mesontest -C build --print-errorlogs; fi
+  - if [[ "$VALGRIND" == "yes" ]]; then RNOTIMEOUT=1 mesontest -C build --print-errorlogs -t 100 --wrap='valgrind -q --error-exitcode=42 --tool=memcheck --leak-check=full'; fi
+
+after_failure:
+  - if [[ -e $TRAVIS_BUILD_DIR/build/meson-logs/testlog.txt ]]; then cat $TRAVIS_BUILD_DIR/build/meson-logs/testlog.txt; fi
 
 addons:
   apt:
