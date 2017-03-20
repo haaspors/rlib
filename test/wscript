@@ -8,6 +8,10 @@ def build(bld):
         excl.append('*file*.c')
 
     if bld.env.BUILD_BIN:
-        bld.program(features='test', source=bld.path.ant_glob('*.c', excl=excl),
-                target='rlibtest', use=bld.env.RLIB_INTERNAL_USE, includes='../include')
+        bld.program(features= 'test',
+                source      = bld.path.ant_glob('*.c', excl=excl),
+                target      = 'rlibtest',
+                use         = bld.env.RLIB_INTERNAL_USE,
+                includes    = '../include',
+                install_path= None)
 
