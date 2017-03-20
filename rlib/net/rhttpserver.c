@@ -259,7 +259,7 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
       r_http_request_append_body_buffer (ctx->req, buf);
     }
   } else {
-    if (ctx->req == NULL) {
+    if (ctx->req != NULL) {
       r_http_server_process_request (server, ctx->req,
           r_http_server_tcp_response_ready,
           r_ev_tcp_ref (evtcp), r_ev_tcp_unref);
