@@ -125,12 +125,29 @@ typedef struct {
   RHttpRequestHandler handler;
   RHttpServer * server;
   RHttpRequest * req;
+  RSocketAddress * addr;
   rpointer handlerdata;
 
   RHttpResponseReady ready;
   rpointer data;
   RDestroyNotify notify;
 } RHttpServerHandlerCtx;
+
+static void
+r_http_server_handler_ctx_free (rpointer data)
+{
+  RHttpServerHandlerCtx * ctx = data;
+
+  /* DONT touch ctx->server */
+  if (ctx->req != NULL)
+    r_http_request_unref (ctx->req);
+  if (ctx->addr != NULL)
+    r_socket_address_unref (ctx->addr);
+  if (ctx->notify != NULL)
+    ctx->notify (ctx->data);
+
+  r_free (data);
+}
 
 static void
 r_http_server_request_handler (rpointer data, REvLoop * loop)
@@ -141,7 +158,7 @@ r_http_server_request_handler (rpointer data, REvLoop * loop)
   (void) loop;
 
   if (ctx->handler != NULL) {
-    if ((res = ctx->handler (ctx->handlerdata, ctx->req, ctx->server)) == NULL) {
+    if ((res = ctx->handler (ctx->handlerdata, ctx->req, ctx->addr, ctx->server)) == NULL) {
       R_LOG_FIXME ("%p: Request %p handled with %p, but no response",
           ctx->server, ctx->req, ctx->handler);
       res = r_http_response_new (ctx->req, R_HTTP_STATUS_INTERNAL_SERVER_ERROR,
@@ -153,15 +170,13 @@ r_http_server_request_handler (rpointer data, REvLoop * loop)
   }
 
   ctx->ready (ctx->data, res, ctx->server);
-  if (ctx->notify != NULL)
-    ctx->notify (ctx->data);
   if (res != NULL)
     r_http_response_unref (res);
-  r_http_request_unref (ctx->req);
 }
 
 rboolean
-r_http_server_process_request (RHttpServer * server, RHttpRequest * req,
+r_http_server_process_request (RHttpServer * server,
+    RHttpRequest * req, RSocketAddress * addr,
     RHttpResponseReady ready, rpointer data, RDestroyNotify notify)
 {
   RUri * uri;
@@ -175,6 +190,7 @@ r_http_server_process_request (RHttpServer * server, RHttpRequest * req,
 
     ctx->server = server;
     ctx->req = r_http_request_ref (req);
+    ctx->addr = addr != NULL ? r_socket_address_ref (addr) : NULL;
     ctx->ready = ready;
     ctx->data = data;
     ctx->notify = notify;
@@ -190,7 +206,7 @@ r_http_server_process_request (RHttpServer * server, RHttpRequest * req,
     }
 
     r_ev_loop_add_callback (server->loop, FALSE,
-        r_http_server_request_handler, ctx, r_free);
+        r_http_server_request_handler, ctx, r_http_server_handler_ctx_free);
     r_uri_unref (uri);
     return TRUE;
   }
@@ -239,11 +255,16 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
       buf = ctx->rem;
       if ((ctx->req = r_http_request_new_from_buffer (buf, &err, &ctx->rem)) != NULL) {
         if (err == R_HTTP_OK) {
+          RSocketAddress * addr;
           r_http_server_process_request (server, ctx->req,
+              (addr = r_ev_tcp_get_remote_address (evtcp)),
               r_http_server_tcp_response_ready,
               r_ev_tcp_ref (evtcp), r_ev_tcp_unref);
           r_http_request_unref (ctx->req);
           ctx->req = NULL;
+
+          if (addr != NULL)
+            r_socket_address_unref (addr);
 
           if (ctx->rem != NULL) {
             R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" remainder %"RSIZE_FMT,
@@ -260,9 +281,13 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
     }
   } else {
     if (ctx->req != NULL) {
+      RSocketAddress * addr;
       r_http_server_process_request (server, ctx->req,
+          (addr = r_ev_tcp_get_remote_address (evtcp)),
           r_http_server_tcp_response_ready,
           r_ev_tcp_ref (evtcp), r_ev_tcp_unref);
+      if (addr != NULL)
+        r_socket_address_unref (addr);
       r_http_request_unref (ctx->req);
       ctx->req = NULL;
     } else {

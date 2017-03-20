@@ -54,11 +54,11 @@ RTEST (rhttpserver, process, RTEST_FAST)
 
   r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
 
-  r_assert (!r_http_server_process_request (srv, NULL, NULL, NULL, NULL));
+  r_assert (!r_http_server_process_request (srv, NULL, NULL, NULL, NULL, NULL));
 
   r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
           "http://example.org", NULL, NULL)), !=, NULL);
-  r_assert (r_http_server_process_request (srv, req,
+  r_assert (r_http_server_process_request (srv, req, NULL,
         r_test_http_response_ready, &res, NULL));
   r_http_request_unref (req);
 
@@ -76,11 +76,27 @@ RTEST (rhttpserver, process, RTEST_FAST)
 RTEST_END;
 
 static RHttpResponse *
-r_test_http_simple_status_handler (rpointer data, RHttpRequest * req, RHttpServer * server)
+r_test_http_simple_status_handler (rpointer data,
+    RHttpRequest * req, RSocketAddress * addr, RHttpServer * server)
 {
+  RHttpResponse * ret;
+
   (void) server;
-  return r_http_response_new (req, (RHttpStatus)RPOINTER_TO_UINT (data),
-      NULL, NULL, NULL);
+
+  if ((ret = r_http_response_new (req, (RHttpStatus)RPOINTER_TO_UINT (data),
+          NULL, NULL, NULL)) != NULL) {
+    rchar * str = r_socket_address_to_str (addr);
+    RBuffer * buf;
+
+    if ((buf = r_buffer_new_take (str, r_strlen (str))) != NULL) {
+      r_http_response_set_body_buffer (ret, buf);
+      r_buffer_unref (buf);
+    } else {
+      r_free (str);
+    }
+  }
+
+  return ret;
 }
 
 RTEST (rhttpserver, handle_GET, RTEST_FAST)
@@ -90,12 +106,16 @@ RTEST (rhttpserver, handle_GET, RTEST_FAST)
   RHttpServer * srv;
   RHttpRequest * req;
   RHttpResponse * res = NULL;
+  RSocketAddress * addr;
+  rchar * body, * addrstr;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_clock_unref (clock);
 
   r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
+
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (10, 0, 0, 1, 34567)), !=, NULL);
 
   r_assert (!r_http_server_set_handler (srv, NULL, 0, NULL, NULL, NULL));
   r_assert (!r_http_server_set_handler (srv, "/", -1, NULL, NULL, NULL));
@@ -104,7 +124,7 @@ RTEST (rhttpserver, handle_GET, RTEST_FAST)
 
   r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
           "http://example.org", NULL, NULL)), !=, NULL);
-  r_assert (r_http_server_process_request (srv, req,
+  r_assert (r_http_server_process_request (srv, req, addr,
         r_test_http_response_ready, &res, NULL));
   r_http_request_unref (req);
 
@@ -114,7 +134,11 @@ RTEST (rhttpserver, handle_GET, RTEST_FAST)
 
   /* Handler should give 400 Bad Request */
   r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_BAD_REQUEST);
+  r_assert_cmpstr ((body = r_http_response_get_body (res, NULL)), ==,
+      (addrstr = r_socket_address_to_str (addr)));
+  r_free (body); r_free (addrstr);
 
+  r_http_request_unref (addr);
   r_http_response_unref (res);
   r_http_server_unref (srv);
   r_ev_loop_unref (loop);

@@ -34,7 +34,7 @@ R_BEGIN_DECLS
 
 typedef struct _RHttpServer RHttpServer;
 typedef RHttpResponse * (*RHttpRequestHandler) (rpointer data,
-    RHttpRequest * req, RHttpServer * server);
+    RHttpRequest * req, RSocketAddress * addr, RHttpServer * server);
 typedef void (*RHttpResponseReady) (rpointer data,
     RHttpResponse * res, RHttpServer * server);
 typedef void (*RHttpServerStop) (rpointer data, RHttpServer * server);
@@ -52,7 +52,8 @@ R_API rsize r_http_server_stop (RHttpServer * server, RHttpServerStop func,
     rpointer data, RDestroyNotify notify);
 
 /* May be used to inject requests into the server without using the listening API. */
-R_API rboolean r_http_server_process_request (RHttpServer * server, RHttpRequest * req,
+R_API rboolean r_http_server_process_request (RHttpServer * server,
+    RHttpRequest * req, RSocketAddress * addr,
     RHttpResponseReady ready, rpointer data, RDestroyNotify notify);
 
 R_END_DECLS
