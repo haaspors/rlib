@@ -168,7 +168,7 @@
       "buf:%p [%"RSIZE_FMT"] (mem:%p)@%"RSIZE_FMT" [%"RSSIZE_FMT"] %s "       \
       "mem:%p [%"RSIZE_FMT"]",                                                \
       r1, #o, #s, #cmp, r2, #ms,                                              \
-      b, r_buffer_get_size (b), info.data, __o, __s, #cmp, m, __ms);          \
+      b, r_buffer_get_size (b), info.data, __o, info.size, #cmp, m, __ms);    \
   r_buffer_unmap (b, &info);                                                  \
 } R_STMT_END
 #define _R_ASSERT_LOG(expr, CAT, LVL, MSG) R_STMT_START {                     \
