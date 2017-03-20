@@ -47,7 +47,8 @@
   __R_GCC_DISABLE_WARN_ADDRESS_END
 #define _R_ASSERT_STMT_CMPMEMSIZE(m1, s1, cmp, m2, s2, REPR, REAL, ...)       \
   __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                          \
-  if (!((s1 == s2 && r_memcmp (m1, m2, s1) cmp 0) || s1 cmp s2)) abort ();    \
+  if (!((s1 == s2 && r_memcmp (m1, m2, s1) cmp 0) || (s1 != s2 && s1 cmp s2)))\
+    abort ();                                                                 \
   __R_GCC_DISABLE_WARN_ADDRESS_END
 #else
 #define _R_ASSERT_STMT(CMPEXPR, REPR, REAL, ...)                              \
@@ -69,7 +70,7 @@
   __R_GCC_DISABLE_WARN_ADDRESS_END
 #define _R_ASSERT_STMT_CMPMEMSIZE(m1, s1, cmp, m2, s2, REPR, REAL, ...)       \
   __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                          \
-  if ((s1 == s2 && r_memcmp (m1, m2, s1) cmp 0) || s1 cmp s2) {               \
+  if ((s1 == s2 && r_memcmp (m1, m2, s1) cmp 0) || (s1 != s2 && s1 cmp s2)) { \
     R_LOG_CAT_TRACE (R_LOG_CAT_ASSERT, "%s ("REPR"): ("REAL")", "passed", __VA_ARGS__);\
   } else {                                                                    \
     if (m1) r_log_mem_dump (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR,              \
