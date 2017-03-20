@@ -201,11 +201,25 @@ r_http_msg_get_buffer (RHttpMsg * msg)
 rchar *
 r_http_msg_get_body (RHttpMsg * msg, rsize * size)
 {
-  if (msg->body != NULL)
-    return r_buffer_extract_dup_all (msg->body, size);
+  rsize real;
+  rchar * ret;
 
-  if (size != NULL) *size = 0;
-  return NULL;
+  if (msg->body != NULL) {
+    if ((real = r_buffer_get_size (msg->body)) > 0) {
+      ret = r_malloc (real + 1);
+    } else {
+      ret = NULL;
+    }
+
+    r_buffer_extract (msg->body, 0, ret, real);
+    ret[real] = 0;
+  } else {
+    real = 0;
+    ret = NULL;
+  }
+
+  if (size != NULL) *size = real;
+  return ret;
 }
 
 RBuffer *
