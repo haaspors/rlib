@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/net/proto/rsdp.h>
 
+#include <rlib/rassert.h>
 #include <rlib/rmem.h>
 #include <rlib/rptrarray.h>
 #include <rlib/rstring.h>
@@ -60,6 +61,9 @@ struct _RSdpMedia {
 
 struct _RSdpMsg {
   RRef ref;
+
+  rboolean jsep;
+  RSdpAttrib * bundle;
 
   rchar * ver;
   rchar * username;
@@ -125,6 +129,21 @@ r_sdp_msg_new (void)
     ret->zone = r_ptr_array_new ();
     ret->attrib = r_ptr_array_new ();
     ret->media = r_ptr_array_new ();
+  }
+
+  return ret;
+}
+
+RSdpMsg *
+r_sdp_msg_new_jsep (ruint64 sessid, ruint sessver)
+{
+  RSdpMsg * ret;
+
+  if ((ret = r_sdp_msg_new ()) != NULL) {
+    ret->jsep = TRUE;
+    ret->sid = r_strprintf ("%"RUINT64_FMT, sessid);
+    ret->sver = r_strprintf ("%u", sessver);
+    r_sdp_msg_add_time (ret, 0, 0);
   }
 
   return ret;
@@ -686,6 +705,41 @@ r_sdp_msg_add_attribute (RSdpMsg * msg,
   return R_SDP_OK;
 }
 
+static void
+_r_sdp_aggreagate_bundle (rpointer data, rpointer user)
+{
+  rchar * mid;
+
+  if ((mid = r_sdp_media_get_mid (data)) != NULL) {
+    r_string_append_printf (user, " %s", mid);
+    r_free (mid);
+  }
+}
+
+static void
+r_sdp_msg_update_bundle (RSdpMsg * msg)
+{
+  RSdpAttrib * a;
+  RString * str = r_string_new_sized (64);
+  rchar * val;
+
+  r_string_append (str, "BUNDLE");
+  r_ptr_array_foreach (msg->media, _r_sdp_aggreagate_bundle, str);
+  val = r_string_free_keep (str);
+
+  if ((a = r_sdp_attrib_new (R_STR_WITH_SIZE_ARGS ("group"), val, -1)) != NULL) {
+    if (msg->bundle != NULL) {
+      r_ptr_array_update_idx (msg->attrib,
+          r_ptr_array_find (msg->attrib, msg->bundle), a, r_free);
+    } else {
+      r_ptr_array_add (msg->attrib, a, r_free);
+    }
+    msg->bundle = a;
+  }
+
+  r_free (val);
+}
+
 RSdpResult
 r_sdp_msg_add_media (RSdpMsg * msg, RSdpMedia * media)
 {
@@ -693,6 +747,9 @@ r_sdp_msg_add_media (RSdpMsg * msg, RSdpMedia * media)
   if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
 
   r_ptr_array_add (msg->media, r_sdp_media_ref (media), r_sdp_media_unref);
+  if (msg->jsep)
+    r_sdp_msg_update_bundle (msg);
+
   return R_SDP_OK;
 }
 
@@ -729,6 +786,39 @@ r_sdp_media_new (void)
 }
 
 RSdpMedia *
+r_sdp_media_new_jsep_dtls (const rchar * type, rssize tsize,
+    const rchar * mid, rssize msize, RSdpMediaDirection md)
+{
+  RSdpMedia * ret;
+
+  if ((ret = r_sdp_media_new_full (type, tsize, 9, 1, "UDP/TLS/RTP/SAVPF", -1)) != NULL) {
+    r_ptr_array_add (ret->conn, r_mem_new0 (RSdpConn), r_free);
+    r_sdp_media_add_attribute (ret, R_STR_WITH_SIZE_ARGS ("rtcp"),
+        R_STR_WITH_SIZE_ARGS ("9 IN IP4 0.0.0.0"));
+    r_sdp_media_add_attribute (ret, R_STR_WITH_SIZE_ARGS ("mid"), mid, msize);
+    r_sdp_media_add_attribute (ret, R_STR_WITH_SIZE_ARGS ("rtcp-mux"), NULL, 0);
+    switch (md) {
+      case R_SDP_MD_INACTIVE:
+          r_sdp_media_add_attribute (ret, R_STR_WITH_SIZE_ARGS ("inactive"), NULL, 0);
+        break;
+      case R_SDP_MD_SENDONLY:
+          r_sdp_media_add_attribute (ret, R_STR_WITH_SIZE_ARGS ("sendonly"), NULL, 0);
+        break;
+      case R_SDP_MD_RECVONLY:
+          r_sdp_media_add_attribute (ret, R_STR_WITH_SIZE_ARGS ("recvonly"), NULL, 0);
+        break;
+      case R_SDP_MD_SENDRECV:
+          r_sdp_media_add_attribute (ret, R_STR_WITH_SIZE_ARGS ("sendrecv"), NULL, 0);
+        break;
+      default:
+        r_assert_not_reached ();
+    }
+  }
+
+  return ret;
+}
+
+RSdpMedia *
 r_sdp_media_new_full (const rchar * type, rssize tsize,
     ruint port, ruint portcount, const rchar * proto, rssize psize)
 {
@@ -742,6 +832,25 @@ r_sdp_media_new_full (const rchar * type, rssize tsize,
   }
 
   return ret;
+}
+
+rchar *
+r_sdp_media_get_attribute (const RSdpMedia * media,
+    const rchar * key, rssize ksize)
+{
+  const RSdpAttrib * a;
+  rsize i;
+
+  if (ksize < 0) ksize = r_strlen (key);
+
+  for (i = 0; i < r_ptr_array_size (media->attrib); i++) {
+    a = r_ptr_array_get (media->attrib, i);
+
+    if (r_str_kv_is_key (&a->kv, key, ksize))
+      return r_str_kv_dup_value (&a->kv);
+  }
+
+  return NULL;
 }
 
 RSdpResult
@@ -885,6 +994,125 @@ r_sdp_media_add_attribute (RSdpMedia * media,
 
   r_ptr_array_add (media->attrib, a, r_free);
   return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_media_add_source_specific_attribute (RSdpMedia * media,
+    ruint32 ssrc, const rchar * key, rssize ksize, const rchar * value, rssize vsize)
+{
+  RSdpResult ret;
+  rchar * val;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (ssrc == 0)) return R_SDP_INVAL;
+  if (R_UNLIKELY (key == NULL)) return R_SDP_INVAL;
+  if (ksize < 0) ksize = r_strlen (key);
+  if (R_UNLIKELY (ksize == 0)) return R_SDP_INVAL;
+
+  if (vsize < 0) vsize = r_strlen (value);
+
+  if (value != NULL && vsize > 0) {
+    val = r_strprintf ("%"RUINT32_FMT" %.*s:%.*s", ssrc, (int)ksize, key, (int)vsize, value);
+  } else {
+    val = r_strprintf ("%"RUINT32_FMT" %.*s", ssrc, (int)ksize, key);
+  }
+
+  ret = r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("ssrc"), val, -1);
+  r_free (val);
+
+  return ret;
+}
+
+RSdpResult
+r_sdp_media_add_jsep_msid (RSdpMedia * media, ruint32 ssrc,
+    const rchar * msidval, rssize vsize, const rchar * msidappdata, rssize asize)
+{
+  RSdpResult ret;
+  rchar * val;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (ssrc == 0)) return R_SDP_INVAL;
+  if (R_UNLIKELY (msidval == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (msidappdata == NULL)) return R_SDP_INVAL;
+
+  if (vsize < 0) vsize = r_strlen (msidval);
+  if (asize < 0) asize = r_strlen (msidappdata);
+
+  if ((val = r_strprintf ("%.*s %.*s", (int)vsize, msidval, (int)asize, msidappdata)) != NULL) {
+    ret = r_sdp_media_add_source_specific_attribute (media, ssrc,
+        R_STR_WITH_SIZE_ARGS ("msid"), val, -1);
+    r_free (val);
+
+    if (ret == R_SDP_OK)
+      ret = r_sdp_media_add_source_specific_attribute (media, ssrc,
+          R_STR_WITH_SIZE_ARGS ("mslabel"), msidval, vsize);
+    if (ret == R_SDP_OK)
+      ret = r_sdp_media_add_source_specific_attribute (media, ssrc,
+          R_STR_WITH_SIZE_ARGS ("label"), msidappdata, asize);
+  } else {
+    ret = R_SDP_OOM;
+  }
+
+  return ret;
+}
+
+RSdpResult
+r_sdp_media_add_ice_credentials (RSdpMedia * media,
+    const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize)
+{
+  RSdpResult ret;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+
+  if ((ret = r_sdp_media_add_attribute (media,
+          R_STR_WITH_SIZE_ARGS ("ice-ufrag"), ufrag, usize)) == R_SDP_OK) {
+    ret = r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("ice-pwd"), pwd, psize);
+  }
+
+  return ret;
+}
+
+RSdpResult
+r_sdp_media_add_dtls_setup (RSdpMedia * media, RSdpConnRole role,
+    RMsgDigestType type, const rchar * fingerprint, rssize fsize)
+{
+  RSdpResult ret;
+  const rchar * strrole, * strtype;
+  rchar * val;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (fingerprint == NULL)) return R_SDP_INVAL;
+  if (fsize < 0) fsize = r_strlen (fingerprint);
+  if (R_UNLIKELY (fsize == 0)) return R_SDP_INVAL;
+  if ((strtype = r_msg_digest_type_string (type)) == NULL) return R_SDP_INVAL;
+
+  switch (role) {
+    case R_SDP_CONN_ROLE_HOLDCONN:
+      strrole = "holdconn";
+      break;
+    case R_SDP_CONN_ROLE_ACTIVE:
+      strrole = "active";
+      break;
+    case R_SDP_CONN_ROLE_PASSIVE:
+      strrole = "passive";
+      break;
+    case R_SDP_CONN_ROLE_ACTPASS:
+      strrole = "actpass";
+      break;
+    default:
+      return R_SDP_INVAL;
+  }
+
+  if (R_UNLIKELY ((val = r_strprintf ("%s %.*s", strtype, (int)fsize, fingerprint)) == NULL))
+    return R_SDP_OOM;
+
+  if ((ret = r_sdp_media_add_attribute (media,
+          R_STR_WITH_SIZE_ARGS ("fingerprint"), val, -1)) == R_SDP_OK) {
+    ret = r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("setup"), strrole, -1);
+  }
+  r_free (val);
+
+  return ret;
 }
 
 

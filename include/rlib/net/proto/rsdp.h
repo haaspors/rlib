@@ -25,6 +25,7 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/rbuffer.h>
+#include <rlib/rmsgdigest.h>
 #include <rlib/rref.h>
 #include <rlib/rstr.h>
 #include <rlib/ruri.h>
@@ -45,6 +46,20 @@ typedef enum {
   R_SDP_MORE_DATA,
 } RSdpResult;
 
+typedef enum {
+  R_SDP_MD_INACTIVE         = 0,
+  R_SDP_MD_SENDONLY         = 1,
+  R_SDP_MD_RECVONLY         = 2,
+  R_SDP_MD_SENDRECV         = R_SDP_MD_SENDONLY | R_SDP_MD_RECVONLY,
+} RSdpMediaDirection;
+
+typedef enum {
+  R_SDP_CONN_ROLE_HOLDCONN  = 0,
+  R_SDP_CONN_ROLE_ACTIVE    = 1,
+  R_SDP_CONN_ROLE_PASSIVE   = 2,
+  R_SDP_CONN_ROLE_ACTPASS   = R_SDP_CONN_ROLE_ACTIVE | R_SDP_CONN_ROLE_PASSIVE,
+} RSdpConnRole;
+
 typedef struct _RSdpBuf RSdpBuf; /* Fwd decl because of RSdpMsg API */
 
 /* RSdpMsg API */
@@ -52,6 +67,7 @@ typedef struct _RSdpMsg RSdpMsg;
 typedef struct _RSdpMedia RSdpMedia;
 
 R_API RSdpMsg * r_sdp_msg_new (void) R_ATTR_MALLOC;
+R_API RSdpMsg * r_sdp_msg_new_jsep (ruint64 sessid, ruint sessver) R_ATTR_MALLOC;
 R_API RSdpMsg * r_sdp_msg_new_from_sdp_buffer (const RSdpBuf * buf) R_ATTR_MALLOC;
 #define r_sdp_msg_ref     r_ref_ref
 #define r_sdp_msg_unref   r_ref_unref
@@ -94,6 +110,9 @@ R_API RSdpResult r_sdp_msg_add_media (RSdpMsg * msg, RSdpMedia * media);
 
 
 R_API RSdpMedia * r_sdp_media_new (void) R_ATTR_MALLOC;
+R_API RSdpMedia * r_sdp_media_new_jsep_dtls (
+    const rchar * type, rssize tsize, const rchar * mid, rssize msize,
+    RSdpMediaDirection md) R_ATTR_MALLOC;
 R_API RSdpMedia * r_sdp_media_new_full (const rchar * type, rssize tsize,
     ruint port, ruint portcount, const rchar * proto, rssize psize) R_ATTR_MALLOC;
 #define r_sdp_media_ref     r_ref_ref
@@ -118,6 +137,20 @@ R_API RSdpResult r_sdp_media_set_key (RSdpMedia * media,
 R_API RSdpResult r_sdp_media_add_attribute (RSdpMedia * media,
     const rchar * key, rssize ksize, const rchar * value, rssize vsize);
 
+R_API RSdpResult r_sdp_media_add_source_specific_attribute (RSdpMedia * media,
+    ruint32 ssrc, const rchar * key, rssize ksize, const rchar * value, rssize vsize);
+#define r_sdp_media_add_ssrc_cname(m, ssrc, cname, csize) \
+  r_sdp_media_add_source_specific_attribute (m, ssrc, "cname", 5, cname, csize)
+R_API RSdpResult r_sdp_media_add_jsep_msid (RSdpMedia * media, ruint32 ssrc,
+    const rchar * msidval, rssize vsize, const rchar * msidappdata, rssize asize);
+R_API RSdpResult r_sdp_media_add_ice_credentials (RSdpMedia * media,
+    const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize);
+R_API RSdpResult r_sdp_media_add_dtls_setup (RSdpMedia * media,
+    RSdpConnRole role, RMsgDigestType type, const rchar * fingerprint, rssize fsize);
+
+R_API rchar * r_sdp_media_get_attribute (const RSdpMedia * media,
+    const rchar * key, rssize ksize) R_ATTR_MALLOC;
+#define r_sdp_media_get_mid(m)  r_sdp_media_get_attribute (m, "mid", -1)
 
 
 /* Parsing API */

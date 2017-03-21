@@ -390,3 +390,105 @@ RTEST (rsdp, msg_from_sdp_buffer, RTEST_FAST)
 }
 RTEST_END;
 
+static const ruint64 jsep_sessid = RUINT64_CONSTANT (0x8000000080000000);
+static const ruint jsep_sessver = 2;
+static const rchar sdp_jsep_default[] =
+  "v=0\r\n"
+  "o=- 9223372039002259456 2 IN IP4 127.0.0.1\r\n"
+  "s=-\r\n"
+  "t=0 0\r\n";
+
+static const rchar ice_ufrag[] = "NYta";
+static const rchar ice_pwd[] = "SpxH0MIwI+r5qsNjKcSERVKd";
+static const ruint32 audio_ssrc = 12345678;
+static const ruint32 video_ssrc = 87654321;
+static const rchar jsep_cname[] = "1hx9gGezTSDLkjru";
+static const rchar jsep_msid_value[] = "go3K62U7QjfQ9JFW9Fuxvd0CwzKt7LqQKs3P";
+static const rchar jsep_msid_audio[] = "ece80006-ec0d-46fc-9775-faa39ace53c5";
+static const rchar jsep_msid_video[] = "90db69b6-00c0-4160-99c2-fe96251afedd";
+static const rchar jsep_fingerprint[] = "DC:1A:C4:76:1E:FF:22:64:75:B8:66:87:F2:BC:D3:17:F5:04:6F:F8:D4:C6:01:36:F5:49:E6:4F:D5:BC:E9:49";
+static const rchar sdp_jsep_with_av[] =
+  "v=0\r\n"
+  "o=- 9223372039002259456 2 IN IP4 127.0.0.1\r\n"
+  "s=-\r\n"
+  "t=0 0\r\n"
+  "a=group:BUNDLE audio video\r\n"
+  "m=audio 9 UDP/TLS/RTP/SAVPF 0 8\r\n"
+  "c=IN IP4 0.0.0.0\r\n"
+  "a=rtcp:9 IN IP4 0.0.0.0\r\n"
+  "a=mid:audio\r\n"
+  "a=rtcp-mux\r\n"
+  "a=sendrecv\r\n"
+  "a=ice-ufrag:NYta\r\n"
+  "a=ice-pwd:SpxH0MIwI+r5qsNjKcSERVKd\r\n"
+  "a=fingerprint:sha-256 DC:1A:C4:76:1E:FF:22:64:75:B8:66:87:F2:BC:D3:17:F5:04:6F:F8:D4:C6:01:36:F5:49:E6:4F:D5:BC:E9:49\r\n"
+  "a=setup:actpass\r\n"
+  "a=rtpmap:0 PCMU/8000\r\n"
+  "a=rtpmap:8 PCMA/8000\r\n"
+  "a=ssrc:12345678 cname:1hx9gGezTSDLkjru\r\n"
+  "a=ssrc:12345678 msid:go3K62U7QjfQ9JFW9Fuxvd0CwzKt7LqQKs3P ece80006-ec0d-46fc-9775-faa39ace53c5\r\n"
+  "a=ssrc:12345678 mslabel:go3K62U7QjfQ9JFW9Fuxvd0CwzKt7LqQKs3P\r\n"
+  "a=ssrc:12345678 label:ece80006-ec0d-46fc-9775-faa39ace53c5\r\n"
+  "m=video 9 UDP/TLS/RTP/SAVPF 100\r\n"
+  "c=IN IP4 0.0.0.0\r\n"
+  "a=rtcp:9 IN IP4 0.0.0.0\r\n"
+  "a=mid:video\r\n"
+  "a=rtcp-mux\r\n"
+  "a=sendrecv\r\n"
+  "a=ice-ufrag:NYta\r\n"
+  "a=ice-pwd:SpxH0MIwI+r5qsNjKcSERVKd\r\n"
+  "a=fingerprint:sha-256 DC:1A:C4:76:1E:FF:22:64:75:B8:66:87:F2:BC:D3:17:F5:04:6F:F8:D4:C6:01:36:F5:49:E6:4F:D5:BC:E9:49\r\n"
+  "a=setup:actpass\r\n"
+  "a=rtpmap:100 VP8/90000\r\n"
+  "a=ssrc:87654321 cname:1hx9gGezTSDLkjru\r\n"
+  "a=ssrc:87654321 msid:go3K62U7QjfQ9JFW9Fuxvd0CwzKt7LqQKs3P 90db69b6-00c0-4160-99c2-fe96251afedd\r\n"
+  "a=ssrc:87654321 mslabel:go3K62U7QjfQ9JFW9Fuxvd0CwzKt7LqQKs3P\r\n"
+  "a=ssrc:87654321 label:90db69b6-00c0-4160-99c2-fe96251afedd\r\n";
+
+RTEST (rsdp, msg_new_jsep, RTEST_FAST)
+{
+  RSdpMsg * msg;
+  RSdpMedia * m;
+  RBuffer * buf;
+
+  r_assert_cmpptr ((msg = r_sdp_msg_new_jsep (jsep_sessid, jsep_sessver)), !=, NULL);
+  r_assert_cmpptr ((buf = r_sdp_msg_to_buffer (msg)), !=, NULL);
+  r_sdp_msg_unref (msg);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, sdp_jsep_default);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((msg = r_sdp_msg_new_jsep (jsep_sessid, jsep_sessver)), !=, NULL);
+  r_assert_cmpptr ((m = r_sdp_media_new_jsep_dtls ("audio", -1, "audio", -1, R_SDP_MD_SENDRECV)), !=, NULL);
+  r_assert_cmpint (r_sdp_msg_add_media (msg, m), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_ice_credentials (m,
+        R_STR_WITH_SIZE_ARGS (ice_ufrag), R_STR_WITH_SIZE_ARGS (ice_pwd)), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_dtls_setup (m, R_SDP_CONN_ROLE_ACTPASS,
+        R_MSG_DIGEST_TYPE_SHA256, R_STR_WITH_SIZE_ARGS (jsep_fingerprint)), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, R_RTP_PT_PCMU,
+        R_STR_WITH_SIZE_ARGS ("PCMU"), 8000, 0), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, R_RTP_PT_PCMA,
+        R_STR_WITH_SIZE_ARGS ("PCMA"), 8000, 0), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_ssrc_cname (m, audio_ssrc, jsep_cname, -1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_jsep_msid (m, audio_ssrc,
+        R_STR_WITH_SIZE_ARGS (jsep_msid_value), R_STR_WITH_SIZE_ARGS (jsep_msid_audio)), ==, R_SDP_OK);
+  r_sdp_media_unref (m);
+  r_assert_cmpptr ((m = r_sdp_media_new_jsep_dtls ("video", -1, "video", -1, R_SDP_MD_SENDRECV)), !=, NULL);
+  r_assert_cmpint (r_sdp_msg_add_media (msg, m), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_ice_credentials (m,
+        R_STR_WITH_SIZE_ARGS (ice_ufrag), R_STR_WITH_SIZE_ARGS (ice_pwd)), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_dtls_setup (m, R_SDP_CONN_ROLE_ACTPASS,
+        R_MSG_DIGEST_TYPE_SHA256, R_STR_WITH_SIZE_ARGS (jsep_fingerprint)), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)100,
+        R_STR_WITH_SIZE_ARGS ("VP8"), 90000, 0), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_ssrc_cname (m, video_ssrc, jsep_cname, -1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_jsep_msid (m, video_ssrc,
+        R_STR_WITH_SIZE_ARGS (jsep_msid_value), R_STR_WITH_SIZE_ARGS (jsep_msid_video)), ==, R_SDP_OK);
+  r_sdp_media_unref (m);
+  r_assert_cmpptr ((buf = r_sdp_msg_to_buffer (msg)), !=, NULL);
+  r_sdp_msg_unref (msg);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, sdp_jsep_with_av);
+  r_buffer_unref (buf);
+
+}
+RTEST_END;
+
