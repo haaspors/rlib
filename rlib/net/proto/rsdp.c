@@ -244,12 +244,12 @@ _r_sdp_msg_add_p_line (rpointer data, rpointer user)
 
 static void
 _r_sdp_msg_add_netaddr (RString * str, const rchar * nettype,
-    const rchar * addrtype, const rchar * addr)
+    const rchar * addrtype, const rchar * addr, const rchar * def)
 {
   if (addr != NULL)
     r_string_append_printf (str, "%s %s %s", nettype, addrtype, addr);
   else
-    r_string_append (str, "IN IP4 0.0.0.0");
+    r_string_append (str, def);
 }
 
 static void
@@ -258,7 +258,8 @@ _r_sdp_msg_add_c_line (rpointer data, rpointer user)
   const RSdpConn * c = data;
 
   r_string_append (user, "c=");
-  _r_sdp_msg_add_netaddr (user, c->nettype, c->addrtype, c->addr);
+  _r_sdp_msg_add_netaddr (user, c->nettype, c->addrtype, c->addr,
+      "IN IP4 0.0.0.0");
   if (c->addr != NULL && c->addrtype != NULL) {
     if (c->ttl > 0 && r_str_equals (c->addrtype, "IP4"))
       r_string_append_printf (user, "/%u", c->ttl);
@@ -367,7 +368,8 @@ r_sdp_msg_to_buffer (const RSdpMsg * msg)
           (msg->username != NULL) ? msg->username : "-",
           (msg->sid != NULL)      ? msg->sid      : "0", /* FIXME: default? */
           (msg->sver != NULL)     ? msg->sver     : "0");
-      _r_sdp_msg_add_netaddr (str, msg->origin_nt, msg->origin_at, msg->origin_addr);
+      _r_sdp_msg_add_netaddr (str, msg->origin_nt, msg->origin_at, msg->origin_addr,
+          "IN IP4 127.0.0.1");
       r_string_append (str, "\r\n");
 
       /* s= */
