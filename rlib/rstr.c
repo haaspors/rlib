@@ -1347,7 +1347,7 @@ r_str_kv_parse (RStrKV * kv, const rchar * str, rssize size,
 }
 
 rboolean
-r_str_kv_is_key (RStrKV * kv, const rchar * key, rssize size)
+r_str_kv_is_key (const RStrKV * kv, const rchar * key, rssize size)
 {
   rsize len;
 
@@ -1360,7 +1360,7 @@ r_str_kv_is_key (RStrKV * kv, const rchar * key, rssize size)
 }
 
 rboolean
-r_str_kv_is_value (RStrKV * kv, const rchar * val, rssize size)
+r_str_kv_is_value (const RStrKV * kv, const rchar * val, rssize size)
 {
   rsize len;
 
