@@ -90,11 +90,7 @@ R_API RSdpResult r_sdp_msg_set_key (RSdpMsg * msg,
     const rchar * method, rssize msize, const rchar * data, rssize size);
 R_API RSdpResult r_sdp_msg_add_attribute (RSdpMsg * msg,
     const rchar * key, rssize ksize, const rchar * value, rssize vsize);
-
 R_API RSdpResult r_sdp_msg_add_media (RSdpMsg * msg, RSdpMedia * media);
-R_API RSdpMedia * r_sdp_msg_add_media_full (RSdpMsg * msg,
-    const rchar * type, rssize tsize, ruint port, ruint portcount,
-    const rchar * proto, rssize psize);
 
 
 R_API RSdpMedia * r_sdp_media_new (void) R_ATTR_MALLOC;

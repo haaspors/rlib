@@ -191,11 +191,12 @@ r_sdp_msg_new_from_sdp_buffer (const RSdpBuf * buf)
     for (j = 0; j < buf->mcount; j++) {
       RSdpMedia * media;
 
-      if (R_UNLIKELY ((media = r_sdp_msg_add_media_full (ret,
+      if (R_UNLIKELY ((media = r_sdp_media_new_full (
                 buf->media[j].type.str, buf->media[j].type.size,
                 buf->media[j].port, buf->media[j].portcount,
                 buf->media[j].proto.str, buf->media[j].proto.size)) == NULL))
         continue;
+      r_sdp_msg_add_media (ret, media);
 
       for (i = 0; i < buf->media[j].fmtcount; i++)
         r_ptr_array_add (media->fmt, r_sdp_buf_media_fmt (buf, j, i), r_free);
@@ -693,21 +694,6 @@ r_sdp_msg_add_media (RSdpMsg * msg, RSdpMedia * media)
   return R_SDP_OK;
 }
 
-RSdpMedia *
-r_sdp_msg_add_media_full (RSdpMsg * msg, const rchar * type, rssize tsize,
-    ruint port, ruint portcount, const rchar * proto, rssize psize)
-{
-  RSdpMedia * ret;
-
-  if (R_UNLIKELY (msg == NULL)) return NULL;
-  if (R_UNLIKELY (type == NULL)) return NULL;
-  if (R_UNLIKELY (proto == NULL)) return NULL;
-
-  if ((ret = r_sdp_media_new_full (type, tsize, port, portcount, proto, psize)) != NULL)
-    r_ptr_array_add (msg->media, r_sdp_media_ref (ret), r_sdp_media_unref);
-
-  return ret;
-}
 
 
 static void
