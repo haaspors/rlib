@@ -584,7 +584,7 @@ r_sdp_attrib_new (const rchar * key, rssize ksize,
     if (vsize > 0) {
       r_sprintf (ret->data, "%.*s:%.*s", (int)ksize, key, (int)vsize, value);
       ret->kv.val.str = ret->data + ksize + 1;
-      ret->kv.val.size = ksize;
+      ret->kv.val.size = vsize;
     } else {
       r_sprintf (ret->data, "%.*s", (int)ksize, key);
       r_memclear (&ret->kv.val, sizeof (RStrChunk));
