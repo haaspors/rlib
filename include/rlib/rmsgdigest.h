@@ -40,6 +40,7 @@ typedef enum {
 
 R_API rsize r_msg_digest_type_size (RMsgDigestType type);
 R_API rsize r_msg_digest_type_blocksize (RMsgDigestType type);
+R_API const rchar * r_msg_digest_type_string (RMsgDigestType type);
 
 typedef struct _RMsgDigest RMsgDigest;
 

@@ -1,5 +1,16 @@
 #include <rlib/rlib.h>
 
+RTEST (rmsgdigest, type_string, R_TEST_TYPE_FAST)
+{
+  r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_MD5), ==, "md5");
+  r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_SHA1), ==, "sha-1");
+  r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_SHA224), ==, "sha-224");
+  r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_SHA256), ==, "sha-256");
+  r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_SHA384), ==, "sha-384");
+  r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_SHA512), ==, "sha-512");
+}
+RTEST_END;
+
 RTEST (rmsgdigest, md5, R_TEST_TYPE_FAST)
 {
   RMsgDigest * md = r_msg_digest_new_md5 ();

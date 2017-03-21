@@ -187,6 +187,27 @@ r_msg_digest_type_blocksize (RMsgDigestType type)
   }
 }
 
+const rchar *
+r_msg_digest_type_string (RMsgDigestType type)
+{
+  switch (type) {
+    case R_MSG_DIGEST_TYPE_MD5:
+      return "md5";
+    case R_MSG_DIGEST_TYPE_SHA1:
+      return "sha-1";
+    case R_MSG_DIGEST_TYPE_SHA224:
+      return "sha-224";
+    case R_MSG_DIGEST_TYPE_SHA256:
+      return "sha-256";
+    case R_MSG_DIGEST_TYPE_SHA384:
+      return "sha-384";
+    case R_MSG_DIGEST_TYPE_SHA512:
+      return "sha-512";
+    default:
+      return 0;
+  }
+}
+
 rsize
 r_msg_digest_size (const RMsgDigest * md)
 {
