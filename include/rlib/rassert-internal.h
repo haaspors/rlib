@@ -45,6 +45,11 @@
   __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                          \
   if (!(r_memcmp (m1, m2, s) cmp 0)) abort ();                                \
   __R_GCC_DISABLE_WARN_ADDRESS_END
+#define _R_ASSERT_STMT_CMPSTRSIZE(m1, s1, cmp, m2, s2, REPR, REAL, ...)       \
+  __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                          \
+  if (!((s1 == s2 && r_memcmp (m1, m2, s1) cmp 0) || (s1 != s2 && s1 cmp s2)))\
+    abort ();                                                                 \
+  __R_GCC_DISABLE_WARN_ADDRESS_END
 #define _R_ASSERT_STMT_CMPMEMSIZE(m1, s1, cmp, m2, s2, REPR, REAL, ...)       \
   __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                          \
   if (!((s1 == s2 && r_memcmp (m1, m2, s1) cmp 0) || (s1 != s2 && s1 cmp s2)))\
@@ -66,6 +71,18 @@
     if (m2) r_log_mem_dump (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR,              \
         __FILE__, __LINE__, R_STRFUNC, m2, size, 16);                         \
     _R_ASSERT_VA ("%s ("REPR"): ("REAL")", "*** mem assertion", __VA_ARGS__); \
+  }                                                                           \
+  __R_GCC_DISABLE_WARN_ADDRESS_END
+#define _R_ASSERT_STMT_CMPSTRSIZE(m1, s1, cmp, m2, s2, REPR, REAL, ...)       \
+  __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                          \
+  if ((s1 == s2 && r_memcmp (m1, m2, s1) cmp 0) || (s1 != s2 && s1 cmp s2)) { \
+    R_LOG_CAT_TRACE (R_LOG_CAT_ASSERT, "%s ("REPR"): ("REAL")", "passed", __VA_ARGS__);\
+  } else {                                                                    \
+    if (m1) r_log_str_dump (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR,              \
+        __FILE__, __LINE__, R_STRFUNC, m1, s1, 68);                           \
+    if (m2) r_log_str_dump (R_LOG_CAT_ASSERT, R_LOG_LEVEL_ERROR,              \
+        __FILE__, __LINE__, R_STRFUNC, m2, s2, 68);                           \
+    _R_ASSERT_VA ("%s ("REPR"): ("REAL")", "*** str assertion", __VA_ARGS__); \
   }                                                                           \
   __R_GCC_DISABLE_WARN_ADDRESS_END
 #define _R_ASSERT_STMT_CMPMEMSIZE(m1, s1, cmp, m2, s2, REPR, REAL, ...)       \
@@ -154,6 +171,23 @@
       b2, r_buffer_get_size (b2), i2.data, __o2, __s2);                       \
   r_buffer_unmap (b1, &i1);                                                   \
   r_buffer_unmap (b2, &i2);                                                   \
+} R_STMT_END
+#define _R_ASSERT_CMPBUFSTR(b, o, s, cmp, m, ms, r1, r2)   R_STMT_START {     \
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;                                     \
+  rsize __o = (o), __ms = (ms);                                               \
+  rssize __s = (s);                                                           \
+  _R_ASSERT_STMT (r_buffer_map_byte_range (b, __o, __s, &info, R_MEM_MAP_READ),\
+      "%s@%s [%s] %s %s [%s]",                                                \
+      "failed to map buf %p@%"RSIZE_FMT" [%"RSSIZE_FMT"] [size: %"RSIZE_FMT"]",\
+      r1, #o, #s, #cmp, r2, #ms,                                              \
+      b, __o, __s, r_buffer_get_size (b));                                    \
+  _R_ASSERT_STMT_CMPSTRSIZE ((rchar *)info.data, info.size, cmp, m, __ms,     \
+      "%s@%s [%s] %s %s [%s]",                                                \
+      "buf:%p [%"RSIZE_FMT"] (mem:%p)@%"RSIZE_FMT" [%"RSSIZE_FMT"] %s "       \
+      "str:%p [%"RSIZE_FMT"]",                                                \
+      r1, #o, #s, #cmp, r2, #ms,                                              \
+      b, r_buffer_get_size (b), info.data, __o, info.size, #cmp, m, __ms);    \
+  r_buffer_unmap (b, &info);                                                  \
 } R_STMT_END
 #define _R_ASSERT_CMPBUFMEM(b, o, s, cmp, m, ms, r1, r2)   R_STMT_START {     \
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;                                     \

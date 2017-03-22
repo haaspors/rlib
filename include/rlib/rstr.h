@@ -230,6 +230,7 @@ R_API rchar * r_strprintf (const rchar * fmt, ...) R_ATTR_PRINTF (1, 2);
 R_API rchar * r_strvprintf (const rchar * fmt, va_list args) R_ATTR_PRINTF (1, 0);
 
 /* Dump/format memory to string */
+R_API void r_str_dump (rchar * dst, const rchar * src, rsize size);
 #define R_STR_MEM_DUMP_SIZE(align) \
   ((align * 4) + (align / 4) + (RLIB_SIZEOF_VOID_P * 2) + 8)
 R_API rboolean r_str_mem_dump (rchar * str, const ruint8 * ptr,

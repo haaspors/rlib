@@ -46,8 +46,8 @@ R_BEGIN_DECLS
 #define r_assert_cmpbuf(b1, o1, cmp, b2, o2, s) _R_ASSERT_CMPBUFSIZE (b1, o1, s, cmp, b2, o2, s, #b1, #b2)
 #define r_assert_cmpbufsize(b1, o1, s1, cmp, b2, o2, s2) _R_ASSERT_CMPBUFSIZE (b1, o1, s1, cmp, b2, o2, s2, #b1, #b2)
 #define r_assert_cmpbufmem(b, o, s, cmp, m, ms) _R_ASSERT_CMPBUFMEM (b, o, s, cmp, m, ms, #b, #m)
-#define r_assert_cmpbufstr(b, o, s, cmp, str, ss) _R_ASSERT_CMPBUFMEM (b, o, s, cmp, (str), ss, #b, #str)
-#define r_assert_cmpbufsstr(b, o, s, cmp, str)  _R_ASSERT_CMPBUFMEM (b, o, s, cmp, (str), R_STR_SIZEOF (str), #b, #str)
+#define r_assert_cmpbufstr(b, o, s, cmp, str, ss) _R_ASSERT_CMPBUFSTR (b, o, s, cmp, (str), ss, #b, #str)
+#define r_assert_cmpbufsstr(b, o, s, cmp, str)  _R_ASSERT_CMPBUFSTR (b, o, s, cmp, (str), R_STR_SIZEOF (str), #b, #str)
 
 /* NOTE that r_assert_log* uses the RLogKeepLast framework which could affect performance */
 #define r_assert_logs_cat(expr, cat)            _R_ASSERT_LOG (expr,  cat, 0, NULL)

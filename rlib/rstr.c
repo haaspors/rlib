@@ -1470,6 +1470,23 @@ r_strnjoinv (rchar * str, rsize size, const rchar * delim, va_list args)
   return str;
 }
 
+#if RLIB_SIZEOF_VOID_P == 8
+#define _PTR_FMT  "%16p: "
+#else
+#define _PTR_FMT  "%8p: "
+#endif
+
+void
+r_str_dump (rchar * dst, const rchar * src, rsize size)
+{
+  dst += r_sprintf (dst, _PTR_FMT, src);
+  while (size-- > 0) {
+    *dst++ = r_ascii_isprint (*src) ? *src : '.';
+    src++;
+  }
+  *dst = 0;
+}
+
 rboolean
 r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
 {
@@ -1481,12 +1498,6 @@ r_str_mem_dump (rchar * str, const ruint8 * ptr, rsize size, rsize align)
     return FALSE;
   if (R_UNLIKELY (ptr == NULL))
     return FALSE;
-
-#if RLIB_SIZEOF_VOID_P == 8
-#define _PTR_FMT  "%16p: "
-#else
-#define _PTR_FMT  "%8p: "
-#endif
 
   for (; size > 0; size -= itsize, ptr += itsize) {
     itsize = size > align ? align : size;

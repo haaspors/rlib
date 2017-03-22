@@ -294,6 +294,33 @@ r_log_msg (RLogCategory * cat, RLogLevel lvl,
 }
 
 void
+r_log_str_dump (RLogCategory * cat, RLogLevel lvl,
+    const rchar * file, ruint line, const rchar * func,
+    const rchar * str, rssize size, rsize bytesperline)
+{
+  rchar * msg = r_alloca (RLIB_SIZEOF_VOID_P * 2 + 4 + bytesperline + 1);
+  const rchar * p = str;
+  rsize s = size < 0 ? r_strlen (str) : (rsize)size;
+
+  if (R_UNLIKELY (cat == NULL))
+    abort ();
+  if (lvl > cat->threshold && !g__r_log_ignore_threshold)
+    return;
+
+  while (s > bytesperline) {
+    r_str_dump (msg, p, bytesperline);
+    r_log_it (cat, lvl, file, line, func, msg);
+    s -= bytesperline;
+    p += bytesperline;
+  }
+
+  if (s > 0) {
+    r_str_dump (msg, p, s);
+    r_log_it (cat, lvl, file, line, func, msg);
+  }
+}
+
+void
 r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,
     rconstpointer ptr, rsize size, rsize bytesperline)

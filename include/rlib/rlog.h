@@ -93,6 +93,9 @@ R_API void r_logv (RLogCategory * cat, RLogLevel lvl,
 R_API void r_log_msg (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,
     const rchar * msg);
+R_API void r_log_str_dump (RLogCategory * cat, RLogLevel lvl,
+    const rchar * file, ruint line, const rchar * func,
+    const rchar * str, rssize size, rsize bytesperline);
 R_API void r_log_mem_dump (RLogCategory * cat, RLogLevel lvl,
     const rchar * file, ruint line, const rchar * func,
     rconstpointer ptr, rsize size, rsize bytesperline);
@@ -123,6 +126,12 @@ R_API void r_log_buf_dump (RLogCategory * cat, RLogLevel lvl,
 #define R_LOG_TRACE(...)    R_LOG_CAT_LEVEL (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_TRACE,    __VA_ARGS__)
 
 
+#define R_LOG_CAT_LEVEL_STR_DUMP(cat,lvl,str,size) R_STMT_START {             \
+  _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE);               \
+  if (R_UNLIKELY (lvl <= R_LOG_LEVEL_MAX && (int)lvl<=(int)_r_log_level_min)) \
+    r_log_str_dump ((cat), (lvl), __FILE__, __LINE__, R_STRFUNC, str, size, 68);\
+} R_STMT_END
+#define R_LOG_STR_DUMP(lvl,str,size)  R_LOG_CAT_LEVEL_STR_DUMP (R_LOG_CAT_DEFAULT, lvl, str, size)
 #define R_LOG_CAT_LEVEL_MEM_DUMP(cat,lvl,ptr,size) R_STMT_START {             \
   _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE);               \
   if (R_UNLIKELY (lvl <= R_LOG_LEVEL_MAX && (int)lvl<=(int)_r_log_level_min)) \
