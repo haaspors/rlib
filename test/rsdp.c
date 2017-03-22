@@ -488,7 +488,94 @@ RTEST (rsdp, msg_new_jsep, RTEST_FAST)
   r_sdp_msg_unref (msg);
   r_assert_cmpbufsstr (buf, 0, -1, ==, sdp_jsep_with_av);
   r_buffer_unref (buf);
+}
+RTEST_END;
 
+RTEST (rsdp, create_webrtc_sdp, RTEST_FAST)
+{
+  RSdpMsg * msg;
+  RSdpMedia * m;
+  RSocketAddress * addr;
+  RBuffer * buf;
+  static const rchar expected[] =
+    "v=0\r\n"
+    "o=- 2489868560574230385 2 IN IP4 127.0.0.1\r\n"
+    "s=-\r\n"
+    "t=0 0\r\n"
+    "a=group:BUNDLE audio\r\n"
+    "m=audio 9 UDP/TLS/RTP/SAVPF 111 103 104 9 0 8 106 105 13 126\r\n"
+    "c=IN IP4 0.0.0.0\r\n"
+    "a=rtcp:9 IN IP4 0.0.0.0\r\n"
+    "a=mid:audio\r\n"
+    "a=rtcp-mux\r\n"
+    "a=recvonly\r\n"
+    "a=ice-ufrag:4f5Pqit80I/GWqjp\r\n"
+    "a=ice-pwd:p+q6kISttan/TbFv8tauTFfA\r\n"
+    "a=ice-lite\r\n"
+    "a=candidate:1467250027 1 udp 2122260223 127.0.0.1 56144 typ host generation 0\r\n"
+    "a=fingerprint:sha-256 74:AC:BD:23:74:28:88:33:67:89:4A:3E:05:12:24:55:C1:1C:71:C4:DE:00:C7:47:D3:5D:98:51:36:A8:0A:B8\r\n"
+    "a=setup:passive\r\n"
+    "a=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level\r\n"
+    "a=extmap:3 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\r\n"
+    "a=rtpmap:111 opus/48000/2\r\n"
+    "a=rtcp-fb:111 transport-cc\r\n"
+    "a=fmtp:111 minptime=10;useinbandfec=1\r\n"
+    "a=rtpmap:103 ISAC/16000\r\n"
+    "a=rtpmap:104 ISAC/32000\r\n"
+    "a=rtpmap:9 G722/8000\r\n"
+    "a=rtpmap:0 PCMU/8000\r\n"
+    "a=rtpmap:8 PCMA/8000\r\n"
+    "a=rtpmap:106 CN/32000\r\n"
+    "a=rtpmap:105 CN/16000\r\n"
+    "a=rtpmap:13 CN/8000\r\n"
+    "a=rtpmap:126 telephone-event/8000\r\n";
+
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 56144)), !=, NULL);
+
+  r_assert_cmpptr ((msg = r_sdp_msg_new_jsep (RUINT64_CONSTANT (2489868560574230385), 2)), !=, NULL);
+  r_assert_cmpptr ((m = r_sdp_media_new_jsep_dtls ("audio", -1, "audio", -1, R_SDP_MD_RECVONLY)), !=, NULL);
+  r_assert_cmpint (r_sdp_msg_add_media (msg, m), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_ice_credentials (m, R_STR_WITH_SIZE_ARGS ("4f5Pqit80I/GWqjp"),
+        R_STR_WITH_SIZE_ARGS ("p+q6kISttan/TbFv8tauTFfA")), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_attribute (m, R_STR_WITH_SIZE_ARGS ("ice-lite"), NULL, 0), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_ice_candidate (m, R_STR_WITH_SIZE_ARGS ("1467250027"), 1,
+        R_STR_WITH_SIZE_ARGS ("udp"), RUINT64_CONSTANT (2122260223), addr, R_SDP_ICE_TYPE_HOST,
+        NULL, R_STR_WITH_SIZE_ARGS ("generation 0")), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_dtls_setup (m, R_SDP_CONN_ROLE_PASSIVE,
+        R_MSG_DIGEST_TYPE_SHA256,
+        R_STR_WITH_SIZE_ARGS ("74:AC:BD:23:74:28:88:33:67:89:4A:3E:05:12:24:55:C1:1C:71:C4:DE:00:C7:47:D3:5D:98:51:36:A8:0A:B8")),
+      ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_attribute (m, R_STR_WITH_SIZE_ARGS ("extmap"), R_STR_WITH_SIZE_ARGS ("1 urn:ietf:params:rtp-hdrext:ssrc-audio-level")), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_attribute (m, R_STR_WITH_SIZE_ARGS ("extmap"), R_STR_WITH_SIZE_ARGS ("3 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time")), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)111,
+        R_STR_WITH_SIZE_ARGS ("opus"), 48000, 2), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_attribute (m, R_STR_WITH_SIZE_ARGS ("rtcp-fb"), R_STR_WITH_SIZE_ARGS ("111 transport-cc")), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_attribute (m, R_STR_WITH_SIZE_ARGS ("fmtp"), R_STR_WITH_SIZE_ARGS ("111 minptime=10;useinbandfec=1")), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)103,
+        R_STR_WITH_SIZE_ARGS ("ISAC"), 16000, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)104,
+        R_STR_WITH_SIZE_ARGS ("ISAC"), 32000, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, R_RTP_PT_G722,
+        R_STR_WITH_SIZE_ARGS ("G722"), 8000, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, R_RTP_PT_PCMU,
+        R_STR_WITH_SIZE_ARGS ("PCMU"), 8000, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, R_RTP_PT_PCMA,
+        R_STR_WITH_SIZE_ARGS ("PCMA"), 8000, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)106,
+        R_STR_WITH_SIZE_ARGS ("CN"), 32000, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)105,
+        R_STR_WITH_SIZE_ARGS ("CN"), 16000, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, R_RTP_PT_CN,
+        R_STR_WITH_SIZE_ARGS ("CN"), 8000, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)126,
+        R_STR_WITH_SIZE_ARGS ("telephone-event"), 8000, 1), ==, R_SDP_OK);
+
+  r_socket_address_unref (addr);
+  r_sdp_media_unref (m);
+  r_assert_cmpptr ((buf = r_sdp_msg_to_buffer (msg)), !=, NULL);
+  r_sdp_msg_unref (msg);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, expected);
+  r_buffer_unref (buf);
 }
 RTEST_END;
 

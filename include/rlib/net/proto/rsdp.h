@@ -27,6 +27,7 @@
 #include <rlib/rbuffer.h>
 #include <rlib/rmsgdigest.h>
 #include <rlib/rref.h>
+#include <rlib/rsocketaddress.h>
 #include <rlib/rstr.h>
 #include <rlib/ruri.h>
 
@@ -59,6 +60,14 @@ typedef enum {
   R_SDP_CONN_ROLE_PASSIVE   = 2,
   R_SDP_CONN_ROLE_ACTPASS   = R_SDP_CONN_ROLE_ACTIVE | R_SDP_CONN_ROLE_PASSIVE,
 } RSdpConnRole;
+
+typedef enum {
+  R_SDP_ICE_TYPE_HOST         = 0,
+  R_SDP_ICE_TYPE_SRFLX        = 1,
+  R_SDP_ICE_TYPE_PRFLX        = 2,
+  R_SDP_ICE_TYPE_RELAY        = 3,
+} RSdpICEType;
+
 
 typedef struct _RSdpBuf RSdpBuf; /* Fwd decl because of RSdpMsg API */
 
@@ -145,6 +154,18 @@ R_API RSdpResult r_sdp_media_add_jsep_msid (RSdpMedia * media, ruint32 ssrc,
     const rchar * msidval, rssize vsize, const rchar * msidappdata, rssize asize);
 R_API RSdpResult r_sdp_media_add_ice_credentials (RSdpMedia * media,
     const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize);
+R_API RSdpResult r_sdp_media_add_ice_candidate_raw (RSdpMedia * media,
+    const rchar * foundation, rssize fsize, ruint componentid,
+    const rchar * transport, rssize transize, ruint64 pri,
+    const rchar * addr, rssize asize, ruint16 port,
+    const rchar * type, rssize typesize,
+    const rchar * raddr, rssize rasize, ruint16 rport,
+    const rchar * extension, rssize esize);
+R_API RSdpResult r_sdp_media_add_ice_candidate (RSdpMedia * media,
+    const rchar * foundation, rssize fsize, ruint componentid,
+    const rchar * transport, rssize tsize, ruint64 pri,
+    const RSocketAddress * addr, RSdpICEType type,
+    const RSocketAddress * raddr, const rchar * extension, rssize esize);
 R_API RSdpResult r_sdp_media_add_dtls_setup (RSdpMedia * media,
     RSdpConnRole role, RMsgDigestType type, const rchar * fingerprint, rssize fsize);
 

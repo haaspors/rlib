@@ -1073,6 +1073,121 @@ r_sdp_media_add_ice_credentials (RSdpMedia * media,
 }
 
 RSdpResult
+r_sdp_media_add_ice_candidate_raw (RSdpMedia * media,
+    const rchar * foundation, rssize fsize, ruint componentid,
+    const rchar * transport, rssize transize, ruint64 pri,
+    const rchar * addr, rssize asize, ruint16 port,
+    const rchar * type, rssize typesize,
+    const rchar * raddr, rssize rasize, ruint16 rport,
+    const rchar * extension, rssize esize)
+{
+  RSdpResult ret;
+  RString * str;
+  rchar * val;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (fsize < 0) fsize = r_strlen (foundation);
+  if (transize < 0) transize = r_strlen (transport);
+  if (asize < 0) asize = r_strlen (addr);
+  if (rasize < 0) rasize = r_strlen (addr);
+  if (esize < 0) esize = r_strlen (extension);
+  if (R_UNLIKELY (foundation == NULL || fsize == 0)) return R_SDP_INVAL;
+  if (R_UNLIKELY (transport == NULL || transize == 0)) return R_SDP_INVAL;
+  if (R_UNLIKELY (addr == NULL || asize == 0)) return R_SDP_INVAL;
+  if (R_UNLIKELY (type == NULL || typesize == 0)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY ((str = r_string_new_sized (128)) == NULL))
+    return R_SDP_OOM;
+
+  r_string_append_printf (str,
+      "%.*s %u %.*s %"RUINT64_FMT" %.*s %"RUINT16_FMT" typ %.*s",
+      (int)fsize, foundation, componentid, (int)transize, transport, pri,
+      (int)asize, addr, port, (int)typesize, type);
+  if (raddr != NULL && rasize > 0)
+    r_string_append_printf (str, " raddr %.*s", (int)rasize, raddr);
+  if (rport > 0)
+    r_string_append_printf (str, " %"RUINT16_FMT, rport);
+  if (extension != NULL || esize > 0)
+    r_string_append_printf (str, " %.*s", (int)esize, extension);
+
+  if ((val = r_string_free_keep (str)) != NULL) {
+    ret = r_sdp_media_add_attribute (media,
+        R_STR_WITH_SIZE_ARGS ("candidate"), val, -1);
+    r_free (val);
+  } else {
+    ret = R_SDP_OOM;
+  }
+
+  return ret;
+}
+
+RSdpResult
+r_sdp_media_add_ice_candidate (RSdpMedia * media,
+    const rchar * foundation, rssize fsize, ruint componentid,
+    const rchar * transport, rssize tsize, ruint64 pri,
+    const RSocketAddress * addr, RSdpICEType type,
+    const RSocketAddress * raddr, const rchar * extension, rssize esize)
+{
+  RSdpResult ret;
+  const rchar * _type;
+  rchar * _addr, * _raddr;
+  ruint16 port, rport;
+
+  if (R_UNLIKELY (addr == NULL)) return R_SDP_INVAL;
+  switch (r_socket_address_get_family (addr)) {
+    case R_SOCKET_FAMILY_IPV4:
+      _addr = r_socket_address_ipv4_to_str (addr, FALSE);
+      port = r_socket_address_ipv4_get_port (addr);
+      break;
+    /*case R_SOCKET_FAMILY_IPV6: FIXME */
+    default:
+      return R_SDP_INVAL;
+  }
+
+  switch (type) {
+    case R_SDP_ICE_TYPE_HOST:
+      _type = "host";
+      break;
+    case R_SDP_ICE_TYPE_SRFLX:
+      _type = "srflx";
+      break;
+    case R_SDP_ICE_TYPE_PRFLX:
+      _type = "prflx";
+      break;
+    case R_SDP_ICE_TYPE_RELAY:
+      _type = "relay";
+      break;
+    default:
+      return R_SDP_INVAL;
+  }
+
+  if (raddr != NULL) {
+    switch (r_socket_address_get_family (raddr)) {
+      case R_SOCKET_FAMILY_IPV4:
+        _raddr = r_socket_address_ipv4_to_str (raddr, FALSE);
+        rport = r_socket_address_ipv4_get_port (raddr);
+        break;
+      /*case R_SOCKET_FAMILY_IPV6: FIXME */
+      default:
+        r_free (_addr);
+        return R_SDP_INVAL;
+    }
+  } else {
+    _raddr = NULL;
+    rport = 0;
+  }
+
+  ret = r_sdp_media_add_ice_candidate_raw (media, foundation, fsize, componentid,
+      transport, tsize, pri, _addr, -1, port, _type, -1, _raddr, -1, rport,
+      extension, esize);
+
+  r_free (_addr);
+  r_free (_raddr);
+
+  return ret;
+}
+
+RSdpResult
 r_sdp_media_add_dtls_setup (RSdpMedia * media, RSdpConnRole role,
     RMsgDigestType type, const rchar * fingerprint, rssize fsize)
 {
