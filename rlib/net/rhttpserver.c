@@ -44,7 +44,7 @@ typedef struct {
 } RHttpClientCtx;
 
 #define R_LOG_CAT_DEFAULT &httpsrvcat
-R_LOG_CATEGORY_DEFINE_STATIC (httpsrvcat, "http-server", "RLib HTTP server",
+R_LOG_CATEGORY_DEFINE_STATIC (httpsrvcat, "httpserver", "RLib HTTP server",
     R_CLR_FG_WHITE | R_CLR_BG_BLUE | R_CLR_FMT_BOLD);
 
 void
