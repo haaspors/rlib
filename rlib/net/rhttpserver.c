@@ -40,6 +40,7 @@ struct _RHttpServer {
 typedef struct {
   RHttpRequest * req;
   RBuffer * rem;
+  rboolean close_after_response_sent;
 } RHttpClientCtx;
 
 #define R_LOG_CAT_DEFAULT &httpsrvcat
@@ -215,19 +216,34 @@ r_http_server_process_request (RHttpServer * server,
 }
 
 static void
+r_http_server_response_sent (rpointer data, RBuffer * buf, REvTCP * evtcp)
+{
+  RHttpServer * server = data;
+  (void) buf;
+
+  R_LOG_TRACE ("%p: response sent "R_EV_IO_FORMAT" closing", server, R_EV_IO_ARGS (evtcp));
+  r_ev_tcp_close (evtcp, NULL, NULL, NULL);
+  r_ptr_array_remove_first_fast (server->con, evtcp);
+}
+
+static void
 r_http_server_tcp_response_ready (rpointer data, RHttpResponse * res,
     RHttpServer * server)
 {
   REvTCP * evtcp = data;
   RBuffer * buf;
-
-  (void) server;
+  RHttpClientCtx * ctx  = r_ev_io_get_user ((REvIO *)evtcp);
 
   if ((buf = r_http_response_get_buffer (res)) != NULL) {
     R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT,
         server, buf, R_EV_IO_ARGS (evtcp));
     R_LOG_BUF_DUMP (R_LOG_LEVEL_TRACE, buf);
-    r_ev_tcp_send_and_forget (evtcp, buf);
+    if (ctx == NULL || ctx->close_after_response_sent) {
+      r_ev_tcp_send (evtcp, buf, r_http_server_response_sent,
+          r_http_server_ref (server), r_http_server_unref);
+    } else {
+      r_ev_tcp_send_and_forget (evtcp, buf);
+    }
     r_buffer_unref (buf);
   }
 }
@@ -256,6 +272,9 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
       if ((ctx->req = r_http_request_new_from_buffer (buf, &err, &ctx->rem)) != NULL) {
         if (err == R_HTTP_OK) {
           RSocketAddress * addr;
+
+          /* FIXME: Check keep-alive */
+          ctx->close_after_response_sent = TRUE;
           r_http_server_process_request (server, ctx->req,
               (addr = r_ev_tcp_get_remote_address (evtcp)),
               r_http_server_tcp_response_ready,
@@ -271,6 +290,7 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
                 server, R_EV_IO_ARGS (evtcp), r_buffer_get_size (ctx->rem));
           }
         } else if (err != R_HTTP_OK_BODY_UNTIL_CLOSE) {
+          ctx->close_after_response_sent = TRUE;
           R_LOG_WARNING ("%p: "R_EV_IO_FORMAT" request parsed, but err: %d",
               server, R_EV_IO_ARGS (evtcp), (int)err);
         }
@@ -282,6 +302,9 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
   } else {
     if (ctx->req != NULL) {
       RSocketAddress * addr;
+
+      /* FIXME: Check keep-alive */
+      ctx->close_after_response_sent = TRUE;
       r_http_server_process_request (server, ctx->req,
           (addr = r_ev_tcp_get_remote_address (evtcp)),
           r_http_server_tcp_response_ready,
