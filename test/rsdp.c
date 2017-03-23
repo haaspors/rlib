@@ -188,6 +188,35 @@ RTEST (rsdp, from_rfc_3264, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsdp, only_lf, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+  static const rchar sdp_only_LF[] =
+    "v=0\n"
+    "o=- 9223372039002259456 2 IN IP4 127.0.0.1\n"
+    "s=-\n"
+    "t=0 0\n"
+    "a=recvonly\n";
+  rchar * tmp;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_only_LF))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_sdp_buf_version (&sdp)), ==, "0"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_username (&sdp)), ==, "-"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_id (&sdp)), ==, "9223372039002259456"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_version (&sdp)), ==, "2"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_nettype (&sdp)), ==, "IN"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_addrtype (&sdp)), ==, "IP4"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_orig_addr (&sdp)), ==, "127.0.0.1"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_session_name (&sdp)), ==, "-"); r_free (tmp);
+  r_assert_cmpint (r_sdp_buf_has_attrib (&sdp, "recvonly", -1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 static const rchar sdp_missing_required[] =
   "v=0\r\n"
   /* Missing o= */
