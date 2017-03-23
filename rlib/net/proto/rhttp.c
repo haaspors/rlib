@@ -565,6 +565,9 @@ r_http_request_new_from_buffer (RBuffer * buf, RHttpError * err,
       } else {
         res = R_HTTP_MISSING_HOST;
       }
+    } else if (res == R_HTTP_BUF_TOO_SMALL) {
+      if (remainder != NULL)
+        *remainder = r_buffer_ref (buf);
     }
 
     r_buffer_unmap (buf, &info);

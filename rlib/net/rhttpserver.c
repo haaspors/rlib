@@ -263,12 +263,13 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
     R_LOG_BUF_DUMP (R_LOG_LEVEL_TRACE, buf);
 
     if (ctx->req == NULL) {
-      if (ctx->rem == NULL)
+      if (ctx->rem == NULL) {
         ctx->rem = r_buffer_ref (buf);
-      else
+      } else {
         r_buffer_append_mem_from_buffer (ctx->rem, buf);
+        buf = ctx->rem;
+      }
 
-      buf = ctx->rem;
       if ((ctx->req = r_http_request_new_from_buffer (buf, &err, &ctx->rem)) != NULL) {
         if (err == R_HTTP_OK) {
           RSocketAddress * addr;
@@ -294,8 +295,9 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
           R_LOG_WARNING ("%p: "R_EV_IO_FORMAT" request parsed, but err: %d",
               server, R_EV_IO_ARGS (evtcp), (int)err);
         }
-        r_buffer_unref (buf);
       }
+
+      r_buffer_unref (buf);
     } else {
       r_http_request_append_body_buffer (ctx->req, buf);
     }
