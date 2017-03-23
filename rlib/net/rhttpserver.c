@@ -212,6 +212,7 @@ r_http_server_process_request (RHttpServer * server,
     return TRUE;
   }
 
+  R_LOG_WARNING ("%p: Request %p not processed", server, req);
   return FALSE;
 }
 
@@ -258,8 +259,8 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
   ctx = r_ev_io_get_user ((REvIO *)evtcp);
 
   if (buf != NULL) {
-    R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT,
-        server, buf, R_EV_IO_ARGS (evtcp));
+    R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT" (%"RSIZE_FMT")",
+        server, buf, R_EV_IO_ARGS (evtcp), r_buffer_get_size (buf));
     R_LOG_BUF_DUMP (R_LOG_LEVEL_TRACE, buf);
 
     if (ctx->req == NULL) {
@@ -271,6 +272,8 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
       }
 
       if ((ctx->req = r_http_request_new_from_buffer (buf, &err, &ctx->rem)) != NULL) {
+        R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request created %p",
+            server, R_EV_IO_ARGS (evtcp), ctx->req);
         if (err == R_HTTP_OK) {
           RSocketAddress * addr;
 
@@ -290,15 +293,28 @@ r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
             R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" remainder %"RSIZE_FMT,
                 server, R_EV_IO_ARGS (evtcp), r_buffer_get_size (ctx->rem));
           }
-        } else if (err != R_HTTP_OK_BODY_UNTIL_CLOSE) {
+        } else if (err == R_HTTP_OK_BODY_UNTIL_CLOSE) {
+          R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" waiting for close",
+              server, R_EV_IO_ARGS (evtcp));
+        } else {
           ctx->close_after_response_sent = TRUE;
           R_LOG_WARNING ("%p: "R_EV_IO_FORMAT" request parsed, but err: %d",
+              server, R_EV_IO_ARGS (evtcp), (int)err);
+        }
+      } else {
+        if (err == R_HTTP_BUF_TOO_SMALL) {
+          R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" waiting for data (%"RSIZE_FMT")",
+              server, R_EV_IO_ARGS (evtcp), r_buffer_get_size (ctx->rem));
+        } else {
+          R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request not parsed. err: %d",
               server, R_EV_IO_ARGS (evtcp), (int)err);
         }
       }
 
       r_buffer_unref (buf);
     } else {
+      R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" append to request %p",
+          server, R_EV_IO_ARGS (evtcp), ctx->req);
       r_http_request_append_body_buffer (ctx->req, buf);
     }
   } else {
