@@ -242,20 +242,6 @@ r_http_msg_set_body_buffer (RHttpMsg * msg, RBuffer * buf)
   return R_HTTP_OK;
 }
 
-RHttpError
-r_http_msg_append_body_buffer (RHttpMsg * msg, RBuffer * buf)
-{
-  if (R_UNLIKELY (msg == NULL)) return R_HTTP_INVAL;
-  if (R_UNLIKELY (buf == NULL)) return R_HTTP_INVAL;
-
-  if (msg->body == NULL)
-    msg->body = r_buffer_ref (buf);
-  else
-    r_buffer_append_mem_from_buffer (msg->body, buf);
-
-  return R_HTTP_OK;
-}
-
 rboolean
 r_http_msg_has_header (RHttpMsg * msg, const rchar * field, rssize size)
 {
@@ -264,12 +250,50 @@ r_http_msg_has_header (RHttpMsg * msg, const rchar * field, rssize size)
 
   if (R_UNLIKELY (msg == NULL)) return FALSE;
   if (R_UNLIKELY (field == NULL)) return FALSE;
+  if (size < 0) size = r_strlen (field);
   if (R_UNLIKELY (size == 0)) return FALSE;
 
   if (r_buffer_map (msg->hdr, &info, R_MEM_MAP_READ)) {
     rssize idx;
     if ((idx = r_str_idx_of_str_case ((rchar *)info.data, info.size, field, size)) >= 0)
       ret = info.data[idx + (rsize)size] == ':';
+    r_buffer_unmap (msg->hdr, &info);
+  }
+
+  return ret;
+}
+
+rboolean
+r_http_msg_has_header_of_value (RHttpMsg * msg,
+    const rchar * key, rssize ksize, const rchar * val, rssize vsize)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rboolean ret = FALSE;
+
+  if (R_UNLIKELY (msg == NULL)) return FALSE;
+  if (R_UNLIKELY (key == NULL)) return FALSE;
+  if (ksize < 0) ksize = r_strlen (key);
+  if (R_UNLIKELY (ksize == 0)) return FALSE;
+  if (R_UNLIKELY (val == NULL)) return FALSE;
+  if (vsize < 0) vsize = r_strlen (val);
+  if (R_UNLIKELY (vsize == 0)) return FALSE;
+
+  if (r_buffer_map (msg->hdr, &info, R_MEM_MAP_READ)) {
+    rsize off = 0;
+    rssize idx;
+    while (off < info.size &&
+        (idx = r_str_idx_of_str_case ((rchar *)info.data + off, info.size - off, key, ksize)) >= 0) {
+      off += idx + ksize + 1;
+      while (off < info.size && r_ascii_isspace (((rchar *)info.data)[off]))
+        off++;
+
+      if (off + vsize < info.size && r_strncasecmp ((rchar *)info.data + off, val, vsize)) {
+        ret = TRUE;
+        break;
+      }
+
+      off += vsize;
+    }
     r_buffer_unmap (msg->hdr, &info);
   }
 
@@ -471,12 +495,16 @@ r_http_method_parse (rpointer data, rsize size)
 static RHttpError
 r_http_request_parse (rconstpointer data, rsize size,
     RHttpMethod * method, RStrChunk * target, RStrChunk * ver,
-    rsize * hdroff, rsize * hdrsize, rsize * bodyoff, rsize * bodysize)
+    rsize * hdroff, rsize * hdrsize)
 {
   RStrMatchResult * sres;
   rssize idx;
-  const rchar * tenc, * clen;
-  rsize tencsize, clensize;
+
+  if ((idx = r_str_idx_of_str ((const rchar *)data, size, "\r\n\r\n", 4)) >= 0) {
+    *hdrsize = (rsize)idx + 4;
+  } else {
+    return R_HTTP_BUF_TOO_SMALL;
+  }
 
   /* Request line */
   if ((sres = r_http_parse_start_line (data, size)) != NULL) {
@@ -490,39 +518,7 @@ r_http_request_parse (rconstpointer data, rsize size,
     return R_HTTP_DECODE_ERROR;
   }
 
-  /* Headers */
-  if ((idx = r_str_idx_of_str (((const rchar *)data) + *hdroff, size - *hdroff,
-          "\r\n\r\n", 4)) >= 0) {
-    *hdrsize = (rsize)idx + 4;
-  } else {
-    return R_HTTP_BUF_TOO_SMALL;
-  }
-
-  /* Body */
-  *bodyoff = *hdroff + *hdrsize;
-
-  if ((tenc = r_http_get_header (((const rchar *)data) + *hdroff, *hdrsize,
-          R_STR_WITH_SIZE_ARGS ("Transfer-Encoding"), &tencsize)) != NULL) {
-    if (tencsize < R_STR_SIZEOF ("chunked") || !r_str_equals (tenc, "chunked"))
-      return R_HTTP_BAD_DATA;
-
-    /* FIXME: Support chunked Transfer-Encoding */
-    return R_HTTP_NOT_SUPPORTED;
-  }
-
-  if ((clen = r_http_get_header (((const rchar *)data) + *hdroff, *hdrsize,
-          R_STR_WITH_SIZE_ARGS ("Content-Length"), &clensize)) != NULL) {
-    RStrParse p;
-    int bsize = r_str_to_int (clen, NULL, 10, &p);
-    if (p == R_STR_PARSE_OK) {
-      if ((*bodysize = (rsize)bsize) > size - *bodyoff)
-        return R_HTTP_BUF_TOO_SMALL;
-    } else {
-      return R_HTTP_BAD_DATA;
-    }
-  } else {
-    *bodysize = 0;
-  }
+  *hdrsize -= *hdroff;
 
   return R_HTTP_OK;
 }
@@ -541,24 +537,23 @@ r_http_request_new_from_buffer (RBuffer * buf, RHttpError * err,
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
     RHttpMethod method;
     RStrChunk strrequest, strver;
-    rsize hdroff, hdrsize, bodyoff, bodysize, hostsize;
+    rsize hdroff, hdrsize, hostsize;
     const rchar * host;
 
     if ((res = r_http_request_parse (info.data, info.size,
-          &method, &strrequest, &strver,
-          &hdroff, &hdrsize, &bodyoff, &bodysize)) == R_HTTP_OK) {
+          &method, &strrequest, &strver, &hdroff, &hdrsize)) == R_HTTP_OK) {
       if ((host = r_http_get_header (info.data + hdroff, hdrsize,
               R_STR_WITH_SIZE_ARGS ("Host"), &hostsize)) != NULL) {
         if ((ret = r_mem_new (RHttpRequest)) != NULL) {
           r_http_msg_init ((RHttpMsg *)ret, (RDestroyNotify)r_http_request_free,
               r_buffer_view (buf, 0, hdroff),
               r_buffer_view (buf, hdroff, hdrsize),
-              r_buffer_view (buf, bodyoff, bodysize));
+              NULL);
           ret->method = method;
           ret->uri = r_uri_new_http_sized (host, hostsize,
               strrequest.str, strrequest.size);
           if (remainder != NULL)
-            *remainder = r_buffer_view (buf, bodyoff + bodysize, -1);
+            *remainder = r_buffer_view (buf, hdroff + hdrsize, -1);
         } else {
           res = R_HTTP_OOM;
         }
@@ -592,6 +587,63 @@ r_http_request_get_uri (RHttpRequest * req)
   return r_uri_ref (req->uri);
 }
 
+RHttpBodyParseType
+r_http_request_get_body_parse_type (RHttpRequest * req)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RHttpBodyParseType ret = R_HTTP_BODY_PARSE_SIZED;
+
+  if (r_buffer_map (req->msg.hdr, &info, R_MEM_MAP_READ)) {
+    const rchar * val;
+    rsize size;
+
+    if ((val = r_http_get_header ((const rchar *)info.data, info.size,
+            R_STR_WITH_SIZE_ARGS ("Transfer-Encoding"), &size)) != NULL) {
+      if (r_str_idx_of_str (val, size, R_STR_WITH_SIZE_ARGS ("chunked")) >= 0)
+        ret = R_HTTP_BODY_PARSE_CHUNKED;
+    }
+
+    r_buffer_unmap (req->msg.hdr, &info);
+  }
+
+  return ret;
+}
+
+rssize
+r_http_request_calc_body_size (RHttpRequest * req, RHttpBodyParseType * type)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rssize ret = 0;
+
+  if (type != NULL)
+    *type = R_HTTP_BODY_PARSE_SIZED;
+
+  if (r_buffer_map (req->msg.hdr, &info, R_MEM_MAP_READ)) {
+    const rchar * val;
+    rsize size;
+
+    if ((val = r_http_get_header ((const rchar *)info.data, info.size,
+            R_STR_WITH_SIZE_ARGS ("Transfer-Encoding"), &size)) != NULL) {
+      if (r_str_idx_of_str (val, size, R_STR_WITH_SIZE_ARGS ("chunked")) >= 0) {
+        if (type != NULL)
+          *type = R_HTTP_BODY_PARSE_CHUNKED;
+        ret = -1;
+      }
+    } else if ((val = r_http_get_header ((const rchar *)info.data, info.size,
+            R_STR_WITH_SIZE_ARGS ("Content-Length"), &size)) != NULL) {
+      RStrParse p;
+      int s = r_str_to_int (val, NULL, 10, &p);
+      if (p == R_STR_PARSE_OK)
+        ret = (rssize)s;
+    }
+
+    r_buffer_unmap (req->msg.hdr, &info);
+  }
+
+  return ret;
+}
+
+
 static const rchar *
 r_http_status_get_phrase (RHttpStatus status)
 {
@@ -604,7 +656,6 @@ r_http_status_get_phrase (RHttpStatus status)
 
   return r_http_status_phrase[i][j];
 }
-
 
 static RBuffer *
 r_http_create_status_line (RHttpStatus status, const rchar * phrase,
@@ -652,15 +703,19 @@ r_http_response_new (RHttpRequest * req,
 }
 
 static RHttpError
-r_http_response_parse (rconstpointer data, rsize size, RHttpMethod reqmethod,
+r_http_response_parse (rconstpointer data, rsize size,
     RStrChunk * ver, RHttpStatus * status, RStrChunk * phrase,
-    rsize * hdroff, rsize * hdrsize, rsize * bodyoff, rsize * bodysize)
+    rsize * hdroff, rsize * hdrsize)
 {
   RStrMatchResult * sres;
   rssize idx;
-  const rchar * tenc, * clen;
-  rsize tencsize, clensize;
   int s;
+
+  if ((idx = r_str_idx_of_str ((const rchar *)data, size, "\r\n\r\n", 4)) >= 0) {
+    *hdrsize = (rsize)idx + 4;
+  } else {
+    return R_HTTP_BUF_TOO_SMALL;
+  }
 
   /* Status line */
   if ((sres = r_http_parse_start_line (data, size)) != NULL &&
@@ -676,53 +731,7 @@ r_http_response_parse (rconstpointer data, rsize size, RHttpMethod reqmethod,
     return R_HTTP_DECODE_ERROR;
   }
 
-  /* Headers */
-  if ((idx = r_str_idx_of_str (((const rchar *)data) + *hdroff, size - *hdroff,
-          "\r\n\r\n", 4)) >= 0) {
-    *hdrsize = (rsize)idx + 4;
-  } else {
-    return R_HTTP_BUF_TOO_SMALL;
-  }
-
-  /* Body */
-  *bodyoff = *hdroff + *hdrsize;
-
-  if (reqmethod == R_HTTP_METHOD_HEAD ||
-      (s >= 100 && s < 200) ||
-      *status == R_HTTP_STATUS_NO_CONTENT ||
-      *status == R_HTTP_STATUS_NOT_MODIFIED) {
-    *bodysize = 0;
-    return R_HTTP_OK;
-  } else if (reqmethod == R_HTTP_METHOD_CONNECT && s >= 200 && s < 300) {
-    *bodysize = size - *bodyoff;
-    return R_HTTP_OK_BODY_UNTIL_CLOSE;
-  }
-
-  if ((tenc = r_http_get_header (((const rchar *)data) + *hdroff, *hdrsize,
-          R_STR_WITH_SIZE_ARGS ("Transfer-Encoding"), &tencsize)) != NULL) {
-    if (tencsize < R_STR_SIZEOF ("chunked") || !r_str_equals (tenc, "chunked")) {
-      *bodysize = size - *bodyoff;
-      return R_HTTP_OK_BODY_UNTIL_CLOSE;
-    }
-
-    /* FIXME: Support chunked Transfer-Encoding */
-    return R_HTTP_NOT_SUPPORTED;
-  }
-
-  if ((clen = r_http_get_header (((const rchar *)data) + *hdroff, *hdrsize,
-          R_STR_WITH_SIZE_ARGS ("Content-Length"), &clensize)) != NULL) {
-    RStrParse p;
-    int bsize = r_str_to_int (clen, NULL, 10, &p);
-    if (p == R_STR_PARSE_OK) {
-      if ((*bodysize = (rsize)bsize) > size - *bodyoff)
-        return R_HTTP_BUF_TOO_SMALL;
-    } else {
-      return R_HTTP_BAD_DATA;
-    }
-  } else {
-    *bodysize = size - *bodyoff;
-    return R_HTTP_OK_BODY_UNTIL_CLOSE;
-  }
+  *hdrsize -= *hdroff;
 
   return R_HTTP_OK;
 }
@@ -739,23 +748,21 @@ r_http_response_new_from_buffer (RHttpRequest * req,
     *remainder = NULL;
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
-    rsize hdroff, hdrsize, bodyoff, bodysize;
+    rsize hdroff, hdrsize;
     RStrChunk strphrase, strver;
     RHttpStatus status;
 
     if ((res = r_http_response_parse (info.data, info.size,
-            (req != NULL) ? req->method : R_HTTP_METHOD_UNKNOWN,
-            &strver, &status, &strphrase,
-            &hdroff, &hdrsize, &bodyoff, &bodysize)) <= R_HTTP_OK) {
+            &strver, &status, &strphrase, &hdroff, &hdrsize)) == R_HTTP_OK) {
       if ((ret = r_mem_new (RHttpResponse)) != NULL) {
         r_http_msg_init ((RHttpMsg *)ret, (RDestroyNotify)r_http_response_free,
             r_buffer_view (buf, 0, hdroff),
             r_buffer_view (buf, hdroff, hdrsize),
-            r_buffer_view (buf, (rsize)bodyoff, bodysize));
+            NULL);
         ret->status = status;
         ret->request = req != NULL ? r_http_request_ref (req) : NULL;
         if (remainder != NULL)
-          *remainder = r_buffer_view (buf, bodyoff + bodysize, -1);
+          *remainder = r_buffer_view (buf, hdroff + hdrsize, -1);
       } else {
         res = R_HTTP_OOM;
       }
@@ -804,5 +811,80 @@ r_http_response_get_request (RHttpResponse * res)
     return r_http_request_ref (res->request);
 
   return NULL;
+}
+
+RHttpBodyParseType
+r_http_response_get_body_parse_type (RHttpResponse * res)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RHttpBodyParseType ret = R_HTTP_BODY_PARSE_CLOSE; /* Assume close */
+
+  if (r_buffer_map (res->msg.hdr, &info, R_MEM_MAP_READ)) {
+    const rchar * val;
+    rsize size;
+    RHttpMethod reqmethod = (res->request != NULL) ?
+      r_http_request_get_method (res->request) : R_HTTP_METHOD_UNKNOWN;
+    RHttpStatus resstatus = r_http_response_get_status (res);
+
+    if (reqmethod == R_HTTP_METHOD_HEAD || (resstatus >= 100 && resstatus < 200) ||
+        resstatus == R_HTTP_STATUS_NO_CONTENT || resstatus == R_HTTP_STATUS_NOT_MODIFIED) {
+      ret = R_HTTP_BODY_PARSE_SIZED;
+    } else if (reqmethod == R_HTTP_METHOD_CONNECT && resstatus >= 200 && resstatus < 300) {
+      ret = R_HTTP_BODY_PARSE_TUNNEL;
+    } else if ((val = r_http_get_header ((const rchar *)info.data, info.size,
+            R_STR_WITH_SIZE_ARGS ("Transfer-Encoding"), &size)) != NULL) {
+      if (r_str_idx_of_str (val, size, R_STR_WITH_SIZE_ARGS ("chunked")) >= 0)
+        ret = R_HTTP_BODY_PARSE_CHUNKED;
+    } else if ((val = r_http_get_header ((const rchar *)info.data, info.size,
+            R_STR_WITH_SIZE_ARGS ("Content-Length"), &size)) != NULL) {
+      ret = R_HTTP_BODY_PARSE_SIZED;
+    }
+
+    r_buffer_unmap (res->msg.hdr, &info);
+  }
+
+  return ret;
+}
+
+rssize
+r_http_response_calc_body_size (RHttpResponse * res, RHttpBodyParseType * type)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RHttpBodyParseType pt = R_HTTP_BODY_PARSE_CLOSE; /* Assume close */
+  rssize ret = -1;
+
+  if (r_buffer_map (res->msg.hdr, &info, R_MEM_MAP_READ)) {
+    const rchar * val;
+    rsize size;
+    RHttpMethod reqmethod = (res->request != NULL) ?
+      r_http_request_get_method (res->request) : R_HTTP_METHOD_UNKNOWN;
+    RHttpStatus resstatus = r_http_response_get_status (res);
+
+    if (reqmethod == R_HTTP_METHOD_HEAD || (resstatus >= 100 && resstatus < 200) ||
+        resstatus == R_HTTP_STATUS_NO_CONTENT || resstatus == R_HTTP_STATUS_NOT_MODIFIED) {
+      pt = R_HTTP_BODY_PARSE_SIZED;
+      ret = 0;
+    } else if (reqmethod == R_HTTP_METHOD_CONNECT && resstatus >= 200 && resstatus < 300) {
+      pt = R_HTTP_BODY_PARSE_TUNNEL;
+    } else if ((val = r_http_get_header ((const rchar *)info.data, info.size,
+            R_STR_WITH_SIZE_ARGS ("Transfer-Encoding"), &size)) != NULL) {
+      if (r_str_idx_of_str (val, size, R_STR_WITH_SIZE_ARGS ("chunked")) >= 0)
+        pt = R_HTTP_BODY_PARSE_CHUNKED;
+    } else if ((val = r_http_get_header ((const rchar *)info.data, info.size,
+            R_STR_WITH_SIZE_ARGS ("Content-Length"), &size)) != NULL) {
+      RStrParse p;
+      int s = r_str_to_int (val, NULL, 10, &p);
+      if (p == R_STR_PARSE_OK)
+        ret = (rssize)s;
+      pt = R_HTTP_BODY_PARSE_SIZED;
+    }
+
+    r_buffer_unmap (res->msg.hdr, &info);
+  }
+
+  if (type != NULL)
+    *type = pt;
+
+  return ret;
 }
 

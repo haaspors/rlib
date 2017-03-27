@@ -33,14 +33,20 @@ struct _RHttpServer {
   REvLoop * loop;
   RDirTree * dt;
 
-  RPtrArray * con;
+  RPtrArray * clients;
   RPtrArray * listen;
 };
 
 typedef struct {
+  RRef ref;
+  RHttpServer * server;
+  REvTCP * evtcp;
+
   RHttpRequest * req;
-  RBuffer * rem;
-  rboolean close_after_response_sent;
+  rssize bodysize;
+  RBuffer * inbuf;
+
+  rboolean keepalive;
 } RHttpClientCtx;
 
 #define R_LOG_CAT_DEFAULT &httpsrvcat
@@ -54,19 +60,203 @@ r_http_server_init (void)
 }
 
 
-#define r_http_client_ctx_new() r_mem_new0 (RHttpClientCtx)
-
 static void
-r_http_client_ctx_free (rpointer data)
+r_http_client_ctx_free (RHttpClientCtx * ctx)
 {
-  RHttpClientCtx * ctx = data;
-
-  if (ctx->rem != NULL)
-    r_buffer_unref (ctx->rem);
+  if (ctx->inbuf != NULL)
+    r_buffer_unref (ctx->inbuf);
   if (ctx->req != NULL)
     r_http_request_unref (ctx->req);
 
+  r_ev_tcp_unref (ctx->evtcp);
+  r_http_server_unref (ctx->server);
   r_free (ctx);
+}
+
+static RHttpClientCtx *
+r_http_client_ctx_new (RHttpServer * server, REvTCP * evtcp)
+{
+  RHttpClientCtx * ret;
+
+  if (R_UNLIKELY (server == NULL)) return NULL;
+  if (R_UNLIKELY (evtcp == NULL)) return NULL;
+
+  if ((ret = r_mem_new0 (RHttpClientCtx)) != NULL) {
+    r_ref_init (ret, r_http_client_ctx_free);
+
+    ret->server = r_http_server_ref (server);
+    ret->evtcp = r_ev_tcp_ref (evtcp);
+  }
+
+  return ret;
+}
+
+static void
+r_http_client_ctx_close (RHttpClientCtx * ctx, rpointer data, RDestroyNotify notify)
+{
+  R_LOG_INFO ("%p: "R_EV_IO_FORMAT, ctx->server, R_EV_IO_ARGS (ctx->evtcp));
+
+  r_ev_tcp_close (ctx->evtcp, NULL, data, notify);
+  r_ptr_array_remove_first_fast (ctx->server->clients, ctx);
+}
+
+static void
+r_http_client_ctx_response_sent (rpointer data, RBuffer * buf, REvTCP * evtcp)
+{
+  RHttpClientCtx * ctx = data;
+  (void) buf;
+
+  R_LOG_TRACE ("%p: response sent "R_EV_IO_FORMAT" closing",
+      ctx->server, R_EV_IO_ARGS (evtcp));
+  r_http_client_ctx_close (ctx, NULL, NULL);
+}
+
+static void
+r_http_client_ctx_tcp_response_ready (rpointer data, RHttpResponse * res,
+    RHttpServer * server)
+{
+  RHttpClientCtx * ctx = data;
+  RBuffer * buf;
+
+  if ((buf = r_http_response_get_buffer (res)) != NULL) {
+    R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT,
+        server, buf, R_EV_IO_ARGS (ctx->evtcp));
+    R_LOG_BUF_DUMP (R_LOG_LEVEL_TRACE, buf);
+
+    if (!ctx->keepalive) {
+      r_ev_tcp_send (ctx->evtcp, buf, r_http_client_ctx_response_sent,
+          r_ref_ref (ctx), r_ref_unref);
+    } else {
+      r_ev_tcp_send_and_forget (ctx->evtcp, buf);
+    }
+    r_buffer_unref (buf);
+  }
+}
+
+static rboolean
+r_http_client_ctx_process (RHttpClientCtx * ctx)
+{
+  RSocketAddress * addr = r_ev_tcp_get_remote_address (ctx->evtcp);
+  rboolean ret;
+
+  if ((ret = r_http_server_process_request (ctx->server, ctx->req, addr,
+      r_http_client_ctx_tcp_response_ready, r_ref_ref (ctx), r_ref_unref))) {
+    r_http_request_unref (ctx->req);
+    ctx->req = NULL;
+  }
+
+  if (addr != NULL)
+    r_socket_address_unref (addr);
+
+  return ret;
+}
+
+static void
+r_http_client_ctx_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
+{
+  RHttpClientCtx * ctx = data;
+  RHttpError err;
+
+  if (buf != NULL) {
+    R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT" (%"RSIZE_FMT")",
+        ctx->server, buf, R_EV_IO_ARGS (evtcp), r_buffer_get_size (buf));
+    R_LOG_BUF_DUMP (R_LOG_LEVEL_TRACE, buf);
+
+    if (ctx->inbuf == NULL)
+      ctx->inbuf = r_buffer_ref (buf);
+    else
+      r_buffer_append_mem_from_buffer (ctx->inbuf, buf);
+  } else {
+    /* FIXME */
+    ctx->keepalive = FALSE;
+
+    if (ctx->req == NULL) {
+      r_http_client_ctx_process (ctx);
+    } else {
+      R_LOG_INFO ("%p: "R_EV_IO_FORMAT" closing, but nothing parsed",
+          ctx->server, R_EV_IO_ARGS (evtcp));
+      r_http_client_ctx_close (ctx, NULL, NULL);
+    }
+
+    return;
+  }
+
+  do {
+    /* Process request-line and headers */
+    if (ctx->req == NULL) {
+      buf = NULL;
+      if ((ctx->req = r_http_request_new_from_buffer (ctx->inbuf, &err, &buf)) != NULL) {
+        ctx->bodysize = r_http_request_calc_body_size (ctx->req, NULL);
+        if (r_http_request_has_header_of_value (ctx->req, "Connection", -1, "close", -1))
+          ctx->keepalive = FALSE;
+        else
+          ctx->keepalive = r_http_request_has_header_of_value (ctx->req,
+              "Connection", -1, "keep-alive", -1);
+
+        R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request created %p waiting for body size %"RSSIZE_FMT,
+            ctx->server, R_EV_IO_ARGS (evtcp), ctx->req, ctx->bodysize);
+      } else if (err == R_HTTP_BUF_TOO_SMALL) {
+        R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" waiting for more data (%"RSIZE_FMT")",
+            ctx->server, R_EV_IO_ARGS (evtcp), r_buffer_get_size (ctx->inbuf));
+      } else {
+        RHttpResponse * res;
+
+        R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request not parsed. err: %d",
+            ctx->server, R_EV_IO_ARGS (evtcp), (int)err);
+
+        /* Send error and close! */
+        ctx->keepalive = FALSE;
+        if ((res = r_http_response_new (NULL, R_HTTP_STATUS_BAD_REQUEST,
+                NULL, NULL, NULL)) != NULL) {
+          r_http_client_ctx_tcp_response_ready (ctx, res, ctx->server);
+          r_http_response_unref (res);
+        } else {
+          R_LOG_WARNING ("%p: "R_EV_IO_FORMAT" closing, error and unable to respond",
+              ctx->server, R_EV_IO_ARGS (evtcp));
+          r_http_client_ctx_close (ctx, NULL, NULL);
+        }
+      }
+
+      if (buf != NULL) {
+        R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" data buffered: %"RSIZE_FMT,
+            ctx->server, R_EV_IO_ARGS (evtcp), r_buffer_get_size (buf));
+      }
+      r_buffer_unref (ctx->inbuf);
+      ctx->inbuf = buf;
+
+      if (ctx->req == NULL)
+        break;
+    }
+
+    /* Process body */
+    if (ctx->bodysize == 0) {
+      r_http_client_ctx_process (ctx);
+    } else if (ctx->bodysize > 0) {
+      if (ctx->inbuf != NULL) {
+        rsize cur = r_buffer_get_size (ctx->inbuf);
+
+        if (cur < (rsize)ctx->bodysize) {
+          return;
+        } else if (cur == (rsize)ctx->bodysize) {
+          r_http_request_set_body_buffer (ctx->req, ctx->inbuf);
+          r_buffer_unref (ctx->inbuf);
+          ctx->inbuf = NULL;
+        } else if (cur > (rsize)ctx->bodysize) {
+          RBuffer * body = r_buffer_view (ctx->inbuf, 0, (rsize)ctx->bodysize);
+          RBuffer * rest = r_buffer_view (ctx->inbuf, (rsize)ctx->bodysize, -1);
+          r_http_request_set_body_buffer (ctx->req, body);
+          r_buffer_unref (body);
+          r_buffer_unref (ctx->inbuf);
+          ctx->inbuf = rest;
+        }
+
+        r_http_client_ctx_process (ctx);
+      }
+    } else if (ctx->bodysize < 0) {
+      /* TODO: chunked */
+      return;
+    }
+  } while (ctx->req == NULL && ctx->inbuf != NULL);
 }
 
 
@@ -75,7 +265,7 @@ r_http_server_free (RHttpServer * server)
 {
   r_dir_tree_unref (server->dt);
   r_ev_loop_unref (server->loop);
-  r_ptr_array_unref (server->con);
+  r_ptr_array_unref (server->clients);
   r_ptr_array_unref (server->listen);
   r_free (server);
 }
@@ -94,7 +284,7 @@ r_http_server_new (REvLoop * loop)
     ret->loop = loop;
     ret->dt = r_dir_tree_new ();
 
-    ret->con = r_ptr_array_new_sized (1024);
+    ret->clients = r_ptr_array_new_sized (1024);
     ret->listen = r_ptr_array_new ();
 
     R_LOG_INFO ("New HTTP server %p", ret);
@@ -217,141 +407,23 @@ r_http_server_process_request (RHttpServer * server,
 }
 
 static void
-r_http_server_response_sent (rpointer data, RBuffer * buf, REvTCP * evtcp)
-{
-  RHttpServer * server = data;
-  (void) buf;
-
-  R_LOG_TRACE ("%p: response sent "R_EV_IO_FORMAT" closing", server, R_EV_IO_ARGS (evtcp));
-  r_ev_tcp_close (evtcp, NULL, NULL, NULL);
-  r_ptr_array_remove_first_fast (server->con, evtcp);
-}
-
-static void
-r_http_server_tcp_response_ready (rpointer data, RHttpResponse * res,
-    RHttpServer * server)
-{
-  REvTCP * evtcp = data;
-  RBuffer * buf;
-  RHttpClientCtx * ctx  = r_ev_io_get_user ((REvIO *)evtcp);
-
-  if ((buf = r_http_response_get_buffer (res)) != NULL) {
-    R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT,
-        server, buf, R_EV_IO_ARGS (evtcp));
-    R_LOG_BUF_DUMP (R_LOG_LEVEL_TRACE, buf);
-    if (ctx == NULL || ctx->close_after_response_sent) {
-      r_ev_tcp_send (evtcp, buf, r_http_server_response_sent,
-          r_http_server_ref (server), r_http_server_unref);
-    } else {
-      r_ev_tcp_send_and_forget (evtcp, buf);
-    }
-    r_buffer_unref (buf);
-  }
-}
-
-static void
-r_http_server_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
-{
-  RHttpServer * server = data;
-  RHttpClientCtx * ctx;
-  RHttpError err;
-
-  ctx = r_ev_io_get_user ((REvIO *)evtcp);
-
-  if (buf != NULL) {
-    R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT" (%"RSIZE_FMT")",
-        server, buf, R_EV_IO_ARGS (evtcp), r_buffer_get_size (buf));
-    R_LOG_BUF_DUMP (R_LOG_LEVEL_TRACE, buf);
-
-    if (ctx->req == NULL) {
-      if (ctx->rem == NULL) {
-        ctx->rem = r_buffer_ref (buf);
-      } else {
-        r_buffer_append_mem_from_buffer (ctx->rem, buf);
-        buf = ctx->rem;
-      }
-
-      if ((ctx->req = r_http_request_new_from_buffer (buf, &err, &ctx->rem)) != NULL) {
-        R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request created %p",
-            server, R_EV_IO_ARGS (evtcp), ctx->req);
-        if (err == R_HTTP_OK) {
-          RSocketAddress * addr;
-
-          /* FIXME: Check keep-alive */
-          ctx->close_after_response_sent = TRUE;
-          r_http_server_process_request (server, ctx->req,
-              (addr = r_ev_tcp_get_remote_address (evtcp)),
-              r_http_server_tcp_response_ready,
-              r_ev_tcp_ref (evtcp), r_ev_tcp_unref);
-          r_http_request_unref (ctx->req);
-          ctx->req = NULL;
-
-          if (addr != NULL)
-            r_socket_address_unref (addr);
-
-          if (ctx->rem != NULL) {
-            R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" remainder %"RSIZE_FMT,
-                server, R_EV_IO_ARGS (evtcp), r_buffer_get_size (ctx->rem));
-          }
-        } else if (err == R_HTTP_OK_BODY_UNTIL_CLOSE) {
-          R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" waiting for close",
-              server, R_EV_IO_ARGS (evtcp));
-        } else {
-          ctx->close_after_response_sent = TRUE;
-          R_LOG_WARNING ("%p: "R_EV_IO_FORMAT" request parsed, but err: %d",
-              server, R_EV_IO_ARGS (evtcp), (int)err);
-        }
-      } else {
-        if (err == R_HTTP_BUF_TOO_SMALL) {
-          R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" waiting for data (%"RSIZE_FMT")",
-              server, R_EV_IO_ARGS (evtcp), r_buffer_get_size (ctx->rem));
-        } else {
-          R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request not parsed. err: %d",
-              server, R_EV_IO_ARGS (evtcp), (int)err);
-        }
-      }
-
-      r_buffer_unref (buf);
-    } else {
-      R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" append to request %p",
-          server, R_EV_IO_ARGS (evtcp), ctx->req);
-      r_http_request_append_body_buffer (ctx->req, buf);
-    }
-  } else {
-    if (ctx->req != NULL) {
-      RSocketAddress * addr;
-
-      /* FIXME: Check keep-alive */
-      ctx->close_after_response_sent = TRUE;
-      r_http_server_process_request (server, ctx->req,
-          (addr = r_ev_tcp_get_remote_address (evtcp)),
-          r_http_server_tcp_response_ready,
-          r_ev_tcp_ref (evtcp), r_ev_tcp_unref);
-      if (addr != NULL)
-        r_socket_address_unref (addr);
-      r_http_request_unref (ctx->req);
-      ctx->req = NULL;
-    } else {
-      R_LOG_DEBUG ("%p: "R_EV_IO_FORMAT" closing, but nothing parsed",
-          server, R_EV_IO_ARGS (evtcp));
-    }
-
-    R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" closing", server, R_EV_IO_ARGS (evtcp));
-    r_ev_tcp_close (evtcp, NULL, NULL, NULL);
-    r_ptr_array_remove_first_fast (server->con, evtcp);
-  }
-}
-
-static void
 r_http_server_tcp_connection_ready (rpointer data,
     REvTCP * newtcp, REvTCP * listening)
 {
-  R_LOG_TRACE ("%p: New connection "R_EV_IO_FORMAT" on "R_EV_IO_FORMAT,
-      data, R_EV_IO_ARGS (newtcp), R_EV_IO_ARGS (listening));
-  r_ev_io_set_user ((REvIO *)newtcp, r_http_client_ctx_new (), r_http_client_ctx_free);
-  if (r_ev_tcp_recv_start (newtcp, NULL, r_http_server_tcp_recv, data, NULL)) {
-    RHttpServer * server = data;
-    r_ptr_array_add (server->con, r_ev_tcp_ref (newtcp), r_ev_tcp_unref);
+  RHttpServer * server = data;
+  RHttpClientCtx * ctx;
+
+  if ((ctx = r_http_client_ctx_new (server, newtcp)) != NULL) {
+    R_LOG_TRACE ("%p: New connection "R_EV_IO_FORMAT" on "R_EV_IO_FORMAT,
+        server, R_EV_IO_ARGS (newtcp), R_EV_IO_ARGS (listening));
+
+    if (r_ev_tcp_recv_start (newtcp, NULL, r_http_client_ctx_tcp_recv, ctx, NULL)) {
+      r_ptr_array_add (server->clients, r_ref_ref (ctx), r_ref_unref);
+    }
+  } else {
+    R_LOG_WARNING ("%p: New connection "R_EV_IO_FORMAT" on "R_EV_IO_FORMAT
+        " failed to create context! OOM?",
+        server, R_EV_IO_ARGS (newtcp), R_EV_IO_ARGS (listening));
   }
 }
 
@@ -415,6 +487,16 @@ r_http_server_tcp_close (rpointer data, rpointer user)
   r_ev_tcp_close (tcp, NULL, r_ref_ref (ctx), r_ref_unref);
 }
 
+static void
+r_http_server_close_client_ctx (rpointer data, rpointer user)
+{
+  RHttpClientCtx * cli = data;
+  RHttpServerStopCtx * ctx = user;
+  R_LOG_DEBUG ("%p: Force close client socket "R_EV_IO_FORMAT,
+      ctx->server, R_EV_IO_ARGS (cli->evtcp));
+  r_http_client_ctx_close (cli, r_ref_ref (ctx), r_ref_unref);
+}
+
 rsize
 r_http_server_stop (RHttpServer * server, RHttpServerStop func,
     rpointer data, RDestroyNotify notify)
@@ -429,8 +511,10 @@ r_http_server_stop (RHttpServer * server, RHttpServerStop func,
     ctx->data = data;
     ctx->notify = notify;
 
-    ret = r_ptr_array_remove_all_full (server->listen, r_http_server_tcp_close, ctx);
-    ret = r_ptr_array_remove_all_full (server->con, r_http_server_tcp_close, ctx);
+    ret = r_ptr_array_remove_all_full (server->listen,
+        r_http_server_tcp_close, ctx);
+    ret = r_ptr_array_remove_all_full (server->clients,
+        r_http_server_close_client_ctx, ctx);
     r_ref_unref (ctx);
   } else {
     ret = 0;

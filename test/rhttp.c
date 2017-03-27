@@ -157,11 +157,11 @@ RTEST (rhttp, body_buffer, RTEST_FAST)
   r_buffer_unref (buf);
 
   r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("\n1337"))), !=, NULL);
-  r_assert_cmpint (r_http_request_append_body_buffer (req, buf), ==, R_HTTP_OK);
+  r_assert_cmpint (r_http_request_set_body_buffer (req, buf), ==, R_HTTP_OK);
   r_buffer_unref (buf);
 
   r_assert_cmpptr ((buf = r_http_request_get_buffer (req)), !=, NULL);
-  r_assert_cmpbufsstr (buf, 0, -1, ==, "GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\nfoobar\n1337");
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "GET /ieei/rlib HTTP/1.1\r\nHost: github.com\r\n\r\n\n1337");
   r_buffer_unref (buf);
 
   r_assert_cmpint (r_http_request_set_body_buffer (req, NULL), ==, R_HTTP_OK);
@@ -197,22 +197,23 @@ RTEST (rhttp, new_response_from_buffer, RTEST_FAST)
 
   r_assert_cmpptr ((res = r_http_response_new_from_buffer (NULL, NULL, &err, NULL)), ==, NULL);
   r_assert_cmpint (err, ==, R_HTTP_INVAL);
-  r_assert_cmpptr ((buf = r_buffer_new_dup (http_200_response, sizeof (http_200_response) - 42)), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (http_200_response, 42)), !=, NULL);
   r_assert_cmpptr ((res = r_http_response_new_from_buffer (NULL, buf, &err, &next)), ==, NULL);
   r_buffer_unref (buf);
   r_assert_cmpint (err, ==, R_HTTP_BUF_TOO_SMALL);
 
-  r_assert_cmpptr ((buf = r_buffer_new_dup (http_200_response, sizeof (http_200_response) - 1)), !=, NULL);
-  r_assert_cmpptr ((res = r_http_response_new_from_buffer (NULL, buf, &err, NULL)), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (http_200_response))), !=, NULL);
+  r_assert_cmpptr ((res = r_http_response_new_from_buffer (NULL, buf, &err, &next)), !=, NULL);
   r_buffer_unref (buf);
-  r_assert_cmpptr (next, ==, NULL);
+  r_assert_cmpptr (next, !=, NULL);
 
   r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_OK);
 
   r_assert_cmpstr ((tmp = r_http_response_get_header (res, "content-length", -1)), ==, "1270"); r_free (tmp);
-  r_assert_cmpptr ((buf = r_http_response_get_body_buffer (res)), !=, NULL);
-  r_assert_cmpuint (r_buffer_get_size (buf), ==, 1270);
-  r_buffer_unref (buf);
+  r_assert_cmpuint (r_http_response_calc_body_size (res, NULL), ==, 1270);
+  r_assert_cmpuint (r_buffer_get_size (next), ==, 1270);
+  r_assert_cmpint (r_http_response_set_body_buffer (res, next), ==, R_HTTP_OK);
+  r_buffer_unref (next);
 
   r_http_response_unref (res);
 }
