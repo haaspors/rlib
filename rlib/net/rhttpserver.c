@@ -170,7 +170,7 @@ r_http_client_ctx_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
     /* FIXME */
     ctx->keepalive = FALSE;
 
-    if (ctx->req == NULL) {
+    if (ctx->req != NULL) {
       r_http_client_ctx_process (ctx);
     } else {
       R_LOG_INFO ("%p: "R_EV_IO_FORMAT" closing, but nothing parsed",
