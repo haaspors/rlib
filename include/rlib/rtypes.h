@@ -75,6 +75,8 @@ typedef unsigned short          rushort;
 typedef unsigned long           rulong;
 typedef unsigned int            ruint;
 
+#define RCHAR_MIN               CHAR_MIN
+#define RCHAR_MAX               CHAR_MAX
 #define RSHORT_MIN              SHRT_MIN
 #define RSHORT_MAX              SHRT_MAX
 #define RUSHORT_MAX             USHRT_MAX
