@@ -242,7 +242,7 @@ r_tls_parser_decrypt (RTLSParser * parser,
   iv = r_alloca (ivsize);
   r_memcpy (iv, parser->fragment.data, ivsize);
   if (r_crypto_cipher_decrypt (cipher, info.data, info.size,
-        parser->fragment.data + ivsize, iv, ivsize)) {
+        parser->fragment.data + ivsize, iv, ivsize) != R_CRYPTO_CIPHER_OK) {
     r_buffer_unmap (buf, &info);
     r_buffer_unref (buf);
     return R_TLS_ERROR_CORRUPT_RECORD;
