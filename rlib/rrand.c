@@ -19,6 +19,7 @@
 #include "config.h"
 #include "rprng-private.h"
 
+#include <rlib/rbase64.h>
 #include <rlib/rmem.h>
 #include <rlib/rtime.h>
 #ifdef R_OS_WIN32
@@ -142,5 +143,40 @@ r_prng_fill_nonzero (RPrng * prng, ruint8 * buf, rsize size)
   }
 
   return ret;
+}
+
+rboolean
+r_prng_fill_base64 (RPrng * prng, rchar * buf, rsize size)
+{
+  ruint64 scratch[3];
+
+  if (R_UNLIKELY (prng == NULL)) return FALSE;
+  if (R_UNLIKELY (buf == NULL)) return FALSE;
+  if (R_UNLIKELY (size == 0)) return FALSE;
+
+  while (size > sizeof (ruint64) * 4) {
+    scratch[0] = r_prng_get_u64 (prng);
+    scratch[1] = r_prng_get_u64 (prng);
+    scratch[2] = r_prng_get_u64 (prng);
+
+    if (r_base64_encode (buf, size, scratch, sizeof (scratch)) != sizeof (ruint64) * 4)
+      return FALSE;
+
+    buf += sizeof (ruint64) * 4;
+    size -= sizeof (ruint64) * 4;
+  }
+
+  if (size > 0) {
+    rchar tmp[sizeof (ruint64) * 4];
+    scratch[0] = r_prng_get_u64 (prng);
+    scratch[1] = r_prng_get_u64 (prng);
+    scratch[2] = r_prng_get_u64 (prng);
+
+    if (r_base64_encode (tmp, size, scratch, sizeof (scratch)) != sizeof (ruint64) * 4)
+      return FALSE;
+    r_memcpy (buf, tmp, size);
+  }
+
+  return TRUE;
 }
 

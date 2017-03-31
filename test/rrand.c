@@ -32,3 +32,24 @@ RTEST (rrand, fill_nonzero, RTEST_FAST)
   r_prng_unref (prng);
 }
 RTEST_END;
+
+RTEST (rrand, fill_base64, RTEST_FAST)
+{
+  RPrng * prng;
+  rchar buffer[4096];
+  rsize i;
+
+  r_assert (!r_prng_fill_base64 (NULL, NULL, 0));
+  r_assert (!r_prng_fill_base64 (NULL, buffer, 0));
+
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+  r_assert (!r_prng_fill_base64 (prng, NULL, 0));
+  r_assert (!r_prng_fill_base64 (prng, buffer, 0));
+  r_assert (r_prng_fill_base64 (prng, buffer, sizeof (buffer)));
+  for (i = 0; i < sizeof (buffer); i++)
+    r_assert (r_base64_is_valid_char (buffer[i]));
+
+  r_prng_unref (prng);
+}
+RTEST_END;
+

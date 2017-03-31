@@ -43,6 +43,7 @@ typedef struct _RPrng RPrng;
 R_API ruint64 r_prng_get_u64 (RPrng * prng);
 R_API rboolean r_prng_fill (RPrng * prng, ruint8 * buf, rsize size);
 R_API rboolean r_prng_fill_nonzero (RPrng * prng, ruint8 * buf, rsize size);
+R_API rboolean r_prng_fill_base64 (RPrng * prng, rchar * buf, rsize size);
 
 
 /* Spesific PRNG implementations */
