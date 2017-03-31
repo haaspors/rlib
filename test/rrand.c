@@ -49,6 +49,8 @@ RTEST (rrand, fill_base64, RTEST_FAST)
   for (i = 0; i < sizeof (buffer); i++)
     r_assert (r_base64_is_valid_char (buffer[i]));
 
+  for (i = 1; i < 12; i++)
+    r_assert (r_prng_fill_base64 (prng, buffer, i));
   r_prng_unref (prng);
 }
 RTEST_END;

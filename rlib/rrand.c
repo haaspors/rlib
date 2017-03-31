@@ -154,7 +154,7 @@ r_prng_fill_base64 (RPrng * prng, rchar * buf, rsize size)
   if (R_UNLIKELY (buf == NULL)) return FALSE;
   if (R_UNLIKELY (size == 0)) return FALSE;
 
-  while (size > sizeof (ruint64) * 4) {
+  while (size >= sizeof (ruint64) * 4) {
     scratch[0] = r_prng_get_u64 (prng);
     scratch[1] = r_prng_get_u64 (prng);
     scratch[2] = r_prng_get_u64 (prng);
@@ -172,7 +172,7 @@ r_prng_fill_base64 (RPrng * prng, rchar * buf, rsize size)
     scratch[1] = r_prng_get_u64 (prng);
     scratch[2] = r_prng_get_u64 (prng);
 
-    if (r_base64_encode (tmp, size, scratch, sizeof (scratch)) != sizeof (ruint64) * 4)
+    if (r_base64_encode (tmp, sizeof (tmp), scratch, sizeof (scratch)) != sizeof (tmp))
       return FALSE;
     r_memcpy (buf, tmp, size);
   }
