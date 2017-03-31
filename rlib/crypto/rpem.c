@@ -274,7 +274,7 @@ ruint8 *
 r_pem_block_decode_base64 (RPemBlock * block, rsize * size)
 {
   rsize s = r_pem_block_get_base64_size (block);
-  return r_base64_decode (block->base64, s, size);
+  return r_base64_decode_dup (block->base64, s, size);
 }
 
 RAsn1BinDecoder *
@@ -401,7 +401,7 @@ r_pem_write_public_key (const RCryptoKey * key,
       rchar * b64;
       rsize b64size;
 
-      if ((b64 = r_base64_encode_full (asn1buf, asn1bufsize, linesize, &b64size)) != NULL) {
+      if ((b64 = r_base64_encode_dup_full (asn1buf, asn1bufsize, linesize, &b64size)) != NULL) {
         if (size >= sizeof (R_PEM_BEGIN_PUBKEY) - 1 + b64size + sizeof (R_PEM_END_PUBKEY) - 1) {
           p = r_stpncpy (p, R_PEM_BEGIN_PUBKEY, sizeof (R_PEM_BEGIN_PUBKEY) - 1);
           p = r_stpncpy (p, b64, b64size);
@@ -460,7 +460,7 @@ r_pem_write_cert (const RCryptoCert * cert, rpointer data, rsize size,
       rchar * b64;
       rsize b64size;
 
-      if ((b64 = r_base64_encode_full (info.data, info.size, linesize, &b64size)) != NULL) {
+      if ((b64 = r_base64_encode_dup_full (info.data, info.size, linesize, &b64size)) != NULL) {
         if (size >= sizeof (R_PEM_BEGIN_CERT) - 1 + b64size + sizeof (R_PEM_END_CERT) - 1) {
           rchar * p = data;
 

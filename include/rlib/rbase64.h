@@ -26,9 +26,14 @@
 
 R_BEGIN_DECLS
 
-R_API rchar * r_base64_encode (rconstpointer data, rsize size, rsize * outsize) R_ATTR_MALLOC;
-R_API rchar * r_base64_encode_full (rconstpointer data, rsize size, rsize linesize, rsize * outsize) R_ATTR_MALLOC;
-R_API ruint8 * r_base64_decode (const rchar * data, rssize size, rsize * outsize) R_ATTR_MALLOC;
+R_API rboolean r_base64_is_valid_char (rchar ch);
+
+R_API rsize r_base64_encode (rchar * dst, rsize dsize, rconstpointer src, rsize size);
+R_API rsize r_base64_decode (ruint8 * dst, rsize dsize, const rchar * src, rssize size);
+
+R_API rchar * r_base64_encode_dup (rconstpointer data, rsize size, rsize * outsize) R_ATTR_MALLOC;
+R_API rchar * r_base64_encode_dup_full (rconstpointer data, rsize size, rsize linesize, rsize * outsize) R_ATTR_MALLOC;
+R_API ruint8 * r_base64_decode_dup (const rchar * data, rssize size, rsize * outsize) R_ATTR_MALLOC;
 
 R_END_DECLS
 

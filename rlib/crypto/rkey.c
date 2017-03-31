@@ -203,7 +203,7 @@ r_crypto_key_import_ssh_public_key (const rchar * data, rsize size)
     ruint8 * keydata;
 
     size -= (++next - data);
-    if ((keydata = r_base64_decode (next, size, &size)) != NULL &&
+    if ((keydata = r_base64_decode_dup (next, size, &size)) != NULL &&
         size > sizeof (ruint32)) {
       rsize algsize = RUINT32_FROM_BE (*(ruint32 *)keydata);
       ruint8 * algptr = keydata + sizeof (ruint32);

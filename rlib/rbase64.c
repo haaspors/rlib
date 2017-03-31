@@ -24,10 +24,14 @@
 static const rchar base64_enc_table[] =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+#define R_BASE64_BYTE_INVALID    255
+#define R_BASE64_BYTE_PADDING    214
+#define R_BASE64_BYTE_SPACE      111
+
 static const ruint8 base64_dec_table[256] = {
+  255,255,255,255,255,255,255,255,255,111,111,255,111,111,255,255,
   255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
-  255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
-  255,255,255,255,255,255,255,255,255,255,255, 62,255,255,255, 63,
+  111,255,255,255,255,255,255,255,255,255,255, 62,255,255,255, 63,
    52, 53, 54, 55, 56, 57, 58, 59, 60, 61,255,255,255,214,255,255,
   255,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,255,255,255,255,255,
@@ -43,8 +47,95 @@ static const ruint8 base64_dec_table[256] = {
   255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
 };
 
+rboolean
+r_base64_is_valid_char (rchar ch)
+{
+  return base64_dec_table[(ruint8)ch] < 64;
+}
+
+rsize
+r_base64_encode (rchar * dst, rsize dsize, rconstpointer data, rsize size)
+{
+  const ruint8 * src;
+  rchar * ptr;
+
+  if (R_UNLIKELY (dst == NULL)) return 0;
+  if (R_UNLIKELY (data == NULL)) return 0;
+
+  for (ptr = dst, src = data; size >= 3 && dsize >= 4; dsize -= 4, size -= 3, src += 3) {
+    *ptr++ = base64_enc_table[(src[0] & 0xfc) >> 2];
+    *ptr++ = base64_enc_table[((src[0] & 0x03) << 4) | ((src[1] & 0xf0) >> 4)];
+    *ptr++ = base64_enc_table[((src[1] & 0x0F) << 2) | ((src[2] & 0xc0) >> 6)];
+    *ptr++ = base64_enc_table[(src[2] & 0x3f)];
+  }
+
+  if (dsize >= 4) {
+    if (size == 2) {
+      *ptr++ = base64_enc_table[(src[0] & 0xfc) >> 2];
+      *ptr++ = base64_enc_table[((src[0] & 0x03) << 4) | ((src[1] & 0xf0) >> 4)];
+      *ptr++ = base64_enc_table[((src[1] & 0x0F) << 2)];
+      *ptr++ = '=';
+    } else if (size == 1) {
+      *ptr++ = base64_enc_table[(src[0] & 0xfc) >> 2];
+      *ptr++ = base64_enc_table[((src[0] & 0x03) << 4)];
+      *ptr++ = '=';
+      *ptr++ = '=';
+    }
+  }
+
+  return RPOINTER_TO_SIZE (ptr - dst);
+}
+
+rsize
+r_base64_decode (ruint8 * dst, rsize dsize, const rchar * data, rssize size)
+{
+  ruint8 c, scratch[4] = { 0, 0, 0, 0 };
+  const rchar * src = data, * srcend;
+  ruint8 * ptr = dst;
+  int i;
+
+  if (size < 0) size = r_strlen (data);
+  srcend = src + size;
+
+  while (src < srcend) {
+    /* fill scratch */
+    for (i = 0; i < 4;) {
+      if (R_UNLIKELY (src >= srcend))
+        goto tail;
+      else if ((c = base64_dec_table[(ruint8)*src++]) < 64)
+        scratch[i++] = c;
+      else if (c == R_BASE64_BYTE_SPACE)
+        continue;
+      else /* c == 214 (-42) (special for '=') or invalid */
+        goto tail;
+    }
+
+    if (ptr + 3 > dst + dsize)
+      break;
+    *ptr++ = ((scratch[0] << 2) & 0xfc) | ((scratch[1] >> 4) & 0x03);
+    *ptr++ = ((scratch[1] << 4) & 0xf0) | ((scratch[2] >> 2) & 0x0f);
+    *ptr++ = ((scratch[2] << 6) & 0xc0) | ((scratch[3] >> 0) & 0x3f);
+  }
+
+  goto beach;
+
+tail:
+  if (i == 3) {
+    if (ptr < dst + dsize)
+      *ptr++ = ((scratch[0] << 2) & 0xfc) | ((scratch[1] >> 4) & 0x03);
+    if (ptr < dst + dsize)
+      *ptr++ = ((scratch[1] << 4) & 0xf0) | ((scratch[2] >> 2) & 0x0f);
+  } else if (i == 2) {
+    if (ptr < dst + dsize)
+      *ptr++ = ((scratch[0] << 2) & 0xfc) | ((scratch[1] >> 4) & 0x03);
+  }
+
+beach:
+  return RPOINTER_TO_SIZE (ptr - dst);
+}
+
 rchar *
-r_base64_encode (rconstpointer data, rsize size, rsize * outsize)
+r_base64_encode_dup (rconstpointer data, rsize size, rsize * outsize)
 {
   if (data != NULL && size != 0) {
     rsize s = ((size + 2) / 3) * 4 + 1;
@@ -52,31 +143,14 @@ r_base64_encode (rconstpointer data, rsize size, rsize * outsize)
       rchar * ret;
 
       if ((ret = r_malloc (s)) != NULL) {
-        const ruint8 * src = data;
-        rchar * dst = ret;
-        for (; size >= 3; size -= 3, src += 3) {
-          *dst++ = base64_enc_table[(src[0] & 0xfc) >> 2];
-          *dst++ = base64_enc_table[((src[0] & 0x03) << 4) | ((src[1] & 0xf0) >> 4)];
-          *dst++ = base64_enc_table[((src[1] & 0x0F) << 2) | ((src[2] & 0xc0) >> 6)];
-          *dst++ = base64_enc_table[(src[2] & 0x3f)];
+        if (r_base64_encode (ret, s, data, size) == s - 1) {
+          ret[--s] = 0;
+          if (outsize != NULL)
+            *outsize = s;
+          return ret;
         }
 
-        if (size == 2) {
-          *dst++ = base64_enc_table[(src[0] & 0xfc) >> 2];
-          *dst++ = base64_enc_table[((src[0] & 0x03) << 4) | ((src[1] & 0xf0) >> 4)];
-          *dst++ = base64_enc_table[((src[1] & 0x0F) << 2)];
-          *dst++ = '=';
-        } else if (size == 1) {
-          *dst++ = base64_enc_table[(src[0] & 0xfc) >> 2];
-          *dst++ = base64_enc_table[((src[0] & 0x03) << 4)];
-          *dst++ = '=';
-          *dst++ = '=';
-        }
-
-        ret[--s] = 0;
-        if (outsize != NULL)
-          *outsize = s;
-        return ret;
+        r_free (ret);
       }
     }
   }
@@ -85,10 +159,10 @@ r_base64_encode (rconstpointer data, rsize size, rsize * outsize)
 }
 
 rchar *
-r_base64_encode_full (rconstpointer data, rsize size, rsize linesize, rsize * outsize)
+r_base64_encode_dup_full (rconstpointer data, rsize size, rsize linesize, rsize * outsize)
 {
   if (linesize == 0)
-    return r_base64_encode (data, size, outsize);
+    return r_base64_encode_dup (data, size, outsize);
 
   if (data != NULL && size != 0) {
     rchar * ret;
@@ -139,47 +213,24 @@ r_base64_encode_full (rconstpointer data, rsize size, rsize linesize, rsize * ou
 }
 
 ruint8 *
-r_base64_decode (const rchar * data, rssize size, rsize * outsize)
+r_base64_decode_dup (const rchar * data, rssize size, rsize * outsize)
 {
-  if (data != NULL && size != 0) {
-    ruint8 * ret;
+  ruint8 * ret;
+  rsize dsize;
 
-    if (size < 0)
-      size = r_strlen (data);
+  if (R_UNLIKELY (data == NULL)) return NULL;
+  if (size < 0) size = r_strlen (data);
+  if (R_UNLIKELY (size == 0)) return NULL;
 
-    if ((ret = r_malloc (((size / 4) + 1) * 3)) != NULL) {
-      const rchar * src = data, * end = data + size;
-      ruint8 * dst = ret;
-      int i;
+  dsize = ((size / 4) + 1) * 3;
 
-      do {
-        /* fill scratch */
-        ruint8 c, scratch[4] = { 0, 0, 0, 0 };
-        for (i = 0; src < end && i < 4;) {
-          if ((c = base64_dec_table[(ruint8)*src++]) != 255) {
-            if (c < 64) {
-              scratch[i] = c;
-              i++;
-            } else { /* c == -42 (special for '=') */
-              src = end;
-              break;
-            }
-          }
-        }
-
-        *dst++ = ((scratch[0] << 2) & 0xfc) | ((scratch[1] >> 4) & 0x03);
-        *dst++ = ((scratch[1] << 4) & 0xf0) | ((scratch[2] >> 2) & 0x0f);
-        *dst++ = ((scratch[2] << 6) & 0xc0) | ((scratch[3] >> 0) & 0x3f);
-      } while (src < end);
-
-      /* adjust dst if some bits from src/scratch not used */
-      dst -= ((24 - i * 6) + 7) / 8;
-      if (outsize != NULL)
-        *outsize = dst - ret;
-      return ret;
-    }
+  if ((ret = r_malloc (dsize)) != NULL) {
+    dsize = r_base64_decode (ret, dsize, data, size);
+    ret[dsize] = 0;
+    if (outsize != NULL)
+      *outsize = dsize;
   }
 
-  return NULL;
+  return ret;
 }
 

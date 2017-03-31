@@ -312,7 +312,7 @@ RTEST (rcryptocert, nodejs_pem_gen_x509_self_signed_rsa_2048_days_1, RTEST_FAST)
   RCryptoKey * pk;
   RMsgDigestType signalgo;
 
-  r_assert_cmpptr ((x509v3 = r_base64_decode (x509_base64, -1, &size)), !=, NULL);
+  r_assert_cmpptr ((x509v3 = r_base64_decode_dup (x509_base64, -1, &size)), !=, NULL);
 
   r_assert_cmpptr ((cert = r_crypto_x509_cert_new (x509v3, size)), !=, NULL);
   r_free (x509v3);
@@ -422,7 +422,7 @@ RTEST (rcryptocert, export_and_fingerprint, RTEST_FAST)
   RAsn1BinEncoder * enc;
   rchar * fingerprint;
 
-  r_assert_cmpptr ((x509v3in = r_base64_decode (x509_base64, -1, &sizein)), !=, NULL);
+  r_assert_cmpptr ((x509v3in = r_base64_decode_dup (x509_base64, -1, &sizein)), !=, NULL);
   r_assert_cmpptr ((cert = r_crypto_x509_cert_new (x509v3in, sizein)), !=, NULL);
 
   r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
