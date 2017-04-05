@@ -244,5 +244,27 @@ RTEST (rhttp, response_get_buffer, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rhttp, response_add_header, RTEST_FAST)
+{
+  RBuffer * buf;
+  RHttpResponse * res;
+  static const rchar expected[] =
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Content-Length: 42\r\n"
+    "\r\n";
+
+  r_assert_cmpptr ((res = r_http_response_new (NULL,
+          R_HTTP_STATUS_OK, "OK", NULL, NULL)), !=, NULL);
+  r_http_response_add_header (res, "Content-Type", -1, "text/html", -1);
+  r_http_response_add_header (res, "Content-Length", -1, "42", -1);
+
+  r_assert_cmpptr ((buf = r_http_request_get_buffer (res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, expected);
+  r_buffer_unref (buf);
+  r_http_response_unref (res);
+}
+RTEST_END;
+
 /* TODO: Add tests for various request->reponse patterns! */
 

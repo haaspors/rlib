@@ -119,8 +119,8 @@ r_http_client_ctx_tcp_response_ready (rpointer data, RHttpResponse * res,
   RBuffer * buf;
 
   if ((buf = r_http_response_get_buffer (res)) != NULL) {
-    R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT,
-        server, buf, R_EV_IO_ARGS (ctx->evtcp));
+    R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT" [%s]",
+        server, buf, R_EV_IO_ARGS (ctx->evtcp), ctx->keepalive ? "keepalive" : "close");
     R_LOG_BUF_DUMP (R_LOG_LEVEL_TRACE, buf);
 
     if (!ctx->keepalive) {
@@ -193,8 +193,8 @@ r_http_client_ctx_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
           ctx->keepalive = r_http_request_has_header_of_value (ctx->req,
               "Connection", -1, "keep-alive", -1);
 
-        R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request created %p waiting for body size %"RSSIZE_FMT,
-            ctx->server, R_EV_IO_ARGS (evtcp), ctx->req, ctx->bodysize);
+        R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request created %p [%s] waiting for body size %"RSSIZE_FMT,
+            ctx->server, R_EV_IO_ARGS (evtcp), ctx->req, ctx->keepalive ? "keepalive" : "close", ctx->bodysize);
       } else if (err == R_HTTP_BUF_TOO_SMALL) {
         R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" waiting for more data (%"RSIZE_FMT")",
             ctx->server, R_EV_IO_ARGS (evtcp), r_buffer_get_size (ctx->inbuf));

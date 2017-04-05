@@ -141,7 +141,7 @@ R_API rboolean r_http_msg_has_header (RHttpMsg * msg, const rchar * field, rssiz
 R_API rboolean r_http_msg_has_header_of_value (RHttpMsg * msg,
     const rchar * key, rssize ksize, const rchar * val, rssize vsize);
 R_API rchar * r_http_msg_get_header (RHttpMsg * msg, const rchar * field, rssize size);
-rboolean r_http_msg_add_header (RHttpMsg * msg,
+R_API rboolean r_http_msg_add_header (RHttpMsg * msg,
     const rchar * field, rssize fsize, const rchar * value, rssize vsize);
 
 typedef struct _RHttpRequest RHttpRequest;

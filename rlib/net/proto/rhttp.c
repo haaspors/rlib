@@ -287,7 +287,7 @@ r_http_msg_has_header_of_value (RHttpMsg * msg,
       while (off < info.size && r_ascii_isspace (((rchar *)info.data)[off]))
         off++;
 
-      if (off + vsize < info.size && r_strncasecmp ((rchar *)info.data + off, val, vsize)) {
+      if (off + vsize < info.size && r_strncasecmp ((rchar *)info.data + off, val, vsize) == 0) {
         ret = TRUE;
         break;
       }
