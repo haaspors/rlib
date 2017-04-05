@@ -813,6 +813,25 @@ r_http_response_get_request (RHttpResponse * res)
   return NULL;
 }
 
+RHttpError
+r_http_response_set_body_buffer_full (RHttpResponse * res, RBuffer * buf,
+    const rchar * contenttype, rssize size, rboolean contentlen)
+{
+  RHttpError ret;
+
+  if ((ret = r_http_response_set_body_buffer (res, buf)) == R_HTTP_OK) {
+    if (contenttype != NULL)
+      r_http_response_add_header (res, "Content-Type", -1, contenttype, size);
+    if (contentlen) {
+      rchar len[16];
+      r_sprintf (len, "%"RSIZE_FMT, r_buffer_get_size (buf));
+      r_http_response_add_header (res, "Content-Length", -1, len, -1);
+    }
+  }
+
+  return ret;
+}
+
 RHttpBodyParseType
 r_http_response_get_body_parse_type (RHttpResponse * res)
 {

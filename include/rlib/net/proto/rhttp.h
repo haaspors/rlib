@@ -190,6 +190,8 @@ R_API RHttpRequest * r_http_response_get_request (RHttpResponse * res);
 #define r_http_response_get_body(res, size) r_http_msg_get_body ((RHttpMsg *)res, size)
 #define r_http_response_get_body_buffer(res) r_http_msg_get_body_buffer ((RHttpMsg *)res)
 #define r_http_response_set_body_buffer(res, buf) r_http_msg_set_body_buffer ((RHttpMsg *)res, buf)
+R_API RHttpError r_http_response_set_body_buffer_full (RHttpResponse * res,
+    RBuffer * buf, const rchar * contenttype, rssize size, rboolean contentlen);
 R_API RHttpBodyParseType r_http_response_get_body_parse_type (RHttpResponse * res);
 R_API rssize r_http_response_calc_body_size (RHttpResponse * res, RHttpBodyParseType * type);
 

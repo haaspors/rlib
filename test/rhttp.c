@@ -266,5 +266,38 @@ RTEST (rhttp, response_add_header, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rhttp, response_set_body_buffer_full, RTEST_FAST)
+{
+  RBuffer * buf;
+  RHttpResponse * res;
+  static const rchar body[] =
+    "<html>\n"
+    " <head><title>Test</title></head>\n"
+    " <body></body>\n"
+    "</html>\n";
+  static const rchar expected[] =
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "Content-Length: 64\r\n"
+    "\r\n"
+    "<html>\n"
+    " <head><title>Test</title></head>\n"
+    " <body></body>\n"
+    "</html>\n";
+
+  r_assert_cmpptr ((res = r_http_response_new (NULL,
+          R_HTTP_STATUS_OK, "OK", NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (body))), !=, NULL);
+  r_assert_cmpint (r_http_response_set_body_buffer_full (res, buf,
+        R_STR_WITH_SIZE_ARGS ("text/html"), TRUE), ==, R_HTTP_OK);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_http_request_get_buffer (res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, expected);
+  r_buffer_unref (buf);
+  r_http_response_unref (res);
+}
+RTEST_END;
+
 /* TODO: Add tests for various request->reponse patterns! */
 
