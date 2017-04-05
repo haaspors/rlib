@@ -39,6 +39,8 @@ R_API_HIDDEN void r_mem_allocator_deinit (void);
 R_API_HIDDEN void r_networking_init (void);
 R_API_HIDDEN void r_networking_deinit (void);
 
+R_API_HIDDEN void r_rtc_init (void);
+
 R_API_HIDDEN void r_srtp_init (void);
 
 R_API_HIDDEN void r_task_queue_init (void);

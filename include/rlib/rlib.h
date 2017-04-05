@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015-2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -106,5 +106,14 @@
 #include <rlib/net/rhttpserver.h>
 #include <rlib/net/rsrtp.h>
 #include <rlib/net/rtlsserver.h>
+
+/* RTC */
+#include <rlib/rtc/rrtc.h>
+#include <rlib/rtc/rrtccryptotransport.h>
+#include <rlib/rtc/rrtcicetransport.h>
+#include <rlib/rtc/rrtcrtpreceiver.h>
+#include <rlib/rtc/rrtcrtpsender.h>
+#include <rlib/rtc/rrtcrtptransceiver.h>
+#include <rlib/rtc/rrtcsession.h>
 
 #endif /* __R_LIB_H__ */
