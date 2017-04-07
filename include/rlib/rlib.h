@@ -111,6 +111,7 @@
 #include <rlib/rtc/rrtc.h>
 #include <rlib/rtc/rrtccryptotransport.h>
 #include <rlib/rtc/rrtcicetransport.h>
+#include <rlib/rtc/rrtcrtplistener.h>
 #include <rlib/rtc/rrtcrtpreceiver.h>
 #include <rlib/rtc/rrtcrtpsender.h>
 #include <rlib/rtc/rrtcrtptransceiver.h>

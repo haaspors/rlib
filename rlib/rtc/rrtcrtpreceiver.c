@@ -38,60 +38,6 @@ r_rtc_rtp_receiver_free (RRtcRtpReceiver * r)
   r_free (r);
 }
 
-static void
-r_rtc_rtp_receiver_crypto_ready (rpointer data, rpointer ctx)
-{
-  RRtcRtpReceiver * s = data;
-  RRtcCryptoTransport * crypto = ctx;
-
-  (void) s;
-  (void) crypto;
-}
-
-static void
-r_rtc_rtp_receiver_crypto_close (rpointer data, rpointer ctx)
-{
-  RRtcRtpReceiver * s = data;
-  RRtcCryptoTransport * crypto = ctx;
-
-  (void) s;
-  (void) crypto;
-}
-
-static void
-r_rtc_rtp_receiver_crypto_null_packet (rpointer data, RBuffer * buf, rpointer ctx)
-{
-  RRtcRtpReceiver * s = data;
-  RRtcCryptoTransport * crypto = ctx;
-
-  (void) buf;
-
-  R_LOG_WARNING ("RTP packet on RTCP only transport? "
-      "(RRtcRtpReceiver: %p RRtcCryptoTransport: %p)", s, crypto);
-}
-
-static void
-r_rtc_rtp_receiver_crypto_rtp_packet (rpointer data, RBuffer * buf, rpointer ctx)
-{
-  RRtcRtpReceiver * s = data;
-  RRtcCryptoTransport * crypto = ctx;
-
-  (void) crypto;
-
-  s->cbs.rtp (s->data, buf, s);
-}
-
-static void
-r_rtc_rtp_receiver_crypto_rtcp_packet (rpointer data, RBuffer * buf, rpointer ctx)
-{
-  RRtcRtpReceiver * s = data;
-  RRtcCryptoTransport * crypto = ctx;
-
-  (void) crypto;
-
-  s->cbs.rtcp (s->data, buf, s);
-}
-
 
 RRtcRtpReceiver *
 r_rtc_rtp_receiver_new (const rchar * id, rssize size, RPrng * prng,
@@ -122,19 +68,9 @@ r_rtc_rtp_receiver_new (const rchar * id, rssize size, RPrng * prng,
     ret->rtp = r_rtc_crypto_transport_ref (rtp);
     ret->rtcp = r_rtc_crypto_transport_ref (rtcp);
 
-    /* FIXME: For now, set_cb,
-     * this should relly be add_cb which is handled by internal RRtcRtpListener
-     */
-    r_rtc_crypto_transport_set_cb (ret->rtp,
-        r_rtc_rtp_receiver_crypto_ready, r_rtc_rtp_receiver_crypto_close,
-        r_rtc_rtp_receiver_crypto_rtp_packet, r_rtc_rtp_receiver_crypto_rtcp_packet,
-        ret, NULL);
-    if (ret->rtp != ret->rtcp) {
-      r_rtc_crypto_transport_set_cb (ret->rtcp,
-          r_rtc_rtp_receiver_crypto_ready, r_rtc_rtp_receiver_crypto_close,
-          r_rtc_rtp_receiver_crypto_null_packet, r_rtc_rtp_receiver_crypto_rtcp_packet,
-          ret, NULL);
-    }
+    r_rtc_crypto_transport_add_receiver (ret->rtp, ret);
+    if (ret->rtp != ret->rtcp)
+      r_rtc_crypto_transport_add_receiver (ret->rtcp, ret);
   }
 
   return ret;
@@ -153,16 +89,20 @@ r_rtc_rtp_receiver_start (RRtcRtpReceiver * r, REvLoop * loop)
   if (R_UNLIKELY (r->loop != NULL)) return R_RTC_WRONG_STATE;
 
   r->loop = r_ev_loop_ref (loop);
+
+  /* FIXME: Update RtpListener ??? */
   r_rtc_crypto_transport_start (r->rtp, r->loop);
   r_rtc_crypto_transport_start (r->rtcp, r->loop);
+
 
   return R_RTC_OK;
 }
 
-#if 0
 RRtcError
 r_rtc_rtp_receiver_close (RRtcRtpReceiver * r)
 {
+  if (r->rtp != r->rtcp)
+    r_rtc_crypto_transport_remove_receiver (r->rtcp, r);
+  return r_rtc_crypto_transport_remove_receiver (r->rtp, r);
 }
-#endif
 

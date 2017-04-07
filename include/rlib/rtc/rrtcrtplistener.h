@@ -15,8 +15,8 @@
  * License along with this library.
  * See the COPYING file at the root of the source repository.
  */
-#ifndef __R_RTC_H__
-#define __R_RTC_H__
+#ifndef __R_RTC_RTP_LISTENER_H__
+#define __R_RTC_RTP_LISTENER_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
 #error "#include <rlib.h> only pelase."
@@ -24,26 +24,26 @@
 
 #include <rlib/rtypes.h>
 
-#include <rlib/rbuffer.h>
+#include <rlib/rref.h>
+
+#include <rlib/rtc/rrtc.h>
+#include <rlib/rtc/rrtcrtpreceiver.h>
+#include <rlib/rtc/rrtcrtpsender.h>
 
 R_BEGIN_DECLS
 
-typedef enum {
-  R_RTC_OK      = 0,
-  R_RTC_INVAL,
-  R_RTC_OOM,
-  R_RTC_WRONG_STATE,
-  R_RTC_INVALID_MEDIA,
-  R_RTC_MAP_ERROR,
-  R_RTC_DECRYPT_ERROR,
-  R_RTC_ENCRYPT_ERROR,
-  R_RTC_NO_HANDLER,
-} RRtcError;
+typedef struct _RRtcRtpListener RRtcRtpListener;
 
-typedef RFunc RRtcEventCb;
-typedef void (*RRtcBufferCb) (rpointer data, RBuffer * buf, rpointer ctx);
+#define r_rtc_rtp_listener_ref      r_ref_ref
+#define r_rtc_rtp_listener_unref    r_ref_unref
+
+R_API RRtcError r_rtc_rtp_listener_add_receiver (RRtcRtpListener * l, RRtcRtpReceiver * r);
+R_API RRtcError r_rtc_rtp_listener_add_sender (RRtcRtpListener * l, RRtcRtpSender * s);
+R_API RRtcError r_rtc_rtp_listener_remove_receiver (RRtcRtpListener * l, RRtcRtpReceiver * r);
+R_API RRtcError r_rtc_rtp_listener_remove_sender (RRtcRtpListener * l, RRtcRtpSender * s);
 
 R_END_DECLS
 
-#endif /* __R_RTC_H__ */
+#endif /* __R_RTC_RTP_LISTENER_H__ */
+
 

@@ -57,6 +57,10 @@ r_rtc_rtp_sender_new (const rchar * id, rssize size, RPrng * prng,
     }
     ret->rtp = r_rtc_crypto_transport_ref (rtp);
     ret->rtcp = r_rtc_crypto_transport_ref (rtcp);
+
+    r_rtc_crypto_transport_add_sender (ret->rtp, ret);
+    if (ret->rtp != ret->rtcp)
+      r_rtc_crypto_transport_add_sender (ret->rtcp, ret);
   }
 
   return ret;
@@ -81,12 +85,13 @@ r_rtc_rtp_sender_start (RRtcRtpSender * s, REvLoop * loop)
   return R_RTC_OK;
 }
 
-#if 0
 RRtcError
 r_rtc_rtp_sender_close (RRtcRtpSender * s)
 {
+  if (s->rtp != s->rtcp)
+    r_rtc_crypto_transport_remove_sender (s->rtcp, s);
+  return r_rtc_crypto_transport_remove_sender (s->rtp, s);
 }
-#endif
 
 RRtcError
 r_rtc_rtp_sender_send (RRtcRtpSender * s, RBuffer * packet)

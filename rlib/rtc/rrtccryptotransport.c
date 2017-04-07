@@ -39,12 +39,12 @@ r_rtc_crypto_transport_free (RRtcCryptoTransport * crypto)
   if (crypto->srtp != NULL)
     r_srtp_ctx_unref (crypto->srtp);
 
+  r_rtc_rtp_listener_unref (crypto->listener);
+
   if (crypto->loop != NULL)
     r_ev_loop_unref (crypto->loop);
   if (crypto->prng != NULL)
     r_prng_unref (crypto->prng);
-  if (crypto->notify != NULL)
-    crypto->notify (crypto->data);
 
   r_free (crypto);
 }
@@ -83,7 +83,7 @@ r_rtc_crypto_srv_hs_done (rpointer data, RTLSServer * srv)
             R_SRTP_FILTER_ANY, cs, clikey)) == R_SRTP_ERROR_OK) {
       R_LOG_INFO ("Added crypto context %s for DTLS-SRTP", csinfo->str);
       R_LOG_MEM_DUMP (R_LOG_LEVEL_INFO, clikey, msize / 2);
-      crypto->ready (crypto->data, crypto);
+      r_rtc_rtp_listener_notify_ready (crypto->listener, crypto);
     } else {
       R_LOG_WARNING ("Couldn't add crypto context for SRTP err %d",
           (ruint)srtperr);
@@ -144,7 +144,7 @@ r_rtc_crypto_transport_ice_close (rpointer data, rpointer ctx)
 
   /* FIXME: State change? */
   r_rtc_ice_transport_clear_cb (crypto->ice);
-  crypto->close (crypto->data, crypto);
+  r_rtc_rtp_listener_notify_close (crypto->listener, crypto);
 }
 
 static void
@@ -163,7 +163,7 @@ r_rtc_crypto_transport_srv_ice_packet (rpointer data, RBuffer * buf, rpointer ct
       r_buffer_unmap (buf, &info);
       if ((decrypt = r_srtp_decrypt_rtp (crypto->srtp, buf, &err)) != NULL) {
         R_LOG_TRACE ("RtcCryptoTransport %p RTP packet", crypto);
-        crypto->rtp (crypto->data, decrypt, crypto);
+        r_rtc_rtp_listener_handle_rtp (crypto->listener, decrypt, crypto);
         r_buffer_unref (decrypt);
       } else {
         R_LOG_WARNING ("Unable to decrypt SRTP buffer %p (err: %d)", buf, (int)err);
@@ -172,7 +172,7 @@ r_rtc_crypto_transport_srv_ice_packet (rpointer data, RBuffer * buf, rpointer ct
       r_buffer_unmap (buf, &info);
       if ((decrypt = r_srtp_decrypt_rtcp (crypto->srtp, buf, &err)) != NULL) {
         R_LOG_TRACE ("RtcCryptoTransport %p RTCP packet", crypto);
-        crypto->rtcp (crypto->data, decrypt, crypto);
+        r_rtc_rtp_listener_handle_rtcp (crypto->listener, decrypt, crypto);
         r_buffer_unref (decrypt);
       } else {
         R_LOG_WARNING ("Unable to decrypt SRTCP buffer %p (err: %d)", buf, (int)err);
@@ -217,15 +217,16 @@ r_rtc_crypto_transport_new (RRtcIceTransport * ice, RPrng * prng,
     r_ref_init (ret, r_rtc_crypto_transport_free);
 
     R_LOG_TRACE ("New RtcCryptoTransport %p", ret);
+    ret->listener = r_rtc_rtp_listener_new ();
     ret->srtp = r_srtp_ctx_new ();
 
-    ret->ice = r_rtc_ice_transport_ref (ice);
+    ret->dtlssrv = r_tls_server_new (&cbs, ret, NULL);
+    r_tls_server_set_cert (ret->dtlssrv, cert, privkey);
     ret->prng = r_prng_ref (prng);
+    ret->ice = r_rtc_ice_transport_ref (ice);
     r_rtc_ice_transport_set_cb (ret->ice,
         r_rtc_crypto_transport_ice_ready, r_rtc_crypto_transport_ice_close,
         r_rtc_crypto_transport_srv_ice_packet, ret, NULL);
-    ret->dtlssrv = r_tls_server_new (&cbs, ret, NULL);
-    r_tls_server_set_cert (ret->dtlssrv, cert, privkey);
   }
 
   return ret;

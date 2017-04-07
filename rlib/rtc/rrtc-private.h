@@ -22,12 +22,14 @@
 #error "rrtc-private.h should only be used internally in rlib!"
 #endif
 
+#include <rlib/rhashtable.h>
 #include <rlib/rlog.h>
 #include <rlib/rptrarray.h>
 
 #include <rlib/rtc/rrtc.h>
 #include <rlib/rtc/rrtcicetransport.h>
 #include <rlib/rtc/rrtccryptotransport.h>
+#include <rlib/rtc/rrtcrtplistener.h>
 #include <rlib/rtc/rrtcrtpreceiver.h>
 #include <rlib/rtc/rrtcrtpsender.h>
 #include <rlib/rtc/rrtcrtptransceiver.h>
@@ -108,48 +110,54 @@ R_API_HIDDEN RRtcRtpSender * r_rtc_rtp_sender_new (
     const rchar * id, rssize size, RPrng * prng,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 
+struct _RRtcRtpListener {
+  RRef ref;
+
+  RPtrArray * recv;
+  RPtrArray * send;
+
+  RHashTable * recv_ssrcmap;
+  RHashTable * recv_extmap;
+  RHashTable * send_ssrcmap;
+};
+
+R_API_HIDDEN RRtcRtpListener * r_rtc_rtp_listener_new (void) R_ATTR_MALLOC;
+R_API_HIDDEN RRtcError r_rtc_rtp_listener_handle_rtp (RRtcRtpListener * l,
+    RBuffer * buf, RRtcCryptoTransport * t);
+R_API_HIDDEN RRtcError r_rtc_rtp_listener_handle_rtcp (RRtcRtpListener * l,
+    RBuffer * buf, RRtcCryptoTransport * t);
+R_API_HIDDEN RRtcError r_rtc_rtp_listener_notify_ready (RRtcRtpListener * l,
+    RRtcCryptoTransport * t);
+R_API_HIDDEN RRtcError r_rtc_rtp_listener_notify_close (RRtcRtpListener * l,
+    RRtcCryptoTransport * t);
+
 
 struct _RRtcCryptoTransport {
   RRef ref;
 
-  RRtcEventCb   ready;
-  RRtcEventCb   close;
-  RRtcBufferCb  rtp;
-  RRtcBufferCb  rtcp;
-
-  rpointer data;
-  RDestroyNotify notify;
-
-  RPrng * prng;
-  REvLoop * loop;
-  RRtcIceTransport * ice;
+  RRtcRtpListener * listener;
   RTLSServer * dtlssrv;
   /*RTLSClient * dtlscli;*/
   RSRTPCtx * srtp;
+
+  REvLoop * loop;
+  RPrng * prng;
+  RRtcIceTransport * ice;
 };
 
 R_API_HIDDEN RRtcCryptoTransport * r_rtc_crypto_transport_new (
     RRtcIceTransport * ice, RPrng * prng,
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey) R_ATTR_MALLOC;
-
 R_API_HIDDEN RRtcError r_rtc_crypto_transport_send (RRtcCryptoTransport * crypto,
     RBuffer * buf);
-#define r_rtc_crypto_transport_clear_cb(crypto) \
-  r_rtc_crypto_transport_set_cb (crypto, NULL, NULL, NULL, NULL, NULL, NULL)
-static inline void
-r_rtc_crypto_transport_set_cb (RRtcCryptoTransport * crypto,
-    RRtcEventCb ready, RRtcEventCb close, RRtcBufferCb rtp, RRtcBufferCb rtcp,
-    rpointer data, RDestroyNotify notify)
-{
-  if (crypto->notify != NULL)
-    crypto->notify (crypto->data);
-  crypto->ready = ready;
-  crypto->close = close;
-  crypto->rtp = rtp;
-  crypto->rtcp = rtcp;
-  crypto->data = data;
-  crypto->notify = notify;
-}
+#define r_rtc_crypto_transport_add_receiver(t, r) \
+  r_rtc_rtp_listener_add_receiver ((t)->listener, r)
+#define r_rtc_crypto_transport_add_sender(t, s) \
+  r_rtc_rtp_listener_add_sender ((t)->listener, s)
+#define r_rtc_crypto_transport_remove_receiver(t, r) \
+  r_rtc_rtp_listener_remove_receiver ((t)->listener, r)
+#define r_rtc_crypto_transport_remove_sender(t, s) \
+  r_rtc_rtp_listener_remove_sender ((t)->listener, s)
 
 
 struct _RRtcIceTransport {
