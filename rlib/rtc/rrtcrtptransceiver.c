@@ -34,19 +34,19 @@ r_rtc_rtp_transceiver_free (RRtcRtpTransceiver * t)
   if (t->loop != NULL)
     r_ev_loop_unref (t->loop);
 
-  r_free (t->id);
   r_free (t);
 }
 
 RRtcRtpTransceiver *
-r_rtc_rtp_transceiver_new (const rchar * id, rssize size)
+r_rtc_rtp_transceiver_new (RPrng * prng)
 {
   RRtcRtpTransceiver * ret;
 
   if ((ret = r_mem_new0 (RRtcRtpTransceiver)) != NULL) {
     r_ref_init (ret, r_rtc_rtp_transceiver_free);
 
-    ret->id = r_strdup_size (id, size);
+    r_prng_fill_base64 (prng, ret->id, 24);
+    ret->id[24] = 0;
   }
 
   return ret;
@@ -56,6 +56,16 @@ const rchar *
 r_rtc_rtp_transceiver_get_id (RRtcRtpTransceiver * t)
 {
   return t->id;
+}
+
+const rchar *
+r_rtc_rtp_transceiver_get_mid (RRtcRtpTransceiver * t)
+{
+  if (t->recv != NULL)
+    return r_rtc_rtp_receiver_get_mid (t->recv);
+  else if (t->send != NULL)
+    return r_rtc_rtp_sender_get_mid (t->send);
+  return NULL;
 }
 
 RRtcError

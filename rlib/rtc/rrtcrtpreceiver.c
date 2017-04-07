@@ -34,13 +34,13 @@ r_rtc_rtp_receiver_free (RRtcRtpReceiver * r)
   if (r->notify != NULL)
     r->notify (r->data);
 
-  r_free (r->id);
+  r_free (r->mid);
   r_free (r);
 }
 
 
 RRtcRtpReceiver *
-r_rtc_rtp_receiver_new (const rchar * id, rssize size, RPrng * prng,
+r_rtc_rtp_receiver_new (RPrng * prng, const rchar * mid, rssize size,
     const RRtcRtpReceiverCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp)
 {
@@ -56,12 +56,7 @@ r_rtc_rtp_receiver_new (const rchar * id, rssize size, RPrng * prng,
   if ((ret = r_mem_new0 (RRtcRtpReceiver)) != NULL) {
     r_ref_init (ret, r_rtc_rtp_receiver_free);
 
-    if (size < 0) size = r_strlen (id);
-    if ((ret->id = r_strdup_size (id, size)) == NULL) {
-      ret->id = r_malloc (24 + 1);
-      r_prng_fill_base64 (prng, ret->id, 24);
-      ret->id[24] = 0;
-    }
+    ret->mid = r_strdup_size (mid, size);
     r_memcpy (&ret->cbs, cbs, sizeof (RRtcRtpReceiverCallbacks));
     ret->data = data;
     ret->notify = notify;
@@ -71,6 +66,9 @@ r_rtc_rtp_receiver_new (const rchar * id, rssize size, RPrng * prng,
     r_rtc_crypto_transport_add_receiver (ret->rtp, ret);
     if (ret->rtp != ret->rtcp)
       r_rtc_crypto_transport_add_receiver (ret->rtcp, ret);
+
+    r_prng_fill_base64 (prng, ret->id, 24);
+    ret->id[24] = 0;
   }
 
   return ret;
@@ -80,6 +78,12 @@ const rchar *
 r_rtc_rtp_receiver_get_id (RRtcRtpReceiver * r)
 {
   return r->id;
+}
+
+const rchar *
+r_rtc_rtp_receiver_get_mid (RRtcRtpReceiver * r)
+{
+  return r->mid;
 }
 
 RRtcError

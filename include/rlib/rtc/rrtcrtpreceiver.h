@@ -45,6 +45,7 @@ typedef struct _RRtcRtpReceiver RRtcRtpReceiver;
 #define r_rtc_rtp_receiver_unref    r_ref_unref
 
 R_API const rchar * r_rtc_rtp_receiver_get_id (RRtcRtpReceiver * r);
+R_API const rchar * r_rtc_rtp_receiver_get_mid (RRtcRtpReceiver * r);
 R_API RRtcError r_rtc_rtp_receiver_start (RRtcRtpReceiver * r, REvLoop * loop);
 R_API RRtcError r_rtc_rtp_receiver_close (RRtcRtpReceiver * r);
 

@@ -207,11 +207,15 @@ RTEST_F (rrtc, create_rtp_sender, RTEST_FAST)
         NULL, NULL, NULL, fixture->crypto, fixture->crypto), ==, NULL);
   r_assert_cmpptr (r_rtc_session_create_rtp_sender (fixture->session, NULL, 0,
         &cbs_null, fixture, NULL, fixture->crypto, fixture->crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_sender (fixture->session, NULL, 0,
+        &cbs, fixture, NULL, fixture->crypto, fixture->crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_sender (fixture->session,
+        R_STR_WITH_SIZE_ARGS ("audio"), &cbs_null, fixture, NULL,
+        fixture->crypto, fixture->crypto), ==, NULL);
+
   r_assert_cmpptr ((sender = r_rtc_session_create_rtp_sender (fixture->session,
-          NULL, 0, &cbs, fixture, NULL, fixture->crypto, fixture->crypto)), !=, NULL);
-  r_rtc_rtp_sender_unref (sender);
-  r_assert_cmpptr ((sender = r_rtc_session_create_rtp_sender (fixture->session,
-          R_STR_WITH_SIZE_ARGS ("audio"), &cbs, fixture, NULL, fixture->crypto, fixture->crypto)), !=, NULL);
+          R_STR_WITH_SIZE_ARGS ("audio"), &cbs, fixture, NULL,
+          fixture->crypto, fixture->crypto)), !=, NULL);
   r_rtc_rtp_sender_unref (sender);
 }
 RTEST_END;
@@ -220,6 +224,7 @@ RTEST_F (rrtc, create_rtp_receiver, RTEST_FAST)
 {
   RRtcRtpReceiver * receiver;
 
+  const RRtcRtpReceiverCallbacks cbs_null = { NULL, NULL, NULL, NULL };
   const RRtcRtpReceiverCallbacks cbs = {
     test_rtc_recv_ready,
     test_rtc_recv_close,
@@ -230,16 +235,18 @@ RTEST_F (rrtc, create_rtp_receiver, RTEST_FAST)
   r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
         NULL, 0, NULL, NULL, NULL, NULL, NULL), ==, NULL);
   r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
+        NULL, 0, NULL, fixture, NULL, fixture->crypto, fixture->crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
         R_STR_WITH_SIZE_ARGS ("audio"), NULL, NULL, NULL, NULL, NULL), ==, NULL);
   r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
         R_STR_WITH_SIZE_ARGS ("audio"), NULL, NULL, NULL, fixture->crypto, fixture->crypto), ==, NULL);
   r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
-        NULL, 0, NULL, fixture, NULL, fixture->crypto, fixture->crypto), ==, NULL);
+        R_STR_WITH_SIZE_ARGS ("audio"), &cbs_null, fixture, NULL,
+        fixture->crypto, fixture->crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
+        NULL, 0, &cbs_null, fixture, NULL,
+        fixture->crypto, fixture->crypto), ==, NULL);
 
-  r_assert_cmpptr ((receiver = r_rtc_session_create_rtp_receiver (fixture->session,
-          NULL, 0, &cbs, fixture, NULL,
-          fixture->crypto, fixture->crypto)), !=, NULL);
-  r_rtc_rtp_receiver_unref (receiver);
   r_assert_cmpptr ((receiver = r_rtc_session_create_rtp_receiver (fixture->session,
           R_STR_WITH_SIZE_ARGS ("audio"), &cbs, fixture, NULL,
           fixture->crypto, fixture->crypto)), !=, NULL);

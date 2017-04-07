@@ -43,6 +43,7 @@ typedef struct _RRtcRtpSender RRtcRtpSender;
 #define r_rtc_rtp_sender_unref      r_ref_unref
 
 R_API const rchar * r_rtc_rtp_sender_get_id (RRtcRtpSender * s);
+R_API const rchar * r_rtc_rtp_sender_get_mid (RRtcRtpSender * s);
 R_API RRtcError r_rtc_rtp_sender_start (RRtcRtpSender * s, REvLoop * loop);
 R_API RRtcError r_rtc_rtp_sender_close (RRtcRtpSender * s);
 R_API RRtcError r_rtc_rtp_sender_send (RRtcRtpSender * s, RBuffer * packet);

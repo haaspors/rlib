@@ -64,21 +64,20 @@ struct _RRtcSession {
 
 struct _RRtcRtpTransceiver {
   RRef ref;
-  rchar * id;
 
   RRtcRtpReceiver * recv;
   RRtcRtpSender * send;
 
   REvLoop * loop;
+  rchar id[24 + 1];
 };
 
-R_API_HIDDEN RRtcRtpTransceiver * r_rtc_rtp_transceiver_new (
-    const rchar * id, rssize size) R_ATTR_MALLOC;
+R_API_HIDDEN RRtcRtpTransceiver * r_rtc_rtp_transceiver_new (RPrng * prng) R_ATTR_MALLOC;
 
 
 struct _RRtcRtpReceiver {
   RRef ref;
-  rchar * id;
+  rchar * mid;
 
   RRtcRtpReceiverCallbacks cbs;
   rpointer data;
@@ -88,17 +87,18 @@ struct _RRtcRtpReceiver {
   RRtcCryptoTransport * rtcp;
 
   REvLoop * loop;
+  rchar id[24 + 1];
 };
 
-R_API_HIDDEN RRtcRtpReceiver * r_rtc_rtp_receiver_new (
-    const rchar * id, rssize size, RPrng * prng,
+R_API_HIDDEN RRtcRtpReceiver * r_rtc_rtp_receiver_new (RPrng * prng,
+    const rchar * mid, rssize size,
     const RRtcRtpReceiverCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 
 
 struct _RRtcRtpSender {
   RRef ref;
-  rchar * id;
+  rchar * mid;
 
   RRtcRtpSenderCallbacks cbs;
   rpointer data;
@@ -108,10 +108,11 @@ struct _RRtcRtpSender {
   RRtcCryptoTransport * rtcp;
 
   REvLoop * loop;
+  rchar id[24 + 1];
 };
 
-R_API_HIDDEN RRtcRtpSender * r_rtc_rtp_sender_new (
-    const rchar * id, rssize size, RPrng * prng,
+R_API_HIDDEN RRtcRtpSender * r_rtc_rtp_sender_new (RPrng * prng,
+    const rchar * mid, rssize size,
     const RRtcRtpSenderCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 

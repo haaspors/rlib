@@ -34,12 +34,12 @@ r_rtc_rtp_sender_free (RRtcRtpSender * s)
   if (s->notify != NULL)
     s->notify (s->data);
 
-  r_free (s->id);
+  r_free (s->mid);
   r_free (s);
 }
 
 RRtcRtpSender *
-r_rtc_rtp_sender_new (const rchar * id, rssize size, RPrng * prng,
+r_rtc_rtp_sender_new (RPrng * prng, const rchar * mid, rssize size,
     const RRtcRtpSenderCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp)
 {
@@ -54,12 +54,7 @@ r_rtc_rtp_sender_new (const rchar * id, rssize size, RPrng * prng,
   if ((ret = r_mem_new0 (RRtcRtpSender)) != NULL) {
     r_ref_init (ret, r_rtc_rtp_sender_free);
 
-    if (size < 0) size = r_strlen (id);
-    if ((ret->id = r_strdup_size (id, size)) == NULL) {
-      ret->id = r_malloc (24 + 1);
-      r_prng_fill_base64 (prng, ret->id, 24);
-      ret->id[24] = 0;
-    }
+    ret->mid = r_strdup_size (mid, size);
     r_memcpy (&ret->cbs, cbs, sizeof (RRtcRtpSenderCallbacks));
     ret->data = data;
     ret->notify = notify;
@@ -69,6 +64,9 @@ r_rtc_rtp_sender_new (const rchar * id, rssize size, RPrng * prng,
     r_rtc_crypto_transport_add_sender (ret->rtp, ret);
     if (ret->rtp != ret->rtcp)
       r_rtc_crypto_transport_add_sender (ret->rtcp, ret);
+
+    r_prng_fill_base64 (prng, ret->id, 24);
+    ret->id[24] = 0;
   }
 
   return ret;
@@ -78,6 +76,12 @@ const rchar *
 r_rtc_rtp_sender_get_id (RRtcRtpSender * s)
 {
   return s->id;
+}
+
+const rchar *
+r_rtc_rtp_sender_get_mid (RRtcRtpSender * s)
+{
+  return s->mid;
 }
 
 RRtcError
