@@ -109,7 +109,10 @@ r_rtc_rtp_listener_notify_ready (RRtcRtpListener * l, RRtcCryptoTransport * t)
     r->cbs.ready (r->data, t);
   }
 
-  /* FIXME: notify senders as well */
+  for (i = 0, c = r_ptr_array_size (l->send); i < c; i++) {
+    RRtcRtpSender * s = r_ptr_array_get (l->send, i);
+    s->cbs.ready (s->data, t);
+  }
 
   return R_RTC_OK;
 }
@@ -124,7 +127,10 @@ r_rtc_rtp_listener_notify_close (RRtcRtpListener * l, RRtcCryptoTransport * t)
     r->cbs.close (r->data, t);
   }
 
-  /* FIXME: notify senders as well */
+  for (i = 0, c = r_ptr_array_size (l->send); i < c; i++) {
+    RRtcRtpSender * s = r_ptr_array_get (l->send, i);
+    s->cbs.close (s->data, t);
+  }
 
   return R_RTC_OK;
 }

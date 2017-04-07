@@ -166,11 +166,12 @@ r_rtc_session_get_rtp_transceiver (RRtcSession * s,
 
 RRtcRtpSender *
 r_rtc_session_create_rtp_sender (RRtcSession * s, const rchar * id, rssize size,
+    const RRtcRtpSenderCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp)
 {
   RRtcRtpSender * ret;
 
-  if ((ret = r_rtc_rtp_sender_new (id, size, s->prng, rtp, rtcp)) != NULL) {
+  if ((ret = r_rtc_rtp_sender_new (id, size, s->prng, cbs, data, notify, rtp, rtcp)) != NULL) {
     RRtcRtpTransceiver * t;
 
     if ((t = r_rtc_session_get_rtp_transceiver (s, r_rtc_rtp_sender_get_id (ret), -1)) != NULL) {
@@ -236,15 +237,16 @@ r_rtc_session_lookup_rtp_transceiver (RRtcSession * s,
 RRtcRtpTransceiver *
 r_rtc_session_create_rtp_transceiver (RRtcSession * s,
     const rchar * id, rssize size,
-    const RRtcRtpReceiverCallbacks * cbs, rpointer data, RDestroyNotify notify,
+    const RRtcRtpReceiverCallbacks * rcbs, const RRtcRtpSenderCallbacks * scbs,
+    rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp)
 {
   RRtcRtpTransceiver * t;
 
   if ((t = r_rtc_session_lookup_rtp_transceiver (s, id, size)) == NULL) {
     if ((t = r_rtc_rtp_transceiver_new (id, size)) != NULL) {
-      if ((t->recv = r_rtc_rtp_receiver_new (id, size, s->prng, cbs, data, notify, rtp, rtcp)) != NULL &&
-          (t->send = r_rtc_rtp_sender_new (id, size, s->prng, rtp, rtcp)) != NULL) {
+      if ((t->recv = r_rtc_rtp_receiver_new (id, size, s->prng, rcbs, data, notify, rtp, rtcp)) != NULL &&
+          (t->send = r_rtc_rtp_sender_new (id, size, s->prng, scbs, data, notify, rtp, rtcp)) != NULL) {
         r_ptr_array_add (s->transceivers, t, r_rtc_rtp_transceiver_unref);
         r_rtc_rtp_transceiver_ref (t);
 

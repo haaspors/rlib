@@ -31,6 +31,8 @@ r_rtc_rtp_sender_free (RRtcRtpSender * s)
 
   if (s->loop != NULL)
     r_ev_loop_unref (s->loop);
+  if (s->notify != NULL)
+    s->notify (s->data);
 
   r_free (s->id);
   r_free (s);
@@ -38,11 +40,14 @@ r_rtc_rtp_sender_free (RRtcRtpSender * s)
 
 RRtcRtpSender *
 r_rtc_rtp_sender_new (const rchar * id, rssize size, RPrng * prng,
+    const RRtcRtpSenderCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp)
 {
   RRtcRtpSender * ret;
 
   if (R_UNLIKELY (prng == NULL)) return NULL;
+  if (R_UNLIKELY (cbs == NULL)) return NULL;
+  if (R_UNLIKELY (cbs->ready == NULL || cbs->close == NULL)) return NULL;
   if (R_UNLIKELY (rtp == NULL)) return NULL;
   if (R_UNLIKELY (rtcp == NULL)) rtcp = rtp;
 
@@ -55,6 +60,9 @@ r_rtc_rtp_sender_new (const rchar * id, rssize size, RPrng * prng,
       r_prng_fill_base64 (prng, ret->id, 24);
       ret->id[24] = 0;
     }
+    r_memcpy (&ret->cbs, cbs, sizeof (RRtcRtpSenderCallbacks));
+    ret->data = data;
+    ret->notify = notify;
     ret->rtp = r_rtc_crypto_transport_ref (rtp);
     ret->rtcp = r_rtc_crypto_transport_ref (rtcp);
 

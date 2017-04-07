@@ -60,6 +60,7 @@ R_API RRtcCryptoTransport * r_rtc_session_create_crypto_transport (RRtcSession *
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey);
 R_API RRtcRtpSender * r_rtc_session_create_rtp_sender (RRtcSession * s,
     const rchar * id, rssize size,
+    const RRtcRtpSenderCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 R_API RRtcRtpReceiver * r_rtc_session_create_rtp_receiver (RRtcSession * s,
     const rchar * id, rssize size,
@@ -69,7 +70,8 @@ R_API RRtcRtpTransceiver * r_rtc_session_lookup_rtp_transceiver (RRtcSession * s
     const rchar * id, rssize size);
 R_API RRtcRtpTransceiver * r_rtc_session_create_rtp_transceiver (RRtcSession * s,
     const rchar * id, rssize size,
-    const RRtcRtpReceiverCallbacks * cbs, rpointer data, RDestroyNotify notify,
+    const RRtcRtpReceiverCallbacks * rcbs, const RRtcRtpSenderCallbacks * scbs,
+    rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 
 

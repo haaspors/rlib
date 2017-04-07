@@ -100,6 +100,10 @@ struct _RRtcRtpSender {
   RRef ref;
   rchar * id;
 
+  RRtcRtpSenderCallbacks cbs;
+  rpointer data;
+  RDestroyNotify notify;
+
   RRtcCryptoTransport * rtp;
   RRtcCryptoTransport * rtcp;
 
@@ -108,6 +112,7 @@ struct _RRtcRtpSender {
 
 R_API_HIDDEN RRtcRtpSender * r_rtc_rtp_sender_new (
     const rchar * id, rssize size, RPrng * prng,
+    const RRtcRtpSenderCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 
 struct _RRtcRtpListener {

@@ -32,6 +32,11 @@
 
 R_BEGIN_DECLS
 
+typedef struct {
+  RRtcEventCb       ready; /* Handshake done, ready for data */
+  RRtcEventCb       close;
+} RRtcRtpSenderCallbacks;
+
 typedef struct _RRtcRtpSender RRtcRtpSender;
 
 #define r_rtc_rtp_sender_ref        r_ref_ref
