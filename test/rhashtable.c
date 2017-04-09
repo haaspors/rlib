@@ -80,6 +80,33 @@ RTEST (rhashtable, notify, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rhashtable, replace, RTEST_FAST)
+{
+  RHashTable * ht;
+  RBuffer * buf;
+
+  r_assert_cmpptr ((ht = r_hash_table_new_full (NULL, NULL, NULL, r_buffer_unref)), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 0);
+
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (0), NULL), ==, R_HASH_TABLE_OK);
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 1);
+
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (0),
+        r_buffer_ref (buf)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 1);
+
+  /* Do it again... */
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (0),
+        r_buffer_ref (buf)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 1);
+
+  r_hash_table_unref (ht);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rhashtable, steal, RTEST_FAST)
 {
   RHashTable * ht;

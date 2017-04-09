@@ -182,9 +182,9 @@ r_hash_table_insert (RHashTable * ht, rpointer key, rpointer value)
 
   idx = r_hash_table_lookup_bucket (ht, key, &hash);
   if (ht->buckets[idx].hash == hash) {
-    if (ht->keynotify != NULL)
+    if (ht->keynotify != NULL && ht->buckets[idx].key != NULL)
       ht->keynotify (ht->buckets[idx].key);
-    if (ht->valuenotify != NULL)
+    if (ht->valuenotify != NULL && ht->buckets[idx].val != NULL)
       ht->valuenotify (ht->buckets[idx].val);
   } else {
     ht->buckets[idx].hash = hash;
