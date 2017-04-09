@@ -110,6 +110,7 @@
 /* RTC */
 #include <rlib/rtc/rrtc.h>
 #include <rlib/rtc/rrtccryptotransport.h>
+#include <rlib/rtc/rrtcicecandidate.h>
 #include <rlib/rtc/rrtcicetransport.h>
 #include <rlib/rtc/rrtcrtplistener.h>
 #include <rlib/rtc/rrtcrtpreceiver.h>

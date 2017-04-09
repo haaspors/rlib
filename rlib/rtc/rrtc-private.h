@@ -27,6 +27,7 @@
 #include <rlib/rptrarray.h>
 
 #include <rlib/rtc/rrtc.h>
+#include <rlib/rtc/rrtcicecandidate.h>
 #include <rlib/rtc/rrtcicetransport.h>
 #include <rlib/rtc/rrtccryptotransport.h>
 #include <rlib/rtc/rrtcrtplistener.h>
@@ -164,6 +165,16 @@ R_API_HIDDEN RRtcError r_rtc_crypto_transport_send (RRtcCryptoTransport * crypto
   r_rtc_rtp_listener_remove_receiver ((t)->listener, r)
 #define r_rtc_crypto_transport_remove_sender(t, s) \
   r_rtc_rtp_listener_remove_sender ((t)->listener, s)
+
+
+struct _RRtcIceCandidate {
+  RRef ref;
+
+  RSocketAddress * addr;
+  RRtcIceProtocol proto;
+  RRtcIceCandidateType type;
+  ruint64 pri;
+};
 
 
 struct _RRtcIceTransport {
