@@ -183,6 +183,7 @@ struct _RRtcIceTransport {
   RRtcEventCb   ready;
   RRtcEventCb   close;
   RRtcBufferCb  packet;
+  RRtcError (*send) (RRtcIceTransport * ice, RBuffer * buf);
 
   rpointer data;
   RDestroyNotify notify;
@@ -192,10 +193,11 @@ struct _RRtcIceTransport {
   rchar * ufrag;
   rchar * pwd;
 
-  /* TODO: Add list of endpoints/candidates/sockets */
-  REvUDP * udp;
-  RSocketAddress * local;
-  RSocketAddress * remote;
+  RRtcIceComponent component;
+  RRtcIceRole role;
+  RRtcIceState state;
+  RRtcIceCandidatePair selected;
+  RHashTable * candidateSockets;
 };
 
 R_API_HIDDEN RRtcIceTransport * r_rtc_ice_transport_new (

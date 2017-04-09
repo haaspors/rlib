@@ -25,13 +25,33 @@
 #include <rlib/rtypes.h>
 
 #include <rlib/rref.h>
-#include <rlib/rsocketaddress.h>
 
 #include <rlib/rtc/rrtc.h>
+#include <rlib/rtc/rrtcicecandidate.h>
 
 #include <rlib/ev/revloop.h>
 
 R_BEGIN_DECLS
+
+typedef enum {
+  R_RTC_ICE_COMPONENT_RTP       = 0,
+  R_RTC_ICE_COMPONENT_RTCP,
+} RRtcIceComponent;
+
+typedef enum {
+  R_RTC_ICE_ROLE_CONTROLLED     = 0,
+  R_RTC_ICE_ROLE_CONTROLLING,
+} RRtcIceRole;
+
+typedef enum {
+  R_RTC_ICE_STATE_NEW           = 0,
+  R_RTC_ICE_STATE_CHECKING,
+  R_RTC_ICE_STATE_CONNECTED,
+  R_RTC_ICE_STATE_COMPLETED,
+  R_RTC_ICE_STATE_DISCONNECTED,
+  R_RTC_ICE_STATE_FAILED,
+  R_RTC_ICE_STATE_CLOSED,
+} RRtcIceState;
 
 typedef struct _RRtcIceTransport RRtcIceTransport;
 
@@ -41,9 +61,9 @@ typedef struct _RRtcIceTransport RRtcIceTransport;
 R_API RRtcError r_rtc_ice_transport_start (RRtcIceTransport * ice, REvLoop * loop);
 R_API RRtcError r_rtc_ice_transport_close (RRtcIceTransport * ice);
 
-/* FIXME: This MUST change to proper ICE gathering API */
-R_API RRtcError r_rtc_ice_transport_add_udp_candidate (RRtcIceTransport * ice,
-    RSocketAddress * local);
+/* FIXME: Change to proper ICE gathering API */
+R_API RRtcError r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport * ice,
+    RRtcIceCandidate * candidate);
 
 
 R_END_DECLS

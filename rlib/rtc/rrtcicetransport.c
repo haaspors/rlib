@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include "rrtc-private.h"
-#include <rlib/rtc/rrtcsession.h>
+#include <rlib/rtc/rrtcicetransport.h>
 
 #include <rlib/rassert.h>
 #include <rlib/rstr.h>
@@ -28,12 +28,11 @@
 static void
 r_rtc_ice_transport_free (RRtcIceTransport * ice)
 {
-  if (ice->udp != NULL)
-    r_ev_udp_unref (ice->udp);
-  if (ice->local != NULL)
-    r_socket_address_unref (ice->local);
-  if (ice->remote != NULL)
-    r_socket_address_unref (ice->remote);
+  if (ice->selected.local != NULL)
+    r_rtc_ice_candidate_unref (ice->selected.local);
+  if (ice->selected.remote != NULL)
+    r_rtc_ice_candidate_unref (ice->selected.remote);
+  r_hash_table_unref (ice->candidateSockets);
 
   r_free (ice->pwd);
   r_free (ice->ufrag);
@@ -58,6 +57,8 @@ r_rtc_ice_transport_new (
 
     ret->ufrag = r_strdup_size (ufrag, usize);
     ret->pwd = r_strdup_size (pwd, psize);
+    ret->candidateSockets = r_hash_table_new_full (NULL, NULL,
+        r_rtc_ice_candidate_unref, r_ref_unref);
     R_LOG_TRACE ("RtcIceTransport %p new %s - %s", ret, ret->ufrag, ret->pwd);
   }
 
@@ -65,19 +66,27 @@ r_rtc_ice_transport_new (
 }
 
 RRtcError
+r_rtc_ice_transport_send_udp (RRtcIceTransport * ice, RBuffer * buf)
+{
+  REvUDP * udp;
+
+  R_LOG_TRACE ("RtcIceTransport %p: %p:%"RSIZE_FMT, ice, buf, r_buffer_get_size (buf));
+
+  if ((udp = r_hash_table_lookup (ice->candidateSockets, ice->selected.local)) != NULL) {
+    /* FIXME: Error checking */
+    r_ev_udp_send (udp, buf, ice->selected.remote->addr, NULL, NULL, NULL);
+    return R_RTC_OK;
+  }
+
+  return R_RTC_WRONG_STATE;
+}
+
+RRtcError
 r_rtc_ice_transport_send (RRtcIceTransport * ice, RBuffer * buf)
 {
   if (R_UNLIKELY (ice == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (buf == NULL)) return R_RTC_INVAL;
-
-  r_assert_cmpptr (ice->udp, !=, NULL);
-
-  R_LOG_TRACE ("RtcIceTransport %p: %p:%"RSIZE_FMT, ice, buf, r_buffer_get_size (buf));
-  /* FIXME: Error checking */
-  /* FIXME: Send on nominated socket! */
-  r_ev_udp_send (ice->udp, buf, ice->remote, NULL, NULL, NULL);
-
-  return R_RTC_OK;
+  return ice->send (ice, buf);
 }
 
 static RBuffer *
@@ -117,11 +126,18 @@ r_rtc_ice_transport_udp_packet_cb (rpointer data,
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
 
   R_LOG_TRACE ("RtcIceTransport %p packet", ice);
-  r_assert_cmpptr (ice->udp, ==, evudp);
 
   /* FIXME: use candidate mapping */
-  if (!r_socket_address_is_equal (addr, ice->remote))
-    ice->remote = r_socket_address_ref (addr);
+  if (ice->selected.remote != NULL) {
+    if (!r_socket_address_is_equal (addr, ice->selected.remote->addr)) {
+      r_rtc_ice_candidate_unref (ice->selected.remote);
+      ice->selected.remote = NULL;
+    }
+  }
+  if (ice->selected.remote == NULL) {
+    ice->selected.remote = r_rtc_ice_candidate_new_full (addr,
+        R_RTC_ICE_PROTO_UDP, R_RTC_ICE_CANDIDATE_HOST, 0);
+  }
 
   r_buffer_map (buf, &info, R_MEM_MAP_READ);
   if (r_stun_is_valid_msg (info.data, info.size)) {
@@ -130,7 +146,7 @@ r_rtc_ice_transport_udp_packet_cb (rpointer data,
 
       if ((outbuf = r_rtc_ice_transport_create_stun_response_binding (ice,
               addr, r_stun_msg_transaction_id (info.data))) != NULL) {
-        r_ev_udp_send (ice->udp, outbuf, addr, NULL, NULL, NULL);
+        r_ev_udp_send (evudp, outbuf, addr, NULL, NULL, NULL);
         r_buffer_unref (outbuf);
       }
     } else {
@@ -145,23 +161,48 @@ r_rtc_ice_transport_udp_packet_cb (rpointer data,
 }
 
 static RRtcError
-r_rtc_ice_transport_setup_udp (RRtcIceTransport * ice)
+r_rtc_ice_transport_setup_udp (RRtcIceTransport * ice, RRtcIceCandidate * candidate)
 {
-  rchar * tmp;
-  ice->udp = r_ev_udp_new (r_socket_address_get_family (ice->local), ice->loop);
+  REvUDP * udp;
 
-  tmp = r_socket_address_to_str (ice->local);
-  R_LOG_TRACE ("RtcIceTransport %p setup UDP: %s", ice, tmp);
-  r_free (tmp);
+  if ((udp = r_ev_udp_new (r_socket_address_get_family (candidate->addr), ice->loop)) != NULL) {
+    rchar * tmp = r_socket_address_to_str (candidate->addr);
+    R_LOG_TRACE ("RtcIceTransport %p setup UDP: %s", ice, tmp);
+    r_free (tmp);
 
-  if (r_ev_udp_bind (ice->udp, ice->local, TRUE)) {
-    r_ev_udp_recv_start (ice->udp, NULL, r_rtc_ice_transport_udp_packet_cb, ice, NULL);
-    ice->ready (ice->data, ice);
+    if (r_ev_udp_bind (udp, candidate->addr, TRUE)) {
+      r_ev_udp_recv_start (udp, NULL, r_rtc_ice_transport_udp_packet_cb, ice, NULL);
+      r_hash_table_insert (ice->candidateSockets, r_rtc_ice_candidate_ref (candidate), udp);
+
+      /* FIXME: Wait for actual gathering and ICE stuff to happen! */
+      if (ice->selected.local == NULL)
+        ice->selected.local = r_rtc_ice_candidate_ref (candidate);
+      ice->send = r_rtc_ice_transport_send_udp;
+      ice->ready (ice->data, ice);
+    } else {
+      r_ev_udp_unref (udp);
+      return R_RTC_WRONG_STATE;
+    }
   } else {
-    return R_RTC_WRONG_STATE;
+    return R_RTC_OOM;
   }
 
   return R_RTC_OK;
+}
+
+static void
+_candidate_socket_start (rpointer key, rpointer value, rpointer user)
+{
+  RRtcIceCandidate * candidate = key;
+  RRtcIceTransport * ice = user;
+
+  if (value == NULL) {
+    if (candidate->proto == R_RTC_ICE_PROTO_UDP) {
+      r_rtc_ice_transport_setup_udp (ice, candidate);
+    } else {
+      r_assert_not_reached (); /* FIXME */
+    }
+  }
 }
 
 RRtcError
@@ -171,37 +212,53 @@ r_rtc_ice_transport_start (RRtcIceTransport * ice, REvLoop * loop)
   if (R_UNLIKELY (ice->loop != NULL)) return R_RTC_WRONG_STATE;
 
   ice->loop = r_ev_loop_ref (loop);
-  /* FIXME: Start gathering! */
 
+  /* FIXME: Start gathering! */
   R_LOG_TRACE ("RtcIceTransport %p start", ice);
-  return (ice->local != NULL) ? r_rtc_ice_transport_setup_udp (ice) : R_RTC_OK;
+  r_hash_table_foreach (ice->candidateSockets, _candidate_socket_start, ice);
+  return R_RTC_OK;
+}
+
+static void
+_candidate_socket_close (rpointer key, rpointer value, rpointer user)
+{
+  RRtcIceCandidate * candidate = key;
+  RRtcIceTransport * ice = user;
+
+  if (candidate->proto == R_RTC_ICE_PROTO_UDP) {
+    REvUDP * udp = value;
+
+    r_ev_udp_recv_stop (udp);
+    r_hash_table_insert (ice->candidateSockets, r_rtc_ice_candidate_ref (candidate), NULL);
+  } else {
+    r_assert_not_reached (); /* FIXME */
+  }
 }
 
 RRtcError
 r_rtc_ice_transport_close (RRtcIceTransport * ice)
 {
-  if (ice->udp != NULL)
-    r_ev_udp_recv_stop (ice->udp);
+  r_hash_table_foreach (ice->candidateSockets, _candidate_socket_close, ice);
 
   return R_RTC_OK;
 }
 
 RRtcError
-r_rtc_ice_transport_add_udp_candidate (RRtcIceTransport * ice,
-    RSocketAddress * local)
+r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport * ice,
+    RRtcIceCandidate * candidate)
 {
-  rchar * tmp;
+  if (R_UNLIKELY (candidate == NULL)) return R_RTC_INVAL;
+  if (R_UNLIKELY (candidate->type != R_RTC_ICE_CANDIDATE_HOST))
+    return R_RTC_INVALID_TYPE;
+  if (R_UNLIKELY (candidate->proto != R_RTC_ICE_PROTO_UDP))
+    return R_RTC_INVALID_TYPE; /* FIXME: Support TCP */
+  if (R_UNLIKELY (r_hash_table_contains (ice->candidateSockets, candidate) == R_HASH_TABLE_OK))
+    return R_RTC_ALREADY_FOUND;
 
-  if (R_UNLIKELY (local == NULL)) return R_RTC_INVAL;
-  if (R_UNLIKELY (ice->local != NULL)) return R_RTC_WRONG_STATE;
+  if (ice->loop != NULL)
+    return r_rtc_ice_transport_setup_udp (ice, candidate);
 
-  ice->local = r_socket_address_ref (local);
-
-  tmp = r_socket_address_to_str (ice->local);
-  R_LOG_TRACE ("RtcIceTransport %p add UDP: %s", ice, tmp);
-  r_free (tmp);
-
-
-  return (ice->loop != NULL) ? r_rtc_ice_transport_setup_udp (ice) : R_RTC_OK;
+  r_hash_table_insert (ice->candidateSockets, r_rtc_ice_candidate_ref (candidate), NULL);
+  return R_RTC_OK;
 }
 
