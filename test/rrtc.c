@@ -125,7 +125,7 @@ RTEST_FIXTURE_SETUP (rrtc)
         R_STR_WITH_SIZE_ARGS ("joe"), R_STR_WITH_SIZE_ARGS ("pwd"))), !=, NULL);
   r_assert_cmpptr ((fixture->cert = r_pem_parse_cert_from_data (R_STR_WITH_SIZE_ARGS (pemcert))), !=, NULL);
   r_assert_cmpptr ((fixture->pk = r_pem_parse_key_from_data (R_STR_WITH_SIZE_ARGS (pempk), NULL, 0)), !=, NULL);
-  r_assert_cmpptr ((fixture->crypto = r_rtc_session_create_crypto_transport (fixture->session,
+  r_assert_cmpptr ((fixture->crypto = r_rtc_session_create_dtls_transport (fixture->session,
         fixture->ice, R_RTC_CRYPTO_ROLE_SERVER, fixture->cert, fixture->pk)), !=, NULL);
 }
 
@@ -177,12 +177,12 @@ RTEST_F (rrtc, create_ice_transport, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST_F (rrtc, create_crypto_transport_server, RTEST_FAST)
+RTEST_F (rrtc, create_dtls_transport_server, RTEST_FAST)
 {
-  r_assert_cmpptr (r_rtc_session_create_crypto_transport (fixture->session,
+  r_assert_cmpptr (r_rtc_session_create_dtls_transport (fixture->session,
         NULL, R_RTC_CRYPTO_ROLE_SERVER, NULL, NULL), ==, NULL);
 #if 0
-  r_assert_cmpptr ((crypto = r_rtc_session_create_crypto_transport (fixture->session,
+  r_assert_cmpptr ((crypto = r_rtc_session_create_dtls_transport (fixture->session,
         ice, R_RTC_CRYPTO_ROLE_SERVER, NULL, NULL)), ==, NULL);
   r_rtc_crypto_transport_unref (crypto);
 #endif

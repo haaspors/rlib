@@ -152,7 +152,7 @@ struct _RRtcCryptoTransport {
   RRtcIceTransport * ice;
 };
 
-R_API_HIDDEN RRtcCryptoTransport * r_rtc_crypto_transport_new (
+R_API_HIDDEN RRtcCryptoTransport * r_rtc_crypto_transport_new_dtls (
     RRtcIceTransport * ice, RPrng * prng,
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey) R_ATTR_MALLOC;
 R_API_HIDDEN RRtcError r_rtc_crypto_transport_send (RRtcCryptoTransport * crypto,

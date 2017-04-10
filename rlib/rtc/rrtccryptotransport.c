@@ -193,7 +193,7 @@ r_rtc_crypto_transport_srv_ice_packet (rpointer data, RBuffer * buf, rpointer ct
 }
 
 RRtcCryptoTransport *
-r_rtc_crypto_transport_new (RRtcIceTransport * ice, RPrng * prng,
+r_rtc_crypto_transport_new_dtls (RRtcIceTransport * ice, RPrng * prng,
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey)
 {
   RRtcCryptoTransport * ret;

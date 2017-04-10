@@ -55,7 +55,7 @@ R_API RRtcError r_rtc_session_start (RRtcSession * s, REvLoop * loop);
 R_API RRtcError r_rtc_session_close (RRtcSession * s);
 R_API RRtcIceTransport * r_rtc_session_create_ice_transport (RRtcSession * s,
     const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize);
-R_API RRtcCryptoTransport * r_rtc_session_create_crypto_transport (RRtcSession * s,
+R_API RRtcCryptoTransport * r_rtc_session_create_dtls_transport (RRtcSession * s,
     RRtcIceTransport * ice,
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey);
 R_API RRtcRtpSender * r_rtc_session_create_rtp_sender (RRtcSession * s,

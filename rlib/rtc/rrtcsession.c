@@ -128,12 +128,12 @@ r_rtc_session_create_ice_transport (RRtcSession * s,
 }
 
 RRtcCryptoTransport *
-r_rtc_session_create_crypto_transport (RRtcSession * s, RRtcIceTransport * ice,
+r_rtc_session_create_dtls_transport (RRtcSession * s, RRtcIceTransport * ice,
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey)
 {
   RRtcCryptoTransport * crypto;
 
-  if ((crypto = r_rtc_crypto_transport_new (ice, s->prng, role, cert, privkey)) != NULL) {
+  if ((crypto = r_rtc_crypto_transport_new_dtls (ice, s->prng, role, cert, privkey)) != NULL) {
     r_ptr_array_add (s->crypto, crypto, r_rtc_crypto_transport_unref);
     r_rtc_crypto_transport_ref (crypto);
   }
