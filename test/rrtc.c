@@ -254,3 +254,19 @@ RTEST_F (rrtc, create_rtp_receiver, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtc, fake_ice_transport, RTEST_FAST)
+{
+  RRtcIceTransport * a = NULL, * b = NULL;
+
+  r_assert_cmpint (r_rtc_ice_transport_create_fake_pair (&a, NULL), ==, R_RTC_INVAL);
+  r_assert_cmpint (r_rtc_ice_transport_create_fake_pair (NULL, &b), ==, R_RTC_INVAL);
+  r_assert_cmpint (r_rtc_ice_transport_create_fake_pair (&a, &b), ==, R_RTC_OK);
+
+  r_assert_cmpptr (a, !=, NULL);
+  r_assert_cmpptr (b, !=, NULL);
+
+  r_rtc_ice_transport_unref (a);
+  r_rtc_ice_transport_unref (b);
+}
+RTEST_END;
+

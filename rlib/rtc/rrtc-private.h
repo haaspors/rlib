@@ -198,6 +198,7 @@ struct _RRtcIceTransport {
   RRtcIceState state;
   RRtcIceCandidatePair selected;
   RHashTable * candidateSockets;
+  RRtcIceTransport * related; /* FIXME: Make weak? */
 };
 
 R_API_HIDDEN RRtcIceTransport * r_rtc_ice_transport_new (

@@ -65,6 +65,10 @@ R_API RRtcError r_rtc_ice_transport_close (RRtcIceTransport * ice);
 R_API RRtcError r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport * ice,
     RRtcIceCandidate * candidate);
 
+/* NOTE: this is used for unit-testing bypassing all sockets,
+ * connecting alice and bob at the transport level */
+R_API RRtcError r_rtc_ice_transport_create_fake_pair (RRtcIceTransport ** a,
+    RRtcIceTransport ** b);
 
 R_END_DECLS
 
