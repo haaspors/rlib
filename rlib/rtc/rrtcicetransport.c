@@ -66,8 +66,9 @@ r_rtc_ice_transport_new (
 }
 
 RRtcError
-r_rtc_ice_transport_send_udp (RRtcIceTransport * ice, RBuffer * buf)
+r_rtc_ice_transport_send_udp (rpointer rtc, RBuffer * buf)
 {
+  RRtcIceTransport * ice = rtc;
   REvUDP * udp;
 
   R_LOG_TRACE ("RtcIceTransport %p: %p:%"RSIZE_FMT, ice, buf, r_buffer_get_size (buf));
@@ -244,8 +245,10 @@ r_rtc_ice_transport_close (RRtcIceTransport * ice)
 }
 
 RRtcError
-r_rtc_ice_transport_send_fake (RRtcIceTransport * ice, RBuffer * buf)
+r_rtc_ice_transport_send_fake (rpointer rtc, RBuffer * buf)
 {
+  RRtcIceTransport * ice = rtc;
+
   if (ice->related != NULL) {
     ice->related->packet (ice->related->data, buf, ice->related);
     return R_RTC_OK;

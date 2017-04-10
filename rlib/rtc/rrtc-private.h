@@ -46,6 +46,10 @@ R_BEGIN_DECLS
 R_LOG_CATEGORY_DEFINE_EXTERN (rtccat);
 #define R_LOG_CAT_DEFAULT &rtccat
 
+
+typedef RRtcError (*RRtcBufferSend) (rpointer rtc, RBuffer * buf);
+typedef RRtcError (*RRtcStart) (rpointer rtc, REvLoop * loop);
+
 struct _RRtcSession {
   RRef ref;
   rchar * id;
@@ -143,15 +147,27 @@ struct _RRtcCryptoTransport {
   RRef ref;
 
   RRtcRtpListener * listener;
-  RTLSServer * dtlssrv;
-  /*RTLSClient * dtlscli;*/
-  RSRTPCtx * srtp;
-
   REvLoop * loop;
-  RPrng * prng;
   RRtcIceTransport * ice;
+  RRtcBufferSend send;
+  RRtcStart start;
 };
 
+typedef struct  {
+  RRtcCryptoTransport crypto;
+
+  RSRTPCtx * srtp;
+  union {
+    RTLSServer * srv;
+    /*RTLSClient * cli;*/
+  } dtls;
+  RPrng * prng;
+} RRtcDtlsTransport;
+
+R_API_HIDDEN void r_rtc_crypto_transport_init (rpointer rtc,
+    RRtcIceTransport * ice, RDestroyNotify destroy, RRtcStart start,
+    RRtcBufferCb recv, RRtcBufferSend send);
+R_API_HIDDEN void r_rtc_crypto_transport_clear (RRtcCryptoTransport * crypto);
 R_API_HIDDEN RRtcCryptoTransport * r_rtc_crypto_transport_new_dtls (
     RRtcIceTransport * ice, RPrng * prng,
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey) R_ATTR_MALLOC;
@@ -180,10 +196,10 @@ struct _RRtcIceCandidate {
 struct _RRtcIceTransport {
   RRef ref;
 
-  RRtcEventCb   ready;
-  RRtcEventCb   close;
-  RRtcBufferCb  packet;
-  RRtcError (*send) (RRtcIceTransport * ice, RBuffer * buf);
+  RRtcEventCb     ready;
+  RRtcEventCb     close;
+  RRtcBufferCb    packet;
+  RRtcBufferSend  send;
 
   rpointer data;
   RDestroyNotify notify;
