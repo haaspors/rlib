@@ -146,7 +146,7 @@ r_rtc_rtp_listener_notify_close (RRtcRtpListener * l, RRtcCryptoTransport * t)
 RRtcError
 r_rtc_rtp_listener_add_receiver (RRtcRtpListener * l, RRtcRtpReceiver * r)
 {
-  r_ptr_array_add (l->recv, r_rtc_rtp_receiver_ref (r), r_rtc_rtp_receiver_unref);
+  r_ptr_array_add (l->recv, r, NULL);
   r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (0), r);
 
   return R_RTC_OK;
@@ -155,7 +155,7 @@ r_rtc_rtp_listener_add_receiver (RRtcRtpListener * l, RRtcRtpReceiver * r)
 RRtcError
 r_rtc_rtp_listener_add_sender (RRtcRtpListener * l, RRtcRtpSender * s)
 {
-  r_ptr_array_add (l->send, r_rtc_rtp_sender_ref (s), r_rtc_rtp_sender_unref);
+  r_ptr_array_add (l->send, s, NULL);
   r_hash_table_insert (l->send_ssrcmap, RSIZE_TO_POINTER (0), s);
 
   return R_RTC_OK;
