@@ -128,7 +128,7 @@ r_rtc_rtp_transceiver_set_sender (RRtcRtpTransceiver * t, RRtcRtpSender * sender
   if (R_UNLIKELY (sender == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (t->send != NULL)) return R_RTC_WRONG_STATE;
 
-  t->send = r_rtc_rtp_receiver_ref (sender);
+  t->send = r_rtc_rtp_sender_ref (sender);
 
   if (t->loop != NULL)
     r_rtc_rtp_sender_start (t->send, t->loop);
