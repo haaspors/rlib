@@ -58,6 +58,8 @@ r_rtc_rtp_listener_handle_rtp (RRtcRtpListener * l,
   RRTPBuffer rtp = R_RTP_BUFFER_INIT;
   RRtcRtpReceiver * r;
 
+  (void) t;
+
   /* TODO: Temporary filter. which will only work with one receiver obviously */
   if ((r = r_hash_table_lookup (l->recv_ssrcmap, RSIZE_TO_POINTER (0))) != NULL)
     goto process;
@@ -78,7 +80,7 @@ r_rtc_rtp_listener_handle_rtp (RRtcRtpListener * l,
 
   return R_RTC_NO_HANDLER;
 process:
-  r->cbs.rtp (r->data, buf, t);
+  r->cbs.rtp (r->data, buf, r);
   return R_RTC_OK;
 }
 
@@ -89,9 +91,11 @@ r_rtc_rtp_listener_handle_rtcp (RRtcRtpListener * l,
   RRtcRtpReceiver * r;
   rsize i, c;
 
+  (void) t;
+
   for (i = 0, c = r_ptr_array_size (l->recv); i < c; i++) {
     r = r_ptr_array_get (l->recv, i);
-    r->cbs.rtcp (r->data, buf, t);
+    r->cbs.rtcp (r->data, buf, r);
   }
 
   /* FIXME send receiver reports to senders? */
@@ -104,14 +108,16 @@ r_rtc_rtp_listener_notify_ready (RRtcRtpListener * l, RRtcCryptoTransport * t)
 {
   rsize i, c;
 
+  (void) t;
+
   for (i = 0, c = r_ptr_array_size (l->recv); i < c; i++) {
     RRtcRtpReceiver * r = r_ptr_array_get (l->recv, i);
-    r->cbs.ready (r->data, t);
+    r->cbs.ready (r->data, r);
   }
 
   for (i = 0, c = r_ptr_array_size (l->send); i < c; i++) {
     RRtcRtpSender * s = r_ptr_array_get (l->send, i);
-    s->cbs.ready (s->data, t);
+    s->cbs.ready (s->data, s);
   }
 
   return R_RTC_OK;
@@ -122,14 +128,16 @@ r_rtc_rtp_listener_notify_close (RRtcRtpListener * l, RRtcCryptoTransport * t)
 {
   rsize i, c;
 
+  (void) t;
+
   for (i = 0, c = r_ptr_array_size (l->recv); i < c; i++) {
     RRtcRtpReceiver * r = r_ptr_array_get (l->recv, i);
-    r->cbs.close (r->data, t);
+    r->cbs.close (r->data, r);
   }
 
   for (i = 0, c = r_ptr_array_size (l->send); i < c; i++) {
     RRtcRtpSender * s = r_ptr_array_get (l->send, i);
-    s->cbs.close (s->data, t);
+    s->cbs.close (s->data, s);
   }
 
   return R_RTC_OK;
