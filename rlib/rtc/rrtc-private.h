@@ -164,9 +164,8 @@ typedef struct  {
   RPrng * prng;
 } RRtcDtlsTransport;
 
-R_API_HIDDEN void r_rtc_crypto_transport_init (rpointer rtc,
-    RRtcIceTransport * ice, RDestroyNotify destroy, RRtcStart start,
-    RRtcBufferCb recv, RRtcBufferSend send);
+R_API_HIDDEN void r_rtc_crypto_transport_init (rpointer rtc, RRtcIceTransport * ice,
+    RRtcStart start, RRtcBufferCb recv, RRtcBufferSend send);
 R_API_HIDDEN void r_rtc_crypto_transport_clear (RRtcCryptoTransport * crypto);
 R_API_HIDDEN RRtcCryptoTransport * r_rtc_crypto_transport_new_dtls (
     RRtcIceTransport * ice, RPrng * prng,

@@ -228,9 +228,8 @@ r_rtc_crypto_transport_new_dtls (RRtcIceTransport * ice, RPrng * prng,
   r_assert_cmpptr (privkey, !=, NULL);
 
   if ((ret = r_mem_new0 (RRtcDtlsTransport)) != NULL) {
-    r_rtc_crypto_transport_init (ret, ice,
-        (RDestroyNotify) r_rtc_dtls_transport_free,
-        r_rtc_dtls_transport_srv_start,
+    r_ref_init (ret, r_rtc_dtls_transport_free);
+    r_rtc_crypto_transport_init (ret, ice, r_rtc_dtls_transport_srv_start,
         r_rtc_dtls_transport_srv_ice_packet, r_rtc_dtls_transport_send);
 
     ret->srtp = r_srtp_ctx_new ();

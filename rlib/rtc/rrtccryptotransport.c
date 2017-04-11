@@ -50,13 +50,11 @@ r_rtc_crypto_transport_ice_close (rpointer data, rpointer ctx)
 
 void
 r_rtc_crypto_transport_init (rpointer rtc, RRtcIceTransport * ice,
-    RDestroyNotify destroy, RRtcStart start,
-    RRtcBufferCb recv, RRtcBufferSend send)
+    RRtcStart start, RRtcBufferCb recv, RRtcBufferSend send)
 {
   RRtcCryptoTransport * crypto = rtc;
 
   R_LOG_TRACE ("Init RtcCryptoTransport %p", crypto);
-  r_ref_init (crypto, destroy);
   crypto->listener = r_rtc_rtp_listener_new ();
   crypto->loop = NULL;
   crypto->ice = r_rtc_ice_transport_ref (ice);
