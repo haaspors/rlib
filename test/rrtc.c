@@ -50,92 +50,136 @@ static const rchar pempk[] =
   "VFwqM04nD9RsYGRKy6NhrA==\r\n"
   "-----END PRIVATE KEY-----\r\n";
 
+typedef struct {
+  RRtcSession * session;
+  RRtcRtpReceiver * recv;
+  RRtcRtpSender * send;
+
+  RQueue rtp;
+  RQueue rtcp;
+} TestRtcCtx;
+
 RTEST_FIXTURE_STRUCT (rrtc)
 {
   RPrng * prng;
-  RRtcSession * session;
+  REvLoop * loop;
 
-  RRtcIceTransport * ice;
-  RRtcCryptoTransport * crypto;
-  RCryptoCert * cert;
-  RCryptoKey * pk;
+  TestRtcCtx alice;
+  TestRtcCtx bob;
 };
 
 static void
 test_rtc_recv_ready (rpointer data, rpointer ctx)
 {
-  RTEST_FIXTURE_STRUCT (rrtc) * fixture;
-  if (R_UNLIKELY ((fixture = data) == NULL)) return;
+  TestRtcCtx * rtc;
+  if (R_UNLIKELY ((rtc = data) == NULL)) return;
 
-  r_assert_cmpptr (fixture->session, ==, ctx);
+  r_assert_cmpptr (rtc->recv, ==, ctx);
 }
 
 static void
 test_rtc_recv_close (rpointer data, rpointer ctx)
 {
-  RTEST_FIXTURE_STRUCT (rrtc) * fixture;
-  if (R_UNLIKELY ((fixture = data) == NULL)) return;
+  TestRtcCtx * rtc;
+  if (R_UNLIKELY ((rtc = data) == NULL)) return;
 
-  r_assert_cmpptr (fixture->session, ==, ctx);
+  r_assert_cmpptr (rtc->recv, ==, ctx);
 }
 
 static void
 test_rtc_recv_rtp (rpointer data, RBuffer * buf, rpointer ctx)
 {
-  RTEST_FIXTURE_STRUCT (rrtc) * fixture;
-  if (R_UNLIKELY ((fixture = data) == NULL)) return;
+  TestRtcCtx * rtc;
+  if (R_UNLIKELY ((rtc = data) == NULL)) return;
 
-  r_assert_cmpptr (fixture->session, ==, ctx);
-  (void) buf;
+  r_assert_cmpptr (rtc->recv, ==, ctx);
+  r_queue_push (&rtc->rtp, r_buffer_ref (buf));
 }
 
 static void
 test_rtc_recv_rtcp (rpointer data, RBuffer * buf, rpointer ctx)
 {
-  RTEST_FIXTURE_STRUCT (rrtc) * fixture;
-  if (R_UNLIKELY ((fixture = data) == NULL)) return;
+  TestRtcCtx * rtc;
+  if (R_UNLIKELY ((rtc = data) == NULL)) return;
 
-  r_assert_cmpptr (fixture->session, ==, ctx);
-  (void) buf;
+  r_assert_cmpptr (rtc->recv, ==, ctx);
+  r_queue_push (&rtc->rtcp, r_buffer_ref (buf));
 }
 
 static void
 test_rtc_send_ready (rpointer data, rpointer ctx)
 {
-  RTEST_FIXTURE_STRUCT (rrtc) * fixture;
-  if (R_UNLIKELY ((fixture = data) == NULL)) return;
+  TestRtcCtx * rtc;
+  if (R_UNLIKELY ((rtc = data) == NULL)) return;
 
-  (void) ctx;
+  r_assert_cmpptr (rtc->send, ==, ctx);
 }
 
 static void
 test_rtc_send_close (rpointer data, rpointer ctx)
 {
-  RTEST_FIXTURE_STRUCT (rrtc) * fixture;
-  if (R_UNLIKELY ((fixture = data) == NULL)) return;
+  TestRtcCtx * rtc;
+  if (R_UNLIKELY ((rtc = data) == NULL)) return;
 
-  (void) ctx;
+  r_assert_cmpptr (rtc->send, ==, ctx);
+}
+
+static void
+test_rtc_ctx_init (TestRtcCtx * ctx, RPrng * prng, RRtcIceTransport * ice)
+{
+  RRtcCryptoTransport * crypto;
+  const RRtcRtpReceiverCallbacks recv_cbs = {
+    test_rtc_recv_ready,
+    test_rtc_recv_close,
+    test_rtc_recv_rtp,
+    test_rtc_recv_rtcp,
+  };
+  const RRtcRtpSenderCallbacks send_cbs = {
+    test_rtc_send_ready,
+    test_rtc_send_close,
+  };
+
+  r_assert_cmpptr ((ctx->session = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((crypto = r_rtc_session_create_raw_transport (ctx->session, ice)), !=, NULL);
+  r_assert_cmpptr ((ctx->send = r_rtc_session_create_rtp_sender (ctx->session,
+          R_STR_WITH_SIZE_ARGS ("audio"), &send_cbs, ctx, NULL,
+          crypto, crypto)), !=, NULL);
+  r_assert_cmpptr ((ctx->recv = r_rtc_session_create_rtp_receiver (ctx->session,
+          R_STR_WITH_SIZE_ARGS ("audio"), &recv_cbs, ctx, NULL,
+          crypto, crypto)), !=, NULL);
+  r_rtc_crypto_transport_unref (crypto);
+
+  r_queue_init (&ctx->rtp);
+  r_queue_init (&ctx->rtcp);
+}
+
+static void
+test_rtc_ctx_clear (TestRtcCtx * ctx)
+{
+  r_rtc_rtp_sender_unref (ctx->send);
+  r_rtc_rtp_receiver_unref (ctx->recv);
+  r_rtc_session_unref (ctx->session);
+
+  r_queue_clear (&ctx->rtp, r_buffer_unref);
+  r_queue_clear (&ctx->rtcp, r_buffer_unref);
 }
 
 RTEST_FIXTURE_SETUP (rrtc)
 {
+  RRtcIceTransport * a, * b;
+
   r_assert_cmpptr ((fixture->prng = r_prng_new_mt ()), !=, NULL);
-  r_assert_cmpptr ((fixture->session = r_rtc_session_new (fixture->prng)), !=, NULL);
-  r_assert_cmpptr ((fixture->ice = r_rtc_session_create_ice_transport (fixture->session,
-        R_STR_WITH_SIZE_ARGS ("joe"), R_STR_WITH_SIZE_ARGS ("pwd"))), !=, NULL);
-  r_assert_cmpptr ((fixture->cert = r_pem_parse_cert_from_data (R_STR_WITH_SIZE_ARGS (pemcert))), !=, NULL);
-  r_assert_cmpptr ((fixture->pk = r_pem_parse_key_from_data (R_STR_WITH_SIZE_ARGS (pempk), NULL, 0)), !=, NULL);
-  r_assert_cmpptr ((fixture->crypto = r_rtc_session_create_dtls_transport (fixture->session,
-        fixture->ice, R_RTC_CRYPTO_ROLE_SERVER, fixture->cert, fixture->pk)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_create_fake_pair (&a, &b), ==, R_RTC_OK);
+  test_rtc_ctx_init (&fixture->alice, fixture->prng, a);
+  test_rtc_ctx_init (&fixture->bob, fixture->prng, b);
+  r_rtc_ice_transport_unref (a);
+  r_rtc_ice_transport_unref (b);
 }
 
 RTEST_FIXTURE_TEARDOWN (rrtc)
 {
-  r_rtc_crypto_transport_unref (fixture->crypto);
-  r_crypto_key_unref (fixture->pk);
-  r_crypto_cert_unref (fixture->cert);
-  r_rtc_ice_transport_unref (fixture->ice);
-  r_rtc_session_unref (fixture->session);
+  test_rtc_ctx_clear (&fixture->alice);
+  test_rtc_ctx_clear (&fixture->bob);
   r_prng_unref (fixture->prng);
 }
 
@@ -160,39 +204,80 @@ RTEST (rrtc_session, new, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST_F (rrtc, create_ice_transport, RTEST_FAST)
+RTEST (rrtc, create_ice_transport, RTEST_FAST)
 {
-  r_assert_cmpptr (r_rtc_session_create_ice_transport (fixture->session,
+  RPrng * prng;
+  RRtcSession * session;
+  RRtcIceTransport * ice;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((session = r_rtc_session_new (prng)), !=, NULL);
+
+  r_assert_cmpptr (r_rtc_session_create_ice_transport (session,
         NULL, 0, NULL, 0), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_ice_transport (fixture->session,
+  r_assert_cmpptr (r_rtc_session_create_ice_transport (session,
         R_STR_WITH_SIZE_ARGS ("joe"), NULL, 0), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_ice_transport (fixture->session,
+  r_assert_cmpptr (r_rtc_session_create_ice_transport (session,
         NULL, 0, R_STR_WITH_SIZE_ARGS ("pwd")), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_ice_transport (fixture->session,
+  r_assert_cmpptr (r_rtc_session_create_ice_transport (session,
         R_STR_WITH_SIZE_ARGS ("joe"), "pwd", 0), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_ice_transport (fixture->session,
+  r_assert_cmpptr (r_rtc_session_create_ice_transport (session,
         "joe", 0, R_STR_WITH_SIZE_ARGS ("pwd")), ==, NULL);
 
-  r_assert_cmpptr (fixture->ice, !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (session,
+        R_STR_WITH_SIZE_ARGS ("joe"), R_STR_WITH_SIZE_ARGS ("pwd"))), !=, NULL);
+  r_rtc_ice_transport_unref (ice);
+
+  r_rtc_session_unref (session);
+  r_prng_unref (prng);
 }
 RTEST_END;
 
-RTEST_F (rrtc, create_dtls_transport_server, RTEST_FAST)
+RTEST (rrtc, create_dtls_transport_server, RTEST_FAST)
 {
-  r_assert_cmpptr (r_rtc_session_create_dtls_transport (fixture->session,
+  RPrng * prng;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RRtcSession * session;
+  RRtcIceTransport * ice;
+
+  RRtcCryptoTransport * crypto;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (R_STR_WITH_SIZE_ARGS (pemcert))), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (R_STR_WITH_SIZE_ARGS (pempk), NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((session = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (session,
+        R_STR_WITH_SIZE_ARGS ("joe"), R_STR_WITH_SIZE_ARGS ("pwd"))), !=, NULL);
+
+  r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
         NULL, R_RTC_CRYPTO_ROLE_SERVER, NULL, NULL), ==, NULL);
 #if 0
-  r_assert_cmpptr ((crypto = r_rtc_session_create_dtls_transport (fixture->session,
-        ice, R_RTC_CRYPTO_ROLE_SERVER, NULL, NULL)), ==, NULL);
-  r_rtc_crypto_transport_unref (crypto);
+  r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_SERVER, NULL, NULL), ==, NULL);
 #endif
+  r_assert_cmpptr ((crypto = r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_SERVER, cert, pk)), !=, NULL);
 
-  r_assert_cmpptr (fixture->crypto, !=, NULL);
+  r_rtc_crypto_transport_unref (crypto);
+  r_rtc_ice_transport_unref (ice);
+
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_prng_unref (prng);
+  r_rtc_session_unref (session);
 }
 RTEST_END;
 
-RTEST_F (rrtc, create_rtp_sender, RTEST_FAST)
+RTEST (rrtc, create_rtp_sender, RTEST_FAST)
 {
+  RPrng * prng;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RRtcSession * session;
+  RRtcIceTransport * ice;
+  RRtcCryptoTransport * crypto;
+
   RRtcRtpSender * sender;
 
   const RRtcRtpSenderCallbacks cbs_null = { NULL, NULL };
@@ -201,27 +286,50 @@ RTEST_F (rrtc, create_rtp_sender, RTEST_FAST)
     test_rtc_send_close,
   };
 
-  r_assert_cmpptr (r_rtc_session_create_rtp_sender (fixture->session, NULL, 0,
-        NULL, NULL, NULL, NULL, NULL), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_rtp_sender (fixture->session, NULL, 0,
-        NULL, NULL, NULL, fixture->crypto, fixture->crypto), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_rtp_sender (fixture->session, NULL, 0,
-        &cbs_null, fixture, NULL, fixture->crypto, fixture->crypto), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_rtp_sender (fixture->session, NULL, 0,
-        &cbs, fixture, NULL, fixture->crypto, fixture->crypto), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_rtp_sender (fixture->session,
-        R_STR_WITH_SIZE_ARGS ("audio"), &cbs_null, fixture, NULL,
-        fixture->crypto, fixture->crypto), ==, NULL);
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (R_STR_WITH_SIZE_ARGS (pemcert))), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (R_STR_WITH_SIZE_ARGS (pempk), NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((session = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (session,
+        R_STR_WITH_SIZE_ARGS ("joe"), R_STR_WITH_SIZE_ARGS ("pwd"))), !=, NULL);
+  r_assert_cmpptr ((crypto = r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_SERVER, cert, pk)), !=, NULL);
 
-  r_assert_cmpptr ((sender = r_rtc_session_create_rtp_sender (fixture->session,
-          R_STR_WITH_SIZE_ARGS ("audio"), &cbs, fixture, NULL,
-          fixture->crypto, fixture->crypto)), !=, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_sender (session, NULL, 0,
+        NULL, NULL, NULL, NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_sender (session, NULL, 0,
+        NULL, NULL, NULL, crypto, crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_sender (session, NULL, 0,
+        &cbs_null, NULL, NULL, crypto, crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_sender (session, NULL, 0,
+        &cbs, NULL, NULL, crypto, crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_sender (session,
+        R_STR_WITH_SIZE_ARGS ("audio"), &cbs_null, NULL, NULL,
+        crypto, crypto), ==, NULL);
+
+  r_assert_cmpptr ((sender = r_rtc_session_create_rtp_sender (session,
+          R_STR_WITH_SIZE_ARGS ("audio"), &cbs, NULL, NULL,
+          crypto, crypto)), !=, NULL);
   r_rtc_rtp_sender_unref (sender);
+
+  r_rtc_crypto_transport_unref (crypto);
+  r_rtc_ice_transport_unref (ice);
+  r_rtc_session_unref (session);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_prng_unref (prng);
 }
 RTEST_END;
 
-RTEST_F (rrtc, create_rtp_receiver, RTEST_FAST)
+RTEST (rrtc, create_rtp_receiver, RTEST_FAST)
 {
+  RPrng * prng;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RRtcSession * session;
+  RRtcIceTransport * ice;
+  RRtcCryptoTransport * crypto;
+
   RRtcRtpReceiver * receiver;
 
   const RRtcRtpReceiverCallbacks cbs_null = { NULL, NULL, NULL, NULL };
@@ -232,25 +340,41 @@ RTEST_F (rrtc, create_rtp_receiver, RTEST_FAST)
     test_rtc_recv_rtcp,
   };
 
-  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
-        NULL, 0, NULL, NULL, NULL, NULL, NULL), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
-        NULL, 0, NULL, fixture, NULL, fixture->crypto, fixture->crypto), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
-        R_STR_WITH_SIZE_ARGS ("audio"), NULL, NULL, NULL, NULL, NULL), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
-        R_STR_WITH_SIZE_ARGS ("audio"), NULL, NULL, NULL, fixture->crypto, fixture->crypto), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
-        R_STR_WITH_SIZE_ARGS ("audio"), &cbs_null, fixture, NULL,
-        fixture->crypto, fixture->crypto), ==, NULL);
-  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (fixture->session,
-        NULL, 0, &cbs_null, fixture, NULL,
-        fixture->crypto, fixture->crypto), ==, NULL);
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (R_STR_WITH_SIZE_ARGS (pemcert))), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (R_STR_WITH_SIZE_ARGS (pempk), NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((session = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (session,
+        R_STR_WITH_SIZE_ARGS ("joe"), R_STR_WITH_SIZE_ARGS ("pwd"))), !=, NULL);
+  r_assert_cmpptr ((crypto = r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_SERVER, cert, pk)), !=, NULL);
 
-  r_assert_cmpptr ((receiver = r_rtc_session_create_rtp_receiver (fixture->session,
-          R_STR_WITH_SIZE_ARGS ("audio"), &cbs, fixture, NULL,
-          fixture->crypto, fixture->crypto)), !=, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (session,
+        NULL, 0, NULL, NULL, NULL, NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (session,
+        NULL, 0, NULL, NULL, NULL, crypto, crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (session,
+        R_STR_WITH_SIZE_ARGS ("audio"), NULL, NULL, NULL, NULL, NULL), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (session,
+        R_STR_WITH_SIZE_ARGS ("audio"), NULL, NULL, NULL, crypto, crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (session,
+        R_STR_WITH_SIZE_ARGS ("audio"), &cbs_null, NULL, NULL,
+        crypto, crypto), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_rtp_receiver (session,
+        NULL, 0, &cbs_null, NULL, NULL,
+        crypto, crypto), ==, NULL);
+
+  r_assert_cmpptr ((receiver = r_rtc_session_create_rtp_receiver (session,
+          R_STR_WITH_SIZE_ARGS ("audio"), &cbs, NULL, NULL,
+          crypto, crypto)), !=, NULL);
   r_rtc_rtp_receiver_unref (receiver);
+
+  r_rtc_crypto_transport_unref (crypto);
+  r_rtc_ice_transport_unref (ice);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_prng_unref (prng);
+  r_rtc_session_unref (session);
 }
 RTEST_END;
 
@@ -267,6 +391,30 @@ RTEST (rrtc, fake_ice_transport, RTEST_FAST)
 
   r_rtc_ice_transport_unref (a);
   r_rtc_ice_transport_unref (b);
+}
+RTEST_END;
+
+RTEST_F (rrtc, send_recv, RTEST_FAST)
+{
+  RBuffer * buf, * pop;
+
+  r_assert_cmpuint (r_queue_size (&fixture->alice.rtp), ==, 0);
+  r_assert_cmpuint (r_queue_size (&fixture->alice.rtcp), ==, 0);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 0);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtcp), ==, 0);
+
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer_alloc (0, 0, 0)), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+
+  r_assert_cmpuint (r_queue_size (&fixture->alice.rtp), ==, 0);
+  r_assert_cmpuint (r_queue_size (&fixture->alice.rtcp), ==, 0);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 1);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtcp), ==, 0);
+
+  r_assert_cmpptr ((pop = r_queue_pop (&fixture->bob.rtp)), ==, buf);
+  r_buffer_unref (pop);
+
+  r_buffer_unref (buf);
 }
 RTEST_END;
 

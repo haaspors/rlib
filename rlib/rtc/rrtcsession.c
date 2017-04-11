@@ -141,6 +141,19 @@ r_rtc_session_create_dtls_transport (RRtcSession * s, RRtcIceTransport * ice,
   return crypto;
 }
 
+RRtcCryptoTransport *
+r_rtc_session_create_raw_transport (RRtcSession * s, RRtcIceTransport * ice)
+{
+  RRtcCryptoTransport * crypto;
+
+  if ((crypto = r_rtc_crypto_transport_new_raw (ice)) != NULL) {
+    r_ptr_array_add (s->crypto, crypto, r_rtc_crypto_transport_unref);
+    r_rtc_crypto_transport_ref (crypto);
+  }
+
+  return crypto;
+}
+
 static RRtcRtpTransceiver *
 r_rtc_session_get_rtp_transceiver (RRtcSession * s,
     const rchar * mid, rssize size)

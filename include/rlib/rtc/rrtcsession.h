@@ -58,6 +58,8 @@ R_API RRtcIceTransport * r_rtc_session_create_ice_transport (RRtcSession * s,
 R_API RRtcCryptoTransport * r_rtc_session_create_dtls_transport (RRtcSession * s,
     RRtcIceTransport * ice,
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey);
+R_API RRtcCryptoTransport * r_rtc_session_create_raw_transport (RRtcSession * s,
+    RRtcIceTransport * ice);
 R_API RRtcRtpSender * r_rtc_session_create_rtp_sender (RRtcSession * s,
     const rchar * id, rssize size,
     const RRtcRtpSenderCallbacks * cbs, rpointer data, RDestroyNotify notify,
