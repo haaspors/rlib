@@ -65,6 +65,13 @@ R_API RHashTableError r_hash_table_remove_full (RHashTable * ht, rconstpointer k
 R_API RHashTableError r_hash_table_steal (RHashTable * ht, rconstpointer key,
     rpointer * keyout, rpointer * valueout);
 
+R_API rboolean r_hash_table_remove_func_value (rpointer key, rpointer value,
+    rpointer user);
+R_API RHashTableError r_hash_table_remove_with_func (RHashTable * ht,
+    RKeyValueFuncReturn func, rpointer user);
+#define r_hash_table_remove_all_values(ht, val) \
+  r_hash_table_remove_with_func (ht, r_hash_table_remove_func_value, val)
+
 R_API RHashTableError r_hash_table_foreach (RHashTable * ht, RKeyValueFunc func, rpointer user);
 
 R_END_DECLS

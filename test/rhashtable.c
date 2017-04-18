@@ -159,6 +159,44 @@ RTEST (rhashtable, str, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rhashtable, remove_with_func, RTEST_FAST)
+{
+  RHashTable * ht;
+
+  r_assert_cmpptr ((ht = r_hash_table_new (NULL, NULL)), !=, NULL);
+
+  r_assert_cmpint (r_hash_table_remove_all_values (ht, RUINT_TO_POINTER (0)),
+      ==, R_HASH_TABLE_OK);
+
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 0);
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (0),
+        RUINT_TO_POINTER (42)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (1),
+        RUINT_TO_POINTER (42)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (2),
+        RUINT_TO_POINTER (22)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (3),
+        RUINT_TO_POINTER (42)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (4),
+        RUINT_TO_POINTER (22)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 5);
+
+  r_assert_cmpint (r_hash_table_remove_all_values (ht, RUINT_TO_POINTER (0)),
+      ==, R_HASH_TABLE_OK);
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 5);
+
+  r_assert_cmpint (r_hash_table_remove_all_values (ht, RUINT_TO_POINTER (42)),
+      ==, R_HASH_TABLE_OK);
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 2);
+
+  r_assert_cmpint (r_hash_table_remove_all_values (ht, RUINT_TO_POINTER (22)),
+      ==, R_HASH_TABLE_OK);
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 0);
+
+  r_hash_table_unref (ht);
+}
+RTEST_END;
+
 static void
 sum_value_uints (rpointer key, rpointer value, rpointer user)
 {

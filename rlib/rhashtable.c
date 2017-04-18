@@ -269,6 +269,18 @@ r_hash_table_remove_all (RHashTable * ht)
   ht->size = 0;
 }
 
+static void
+r_hash_table_internal_remove (RHashTable * ht, rsize idx)
+{
+  if (ht->keynotify != NULL)
+    ht->keynotify (ht->buckets[idx].key);
+  if (ht->valuenotify != NULL)
+    ht->valuenotify (ht->buckets[idx].val);
+  ht->buckets[idx].hash = R_HASH_EMPTY;
+
+  ht->size--;
+}
+
 RHashTableError
 r_hash_table_remove (RHashTable * ht, rconstpointer key)
 {
@@ -280,13 +292,7 @@ r_hash_table_remove (RHashTable * ht, rconstpointer key)
   if (R_UNLIKELY (ht->buckets[idx].hash != hash))
     return R_HASH_TABLE_NOT_FOUND;
 
-  if (ht->keynotify != NULL)
-    ht->keynotify (ht->buckets[idx].key);
-  if (ht->valuenotify != NULL)
-    ht->valuenotify (ht->buckets[idx].val);
-  ht->buckets[idx].hash = R_HASH_EMPTY;
-
-  ht->size--;
+  r_hash_table_internal_remove (ht, idx);
   return R_HASH_TABLE_OK;
 }
 
@@ -311,13 +317,8 @@ r_hash_table_remove_full (RHashTable * ht, rconstpointer key,
     *keyout = ht->buckets[idx].key;
   if (valueout != NULL)
     *valueout = ht->buckets[idx].val;
-  if (ht->keynotify != NULL)
-    ht->keynotify (ht->buckets[idx].key);
-  if (ht->valuenotify != NULL)
-    ht->valuenotify (ht->buckets[idx].val);
-  ht->buckets[idx].hash = R_HASH_EMPTY;
 
-  ht->size--;
+  r_hash_table_internal_remove (ht, idx);
   return R_HASH_TABLE_OK;
 }
 
@@ -345,6 +346,33 @@ r_hash_table_steal (RHashTable * ht, rconstpointer key,
   ht->buckets[idx].hash = R_HASH_EMPTY;
 
   ht->size--;
+  return R_HASH_TABLE_OK;
+}
+
+rboolean
+r_hash_table_remove_func_value (rpointer key, rpointer value, rpointer user)
+{
+  (void) key;
+  return value == user;
+}
+
+RHashTableError
+r_hash_table_remove_with_func (RHashTable * ht,
+    RKeyValueFuncReturn func, rpointer user)
+{
+  rsize i, c;
+
+  if (R_UNLIKELY (ht == NULL)) return R_HASH_TABLE_INVAL;
+  if (R_UNLIKELY (func == NULL)) return R_HASH_TABLE_INVAL;
+
+  c = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx);
+  for (i = 0; i < c; i++) {
+    if (ht->buckets[i].hash != R_HASH_EMPTY &&
+        func (ht->buckets[i].key, ht->buckets[i].val, user)) {
+      r_hash_table_internal_remove (ht, i);
+    }
+  }
+
   return R_HASH_TABLE_OK;
 }
 
