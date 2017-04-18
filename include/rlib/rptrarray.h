@@ -32,13 +32,19 @@ R_BEGIN_DECLS
 
 typedef struct _RPtrArray RPtrArray;
 
+/* Create using stack/static/embedded initialization */
+#define R_PTR_ARRAY_INIT                      { R_REF_STATIC_INIT (NULL), 0, 0, NULL }
+R_API void r_ptr_array_init (RPtrArray * array);
+R_API void r_ptr_array_clear (RPtrArray * array);
+
+/* Create using ref counting */
 #define r_ptr_array_new() r_ptr_array_new_sized (0)
 R_API RPtrArray * r_ptr_array_new_sized (rsize size) R_ATTR_MALLOC;
 #define r_ptr_array_ref   r_ref_ref
 #define r_ptr_array_unref r_ref_unref
 
-R_API rsize r_ptr_array_size (const RPtrArray * array);
-R_API rsize r_ptr_array_alloc_size (const RPtrArray * array);
+#define r_ptr_array_size(array) (array)->nsize
+#define r_ptr_array_alloc_size(array) (array)->nalloc
 R_API rpointer r_ptr_array_get (RPtrArray * array, rsize idx);
 
 #define r_ptr_array_find(array, data) r_ptr_array_find_range (array, data, 0, -1)
@@ -90,6 +96,13 @@ R_API rsize r_ptr_array_foreach_range (RPtrArray * array, rsize idx, rssize size
 
 /* FIXME: Sorting? */
 /*R_API void r_ptr_array_sort (RPtrArray * array, RCmpFunc cmp);*/
+
+struct _RPtrArray {
+  RRef ref;
+
+  rsize nalloc, nsize;
+  rpointer mem;
+};
 
 R_END_DECLS
 

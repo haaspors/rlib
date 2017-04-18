@@ -37,6 +37,24 @@ RTEST (rptrarray, grow, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rptrarray, init, RTEST_FAST)
+{
+  RPtrArray array = R_PTR_ARRAY_INIT;
+
+  r_assert_cmpuint (r_ptr_array_alloc_size (&array), ==, 0);
+  r_assert_cmpuint (r_ptr_array_size (&array), ==, 0);
+
+  r_assert_cmpuint (r_ptr_array_add (&array,
+          RUINT_TO_POINTER (0), NULL), ==, 0);
+  r_assert_cmpuint (r_ptr_array_add (&array,
+          RUINT_TO_POINTER (42), NULL), ==, 1);
+  r_assert_cmpuint (r_ptr_array_alloc_size (&array), >=, 4);
+  r_assert_cmpuint (r_ptr_array_size (&array), ==, 2);
+
+  r_ptr_array_clear (&array);
+}
+RTEST_END;
+
 RTEST (rptrarray, new_sized, RTEST_FAST)
 {
   RPtrArray * array;

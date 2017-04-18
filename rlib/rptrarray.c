@@ -22,32 +22,27 @@
 #include <rlib/rmem.h>
 
 #define R_PTR_ARRAY_MIN_SIZE    8
+#define R_PTR_ARRAY_N(array, idx) ((RPtrNode *)(array)->mem)[idx]
 
 typedef struct {
   rpointer ptr;
   RDestroyNotify notify;
 } RPtrNode;
 
-struct _RPtrArray {
-  RRef ref;
-
-  rsize nalloc, nsize;
-  RPtrNode * array;
-};
 
 static inline void
 r_ptr_array_notify_idx (RPtrArray * array, rsize idx)
 {
-  if (array->array[idx].notify != NULL)
-    array->array[idx].notify (array->array[idx].ptr);
+  if (R_PTR_ARRAY_N (array, idx).notify != NULL)
+    R_PTR_ARRAY_N (array, idx).notify (R_PTR_ARRAY_N (array, idx).ptr);
 }
 
 static inline void
 r_ptr_array_notify_range (RPtrArray * array, rsize idx, rsize until)
 {
   for (; idx < until; idx++) {
-    if (array->array[idx].notify != NULL)
-      array->array[idx].notify (array->array[idx].ptr);
+    if (R_PTR_ARRAY_N (array, idx).notify != NULL)
+      R_PTR_ARRAY_N (array, idx).notify (R_PTR_ARRAY_N (array, idx).ptr);
   }
 }
 
@@ -56,17 +51,33 @@ r_ptr_array_notify_range_full (RPtrArray * array, rsize idx, rsize until,
     RFunc func, rpointer user)
 {
   for (; idx < until; idx++) {
-    func (array->array[idx].ptr, user);
-    if (array->array[idx].notify != NULL)
-      array->array[idx].notify (array->array[idx].ptr);
+    func (R_PTR_ARRAY_N (array, idx).ptr, user);
+    if (R_PTR_ARRAY_N (array, idx).notify != NULL)
+      R_PTR_ARRAY_N (array, idx).notify (R_PTR_ARRAY_N (array, idx).ptr);
   }
+}
+
+void
+r_ptr_array_init (RPtrArray * array)
+{
+  r_ref_init (array, r_ptr_array_clear);
+  array->nalloc = array->nsize = 0;
+  array->mem = NULL;
+}
+
+void
+r_ptr_array_clear (RPtrArray * array)
+{
+  r_ptr_array_notify_range (array, 0, array->nsize);
+  r_free (array->mem);
+  array->nalloc = array->nsize = 0;
+  array->mem = NULL;
 }
 
 static void
 r_ptr_array_free (RPtrArray * array)
 {
-  r_ptr_array_notify_range (array, 0, array->nsize);
-  r_free (array->array);
+  r_ptr_array_clear (array);
   r_free (array);
 }
 
@@ -80,7 +91,7 @@ r_ptr_array_ensure_size (RPtrArray * array, rsize size)
     if (RSIZE_POPCOUNT (size) != 1)
       size = 1 << ((sizeof (rsize) * 8) - RSIZE_CLZ (size));
 
-    array->array = r_realloc (array->array, size * sizeof (RPtrNode));
+    array->mem = r_realloc (array->mem, size * sizeof (RPtrNode));
     array->nalloc = size;
   }
 }
@@ -91,40 +102,27 @@ r_ptr_array_new_sized (rsize size)
   RPtrArray * ret;
 
   if ((ret = r_mem_new (RPtrArray)) != NULL) {
+    r_ptr_array_init (ret);
     r_ref_init (ret, r_ptr_array_free);
-    ret->nalloc = ret->nsize = 0;
-    ret->array = NULL;
     r_ptr_array_ensure_size (ret, size);
   }
 
   return ret;
 }
 
-rsize
-r_ptr_array_size (const RPtrArray * array)
-{
-  return array->nsize;
-}
-
-rsize
-r_ptr_array_alloc_size (const RPtrArray * array)
-{
-  return array->nalloc;
-}
-
 rpointer
 r_ptr_array_get (RPtrArray * array, rsize idx)
 {
   if (R_UNLIKELY (idx >= array->nsize)) return NULL;
-  return array->array[idx].ptr;
+  return R_PTR_ARRAY_N (array, idx).ptr;
 }
 
 rsize
 r_ptr_array_add (RPtrArray * array, rpointer data, RDestroyNotify notify)
 {
   r_ptr_array_ensure_size (array, array->nsize + 1);
-  array->array[array->nsize].ptr = data;
-  array->array[array->nsize].notify = notify;
+  R_PTR_ARRAY_N (array, array->nsize).ptr = data;
+  R_PTR_ARRAY_N (array, array->nsize).notify = notify;
   return array->nsize++;
 }
 
@@ -135,8 +133,8 @@ r_ptr_array_update_idx (RPtrArray * array, rsize idx, rpointer data, RDestroyNot
 
   r_ptr_array_notify_idx (array, idx);
 
-  array->array[idx].ptr = data;
-  array->array[idx].notify = notify;
+  R_PTR_ARRAY_N (array, idx).ptr = data;
+  R_PTR_ARRAY_N (array, idx).notify = notify;
   return idx;
 }
 
@@ -150,7 +148,7 @@ r_ptr_array_clear_range (RPtrArray * array, rsize idx, rssize size)
   if (R_UNLIKELY (end > array->nsize)) return 0;
 
   r_ptr_array_notify_range (array, idx, end);
-  r_memclear (&array->array[idx], (end - idx) * sizeof (RPtrNode));
+  r_memclear (&R_PTR_ARRAY_N (array, idx), (end - idx) * sizeof (RPtrNode));
 
   return end - idx;
 }
@@ -160,11 +158,11 @@ r_ptr_array_remove_idx_full (RPtrArray * array, rsize idx, RFunc func, rpointer 
 {
   if (R_UNLIKELY (idx >= array->nsize)) return R_PTR_ARRAY_INVALID_IDX;
 
-  if (func != NULL) func (array->array[idx].ptr, user);
+  if (func != NULL) func (R_PTR_ARRAY_N (array, idx).ptr, user);
   r_ptr_array_notify_idx (array, idx);
 
   if (idx < --array->nsize) {
-    r_memmove (&array->array[idx], &array->array[idx + 1],
+    r_memmove (&R_PTR_ARRAY_N (array, idx), &R_PTR_ARRAY_N (array, idx + 1),
         (array->nsize - idx) * sizeof (RPtrNode));
   }
 
@@ -175,11 +173,11 @@ rsize
 r_ptr_array_remove_idx_fast_full (RPtrArray * array, rsize idx, RFunc func, rpointer user)
 {
   if (R_UNLIKELY (idx >= array->nsize)) return R_PTR_ARRAY_INVALID_IDX;
-  if (func != NULL) func (array->array[idx].ptr, user);
+  if (func != NULL) func (R_PTR_ARRAY_N (array, idx).ptr, user);
   r_ptr_array_notify_idx (array, idx);
 
   if (idx < --array->nsize)
-    array->array[idx] = array->array[array->nsize];
+    R_PTR_ARRAY_N (array, idx) = R_PTR_ARRAY_N (array, array->nsize);
 
   return idx;
 }
@@ -189,7 +187,7 @@ r_ptr_array_remove_idx_clear_full (RPtrArray * array, rsize idx, RFunc func, rpo
 {
   if (R_UNLIKELY (idx >= array->nsize)) return R_PTR_ARRAY_INVALID_IDX;
 
-  if (func != NULL) func (array->array[idx].ptr, user);
+  if (func != NULL) func (R_PTR_ARRAY_N (array, idx).ptr, user);
   r_ptr_array_clear_idx (array, idx);
 
   if (idx == array->nsize - 1)
@@ -213,7 +211,7 @@ r_ptr_array_remove_range_full (RPtrArray * array,
     r_ptr_array_notify_range (array, idx, end);
 
   if (end < array->nsize) {
-    r_memmove (&array->array[idx], &array->array[end],
+    r_memmove (&R_PTR_ARRAY_N (array, idx), &R_PTR_ARRAY_N (array, end),
         (array->nsize - end) * sizeof (RPtrNode));
   }
 
@@ -237,7 +235,7 @@ r_ptr_array_remove_range_fast_full (RPtrArray * array,
     r_ptr_array_notify_range (array, idx, end);
 
   array->nsize -= (end - idx);
-  r_memmove (&array->array[idx], &array->array[array->nsize],
+  r_memmove (&R_PTR_ARRAY_N (array, idx), &R_PTR_ARRAY_N (array, array->nsize),
       (end - idx) * sizeof (RPtrNode));
 
   return end - idx;
@@ -259,7 +257,7 @@ r_ptr_array_remove_range_clear_full (RPtrArray * array,
     r_ptr_array_notify_range (array, idx, end);
 
   if (end < array->nsize)
-    r_memclear (&array->array[idx], (end - idx) * sizeof (RPtrNode));
+    r_memclear (&R_PTR_ARRAY_N (array, idx), (end - idx) * sizeof (RPtrNode));
   else
     array->nsize -= (end - idx);
 
@@ -276,7 +274,7 @@ r_ptr_array_find_range (RPtrArray * array, rpointer data, rsize idx, rssize size
   if (R_UNLIKELY (end > array->nsize)) return 0;
 
   for (; idx < end; idx++) {
-    if (array->array[idx].ptr == data)
+    if (R_PTR_ARRAY_N (array, idx).ptr == data)
       return idx;
   }
 
@@ -296,7 +294,7 @@ r_ptr_array_foreach_range (RPtrArray * array, rsize idx, rssize size,
   if (R_UNLIKELY (end > array->nsize)) return 0;
 
   for (i = idx; i < end; i++)
-    func (array->array[i].ptr, user);
+    func (R_PTR_ARRAY_N (array, i).ptr, user);
 
   return end - idx;
 }
