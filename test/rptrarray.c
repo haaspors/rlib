@@ -380,6 +380,9 @@ RTEST (rptrarray, find, RTEST_FAST)
   r_assert_cmpptr ((array = r_ptr_array_new ()), !=, NULL);
   r_assert_cmpuint (r_ptr_array_size (array), ==, 0);
 
+  r_assert_cmpuint (r_ptr_array_find (array, NULL), ==, R_PTR_ARRAY_INVALID_IDX);
+  r_assert_cmpuint (r_ptr_array_find (array, RUINT_TO_POINTER (22)), ==, R_PTR_ARRAY_INVALID_IDX);
+
   r_assert_cmpuint (r_ptr_array_add (array,
           RUINT_TO_POINTER (22), NULL), ==, 0);
   r_assert_cmpuint (r_ptr_array_add (array,

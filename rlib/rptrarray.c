@@ -269,9 +269,9 @@ r_ptr_array_find_range (RPtrArray * array, rpointer data, rsize idx, rssize size
 {
   rsize end;
 
-  if (R_UNLIKELY (idx >= array->nsize)) return 0;
+  if (R_UNLIKELY (idx >= array->nsize)) return R_PTR_ARRAY_INVALID_IDX;
   end = (size < 0) ? array->nsize : idx + size;
-  if (R_UNLIKELY (end > array->nsize)) return 0;
+  if (R_UNLIKELY (end > array->nsize)) return R_PTR_ARRAY_INVALID_IDX;
 
   for (; idx < end; idx++) {
     if (R_PTR_ARRAY_N (array, idx).ptr == data)
