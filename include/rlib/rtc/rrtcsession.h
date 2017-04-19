@@ -50,7 +50,9 @@ R_API RRtcSession * r_rtc_session_new_full (const rchar * id, rssize size,
 #define r_rtc_session_ref       r_ref_ref
 #define r_rtc_session_unref     r_ref_unref
 
-R_API const rchar * r_rtc_session_get_id (RRtcSession * s);
+R_API const rchar * r_rtc_session_get_id (const RRtcSession * s);
+R_API RRtcRtpTransceiver * r_rtc_session_lookup_rtp_transceiver (RRtcSession * s,
+    const rchar * id, rssize size);
 
 R_API RRtcIceTransport * r_rtc_session_create_ice_transport (RRtcSession * s,
     const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize);
@@ -67,8 +69,6 @@ R_API RRtcRtpReceiver * r_rtc_session_create_rtp_receiver (RRtcSession * s,
     const rchar * id, rssize size,
     const RRtcRtpReceiverCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
-R_API RRtcRtpTransceiver * r_rtc_session_lookup_rtp_transceiver (RRtcSession * s,
-    const rchar * id, rssize size);
 R_API RRtcRtpTransceiver * r_rtc_session_create_rtp_transceiver (RRtcSession * s,
     const rchar * id, rssize size,
     const RRtcRtpReceiverCallbacks * rcbs, const RRtcRtpSenderCallbacks * scbs,

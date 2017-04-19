@@ -78,7 +78,7 @@ r_rtc_session_new_full (const rchar * id, rssize size, RPrng * prng)
 }
 
 const rchar *
-r_rtc_session_get_id (RRtcSession * s)
+r_rtc_session_get_id (const RRtcSession * s)
 {
   return s->id;
 }
