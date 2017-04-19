@@ -51,8 +51,7 @@ R_API RRtcSession * r_rtc_session_new_full (const rchar * id, rssize size,
 #define r_rtc_session_unref     r_ref_unref
 
 R_API const rchar * r_rtc_session_get_id (RRtcSession * s);
-R_API RRtcError r_rtc_session_start (RRtcSession * s, REvLoop * loop);
-R_API RRtcError r_rtc_session_close (RRtcSession * s);
+
 R_API RRtcIceTransport * r_rtc_session_create_ice_transport (RRtcSession * s,
     const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize);
 R_API RRtcCryptoTransport * r_rtc_session_create_dtls_transport (RRtcSession * s,

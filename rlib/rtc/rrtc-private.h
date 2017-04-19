@@ -58,7 +58,6 @@ struct _RRtcSession {
   RDestroyNotify notify;
 
   RPrng * prng;
-  REvLoop * loop;
 
   RPtrArray * transceivers;
   /* FIXME: Move to TransportController */
@@ -73,7 +72,6 @@ struct _RRtcRtpTransceiver {
   RRtcRtpReceiver * recv;
   RRtcRtpSender * send;
 
-  REvLoop * loop;
   rchar id[24 + 1];
 };
 
@@ -88,10 +86,11 @@ struct _RRtcRtpReceiver {
   rpointer data;
   RDestroyNotify notify;
 
+  RRtcRtpParameters * params;
   RRtcCryptoTransport * rtp;
   RRtcCryptoTransport * rtcp;
 
-  REvLoop * loop;
+  /*REvLoop * loop;*/
   rchar id[24 + 1];
 };
 
@@ -109,10 +108,11 @@ struct _RRtcRtpSender {
   rpointer data;
   RDestroyNotify notify;
 
+  RRtcRtpParameters * params;
   RRtcCryptoTransport * rtp;
   RRtcCryptoTransport * rtcp;
 
-  REvLoop * loop;
+  /*REvLoop * loop;*/
   rchar id[24 + 1];
 };
 
@@ -129,6 +129,7 @@ struct _RRtcRtpListener {
 
   RHashTable * recv_ssrcmap;
   RHashTable * recv_extmap;
+  RHashTable * recv_ptmap;
   RHashTable * send_ssrcmap;
 };
 
@@ -182,6 +183,10 @@ R_API_HIDDEN RRtcError r_rtc_crypto_transport_send (RRtcCryptoTransport * crypto
   r_rtc_rtp_listener_remove_receiver ((t)->listener, r)
 #define r_rtc_crypto_transport_remove_sender(t, s) \
   r_rtc_rtp_listener_remove_sender ((t)->listener, s)
+#define r_rtc_crypto_transport_update_receiver(t, r, p) \
+  r_rtc_rtp_listener_update_receiver ((t)->listener, r, p)
+#define r_rtc_crypto_transport_update_sender(t, s, p) \
+  r_rtc_rtp_listener_update_sender ((t)->listener, s, p)
 
 
 struct _RRtcIceCandidate {

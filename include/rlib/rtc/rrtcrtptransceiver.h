@@ -41,9 +41,7 @@ typedef struct _RRtcRtpTransceiver RRtcRtpTransceiver;
 
 R_API const rchar * r_rtc_rtp_transceiver_get_id (RRtcRtpTransceiver * t);
 R_API const rchar * r_rtc_rtp_transceiver_get_mid (RRtcRtpTransceiver * t);
-R_API RRtcError r_rtc_rtp_transceiver_start (RRtcRtpTransceiver * t,
-    REvLoop * loop);
-R_API RRtcError r_rtc_rtp_transceiver_close (RRtcRtpTransceiver * t);
+
 R_API RRtcRtpReceiver * r_rtc_rtp_transceiver_get_receiver (RRtcRtpTransceiver * t);
 R_API RRtcRtpSender * r_rtc_rtp_transceiver_get_sender (RRtcRtpTransceiver * t);
 R_API RRtcError r_rtc_rtp_transceiver_set_receiver (RRtcRtpTransceiver * t,

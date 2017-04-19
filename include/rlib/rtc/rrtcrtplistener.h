@@ -27,6 +27,7 @@
 #include <rlib/rref.h>
 
 #include <rlib/rtc/rrtc.h>
+#include <rlib/rtc/rrtcrtpparameters.h>
 #include <rlib/rtc/rrtcrtpreceiver.h>
 #include <rlib/rtc/rrtcrtpsender.h>
 
@@ -41,6 +42,11 @@ R_API RRtcError r_rtc_rtp_listener_add_receiver (RRtcRtpListener * l, RRtcRtpRec
 R_API RRtcError r_rtc_rtp_listener_add_sender (RRtcRtpListener * l, RRtcRtpSender * s);
 R_API RRtcError r_rtc_rtp_listener_remove_receiver (RRtcRtpListener * l, RRtcRtpReceiver * r);
 R_API RRtcError r_rtc_rtp_listener_remove_sender (RRtcRtpListener * l, RRtcRtpSender * s);
+
+R_API RRtcError r_rtc_rtp_listener_update_receiver (RRtcRtpListener * l,
+    RRtcRtpReceiver * r, RRtcRtpParameters * params);
+R_API RRtcError r_rtc_rtp_listener_update_sender (RRtcRtpListener * l,
+    RRtcRtpSender * s, RRtcRtpParameters * params);
 
 R_END_DECLS
 

@@ -29,8 +29,8 @@ r_rtc_rtp_receiver_free (RRtcRtpReceiver * r)
   r_rtc_crypto_transport_unref (r->rtp);
   r_rtc_crypto_transport_unref (r->rtcp);
 
-  if (r->loop != NULL)
-    r_ev_loop_unref (r->loop);
+  if (r->params != NULL)
+    r_rtc_rtp_parameters_unref (r->params);
   if (r->notify != NULL)
     r->notify (r->data);
 
@@ -63,10 +63,6 @@ r_rtc_rtp_receiver_new (RPrng * prng, const rchar * mid, rssize size,
     ret->rtp = r_rtc_crypto_transport_ref (rtp);
     ret->rtcp = r_rtc_crypto_transport_ref (rtcp);
 
-    r_rtc_crypto_transport_add_receiver (ret->rtp, ret);
-    if (ret->rtp != ret->rtcp)
-      r_rtc_crypto_transport_add_receiver (ret->rtcp, ret);
-
     r_prng_fill_base64 (prng, ret->id, 24);
     ret->id[24] = 0;
   }
@@ -87,24 +83,36 @@ r_rtc_rtp_receiver_get_mid (RRtcRtpReceiver * r)
 }
 
 RRtcError
-r_rtc_rtp_receiver_start (RRtcRtpReceiver * r, REvLoop * loop)
+r_rtc_rtp_receiver_start (RRtcRtpReceiver * r,
+    RRtcRtpParameters * params, REvLoop * loop)
 {
+  if (R_UNLIKELY (params == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (loop == NULL)) return R_RTC_INVAL;
-  if (R_UNLIKELY (r->loop != NULL)) return R_RTC_WRONG_STATE;
+  if (R_UNLIKELY (r->params != NULL)) return R_RTC_WRONG_STATE;
 
-  r->loop = r_ev_loop_ref (loop);
+  r->params = r_rtc_rtp_parameters_ref (params);
 
-  /* FIXME: Update RtpListener ??? */
-  r_rtc_crypto_transport_start (r->rtp, r->loop);
-  r_rtc_crypto_transport_start (r->rtcp, r->loop);
+  r_rtc_crypto_transport_add_receiver (r->rtp, r);
+  r_rtc_crypto_transport_update_receiver (r->rtp, r, params);
+  if (r->rtp != r->rtcp) {
+    r_rtc_crypto_transport_add_receiver (r->rtcp, r);
+    r_rtc_crypto_transport_update_receiver (r->rtcp, r, params);
+  }
 
+  r_rtc_crypto_transport_start (r->rtp, loop);
+  r_rtc_crypto_transport_start (r->rtcp, loop);
 
   return R_RTC_OK;
 }
 
 RRtcError
-r_rtc_rtp_receiver_close (RRtcRtpReceiver * r)
+r_rtc_rtp_receiver_stop (RRtcRtpReceiver * r)
 {
+  if (R_UNLIKELY (r->params == NULL)) return R_RTC_WRONG_STATE;
+
+  r_rtc_rtp_parameters_unref (r->params);
+  r->params = NULL;
+
   if (r->rtp != r->rtcp)
     r_rtc_crypto_transport_remove_receiver (r->rtcp, r);
   return r_rtc_crypto_transport_remove_receiver (r->rtp, r);

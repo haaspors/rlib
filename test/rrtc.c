@@ -169,6 +169,7 @@ RTEST_FIXTURE_SETUP (rrtc)
   RRtcIceTransport * a, * b;
 
   r_assert_cmpptr ((fixture->prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((fixture->loop = r_ev_loop_new ()), !=, NULL);
   r_assert_cmpint (r_rtc_ice_transport_create_fake_pair (&a, &b), ==, R_RTC_OK);
   test_rtc_ctx_init (&fixture->alice, fixture->prng, a);
   test_rtc_ctx_init (&fixture->bob, fixture->prng, b);
@@ -181,6 +182,7 @@ RTEST_FIXTURE_TEARDOWN (rrtc)
   test_rtc_ctx_clear (&fixture->alice);
   test_rtc_ctx_clear (&fixture->bob);
   r_prng_unref (fixture->prng);
+  r_ev_loop_unref (fixture->loop);
 }
 
 
@@ -397,14 +399,23 @@ RTEST_END;
 RTEST_F (rrtc, send_recv, RTEST_FAST)
 {
   RBuffer * buf, * pop;
+  RRtcRtpParameters * p;
 
   r_assert_cmpuint (r_queue_size (&fixture->alice.rtp), ==, 0);
   r_assert_cmpuint (r_queue_size (&fixture->alice.rtcp), ==, 0);
   r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 0);
   r_assert_cmpuint (r_queue_size (&fixture->bob.rtcp), ==, 0);
 
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, p, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->bob.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
   r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer_alloc (0, 0, 0)), !=, NULL);
   r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+
+  r_assert_cmpint (r_rtc_rtp_sender_stop (fixture->alice.send), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->bob.recv), ==, R_RTC_OK);
 
   r_assert_cmpuint (r_queue_size (&fixture->alice.rtp), ==, 0);
   r_assert_cmpuint (r_queue_size (&fixture->alice.rtcp), ==, 0);

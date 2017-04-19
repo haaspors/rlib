@@ -31,9 +31,6 @@ r_rtc_rtp_transceiver_free (RRtcRtpTransceiver * t)
   if (t->send != NULL)
     r_rtc_rtp_sender_unref (t->send);
 
-  if (t->loop != NULL)
-    r_ev_loop_unref (t->loop);
-
   r_free (t);
 }
 
@@ -68,28 +65,6 @@ r_rtc_rtp_transceiver_get_mid (RRtcRtpTransceiver * t)
   return NULL;
 }
 
-RRtcError
-r_rtc_rtp_transceiver_start (RRtcRtpTransceiver * t, REvLoop * loop)
-{
-  if (R_UNLIKELY (loop == NULL)) return R_RTC_INVAL;
-  if (R_UNLIKELY (t->loop != NULL)) return R_RTC_WRONG_STATE;
-
-  t->loop = r_ev_loop_ref (loop);
-  if (t->recv != NULL)
-    r_rtc_rtp_receiver_start (t->recv, loop);
-  if (t->send != NULL)
-    r_rtc_rtp_sender_start (t->send, loop);
-
-  return R_RTC_OK;
-}
-
-#if 0
-RRtcError
-r_rtc_rtp_transceiver_close (RRtcRtpTransceiver * t)
-{
-}
-#endif
-
 RRtcRtpReceiver *
 r_rtc_rtp_transceiver_get_receiver (RRtcRtpTransceiver * t)
 {
@@ -115,10 +90,6 @@ r_rtc_rtp_transceiver_set_receiver (RRtcRtpTransceiver * t, RRtcRtpReceiver * re
   if (R_UNLIKELY (t->recv != NULL)) return R_RTC_WRONG_STATE;
 
   t->recv = r_rtc_rtp_receiver_ref (receiver);
-
-  if (t->loop != NULL)
-    r_rtc_rtp_receiver_start (t->recv, t->loop);
-
   return R_RTC_OK;
 }
 
@@ -129,10 +100,6 @@ r_rtc_rtp_transceiver_set_sender (RRtcRtpTransceiver * t, RRtcRtpSender * sender
   if (R_UNLIKELY (t->send != NULL)) return R_RTC_WRONG_STATE;
 
   t->send = r_rtc_rtp_sender_ref (sender);
-
-  if (t->loop != NULL)
-    r_rtc_rtp_sender_start (t->send, t->loop);
-
   return R_RTC_OK;
 }
 

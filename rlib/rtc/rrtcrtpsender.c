@@ -29,8 +29,8 @@ r_rtc_rtp_sender_free (RRtcRtpSender * s)
   r_rtc_crypto_transport_unref (s->rtp);
   r_rtc_crypto_transport_unref (s->rtcp);
 
-  if (s->loop != NULL)
-    r_ev_loop_unref (s->loop);
+  if (s->params != NULL)
+    r_rtc_rtp_parameters_unref (s->params);
   if (s->notify != NULL)
     s->notify (s->data);
 
@@ -61,10 +61,6 @@ r_rtc_rtp_sender_new (RPrng * prng, const rchar * mid, rssize size,
     ret->rtp = r_rtc_crypto_transport_ref (rtp);
     ret->rtcp = r_rtc_crypto_transport_ref (rtcp);
 
-    r_rtc_crypto_transport_add_sender (ret->rtp, ret);
-    if (ret->rtp != ret->rtcp)
-      r_rtc_crypto_transport_add_sender (ret->rtcp, ret);
-
     r_prng_fill_base64 (prng, ret->id, 24);
     ret->id[24] = 0;
   }
@@ -85,12 +81,22 @@ r_rtc_rtp_sender_get_mid (RRtcRtpSender * s)
 }
 
 RRtcError
-r_rtc_rtp_sender_start (RRtcRtpSender * s, REvLoop * loop)
+r_rtc_rtp_sender_start (RRtcRtpSender * s,
+    RRtcRtpParameters * params, REvLoop * loop)
 {
+  if (R_UNLIKELY (params == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (loop == NULL)) return R_RTC_INVAL;
-  if (R_UNLIKELY (s->loop != NULL)) return R_RTC_WRONG_STATE;
+  if (R_UNLIKELY (s->params != NULL)) return R_RTC_WRONG_STATE;
 
-  s->loop = r_ev_loop_ref (loop);
+  s->params = r_rtc_rtp_parameters_ref (params);
+
+  r_rtc_crypto_transport_add_sender (s->rtp, s);
+  r_rtc_crypto_transport_update_sender (s->rtp, s, params);
+  if (s->rtp != s->rtcp) {
+    r_rtc_crypto_transport_add_sender (s->rtcp, s);
+    r_rtc_crypto_transport_update_sender (s->rtcp, s, params);
+  }
+
   r_rtc_crypto_transport_start (s->rtp, loop);
   r_rtc_crypto_transport_start (s->rtcp, loop);
 
@@ -98,8 +104,13 @@ r_rtc_rtp_sender_start (RRtcRtpSender * s, REvLoop * loop)
 }
 
 RRtcError
-r_rtc_rtp_sender_close (RRtcRtpSender * s)
+r_rtc_rtp_sender_stop (RRtcRtpSender * s)
 {
+  if (R_UNLIKELY (s->params == NULL)) return R_RTC_WRONG_STATE;
+
+  r_rtc_rtp_parameters_unref (s->params);
+  s->params = NULL;
+
   if (s->rtp != s->rtcp)
     r_rtc_crypto_transport_remove_sender (s->rtcp, s);
   return r_rtc_crypto_transport_remove_sender (s->rtp, s);

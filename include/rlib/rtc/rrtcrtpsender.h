@@ -27,6 +27,7 @@
 #include <rlib/rref.h>
 
 #include <rlib/rtc/rrtc.h>
+#include <rlib/rtc/rrtcrtpparameters.h>
 
 #include <rlib/ev/revloop.h>
 
@@ -44,8 +45,9 @@ typedef struct _RRtcRtpSender RRtcRtpSender;
 
 R_API const rchar * r_rtc_rtp_sender_get_id (RRtcRtpSender * s);
 R_API const rchar * r_rtc_rtp_sender_get_mid (RRtcRtpSender * s);
-R_API RRtcError r_rtc_rtp_sender_start (RRtcRtpSender * s, REvLoop * loop);
-R_API RRtcError r_rtc_rtp_sender_close (RRtcRtpSender * s);
+R_API RRtcError r_rtc_rtp_sender_start (RRtcRtpSender * s,
+    RRtcRtpParameters * params, REvLoop * loop);
+R_API RRtcError r_rtc_rtp_sender_stop (RRtcRtpSender * s);
 R_API RRtcError r_rtc_rtp_sender_send (RRtcRtpSender * s, RBuffer * packet);
 
 R_END_DECLS

@@ -43,8 +43,6 @@ r_rtc_session_free (RRtcSession * session)
   if (session->transceivers != NULL)
     r_ptr_array_unref (session->transceivers);
 
-  if (session->loop != NULL)
-    r_ev_loop_unref (session->loop);
   if (session->prng != NULL)
     r_prng_unref (session->prng);
   if (session->notify != NULL)
@@ -84,26 +82,6 @@ r_rtc_session_get_id (RRtcSession * s)
 {
   return s->id;
 }
-
-RRtcError
-r_rtc_session_start (RRtcSession * s, REvLoop * loop)
-{
-  if (R_UNLIKELY (loop == NULL)) return R_RTC_INVAL;
-  if (R_UNLIKELY (s->loop != NULL)) return R_RTC_WRONG_STATE;
-
-  s->loop = r_ev_loop_ref (loop);
-  r_ptr_array_foreach (s->transceivers,
-      (RFunc)r_rtc_rtp_transceiver_start, s->loop);
-
-  return R_RTC_OK;
-}
-
-#if 0
-RRtcError
-r_rtc_session_close (RRtcSession * s)
-{
-}
-#endif
 
 RRtcIceTransport *
 r_rtc_session_create_ice_transport (RRtcSession * s,
@@ -147,8 +125,8 @@ r_rtc_session_create_raw_transport (RRtcSession * s, RRtcIceTransport * ice)
   RRtcCryptoTransport * crypto;
 
   if ((crypto = r_rtc_crypto_transport_new_raw (ice)) != NULL) {
-    r_ptr_array_add (s->crypto, crypto, r_rtc_crypto_transport_unref);
-    r_rtc_crypto_transport_ref (crypto);
+    r_ptr_array_add (s->crypto, r_rtc_crypto_transport_ref (crypto),
+        r_rtc_crypto_transport_unref);
   }
 
   return crypto;
@@ -164,10 +142,8 @@ r_rtc_session_get_rtp_transceiver (RRtcSession * s,
     return t;
 
   if ((t = r_rtc_rtp_transceiver_new (s->prng)) != NULL) {
-    r_ptr_array_add (s->transceivers, t, r_rtc_rtp_transceiver_unref);
-    r_rtc_rtp_transceiver_ref (t);
-    if (s->loop != NULL)
-      r_rtc_rtp_transceiver_start (t, s->loop);
+    r_ptr_array_add (s->transceivers, r_rtc_rtp_transceiver_ref (t),
+        r_rtc_rtp_transceiver_unref);
   }
 
   return t;
@@ -269,11 +245,8 @@ r_rtc_session_create_rtp_transceiver (RRtcSession * s,
     if ((t = r_rtc_rtp_transceiver_new (s->prng)) != NULL) {
       if ((t->recv = r_rtc_rtp_receiver_new (s->prng, mid, size, rcbs, data, notify, rtp, rtcp)) != NULL &&
           (t->send = r_rtc_rtp_sender_new (s->prng, mid, size, scbs, data, notify, rtp, rtcp)) != NULL) {
-        r_ptr_array_add (s->transceivers, t, r_rtc_rtp_transceiver_unref);
-        r_rtc_rtp_transceiver_ref (t);
-
-        if (s->loop != NULL)
-          r_rtc_rtp_transceiver_start (t, s->loop);
+        r_ptr_array_add (s->transceivers, r_rtc_rtp_transceiver_ref (t),
+            r_rtc_rtp_transceiver_unref);
       } else {
         r_rtc_rtp_transceiver_unref (t);
         t = NULL;
