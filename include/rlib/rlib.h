@@ -113,6 +113,7 @@
 #include <rlib/rtc/rrtcicecandidate.h>
 #include <rlib/rtc/rrtcicetransport.h>
 #include <rlib/rtc/rrtcrtplistener.h>
+#include <rlib/rtc/rrtcrtpparameters.h>
 #include <rlib/rtc/rrtcrtpreceiver.h>
 #include <rlib/rtc/rrtcrtpsender.h>
 #include <rlib/rtc/rrtcrtptransceiver.h>
