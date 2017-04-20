@@ -11,6 +11,17 @@ RTEST (rmsgdigest, type_string, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rmsgdigest, type_from_str, R_TEST_TYPE_FAST)
+{
+  r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("md5")),     ==, R_MSG_DIGEST_TYPE_MD5);
+  r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("sha-1")),   ==, R_MSG_DIGEST_TYPE_SHA1);
+  r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("sha-224")), ==, R_MSG_DIGEST_TYPE_SHA224);
+  r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("sha-256")), ==, R_MSG_DIGEST_TYPE_SHA256);
+  r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("sha-384")), ==, R_MSG_DIGEST_TYPE_SHA384);
+  r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("sha-512")), ==, R_MSG_DIGEST_TYPE_SHA512);
+}
+RTEST_END;
+
 RTEST (rmsgdigest, md5, R_TEST_TYPE_FAST)
 {
   RMsgDigest * md = r_msg_digest_new_md5 ();

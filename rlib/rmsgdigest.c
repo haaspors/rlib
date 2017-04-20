@@ -187,25 +187,37 @@ r_msg_digest_type_blocksize (RMsgDigestType type)
   }
 }
 
+static const rchar * _r_msg_digest_strtbl[] = {
+  "md2",
+  "md4",
+  "md5",
+  "sha-1",
+  "sha-224",
+  "sha-256",
+  "sha-384",
+  "sha-512",
+};
+
 const rchar *
 r_msg_digest_type_string (RMsgDigestType type)
 {
-  switch (type) {
-    case R_MSG_DIGEST_TYPE_MD5:
-      return "md5";
-    case R_MSG_DIGEST_TYPE_SHA1:
-      return "sha-1";
-    case R_MSG_DIGEST_TYPE_SHA224:
-      return "sha-224";
-    case R_MSG_DIGEST_TYPE_SHA256:
-      return "sha-256";
-    case R_MSG_DIGEST_TYPE_SHA384:
-      return "sha-384";
-    case R_MSG_DIGEST_TYPE_SHA512:
-      return "sha-512";
-    default:
-      return 0;
+  if (type > R_MSG_DIGEST_TYPE_NONE && type < R_MSG_DIGEST_TYPE_COUNT)
+    return _r_msg_digest_strtbl[type];
+  else
+    return NULL;
+}
+
+RMsgDigestType
+r_msg_digest_type_from_str (const rchar * str, rssize size)
+{
+  RMsgDigestType i;
+  if (size < 0) size = r_strlen (str);
+  for (i = 0; i < R_MSG_DIGEST_TYPE_COUNT; i++) {
+    if (r_strncasecmp (_r_msg_digest_strtbl[i], str, size) == 0)
+      return i;
   }
+
+  return R_MSG_DIGEST_TYPE_NONE;
 }
 
 rsize

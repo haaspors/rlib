@@ -27,7 +27,7 @@
 R_BEGIN_DECLS
 
 typedef enum {
-  R_MSG_DIGEST_TYPE_NONE,
+  R_MSG_DIGEST_TYPE_NONE = -1,
   R_MSG_DIGEST_TYPE_MD2,
   R_MSG_DIGEST_TYPE_MD4,
   R_MSG_DIGEST_TYPE_MD5,
@@ -36,11 +36,13 @@ typedef enum {
   R_MSG_DIGEST_TYPE_SHA256,
   R_MSG_DIGEST_TYPE_SHA384,
   R_MSG_DIGEST_TYPE_SHA512,
+  R_MSG_DIGEST_TYPE_COUNT,
 } RMsgDigestType;
 
 R_API rsize r_msg_digest_type_size (RMsgDigestType type);
 R_API rsize r_msg_digest_type_blocksize (RMsgDigestType type);
 R_API const rchar * r_msg_digest_type_string (RMsgDigestType type);
+R_API RMsgDigestType r_msg_digest_type_from_str (const rchar * str, rssize size);
 
 typedef struct _RMsgDigest RMsgDigest;
 
