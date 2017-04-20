@@ -616,3 +616,51 @@ RTEST (rsdp, create_webrtc_sdp, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsdp, find_grouping_BUNDLE, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+  RStrChunk group;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, NULL,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), "foobar", -1), ==, R_SDP_INVAL);
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, &group,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), NULL, -1), ==, R_SDP_INVAL);
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, &group,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), "foobar", 0), ==, R_SDP_INVAL);
+
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, &group,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), "foobar", -1), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, &group,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), "audio", -1), ==, R_SDP_OK);
+  r_assert_cmpstrn ("audio", ==, group.str, group.size);
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, &group,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), "audio", 3), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpstr (group.str, ==, NULL);
+
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_jsep_with_av))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, &group,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), "foobar", -1), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, &group,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), "audio", -1), ==, R_SDP_OK);
+  r_assert_cmpstrn ("audio video", ==, group.str, group.size);
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, &group,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), "audio", 3), ==, R_SDP_NOT_FOUND);
+  r_assert_cmpstr (group.str, ==, NULL);
+  r_assert_cmpint (r_sdp_buf_find_grouping (&sdp, &group,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), "video", -1), ==, R_SDP_OK);
+  r_assert_cmpstrn ("audio video", ==, group.str, group.size);
+
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+

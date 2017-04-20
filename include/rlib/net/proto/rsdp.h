@@ -409,6 +409,9 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_media_fmtp_for_fmt_idx(buf, idx, fmtidx, attrib) \
   r_sdp_media_buf_fmtp_for_fmt_idx (&(buf)->media[idx], fmtidx, attrib)
 
+R_API RSdpResult r_sdp_buf_find_grouping (const RSdpBuf * sdp, RStrChunk * group,
+    const rchar * semantics, rssize ssize, const rchar * mid, rssize midsize);
+
 R_END_DECLS
 
 #endif /* __R_NET_PROTO_SDP_H__ */

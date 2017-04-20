@@ -1836,3 +1836,40 @@ r_sdp_media_buf_fmtidx_specific_attrib (const RSdpMediaBuf * media,
   return R_SDP_NOT_FOUND;
 }
 
+RSdpResult
+r_sdp_buf_find_grouping (const RSdpBuf * sdp, RStrChunk * group,
+    const rchar * semantics, rssize ssize, const rchar * mid, rssize midsize)
+{
+  const RStrChunk * cur;
+  rsize i = 0;
+
+  if (R_UNLIKELY (group == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (mid == NULL)) return R_SDP_INVAL;
+  if (midsize < 0) midsize = r_strlen (mid);
+  if (R_UNLIKELY (midsize == 0)) return R_SDP_INVAL;
+
+  if (ssize < 0) ssize = r_strlen (semantics);
+
+  while ((cur = r_sdp_buf_attrib_find (sdp, "group", -1, &i)) != NULL) {
+    if (r_str_chunk_has_prefix (cur, semantics, ssize)) {
+      rssize idx;
+
+      r_memcpy (group, cur, sizeof (RStrChunk));
+      group->size -= ssize;
+      group->str += ssize;
+      r_str_chunk_wstrip (group);
+
+      if ((idx = r_str_chunk_idx_of_str (group, mid, midsize)) >= 0 &&
+          ((rsize)(idx + midsize) == group->size ||
+           group->str[idx + midsize] == ' ')) {
+        return R_SDP_OK;
+      }
+    }
+    i++;
+  }
+
+  group->str = NULL;
+  group->size = 0;
+  return R_SDP_NOT_FOUND;
+}
+
