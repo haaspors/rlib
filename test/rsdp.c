@@ -71,8 +71,8 @@ RTEST (rsdp, from_rfc_4566, RTEST_FAST)
   r_assert_cmpuint (r_sdp_buf_time_repeat_count (&sdp, 0), ==, 0);
   r_assert_cmpuint (r_sdp_buf_time_zone_count (&sdp), ==, 0);
   r_assert_cmpuint (r_sdp_buf_attrib_count (&sdp), ==, 1);
-  r_assert_cmpint (r_sdp_buf_has_attrib (&sdp, "foobar", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_has_attrib (&sdp, "recvonly", -1), ==, R_SDP_OK);
+  r_assert (!r_sdp_buf_has_attrib (&sdp, "foobar", -1));
+  r_assert ( r_sdp_buf_has_attrib (&sdp, "recvonly", -1));
   r_assert_cmpptr (r_sdp_buf_attrib (&sdp, 0, "foobar", -1), ==, NULL);
   r_assert_cmpptr (r_sdp_buf_attrib (&sdp, 0, "recvonly", -1), ==, NULL);
   r_assert_cmpuint (r_sdp_buf_media_count (&sdp), ==, 2);
@@ -86,8 +86,8 @@ RTEST (rsdp, from_rfc_4566, RTEST_FAST)
   r_assert_cmpuint (r_sdp_buf_media_conn_count (&sdp, 0), ==, 0);
   r_assert_cmpuint (r_sdp_buf_media_bandwidth_count (&sdp, 0), ==, 0);
   r_assert_cmpuint (r_sdp_buf_media_attrib_count (&sdp, 0), ==, 0);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 0, "foobar", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 0, "rtpmap", -1), ==, R_SDP_NOT_FOUND);
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 0, "foobar", -1));
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 0, "rtpmap", -1));
   r_assert_cmpstr ((tmp = r_sdp_buf_media_type (&sdp, 1)), ==, "video"); r_free (tmp);
   r_assert_cmpuint (r_sdp_buf_media_port (&sdp, 1), ==, 51372);
   r_assert_cmpuint (r_sdp_buf_media_portcount (&sdp, 1), ==, 1);
@@ -98,8 +98,8 @@ RTEST (rsdp, from_rfc_4566, RTEST_FAST)
   r_assert_cmpuint (r_sdp_buf_media_conn_count (&sdp, 1), ==, 0);
   r_assert_cmpuint (r_sdp_buf_media_bandwidth_count (&sdp, 1), ==, 0);
   r_assert_cmpuint (r_sdp_buf_media_attrib_count (&sdp, 1), ==, 1);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 1, "foobar", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 1, "rtpmap", -1), ==, R_SDP_OK);
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 1, "foobar", -1));
+  r_assert ( r_sdp_buf_media_has_attrib (&sdp, 1, "rtpmap", -1));
   r_assert_cmpstr ((tmp = r_sdp_buf_media_attrib (&sdp, 1, 0, "rtpmap", -1)), ==, "99 h263-1998/90000"); r_free (tmp);
 
   r_assert_cmpint (r_sdp_buf_media_rtpmap_for_fmt_idx (&sdp, 1, 0, &a), ==, R_SDP_OK);
@@ -166,14 +166,14 @@ RTEST (rsdp, from_rfc_3264, RTEST_FAST)
   r_assert_cmpuint (r_sdp_buf_media_fmt_uint (&sdp, 1, 0), ==, 31);
   r_assert_cmpuint (r_sdp_buf_media_fmt_uint (&sdp, 2, 0), ==, 32);
   r_assert_cmpuint (r_sdp_buf_media_fmt_uint (&sdp, 3, 0), ==, 110);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 0, "recvonly", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 1, "recvonly", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 2, "recvonly", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 3, "recvonly", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 0, "sendonly", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 1, "sendonly", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 2, "sendonly", -1), ==, R_SDP_NOT_FOUND);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 3, "sendonly", -1), ==, R_SDP_OK);
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 0, "recvonly", -1));
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 1, "recvonly", -1));
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 2, "recvonly", -1));
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 3, "recvonly", -1));
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 0, "sendonly", -1));
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 1, "sendonly", -1));
+  r_assert (!r_sdp_buf_media_has_attrib (&sdp, 2, "sendonly", -1));
+  r_assert ( r_sdp_buf_media_has_attrib (&sdp, 3, "sendonly", -1));
   r_assert_cmpint (r_sdp_buf_media_rtpmap_for_fmt_idx (&sdp, 0, 0, &a), ==, R_SDP_OK);
   r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "PCMU/8000"); r_free (tmp);
   r_assert_cmpint (r_sdp_buf_media_rtpmap_for_fmt_idx (&sdp, 1, 0, &a), ==, R_SDP_OK);
@@ -210,7 +210,7 @@ RTEST (rsdp, only_lf, RTEST_FAST)
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addrtype (&sdp)), ==, "IP4"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addr (&sdp)), ==, "127.0.0.1"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_session_name (&sdp)), ==, "-"); r_free (tmp);
-  r_assert_cmpint (r_sdp_buf_has_attrib (&sdp, "recvonly", -1), ==, R_SDP_OK);
+  r_assert (r_sdp_buf_has_attrib (&sdp, "recvonly", -1));
   r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
 
   r_buffer_unref (buf);
@@ -323,8 +323,8 @@ RTEST (rsdp, chrome_webrtc_offer, RTEST_FAST)
   r_assert_cmpuint (r_sdp_buf_time_repeat_count (&sdp, 0), ==, 0);
   r_assert_cmpuint (r_sdp_buf_time_zone_count (&sdp), ==, 0);
   r_assert_cmpuint (r_sdp_buf_attrib_count (&sdp), ==, 2);
-  r_assert_cmpint (r_sdp_buf_has_attrib (&sdp, "group", -1), ==, R_SDP_OK);
-  r_assert_cmpint (r_sdp_buf_has_attrib (&sdp, "msid-semantic", -1), ==, R_SDP_OK);
+  r_assert (r_sdp_buf_has_attrib (&sdp, "group", -1));
+  r_assert (r_sdp_buf_has_attrib (&sdp, "msid-semantic", -1));
 
   r_assert_cmpuint (r_sdp_buf_media_count (&sdp), ==, 1);
   r_assert_cmpstr ((tmp = r_sdp_buf_media_type (&sdp, 0)), ==, "audio"); r_free (tmp);
@@ -346,7 +346,7 @@ RTEST (rsdp, chrome_webrtc_offer, RTEST_FAST)
   r_assert_cmpuint (r_sdp_buf_media_conn_count (&sdp, 0), ==, 1);
   r_assert_cmpuint (r_sdp_buf_media_bandwidth_count (&sdp, 0), ==, 0);
   r_assert_cmpuint (r_sdp_buf_media_attrib_count (&sdp, 0), ==, 25);
-  r_assert_cmpint (r_sdp_buf_media_has_attrib (&sdp, 0, "rtcp-mux", -1), ==, R_SDP_OK);
+  r_assert (r_sdp_buf_media_has_attrib (&sdp, 0, "rtcp-mux", -1));
 
   r_assert_cmpint (r_sdp_buf_media_rtpmap_for_fmt_idx (&sdp, 0, 0, &a), ==, R_SDP_OK);
   r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "opus/48000/2"); r_free (tmp);
