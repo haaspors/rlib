@@ -108,6 +108,16 @@ typedef struct {
 #define r_str_chunk_dup(chunk)  r_strndup ((chunk)->str, (chunk)->size)
 R_API int r_str_chunk_cmp (const RStrChunk * buf, const rchar * str, rssize size);
 R_API rboolean r_str_chunk_has_prefix (const RStrChunk * buf, const rchar * str, rssize size);
+#define r_str_chunk_ptr_of_c(buf, c)                r_str_ptr_of_c ((buf)->str, (buf)->size, c)
+#define r_str_chunk_ptr_of_c_any(buf, c, chars)     r_str_ptr_of_c_any ((buf)->str, (buf)->size, c, chars)
+#define r_str_chunk_ptr_of_c_case(buf, c)           r_str_ptr_of_c_case ((buf)->str, (buf)->size, c)
+#define r_str_chunk_ptr_of_str(buf, sub, subsize)      r_str_ptr_of_str ((buf)->str, (buf)->size, sub, subsize)
+#define r_str_chunk_ptr_of_str_case(buf, sub, subsize) r_str_ptr_of_str_case ((buf)->str, (buf)->size, sub, subsize)
+#define r_str_chunk_idx_of_c(buf, c)                r_str_idx_of_c ((buf)->str, (buf)->size, c)
+#define r_str_chunk_idx_of_c_any(buf, c, chars)     r_str_idx_of_c_any ((buf)->str, (buf)->size, c, chars)
+#define r_str_chunk_idx_of_c_case(buf, c)           r_str_idx_of_c_case ((buf)->str, (buf)->size, c)
+#define r_str_chunk_idx_of_str(buf, sub, subsize)      r_str_idx_of_str ((buf)->str, (buf)->size, sub, subsize)
+#define r_str_chunk_idx_of_str_case(buf, sub, subsize) r_str_idx_of_str_case ((buf)->str, (buf)->size, sub, subsize)
 R_API RStrParse r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line);
 R_API ruint r_str_chunk_split (RStrChunk * buf, const rchar * delim, ...) R_ATTR_NULL_TERMINATED;
 R_API ruint r_str_chunk_splitv (RStrChunk * buf, const rchar * delim, va_list args);
