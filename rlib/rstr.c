@@ -1232,6 +1232,13 @@ r_str_chunk_cmp (const RStrChunk * buf, const rchar * str, rssize size)
   return ret;
 }
 
+rboolean
+r_str_chunk_has_prefix (const RStrChunk * buf, const rchar * str, rssize size)
+{
+  if (size < 0) size = (rssize)r_strlen (str);
+  return ((rsize)size <= buf->size) ? (r_memcmp (buf->str, str, size) == 0) : FALSE;
+}
+
 RStrParse
 r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line)
 {

@@ -107,6 +107,7 @@ typedef struct {
 #define R_STR_CHUNK_INIT        { NULL, 0 }
 #define r_str_chunk_dup(chunk)  r_strndup ((chunk)->str, (chunk)->size)
 R_API int r_str_chunk_cmp (const RStrChunk * buf, const rchar * str, rssize size);
+R_API rboolean r_str_chunk_has_prefix (const RStrChunk * buf, const rchar * str, rssize size);
 R_API RStrParse r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line);
 R_API ruint r_str_chunk_split (RStrChunk * buf, const rchar * delim, ...) R_ATTR_NULL_TERMINATED;
 R_API ruint r_str_chunk_splitv (RStrChunk * buf, const rchar * delim, va_list args);

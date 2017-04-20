@@ -1188,6 +1188,20 @@ RTEST (rstr, chunk_cmp, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, chunk_has_prefix, RTEST_FAST)
+{
+  RStrChunk a = { R_STR_WITH_SIZE_ARGS ("foobar") };
+
+  r_assert (!r_str_chunk_has_prefix (&a, NULL, 0));
+  r_assert (!r_str_chunk_has_prefix (&a, "bar", -1));
+  r_assert (!r_str_chunk_has_prefix (&a, "bar", 2));
+  r_assert ( r_str_chunk_has_prefix (&a, "bar", 0));
+  r_assert ( r_str_chunk_has_prefix (&a, "foobar", -1));
+  r_assert ( r_str_chunk_has_prefix (&a, "foobar", 3));
+  r_assert ( r_str_chunk_has_prefix (&a, "foo", -1));
+}
+RTEST_END;
+
 RTEST (rstr, chunk_next_line, RTEST_FAST)
 {
   RStrChunk a = { R_STR_WITH_SIZE_ARGS ("foo\r\nbar\nfoobar\r\n") };
