@@ -1232,6 +1232,16 @@ r_str_chunk_cmp (const RStrChunk * buf, const rchar * str, rssize size)
   return ret;
 }
 
+int
+r_str_chunk_casecmp (const RStrChunk * buf, const rchar * str, rssize size)
+{
+  int ret;
+  if (size < 0) size = (rssize)r_strlen (str);
+  if ((ret = (int)(size - buf->size)) == 0)
+    ret = r_strncasecmp (buf->str, str, size);
+  return ret;
+}
+
 rboolean
 r_str_chunk_has_prefix (const RStrChunk * buf, const rchar * str, rssize size)
 {

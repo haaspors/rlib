@@ -107,6 +107,7 @@ typedef struct {
 #define R_STR_CHUNK_INIT        { NULL, 0 }
 #define r_str_chunk_dup(chunk)  r_strndup ((chunk)->str, (chunk)->size)
 R_API int r_str_chunk_cmp (const RStrChunk * buf, const rchar * str, rssize size);
+R_API int r_str_chunk_casecmp (const RStrChunk * buf, const rchar * str, rssize size);
 R_API rboolean r_str_chunk_has_prefix (const RStrChunk * buf, const rchar * str, rssize size);
 #define r_str_chunk_ptr_of_c(buf, c)                r_str_ptr_of_c ((buf)->str, (buf)->size, c)
 #define r_str_chunk_ptr_of_c_any(buf, c, chars)     r_str_ptr_of_c_any ((buf)->str, (buf)->size, c, chars)

@@ -1188,6 +1188,22 @@ RTEST (rstr, chunk_cmp, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, chunk_casecmp, RTEST_FAST)
+{
+  RStrChunk a = { R_STR_WITH_SIZE_ARGS ("foobar") };
+
+  r_assert_cmpint (r_str_chunk_casecmp (&a, NULL, 0), !=, 0);
+  r_assert_cmpint (r_str_chunk_casecmp (&a, "bar", 0), !=, 0);
+  r_assert_cmpint (r_str_chunk_casecmp (&a, "foobar", -1), ==, 0);
+  r_assert_cmpint (r_str_chunk_casecmp (&a, "foobar", 3), !=, 0);
+  r_assert_cmpint (r_str_chunk_casecmp (&a, "foo", -1), !=, 0);
+
+  r_assert_cmpint (r_str_chunk_casecmp (&a, "FOOBAR", -1), ==, 0);
+  r_assert_cmpint (r_str_chunk_casecmp (&a, "fOoBAR", -1), ==, 0);
+  r_assert_cmpint (r_str_chunk_casecmp (&a, "FoOBaR", -1), ==, 0);
+}
+RTEST_END;
+
 RTEST (rstr, chunk_has_prefix, RTEST_FAST)
 {
   RStrChunk a = { R_STR_WITH_SIZE_ARGS ("foobar") };
