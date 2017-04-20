@@ -1743,9 +1743,9 @@ r_sdp_attrib_check (const RStrKV * attrib, rsize acount, const rchar * field, rs
   return R_SDP_NOT_FOUND;
 }
 
-rchar *
-r_sdp_attrib (const RStrKV * attrib, rsize acount, rsize start,
-    const rchar * field, rssize fsize)
+const RStrChunk *
+r_sdp_attrib_find (const RStrKV * attrib, rsize acount,
+    const rchar * field, rssize fsize, rsize * start)
 {
   rsize i, len;
 
@@ -1754,11 +1754,26 @@ r_sdp_attrib (const RStrKV * attrib, rsize acount, rsize start,
   if (R_UNLIKELY (fsize == 0)) return NULL;
 
   len = fsize > 0 ? (rsize)fsize : r_strlen (field);
-  for (i = start; i < acount; i++) {
+  for (i = start != NULL ? *start : 0; i < acount; i++) {
     if (len == attrib[i].key.size &&
-        r_strncmp (attrib[i].key.str, field, len) == 0)
-      return r_str_kv_dup_value (&attrib[i]);
+        r_strncmp (attrib[i].key.str, field, len) == 0) {
+      if (start != NULL) *start = i;
+      return &attrib[i].val;
+    }
   }
+
+  if (start != NULL) *start = acount;
+  return NULL;
+}
+
+rchar *
+r_sdp_attrib_dup_value (const RStrKV * attrib, rsize acount,
+    const rchar * field, rssize fsize, rsize * start)
+{
+  const RStrChunk * val;
+
+  if ((val = r_sdp_attrib_find (attrib, acount, field, fsize, start)) != NULL)
+    return r_str_chunk_dup (val);
 
   return NULL;
 }

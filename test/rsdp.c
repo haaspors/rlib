@@ -75,8 +75,8 @@ RTEST (rsdp, from_rfc_4566, RTEST_FAST)
   r_assert_cmpuint (r_sdp_buf_attrib_count (&sdp), ==, 1);
   r_assert (!r_sdp_buf_has_attrib (&sdp, "foobar", -1));
   r_assert ( r_sdp_buf_has_attrib (&sdp, "recvonly", -1));
-  r_assert_cmpptr (r_sdp_buf_attrib (&sdp, 0, "foobar", -1), ==, NULL);
-  r_assert_cmpptr (r_sdp_buf_attrib (&sdp, 0, "recvonly", -1), ==, NULL);
+  r_assert_cmpptr (r_sdp_buf_attrib_dup_value (&sdp, "foobar", -1, NULL), ==, NULL);
+  r_assert_cmpptr (r_sdp_buf_attrib_dup_value (&sdp, "recvonly", -1, NULL), ==, NULL);
   r_assert_cmpuint (r_sdp_buf_media_count (&sdp), ==, 2);
   r_assert_cmpstr ((tmp = r_sdp_buf_media_type (&sdp, 0)), ==, "audio"); r_free (tmp);
   r_assert_cmpuint (r_sdp_buf_media_port (&sdp, 0), ==, 49170);
@@ -102,7 +102,7 @@ RTEST (rsdp, from_rfc_4566, RTEST_FAST)
   r_assert_cmpuint (r_sdp_buf_media_attrib_count (&sdp, 1), ==, 1);
   r_assert (!r_sdp_buf_media_has_attrib (&sdp, 1, "foobar", -1));
   r_assert ( r_sdp_buf_media_has_attrib (&sdp, 1, "rtpmap", -1));
-  r_assert_cmpstr ((tmp = r_sdp_buf_media_attrib (&sdp, 1, 0, "rtpmap", -1)), ==, "99 h263-1998/90000"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_sdp_buf_media_attrib_dup_value (&sdp, 1, "rtpmap", -1, NULL)), ==, "99 h263-1998/90000"); r_free (tmp);
 
   r_assert_cmpint (r_sdp_buf_media_rtpmap_for_fmt_idx (&sdp, 1, 0, &a), ==, R_SDP_OK);
   r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "h263-1998/90000"); r_free (tmp);

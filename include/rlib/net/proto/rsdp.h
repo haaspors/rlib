@@ -218,8 +218,10 @@ typedef struct {
 
 R_API RSdpResult r_sdp_attrib_check (const RStrKV * attrib, rsize acount,
     const rchar * field, rssize fsize);
-R_API rchar * r_sdp_attrib (const RStrKV * attrib, rsize acount, rsize start,
-    const rchar * field, rssize fsize);
+R_API const RStrChunk * r_sdp_attrib_find (const RStrKV * attrib, rsize acount,
+    const rchar * field, rssize fsize, rsize * start);
+R_API rchar * r_sdp_attrib_dup_value (const RStrKV * attrib, rsize acount,
+    const rchar * field, rssize fsize, rsize * start);
 
 typedef struct {
   RStrChunk type;
@@ -260,7 +262,8 @@ R_API rssize r_sdp_media_buf_find_fmt (const RSdpMediaBuf * media, const rchar *
 #define r_sdp_media_buf_key_data(media)             r_str_kv_dup_value (&(media)->key)
 #define r_sdp_media_buf_attrib_count(media)         (media)->acount
 #define r_sdp_media_buf_has_attrib(media, f, fsize) (r_sdp_attrib_check ((media)->attrib, (media)->acount, f, fsize) == R_SDP_OK)
-#define r_sdp_media_buf_attrib(media, s, f, fsize)  r_sdp_attrib ((media)->attrib, (media)->acount, s, f, fsize)
+#define r_sdp_media_buf_attrib_find(media, f, fsize, s) r_sdp_attrib_find ((media)->attrib, (media)->acount, f, fsize, s)
+#define r_sdp_media_buf_attrib_dup_value(media, f, fsize, s) r_sdp_attrib_dup_value ((media)->attrib, (media)->acount, f, fsize, s)
 R_API RSdpResult r_sdp_media_buf_fmt_specific_attrib (const RSdpMediaBuf * media,
     const rchar * fmt, rssize fmtsize, const rchar * field, rssize fsize,
     RStrChunk * attrib);
@@ -365,7 +368,8 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_key_data(buf)                     r_str_kv_dup_value (&(buf)->key)
 
 #define r_sdp_buf_has_attrib(buf, f, fsize)         (r_sdp_attrib_check ((buf)->attrib, (buf)->acount, f, fsize) == R_SDP_OK)
-#define r_sdp_buf_attrib(buf, s, f, fsize)          r_sdp_attrib ((buf)->attrib, (buf)->acount, s, f, fsize)
+#define r_sdp_buf_attrib_find(buf, f, fsize, s)     r_sdp_attrib_find ((buf)->attrib, (buf)->acount, f, fsize, s)
+#define r_sdp_buf_attrib_dup_value(buf, f, fsize, s) r_sdp_attrib_dup_value ((buf)->attrib, (buf)->acount, f, fsize, s)
 
 /* media lines */
 #define r_sdp_buf_media_type(buf, idx)                  r_sdp_media_buf_type (&(buf)->media[idx])
@@ -390,7 +394,8 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_media_key_data(buf, idx)              r_sdp_media_buf_key_data (&(buf)->media[idx])
 #define r_sdp_buf_media_attrib_count(buf, idx)          r_sdp_media_buf_attrib_count (&(buf)->media[idx])
 #define r_sdp_buf_media_has_attrib(buf, idx, f, fsize)  r_sdp_media_buf_has_attrib (&(buf)->media[idx], f, fsize)
-#define r_sdp_buf_media_attrib(buf, idx, s, f, fsize)   r_sdp_media_buf_attrib (&(buf)->media[idx], s, f, fsize)
+#define r_sdp_buf_media_attrib_dup_value(buf, idx, s, f, fsize) \
+  r_sdp_media_buf_attrib_dup_value (&(buf)->media[idx], s, f, fsize)
 #define r_sdp_buf_media_rtpmap_for_fmt(buf, idx, fmt, fsize, attrib) \
   r_sdp_media_buf_rtpmap_for_fmt (&(buf)->media[idx], fmt, fsize, attrib)
 #define r_sdp_buf_media_rtpmap_for_fmt_idx(buf, idx, fmtidx, attrib) \
