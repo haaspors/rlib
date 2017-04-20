@@ -185,7 +185,9 @@ typedef struct {
 } RSdpOriginatorBuf;
 #define r_sdp_originator_buf_username(orig)         r_str_chunk_dup (&(orig)->username)
 #define r_sdp_originator_buf_session_id(orig)       r_str_chunk_dup (&(orig)->sess_id)
+#define r_sdp_originator_buf_session_id_u64(orig)   r_str_to_uint64 ((orig)->sess_id.str, NULL, 10, NULL)
 #define r_sdp_originator_buf_session_version(orig)  r_str_chunk_dup (&(orig)->sess_version)
+#define r_sdp_originator_buf_session_version_u64(orig) r_str_to_uint64 ((orig)->sess_version.str, NULL, 10, NULL)
 #define r_sdp_originator_buf_nettype(orig)          r_str_chunk_dup (&(orig)->nettype)
 #define r_sdp_originator_buf_addrtype(orig)         r_str_chunk_dup (&(orig)->addrtype)
 #define r_sdp_originator_buf_addr(orig)             r_str_chunk_dup (&(orig)->addr)
@@ -321,7 +323,9 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 
 #define r_sdp_buf_orig_username(buf)                r_sdp_originator_buf_username (&(buf)->orig)
 #define r_sdp_buf_orig_session_id(buf)              r_sdp_originator_buf_session_id (&(buf)->orig)
+#define r_sdp_buf_orig_session_id_u64(buf)          r_sdp_originator_buf_session_id_u64 (&(buf)->orig)
 #define r_sdp_buf_orig_session_version(buf)         r_sdp_originator_buf_session_version (&(buf)->orig)
+#define r_sdp_buf_orig_session_version_u64(buf)     r_sdp_originator_buf_session_version_u64 (&(buf)->orig)
 #define r_sdp_buf_orig_nettype(buf)                 r_sdp_originator_buf_nettype (&(buf)->orig)
 #define r_sdp_buf_orig_addrtype(buf)                r_sdp_originator_buf_addrtype (&(buf)->orig)
 #define r_sdp_buf_orig_addr(buf)                    r_sdp_originator_buf_addr (&(buf)->orig)

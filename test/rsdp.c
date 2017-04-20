@@ -50,6 +50,8 @@ RTEST (rsdp, from_rfc_4566, RTEST_FAST)
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_username (&sdp)), ==, "jdoe"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_id (&sdp)), ==, "2890844526"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_version (&sdp)), ==, "2890842807"); r_free (tmp);
+  r_assert_cmpuint (r_sdp_buf_orig_session_id_u64 (&sdp), ==, RUINT64_CONSTANT (2890844526));
+  r_assert_cmpuint (r_sdp_buf_orig_session_version_u64 (&sdp), ==, RUINT64_CONSTANT (2890842807));
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_nettype (&sdp)), ==, "IN"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addrtype (&sdp)), ==, "IP4"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addr (&sdp)), ==, "10.47.16.5"); r_free (tmp);
@@ -127,6 +129,8 @@ RTEST (rsdp, from_rfc_3264, RTEST_FAST)
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_username (&sdp)), ==, "alice"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_id (&sdp)), ==, "2890844526"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_version (&sdp)), ==, "2890844527"); r_free (tmp);
+  r_assert_cmpuint (r_sdp_buf_orig_session_id_u64 (&sdp), ==, RUINT64_CONSTANT (2890844526));
+  r_assert_cmpuint (r_sdp_buf_orig_session_version_u64 (&sdp), ==, RUINT64_CONSTANT (2890844527));
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_nettype (&sdp)), ==, "IN"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addrtype (&sdp)), ==, "IP4"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addr (&sdp)), ==, "host.anywhere.com"); r_free (tmp);
@@ -206,6 +210,8 @@ RTEST (rsdp, only_lf, RTEST_FAST)
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_username (&sdp)), ==, "-"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_id (&sdp)), ==, "9223372039002259456"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_version (&sdp)), ==, "2"); r_free (tmp);
+  r_assert_cmpuint (r_sdp_buf_orig_session_id_u64 (&sdp), ==, RUINT64_CONSTANT (9223372039002259456));
+  r_assert_cmpuint (r_sdp_buf_orig_session_version_u64 (&sdp), ==, 2);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_nettype (&sdp)), ==, "IN"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addrtype (&sdp)), ==, "IP4"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addr (&sdp)), ==, "127.0.0.1"); r_free (tmp);
@@ -307,6 +313,8 @@ RTEST (rsdp, chrome_webrtc_offer, RTEST_FAST)
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_username (&sdp)), ==, "-"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_id (&sdp)), ==, "8610450130369641692"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_session_version (&sdp)), ==, "2"); r_free (tmp);
+  r_assert_cmpuint (r_sdp_buf_orig_session_id_u64 (&sdp), ==, RUINT64_CONSTANT (8610450130369641692));
+  r_assert_cmpuint (r_sdp_buf_orig_session_version_u64 (&sdp), ==, 2);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_nettype (&sdp)), ==, "IN"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addrtype (&sdp)), ==, "IP4"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_sdp_buf_orig_addr (&sdp)), ==, "127.0.0.1"); r_free (tmp);
