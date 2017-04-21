@@ -339,6 +339,7 @@ r_str_match_pattern (const rchar * str, rssize size,
       (*result)->end = (*result)->token[tokens-1].chunk.str +
           (*result)->token[tokens-1].chunk.size;
     } else {
+beach:
       r_free (*result);
       *result = NULL;
     }
@@ -346,7 +347,6 @@ r_str_match_pattern (const rchar * str, rssize size,
     ret = R_STR_MATCH_RESULT_OOM;
   }
 
-beach:
   return ret;
 }
 

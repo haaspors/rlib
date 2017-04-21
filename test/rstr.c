@@ -1129,6 +1129,8 @@ RTEST (rstr, match_pattern, RTEST_FAST)
   r_assert_cmpuint (r_str_match_pattern (foo, -1, NULL, NULL), ==, R_STR_MATCH_RESULT_INVAL);
   r_assert_cmpuint (r_str_match_pattern (foo, -1, "*", NULL), ==, R_STR_MATCH_RESULT_INVAL);
 
+  r_assert_cmpuint (r_str_match_pattern (foo, -1, "foobar", &res), ==, R_STR_MATCH_RESULT_NO_MATCH);
+
   r_assert_cmpuint (r_str_match_pattern (foo, -1, "*", &res), ==, R_STR_MATCH_RESULT_OK);
   r_assert_cmpuint (res->tokens, ==, 1);
   r_assert_cmpuint (res->token[0].chunk.size, ==, r_strlen (foo));
