@@ -136,8 +136,9 @@ r_rtc_ice_transport_udp_packet_cb (rpointer data,
     }
   }
   if (ice->selected.remote == NULL) {
-    ice->selected.remote = r_rtc_ice_candidate_new_full (addr,
-        R_RTC_ICE_PROTO_UDP, R_RTC_ICE_CANDIDATE_HOST, 0);
+    ice->selected.remote = r_rtc_ice_candidate_new_full (
+        R_STR_WITH_SIZE_ARGS ("fixme-dummy"), 0,
+        R_RTC_ICE_COMPONENT_UNKNOWN, R_RTC_ICE_PROTO_UDP, addr, R_RTC_ICE_CANDIDATE_HOST);
   }
 
   r_buffer_map (buf, &info, R_MEM_MAP_READ);

@@ -34,11 +34,6 @@
 R_BEGIN_DECLS
 
 typedef enum {
-  R_RTC_ICE_COMPONENT_RTP       = 0,
-  R_RTC_ICE_COMPONENT_RTCP,
-} RRtcIceComponent;
-
-typedef enum {
   R_RTC_ICE_ROLE_CONTROLLED     = 0,
   R_RTC_ICE_ROLE_CONTROLLING,
 } RRtcIceRole;

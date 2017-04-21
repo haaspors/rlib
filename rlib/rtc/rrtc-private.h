@@ -192,10 +192,15 @@ R_API_HIDDEN RRtcError r_rtc_crypto_transport_send (RRtcCryptoTransport * crypto
 struct _RRtcIceCandidate {
   RRef ref;
 
-  RSocketAddress * addr;
+  rchar * foundation;
+
+  RRtcIceComponent component;
   RRtcIceProtocol proto;
-  RRtcIceCandidateType type;
   ruint64 pri;
+  RSocketAddress * addr;
+  RRtcIceCandidateType type;
+
+  RSocketAddress * raddr;
 };
 
 
