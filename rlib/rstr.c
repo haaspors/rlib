@@ -1363,6 +1363,46 @@ r_str_kv_parse (RStrKV * kv, const rchar * str, rssize size,
   return R_STR_PARSE_RANGE;
 }
 
+RStrParse
+r_str_kv_parse_multiple (RStrKV * kv, const rchar * str, rssize size,
+    const rchar * kvdelim, rssize kvdsize, const rchar * delim, rssize dsize,
+    const rchar ** endptr)
+{
+  rchar * ptr;
+
+  if (R_UNLIKELY (kv == NULL)) return R_STR_PARSE_INVAL;
+  if (R_UNLIKELY (str == NULL)) return R_STR_PARSE_INVAL;
+  if (R_UNLIKELY (kvdelim == NULL)) return R_STR_PARSE_INVAL;
+  if (R_UNLIKELY (delim == NULL)) return R_STR_PARSE_INVAL;
+
+  if (size < 0) size = r_strlen (str);
+  if (kvdsize < 0) kvdsize = r_strlen (kvdelim);
+  if (dsize < 0) dsize = r_strlen (delim);
+
+  if ((ptr = r_str_ptr_of_str (str, size, kvdelim, kvdsize)) != NULL) {
+    const rchar * end;
+
+    kv->key.str = (rchar *)r_str_lwstrip (str);
+    kv->key.size = ptr - kv->key.str;
+    kv->val.str = (rchar *)r_str_lwstrip (ptr + dsize);
+
+    if ((end = r_str_ptr_of_str (kv->val.str, RPOINTER_TO_SIZE (str + size - kv->val.str),
+            delim, dsize)) != NULL) {
+      kv->val.size = end - kv->val.str;
+      end += dsize;
+    } else {
+      end = str + size;
+      kv->val.size = end - kv->val.str;
+    }
+
+    if (endptr != NULL)
+      *endptr = end;
+    return R_STR_PARSE_OK;
+  }
+
+  return R_STR_PARSE_RANGE;
+}
+
 rboolean
 r_str_kv_is_key (const RStrKV * kv, const rchar * key, rssize size)
 {

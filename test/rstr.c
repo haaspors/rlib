@@ -1310,6 +1310,28 @@ RTEST (rstr, kv_parse, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, kv_parse_multiple, RTEST_FAST)
+{
+  RStrKV kv = R_STR_KV_INIT;
+  const rchar * str = "raddr 8.16.8.16 rport 65427 generation 0", * next = str;
+
+  r_assert_cmpint (r_str_kv_parse_multiple (&kv, next, -1, R_STR_WITH_SIZE_ARGS (" "),
+        R_STR_WITH_SIZE_ARGS (" "), &next), ==, R_STR_PARSE_OK);
+  r_assert_cmpstrn ("raddr", ==, kv.key.str, kv.key.size);
+  r_assert_cmpstrn ("8.16.8.16", ==, kv.val.str, kv.val.size);
+  r_assert_cmpint (r_str_kv_parse_multiple (&kv, next, -1, R_STR_WITH_SIZE_ARGS (" "),
+        R_STR_WITH_SIZE_ARGS (" "), &next), ==, R_STR_PARSE_OK);
+  r_assert_cmpstrn ("rport", ==, kv.key.str, kv.key.size);
+  r_assert_cmpstrn ("65427", ==, kv.val.str, kv.val.size);
+  r_assert_cmpint (r_str_kv_parse_multiple (&kv, next, -1, R_STR_WITH_SIZE_ARGS (" "),
+        R_STR_WITH_SIZE_ARGS (" "), &next), ==, R_STR_PARSE_OK);
+  r_assert_cmpstrn ("generation", ==, kv.key.str, kv.key.size);
+  r_assert_cmpstrn ("0", ==, kv.val.str, kv.val.size);
+  r_assert_cmpint (r_str_kv_parse_multiple (&kv, next, -1, R_STR_WITH_SIZE_ARGS (" "),
+        R_STR_WITH_SIZE_ARGS (" "), &next), ==, R_STR_PARSE_RANGE);
+}
+RTEST_END;
+
 RTEST (rstr, kv_dup, RTEST_FAST)
 {
   RStrKV kv = R_STR_KV_INIT;
