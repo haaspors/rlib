@@ -115,6 +115,8 @@ r_socket_address_ipv4_new_from_string (const rchar * ip, ruint16 port)
   RSocketAddress * ret;
   struct in_addr in;
 
+  if (R_UNLIKELY (ip == NULL)) return NULL;
+
 #if defined (HAVE_INET_PTON)
   if (inet_pton (AF_INET, ip, &in) < 1)
     return NULL;

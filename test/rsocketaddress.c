@@ -40,6 +40,8 @@ RTEST (rsocketaddress, ipv4_new, RTEST_FAST)
   r_assert_cmpuint (r_socket_address_ipv4_get_port (addr_u8), ==, 42);
   r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr_u8), ==, INADDR_LOOPBACK);
 
+  r_assert_cmpptr (r_socket_address_ipv4_new_from_string (NULL, 42), ==, NULL);
+  r_assert_cmpptr (r_socket_address_ipv4_new_from_string ("foobar", 42), ==, NULL);
   r_assert_cmpptr ((addr_str = r_socket_address_ipv4_new_from_string ("127.0.0.1", 42)), !=, NULL);
   r_assert_cmpptr (r_socket_address_get_family (addr_str), ==, R_SOCKET_FAMILY_IPV4);
   r_assert_cmpuint (r_socket_address_ipv4_get_port (addr_str), ==, 42);
