@@ -204,6 +204,7 @@ typedef struct {
 #define r_sdp_connection_buf_addr(conn)             r_str_chunk_dup (&(conn)->addr)
 #define r_sdp_connection_buf_ttl(conn)              (conn)->ttl
 #define r_sdp_connection_buf_addrcount(conn)        (conn)->addrcount
+R_API RSocketAddress * r_sdp_connection_buf_to_socket_address (const RSdpConnectionBuf * conn, ruint port);
 
 typedef struct {
   RStrChunk start;
@@ -254,6 +255,7 @@ R_API rssize r_sdp_media_buf_find_fmt (const RSdpMediaBuf * media, const rchar *
 #define r_sdp_media_buf_conn_addr(media, idx)       r_sdp_connection_buf_addr (&(media)->conn[idx])
 #define r_sdp_media_buf_conn_ttl(media, idx)        r_sdp_connection_buf_ttl (&(media)->conn[idx])
 #define r_sdp_media_buf_conn_addrcount(media, idx)  r_sdp_connection_buf_addrcount (&(media)->conn[idx])
+#define r_sdp_media_buf_conn_to_socket_address(media, idx) r_sdp_connection_buf_to_socket_address (&(media)->conn[idx], (media)->port)
 #define r_sdp_media_buf_bandwidth_count(media)      (media)->bcount
 #define r_sdp_media_buf_bandwidth_type(media, idx)  r_str_kv_dup_key (&(media)->bw[idx])
 #define r_sdp_media_buf_bandwidth_kbps(media, idx)  r_str_to_uint ((media)->bw[idx].val.str, NULL, 10, NULL)
@@ -349,6 +351,7 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_conn_addr(buf)                    r_sdp_connection_buf_addr (&(buf)->conn)
 #define r_sdp_buf_conn_ttl(buf)                     r_sdp_connection_buf_ttl (&(buf)->conn)
 #define r_sdp_buf_conn_addrcount(buf)               r_sdp_connection_buf_addrcount (&(buf)->conn)
+#define r_sdp_buf_conn_to_socket_address(buf, port) r_sdp_connection_buf_to_socket_address (&(buf)->conn, port)
 
 #define r_sdp_buf_bandwidth_type(buf, idx)          r_str_kv_dup_key (&(buf)->bw[idx])
 #define r_sdp_buf_bandwidth_kbps(buf, idx)          r_str_to_uint ((buf)->bw[idx].val.str, NULL, 10, NULL)
@@ -386,6 +389,7 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_media_conn_addr(buf, idx, cidx)       r_sdp_media_buf_conn_addr (&(buf)->media[idx], cidx)
 #define r_sdp_buf_media_conn_ttl(buf, idx, cidx)        r_sdp_media_buf_conn_ttl (&(buf)->media[idx], cidx)
 #define r_sdp_buf_media_conn_addrcount(buf, idx, cidx)  r_sdp_media_buf_conn_addrcount (&(buf)->media[idx], cidx)
+#define r_sdp_buf_media_conn_to_socket_address(buf, idx, cidx) r_sdp_media_buf_conn_to_socket_address (&(buf)->media[idx], cidx)
 #define r_sdp_buf_media_bandwidth_count(buf, idx)       r_sdp_media_buf_bandwidth_count (&(buf)->media[idx])
 #define r_sdp_buf_media_bandwidth_type(buf, idx, bidx)  r_sdp_media_buf_bandwidth_type (&(buf)->media[idx], bidx)
 #define r_sdp_buf_media_bandwidth_kbps(buf, idx, bidx)  r_sdp_media_buf_bandwidth_kbps (&(buf)->media[idx], bidx)

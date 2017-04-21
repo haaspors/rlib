@@ -1724,6 +1724,26 @@ r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf)
   return ret;
 }
 
+RSocketAddress *
+r_sdp_connection_buf_to_socket_address (const RSdpConnectionBuf * conn, ruint port)
+{
+  RSocketAddress * ret = NULL;
+
+  if (R_UNLIKELY (conn == NULL)) return NULL;
+
+  if (r_str_chunk_casecmp (&conn->nettype, "IN", 2) == 0) {
+    if (r_str_chunk_casecmp (&conn->addrtype, "IP4", 3) == 0) {
+      rchar * ip = r_str_chunk_dup (&conn->addr);
+      ret = r_socket_address_ipv4_new_from_string (ip, port);
+      r_free (ip);
+    } else if (r_str_chunk_casecmp (&conn->addrtype, "IP6", 3) == 0) {
+      /* FIXME: IPv6 support */
+    }
+  }
+
+  return ret;
+}
+
 RSdpResult
 r_sdp_attrib_check (const RStrKV * attrib, rsize acount, const rchar * field, rssize fsize)
 {

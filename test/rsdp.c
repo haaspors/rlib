@@ -664,3 +664,22 @@ RTEST (rsdp, find_grouping_BUNDLE, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsdp, connection_to_socket_address, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+  RSocketAddress * addr;
+  rchar * tmp;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+
+  r_assert_cmpptr ((addr = r_sdp_buf_media_conn_to_socket_address (&sdp, 0, 0)), !=, NULL);
+  r_assert_cmpstr ((tmp = r_socket_address_to_str (addr)), ==, "0.0.0.0:9"); r_free (tmp);
+  r_socket_address_unref (addr);
+
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
