@@ -1135,7 +1135,7 @@ RTEST (rstr, match_pattern, RTEST_FAST)
   r_assert_cmpptr (res->token[0].chunk.str, ==, &foo[0]);
   r_free (res);
 
-  r_assert_cmpuint (r_str_match_pattern (foo, -1, "this?is*foobar*\\?", &res), ==, R_MEM_SCAN_RESULT_OK);
+  r_assert_cmpuint (r_str_match_pattern (foo, -1, "this?is*foobar*\\?", &res), ==, R_STR_MATCH_RESULT_OK);
   r_assert_cmpuint (res->tokens, ==, 7);
   r_assert_cmpuint (res->token[0].chunk.size, ==, 4);
   r_assert_cmpuint (res->token[1].chunk.size, ==, 1);
