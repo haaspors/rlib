@@ -39,7 +39,7 @@ r_rtc_rtp_codec_parameters_new (const rchar * name, rssize size,
     ret->ptime = 0;
     ret->channels = ch;
     r_ptr_array_init (&ret->rtcpfb);
-    r_ptr_array_init (&ret->params);
+    ret->fmtp = NULL;
   }
 
   return ret;
@@ -56,17 +56,23 @@ r_rtc_rtp_codec_parameters_init (RRtcRtpCodecParameters * p)
   p->ptime = 0;
   p->channels = 0;
   r_ptr_array_init (&p->rtcpfb);
-  r_ptr_array_init (&p->params);
+  p->fmtp = NULL;
 }
 
 void
 r_rtc_rtp_codec_parameters_clear (RRtcRtpCodecParameters * p)
 {
-  r_ptr_array_clear (&p->params);
+  r_free (p->fmtp); p->fmtp = NULL;
   r_ptr_array_clear (&p->rtcpfb);
 
   r_free (p->mime); p->mime = NULL;
   r_free (p->name); p->name = NULL;
+}
+
+static void
+_copy_str_array_cb (rpointer data, rpointer user)
+{
+  r_ptr_array_add (user, r_strdup (data), r_free);
 }
 
 RRtcRtpCodecParameters *
@@ -79,7 +85,9 @@ r_rtc_rtp_codec_parameters_dup (const RRtcRtpCodecParameters * p)
     ret->mime = r_strdup (p->mime);
     ret->maxptime = p->maxptime;
     ret->ptime = p->ptime;
-    /* TODO: Coypy rtcpfb and params */
+    r_ptr_array_foreach ((RPtrArray *)&p->rtcpfb,
+        _copy_str_array_cb, &ret->rtcpfb);
+    ret->fmtp = r_strdup (p->fmtp);
   }
 
   return ret;

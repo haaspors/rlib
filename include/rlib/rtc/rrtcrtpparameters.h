@@ -55,8 +55,8 @@ typedef struct {
   ruint           maxptime;
   ruint           ptime;
   ruint           channels;
-  RPtrArray       rtcpfb; /* StrKV */
-  RPtrArray       params; /* ??? */
+  RPtrArray       rtcpfb; /* rchar * */
+  rchar *         fmtp;
 } RRtcRtpCodecParameters;
 
 R_API RRtcRtpCodecParameters * r_rtc_rtp_codec_parameters_new (const rchar * name,
