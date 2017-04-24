@@ -1971,6 +1971,29 @@ r_sdp_media_buf_source_specific_media_attrib (const RSdpMediaBuf * media,
   return R_SDP_NOT_FOUND;
 }
 
+RSdpResult
+r_sdp_media_buf_extmap_attrib (const RSdpMediaBuf * media,
+    ruint16 * id, RStrChunk * attrib, rsize * start)
+{
+  const RStrChunk * res;
+
+  if (R_UNLIKELY (id == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (attrib == NULL)) return R_SDP_INVAL;
+
+  if ((res = r_sdp_media_buf_attrib_find (media, "extmap", 6, start)) != NULL) {
+    const rchar * end;
+
+    if ((*id = r_str_to_uint16 (res->str, &end, 10, NULL)) == 0)
+      return R_SDP_BAD_DATA;
+
+    attrib->str = (rchar *)end;
+    attrib->size = res->size + RPOINTER_TO_SIZE (end - res->str);
+    r_str_chunk_wstrip (attrib);
+    return R_SDP_OK;
+  }
+
+  return R_SDP_NOT_FOUND;
+}
 
 RSdpResult
 r_sdp_buf_find_grouping (const RSdpBuf * sdp, RStrChunk * group,

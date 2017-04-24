@@ -417,6 +417,31 @@ RTEST (rsdp, source_specific, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsdp, extmap, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+  RStrChunk chunk = R_STR_CHUNK_INIT;
+  rchar * tmp;
+  ruint16 extmapid = 0;
+  rsize start;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+  r_assert_cmpuint (r_sdp_buf_media_count (&sdp), ==, 1);
+
+  start = 0;
+  r_assert_cmpint (r_sdp_media_buf_extmap_attrib (sdp.media, &extmapid, &chunk, &start), ==, R_SDP_OK);
+  r_assert_cmpuint (extmapid, ==, 1);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&chunk)), ==, "urn:ietf:params:rtp-hdrext:ssrc-audio-level"); r_free (tmp);
+  start++;
+  r_assert_cmpint (r_sdp_media_buf_extmap_attrib (sdp.media, &extmapid, &chunk, &start), ==, R_SDP_NOT_FOUND);
+
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rsdp, msg_replicate_rfc_4566, RTEST_FAST)
 {
   RSdpMsg * msg;
