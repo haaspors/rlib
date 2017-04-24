@@ -368,6 +368,51 @@ RTEST (rsdp, chrome_webrtc_offer, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsdp, source_specific, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+
+  ruint32 * ssrcs;
+  RStrKV * kv;
+  rsize count;
+  rchar * tmp;
+  RStrChunk chunk = R_STR_CHUNK_INIT;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+  r_assert_cmpuint (r_sdp_buf_media_count (&sdp), ==, 1);
+
+  r_assert_cmpptr ((ssrcs = r_sdp_media_buf_source_specific_sources (sdp.media, &count)), !=, NULL);
+  r_assert_cmpuint (count, ==, 1);
+  r_assert_cmpuint (ssrcs[0], ==, 600258811);
+  r_free (ssrcs);
+
+  r_assert_cmpint (r_sdp_media_buf_source_specific_media_attrib (sdp.media,
+        600258811, R_STR_WITH_SIZE_ARGS ("cname"), &chunk), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&chunk)), ==, "1uk9tTrmGFQYxweh"); r_free (tmp);
+  r_assert_cmpint (r_sdp_media_buf_source_specific_media_attrib (sdp.media,
+        600258811, R_STR_WITH_SIZE_ARGS ("msid"), &chunk), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&chunk)), ==, "tb3X62H7DwsD9WSJ9Shkiq0PjmXg7YdDXf3C 5f825656-d361-4767-98cc-959e0fb1fd04"); r_free (tmp);
+
+  r_assert_cmpptr ((kv = r_sdp_media_buf_source_specific_all_media_attribs (sdp.media,
+          600258811, &count)), !=, NULL);
+  r_assert_cmpuint (count, ==, 4);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_key (&kv[0])), ==, "cname"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_value (&kv[0])), ==, "1uk9tTrmGFQYxweh"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_key (&kv[1])), ==, "msid"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_value (&kv[1])), ==, "tb3X62H7DwsD9WSJ9Shkiq0PjmXg7YdDXf3C 5f825656-d361-4767-98cc-959e0fb1fd04"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_key (&kv[2])), ==, "mslabel"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_value (&kv[2])), ==, "tb3X62H7DwsD9WSJ9Shkiq0PjmXg7YdDXf3C"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_key (&kv[3])), ==, "label"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_value (&kv[3])), ==, "5f825656-d361-4767-98cc-959e0fb1fd04"); r_free (tmp);
+  r_free (kv);
+
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rsdp, msg_replicate_rfc_4566, RTEST_FAST)
 {
   RSdpMsg * msg;

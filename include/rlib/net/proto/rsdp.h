@@ -289,6 +289,12 @@ R_API RSdpResult r_sdp_media_buf_fmtidx_specific_attrib (const RSdpMediaBuf * me
 #define r_sdp_media_buf_fmtp_for_fmt_idx(media, fmtidx, attrib)               \
   r_sdp_media_buf_fmtidx_specific_attrib (media, fmtidx,                      \
       R_STR_WITH_SIZE_ARGS ("fmtp"), attrib)
+R_API ruint32 * r_sdp_media_buf_source_specific_sources (
+    const RSdpMediaBuf * media, rsize * size);
+R_API RStrKV * r_sdp_media_buf_source_specific_all_media_attribs (
+    const RSdpMediaBuf * media, ruint32 ssrc, rsize * size) R_ATTR_MALLOC;
+R_API RSdpResult r_sdp_media_buf_source_specific_media_attrib (const RSdpMediaBuf * media,
+    ruint32 ssrc, const rchar * field, rssize fsize, RStrChunk * attrib);
 
 struct _RSdpBuf {
   RMemMapInfo info;

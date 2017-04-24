@@ -1856,6 +1856,120 @@ r_sdp_media_buf_fmtidx_specific_attrib (const RSdpMediaBuf * media,
   return R_SDP_NOT_FOUND;
 }
 
+ruint32 *
+r_sdp_media_buf_source_specific_sources (const RSdpMediaBuf * media, rsize * size)
+{
+  const RStrChunk * res;
+  ruint32 * ret = NULL;
+  rsize i, alloc = 0, count = 0, next = 0;
+  ruint32 ssrc;
+  const rchar * end;
+
+  while ((res = r_sdp_attrib_find (media->attrib, media->acount,
+          R_STR_WITH_SIZE_ARGS ("ssrc"), &next)) != NULL) {
+    if ((ssrc = r_str_to_uint32 (res->str, &end, 10, NULL)) > 0 &&
+        RPOINTER_TO_SIZE (end - res->str) <= res->size) {
+      for (i = 0; i < count; i++) {
+        if (ssrc == ret[i]) goto next;
+      }
+
+      if (count >= alloc) {
+        alloc += 8;
+        ret = r_realloc (ret, sizeof (ruint32) * alloc);
+      }
+
+      ret[count++] = ssrc;
+    }
+
+next:
+    next++;
+  }
+
+  if (size != NULL)
+    *size = count;
+  return ret;
+}
+
+RStrKV *
+r_sdp_media_buf_source_specific_all_media_attribs (const RSdpMediaBuf * media,
+    ruint32 ssrc, rsize * size)
+{
+  const RStrChunk * res;
+  RStrKV * ret = NULL;
+  rsize alloc = 0, count = 0, next = 0;
+  const rchar * end;
+
+  while ((res = r_sdp_attrib_find (media->attrib, media->acount,
+          R_STR_WITH_SIZE_ARGS ("ssrc"), &next)) != NULL) {
+    if (r_str_to_uint32 (res->str, &end, 10, NULL) == ssrc &&
+        RPOINTER_TO_SIZE (end - res->str) < res->size && *end == ' ') {
+      RStrChunk mattrib = { (rchar *)end + 1, res->size - RPOINTER_TO_SIZE (end - res->str) };
+      r_str_chunk_wstrip (&mattrib);
+
+      if (mattrib.size > 0) {
+        if (count >= alloc) {
+          alloc += 8;
+          ret = r_realloc (ret, sizeof (RStrKV) * alloc);
+        }
+
+        if (r_str_kv_parse (&ret[count], mattrib.str, mattrib.size, ":", NULL) != R_STR_PARSE_OK) {
+          r_memcpy (&ret[count].key, &mattrib, sizeof (RStrChunk));
+          r_memclear (&ret[count].val, sizeof (RStrChunk));
+        }
+        count++;
+      }
+    }
+
+    next++;
+  }
+
+  if (size != NULL)
+    *size = count;
+  return ret;
+}
+
+RSdpResult
+r_sdp_media_buf_source_specific_media_attrib (const RSdpMediaBuf * media,
+    ruint32 ssrc, const rchar * field, rssize fsize, RStrChunk * attrib)
+{
+  const RStrChunk * res;
+  rsize next = 0;
+  const rchar * end;
+
+  if (R_UNLIKELY (attrib == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (field == NULL)) return R_SDP_INVAL;
+  if (fsize < 0) fsize = r_strlen (field);
+  if (R_UNLIKELY (fsize == 0)) return R_SDP_INVAL;
+
+  while ((res = r_sdp_attrib_find (media->attrib, media->acount,
+          R_STR_WITH_SIZE_ARGS ("ssrc"), &next)) != NULL) {
+    if (r_str_to_uint32 (res->str, &end, 10, NULL) == ssrc &&
+        RPOINTER_TO_SIZE (end - res->str) < res->size && *end == ' ') {
+      RStrChunk mattrib = { (rchar *)end + 1, res->size - RPOINTER_TO_SIZE (end - res->str) };
+      RStrKV kv = R_STR_KV_INIT;
+
+      r_str_chunk_wstrip (&mattrib);
+
+      if (r_str_kv_parse (&kv, mattrib.str, mattrib.size, ":", NULL) == R_STR_PARSE_OK) {
+        if (r_str_chunk_casecmp (&kv.key, field, fsize) == 0) {
+          r_memcpy (attrib, &kv.val, sizeof (RStrChunk));
+          return R_SDP_OK;
+        }
+      } else {
+        if (r_str_chunk_casecmp (&mattrib, field, fsize) == 0) {
+          r_memclear (attrib, sizeof (RStrChunk));
+          return R_SDP_OK;
+        }
+      }
+    }
+
+    next++;
+  }
+
+  return R_SDP_NOT_FOUND;
+}
+
+
 RSdpResult
 r_sdp_buf_find_grouping (const RSdpBuf * sdp, RStrChunk * group,
     const rchar * semantics, rssize ssize, const rchar * mid, rssize midsize)
