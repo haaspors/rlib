@@ -299,6 +299,7 @@ RTEST (rsdp, chrome_webrtc_offer, RTEST_FAST)
   RBuffer * buf;
   RSdpBuf sdp;
   rchar * tmp;
+  rsize start;
 
   RStrChunk a = R_STR_CHUNK_INIT;
 
@@ -360,8 +361,11 @@ RTEST (rsdp, chrome_webrtc_offer, RTEST_FAST)
   r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "opus/48000/2"); r_free (tmp);
   r_assert_cmpint (r_sdp_buf_media_fmtp_for_fmt_idx (&sdp, 0, 0, &a), ==, R_SDP_OK);
   r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "minptime=10;useinbandfec=1"); r_free (tmp);
-  r_assert_cmpint (r_sdp_buf_media_rtcpfb_for_fmt_idx (&sdp, 0, 0, &a), ==, R_SDP_OK);
+  start = 0;
+  r_assert_cmpint (r_sdp_buf_media_rtcpfb_for_fmt_idx (&sdp, 0, 0, &a, &start), ==, R_SDP_OK);
   r_assert_cmpstr ((tmp = r_str_chunk_dup (&a)), ==, "transport-cc"); r_free (tmp);
+  start++;
+  r_assert_cmpint (r_sdp_buf_media_rtcpfb_for_fmt_idx (&sdp, 0, 0, &a, &start), ==, R_SDP_NOT_FOUND);
 
   r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
   r_buffer_unref (buf);

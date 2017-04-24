@@ -1817,13 +1817,13 @@ r_sdp_media_buf_find_fmt (const RSdpMediaBuf * media, const rchar * fmt, rssize 
 RSdpResult
 r_sdp_media_buf_fmt_specific_attrib (const RSdpMediaBuf * media,
     const rchar * fmt, rssize fmtsize, const rchar * field, rssize fsize,
-    RStrChunk * attrib)
+    RStrChunk * attrib, rsize * start)
 {
   rssize i;
 
   if ((i = r_sdp_media_buf_find_fmt (media, fmt, fmtsize)) >= 0) {
     return r_sdp_media_buf_fmtidx_specific_attrib (media, (rsize)i, field, fsize,
-        attrib);
+        attrib, start);
   }
 
   return R_SDP_NOT_FOUND;
@@ -1831,7 +1831,7 @@ r_sdp_media_buf_fmt_specific_attrib (const RSdpMediaBuf * media,
 
 RSdpResult
 r_sdp_media_buf_fmtidx_specific_attrib (const RSdpMediaBuf * media,
-    rsize fmtidx, const rchar * field, rssize fsize, RStrChunk * attrib)
+    rsize fmtidx, const rchar * field, rssize fsize, RStrChunk * attrib, rsize * start)
 {
   rsize i;
 
@@ -1840,18 +1840,20 @@ r_sdp_media_buf_fmtidx_specific_attrib (const RSdpMediaBuf * media,
   if (R_UNLIKELY (fmtidx >= media->fmtcount)) return R_SDP_INVAL;
   if (fsize < 0) fsize = (rssize)r_strlen (field);
 
-  for (i = 0; i < media->acount; i++) {
+  for (i = (start != NULL ? *start : 0); i < media->acount; i++) {
     if (r_str_kv_is_key (&media->attrib[i], field, fsize)) {
       if (media->attrib[i].val.size > media->fmt[fmtidx].size &&
           r_strncmp (media->attrib[i].val.str, media->fmt[fmtidx].str, media->fmt[fmtidx].size) == 0) {
         attrib->str = (rchar *)r_str_lwstrip (media->attrib[i].val.str + media->fmt[fmtidx].size);
         attrib->size = media->attrib[i].val.size -
           RPOINTER_TO_SIZE (attrib->str - media->attrib[i].val.str);
+        if (start != NULL) *start = i;
         return R_SDP_OK;
       }
     }
   }
 
+  if (start != NULL) *start = i;
   r_memclear (attrib, sizeof (RStrChunk));
   return R_SDP_NOT_FOUND;
 }

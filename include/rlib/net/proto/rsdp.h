@@ -268,27 +268,27 @@ R_API rssize r_sdp_media_buf_find_fmt (const RSdpMediaBuf * media, const rchar *
 #define r_sdp_media_buf_attrib_dup_value(media, f, fsize, s) r_sdp_attrib_dup_value ((media)->attrib, (media)->acount, f, fsize, s)
 R_API RSdpResult r_sdp_media_buf_fmt_specific_attrib (const RSdpMediaBuf * media,
     const rchar * fmt, rssize fmtsize, const rchar * field, rssize fsize,
-    RStrChunk * attrib);
+    RStrChunk * attrib, rsize * start);
 R_API RSdpResult r_sdp_media_buf_fmtidx_specific_attrib (const RSdpMediaBuf * media,
-    rsize fmtidx, const rchar * field, rssize fsize, RStrChunk * attrib);
+    rsize fmtidx, const rchar * field, rssize fsize, RStrChunk * attrib, rsize * start);
 #define r_sdp_media_buf_rtpmap_for_fmt(media, fmt, fmtsize, attrib)           \
   r_sdp_media_buf_fmt_specific_attrib (media, fmt, fmtsize,                   \
-      R_STR_WITH_SIZE_ARGS ("rtpmap"), attrib)
+      R_STR_WITH_SIZE_ARGS ("rtpmap"), attrib, NULL)
 #define r_sdp_media_buf_rtpmap_for_fmt_idx(media, fmtidx, attrib)             \
   r_sdp_media_buf_fmtidx_specific_attrib (media, fmtidx,                      \
-      R_STR_WITH_SIZE_ARGS ("rtpmap"), attrib)
-#define r_sdp_media_buf_rtcpfb_for_fmt(media, fmt, fmtsize, attrib)           \
+      R_STR_WITH_SIZE_ARGS ("rtpmap"), attrib, NULL)
+#define r_sdp_media_buf_rtcpfb_for_fmt(media, fmt, fmtsize, attrib, start)    \
   r_sdp_media_buf_fmt_specific_attrib (media, fmt, fmtsize,                   \
-      R_STR_WITH_SIZE_ARGS ("rtcp-fb"), attrib)
-#define r_sdp_media_buf_rtcpfb_for_fmt_idx(media, fmtidx, attrib)             \
+      R_STR_WITH_SIZE_ARGS ("rtcp-fb"), attrib, start)
+#define r_sdp_media_buf_rtcpfb_for_fmt_idx(media, fmtidx, attrib, start)      \
   r_sdp_media_buf_fmtidx_specific_attrib (media, fmtidx,                      \
-      R_STR_WITH_SIZE_ARGS ("rtcp-fb"), attrib)
+      R_STR_WITH_SIZE_ARGS ("rtcp-fb"), attrib, start)
 #define r_sdp_media_buf_fmtp_for_fmt(media, fmt, fmtsize, attrib)             \
   r_sdp_media_buf_fmt_specific_attrib (media, fmt, fmtsize,                   \
-      R_STR_WITH_SIZE_ARGS ("fmtp"), attrib)
+      R_STR_WITH_SIZE_ARGS ("fmtp"), attrib, NULL)
 #define r_sdp_media_buf_fmtp_for_fmt_idx(media, fmtidx, attrib)               \
   r_sdp_media_buf_fmtidx_specific_attrib (media, fmtidx,                      \
-      R_STR_WITH_SIZE_ARGS ("fmtp"), attrib)
+      R_STR_WITH_SIZE_ARGS ("fmtp"), attrib, NULL)
 R_API ruint32 * r_sdp_media_buf_source_specific_sources (
     const RSdpMediaBuf * media, rsize * size);
 R_API RStrKV * r_sdp_media_buf_source_specific_all_media_attribs (
@@ -410,10 +410,10 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
   r_sdp_media_buf_rtpmap_for_fmt (&(buf)->media[idx], fmt, fsize, attrib)
 #define r_sdp_buf_media_rtpmap_for_fmt_idx(buf, idx, fmtidx, attrib) \
   r_sdp_media_buf_rtpmap_for_fmt_idx (&(buf)->media[idx], fmtidx, attrib)
-#define r_sdp_buf_media_rtcpfb_for_fmt(buf, idx, fmt, fsize, attrib) \
-  r_sdp_media_buf_rtcpfb_for_fmt (&(buf)->media[idx], fmt, fsize, attrib)
-#define r_sdp_buf_media_rtcpfb_for_fmt_idx(buf, idx, fmtidx, attrib) \
-  r_sdp_media_buf_rtcpfb_for_fmt_idx (&(buf)->media[idx], fmtidx, attrib)
+#define r_sdp_buf_media_rtcpfb_for_fmt(buf, idx, fmt, fsize, attrib, start) \
+  r_sdp_media_buf_rtcpfb_for_fmt (&(buf)->media[idx], fmt, fsize, attrib, start)
+#define r_sdp_buf_media_rtcpfb_for_fmt_idx(buf, idx, fmtidx, attrib, start) \
+  r_sdp_media_buf_rtcpfb_for_fmt_idx (&(buf)->media[idx], fmtidx, attrib, start)
 #define r_sdp_buf_media_fmtp_for_fmt(buf, idx, fmt, fsize, attrib) \
   r_sdp_media_buf_fmtp_for_fmt (&(buf)->media[idx], fmt, fsize, attrib)
 #define r_sdp_buf_media_fmtp_for_fmt_idx(buf, idx, fmtidx, attrib) \
