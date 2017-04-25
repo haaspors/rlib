@@ -757,3 +757,62 @@ RTEST (rsdp, connection_to_socket_address, RTEST_FAST)
 }
 RTEST_END;
 
+static const rchar sdp_rfc_5576[] =
+  "v=0\r\n"
+  "o=alice 2890844526 2890844527 IN IP4 host.anywhere.com\r\n"
+  "s=\r\n"
+  "c=IN IP4 host.anywhere.com\r\n"
+  "t=0 0\r\n"
+  "m=video 49174 RTP/AVPF 96 98\r\n"
+  "a=rtpmap:96 H.264/90000\r\n"
+  "a=rtpmap:98 rtx/90000\r\n"
+  "a=fmtp:98 apt=96;rtx-time=3000\r\n"
+  "a=ssrc-group:FID 11111 22222\r\n"
+  "a=ssrc:11111 cname:user3@example.com\r\n"
+  "a=ssrc:22222 cname:user3@example.com\r\n"
+  "a=ssrc-group:FID 33333 44444\r\n"
+  "a=ssrc:33333 cname:user3@example.com\r\n"
+  "a=ssrc:44444 cname:user3@example.com\r\n";
+
+RTEST (rsdp, ssrc_group_FID_semantics, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+  RStrChunk chunk = R_STR_CHUNK_INIT;
+  rchar * tmp;
+  rsize start;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_rfc_5576))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+
+  r_assert_cmpuint (r_sdp_buf_media_count (&sdp), ==, 1);
+  r_assert_cmpint (r_sdp_media_buf_source_specific_media_attrib (sdp.media,
+        11111, R_STR_WITH_SIZE_ARGS ("cname"), &chunk), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&chunk)), ==, "user3@example.com"); r_free (tmp);
+  r_assert_cmpint (r_sdp_media_buf_source_specific_media_attrib (sdp.media,
+        22222, R_STR_WITH_SIZE_ARGS ("cname"), &chunk), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&chunk)), ==, "user3@example.com"); r_free (tmp);
+  r_assert_cmpint (r_sdp_media_buf_source_specific_media_attrib (sdp.media,
+        33333, R_STR_WITH_SIZE_ARGS ("cname"), &chunk), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&chunk)), ==, "user3@example.com"); r_free (tmp);
+  r_assert_cmpint (r_sdp_media_buf_source_specific_media_attrib (sdp.media,
+        44444, R_STR_WITH_SIZE_ARGS ("cname"), &chunk), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&chunk)), ==, "user3@example.com"); r_free (tmp);
+
+  start = 0;
+  r_assert_cmpint (r_sdp_media_buf_ssrc_group_attrib (sdp.media,
+        R_STR_WITH_SIZE_ARGS ("FID"), &chunk, &start), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&chunk)), ==, "11111 22222"); r_free (tmp);
+  start++;
+  r_assert_cmpint (r_sdp_media_buf_ssrc_group_attrib (sdp.media,
+        R_STR_WITH_SIZE_ARGS ("FID"), &chunk, &start), ==, R_SDP_OK);
+  r_assert_cmpstr ((tmp = r_str_chunk_dup (&chunk)), ==, "33333 44444"); r_free (tmp);
+  start++;
+  r_assert_cmpint (r_sdp_media_buf_ssrc_group_attrib (sdp.media,
+        R_STR_WITH_SIZE_ARGS ("FID"), &chunk, &start), ==, R_SDP_NOT_FOUND);
+
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+

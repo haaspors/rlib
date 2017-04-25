@@ -295,6 +295,8 @@ R_API RStrKV * r_sdp_media_buf_source_specific_all_media_attribs (
     const RSdpMediaBuf * media, ruint32 ssrc, rsize * size) R_ATTR_MALLOC;
 R_API RSdpResult r_sdp_media_buf_source_specific_media_attrib (const RSdpMediaBuf * media,
     ruint32 ssrc, const rchar * field, rssize fsize, RStrChunk * attrib);
+R_API RSdpResult r_sdp_media_buf_ssrc_group_attrib (const RSdpMediaBuf * media,
+    const rchar * semantics, rssize size, RStrChunk * attrib, rsize * start);
 R_API RSdpResult r_sdp_media_buf_extmap_attrib (const RSdpMediaBuf * media,
     ruint16 * id, RStrChunk * attrib, rsize * start);
 

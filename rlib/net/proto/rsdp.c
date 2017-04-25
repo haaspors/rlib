@@ -1972,6 +1972,38 @@ r_sdp_media_buf_source_specific_media_attrib (const RSdpMediaBuf * media,
 }
 
 RSdpResult
+r_sdp_media_buf_ssrc_group_attrib (const RSdpMediaBuf * media,
+    const rchar * semantics, rssize size, RStrChunk * attrib, rsize * start)
+{
+  const RStrChunk * res;
+  rsize next;
+
+  if (R_UNLIKELY (attrib == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (semantics == NULL)) return R_SDP_INVAL;
+  if (size < 0) size = r_strlen (semantics);
+  if (R_UNLIKELY (size == 0)) return R_SDP_INVAL;
+
+  next = start != NULL ? *start : 0;
+  while ((res = r_sdp_attrib_find (media->attrib, media->acount,
+          R_STR_WITH_SIZE_ARGS ("ssrc-group"), &next)) != NULL) {
+    if (res->size > (rsize)size && res->str[size] == ' ' &&
+        r_strncasecmp (res->str, semantics, (rsize)size) == 0) {
+      attrib->str = res->str + size + 1;
+      attrib->size = res->size - RPOINTER_TO_SIZE (attrib->str - res->str);
+
+      r_str_chunk_wstrip (attrib);
+      if (start != NULL) *start = next;
+      return R_SDP_OK;
+    }
+
+    next++;
+  }
+
+  if (start != NULL) *start = next;
+  return R_SDP_NOT_FOUND;
+}
+
+RSdpResult
 r_sdp_media_buf_extmap_attrib (const RSdpMediaBuf * media,
     ruint16 * id, RStrChunk * attrib, rsize * start)
 {
