@@ -43,6 +43,26 @@ typedef enum {
 } RRtcError;
 
 typedef enum {
+  R_RTC_DIR_NONE      = 0,
+  R_RTC_DIR_SEND_ONLY = (1 << 0),
+  R_RTC_DIR_RECV_ONLY = (1 << 1),
+  R_RTC_DIR_SEND_RECV = R_RTC_DIR_SEND_ONLY | R_RTC_DIR_RECV_ONLY,
+} RRtcDirection;
+
+typedef enum {
+  R_RTC_ROLE_AUTO,
+  R_RTC_ROLE_SERVER,
+  R_RTC_ROLE_CLIENT,
+} RRtcRole;
+
+typedef enum {
+  R_RTC_SIGNAL_OFFER,
+  R_RTC_SIGNAL_ANSWER,
+  R_RTC_SIGNAL_PRANSWER,
+  R_RTC_SIGNAL_ROLLBACK,
+} RRtcSignalType;
+
+typedef enum {
   R_RTC_MEDIA_UNKNOWN = 0,
   R_RTC_MEDIA_AUDIO,
   R_RTC_MEDIA_VIDEO,

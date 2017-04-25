@@ -36,7 +36,8 @@ R_BEGIN_DECLS
 typedef enum {
   R_RTC_RTCP_NONE       = 0,
   R_RTC_RTCP_MUX        = (1 << 0),
-  R_RTC_RTCP_RSIZE      = (1 << 1),
+  R_RTC_RTCP_MUX_ONLY   = (1 << 1),
+  R_RTC_RTCP_RSIZE      = (1 << 2),
 } RRtcRtcpFlags;
 
 typedef enum {
@@ -142,6 +143,9 @@ R_API RRtcRtpParameters * r_rtc_rtp_parameters_new (const rchar * mid, rssize si
 #define r_rtc_rtp_parameters_codec_count(p)     r_ptr_array_size (&(p)->codecs)
 #define r_rtc_rtp_parameters_hdrext_count(p)    r_ptr_array_size (&(p)->extensions)
 #define r_rtc_rtp_parameters_encoding_count(p)  r_ptr_array_size (&(p)->encodings)
+#define r_rtc_rtp_parameters_get_codec(p, i)    ((RRtcRtpCodecParameters *)r_ptr_array_get (&(p)->codecs, i))
+#define r_rtc_rtp_parameters_get_hdrext(p, i)   ((RRtcRtpHdrExtParameters *)r_ptr_array_get (&(p)->extensions, i))
+#define r_rtc_rtp_parameters_get_encoding(p, i) ((RRtcRtpEncodingParameters *)r_ptr_array_get (&(p)->encodings, i))
 
 R_API RRtcError r_rtc_rtp_parameters_set_rtcp (RRtcRtpParameters * params,
     const rchar * cname, rssize size, ruint32 ssrc, RRtcRtcpFlags flags);

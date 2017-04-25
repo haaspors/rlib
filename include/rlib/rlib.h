@@ -118,5 +118,6 @@
 #include <rlib/rtc/rrtcrtpsender.h>
 #include <rlib/rtc/rrtcrtptransceiver.h>
 #include <rlib/rtc/rrtcsession.h>
+#include <rlib/rtc/rrtcsessiondescription.h>
 
 #endif /* __R_LIB_H__ */
