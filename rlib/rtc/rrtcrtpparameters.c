@@ -24,6 +24,60 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
+static const struct _RRtcCodecInfo {
+  const rchar *   name;
+  RRTPPayloadType pt;
+  RRtcMediaType   media;
+  RRtcCodecType   type;
+  RRtcCodecKind   kind;
+} _r_rtc_rtp_codec_tbl[] = {
+  { "Unknown", 0, R_RTC_MEDIA_UNKNOWN, R_RTC_CODEC_UNKNOWN, R_RTC_CODEC_KIND_UNKNOWN },
+  /* Audio */
+  { "PCMU", R_RTP_PT_PCMU, R_RTC_MEDIA_AUDIO, R_RTC_CODEC_PCMU, R_RTC_CODEC_KIND_MEDIA },
+  { "PCMA", R_RTP_PT_PCMA, R_RTC_MEDIA_AUDIO, R_RTC_CODEC_PCMA, R_RTC_CODEC_KIND_MEDIA },
+  { "G722", R_RTP_PT_G722, R_RTC_MEDIA_AUDIO, R_RTC_CODEC_G722, R_RTC_CODEC_KIND_MEDIA },
+  /*{ "G7221", 0, R_RTC_MEDIA_AUDIO, R_RTC_CODEC_G7221, R_RTC_CODEC_KIND_MEDIA },*/
+  { "opus", 0, R_RTC_MEDIA_AUDIO, R_RTC_CODEC_OPUS, R_RTC_CODEC_KIND_MEDIA },
+  { "isac", 0, R_RTC_MEDIA_AUDIO, R_RTC_CODEC_ISAC, R_RTC_CODEC_KIND_MEDIA },
+  { "ilbc", 0, R_RTC_MEDIA_AUDIO, R_RTC_CODEC_ILBC, R_RTC_CODEC_KIND_MEDIA },
+  { "CN", R_RTP_PT_CN, R_RTC_MEDIA_AUDIO, R_RTC_CODEC_CN, R_RTC_CODEC_KIND_SUPPLEMENTAL },
+  { "telephone-event", 0, R_RTC_MEDIA_AUDIO, R_RTC_CODEC_TELEPHONE_EVENT, R_RTC_CODEC_KIND_SUPPLEMENTAL },
+
+  /* Vidoe */
+  { "VP8", 0, R_RTC_MEDIA_VIDEO, R_RTC_CODEC_VP8, R_RTC_CODEC_KIND_MEDIA },
+  { "VP9", 0, R_RTC_MEDIA_VIDEO, R_RTC_CODEC_VP9, R_RTC_CODEC_KIND_MEDIA },
+  { "H261", R_RTP_PT_H261, R_RTC_MEDIA_VIDEO, R_RTC_CODEC_H261, R_RTC_CODEC_KIND_MEDIA },
+  { "H263", 0, R_RTC_MEDIA_VIDEO, R_RTC_CODEC_H263, R_RTC_CODEC_KIND_MEDIA },
+  { "H263-1998", 0, R_RTC_MEDIA_VIDEO, R_RTC_CODEC_H263_1998, R_RTC_CODEC_KIND_MEDIA },
+  { "H263-2000", 0, R_RTC_MEDIA_VIDEO, R_RTC_CODEC_H263_2000, R_RTC_CODEC_KIND_MEDIA },
+  { "H264", 0, R_RTC_MEDIA_VIDEO, R_RTC_CODEC_H264, R_RTC_CODEC_KIND_MEDIA },
+  { "H265", 0, R_RTC_MEDIA_VIDEO, R_RTC_CODEC_H265, R_RTC_CODEC_KIND_MEDIA },
+
+  { "rtx", 0, R_RTC_MEDIA_UNKNOWN, R_RTC_CODEC_RTX, R_RTC_CODEC_KIND_RTX },
+  { "red", 0, R_RTC_MEDIA_UNKNOWN, R_RTC_CODEC_RED, R_RTC_CODEC_KIND_FEC },
+  { "ulpfec", 0, R_RTC_MEDIA_UNKNOWN, R_RTC_CODEC_ULP_FEC, R_RTC_CODEC_KIND_FEC },
+  { "flexfec", 0, R_RTC_MEDIA_UNKNOWN, R_RTC_CODEC_FLEX_FEC, R_RTC_CODEC_KIND_FEC },
+};
+
+static void
+r_rtc_rtp_codec_parse_type_from_name (RRtcRtpCodecParameters * p)
+{
+  rsize i;
+
+  for (i = 0; i < R_N_ELEMENTS (_r_rtc_rtp_codec_tbl); i++) {
+    if (r_strcasecmp (p->name, _r_rtc_rtp_codec_tbl[i].name) == 0) {
+      p->media = _r_rtc_rtp_codec_tbl[i].media;
+      p->type = _r_rtc_rtp_codec_tbl[i].type;
+      p->kind = _r_rtc_rtp_codec_tbl[i].kind;
+      return;
+    }
+  }
+
+  p->media = R_RTC_MEDIA_UNKNOWN;
+  p->type = R_RTC_CODEC_UNKNOWN;
+  p->kind = R_RTC_CODEC_KIND_UNKNOWN;
+}
+
 RRtcRtpCodecParameters *
 r_rtc_rtp_codec_parameters_new (const rchar * name, rssize size,
     RRTPPayloadType pt, ruint rate, ruint ch)
@@ -32,7 +86,7 @@ r_rtc_rtp_codec_parameters_new (const rchar * name, rssize size,
 
   if ((ret = r_mem_new (RRtcRtpCodecParameters)) != NULL) {
     ret->name = r_strdup_size (name, size);
-    ret->mime = NULL;
+    r_rtc_rtp_codec_parse_type_from_name (ret);
     ret->pt = pt;
     ret->rate = rate;
     ret->maxptime = 0;
@@ -49,7 +103,9 @@ void
 r_rtc_rtp_codec_parameters_init (RRtcRtpCodecParameters * p)
 {
   p->name = NULL;
-  p->mime = NULL;
+  p->media = R_RTC_MEDIA_UNKNOWN;
+  p->type = R_RTC_CODEC_UNKNOWN;
+  p->kind = R_RTC_CODEC_KIND_UNKNOWN;
   p->pt = (RRTPPayloadType) 1;
   p->rate = 0;
   p->maxptime = 0;
@@ -65,7 +121,6 @@ r_rtc_rtp_codec_parameters_clear (RRtcRtpCodecParameters * p)
   r_free (p->fmtp); p->fmtp = NULL;
   r_ptr_array_clear (&p->rtcpfb);
 
-  r_free (p->mime); p->mime = NULL;
   r_free (p->name); p->name = NULL;
 }
 
@@ -82,7 +137,6 @@ r_rtc_rtp_codec_parameters_dup (const RRtcRtpCodecParameters * p)
 
   if ((ret = r_rtc_rtp_codec_parameters_new (p->name, -1,
           p->pt, p->rate, p->channels)) != NULL) {
-    ret->mime = r_strdup (p->mime);
     ret->maxptime = p->maxptime;
     ret->ptime = p->ptime;
     r_ptr_array_foreach ((RPtrArray *)&p->rtcpfb,

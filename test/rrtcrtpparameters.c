@@ -113,3 +113,33 @@ RTEST (rrtcrtpparameters, hdrext, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcrtpcodecparameters, codecs_by_name, RTEST_FAST)
+{
+  RRtcRtpCodecParameters * codec;
+
+  r_assert_cmpptr ((codec = r_rtc_rtp_codec_parameters_new (R_STR_WITH_SIZE_ARGS ("PCMU"),
+          R_RTP_PT_PCMU, 8000, 1)), !=, NULL);
+  r_assert_cmpstr (codec->name, ==, "PCMU");
+  r_assert_cmpint (codec->media, ==, R_RTC_MEDIA_AUDIO);
+  r_assert_cmpint (codec->kind, ==, R_RTC_CODEC_KIND_MEDIA);
+  r_assert_cmpint (codec->type, ==, R_RTC_CODEC_PCMU);
+  r_rtc_rtp_codec_parameters_clear (codec); r_free (codec);
+
+  r_assert_cmpptr ((codec = r_rtc_rtp_codec_parameters_new (R_STR_WITH_SIZE_ARGS ("foobar"),
+          R_RTP_PT_DYNAMIC_FIRST, 8000, 1)), !=, NULL);
+  r_assert_cmpstr (codec->name, ==, "foobar");
+  r_assert_cmpint (codec->media, ==, R_RTC_MEDIA_UNKNOWN);
+  r_assert_cmpint (codec->kind, ==, R_RTC_CODEC_KIND_UNKNOWN);
+  r_assert_cmpint (codec->type, ==, R_RTC_CODEC_UNKNOWN);
+  r_rtc_rtp_codec_parameters_clear (codec); r_free (codec);
+
+  r_assert_cmpptr ((codec = r_rtc_rtp_codec_parameters_new (R_STR_WITH_SIZE_ARGS ("vp9"),
+          R_RTP_PT_DYNAMIC_FIRST, 90000, 1)), !=, NULL);
+  r_assert_cmpstr (codec->name, ==, "vp9");
+  r_assert_cmpint (codec->media, ==, R_RTC_MEDIA_VIDEO);
+  r_assert_cmpint (codec->kind, ==, R_RTC_CODEC_KIND_MEDIA);
+  r_assert_cmpint (codec->type, ==, R_RTC_CODEC_VP9);
+  r_rtc_rtp_codec_parameters_clear (codec); r_free (codec);
+}
+RTEST_END;
+

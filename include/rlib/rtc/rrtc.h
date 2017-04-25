@@ -42,6 +42,52 @@ typedef enum {
   R_RTC_NO_HANDLER,
 } RRtcError;
 
+typedef enum {
+  R_RTC_MEDIA_UNKNOWN = 0,
+  R_RTC_MEDIA_AUDIO,
+  R_RTC_MEDIA_VIDEO,
+  R_RTC_MEDIA_TEXT,
+  R_RTC_MEDIA_APPLICATION,
+} RRtcMediaType;
+
+typedef enum {
+  R_RTC_CODEC_KIND_UNKNOWN = 0,
+  R_RTC_CODEC_KIND_MEDIA,
+  R_RTC_CODEC_KIND_RTX,
+  R_RTC_CODEC_KIND_FEC,
+  R_RTC_CODEC_KIND_SUPPLEMENTAL,
+} RRtcCodecKind;
+
+typedef enum {
+  R_RTC_CODEC_UNKNOWN = 0,
+  /* Audio */
+  R_RTC_CODEC_PCMU,
+  R_RTC_CODEC_PCMA,
+  R_RTC_CODEC_G722,
+  /*R_RTC_CODEC_G7221,*/
+  R_RTC_CODEC_OPUS,
+  R_RTC_CODEC_ISAC,
+  R_RTC_CODEC_ILBC,
+  R_RTC_CODEC_CN,
+  R_RTC_CODEC_TELEPHONE_EVENT,
+  /* Video */
+  R_RTC_CODEC_VP8,
+  R_RTC_CODEC_VP9,
+  R_RTC_CODEC_H261,
+  R_RTC_CODEC_H263,
+  R_RTC_CODEC_H263_1998,
+  R_RTC_CODEC_H263_2000,
+  R_RTC_CODEC_H264,
+  R_RTC_CODEC_H265,
+  /* RTX */
+  R_RTC_CODEC_RTX,
+  /* FEC */
+  R_RTC_CODEC_RED,
+  R_RTC_CODEC_ULP_FEC,
+  R_RTC_CODEC_FLEX_FEC,
+} RRtcCodecType;
+
+
 typedef RFunc RRtcEventCb;
 typedef void (*RRtcBufferCb) (rpointer data, RBuffer * buf, rpointer ctx);
 

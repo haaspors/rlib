@@ -49,7 +49,9 @@ typedef enum {
 
 typedef struct {
   rchar *         name;
-  rchar *         mime;
+  RRtcMediaType   media;
+  RRtcCodecType   type;
+  RRtcCodecKind   kind;
   RRTPPayloadType pt;
   ruint           rate;
   ruint           maxptime;
