@@ -67,6 +67,8 @@ R_API rchar * r_str_ptr_of_c_any (const rchar * str, rssize strsize,
     const rchar * c, rssize chars);
 R_API rchar * r_str_ptr_of_str (const rchar * str, rssize strsize,
     const rchar * sub, rssize subsize);
+R_API rchar * r_str_ptr_of_str_case (const rchar * str, rssize strsize,
+    const rchar * sub, rssize subsize);
 R_API rssize r_str_idx_of_c (const rchar * str, rssize strsize, rchar c);
 R_API rssize r_str_idx_of_c_case (const rchar * str, rssize strsize, rchar c);
 R_API rssize r_str_idx_of_c_any (const rchar * str, rssize strsize,

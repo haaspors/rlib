@@ -323,6 +323,18 @@ r_str_ptr_of_str (const rchar * str, rssize strsize,
   return NULL;
 }
 
+rchar *
+r_str_ptr_of_str_case (const rchar * str, rssize strsize,
+    const rchar * sub, rssize subsize)
+{
+  rssize idx;
+
+  if ((idx = r_str_idx_of_str_case (str, strsize, sub, subsize)) >= 0)
+    return (rchar *)str + idx;
+
+  return NULL;
+}
+
 rssize
 r_str_idx_of_c (const rchar * str, rssize strsize, rchar c)
 {
