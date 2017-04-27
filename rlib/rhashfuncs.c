@@ -46,8 +46,10 @@ r_str_hash (rconstpointer data)
   const signed char * p;
   rsize ret = 5381;
 
-  for (p = data; *p != 0; p++)
-    ret = (ret << 5) + ret + *p;
+  if (data != NULL) {
+    for (p = data; *p != 0; p++)
+      ret = (ret << 5) + ret + *p;
+  }
 
   return ret;
 }
@@ -63,7 +65,7 @@ r_str_hash_sized (const rchar * data, rssize size)
     for (p = (const signed char *)data; size-- > 0; p++)
       ret = (ret << 5) + ret + *p;
 
-  } else if (size < 0) {
+  } else if (size < 0 && data != NULL) {
     ret = r_str_hash (data);
   }
 
