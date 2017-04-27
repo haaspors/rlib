@@ -37,6 +37,16 @@ RTEST (rstr, cmp, RTEST_FAST)
   r_assert_cmpint (r_strncmp (NULL, foobar, 6), <, 0);
   r_assert_cmpint (r_strncmp (foobar, NULL, 6), >, 0);
   r_assert_cmpint (r_strncmp (NULL, NULL, 0), ==, 0);
+
+  r_assert_cmpint (r_strcmp_size (NULL, 0, NULL, 0), ==, 0);
+  r_assert_cmpint (r_strcmp_size (NULL, 0, foobar, 6), <, 0);
+  r_assert_cmpint (r_strcmp_size (foobar, 6, NULL, 0), >, 0);
+  r_assert_cmpint (r_strcmp_size (foobar, 6, foobar, 6), ==, 0);
+  r_assert_cmpint (r_strcmp_size (foobar, -1, foobar, -1), ==, 0);
+  r_assert_cmpint (r_strcmp_size (foobar, 5, foobar, -1), <, 0);
+  r_assert_cmpint (r_strcmp_size (foobar, -1, foobar, 5), >, 0);
+  r_assert_cmpint (r_strcmp_size (foobar, 3, foo, 3), ==, 0);
+  r_assert_cmpint (r_strcmp_size (foobar, -1, foo, -1), >, 0);
 }
 RTEST_END;
 

@@ -158,6 +158,34 @@ r_strncasecmp (const rchar * a, const rchar * b, rsize len)
 #endif
 }
 
+int
+r_strcmp_size (const rchar * a, rssize asize, const rchar * b, rssize bsize)
+{
+  if (R_UNLIKELY (a == NULL)) return -(a != b);
+  if (R_UNLIKELY (b == NULL)) return a != b;
+  if (asize < 0) asize = r_strlen (a);
+  if (bsize < 0) bsize = r_strlen (b);
+  if (asize - bsize != 0) return (int)(asize - bsize);
+  return strncmp (a, b, asize);
+}
+
+int
+r_strcasecmp_size (const rchar * a, rssize asize, const rchar * b, rssize bsize)
+{
+  if (R_UNLIKELY (a == NULL)) return -(a != b);
+  if (R_UNLIKELY (b == NULL)) return a != b;
+  if (asize < 0) asize = r_strlen (a);
+  if (bsize < 0) bsize = r_strlen (b);
+  if (asize - bsize != 0) return (int)(asize - bsize);
+#if defined (HAVE__STRNICMP)
+  return _strnicmp (a, b, asize);
+#elif defined (HAVE_STRNCASECMP)
+  return strncasecmp (a, b, asize);
+#else
+#error "no case insensitive string compare function"
+#endif
+}
+
 rboolean
 r_str_has_prefix (const rchar * str, const rchar * prefix)
 {

@@ -46,6 +46,8 @@ R_API int r_strcmp (const rchar * a, const rchar * b);
 R_API int r_strcasecmp (const rchar * a, const rchar * b);
 R_API int r_strncmp (const rchar * a, const rchar * b, rsize len);
 R_API int r_strncasecmp (const rchar * a, const rchar * b, rsize len);
+R_API int r_strcmp_size (const rchar * a, rssize asize, const rchar * b, rssize bsize);
+R_API int r_strcasecmp_size (const rchar * a, rssize asize, const rchar * b, rssize bsize);
 #define r_str_equals(a,b) (r_strcmp (a, b) == 0)
 
 R_API rboolean r_str_has_prefix (const rchar * str, const rchar * prefix);
