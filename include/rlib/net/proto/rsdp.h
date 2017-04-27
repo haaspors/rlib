@@ -146,6 +146,8 @@ R_API RSdpResult r_sdp_media_set_key (RSdpMedia * media,
 R_API RSdpResult r_sdp_media_add_attribute (RSdpMedia * media,
     const rchar * key, rssize ksize, const rchar * value, rssize vsize);
 
+R_API RSdpResult r_sdp_media_add_pt_specific_attribute (RSdpMedia * media,
+    RRTPPayloadType pt, const rchar * key, rssize ksize, const rchar * value, rssize vsize);
 R_API RSdpResult r_sdp_media_add_source_specific_attribute (RSdpMedia * media,
     ruint32 ssrc, const rchar * key, rssize ksize, const rchar * value, rssize vsize);
 #define r_sdp_media_add_ssrc_cname(m, ssrc, cname, csize) \

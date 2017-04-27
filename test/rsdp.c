@@ -660,8 +660,10 @@ RTEST (rsdp, create_webrtc_sdp, RTEST_FAST)
   r_assert_cmpint (r_sdp_media_add_attribute (m, R_STR_WITH_SIZE_ARGS ("extmap"), R_STR_WITH_SIZE_ARGS ("3 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time")), ==, R_SDP_OK);
   r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)111,
         R_STR_WITH_SIZE_ARGS ("opus"), 48000, 2), ==, R_SDP_OK);
-  r_assert_cmpint (r_sdp_media_add_attribute (m, R_STR_WITH_SIZE_ARGS ("rtcp-fb"), R_STR_WITH_SIZE_ARGS ("111 transport-cc")), ==, R_SDP_OK);
-  r_assert_cmpint (r_sdp_media_add_attribute (m, R_STR_WITH_SIZE_ARGS ("fmtp"), R_STR_WITH_SIZE_ARGS ("111 minptime=10;useinbandfec=1")), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_pt_specific_attribute (m, (RRTPPayloadType)111,
+        R_STR_WITH_SIZE_ARGS ("rtcp-fb"), R_STR_WITH_SIZE_ARGS ("transport-cc")), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_media_add_pt_specific_attribute (m, (RRTPPayloadType)111,
+        R_STR_WITH_SIZE_ARGS ("fmtp"), R_STR_WITH_SIZE_ARGS ("minptime=10;useinbandfec=1")), ==, R_SDP_OK);
   r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)103,
         R_STR_WITH_SIZE_ARGS ("ISAC"), 16000, 1), ==, R_SDP_OK);
   r_assert_cmpint (r_sdp_media_add_rtp_fmt (m, (RRTPPayloadType)104,

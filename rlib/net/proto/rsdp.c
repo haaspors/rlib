@@ -997,6 +997,31 @@ r_sdp_media_add_attribute (RSdpMedia * media,
 }
 
 RSdpResult
+r_sdp_media_add_pt_specific_attribute (RSdpMedia * media, RRTPPayloadType pt,
+    const rchar * key, rssize ksize, const rchar * value, rssize vsize)
+{
+  RSdpResult ret;
+  rchar * val;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (pt == 0 || pt > R_RTP_PT_DYNAMIC_LAST)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY (key == NULL)) return R_SDP_INVAL;
+  if (ksize < 0) ksize = r_strlen (key);
+  if (R_UNLIKELY (ksize == 0)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY (value == NULL)) return R_SDP_INVAL;
+  if (vsize < 0) vsize = r_strlen (value);
+  if (R_UNLIKELY (vsize == 0)) return R_SDP_INVAL;
+
+  val = r_strprintf ("%"RUINT8_FMT" %.*s", (ruint8)pt, (int)vsize, value);
+  ret = r_sdp_media_add_attribute (media, key, ksize, val, -1);
+  r_free (val);
+
+  return ret;
+}
+
+RSdpResult
 r_sdp_media_add_source_specific_attribute (RSdpMedia * media,
     ruint32 ssrc, const rchar * key, rssize ksize, const rchar * value, rssize vsize)
 {
