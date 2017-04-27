@@ -98,7 +98,7 @@ typedef struct {
   RRtcProtocol proto;
   RRtcProtocolFlags protoflags;
   rchar * mid;
-  rchar * trans;
+  rchar * trans; /* BUNDLE-tag */
 
   /*RDictionary * attrib;*/
   RRtcRtpParameters * params;
@@ -144,9 +144,9 @@ R_API RRtcSessionDescription * r_rtc_session_description_new_from_sdp (
 #define r_rtc_session_description_unref     r_ref_unref
 
 #define r_rtc_session_description_transport_count(sd)     r_hash_table_size ((sd)->transport)
-#define r_rtc_session_description_get_transport(sd, id)   r_hash_table_lookup ((sd)->transport, id)
+#define r_rtc_session_description_get_transport(sd, id)   ((RRtcTransportInfo *) r_hash_table_lookup ((sd)->transport, id))
 #define r_rtc_session_description_media_line_count(sd)    r_hash_table_size ((sd)->mline)
-#define r_rtc_session_description_get_media_line(sd, mid) r_hash_table_lookup ((sd)->mline, mid)
+#define r_rtc_session_description_get_media_line(sd, mid) ((RRtcMediaLineInfo *) r_hash_table_lookup ((sd)->mline, mid))
 
 R_API RRtcError r_rtc_session_description_take_transport (RRtcSessionDescription * sd,
     RRtcTransportInfo * transport);
