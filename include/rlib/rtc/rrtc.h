@@ -50,9 +50,10 @@ typedef enum {
 } RRtcDirection;
 
 typedef enum {
-  R_RTC_ROLE_AUTO,
-  R_RTC_ROLE_SERVER,
-  R_RTC_ROLE_CLIENT,
+  R_RTC_ROLE_NONE     = 0,
+  R_RTC_ROLE_SERVER   = (1 << 0),
+  R_RTC_ROLE_CLIENT   = (1 << 1),
+  R_RTC_ROLE_AUTO     = R_RTC_ROLE_SERVER | R_RTC_ROLE_CLIENT,
 } RRtcRole;
 
 typedef enum {
