@@ -132,7 +132,9 @@ R_API RSdpResult r_sdp_media_add_rtp_fmt (RSdpMedia * media,
     ruint rate, ruint params);
 #define r_sdp_media_add_rtp_fmt_static(m, pt) r_sdp_media_add_rtp_fmt (m, pt, NULL, 0, 0, 0)
 #define r_sdp_medida_add_connection_unicast(media, addr)                      \
-  r_sdp_media_add_connection_full (media, addr, 0, 1)
+  r_sdp_media_add_connection_addr (media, addr, 0, 1)
+R_API RSdpResult r_sdp_media_add_connection_addr (RSdpMedia * media,
+    RSocketAddress * addr, ruint ttl, ruint addrcount);
 R_API RSdpResult r_sdp_media_add_connection_full (RSdpMedia * media,
     const rchar * nettype, rssize nsize,
     const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize,

@@ -901,6 +901,33 @@ r_sdp_conn_free (rpointer data)
 }
 
 RSdpResult
+r_sdp_media_add_connection_addr (RSdpMedia * media,
+    RSocketAddress * addr, ruint ttl, ruint addrcount)
+{
+  RSdpResult ret;
+  const rchar * addrtype;
+  rchar * addrstr;
+
+  if (R_UNLIKELY (addr == NULL)) return R_SDP_INVAL;
+
+  switch (r_socket_address_get_family (addr)) {
+    case R_SOCKET_FAMILY_IPV4:
+      addrtype = "IP4";
+      addrstr = r_socket_address_ipv4_to_str (addr, FALSE);
+      break;
+    /*case R_SOCKET_FAMILY_IPV6: FIXME */
+    default:
+      return R_SDP_INVAL;
+  }
+
+  ret = r_sdp_media_add_connection_full (media, R_STR_WITH_SIZE_ARGS ("IN"),
+      addrtype, -1, addrstr, -1, ttl, addrcount);
+  r_free (addrstr);
+
+  return ret;
+}
+
+RSdpResult
 r_sdp_media_add_connection_full (RSdpMedia * media,
     const rchar * nettype, rssize ntsize,
     const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize,
