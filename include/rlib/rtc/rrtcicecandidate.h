@@ -84,6 +84,8 @@ R_API RRtcError r_rtc_ice_candidate_add_ext (RRtcIceCandidate * candidate,
 #define r_rtc_ice_candidate_add_ext_kv(canidate, kv) \
   r_rtc_ice_candidate_add_ext(candidate, kv->key.str, kv->key.size, kv->val.str, kv->val.size)
 
+R_API rchar * r_rtc_ice_candidate_to_string (const RRtcIceCandidate * candidate) R_ATTR_MALLOC;
+
 
 typedef struct {
   RRtcIceCandidate * local;

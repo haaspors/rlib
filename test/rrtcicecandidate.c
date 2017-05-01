@@ -100,3 +100,36 @@ RTEST (rrtcicecandidate, add_ext, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcicecandidate, to_string, RTEST_FAST)
+{
+  RRtcIceCandidate * cand;
+  rchar * tmp;
+
+  r_assert_cmpptr ((cand = r_rtc_ice_candidate_new (R_STR_WITH_SIZE_ARGS ("tmp"), 0,
+          R_RTC_ICE_COMPONENT_RTP, R_RTC_ICE_PROTO_UDP, "10.0.0.1", 47523,
+          R_RTC_ICE_CANDIDATE_HOST)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_candidate_add_ext (cand, "generation", -1, "0", -1), ==, R_RTC_OK);
+  r_assert_cmpstr ((tmp = r_rtc_ice_candidate_to_string (cand)), ==,
+      "tmp 1 udp 0 10.0.0.1 47523 typ host generation 0"); r_free (tmp);
+  r_rtc_ice_candidate_unref (cand);
+
+  r_assert_cmpptr ((cand = r_rtc_ice_candidate_new (
+          R_STR_WITH_SIZE_ARGS ("1467250027"), RUINT64_CONSTANT (2122260223),
+        R_RTC_ICE_COMPONENT_RTP, R_RTC_ICE_PROTO_UDP, "127.0.0.1", 56148,
+        R_RTC_ICE_CANDIDATE_HOST)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_candidate_add_ext (cand, "generation", -1, "0", -1), ==, R_RTC_OK);
+  r_assert_cmpstr ((tmp = r_rtc_ice_candidate_to_string (cand)), ==,
+      "1467250027 1 udp 2122260223 127.0.0.1 56148 typ host generation 0"); r_free (tmp);
+  r_rtc_ice_candidate_unref (cand);
+
+  r_assert_cmpptr ((cand = r_rtc_ice_candidate_new (
+          R_STR_WITH_SIZE_ARGS ("1467250027"), RUINT64_CONSTANT (2122260222),
+        R_RTC_ICE_COMPONENT_RTCP, R_RTC_ICE_PROTO_UDP, "94.9.0.11", 56149,
+        R_RTC_ICE_CANDIDATE_SRFLX)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_candidate_add_ext (cand, "dummy", -1, "foobar", -1), ==, R_RTC_OK);
+  r_assert_cmpstr ((tmp = r_rtc_ice_candidate_to_string (cand)), ==,
+      "1467250027 2 udp 2122260222 94.9.0.11 56149 typ srflx dummy foobar"); r_free (tmp);
+  r_rtc_ice_candidate_unref (cand);
+}
+RTEST_END;
+

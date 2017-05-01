@@ -22,6 +22,7 @@
 
 #include <rlib/rassert.h>
 #include <rlib/rmem.h>
+#include <rlib/rstring.h>
 
 static void
 r_rtc_ice_candidate_free (RRtcIceCandidate * candidate)
@@ -263,5 +264,70 @@ r_rtc_ice_candidate_add_ext (RRtcIceCandidate * candidate,
   }
 
   return R_RTC_OOM;
+}
+
+
+static const rchar * _r_rtc_ice_proto_tbl[] = {
+  "udp",
+  "tcp",
+};
+
+static const rchar * _r_rtc_ice_type_tbl[] = {
+  "host",
+  "srflx",
+  "prflx",
+  "relay",
+};
+
+rchar *
+r_rtc_ice_candidate_to_string (const RRtcIceCandidate * candidate)
+{
+  RString * str;
+  rchar * addr;
+  ruint16 port;
+  rsize i;
+
+  if (R_UNLIKELY ((str = r_string_new_sized (128)) == NULL)) return NULL;
+
+  switch (r_socket_address_get_family (candidate->addr)) {
+    case R_SOCKET_FAMILY_IPV4:
+      addr = r_socket_address_ipv4_to_str (candidate->addr, FALSE);
+      port = r_socket_address_ipv4_get_port (candidate->addr);
+      break;
+    /*case R_SOCKET_FAMILY_IPV6: FIXME */
+    default:
+      r_string_free (str);
+      return NULL;
+  }
+
+  r_string_append_printf (str,
+      "%s %u %s %"RUINT64_FMT" %s %"RUINT16_FMT" typ %s",
+      candidate->foundation, candidate->component,
+      _r_rtc_ice_proto_tbl[candidate->proto], candidate->pri,
+      addr, port, _r_rtc_ice_type_tbl[candidate->type]);
+  r_free (addr);
+
+  if (candidate->raddr != NULL) {
+    switch (r_socket_address_get_family (candidate->raddr)) {
+      case R_SOCKET_FAMILY_IPV4:
+        addr = r_socket_address_ipv4_to_str (candidate->raddr, FALSE);
+        port = r_socket_address_ipv4_get_port (candidate->raddr);
+        r_string_append_printf (str, " raddr %s rport %"RUINT16_FMT, addr, port);
+        r_free (addr);
+        break;
+      /*case R_SOCKET_FAMILY_IPV6: FIXME */
+      default:
+        break;
+    }
+  }
+
+  /* Add extensions/properties... */
+  for (i = 0; i < r_ptr_array_size (&candidate->extensions); i++) {
+    const RStrKV * kv = r_ptr_array_get ((rpointer)&candidate->extensions, i);
+    r_string_append_printf (str, " %.*s %.*s",
+        (int)kv->key.size, kv->key.str, (int)kv->val.size, kv->val.str);
+  }
+
+  return r_string_free_keep (str);
 }
 
