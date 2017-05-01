@@ -22,11 +22,11 @@
 
 #include <rlib/rassert.h>
 #include <rlib/rmem.h>
-#include <rlib/rstr.h>
 
 static void
 r_rtc_ice_candidate_free (RRtcIceCandidate * candidate)
 {
+  r_ptr_array_clear (&candidate->extensions);
   r_socket_address_unref (candidate->addr);
   if (candidate->raddr != NULL)
     r_socket_address_unref (candidate->raddr);
@@ -56,6 +56,7 @@ r_rtc_ice_candidate_new_full (const rchar * foundation, rssize fsize,
     ret->addr = r_socket_address_ref (addr);
     ret->type = type;
     ret->raddr = NULL;
+    r_ptr_array_init (&ret->extensions);
   }
 
   return ret;
@@ -150,9 +151,25 @@ r_rtc_ice_candidate_new_from_sdp_attrib_value (const rchar * value, rssize size)
       r_free (ip);
     }
 
+    /* Parse extensions */
     while (r_str_kv_parse_multiple (&kv, next, RPOINTER_TO_SIZE (end - next),
           R_STR_WITH_SIZE_ARGS (" "), R_STR_WITH_SIZE_ARGS (" "), &next) == R_STR_PARSE_OK) {
-      /* FIXME: Parse attributes */
+      RStrKV * extkv;
+      rchar * alloc;
+
+      if ((alloc = r_malloc (sizeof (RStrKV) + kv.key.size + kv.val.size + 2)) != NULL) {
+        extkv = (RStrKV *)alloc;
+        extkv->key.str = alloc + sizeof (RStrKV);
+        extkv->key.size = kv.key.size;
+        extkv->val.str = extkv->key.str + extkv->key.size + 1;
+        extkv->val.size = kv.val.size;
+        r_memcpy (extkv->key.str, kv.key.str, kv.key.size);
+        extkv->key.str[extkv->key.size] = 0;
+        r_memcpy (extkv->val.str, kv.val.str, kv.val.size);
+        extkv->val.str[extkv->val.size] = 0;
+
+        r_ptr_array_add (&ret->extensions, extkv, r_free);
+      }
     }
 
 parse_error:
@@ -203,5 +220,48 @@ RSocketAddress *
 r_rtc_ice_candidate_get_raddr (RRtcIceCandidate * candidate)
 {
   return (candidate->raddr != NULL) ? r_socket_address_ref (candidate->raddr) : NULL;
+}
+
+rsize
+r_rtc_ice_candidate_ext_count (const RRtcIceCandidate * candidate)
+{
+  return r_ptr_array_size (&candidate->extensions);
+}
+
+const RStrKV *
+r_rtc_ice_candidate_get_ext (RRtcIceCandidate * candidate, rsize idx)
+{
+  return r_ptr_array_get (&candidate->extensions, idx);
+}
+
+RRtcError
+r_rtc_ice_candidate_add_ext (RRtcIceCandidate * candidate,
+    const rchar * key, rssize ksize, const rchar * val, rssize vsize)
+{
+  rchar * alloc;
+
+  if (R_UNLIKELY (key == NULL)) return R_RTC_INVAL;
+  if (R_UNLIKELY (val == NULL)) return R_RTC_INVAL;
+  if (ksize < 0) ksize = r_strlen (key);
+  if (vsize < 0) vsize = r_strlen (val);
+  if (R_UNLIKELY (ksize == 0)) return R_RTC_INVAL;
+  if (R_UNLIKELY (vsize == 0)) return R_RTC_INVAL;
+
+  if ((alloc = r_malloc (sizeof (RStrKV) + ksize + vsize + 2)) != NULL) {
+    RStrKV * extkv = (RStrKV *)alloc;
+    extkv->key.str = alloc + sizeof (RStrKV);
+    extkv->key.size = ksize;
+    extkv->val.str = extkv->key.str + extkv->key.size + 1;
+    extkv->val.size = vsize;
+    r_memcpy (extkv->key.str, key, ksize);
+    extkv->key.str[extkv->key.size] = 0;
+    r_memcpy (extkv->val.str, val, vsize);
+    extkv->val.str[extkv->val.size] = 0;
+
+    r_ptr_array_add (&candidate->extensions, extkv, r_free);
+    return R_RTC_OK;
+  }
+
+  return R_RTC_OOM;
 }
 

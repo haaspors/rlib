@@ -22,6 +22,7 @@ RTEST (rrtcicecandidate, new, RTEST_FAST)
   r_assert_cmpint (r_rtc_ice_candidate_get_component (cand), ==, R_RTC_ICE_COMPONENT_RTP);
   r_assert_cmpint (r_rtc_ice_candidate_get_protocol (cand), ==, R_RTC_ICE_PROTO_UDP);
   r_assert_cmpuint (r_rtc_ice_candidate_get_pri (cand), ==, 0);
+  r_assert_cmpuint (r_rtc_ice_candidate_ext_count (cand), ==, 0);
   r_rtc_ice_candidate_unref (cand);
 }
 RTEST_END;
@@ -30,6 +31,7 @@ RTEST (rrtcicecandidate, new_from_sdp, RTEST_FAST)
 {
   RRtcIceCandidate * cand;
   RSocketAddress * addr;
+  const RStrKV * kv;
   rchar * tmp;
 
   r_assert_cmpptr (r_rtc_ice_candidate_new_from_sdp_attrib_value (NULL, 0), ==, NULL);
@@ -46,6 +48,10 @@ RTEST (rrtcicecandidate, new_from_sdp, RTEST_FAST)
   r_socket_address_unref (addr);
   r_assert_cmpint (r_rtc_ice_candidate_get_type (cand), ==, R_RTC_ICE_CANDIDATE_HOST);
   r_assert_cmpptr (r_rtc_ice_candidate_get_raddr (cand), ==, NULL);
+  r_assert_cmpuint (r_rtc_ice_candidate_ext_count (cand), ==, 1);
+  r_assert_cmpptr ((kv = r_rtc_ice_candidate_get_ext (cand, 0)), !=, NULL);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_key (kv)), ==, "generation"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_value (kv)), ==, "0"); r_free (tmp);
   r_rtc_ice_candidate_unref (cand);
 
   r_assert_cmpptr ((cand = r_rtc_ice_candidate_new_from_sdp_attrib_value (
@@ -61,8 +67,36 @@ RTEST (rrtcicecandidate, new_from_sdp, RTEST_FAST)
   r_assert_cmpptr ((addr = r_rtc_ice_candidate_get_raddr (cand)), !=, NULL);
   r_assert_cmpstr ((tmp = r_socket_address_to_str (addr)), ==, "8.16.8.16:65427"); r_free (tmp);
   r_socket_address_unref (addr);
+  r_assert_cmpuint (r_rtc_ice_candidate_ext_count (cand), ==, 1);
+  r_assert_cmpptr ((kv = r_rtc_ice_candidate_get_ext (cand, 0)), !=, NULL);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_key (kv)), ==, "generation"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_value (kv)), ==, "0"); r_free (tmp);
   r_rtc_ice_candidate_unref (cand);
+}
+RTEST_END;
 
+RTEST (rrtcicecandidate, add_ext, RTEST_FAST)
+{
+  RRtcIceCandidate * cand;
+  const RStrKV * kv;
+  rchar * tmp;
+
+  r_assert_cmpptr ((cand = r_rtc_ice_candidate_new (R_STR_WITH_SIZE_ARGS ("tmp"), 0,
+        R_RTC_ICE_COMPONENT_RTP, R_RTC_ICE_PROTO_UDP, "10.0.0.1", 47523,
+        R_RTC_ICE_CANDIDATE_HOST)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_candidate_get_type (cand), ==, R_RTC_ICE_CANDIDATE_HOST);
+  r_assert_cmpint (r_rtc_ice_candidate_get_component (cand), ==, R_RTC_ICE_COMPONENT_RTP);
+  r_assert_cmpint (r_rtc_ice_candidate_get_protocol (cand), ==, R_RTC_ICE_PROTO_UDP);
+  r_assert_cmpuint (r_rtc_ice_candidate_get_pri (cand), ==, 0);
+  r_assert_cmpuint (r_rtc_ice_candidate_ext_count (cand), ==, 0);
+
+  r_assert_cmpint (r_rtc_ice_candidate_add_ext (cand, "generation", -1, "0", -1), ==, R_RTC_OK);
+  r_assert_cmpuint (r_rtc_ice_candidate_ext_count (cand), ==, 1);
+  r_assert_cmpptr ((kv = r_rtc_ice_candidate_get_ext (cand, 0)), !=, NULL);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_key (kv)), ==, "generation"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_str_kv_dup_value (kv)), ==, "0"); r_free (tmp);
+
+  r_rtc_ice_candidate_unref (cand);
 }
 RTEST_END;
 

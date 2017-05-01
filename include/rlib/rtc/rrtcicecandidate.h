@@ -26,6 +26,7 @@
 
 #include <rlib/rref.h>
 #include <rlib/rsocketaddress.h>
+#include <rlib/rstr.h>
 
 #include <rlib/rtc/rrtc.h>
 
@@ -75,6 +76,13 @@ R_API RRtcIceComponent r_rtc_ice_candidate_get_component (const RRtcIceCandidate
 R_API RRtcIceCandidateType r_rtc_ice_candidate_get_type (const RRtcIceCandidate * candidate);
 R_API ruint64 r_rtc_ice_candidate_get_pri (const RRtcIceCandidate * candidate);
 R_API RSocketAddress * r_rtc_ice_candidate_get_raddr (RRtcIceCandidate * candidate) R_ATTR_WARN_UNUSED_RESULT;
+R_API rsize r_rtc_ice_candidate_ext_count (const RRtcIceCandidate * candidate);
+R_API const RStrKV * r_rtc_ice_candidate_get_ext (RRtcIceCandidate * candidate, rsize idx);
+
+R_API RRtcError r_rtc_ice_candidate_add_ext (RRtcIceCandidate * candidate,
+    const rchar * key, rssize ksize, const rchar * val, rssize vsize);
+#define r_rtc_ice_candidate_add_ext_kv(canidate, kv) \
+  r_rtc_ice_candidate_add_ext(candidate, kv->key.str, kv->key.size, kv->val.str, kv->val.size)
 
 
 typedef struct {

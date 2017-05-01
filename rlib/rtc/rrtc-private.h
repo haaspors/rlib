@@ -201,6 +201,8 @@ struct _RRtcIceCandidate {
   RRtcIceCandidateType type;
 
   RSocketAddress * raddr;
+
+  RPtrArray extensions;
 };
 
 
