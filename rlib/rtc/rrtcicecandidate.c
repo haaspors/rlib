@@ -20,7 +20,6 @@
 #include "rrtc-private.h"
 #include <rlib/rtc/rrtcicecandidate.h>
 
-#include <rlib/rassert.h>
 #include <rlib/rmem.h>
 #include <rlib/rstring.h>
 
@@ -89,15 +88,14 @@ r_rtc_ice_candidate_new_from_sdp_attrib_value (const rchar * value, rssize size)
   RRtcIceCandidate * ret = NULL;
   RStrMatchResult * res;
 
-  if (r_str_match_pattern (value, size, "* ? * * * * typ * *", &res) == R_STR_MATCH_RESULT_OK) {
+  if (r_str_match_pattern (value, size, "* ? * * * * typ * *", &res) == R_STR_MATCH_RESULT_OK ||
+      r_str_match_pattern (value, size, "* ? * * * * typ *", &res) == R_STR_MATCH_RESULT_OK) {
     RRtcIceComponent comp;
     RRtcIceProtocol proto;
     RRtcIceCandidateType type;
     ruint64 pri;
     rchar * ip = NULL;
     ruint16 port;
-    RStrKV kv = R_STR_KV_INIT;
-    const rchar * next, * end, * rnext;
 
     switch (res->token[2].chunk.str[0]) {
       case '1':
@@ -135,41 +133,46 @@ r_rtc_ice_candidate_new_from_sdp_attrib_value (const rchar * value, rssize size)
     ret = r_rtc_ice_candidate_new (res->token[0].chunk.str, res->token[0].chunk.size,
         pri, comp, proto, ip, port, type);
 
-    /* Parse raddr/rport */
-    next = rnext = res->token[14].chunk.str;
-    end = res->token[14].chunk.str + res->token[14].chunk.size;
-    if (r_str_kv_parse_multiple (&kv, rnext, RPOINTER_TO_SIZE (end - rnext),
-          R_STR_WITH_SIZE_ARGS (" "), R_STR_WITH_SIZE_ARGS (" "), &rnext) == R_STR_PARSE_OK &&
-        r_str_chunk_casecmp (&kv.key, R_STR_WITH_SIZE_ARGS ("raddr")) == 0) {
-      rchar * ip = r_str_kv_dup_value (&kv);
+    if (res->tokens > 14) {
+      const rchar * next, * end, * rnext;
+      RStrKV kv = R_STR_KV_INIT;
+
+      /* Parse raddr/rport */
+      next = rnext = res->token[14].chunk.str;
+      end = res->token[14].chunk.str + res->token[14].chunk.size;
       if (r_str_kv_parse_multiple (&kv, rnext, RPOINTER_TO_SIZE (end - rnext),
-          R_STR_WITH_SIZE_ARGS (" "), R_STR_WITH_SIZE_ARGS (" "), &rnext) == R_STR_PARSE_OK &&
-          r_str_chunk_casecmp (&kv.key, R_STR_WITH_SIZE_ARGS ("rport")) == 0) {
-        ret->raddr = r_socket_address_ipv4_new_from_string (ip,
-            r_str_to_uint16 (kv.val.str, NULL, 10, NULL));
-        next = rnext;
+            R_STR_WITH_SIZE_ARGS (" "), R_STR_WITH_SIZE_ARGS (" "), &rnext) == R_STR_PARSE_OK &&
+          r_str_chunk_casecmp (&kv.key, R_STR_WITH_SIZE_ARGS ("raddr")) == 0) {
+        rchar * ip = r_str_kv_dup_value (&kv);
+        if (r_str_kv_parse_multiple (&kv, rnext, RPOINTER_TO_SIZE (end - rnext),
+            R_STR_WITH_SIZE_ARGS (" "), R_STR_WITH_SIZE_ARGS (" "), &rnext) == R_STR_PARSE_OK &&
+            r_str_chunk_casecmp (&kv.key, R_STR_WITH_SIZE_ARGS ("rport")) == 0) {
+          ret->raddr = r_socket_address_ipv4_new_from_string (ip,
+              r_str_to_uint16 (kv.val.str, NULL, 10, NULL));
+          next = rnext;
+        }
+        r_free (ip);
       }
-      r_free (ip);
-    }
 
-    /* Parse extensions */
-    while (r_str_kv_parse_multiple (&kv, next, RPOINTER_TO_SIZE (end - next),
-          R_STR_WITH_SIZE_ARGS (" "), R_STR_WITH_SIZE_ARGS (" "), &next) == R_STR_PARSE_OK) {
-      RStrKV * extkv;
-      rchar * alloc;
+      /* Parse extensions */
+      while (r_str_kv_parse_multiple (&kv, next, RPOINTER_TO_SIZE (end - next),
+            R_STR_WITH_SIZE_ARGS (" "), R_STR_WITH_SIZE_ARGS (" "), &next) == R_STR_PARSE_OK) {
+        RStrKV * extkv;
+        rchar * alloc;
 
-      if ((alloc = r_malloc (sizeof (RStrKV) + kv.key.size + kv.val.size + 2)) != NULL) {
-        extkv = (RStrKV *)alloc;
-        extkv->key.str = alloc + sizeof (RStrKV);
-        extkv->key.size = kv.key.size;
-        extkv->val.str = extkv->key.str + extkv->key.size + 1;
-        extkv->val.size = kv.val.size;
-        r_memcpy (extkv->key.str, kv.key.str, kv.key.size);
-        extkv->key.str[extkv->key.size] = 0;
-        r_memcpy (extkv->val.str, kv.val.str, kv.val.size);
-        extkv->val.str[extkv->val.size] = 0;
+        if ((alloc = r_malloc (sizeof (RStrKV) + kv.key.size + kv.val.size + 2)) != NULL) {
+          extkv = (RStrKV *)alloc;
+          extkv->key.str = alloc + sizeof (RStrKV);
+          extkv->key.size = kv.key.size;
+          extkv->val.str = extkv->key.str + extkv->key.size + 1;
+          extkv->val.size = kv.val.size;
+          r_memcpy (extkv->key.str, kv.key.str, kv.key.size);
+          extkv->key.str[extkv->key.size] = 0;
+          r_memcpy (extkv->val.str, kv.val.str, kv.val.size);
+          extkv->val.str[extkv->val.size] = 0;
 
-        r_ptr_array_add (&ret->extensions, extkv, r_free);
+          r_ptr_array_add (&ret->extensions, extkv, r_free);
+        }
       }
     }
 

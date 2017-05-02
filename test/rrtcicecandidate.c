@@ -72,6 +72,20 @@ RTEST (rrtcicecandidate, new_from_sdp, RTEST_FAST)
   r_assert_cmpstr ((tmp = r_str_kv_dup_key (kv)), ==, "generation"); r_free (tmp);
   r_assert_cmpstr ((tmp = r_str_kv_dup_value (kv)), ==, "0"); r_free (tmp);
   r_rtc_ice_candidate_unref (cand);
+
+  r_assert_cmpptr ((cand = r_rtc_ice_candidate_new_from_sdp_attrib_value (
+          R_STR_WITH_SIZE_ARGS ("foobar 1 udp 25148212 127.0.0.1 1337 typ host"))), !=, NULL);
+  r_assert_cmpstr (r_rtc_ice_candidate_get_foundation (cand), ==, "foobar");
+  r_assert_cmpint (r_rtc_ice_candidate_get_component (cand), ==, R_RTC_ICE_COMPONENT_RTP);
+  r_assert_cmpint (r_rtc_ice_candidate_get_protocol (cand), ==, R_RTC_ICE_PROTO_UDP);
+  r_assert_cmpuint (r_rtc_ice_candidate_get_pri (cand), ==, RUINT64_CONSTANT (25148212));
+  r_assert_cmpptr ((addr = r_rtc_ice_candidate_get_addr (cand)), !=, NULL);
+  r_assert_cmpstr ((tmp = r_socket_address_to_str (addr)), ==, "127.0.0.1:1337"); r_free (tmp);
+  r_socket_address_unref (addr);
+  r_assert_cmpint (r_rtc_ice_candidate_get_type (cand), ==, R_RTC_ICE_CANDIDATE_HOST);
+  r_assert_cmpptr ((addr = r_rtc_ice_candidate_get_raddr (cand)), ==, NULL);
+  r_assert_cmpuint (r_rtc_ice_candidate_ext_count (cand), ==, 0);
+  r_rtc_ice_candidate_unref (cand);
 }
 RTEST_END;
 
