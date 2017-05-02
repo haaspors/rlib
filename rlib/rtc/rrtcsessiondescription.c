@@ -21,55 +21,41 @@
 
 #include <rlib/rtc/rrtcsessiondescription.h>
 
+#include <rlib/rassert.h>
 #include <rlib/rbase64.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
+#include <rlib/rstring.h>
 
 #include <rlib/net/proto/rsdp.h>
 
-static void
-r_rtc_transport_info_free (RRtcTransportInfo * trans)
+RRtcMediaType
+r_rtc_media_type_from_string (const rchar * type, rssize size)
 {
-  r_free (trans->id);
+  if (size < 0) size = r_strlen (type);
+  if (r_strcasecmp_size (type, (rsize)size, R_STR_WITH_SIZE_ARGS ("audio")) == 0)
+    return R_RTC_MEDIA_AUDIO;
+  else if (r_strcasecmp_size (type, (rsize)size, R_STR_WITH_SIZE_ARGS ("video")) == 0)
+    return R_RTC_MEDIA_VIDEO;
+  else if (r_strcasecmp_size (type, (rsize)size, R_STR_WITH_SIZE_ARGS ("application")) == 0)
+    return R_RTC_MEDIA_APPLICATION;
+  else if (r_strcasecmp_size (type, (rsize)size, R_STR_WITH_SIZE_ARGS ("text")) == 0)
+    return R_RTC_MEDIA_TEXT;
 
-  r_free (trans->rtcp.ice.ufrag);
-  r_free (trans->rtcp.ice.pwd);
-  r_free (trans->rtcp.dtls.fingerprint);
-  r_ptr_array_clear (&trans->rtcp.candidates);
-
-  r_free (trans->rtp.ice.ufrag);
-  r_free (trans->rtp.ice.pwd);
-  r_free (trans->rtp.dtls.fingerprint);
-  r_ptr_array_clear (&trans->rtp.candidates);
-
-  r_free (trans);
+  return R_RTC_MEDIA_UNKNOWN;
 }
 
-RRtcTransportInfo *
-r_rtc_transport_info_new (const rchar * id, rssize size, rboolean rtcpmux)
+const rchar *
+r_rtc_media_type_to_string (RRtcMediaType type)
 {
-  RRtcTransportInfo * ret;
-
-  if ((ret = r_mem_new0 (RRtcTransportInfo)) != NULL) {
-    r_ref_init (ret, r_rtc_transport_info_free);
-    ret->id = r_strdup_size (id, size);
-    ret->rtcpmux = rtcpmux;
-
-    r_ptr_array_init (&ret->rtp.candidates);
-    r_ptr_array_init (&ret->rtcp.candidates);
+  switch (type) {
+    case R_RTC_MEDIA_AUDIO:
+      return "audio";
+    case R_RTC_MEDIA_VIDEO:
+      return "video";
+    default:
+      return NULL;
   }
-
-  return ret;
-}
-
-static void
-r_rtc_media_line_info_free (RRtcMediaLineInfo * mline)
-{
-  r_free (mline->mid);
-  r_free (mline->trans);
-  if (mline->params != NULL)
-    r_rtc_rtp_parameters_unref (mline->params);
-  r_free (mline);
 }
 
 static RRtcProtocolFlags
@@ -87,8 +73,8 @@ r_rtc_protocol_parse_rtp_profile (const RStrChunk * profile)
   return R_RTC_PROTO_FLAG_NONE;
 }
 
-static RRtcProtocol
-r_rtc_protocol_parse (const rchar * proto, rssize size, RRtcProtocolFlags * flags)
+R_API RRtcProtocol
+r_rtc_protocol_from_string (const rchar * proto, rssize size, RRtcProtocolFlags * flags)
 {
   RStrChunk in = { (rchar *)proto, (size < 0) ? r_strlen (proto) : (rsize)size }, f[5];
   ruint c = r_str_chunk_split (&in, "/", &f[0], &f[1], &f[2], &f[3], &f[4], NULL);
@@ -135,9 +121,122 @@ r_rtc_protocol_parse (const rchar * proto, rssize size, RRtcProtocolFlags * flag
   return R_RTC_PROTO_NONE;
 }
 
+const rchar *
+r_rtc_protocol_to_string (RRtcProtocol proto, RRtcProtocolFlags flags)
+{
+  switch (proto) {
+    case R_RTC_PROTO_RTP:
+      switch (flags) {
+        case R_RTC_PROTO_FLAGS_SAVPF:
+          return "UDP/TLS/RTP/SAVPF";
+        case R_RTC_PROTO_FLAGS_SAVP:
+          return "UDP/TLS/RTP/SAVP";
+        case R_RTC_PROTO_FLAGS_AVPF:
+          return "RTP/AVPF";
+        case R_RTC_PROTO_FLAG_AV_PROFILE:
+          return "RTP/AVP";
+        default:
+          return NULL;
+      }
+    case R_RTC_PROTO_SCTP:
+      return "UDP/DTLS/SCTP";
+    default:
+      return NULL;
+  }
+}
+
+
+
+static void
+r_rtc_transport_info_free (RRtcTransportInfo * trans)
+{
+  r_free (trans->id);
+  if (trans->addr != NULL)
+    r_socket_address_unref (trans->addr);
+
+  r_free (trans->rtcp.ice.ufrag);
+  r_free (trans->rtcp.ice.pwd);
+  r_free (trans->rtcp.dtls.fingerprint);
+
+  r_free (trans->rtp.ice.ufrag);
+  r_free (trans->rtp.ice.pwd);
+  r_free (trans->rtp.dtls.fingerprint);
+
+  r_free (trans);
+}
+
+RRtcTransportInfo *
+r_rtc_transport_info_new (const rchar * id, rssize size, rboolean rtcpmux)
+{
+  RRtcTransportInfo * ret;
+
+  if (R_UNLIKELY (id == NULL || size == 0 || *id == 0)) return NULL;
+
+  if ((ret = r_mem_new0 (RRtcTransportInfo)) != NULL) {
+    r_ref_init (ret, r_rtc_transport_info_free);
+    ret->id = r_strdup_size (id, size);
+    ret->rtcpmux = rtcpmux;
+  }
+
+  return ret;
+}
+
+RRtcError
+r_rtc_transport_set_ice_parameters (RRtcTransportInfo * trans,
+  const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize,
+  rboolean lite)
+{
+  r_free (trans->rtp.ice.ufrag);
+  r_free (trans->rtp.ice.pwd);
+  trans->rtp.ice.ufrag = r_strdup_size (ufrag, usize);
+  trans->rtp.ice.pwd = r_strdup_size (pwd, psize);
+  trans->rtp.ice.lite = lite;
+
+  if (trans->rtcpmux) {
+    r_free (trans->rtcp.ice.ufrag);
+    r_free (trans->rtcp.ice.pwd);
+    trans->rtcp.ice.ufrag = r_strdup_size (ufrag, usize);
+    trans->rtcp.ice.pwd = r_strdup_size (pwd, psize);
+    trans->rtcp.ice.lite = lite;
+  }
+
+  return R_RTC_OK;
+}
+
+RRtcError
+r_rtc_transport_set_dtls_parameters (RRtcTransportInfo * trans,
+  RRtcRole role, RMsgDigestType md, const rchar * fingerprint, rssize size)
+{
+  r_free (trans->rtp.dtls.fingerprint);
+  trans->rtp.dtls.fingerprint = r_strdup_size (fingerprint, size);
+  trans->rtp.dtls.role = role;
+  trans->rtp.dtls.md = md;
+
+  if (trans->rtcpmux) {
+    r_free (trans->rtcp.dtls.fingerprint);
+    trans->rtcp.dtls.fingerprint = r_strdup_size (fingerprint, size);
+    trans->rtcp.dtls.role = role;
+    trans->rtcp.dtls.md = md;
+  }
+
+  return R_RTC_OK;
+}
+
+
+static void
+r_rtc_media_line_info_free (RRtcMediaLineInfo * mline)
+{
+  r_ptr_array_clear (&mline->candidates);
+  r_free (mline->mid);
+  r_free (mline->trans);
+  if (mline->params != NULL)
+    r_rtc_rtp_parameters_unref (mline->params);
+  r_free (mline);
+}
+
 RRtcMediaLineInfo *
-r_rtc_media_line_info_new (const rchar * mid, rssize size,
-    RRtcMediaType type, RRtcDirection dir, const rchar * proto, rssize psize)
+r_rtc_media_line_info_new (const rchar * mid, rssize size, RRtcDirection dir,
+    RRtcMediaType type, RRtcProtocol proto, RRtcProtocolFlags protoflags)
 {
   RRtcMediaLineInfo * ret;
 
@@ -145,14 +244,42 @@ r_rtc_media_line_info_new (const rchar * mid, rssize size,
     r_ref_init (ret, r_rtc_media_line_info_free);
     ret->type = type;
     ret->dir = dir;
+    ret->proto = proto;
+    ret->protoflags = protoflags;
     ret->mid = r_strdup_size (mid, size);
-    ret->proto = r_rtc_protocol_parse (proto, psize, &ret->protoflags);
-    ret->params = NULL;
     ret->trans = NULL;
+    ret->bundled = FALSE;
+
+    r_ptr_array_init (&ret->candidates);
+    ret->endofcandidates = FALSE;
+
+    ret->params = NULL;
   }
 
   return ret;
 }
+
+RRtcMediaLineInfo *
+r_rtc_media_line_info_new_from_str (const rchar * mid, rssize size, RRtcDirection dir,
+    const rchar * type, rssize tsize, const rchar * proto, rssize psize)
+{
+  RRtcProtocolFlags pf;
+  RRtcProtocol p = r_rtc_protocol_from_string (proto, psize, &pf);
+
+  return r_rtc_media_line_info_new (mid, size, dir,
+      r_rtc_media_type_from_string (type, tsize), p, pf);
+}
+
+RRtcError
+r_rtc_media_line_info_take_ice_candidate (RRtcMediaLineInfo * mline,
+    RRtcIceCandidate * candidate)
+{
+  if (R_UNLIKELY (candidate == NULL)) return R_RTC_INVAL;
+
+  r_ptr_array_add (&mline->candidates, candidate, r_rtc_ice_candidate_unref);
+  return R_RTC_OK;
+}
+
 
 static void
 r_rtc_session_description_free (RRtcSessionDescription * sd)
@@ -168,7 +295,7 @@ r_rtc_session_description_free (RRtcSessionDescription * sd)
   r_free (sd->username);
 
   r_hash_table_unref (sd->transport);
-  r_hash_table_unref (sd->mline);
+  r_ptr_array_clear (&sd->mline);
 
   if (sd->notify != NULL)
     sd->notify (sd->data);
@@ -186,8 +313,7 @@ r_rtc_session_description_new (RRtcSignalType type)
 
     ret->transport = r_hash_table_new_full (r_str_hash, r_str_equal,
         NULL, r_rtc_transport_info_unref);
-    ret->mline = r_hash_table_new_full (r_str_hash, r_str_equal,
-        NULL, r_rtc_media_line_info_unref);
+    r_ptr_array_init (&ret->mline);
   }
 
   return ret;
@@ -375,13 +501,10 @@ r_rtc_session_description_parse_sdp_transport (RRtcTransportInfo * trans,
     RSdpMediaBuf * media, RSdpBuf * sdp)
 {
   const RStrChunk * cur;
-  rsize i;
 
   /* FIXME: Support multiple c= lines */
-  if (r_sdp_media_buf_port (media) != 0 && r_sdp_media_buf_port (media) != 9 &&
-      r_sdp_media_buf_conn_count (media) == 1 && r_sdp_media_buf_conn_addrcount (media, 0) == 1) {
+  if (r_sdp_media_buf_conn_count (media) == 1 && r_sdp_media_buf_conn_addrcount (media, 0) == 1)
     trans->addr = r_sdp_media_buf_conn_to_socket_address (media, 0);
-  }
 
   /* ICE */
   if ((trans->rtp.ice.ufrag = r_sdp_media_buf_attrib_dup_value (media, "ice-ufrag", -1, NULL)) == NULL)
@@ -411,26 +534,6 @@ r_rtc_session_description_parse_sdp_transport (RRtcTransportInfo * trans,
     }
   }
 
-  for (i = 0; (cur = r_sdp_media_buf_attrib_find (media, "candidate", -1, &i)) != NULL; i++) {
-    RRtcIceCandidate * cand;
-
-    if ((cand = r_rtc_ice_candidate_new_from_sdp_attrib_value (cur->str, cur->size)) != NULL) {
-      switch (r_rtc_ice_candidate_get_component (cand)) {
-        case R_RTC_ICE_COMPONENT_RTP:
-          r_ptr_array_add (&trans->rtp.candidates, cand, r_rtc_ice_candidate_unref);
-          break;
-        case R_RTC_ICE_COMPONENT_RTCP:
-          r_ptr_array_add (&trans->rtcp.candidates, cand, r_rtc_ice_candidate_unref);
-          break;
-        default:
-          r_rtc_ice_candidate_unref (cand);
-          break;
-      }
-    }
-  }
-  trans->rtp.endofcandidates = r_sdp_media_buf_has_attrib (media, "end-of-candidates", -1);
-  trans->rtcp.endofcandidates = trans->rtp.endofcandidates;
-
   if (!trans->rtcpmux) {
     trans->rtcp.ice.ufrag = r_strdup (trans->rtp.ice.ufrag);
     trans->rtcp.ice.pwd   = r_strdup (trans->rtp.ice.pwd);
@@ -442,6 +545,7 @@ r_rtc_session_description_parse_sdp_transport (RRtcTransportInfo * trans,
   }
 }
 
+
 static void
 r_rtc_session_description_parse_sdp_mline (RRtcSessionDescription * sd,
     RSdpMediaBuf * media, RSdpBuf * sdp)
@@ -451,16 +555,15 @@ r_rtc_session_description_parse_sdp_mline (RRtcSessionDescription * sd,
   RStrChunk midchunk = R_STR_CHUNK_INIT;
   RRtcTransportInfo * tinfo;
   RRtcMediaLineInfo * mline;
-  rboolean rtcpmux;
-  RRtcMediaType mtype;
+  rboolean rtcpmux, bundled;
   RRtcDirection dir;
 
   if ((mid = r_sdp_media_buf_attrib_find (media, "mid", 3, NULL)) != NULL) {
     RStrChunk bundlegroup = R_STR_CHUNK_INIT;
-    if (r_sdp_buf_find_grouping (sdp, &bundlegroup, R_STR_WITH_SIZE_ARGS ("BUNDLE"), mid->str, mid->size) != R_SDP_OK ||
-        r_str_chunk_split (&bundlegroup, " ", &trans, NULL) < 1) {
+    bundled = (r_sdp_buf_find_grouping (sdp, &bundlegroup,
+        R_STR_WITH_SIZE_ARGS ("BUNDLE"), mid->str, mid->size) == R_SDP_OK);
+    if (!bundled || r_str_chunk_split (&bundlegroup, " ", &trans, NULL) < 1)
       r_memcpy (&trans, mid, sizeof (RStrChunk));
-    }
   } else {
     /* FIXME: Better way of generating some form of random??? */
     rsize hash, hashsize;
@@ -472,19 +575,11 @@ r_rtc_session_description_parse_sdp_mline (RRtcSessionDescription * sd,
     midchunk.str = r_base64_encode_dup (RSIZE_TO_POINTER (hash), sizeof (rsize), &midchunk.size);
     mid = &midchunk;
     r_memcpy (&trans, mid, sizeof (RStrChunk));
+    bundled = FALSE;
   }
 
   rtcpmux = r_sdp_media_buf_has_attrib (media, "rtcp-mux", -1) ||
     r_sdp_buf_has_attrib (sdp, "rtcp-mux", -1);
-
-  if (r_str_chunk_cmp (&media->type, R_STR_WITH_SIZE_ARGS ("audio")) == 0)
-    mtype = R_RTC_MEDIA_AUDIO;
-  else if (r_str_chunk_cmp (&media->type, R_STR_WITH_SIZE_ARGS ("video")) == 0)
-    mtype = R_RTC_MEDIA_VIDEO;
-  else if (r_str_chunk_cmp (&media->type, R_STR_WITH_SIZE_ARGS ("application")) == 0)
-    mtype = R_RTC_MEDIA_APPLICATION;
-  else
-    mtype = R_RTC_MEDIA_UNKNOWN;
 
   if (r_sdp_media_buf_has_attrib (media, "sendrecv", -1))
     dir = R_RTC_DIR_SEND_RECV;
@@ -502,10 +597,22 @@ r_rtc_session_description_parse_sdp_mline (RRtcSessionDescription * sd,
   }
 
   /* MEDIA LINE */
-  if ((mline = r_rtc_media_line_info_new (mid->str, mid->size, mtype, dir,
-          media->proto.str, media->proto.size)) != NULL) {
+  if ((mline = r_rtc_media_line_info_new_from_str (mid->str, mid->size, dir,
+          media->type.str, media->type.size, media->proto.str, media->proto.size)) != NULL) {
+    RRtcIceCandidate * cand;
+    const RStrChunk * cur;
+    rsize i;
+
     mline->params = r_rtc_session_description_create_sdp_rtp_params (mline->mid, media, sdp);
     mline->trans = r_str_chunk_dup (&trans);
+    mline->bundled = bundled;
+
+    for (i = 0; (cur = r_sdp_media_buf_attrib_find (media, "candidate", -1, &i)) != NULL; i++) {
+      if ((cand = r_rtc_ice_candidate_new_from_sdp_attrib_value (cur->str, cur->size)) != NULL)
+        r_ptr_array_add (&mline->candidates, cand, r_rtc_ice_candidate_unref);
+    }
+    mline->endofcandidates = r_sdp_media_buf_has_attrib (media, "end-of-candidates", -1);
+
     r_rtc_session_description_take_media_line (sd, mline);
   }
 
@@ -518,12 +625,12 @@ r_rtc_session_description_parse_sdp (RRtcSessionDescription * sd, RSdpBuf * sdp)
   rsize i;
 
   sd->username = r_sdp_buf_orig_username (sdp);
-  sd->session_name = r_sdp_buf_session_name (sdp);
   sd->session_id = r_sdp_buf_orig_session_id (sdp);
   sd->session_ver = r_sdp_buf_orig_session_version_u64 (sdp);
   sd->orig_nettype = r_sdp_buf_orig_nettype (sdp);
   sd->orig_addrtype = r_sdp_buf_orig_addrtype (sdp);
   sd->orig_addr = r_sdp_buf_orig_addr (sdp);
+  sd->session_name = r_sdp_buf_session_name (sdp);
   sd->conn_nettype = r_sdp_buf_conn_nettype (sdp);
   sd->conn_addrtype = r_sdp_buf_conn_addrtype (sdp);
   sd->conn_addr = r_sdp_buf_conn_addr (sdp);
@@ -563,6 +670,123 @@ r_rtc_session_description_new_from_sdp (RRtcSignalType type,
   return ret;
 }
 
+RRtcMediaLineInfo *
+r_rtc_session_description_get_media_line (RRtcSessionDescription * sd,
+    const rchar * mid, rssize size)
+{
+  rsize i;
+
+  for (i = 0; i < r_rtc_session_description_media_line_count (sd); i++) {
+    RRtcMediaLineInfo * mline;
+
+    mline = r_rtc_session_description_get_media_line_by_idx (sd, i);
+    if (r_strncasecmp (mline->mid, mid, size) == 0)
+      return mline;
+  }
+
+  return NULL;
+}
+
+RRtcError
+r_rtc_session_description_set_originator_full (RRtcSessionDescription * sd,
+    const rchar * username, rssize usize, const rchar * sid, rssize sidsize,
+    ruint64 sver, const rchar * nettype, rssize ntsize,
+    const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize)
+{
+  r_free (sd->username);      sd->username = r_strdup_size (username, usize);
+  r_free (sd->session_id);    sd->session_id = r_strdup_size (sid, sidsize);
+  sd->session_ver = sver;
+  r_free (sd->orig_nettype);  sd->orig_nettype = r_strdup_size (nettype, ntsize);
+  r_free (sd->orig_addrtype); sd->orig_addrtype = r_strdup_size (addrtype, atsize);
+  r_free (sd->orig_addr);     sd->orig_addr = r_strdup_size (addr, asize);
+
+  return R_RTC_OK;
+}
+
+RRtcError
+r_rtc_session_description_set_originator_addr (RRtcSessionDescription * sd,
+    const rchar * username, rssize usize, const rchar * sid, rssize sidsize,
+    ruint64 sver, RSocketAddress * addr)
+{
+  RRtcError ret;
+  const rchar * addrtype;
+  rchar * addrstr;
+
+  if (R_UNLIKELY (addr == NULL)) return R_RTC_INVAL;
+
+  switch (r_socket_address_get_family (addr)) {
+    case R_SOCKET_FAMILY_IPV4:
+      addrtype = "IP4";
+      addrstr = r_socket_address_ipv4_to_str (addr, FALSE);
+      break;
+      /* FIXME: IPV6 */
+    /*case R_SOCKET_FAMILY_IPV6:*/
+      /*addrtype = "IP6";*/
+      /*break;*/
+    default:
+      return R_RTC_INVAL;
+  }
+
+  ret = r_rtc_session_description_set_originator_full (sd,
+      username, usize, sid, sidsize, sver, R_STR_WITH_SIZE_ARGS ("IN"),
+      addrtype, -1, addrstr, -1);
+
+  r_free (addrstr);
+  return ret;
+}
+
+RRtcError
+r_rtc_session_description_set_session_name (RRtcSessionDescription * sd,
+    const rchar * name, rssize size)
+{
+  r_free (sd->session_name);
+  sd->session_name = r_strdup_size (name, size);
+  return R_RTC_OK;
+}
+
+RRtcError
+r_rtc_session_description_set_connection_full (RRtcSessionDescription * sd,
+    const rchar * nettype, rssize ntsize,
+    const rchar * addrtype, rssize atsize, const rchar * addr, rssize asize)
+{
+  r_free (sd->conn_nettype);  sd->conn_nettype = r_strdup_size (nettype, ntsize);
+  r_free (sd->conn_addrtype); sd->conn_addrtype = r_strdup_size (addrtype, atsize);
+  r_free (sd->conn_addr);     sd->conn_addr = r_strdup_size (addr, asize);
+
+  return R_RTC_OK;
+}
+
+RRtcError
+r_rtc_session_description_set_connection_addr (RRtcSessionDescription * sd,
+    RSocketAddress * addr)
+{
+  RRtcError ret;
+  const rchar * addrtype;
+  rchar * addrstr;
+
+  if (R_UNLIKELY (addr == NULL)) return R_RTC_INVAL;
+
+  switch (r_socket_address_get_family (addr)) {
+    case R_SOCKET_FAMILY_IPV4:
+      addrtype = "IP4";
+      addrstr = r_socket_address_ipv4_to_str (addr, FALSE);
+      break;
+      /* FIXME: IPV6 */
+    /*case R_SOCKET_FAMILY_IPV6:*/
+      /*addrtype = "IP6";*/
+      /*break;*/
+    default:
+      return R_RTC_INVAL;
+  }
+
+  ret = r_rtc_session_description_set_connection_full (sd,
+      R_STR_WITH_SIZE_ARGS ("IN"), addrtype, -1, addrstr, -1);
+
+  r_free (addrstr);
+  return ret;
+}
+
+
 RRtcError
 r_rtc_session_description_take_transport (RRtcSessionDescription * sd,
     RRtcTransportInfo * transport)
@@ -581,11 +805,223 @@ r_rtc_session_description_take_media_line (RRtcSessionDescription * sd,
     RRtcMediaLineInfo * mline)
 {
   if (R_UNLIKELY (mline == NULL)) return R_RTC_INVAL;
-  if (R_UNLIKELY (mline->mid == NULL)) return R_RTC_INVAL;
-  if (R_UNLIKELY (r_hash_table_contains (sd->mline, mline->mid) == R_HASH_TABLE_OK))
-    return R_RTC_ALREADY_FOUND;
 
-  r_hash_table_insert (sd->mline, mline->mid, mline);
+  r_ptr_array_add (&sd->mline, mline, r_rtc_media_line_info_unref);
   return R_RTC_OK;
+}
+
+static RSdpMedia *
+r_rtc_session_description_mline_to_sdp_media (const RRtcSessionDescription * sd,
+    RRtcMediaLineInfo * mline)
+{
+  RRtcTransportInfo * trans;
+  RSdpMedia * media;
+  ruint port, portcount;
+
+  if (R_UNLIKELY ((trans = r_rtc_session_description_get_transport (sd,
+            mline->trans)) == NULL))
+    return NULL;
+
+  /* FIXME: Support IPv6! and non-unicast? */
+  portcount = 1;
+  port = trans->addr != NULL ? r_socket_address_ipv4_get_port (trans->addr) : 9;
+
+  if ((media = r_sdp_media_new_full (r_rtc_media_type_to_string (mline->type), -1,
+          port, portcount,
+          r_rtc_protocol_to_string (mline->proto, mline->protoflags), -1)) != NULL) {
+    rsize i;
+
+    if (trans->addr != NULL)
+      r_sdp_media_add_connection_unicast (media, trans->addr);
+    else
+      r_sdp_media_add_connection_full (media, R_STR_WITH_SIZE_ARGS ("IN"),
+          R_STR_WITH_SIZE_ARGS ("IP4"), R_STR_WITH_SIZE_ARGS ("0.0.0.0"), 0, 1);
+
+    /* ICE candidates */
+    for (i = 0; i < r_ptr_array_size (&mline->candidates); i++) {
+      RRtcIceCandidate * cand = r_ptr_array_get (&mline->candidates, i);
+      rchar * val = r_rtc_ice_candidate_to_string (cand);
+      r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("candidate"), val, -1);
+      r_free (val);
+    }
+    if (mline->endofcandidates) {
+      r_sdp_media_add_attribute (media,
+          R_STR_WITH_SIZE_ARGS ("end-of-candidates"), NULL, 0);
+    }
+    /* ICE params */
+    if (trans->rtp.ice.ufrag != NULL) {
+      r_sdp_media_add_ice_credentials (media, trans->rtp.ice.ufrag, -1,
+          trans->rtp.ice.pwd, -1);
+    }
+    if (trans->rtp.ice.lite) {
+      r_sdp_media_add_attribute (media,
+          R_STR_WITH_SIZE_ARGS ("ice-lite"), NULL, 0);
+    }
+    /* DTLS params */
+    switch (trans->rtp.dtls.role) {
+      case R_RTC_ROLE_AUTO:
+        r_sdp_media_add_dtls_setup (media, R_SDP_CONN_ROLE_ACTPASS,
+            trans->rtp.dtls.md, trans->rtp.dtls.fingerprint, -1);
+        break;
+      case R_RTC_ROLE_SERVER:
+        r_sdp_media_add_dtls_setup (media, R_SDP_CONN_ROLE_PASSIVE,
+            trans->rtp.dtls.md, trans->rtp.dtls.fingerprint, -1);
+        break;
+      case R_RTC_ROLE_CLIENT:
+        r_sdp_media_add_dtls_setup (media, R_SDP_CONN_ROLE_ACTIVE,
+            trans->rtp.dtls.md, trans->rtp.dtls.fingerprint, -1);
+        break;
+      default:
+        break;
+    }
+
+    if (mline->mid != NULL) {
+      r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("mid"),
+          mline->mid, -1);
+    }
+
+    if (mline->params != NULL) {
+      rsize i, j;
+
+      /* FIXME: Header extensions */
+
+      switch (mline->dir) {
+        case R_RTC_DIR_SEND_RECV:
+          r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("sendrecv"), NULL, 0);
+          break;
+        case R_RTC_DIR_RECV_ONLY:
+          r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("recvonly"), NULL, 0);
+          break;
+        case R_RTC_DIR_SEND_ONLY:
+          r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("sendonly"), NULL, 0);
+          break;
+        default:
+          break;
+      }
+
+      if (mline->params->flags & R_RTC_RTCP_MUX_ONLY)
+        r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("rtcp-mux-only"), NULL, 0);
+      else if (mline->params->flags & R_RTC_RTCP_MUX)
+        r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("rtcp-mux"), NULL, 0);
+      if (mline->params->flags & R_RTC_RTCP_RSIZE)
+        r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("rtcp-rsize"), NULL, 0);
+
+      for (i = 0; i < r_rtc_rtp_parameters_codec_count (mline->params); i++) {
+        RRtcRtpCodecParameters * codec;
+
+        codec = r_rtc_rtp_parameters_get_codec (mline->params, i);
+        r_sdp_media_add_rtp_fmt (media, codec->pt, codec->name, -1,
+            codec->rate, codec->channels);
+        for (j = 0; j < r_ptr_array_size (&codec->rtcpfb); j++) {
+          r_sdp_media_add_pt_specific_attribute (media, codec->pt,
+              R_STR_WITH_SIZE_ARGS ("rtcp-fb"), r_ptr_array_get (&codec->rtcpfb, j), -1);
+        }
+        if (codec->fmtp != NULL) {
+          r_sdp_media_add_pt_specific_attribute (media, codec->pt,
+              R_STR_WITH_SIZE_ARGS ("fmtp"), codec->fmtp, -1);
+        }
+      }
+
+      if (mline->params->cname != NULL && mline->params->ssrc > 0) {
+        r_sdp_media_add_ssrc_cname (media, mline->params->ssrc,
+            mline->params->cname, -1);
+      }
+    } else {
+      r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("inactive"), NULL, 0);
+    }
+
+    /* FIXME: extra attributes? */
+  }
+
+  return media;
+}
+
+typedef struct {
+  RRtcSessionDescription * sd;
+  RSdpMsg * msg;
+} RSd2SdpCtx;
+
+static void
+_gather_bundle_to_sdp (rpointer key, rpointer value, rpointer data)
+{
+  RSd2SdpCtx * ctx = data;
+  RString * str = r_string_new ("BUNDLE");
+  rsize i, initlen = r_string_length (str);
+  (void) value;
+
+  for (i = 0; i < r_rtc_session_description_media_line_count (ctx->sd); i++) {
+    RRtcMediaLineInfo * mline;
+    mline = r_rtc_session_description_get_media_line_by_idx (ctx->sd, i);
+    if (mline->bundled && mline->mid != NULL &&
+        r_strcasecmp (mline->trans, key) == 0) {
+      r_string_append_printf (str, " %s", mline->mid);
+    }
+  }
+
+  if (r_string_length (str) > initlen) {
+    rchar * val = r_string_free_keep (str);
+    r_sdp_msg_add_attribute (ctx->msg, R_STR_WITH_SIZE_ARGS ("group"), val, -1);
+    r_free (val);
+  } else {
+    r_string_free (str);
+  }
+}
+
+RBuffer *
+r_rtc_session_description_to_sdp (RRtcSessionDescription * sd, RRtcError * err)
+{
+  RBuffer * ret = NULL;
+  RRtcError reterr = R_RTC_OK;
+  RSd2SdpCtx ctx = { sd, r_sdp_msg_new () };
+  rchar * tmp;
+  rsize i;
+
+  if (R_UNLIKELY (sd->username == NULL || sd->session_id == NULL ||
+        sd->session_name == NULL || sd->orig_nettype == NULL ||
+        sd->orig_addrtype == NULL || sd->orig_addr == NULL ||
+        r_rtc_session_description_media_line_count (sd) == 0 ||
+        r_rtc_session_description_transport_count (sd) == 0)) {
+    reterr = R_RTC_INCOMPLETE;
+    goto beach;
+  }
+
+  tmp = r_strprintf ("%"RSIZE_FMT, sd->session_ver);
+  if (r_sdp_msg_set_originator (ctx.msg, sd->username, -1, sd->session_id, -1, tmp, -1,
+        sd->orig_nettype, -1, sd->orig_addrtype, -1, sd->orig_addr, -1) != R_SDP_OK ||
+      r_sdp_msg_set_session_name (ctx.msg, sd->session_name, -1) != R_SDP_OK ||
+      r_sdp_msg_add_time (ctx.msg, sd->tstart, sd->tstop) != R_SDP_OK) {
+    r_free (tmp);
+    reterr = R_RTC_OOM;
+    goto beach;
+  }
+  r_free (tmp);
+
+  if (sd->conn_addr != NULL) {
+    if (r_sdp_msg_set_connection_full (ctx.msg, sd->conn_nettype, -1,
+          sd->conn_addrtype, -1, sd->conn_addr, -1,
+          sd->conn_ttl, sd->conn_addrcount) != R_SDP_OK) {
+      reterr = R_RTC_OOM;
+      goto beach;
+    }
+  }
+
+  for (i = 0; i < r_rtc_session_description_media_line_count (sd); i++) {
+    RRtcMediaLineInfo * mline;
+    RSdpMedia * media;
+    mline = r_rtc_session_description_get_media_line_by_idx (sd, i);
+    if ((media = r_rtc_session_description_mline_to_sdp_media (sd, mline)) != NULL) {
+      r_sdp_msg_add_media (ctx.msg, media);
+      r_sdp_media_unref (media);
+    }
+  }
+
+  r_hash_table_foreach (sd->transport, _gather_bundle_to_sdp, &ctx);
+
+  ret = r_sdp_msg_to_buffer (ctx.msg);
+beach:
+  r_sdp_msg_unref (ctx.msg);
+
+  if (err != NULL) *err = reterr;
+  return ret;
 }
 

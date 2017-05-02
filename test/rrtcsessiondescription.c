@@ -46,10 +46,10 @@ RTEST (rrtcsessiondescription, new_from_sdp_webrtc_chrome_audio_only, RTEST_FAST
   RRtcRtpEncodingParameters * encoding;
   RRtcRtpHdrExtParameters * hdrext;
 
-  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer_audio_only))), !=, NULL);
   r_assert_cmpptr (r_rtc_session_description_new_from_sdp (R_RTC_SIGNAL_OFFER, NULL, &err), ==, NULL);
   r_assert_cmpint (err, ==, R_RTC_INVAL);
 
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer_audio_only))), !=, NULL);
   r_assert_cmpptr ((sd = r_rtc_session_description_new_from_sdp (R_RTC_SIGNAL_OFFER, buf, &err)), !=, NULL);
   r_assert_cmpint (err, ==, R_RTC_OK);
   r_assert_cmpint (sd->dir, ==, R_RTC_DIR_NONE);
@@ -69,7 +69,7 @@ RTEST (rrtcsessiondescription, new_from_sdp_webrtc_chrome_audio_only, RTEST_FAST
   r_assert_cmpuint (r_rtc_session_description_transport_count (sd), ==, 1);
   r_assert_cmpptr ((trans = r_rtc_session_description_get_transport (sd, "audio")), !=, NULL);
   r_assert_cmpstr (trans->id, ==, "audio");
-  r_assert_cmpptr (trans->addr, ==, NULL);
+  r_assert_cmpptr (trans->addr, !=, NULL);
   r_assert (trans->rtcpmux);
   r_assert_cmpstr (trans->rtp.ice.ufrag, ==, "ALgn");
   r_assert_cmpstr (trans->rtp.ice.pwd, ==, "FckU0ZVjV+e5dfAwXpFREIXq");
@@ -77,17 +77,19 @@ RTEST (rrtcsessiondescription, new_from_sdp_webrtc_chrome_audio_only, RTEST_FAST
   r_assert_cmpint (trans->rtp.dtls.role, ==, R_RTC_ROLE_AUTO);
   r_assert_cmpint (trans->rtp.dtls.md, ==, R_MSG_DIGEST_TYPE_SHA256);
   r_assert_cmpstr (trans->rtp.dtls.fingerprint, ==, "DC:1A:C4:76:1E:FF:22:64:75:B8:66:87:F2:BC:D3:17:F5:04:6F:F8:D4:C6:01:36:F5:49:E6:4F:D5:BC:E9:49");
-  r_assert_cmpuint (r_ptr_array_size (&trans->rtp.candidates), ==, 0);
-  r_assert (!trans->rtp.endofcandidates);
 
   r_assert_cmpuint (r_rtc_session_description_media_line_count (sd), ==, 1);
-  r_assert_cmpptr ((mline = r_rtc_session_description_get_media_line (sd, "audio")), !=, NULL);
+  r_assert_cmpptr ((mline = r_rtc_session_description_get_media_line (sd,
+          R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
   r_assert_cmpint (mline->type, ==, R_RTC_MEDIA_AUDIO);
   r_assert_cmpint (mline->dir, ==, R_RTC_DIR_SEND_RECV);
   r_assert_cmpstr (mline->mid, ==, "audio");
   r_assert_cmpint (mline->proto, ==, R_RTC_PROTO_RTP);
   r_assert_cmpint (mline->protoflags, ==, R_RTC_PROTO_FLAG_AV_PROFILE | R_RTC_PROTO_FLAG_SECURE | R_RTC_PROTO_FLAG_FEEDBACK);
   r_assert_cmpstr (mline->trans, ==, "audio");
+  r_assert (mline->bundled);
+  r_assert_cmpuint (r_ptr_array_size (&mline->candidates), ==, 0);
+  r_assert (!mline->endofcandidates);
   r_assert_cmpptr (mline->params, !=, NULL);
   r_assert_cmpstr (r_rtc_rtp_parameters_mid (mline->params), ==, mline->mid);
   r_assert_cmpstr (r_rtc_rtp_parameters_rtcp_cname (mline->params), ==, "1uk9tTrmGFQYxweh");
@@ -304,10 +306,10 @@ RTEST (rrtcsessiondescription, new_from_sdp_webrtc_chrome_av, RTEST_FAST)
   RRtcRtpEncodingParameters * encoding;
   RRtcRtpHdrExtParameters * hdrext;
 
-  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer_av))), !=, NULL);
   r_assert_cmpptr (r_rtc_session_description_new_from_sdp (R_RTC_SIGNAL_OFFER, NULL, &err), ==, NULL);
   r_assert_cmpint (err, ==, R_RTC_INVAL);
 
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer_av))), !=, NULL);
   r_assert_cmpptr ((sd = r_rtc_session_description_new_from_sdp (R_RTC_SIGNAL_OFFER, buf, &err)), !=, NULL);
   r_assert_cmpint (err, ==, R_RTC_OK);
   r_assert_cmpint (sd->dir, ==, R_RTC_DIR_NONE);
@@ -329,7 +331,7 @@ RTEST (rrtcsessiondescription, new_from_sdp_webrtc_chrome_av, RTEST_FAST)
 
   r_assert_cmpptr ((trans = r_rtc_session_description_get_transport (sd, "audio")), !=, NULL);
   r_assert_cmpstr (trans->id, ==, "audio");
-  r_assert_cmpptr (trans->addr, ==, NULL);
+  r_assert_cmpptr (trans->addr, !=, NULL);
   r_assert (trans->rtcpmux);
   r_assert_cmpstr (trans->rtp.ice.ufrag, ==, "AKbc");
   r_assert_cmpstr (trans->rtp.ice.pwd, ==, "QTIVSkIWXNWrOZtkwXVcmbbY");
@@ -337,16 +339,18 @@ RTEST (rrtcsessiondescription, new_from_sdp_webrtc_chrome_av, RTEST_FAST)
   r_assert_cmpint (trans->rtp.dtls.role, ==, R_RTC_ROLE_AUTO);
   r_assert_cmpint (trans->rtp.dtls.md, ==, R_MSG_DIGEST_TYPE_SHA256);
   r_assert_cmpstr (trans->rtp.dtls.fingerprint, ==, "C4:37:9E:59:AD:C2:89:DD:3E:7A:E1:BD:C6:B5:C0:C0:77:D5:B6:66:6A:63:85:DC:90:A4:C3:AC:73:7E:13:F4");
-  r_assert_cmpuint (r_ptr_array_size (&trans->rtp.candidates), ==, 0);
-  r_assert (!trans->rtp.endofcandidates);
 
-  r_assert_cmpptr ((mline = r_rtc_session_description_get_media_line (sd, "audio")), !=, NULL);
+  r_assert_cmpptr ((mline = r_rtc_session_description_get_media_line (sd,
+          R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
   r_assert_cmpint (mline->type, ==, R_RTC_MEDIA_AUDIO);
   r_assert_cmpint (mline->dir, ==, R_RTC_DIR_SEND_RECV);
   r_assert_cmpstr (mline->mid, ==, "audio");
   r_assert_cmpint (mline->proto, ==, R_RTC_PROTO_RTP);
   r_assert_cmpint (mline->protoflags, ==, R_RTC_PROTO_FLAG_AV_PROFILE | R_RTC_PROTO_FLAG_SECURE | R_RTC_PROTO_FLAG_FEEDBACK);
   r_assert_cmpstr (mline->trans, ==, "audio");
+  r_assert (mline->bundled);
+  r_assert_cmpuint (r_ptr_array_size (&mline->candidates), ==, 0);
+  r_assert (!mline->endofcandidates);
   r_assert_cmpptr (mline->params, !=, NULL);
   r_assert_cmpstr (r_rtc_rtp_parameters_mid (mline->params), ==, mline->mid);
   r_assert_cmpstr (r_rtc_rtp_parameters_rtcp_cname (mline->params), ==, "AyGJ3PEhxKQXrY0g");
@@ -459,7 +463,7 @@ RTEST (rrtcsessiondescription, new_from_sdp_webrtc_chrome_av, RTEST_FAST)
 
   r_assert_cmpptr ((trans = r_rtc_session_description_get_transport (sd, "video")), !=, NULL);
   r_assert_cmpstr (trans->id, ==, "video");
-  r_assert_cmpptr (trans->addr, ==, NULL);
+  r_assert_cmpptr (trans->addr, !=, NULL);
   r_assert (trans->rtcpmux);
   r_assert_cmpstr (trans->rtp.ice.ufrag, ==, "AKbc");
   r_assert_cmpstr (trans->rtp.ice.pwd, ==, "QTIVSkIWXNWrOZtkwXVcmbbY");
@@ -467,16 +471,18 @@ RTEST (rrtcsessiondescription, new_from_sdp_webrtc_chrome_av, RTEST_FAST)
   r_assert_cmpint (trans->rtp.dtls.role, ==, R_RTC_ROLE_AUTO);
   r_assert_cmpint (trans->rtp.dtls.md, ==, R_MSG_DIGEST_TYPE_SHA256);
   r_assert_cmpstr (trans->rtp.dtls.fingerprint, ==, "C4:37:9E:59:AD:C2:89:DD:3E:7A:E1:BD:C6:B5:C0:C0:77:D5:B6:66:6A:63:85:DC:90:A4:C3:AC:73:7E:13:F4");
-  r_assert_cmpuint (r_ptr_array_size (&trans->rtp.candidates), ==, 0);
-  r_assert (!trans->rtp.endofcandidates);
 
-  r_assert_cmpptr ((mline = r_rtc_session_description_get_media_line (sd, "video")), !=, NULL);
+  r_assert_cmpptr ((mline = r_rtc_session_description_get_media_line (sd,
+          R_STR_WITH_SIZE_ARGS ("video"))), !=, NULL);
   r_assert_cmpint (mline->type, ==, R_RTC_MEDIA_VIDEO);
   r_assert_cmpint (mline->dir, ==, R_RTC_DIR_SEND_RECV);
   r_assert_cmpstr (mline->mid, ==, "video");
   r_assert_cmpint (mline->proto, ==, R_RTC_PROTO_RTP);
   r_assert_cmpint (mline->protoflags, ==, R_RTC_PROTO_FLAG_AV_PROFILE | R_RTC_PROTO_FLAG_SECURE | R_RTC_PROTO_FLAG_FEEDBACK);
   r_assert_cmpstr (mline->trans, ==, "audio");
+  r_assert (mline->bundled);
+  r_assert_cmpuint (r_ptr_array_size (&mline->candidates), ==, 0);
+  r_assert (!mline->endofcandidates);
   r_assert_cmpptr (mline->params, !=, NULL);
   r_assert_cmpstr (r_rtc_rtp_parameters_mid (mline->params), ==, mline->mid);
   r_assert_cmpstr (r_rtc_rtp_parameters_rtcp_cname (mline->params), ==, "AyGJ3PEhxKQXrY0g");
@@ -631,6 +637,200 @@ RTEST (rrtcsessiondescription, new_from_sdp_webrtc_chrome_av, RTEST_FAST)
 
   r_rtc_session_description_unref (sd);
   r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtcsessiondescription, simple_to_sdp, RTEST_FAST)
+{
+  RRtcSessionDescription * sd;
+  RRtcMediaLineInfo * mline;
+  RRtcTransportInfo * trans;
+  RRtcError err;
+  RBuffer * buf;
+
+  r_assert_cmpptr ((sd = r_rtc_session_description_new (R_RTC_SIGNAL_OFFER)), !=, NULL);
+
+  r_assert_cmpptr (r_rtc_session_description_to_sdp (sd, &err), ==, NULL);
+  r_assert_cmpint (err, ==, R_RTC_INCOMPLETE);
+
+  r_assert_cmpint (r_rtc_session_description_set_originator_full (sd,
+        R_STR_WITH_SIZE_ARGS ("jdoe"), R_STR_WITH_SIZE_ARGS ("123456789"), 2,
+        R_STR_WITH_SIZE_ARGS ("IN"), R_STR_WITH_SIZE_ARGS ("IP4"),
+        R_STR_WITH_SIZE_ARGS ("127.0.0.1")), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_set_session_name (sd,
+        R_STR_WITH_SIZE_ARGS ("-")), ==, R_RTC_OK);
+  r_assert_cmpptr (r_rtc_session_description_to_sdp (sd, &err), ==, NULL);
+  r_assert_cmpint (err, ==, R_RTC_INCOMPLETE);
+
+  r_assert_cmpptr ((trans = r_rtc_transport_info_new (R_STR_WITH_SIZE_ARGS ("audio"), FALSE)), !=, NULL);
+  r_assert_cmpptr ((trans->addr = r_socket_address_ipv4_new_uint8 (94, 9, 81, 234, 45342)), !=, NULL);
+  r_assert_cmpint (r_rtc_session_description_take_transport (sd, trans), ==, R_RTC_OK);
+  r_assert_cmpptr ((mline = r_rtc_media_line_info_new (NULL, 0,
+          R_RTC_DIR_NONE, R_RTC_MEDIA_AUDIO, R_RTC_PROTO_RTP,
+          R_RTC_PROTO_FLAGS_AVPF)), !=, NULL);
+  r_assert_cmpptr ((mline->trans = r_strdup (trans->id)), !=, NULL);
+  r_assert_cmpptr ((mline->params = r_rtc_rtp_parameters_new (mline->mid, -1)), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (mline->params, "PCMU", 0, 8000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (mline->params, "PCMA", 8, 8000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_take_media_line (sd, mline), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((buf = r_rtc_session_description_to_sdp (sd, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_RTC_OK);
+  r_assert_cmpbufsstr (buf, 0, -1, ==,
+      "v=0\r\n"
+      "o=jdoe 123456789 2 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "m=audio 45342 RTP/AVPF 0 8\r\n"
+      "c=IN IP4 94.9.81.234\r\n"
+      "a=rtpmap:0 PCMU/8000\r\n"
+      "a=rtpmap:8 PCMA/8000\r\n");
+  r_buffer_unref (buf);
+
+  r_rtc_session_description_unref (sd);
+}
+RTEST_END;
+
+static const rchar sdp_rlib_webrtc[] =
+  "v=0\r\n"
+  "o=jdoe 123456789 2 IN IP4 127.0.0.1\r\n"
+  "s=-\r\n"
+  "t=0 0\r\n"
+  "a=group:BUNDLE audio video\r\n"
+  "m=audio 9 UDP/TLS/RTP/SAVPF 0 8\r\n"
+  "c=IN IP4 0.0.0.0\r\n"
+  "a=candidate:1467250027 1 udp 2122260223 127.0.0.1 46244 typ host\r\n"
+  "a=candidate:1467250027 2 udp 2122260222 127.0.0.1 46245 typ host\r\n"
+  "a=end-of-candidates\r\n"
+  "a=ice-ufrag:ALgn\r\n"
+  "a=ice-pwd:FckU0ZVjV+e5dfAwXpFREIXq\r\n"
+  "a=fingerprint:sha-256 DC:1A:C4:76:1E:FF:22:64:75:B8:66:87:F2:BC:D3:17:F5:04:6F:F8:D4:C6:01:36:F5:49:E6:4F:D5:BC:E9:49\r\n"
+  "a=setup:actpass\r\n"
+  "a=mid:audio\r\n"
+  "a=sendrecv\r\n"
+  "a=rtcp-mux\r\n"
+  "a=rtpmap:0 PCMU/8000\r\n"
+  "a=rtpmap:8 PCMA/8000\r\n"
+  "a=ssrc:3735928559 cname:1uk9tTrmGFQYxweh\r\n"
+  "m=video 9 UDP/TLS/RTP/SAVPF 100\r\n"
+  "c=IN IP4 0.0.0.0\r\n"
+  "a=candidate:1467250027 1 udp 2122260223 127.0.0.1 46246 typ host\r\n"
+  "a=candidate:1467250027 2 udp 2122260222 127.0.0.1 46247 typ host\r\n"
+  "a=end-of-candidates\r\n"
+  "a=ice-ufrag:ALgn\r\n"
+  "a=ice-pwd:FckU0ZVjV+e5dfAwXpFREIXq\r\n"
+  "a=fingerprint:sha-256 DC:1A:C4:76:1E:FF:22:64:75:B8:66:87:F2:BC:D3:17:F5:04:6F:F8:D4:C6:01:36:F5:49:E6:4F:D5:BC:E9:49\r\n"
+  "a=setup:actpass\r\n"
+  "a=mid:video\r\n"
+  "a=sendrecv\r\n"
+  "a=rtcp-mux\r\n"
+  "a=rtcp-rsize\r\n"
+  "a=rtpmap:100 VP8/90000\r\n"
+  "a=ssrc:3405691582 cname:AyGJ3PEhxKQXrY0g\r\n";
+
+RTEST (rrtcsessiondescription, webrtc_with_BUNDLE_to_sdp, RTEST_FAST)
+{
+  RRtcSessionDescription * sd;
+  RRtcMediaLineInfo * mline;
+  RRtcTransportInfo * trans;
+  RRtcError err;
+  RBuffer * buf;
+
+  r_assert_cmpptr ((sd = r_rtc_session_description_new (R_RTC_SIGNAL_OFFER)), !=, NULL);
+
+  r_assert_cmpint (r_rtc_session_description_set_originator_full (sd,
+        R_STR_WITH_SIZE_ARGS ("jdoe"), R_STR_WITH_SIZE_ARGS ("123456789"), 2,
+        R_STR_WITH_SIZE_ARGS ("IN"), R_STR_WITH_SIZE_ARGS ("IP4"),
+        R_STR_WITH_SIZE_ARGS ("127.0.0.1")), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_set_session_name (sd,
+        R_STR_WITH_SIZE_ARGS ("-")), ==, R_RTC_OK);
+  r_assert_cmpptr ((trans = r_rtc_transport_info_new (R_STR_WITH_SIZE_ARGS ("audio"), FALSE)), !=, NULL);
+  r_assert_cmpptr ((trans->addr = r_socket_address_ipv4_new_uint8 (0, 0, 0, 0, 9)), !=, NULL);
+  r_assert_cmpint (r_rtc_transport_set_ice_parameters (trans, "ALgn", -1, "FckU0ZVjV+e5dfAwXpFREIXq", -1, FALSE), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_transport_set_dtls_parameters (trans, R_RTC_ROLE_AUTO,
+        R_MSG_DIGEST_TYPE_SHA256, "DC:1A:C4:76:1E:FF:22:64:75:B8:66:87:F2:BC:D3:17:F5:04:6F:F8:D4:C6:01:36:F5:49:E6:4F:D5:BC:E9:49", -1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_take_transport (sd, trans), ==, R_RTC_OK);
+  r_assert_cmpptr ((mline = r_rtc_media_line_info_new (R_STR_WITH_SIZE_ARGS ("audio"),
+          R_RTC_DIR_SEND_RECV, R_RTC_MEDIA_AUDIO, R_RTC_PROTO_RTP,
+          R_RTC_PROTO_FLAGS_SAVPF)), !=, NULL);
+  mline->bundled = TRUE;
+  r_assert_cmpptr ((mline->trans = r_strdup (trans->id)), !=, NULL);
+  r_assert_cmpint (r_rtc_media_line_info_take_ice_candidate (mline,
+        r_rtc_ice_candidate_new (R_STR_WITH_SIZE_ARGS ("1467250027"),
+          RUINT64_CONSTANT (2122260223), R_RTC_ICE_COMPONENT_RTP,
+          R_RTC_ICE_PROTO_UDP, "127.0.0.1", 46244,
+          R_RTC_ICE_CANDIDATE_HOST)), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_media_line_info_take_ice_candidate (mline,
+        r_rtc_ice_candidate_new (R_STR_WITH_SIZE_ARGS ("1467250027"),
+          RUINT64_CONSTANT (2122260222), R_RTC_ICE_COMPONENT_RTCP,
+          R_RTC_ICE_PROTO_UDP, "127.0.0.1", 46245,
+          R_RTC_ICE_CANDIDATE_HOST)), ==, R_RTC_OK);
+  mline->endofcandidates = TRUE;
+  r_assert_cmpptr ((mline->params = r_rtc_rtp_parameters_new (mline->mid, -1)), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_set_rtcp (mline->params,
+        R_STR_WITH_SIZE_ARGS ("1uk9tTrmGFQYxweh"), 0xdeadbeef,
+        R_RTC_RTCP_MUX), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (mline->params, "PCMU", 0, 8000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (mline->params, "PCMA", 8, 8000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_take_media_line (sd, mline), ==, R_RTC_OK);
+  r_assert_cmpptr ((mline = r_rtc_media_line_info_new (R_STR_WITH_SIZE_ARGS ("video"),
+          R_RTC_DIR_SEND_RECV, R_RTC_MEDIA_VIDEO, R_RTC_PROTO_RTP,
+          R_RTC_PROTO_FLAGS_SAVPF)), !=, NULL);
+  mline->bundled = TRUE;
+  r_assert_cmpptr ((mline->trans = r_strdup (trans->id)), !=, NULL);
+  r_assert_cmpint (r_rtc_media_line_info_take_ice_candidate (mline,
+        r_rtc_ice_candidate_new (R_STR_WITH_SIZE_ARGS ("1467250027"),
+          RUINT64_CONSTANT (2122260223), R_RTC_ICE_COMPONENT_RTP,
+          R_RTC_ICE_PROTO_UDP, "127.0.0.1", 46246,
+          R_RTC_ICE_CANDIDATE_HOST)), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_media_line_info_take_ice_candidate (mline,
+        r_rtc_ice_candidate_new (R_STR_WITH_SIZE_ARGS ("1467250027"),
+          RUINT64_CONSTANT (2122260222), R_RTC_ICE_COMPONENT_RTCP,
+          R_RTC_ICE_PROTO_UDP, "127.0.0.1", 46247,
+          R_RTC_ICE_CANDIDATE_HOST)), ==, R_RTC_OK);
+  mline->endofcandidates = TRUE;
+  r_assert_cmpptr ((mline->params = r_rtc_rtp_parameters_new (mline->mid, -1)), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_set_rtcp (mline->params,
+        R_STR_WITH_SIZE_ARGS ("AyGJ3PEhxKQXrY0g"), 0xcafebabe,
+        R_RTC_RTCP_MUX | R_RTC_RTCP_RSIZE), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (mline->params, "VP8", 100, 90000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_take_media_line (sd, mline), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((buf = r_rtc_session_description_to_sdp (sd, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_RTC_OK);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, sdp_rlib_webrtc);
+  r_buffer_unref (buf);
+
+  r_rtc_session_description_unref (sd);
+}
+RTEST_END;
+
+RTEST (rrtcsessiondescription, new_from_sdp_to_sdp_symetric, RTEST_FAST)
+{
+  RRtcSessionDescription * sd;
+  RRtcError err;
+  RBuffer * buf, * out;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_rlib_webrtc))), !=, NULL);
+  r_assert_cmpptr ((sd = r_rtc_session_description_new_from_sdp (R_RTC_SIGNAL_OFFER, buf, &err)), !=, NULL);
+  r_assert_cmpptr ((out = r_rtc_session_description_to_sdp (sd, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_RTC_OK);
+  r_rtc_session_description_unref (sd);
+  r_assert_cmpbufsstr (out, 0, -1, ==, sdp_rlib_webrtc);
+  //r_assert_cmpbuf (buf, 0, ==, out, 0, -1);
+  r_buffer_unref (buf);
+  r_buffer_unref (out);
+
+#if 0
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_chrome_webrtc_offer_av))), !=, NULL);
+  r_assert_cmpptr ((sd = r_rtc_session_description_new_from_sdp (R_RTC_SIGNAL_OFFER, buf, &err)), !=, NULL);
+  r_assert_cmpptr ((out = r_rtc_session_description_to_sdp (sd, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_RTC_OK);
+  r_rtc_session_description_unref (sd);
+  r_assert_cmpbuf (buf, 0, ==, out, 0, -1);
+  r_buffer_unref (buf);
+  r_buffer_unref (out);
+#endif
 }
 RTEST_END;
 

@@ -33,6 +33,7 @@ typedef enum {
   R_RTC_INVAL,
   R_RTC_OOM,
   R_RTC_WRONG_STATE,
+  R_RTC_INCOMPLETE,
   R_RTC_INVALID_MEDIA,
   R_RTC_INVALID_TYPE,
   R_RTC_ALREADY_FOUND,
@@ -70,6 +71,8 @@ typedef enum {
   R_RTC_MEDIA_TEXT,
   R_RTC_MEDIA_APPLICATION,
 } RRtcMediaType;
+R_API RRtcMediaType r_rtc_media_type_from_string (const rchar * type, rssize size);
+R_API const rchar * r_rtc_media_type_to_string (RRtcMediaType type);
 
 typedef enum {
   R_RTC_CODEC_KIND_UNKNOWN = 0,
