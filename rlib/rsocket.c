@@ -39,6 +39,8 @@ r_socket_err_to_socket_status (int err)
     case EWOULDBLOCK:
 #endif
       return R_SOCKET_WOULD_BLOCK;
+    case EBADF:
+      return R_SOCKET_BAD;
     case ECANCELED:
       return R_SOCKET_CANCELED;
     case EDESTADDRREQ:
@@ -48,6 +50,12 @@ r_socket_err_to_socket_status (int err)
 #endif
     case ENOTCONN:
       return R_SOCKET_NOT_CONNECTED;
+    case ECONNABORTED:
+      return R_SOCKET_CONN_ABORTED;
+    case ECONNREFUSED:
+      return R_SOCKET_CONN_REFUSED;
+    case ECONNRESET:
+      return R_SOCKET_CONN_RESET;
 #ifdef WSAEOPNOTSUPP
     case WSAEOPNOTSUPP:
 #endif

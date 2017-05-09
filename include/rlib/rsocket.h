@@ -65,9 +65,13 @@ typedef enum {
   R_SOCKET_OOM              = -2,
   R_SOCKET_ERROR            = -3,
   R_SOCKET_INVALID_OP       = -4,
-  R_SOCKET_NOT_BOUND        = -5,
-  R_SOCKET_NOT_CONNECTED    = -6,
-  R_SOCKET_CANCELED         = -7,
+  R_SOCKET_CANCELED         = -5,
+  R_SOCKET_BAD              = -6,
+  R_SOCKET_NOT_BOUND        = -7,
+  R_SOCKET_NOT_CONNECTED    = -8,
+  R_SOCKET_CONN_ABORTED     = -9,
+  R_SOCKET_CONN_REFUSED     = -10,
+  R_SOCKET_CONN_RESET       = -11,
 } RSocketStatus;
 
 #if 0
