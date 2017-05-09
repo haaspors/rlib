@@ -139,6 +139,8 @@ r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotif
   }
 
   if ((ret = r_ev_io_close ((REvIO *)evtcp, close_cb, data, datanotify))) {
+    /* FIXME: This must be done better.. call r_socket_close somehow! */
+    evtcp->socket->flags |= R_SOCKET_FLAG_CLOSED;
     evtcp->socket->handle = R_SOCKET_HANDLE_INVALID;
   }
 
@@ -194,7 +196,7 @@ r_ev_tcp_connected_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
   REvTCP * evtcp = (REvTCP *)evio;
 
-  if (events & R_EV_IO_WRITABLE) {
+  if (events & (R_EV_IO_WRITABLE | R_EV_IO_ERROR)) {
     /* Make sure stop is called as part of after callbacks */
     r_ev_loop_add_cb_after (evio->loop, (RFunc)r_ev_io_stop,
         evio, NULL, evtcp->connect_iocb_ctx, NULL);
@@ -295,6 +297,8 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
   r_atomic_uint_store (&evtcp->recv_counter, 0);
 
   do {
+    if (R_UNLIKELY (r_socket_is_closed (evtcp->socket)))
+      break;
     if ((buf = evtcp->alloc (evtcp->recv_data, evtcp)) == NULL) {
       res = R_SOCKET_OOM;
       break;
@@ -329,19 +333,18 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
           return;
         }
         break;
+      case R_SOCKET_WOULD_BLOCK:
+        break;
       /* FIXME: Handle errors?? */
       default:
+        R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" res %d",
+            evtcp->evio.loop, R_EV_IO_ARGS (evtcp), res);
         break;
     }
     r_buffer_unref (buf);
   } while (res == R_SOCKET_OK);
 
   /* FIXME: What do we do when something fails and we are unable to drain socket? */
-  if (res != R_SOCKET_WOULD_BLOCK) {
-    R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" res %d",
-        evtcp->evio.loop, R_EV_IO_ARGS (evtcp), res);
-    abort ();
-  }
 }
 
 static void r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio);
@@ -380,10 +383,9 @@ r_ev_tcp_send_iocb (REvTCP * evtcp)
 static void
 r_ev_tcp_error_iocb (REvTCP * evtcp)
 {
-  R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT,
-      evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
-  /* TODO */
-  abort ();
+  R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" err: %d",
+      evtcp->evio.loop, R_EV_IO_ARGS (evtcp),
+      r_socket_get_error (evtcp->socket));
 }
 
 static void
