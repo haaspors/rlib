@@ -166,7 +166,8 @@ r_rtc_transport_info_free (RRtcTransportInfo * trans)
 }
 
 RRtcTransportInfo *
-r_rtc_transport_info_new (const rchar * id, rssize size, rboolean rtcpmux)
+r_rtc_transport_info_new_full (const rchar * id, rssize size,
+    RSocketAddress * addr, rboolean rtcpmux)
 {
   RRtcTransportInfo * ret;
 
@@ -175,6 +176,8 @@ r_rtc_transport_info_new (const rchar * id, rssize size, rboolean rtcpmux)
   if ((ret = r_mem_new0 (RRtcTransportInfo)) != NULL) {
     r_ref_init (ret, r_rtc_transport_info_free);
     ret->id = r_strdup_size (id, size);
+    if ((ret->addr = addr) != NULL)
+      r_socket_address_ref (addr);
     ret->rtcpmux = rtcpmux;
   }
 
@@ -591,7 +594,7 @@ r_rtc_session_description_parse_sdp_mline (RRtcSessionDescription * sd,
     dir = R_RTC_DIR_NONE;
 
   /* TRANSPORT */
-  if ((tinfo = r_rtc_transport_info_new (mid->str, mid->size, rtcpmux)) != NULL) {
+  if ((tinfo = r_rtc_transport_info_new_full (mid->str, mid->size, NULL, rtcpmux)) != NULL) {
     r_rtc_session_description_parse_sdp_transport (tinfo, media, sdp);
     r_rtc_session_description_take_transport (sd, tinfo);
   }

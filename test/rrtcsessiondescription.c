@@ -645,6 +645,7 @@ RTEST (rrtcsessiondescription, simple_to_sdp, RTEST_FAST)
   RRtcSessionDescription * sd;
   RRtcMediaLineInfo * mline;
   RRtcTransportInfo * trans;
+  RSocketAddress * addr;
   RRtcError err;
   RBuffer * buf;
 
@@ -662,8 +663,9 @@ RTEST (rrtcsessiondescription, simple_to_sdp, RTEST_FAST)
   r_assert_cmpptr (r_rtc_session_description_to_sdp (sd, &err), ==, NULL);
   r_assert_cmpint (err, ==, R_RTC_INCOMPLETE);
 
-  r_assert_cmpptr ((trans = r_rtc_transport_info_new (R_STR_WITH_SIZE_ARGS ("audio"), FALSE)), !=, NULL);
-  r_assert_cmpptr ((trans->addr = r_socket_address_ipv4_new_uint8 (94, 9, 81, 234, 45342)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (94, 9, 81, 234, 45342)), !=, NULL);
+  r_assert_cmpptr ((trans = r_rtc_transport_info_new_full (R_STR_WITH_SIZE_ARGS ("audio"), addr, FALSE)), !=, NULL);
+  r_socket_address_unref (addr);
   r_assert_cmpint (r_rtc_session_description_take_transport (sd, trans), ==, R_RTC_OK);
   r_assert_cmpptr ((mline = r_rtc_media_line_info_new (NULL, 0,
           R_RTC_DIR_NONE, R_RTC_MEDIA_AUDIO, R_RTC_PROTO_RTP,
@@ -733,6 +735,7 @@ RTEST (rrtcsessiondescription, webrtc_with_BUNDLE_to_sdp, RTEST_FAST)
   RRtcSessionDescription * sd;
   RRtcMediaLineInfo * mline;
   RRtcTransportInfo * trans;
+  RSocketAddress * addr;
   RRtcError err;
   RBuffer * buf;
 
@@ -744,8 +747,9 @@ RTEST (rrtcsessiondescription, webrtc_with_BUNDLE_to_sdp, RTEST_FAST)
         R_STR_WITH_SIZE_ARGS ("127.0.0.1")), ==, R_RTC_OK);
   r_assert_cmpint (r_rtc_session_description_set_session_name (sd,
         R_STR_WITH_SIZE_ARGS ("-")), ==, R_RTC_OK);
-  r_assert_cmpptr ((trans = r_rtc_transport_info_new (R_STR_WITH_SIZE_ARGS ("audio"), FALSE)), !=, NULL);
-  r_assert_cmpptr ((trans->addr = r_socket_address_ipv4_new_uint8 (0, 0, 0, 0, 9)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (0, 0, 0, 0, 9)), !=, NULL);
+  r_assert_cmpptr ((trans = r_rtc_transport_info_new_full (R_STR_WITH_SIZE_ARGS ("audio"), addr, FALSE)), !=, NULL);
+  r_socket_address_unref (addr);
   r_assert_cmpint (r_rtc_transport_set_ice_parameters (trans, "ALgn", -1, "FckU0ZVjV+e5dfAwXpFREIXq", -1, FALSE), ==, R_RTC_OK);
   r_assert_cmpint (r_rtc_transport_set_dtls_parameters (trans, R_RTC_ROLE_AUTO,
         R_MSG_DIGEST_TYPE_SHA256, "DC:1A:C4:76:1E:FF:22:64:75:B8:66:87:F2:BC:D3:17:F5:04:6F:F8:D4:C6:01:36:F5:49:E6:4F:D5:BC:E9:49", -1), ==, R_RTC_OK);

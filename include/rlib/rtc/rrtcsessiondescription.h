@@ -69,8 +69,10 @@ typedef struct {
   RRtcTransportParameters rtcp;
 } RRtcTransportInfo;
 
-R_API RRtcTransportInfo * r_rtc_transport_info_new (const rchar * id, rssize size,
-    rboolean rtcpmux) R_ATTR_MALLOC;
+R_API RRtcTransportInfo * r_rtc_transport_info_new_full (const rchar * id,
+    rssize size, RSocketAddress * addr, rboolean rtcpmux) R_ATTR_MALLOC;
+static inline RRtcTransportInfo * r_rtc_transport_info_new (const rchar * id,
+    rssize size) { return r_rtc_transport_info_new_full (id, size, NULL, TRUE); }
 #define r_rtc_transport_info_ref        r_ref_ref
 #define r_rtc_transport_info_unref      r_ref_unref
 
