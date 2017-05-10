@@ -26,6 +26,7 @@
 
 #include <rlib/rbuffer.h>
 #include <rlib/rmsgdigest.h>
+#include <rlib/rrand.h>
 #include <rlib/rref.h>
 #include <rlib/rsocketaddress.h>
 
@@ -77,10 +78,12 @@ static inline RRtcTransportInfo * r_rtc_transport_info_new (const rchar * id,
 #define r_rtc_transport_info_unref      r_ref_unref
 
 R_API RRtcError r_rtc_transport_set_ice_parameters (RRtcTransportInfo * trans,
-  const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize,
-  rboolean lite);
+    const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize,
+    rboolean lite);
+R_API RRtcError r_rtc_transport_set_ice_parameters_random (RRtcTransportInfo * trans,
+    RPrng * prng, rboolean lite);
 R_API RRtcError r_rtc_transport_set_dtls_parameters (RRtcTransportInfo * trans,
-  RRtcRole role, RMsgDigestType md, const rchar * fingerprint, rssize size);
+    RRtcRole role, RMsgDigestType md, const rchar * fingerprint, rssize size);
 
 typedef enum {
   R_RTC_PROTO_NONE = 0,

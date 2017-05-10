@@ -195,13 +195,42 @@ r_rtc_transport_set_ice_parameters (RRtcTransportInfo * trans,
   trans->rtp.ice.pwd = r_strdup_size (pwd, psize);
   trans->rtp.ice.lite = lite;
 
-  if (trans->rtcpmux) {
-    r_free (trans->rtcp.ice.ufrag);
-    r_free (trans->rtcp.ice.pwd);
-    trans->rtcp.ice.ufrag = r_strdup_size (ufrag, usize);
-    trans->rtcp.ice.pwd = r_strdup_size (pwd, psize);
-    trans->rtcp.ice.lite = lite;
-  }
+  r_free (trans->rtcp.ice.ufrag);
+  r_free (trans->rtcp.ice.pwd);
+  trans->rtcp.ice.ufrag = r_strdup_size (ufrag, usize);
+  trans->rtcp.ice.pwd = r_strdup_size (pwd, psize);
+  trans->rtcp.ice.lite = lite;
+
+  return R_RTC_OK;
+}
+
+RRtcError
+r_rtc_transport_set_ice_parameters_random (RRtcTransportInfo * trans,
+    RPrng * prng, rboolean lite)
+{
+  const rsize usize = 4, psize = 24;
+
+  if (R_UNLIKELY (prng == NULL)) return R_RTC_INVAL;
+
+  /* ufrag */
+  r_free (trans->rtp.ice.ufrag);
+  trans->rtp.ice.ufrag = r_malloc (usize + 1);
+  r_prng_fill_base64 (prng, trans->rtp.ice.ufrag, usize);
+  trans->rtp.ice.ufrag[usize] = 0;
+
+  /* pwd */
+  r_free (trans->rtp.ice.pwd);
+  trans->rtp.ice.pwd = r_malloc (psize + 1);
+  r_prng_fill_base64 (prng, trans->rtp.ice.pwd, psize);
+  trans->rtp.ice.pwd[psize] = 0;
+
+  r_free (trans->rtcp.ice.ufrag);
+  trans->rtcp.ice.ufrag = r_strdup_size (trans->rtp.ice.ufrag, usize);
+  r_free (trans->rtcp.ice.pwd);
+  trans->rtcp.ice.pwd = r_strdup_size (trans->rtp.ice.pwd, psize);
+
+  trans->rtp.ice.lite = lite;
+  trans->rtcp.ice.lite = lite;
 
   return R_RTC_OK;
 }
