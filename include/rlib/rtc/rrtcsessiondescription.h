@@ -171,12 +171,17 @@ R_API RRtcSessionDescription * r_rtc_session_description_new_from_sdp (
 #define r_rtc_session_description_ref       r_ref_ref
 #define r_rtc_session_description_unref     r_ref_unref
 
-#define r_rtc_session_description_transport_count(sd)     r_hash_table_size ((sd)->transport)
-#define r_rtc_session_description_get_transport(sd, id)   ((RRtcTransportInfo *) r_hash_table_lookup ((sd)->transport, id))
 #define r_rtc_session_description_media_line_count(sd)    r_ptr_array_size (&(sd)->mline)
-#define r_rtc_session_description_get_media_line_by_idx(sd, idx) ((RRtcMediaLineInfo *) r_ptr_array_get (&(sd)->mline, idx))
+/* These will not return a ref */
 R_API RRtcMediaLineInfo * r_rtc_session_description_get_media_line (RRtcSessionDescription * sd,
     const rchar * mid, rssize size);
+#define r_rtc_session_description_get_media_line_by_idx(sd, idx) ((RRtcMediaLineInfo *) r_ptr_array_get (&(sd)->mline, idx))
+
+#define r_rtc_session_description_transport_count(sd)     r_hash_table_size ((sd)->transport)
+/* These will not return a ref */
+#define r_rtc_session_description_get_transport(sd, id)   ((RRtcTransportInfo *) r_hash_table_lookup ((sd)->transport, id))
+#define r_rtc_session_description_get_media_line_transport(sd, mline)         \
+  r_rtc_session_description_get_transport (sd, (mline)->trans)
 
 R_API RRtcError r_rtc_session_description_set_originator_full (RRtcSessionDescription * sd,
     const rchar * username, rssize usize, const rchar * sid, rssize sidsize,
