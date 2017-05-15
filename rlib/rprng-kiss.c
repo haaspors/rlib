@@ -19,10 +19,10 @@
 #include "config.h"
 #include "rprng-private.h"
 
-#define R_PRNG_KISS_X(prng) (prng)->data.u64[0]
-#define R_PRNG_KISS_Y(prng) (prng)->data.u64[1]
-#define R_PRNG_KISS_Z(prng) (prng)->data.u64[2]
-#define R_PRNG_KISS_C(prng) (prng)->data.u64[3]
+#define R_PRNG_KISS_X(prng) (prng)->data[0]
+#define R_PRNG_KISS_Y(prng) (prng)->data[1]
+#define R_PRNG_KISS_Z(prng) (prng)->data[2]
+#define R_PRNG_KISS_C(prng) (prng)->data[3]
 
 static ruint64
 r_prng_kiss_get (RPrng * prng)

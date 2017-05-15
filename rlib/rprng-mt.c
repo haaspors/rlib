@@ -22,8 +22,8 @@
 /* mt19937 - 64bit version */
 
 #define RPRNG_MT_SIZE         312
-#define RPRNG_MT_DATA(prng)   (prng)->data.u64
-#define RPRNG_MT_INDEX(prng)  (prng)->data.u64[RPRNG_MT_SIZE]
+#define RPRNG_MT_DATA(prng)   (prng)->data
+#define RPRNG_MT_INDEX(prng)  (prng)->data[RPRNG_MT_SIZE]
 
 static ruint64
 r_prng_mt_get (RPrng * prng)

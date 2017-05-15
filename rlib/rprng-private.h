@@ -31,12 +31,7 @@ typedef ruint64 (*RPrngGetFunc) (RPrng * prng);
 struct _RPrng {
   RRef ref;
   RPrngGetFunc get;
-  union {
-    ruint8    u8 [0];
-    ruint16   u16[0];
-    ruint32   u32[0];
-    ruint64   u64[0];
-  } data;
+  ruint64 data[0];
 };
 
 R_API_HIDDEN RPrng * r_prng_new (RPrngGetFunc get, rsize size);
