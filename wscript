@@ -215,12 +215,12 @@ def configure_options(cfg):
 def configure_os_arch(cfg):
     cfg.start_msg('Checking dest/host OS')
     if cfg.env.DEST_OS == 'win32':
-        cfg.env.RLIB_OS = 'R_OS_WIN32'
+        cfg.env.RLIB_OS = 'R_OS_WIN32              '
     elif cfg.env.DEST_OS == 'none':
-        cfg.env.RLIB_OS = 'R_OS_NONE'
+        cfg.env.RLIB_OS = 'R_OS_NONE               '
     else:
         cfg.define('_GNU_SOURCE', 1)
-        cfg.env.RLIB_OS = 'R_OS_UNIX'
+        cfg.env.RLIB_OS = 'R_OS_UNIX               '
     if cfg.env.DEST_OS == 'linux':
         cfg.env.RLIB_OS_EXTRA = '#define R_OS_LINUX              1'
     elif cfg.env.DEST_OS == 'darwin':
@@ -237,29 +237,29 @@ def configure_os_arch(cfg):
     cfg.start_msg('Checking dest/host CPU/ARCH')
     archcolor = 'CYAN'
     if cfg.env.DEST_CPU in ['x86_64', 'amd64', 'x64']:
-        cfg.env.RLIB_ARCH = 'R_ARCH_X86_64'
+        cfg.env.RLIB_ARCH = 'R_ARCH_X86_64           '
     elif cfg.env.DEST_CPU == 'x86':
-        cfg.env.RLIB_ARCH = 'R_ARCH_X86'
+        cfg.env.RLIB_ARCH = 'R_ARCH_X86              '
     elif cfg.env.DEST_CPU == 'ia':
-        cfg.env.RLIB_ARCH = 'R_ARCH_IA64'
+        cfg.env.RLIB_ARCH = 'R_ARCH_IA64             '
     elif cfg.env.DEST_CPU == 'arm':
-        cfg.env.RLIB_ARCH = 'R_ARCH_ARM'
+        cfg.env.RLIB_ARCH = 'R_ARCH_ARM              '
     elif cfg.env.DEST_CPU == 'thumb':
-        cfg.env.RLIB_ARCH = 'R_ARCH_THUMB'
+        cfg.env.RLIB_ARCH = 'R_ARCH_THUMB            '
     elif cfg.env.DEST_CPU == 'aarch64':
-        cfg.env.RLIB_ARCH = 'R_ARCH_AARCH64'
+        cfg.env.RLIB_ARCH = 'R_ARCH_AARCH64          '
     elif cfg.env.DEST_CPU == 'mips':
-        cfg.env.RLIB_ARCH = 'R_ARCH_MIPS'
+        cfg.env.RLIB_ARCH = 'R_ARCH_MIPS             '
     elif cfg.env.DEST_CPU == 'sparc':
-        cfg.env.RLIB_ARCH = 'R_ARCH_SPARC'
+        cfg.env.RLIB_ARCH = 'R_ARCH_SPARC            '
     elif cfg.env.DEST_CPU == 'alpha':
-        cfg.env.RLIB_ARCH = 'R_ARCH_ALPHA'
+        cfg.env.RLIB_ARCH = 'R_ARCH_ALPHA            '
     elif cfg.env.DEST_CPU == 'powerpc':
-        cfg.env.RLIB_ARCH = 'R_ARCH_POWERPC'
+        cfg.env.RLIB_ARCH = 'R_ARCH_POWERPC          '
     elif cfg.env.DEST_CPU == 'xtensa':
-        cfg.env.RLIB_ARCH = 'R_ARCH_XTENSA'
+        cfg.env.RLIB_ARCH = 'R_ARCH_XTENSA           '
     else:
-        cfg.env.RLIB_ARCH = 'R_ARCH_UNKNOWN'
+        cfg.env.RLIB_ARCH = 'R_ARCH_UNKNOWN          '
         archcolor = 'RED'
     cfg.end_msg(cfg.env.DEST_CPU, archcolor)
 
@@ -374,7 +374,7 @@ def configure_threads(cfg):
         cfg.env.RLIB_DEFINE_HAVE_THREADS = '/* #undef RLIB_HAVE_THREADS */'
         return
 
-    cfg.env.RLIB_DEFINE_HAVE_THREADS = '#define RLIB_HAVE_THREADS     1'
+    cfg.env.RLIB_DEFINE_HAVE_THREADS = '#define RLIB_HAVE_THREADS       1'
     cfg.check_cc(function_name='gettid',
             header_name="sys/types.h", mandatory=False)
     if cfg.check(header_name='pthread.h', mandatory=False):
@@ -407,7 +407,7 @@ def configure_signal(cfg):
         cfg.env.RLIB_DEFINE_HAVE_SIGNALS = '/* #undef RLIB_HAVE_SIGNALS */'
         return
 
-    cfg.env.RLIB_DEFINE_HAVE_SIGNALS = '#define RLIB_HAVE_SIGNALS     1'
+    cfg.env.RLIB_DEFINE_HAVE_SIGNALS = '#define RLIB_HAVE_SIGNALS       1'
     if not cfg.env.DEST_OS == 'win32':
         cfg.check_cc(function_name='timer_create', lib='rt',
                 header_name="time.h", mandatory=False)
@@ -420,7 +420,7 @@ def configure_fs(cfg):
     if cfg.env.NOFS:
         cfg.env.RLIB_DEFINE_HAVE_FILES = '/* #undef RLIB_HAVE_FILES */'
     else:
-        cfg.env.RLIB_DEFINE_HAVE_FILES = '#define RLIB_HAVE_FILES     1'
+        cfg.env.RLIB_DEFINE_HAVE_FILES = '#define RLIB_HAVE_FILES         1'
 
 def configure_networking(cfg):
     cfg.check_cc(function_name='inet_pton',

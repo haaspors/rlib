@@ -14,39 +14,39 @@ rconf = configuration_data()
 install_subdir('include', install_dir : '')
 
 # FIXME: options
-rconf.set('RLIB_DEFINE_HAVE_THREADS', '#define RLIB_HAVE_THREADS     1')
-rconf.set('RLIB_DEFINE_HAVE_SIGNALS', '#define RLIB_HAVE_SIGNALS     1')
-rconf.set('RLIB_DEFINE_HAVE_FILES',   '#define RLIB_HAVE_FILES       1')
+rconf.set('RLIB_DEFINE_HAVE_THREADS', '#define RLIB_HAVE_THREADS       1')
+rconf.set('RLIB_DEFINE_HAVE_SIGNALS', '#define RLIB_HAVE_SIGNALS       1')
+rconf.set('RLIB_DEFINE_HAVE_FILES',   '#define RLIB_HAVE_FILES         1')
 
 
 # OS
 if host_machine.system() == 'windows'
-  rconf.set('RLIB_OS', 'R_OS_WIN32')
+  rconf.set('RLIB_OS', 'R_OS_WIN32              ')
 else
-  rconf.set('RLIB_OS', 'R_OS_UNIX')
+  rconf.set('RLIB_OS', 'R_OS_UNIX               ')
   add_global_arguments('-D_GNU_SOURCE=1', language : 'c')
   #cfg.define('_GNU_SOURCE', 1)
 endif
 if host_machine.system() == 'linux'
-  rconf.set('RLIB_OS_EXTRA', '#define R_OS_LINUX       1')
+  rconf.set('RLIB_OS_EXTRA', '#define R_OS_LINUX              1')
 elif host_machine.system() == 'darwin'
-  rconf.set('RLIB_OS_EXTRA', '#define R_OS_DARWIN      1')
+  rconf.set('RLIB_OS_EXTRA', '#define R_OS_DARWIN             1')
 endif
 
 
 # ARCH
 if host_machine.cpu() == 'x86_64' or host_machine.cpu() == 'amd64' or host_machine.cpu() == 'x64'
-  rconf.set('RLIB_ARCH', 'R_ARCH_X86_64')
+  rconf.set('RLIB_ARCH', 'R_ARCH_X86_64           ')
 elif host_machine.cpu() == 'x86'
-  rconf.set('RLIB_ARCH', 'R_ARCH_X86')
+  rconf.set('RLIB_ARCH', 'R_ARCH_X86              ')
 elif host_machine.cpu() == 'ia'
-  rconf.set('RLIB_ARCH', 'R_ARCH_IA64')
+  rconf.set('RLIB_ARCH', 'R_ARCH_IA64             ')
 elif host_machine.cpu() == 'arm'
-  rconf.set('RLIB_ARCH', 'R_ARCH_ARM')
+  rconf.set('RLIB_ARCH', 'R_ARCH_ARM              ')
 elif host_machine.cpu() == 'thumb'
-  rconf.set('RLIB_ARCH', 'R_ARCH_THUMB')
+  rconf.set('RLIB_ARCH', 'R_ARCH_THUMB            ')
 elif host_machine.cpu() == 'aarch64'
-  rconf.set('RLIB_ARCH', 'R_ARCH_AARCH64')
+  rconf.set('RLIB_ARCH', 'R_ARCH_AARCH64          ')
 else
   error('architecture ' + host_machine.cpu() + 'not supported')
 endif

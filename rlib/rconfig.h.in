@@ -94,9 +94,9 @@ typedef unsigned @RINTPTR_TYPE@ ruintptr;
 #define R_AI_ALL                @R_AI_ALL@
 #define R_AI_ADDRCONFIG         @R_AI_ADDRCONFIG@
 
-#define @RLIB_OS@               1
+#define @RLIB_OS@1
 @RLIB_OS_EXTRA@
-#define @RLIB_ARCH@             1
+#define @RLIB_ARCH@1
 
 @RLIB_DEFINE_HAVE_ALLOCA_H@
 @RLIB_DEFINE_HAVE_THREADS@
