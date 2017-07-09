@@ -26,17 +26,20 @@
 #mesondefine HAVE_MACH_CLOCK_H
 #mesondefine HAVE_MACH_THREAD_POLICY_H
 #mesondefine HAVE_MACH_MACH_TIME_H
-#mesondefine HAVE_IOCTL
 #mesondefine HAVE_FCNTL
-#mesondefine HAVE_EVENTFD
+#mesondefine HAVE_IOCTL
+#mesondefine HAVE_SYSCTLBYNAME
 #mesondefine HAVE_KQUEUE
 #mesondefine HAVE_EPOLL_CTL
+#mesondefine HAVE_EVENTFD
 #mesondefine HAVE_STPCPY
 #mesondefine HAVE_STPNCPY
 #mesondefine HAVE_STRCASECMP
 #mesondefine HAVE_STRNCASECMP
 #mesondefine HAVE_STRNSTR
 #mesondefine HAVE_MEMRCHR
+#mesondefine HAVE__STRICMP
+#mesondefine HAVE__STRNICMP
 #mesondefine HAVE_PRINTF
 #mesondefine HAVE_FPRINTF
 #mesondefine HAVE_SPRINTF
@@ -48,8 +51,13 @@
 #mesondefine HAVE_ASPRINTF
 #mesondefine HAVE_VASPRINTF
 #mesondefine HAVE__VSCPRINTF
+#mesondefine HAVE_INET_PTON
+#mesondefine HAVE_INET_NTOP
+#mesondefine HAVE_TIMER_CREATE
 #mesondefine HAVE_CLOCK_GETTIME
+#mesondefine HAVE_SETITIMER
 #mesondefine HAVE_GETTID
+#mesondefine HAVE_ALARM
 #mesondefine HAVE_PTHREAD_H
 #mesondefine HAVE_PTHREAD_GETNAME_NP
 #mesondefine HAVE_PTHREAD_SETNAME_NP_WITH_TID
@@ -59,10 +67,5 @@
 #mesondefine HAVE_PTHREAD_GETAFFINITY_NP
 #mesondefine HAVE_PTHREAD_SETAFFINITY_NP
 #mesondefine HAVE_PTHREAD_ATTR_SETAFFINITY_NP
-#mesondefine HAVE_TIMER_CREATE
-#mesondefine HAVE_SETITIMER
-#mesondefine HAVE_ALARM
-#mesondefine HAVE_INET_PTON
-#mesondefine HAVE_INET_NTOP
 
 #endif /* _CONFIG_H_MESON_ */
