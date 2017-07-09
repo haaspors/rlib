@@ -356,28 +356,43 @@ if conf.has('HAVE_PTHREAD_H')
   endif
 endif
 
+rconf_defines = []
 if host_machine.system() == 'windows'
   socket_h = '#include <winsock2.h>'
   netdb_h = '#include <ws2tcpip.h>'
-  rconf.set('R_AF_UNIX'     , 1)
-  rconf.set('R_AF_BLUETOOTH', cc.get_define('AF_BTH', prefix='#include <winsock2.h>'))
+  rconf_defines += [
+    [ 'R_AF_UNIX', '1' ],
+    [ 'R_AF_BLUETOOTH', cc.get_define('AF_BTH', prefix : socket_h) ],
+  ]
 else
   socket_h = '#include <sys/socket.h>'
   netdb_h = '#include <netdb.h>'
-  rconf.set('R_AF_UNIX'     , cc.get_define('AF_UNIX', prefix : socket_h))
-  rconf.set('R_AF_BLUETOOTH', cc.get_define('AF_BLUETOOTH', prefix : socket_h))
+  rconf_defines += [
+    [ 'R_AF_UNIX',      cc.get_define('AF_UNIX', prefix : socket_h) ],
+    [ 'R_AF_BLUETOOTH', cc.get_define('AF_BLUETOOTH', prefix : socket_h) ],
+  ]
 endif
 
-rconf.set('R_AF_INET'       , cc.get_define('AF_INET', prefix : socket_h))
-rconf.set('R_AF_INET6'      , cc.get_define('AF_INET6', prefix : socket_h))
-rconf.set('R_AF_IRDA'       , cc.get_define('AF_IRDA', prefix : socket_h))
+rconf_defines += [
+  [ 'R_AF_INET',        cc.get_define('AF_INET', prefix : socket_h) ],
+  [ 'R_AF_INET6',       cc.get_define('AF_INET6', prefix : socket_h) ],
+  [ 'R_AF_IRDA',        cc.get_define('AF_IRDA', prefix : socket_h) ],
 
-rconf.set('R_AI_PASSIVE'    , cc.get_define('AI_PASSIVE', prefix : netdb_h))
-rconf.set('R_AI_CANONNAME'  , cc.get_define('AI_CANONNAME', prefix : netdb_h))
-rconf.set('R_AI_NUMERICHOST', cc.get_define('AI_NUMERICHOST', prefix : netdb_h))
-rconf.set('R_AI_V4MAPPED'   , cc.get_define('AI_V4MAPPED', prefix : netdb_h))
-rconf.set('R_AI_ALL'        , cc.get_define('AI_ALL', prefix : netdb_h))
-rconf.set('R_AI_ADDRCONFIG' , cc.get_define('AI_ADDRCONFIG', prefix : netdb_h))
+  [ 'R_AI_PASSIVE',     cc.get_define('AI_PASSIVE', prefix : netdb_h) ],
+  [ 'R_AI_CANONNAME',   cc.get_define('AI_CANONNAME', prefix : netdb_h) ],
+  [ 'R_AI_NUMERICHOST', cc.get_define('AI_NUMERICHOST', prefix : netdb_h) ],
+  [ 'R_AI_V4MAPPED',    cc.get_define('AI_V4MAPPED', prefix : netdb_h) ],
+  [ 'R_AI_ALL',         cc.get_define('AI_ALL', prefix : netdb_h) ],
+  [ 'R_AI_ADDRCONFIG',  cc.get_define('AI_ADDRCONFIG', prefix : netdb_h) ],
+]
+
+foreach d : rconf_defines
+  if d[1].strip() == ''
+    rconf.set(d[0], 'R_SOCKET_FAMILY_NONE')
+  else
+    rconf.set(d[0], d[1])
+  endif
+endforeach
 
 configure_file(input : 'config.h.meson', output : 'config.h', configuration : conf)
 
