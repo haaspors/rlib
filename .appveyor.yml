@@ -1,15 +1,27 @@
--
-    version: 1.0.{build}
-    clone_depth: 15
-    environment:
-        matrix:
-            - VARIANT: debug
-              WAFTESTCMD: test
-            - VARIANT: release
-              WAFTESTCMD: test
-            - VARIANT: release
-              WAFTESTCMD: bench
-    build_script:
-        - ps: python waf --variant=${env:VARIANT} configure --msvc_version="msvc 14.0" build
-    test_script:
-        - ps: python waf --variant=${env:VARIANT} ${env:WAFTESTCMD}
+version: '{build}'
+
+os: Visual Studio 2015
+
+environment:
+  matrix:
+    - platform: x86
+      compiler: msvc2015
+    - platform: x64
+      compiler: msvc2015
+
+install:
+  - ps: (new-object net.webclient).DownloadFile("https://www.dropbox.com/s/bbzvepq85hv47x1/ninja.exe?dl=1", "$env:USERPROFILE\ninja.exe")
+  - cmd: set "MESON_PYTHON_PATH=C:\python34-x64"
+  - cmd: set "PATH=%USERPROFILE%;%MESON_PYTHON_PATH%\Scripts;%MESON_PYTHON_PATH%;%PATH%"
+  - cmd: echo Using Python at %MESON_PYTHON_PATH%
+  - cmd: pip install meson
+  - cmd: if %compiler%==msvc2010 ( call "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\vcvarsall.bat" %platform% )
+  - cmd: if %compiler%==msvc2015 ( call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" %platform% )
+
+build_script:
+  - cmd: echo Building on %platform% with %compiler%
+  - cmd: meson --backend=ninja _build_
+  - cmd: ninja -C _build_
+
+test_script:
+  - cmd: ninja -C _build_ test
