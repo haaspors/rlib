@@ -2,12 +2,17 @@ version: '{build}'
 
 os: Visual Studio 2015
 
+platform:
+  - x86
+  - x64
+
+configuration:
+  - debug
+  - release
+
 environment:
   matrix:
-    - platform: x86
-      compiler: msvc2015
-    - platform: x64
-      compiler: msvc2015
+    - compiler: msvc2015
 
 install:
   - ps: (new-object net.webclient).DownloadFile("https://www.dropbox.com/s/bbzvepq85hv47x1/ninja.exe?dl=1", "$env:USERPROFILE\ninja.exe")
@@ -19,8 +24,8 @@ install:
   - cmd: if %compiler%==msvc2015 ( call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" %platform% )
 
 build_script:
-  - cmd: echo Building on %platform% with %compiler%
-  - cmd: meson --backend=ninja _build_
+  - cmd: echo Building %configuration% on %platform% with %compiler%
+  - cmd: meson --backend=ninja --buildtype=%configuration% _build_
   - cmd: ninja -C _build_
 
 test_script:
