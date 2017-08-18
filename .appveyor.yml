@@ -25,3 +25,4 @@ build_script:
 
 test_script:
   - cmd: ninja -C _build_ test
+  - cmd: type C:\projects\rlib\_build_\meson-logs\testlog.txt
