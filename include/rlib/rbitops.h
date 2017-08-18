@@ -41,6 +41,25 @@ ruint __inline RUINT_CTZ (ruint x)
   return (_BitScanForward (&tz, x)) ? tz : 32;
 }
 
+#if RLIB_SIZEOF_LONG == 4
+rulong __inline RULONGLONG_CLZ (ruint64 x)
+{
+  ruint y[2] = { x & RUINT32_MAX, x >> 32 };
+  rulong lz;
+
+  return (_BitScanReverse (&lz, y[1])) ? 31 - lz :
+    ((_BitScanReverse (&lz, y[0])) ? 63 - lz : 64);
+}
+
+rulong __inline RULONGLONG_CTZ (ruint64 x)
+{
+  ruint y[2] = { x & RUINT32_MAX, x >> 32 };
+  rulong tz;
+
+  return (_BitScanForward (&tz, y[0])) ? tz :
+    ((_BitScanForward (&tz, y[1])) ? tz + 32 : 64);
+}
+#else
 rulong __inline RULONGLONG_CLZ (ruint64 x)
 {
   rulong lz;
@@ -52,11 +71,26 @@ rulong __inline RULONGLONG_CTZ (ruint64 x)
   rulong tz;
   return (_BitScanForward64 (&tz, x)) ? tz : 64;
 }
+#endif
 
 #define RUINT_POPCOUNT(x)       (ruint)__popcnt (x)
 #define RUINT_PARITY(x)         (__popcnt (x) & 1)
+#if RLIB_SIZEOF_LONG == 4
+ruint __inline RULONGLONG_POPCOUNT (ruint64 x)
+{
+  ruint y[2] = { x & RUINT32_MAX, x >> 32 };
+  return (ruint)__popcnt (y[0]) + __popcnt (y[1]);
+}
+
+rboolean __inline RULONGLONG_PARITY (ruint64 x)
+{
+  ruint y[2] = { x & RUINT32_MAX, x >> 32 };
+  return ((__popcnt (y[0]) + __popcnt (y[1])) & 1) != 0;
+}
+#else
 #define RULONGLONG_POPCOUNT(x)  (ruint)__popcnt64 (x)
 #define RULONGLONG_PARITY(x)    (__popcnt64 (x) & 1)
+#endif
 #if RLIB_SIZEOF_LONG == 4
 #define RULONG_CLZ(x)           RUINT_CLZ (x)
 #define RULONG_CTZ(x)           RUINT_CTZ (x)
