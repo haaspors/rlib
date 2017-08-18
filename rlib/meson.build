@@ -110,7 +110,7 @@ rlibst = static_library(rlib_name,
   install : true)
 
 rlibsh = shared_library(rlib_name,
-  objects : rlibst.extract_all_objects(),
+  sources : [ rlib_sources ],
   include_directories : inc,
   dependencies : [ libm, libdl, libthread, librt ],
   version : rlib_version,
