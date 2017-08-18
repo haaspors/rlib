@@ -62,64 +62,49 @@ Also you'll need [python](https://www.python.org) for running the build system.
 
 Building
 --------
-rlib uses [waf](https://waf.io) as build system.
+rlib uses [meson](https://mesonbuild.com) as build system.
+Meson supports multiple backends, but you'll most likely use `ninja`.
+You can also make meson generate Visual Studio or XCode project files if you like.
+See more on that on the meson build system project website!
 
-To configure and build both debug and release build, and then install:
+To configure and build run (`_build_` is output build directory):
 ```
-python waf configure buildall install
+meson _build_
+ninja -C _build_
+```
+To run unit tests:
+```
+ninja -C _build_ test
+```
+To install rlib to prefix (E.g. ):
+```
+ninja -C _build_ install
 ```
 
 ### Build step by step
-
-#### Distclean
-Dist clean will clean all configuration, build and cached files.
-```
-python waf distclean
-```
 
 #### Configure
 The configure step is only needed to run once, to generate the appropriate build environment.
 This is basically a step to detect what and how to build stuff for your os/platform/cpu.
 ```
-python waf configure
+meson _build_
 ```
 
 #### Build
-There are two defined variants you can build.
-* release - (default) no debug symbols and some optimizations (`-O2`)
-* debug - includes debug symbols and no optimization
+There are multiple defined build types.
+* debugoptimized - (default) debug symbols and some optimizations (`-g -O2`)
+* debug - includes debug symbols and no optimization (`-g`)
+* release - no debug symbols and some optimizations (`-O2`)
+* ...
 
-The following will build the default variant:
+So to configure and build release:
 ```
-python waf build
-```
-which is equivalent to:
-```
-python waf --variant=release build
-```
-To build debug only:
-```
-python waf -d build
-```
-or
-```
-python waf --variant=debug build
-```
-To build all variants:
-```
-python waf buildall
-```
-
-#### Clean
-Clean all buildfiles. Could be used if you want to force rebuilding without reconfiguring.
-```
-python waf clean
+meson --buildtype release _build_
 ```
 
 #### Test
-rlib has a testsuite obviously and you can both build and run the test with the test command. This is essentially the
-same as build, so running debug variant add `-d`. (But there is no `testall` command)
+rlib has a testsuite obviously. After configuring, just run:
 ```
-python waf test
+ninja -C _build_ test
 ```
 
