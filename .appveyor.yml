@@ -27,7 +27,12 @@ build_script:
   - cmd: echo Building %configuration% on %platform% with %compiler%
   - cmd: meson --backend=ninja --buildtype=%configuration% _build_
   - cmd: ninja -C _build_
+  - cmd: 7z a rlib.zip _build_ -xr!*@*
 
 test_script:
   - cmd: ninja -C _build_ test
   - cmd: type C:\projects\rlib\_build_\meson-logs\testlog.txt
+
+artifacts:
+  - path: rlib.zip
+    name: rlib
