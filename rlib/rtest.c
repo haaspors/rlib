@@ -289,32 +289,6 @@ r_test_get_local_tests (rsize * tests, rsize * total)
   return begin;
 }
 
-RSList *
-r_test_get_local_tests_filtered (const rchar * filter, rsize * count)
-{
-  RSList * ret = NULL;
-  const RTest * t;
-  rsize defs, i;
-
-  if (R_LIKELY (count != NULL)) *count = 0;
-  if (R_UNLIKELY (filter == NULL)) return NULL;
-
-  if ((t = r_test_get_local_tests (&defs, NULL)) != NULL) {
-    rchar fullname[1024];
-
-    for (i = 0; i < defs; i++, t++) {
-      if (r_test_fill_path (t, fullname, sizeof (fullname)) &&
-          r_str_match_simple_pattern (fullname, -1, filter)) {
-        ret = r_slist_prepend (ret, (rpointer)t);
-        if (count != NULL)
-          (*count)++;
-      }
-    }
-  }
-
-  return ret;
-}
-
 #if defined (R_OS_WIN32)
 typedef struct {
   const RTest * test;

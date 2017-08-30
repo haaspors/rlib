@@ -227,7 +227,6 @@ R_API rboolean r_test_fill_path (const RTest * test, rchar * path, rsize size);
 
 R_API rsize r_test_get_local_test_count (rsize * total);
 R_API const RTest * r_test_get_local_tests (rsize * tests, rsize * total);
-R_API RSList * r_test_get_local_tests_filtered (const rchar * filter, rsize * count);
 
 R_API RTestRunState r_test_run_fork (const RTest * test, rsize __i,
     rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);

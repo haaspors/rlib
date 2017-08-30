@@ -96,23 +96,6 @@ RTEST (rtest, assert_logs, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rtest, local_tests_filtered, RTEST_FAST)
-{
-  RSList * res;
-  rsize count = 0;
-
-  r_assert_cmpptr (r_test_get_local_tests_filtered (NULL, NULL), ==, NULL);
-  r_assert_cmpptr ((res = r_test_get_local_tests_filtered ("*", NULL)), !=, NULL); r_slist_destroy (res);
-  r_assert_cmpptr ((res = r_test_get_local_tests_filtered ("/rtest/local_tests_filtered", &count)), !=, NULL);
-  r_assert_cmpuint (count, ==, 1);
-  r_assert_cmpptr (r_slist_data (res), ==, &_RTEST_DATA_NAME (rtest, local_tests_filtered));
-  r_slist_destroy (res);
-  r_assert_cmpptr ((res = r_test_get_local_tests_filtered ("/rtest/*", &count)), !=, NULL);
-  r_assert_cmpuint (count, ==, 6);
-  r_slist_destroy (res);
-}
-RTEST_END;
-
 /********************************************************/
 /* Main entry point and test runner                     */
 /********************************************************/
