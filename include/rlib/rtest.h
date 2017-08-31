@@ -193,19 +193,22 @@ int main (int argc, rchar ** argv) {                                          \
       }                                                                       \
       break;                                                                  \
     case R_OPTION_PARSE_OK:                                                   \
-      if (filter == NULL)                                                     \
-        filter = r_strdup ("*");                                              \
+      {                                                                       \
+        const RTest * tests;                                                  \
+        rsize count;                                                          \
                                                                               \
-      if ((report = r_test_run_local_tests (R_TEST_ALL_MASK,                  \
-              filter, igskip)) != NULL) {                                     \
-        FILE * f = stdout;                                                    \
-        if (output != NULL && !r_str_equals (output, "-"))                    \
-          f = fopen (output, "w");                                            \
-        r_test_report_print (report, verbose, f);                             \
-        if (f != stdout)                                                      \
-          fclose (f);                                                         \
-        ret = report->fail + report->error;                                   \
-        r_test_report_free (report);                                          \
+        if ((tests = r_test_get_local_tests (&count, NULL)) != NULL &&        \
+            (report = r_test_run_tests (tests, count, R_TEST_ALL_MASK,        \
+                filter, igskip)) != NULL) {                                   \
+          FILE * f = stdout;                                                  \
+          if (output != NULL && !r_str_equals (output, "-"))                  \
+            f = fopen (output, "w");                                          \
+          r_test_report_print (report, verbose, f);                           \
+          if (f != stdout)                                                    \
+            fclose (f);                                                       \
+          ret = report->fail + report->error;                                 \
+          r_test_report_free (report);                                        \
+        }                                                                     \
       }                                                                       \
       break;                                                                  \
     default:                                                                  \
@@ -226,14 +229,16 @@ R_API rchar * r_test_dup_path (const RTest * test) R_ATTR_MALLOC;
 R_API rboolean r_test_fill_path (const RTest * test, rchar * path, rsize size);
 
 R_API rsize r_test_get_local_test_count (rsize * total);
-R_API const RTest * r_test_get_local_tests (rsize * tests, rsize * total);
+R_API const RTest * r_test_get_local_tests (rsize * tests, rsize * runs);
 
 R_API RTestRunState r_test_run_fork (const RTest * test, rsize __i,
     rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);
 R_API RTestRunState r_test_run_nofork (const RTest * test, rsize __i,
     rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);
-R_API RTestReport * r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data);
-R_API RTestReport * r_test_run_local_tests (RTestType type, const rchar * filter, rboolean ignore_skip);
+R_API RTestReport * r_test_run_tests_full (const RTest * tests, rsize count,
+    RTestFilterFunc filter, rpointer data);
+R_API RTestReport * r_test_run_tests (const RTest * tests, rsize count,
+    RTestType type, const rchar * filter, rboolean ignore_skip);
 
 R_API void r_test_report_print (RTestReport * report, rboolean verbose, FILE * f);
 #define r_test_report_free(report)  r_free (report)

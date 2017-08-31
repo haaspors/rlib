@@ -245,7 +245,7 @@ r_test_find_magic_sym (RMODULE mod)
 }
 
 const RTest *
-r_test_get_local_tests (rsize * tests, rsize * total)
+r_test_get_local_tests (rsize * tests, rsize * runs)
 {
   const RTest * begin, * end, * sym, * cur;
   rsize count;
@@ -283,8 +283,8 @@ r_test_get_local_tests (rsize * tests, rsize * total)
 
   if (tests != NULL)
     *tests = (end - begin) + 1;
-  if (total != NULL)
-    *total = count;
+  if (runs != NULL)
+    *runs = count;
 
   return begin;
 }
@@ -730,13 +730,12 @@ r_test_run_nofork (const RTest * test, rsize __i, rboolean notimeout,
 }
 
 RTestReport *
-r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data)
+r_test_run_tests_full (const RTest * tests, rsize count,
+    RTestFilterFunc filter, rpointer data)
 {
   typedef RTestRunState (*RTestRunFunc) (const RTest *, rsize, rboolean,
       RTestLastPos *, RTestLastPos *, int * pid);
   RTestRunFunc runner = r_test_run_nofork;
-  rsize defs, total, i;
-  const RTest * begin;
   RTestReport * ret;
   rboolean notimeout;
 
@@ -749,48 +748,56 @@ r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data)
     notimeout = TRUE;
   }
 
-  if (filter != NULL && (begin = r_test_get_local_tests (&defs, &total)) != NULL) {
-    ret = r_malloc0 (sizeof (RTestReport) + (sizeof (RTestRun) * total));
-    RTestRun * run = ret->runs;
+  if (filter != NULL) {
+    rsize i, cur = 0;
 
-    ret->total = total;
+    ret = r_malloc0 (sizeof (RTestReport) + (sizeof (RTestRun) * count * 2));
+
+    ret->total = count * 2;
     ret->start = r_time_get_ts_monotonic ();
-    for (i = 0; i < defs; i++) {
-      const RTest * test = &begin[i];
+    for (i = 0; i < count; i++) {
       rsize it_start, it_end, it;
 
-      if (test->type & R_TEST_FLAG_LOOP) {
-        it_start = test->loop_start;
-        it_end = test->loop_end;
+      if (tests[i].magic != _RTEST_MAGIC) continue;
+
+      if (tests[i].type & R_TEST_FLAG_LOOP) {
+        it_start = tests[i].loop_start;
+        it_end = tests[i].loop_end;
       } else {
         it_start = 0;
         it_end = 1;
       }
 
-      for (it = it_start; it < it_end; it++, run++) {
-        run->__i = it;
-        run->test = test;
+      if (cur + it_end - it_start > ret->total) {
+        ret->total = (cur * 2) + it_end - it_start;
+        ret = r_realloc (ret,
+            sizeof (RTestReport) + (sizeof (RTestRun) * ret->total));
+      }
 
-        if (filter (test, it, data)) {
+      for (it = it_start; it < it_end; it++, cur++) {
+        ret->runs[cur].__i = it;
+        ret->runs[cur].test = &tests[i];
+
+        if (filter (&tests[i], it, data)) {
           ret->run++;
-          run->state = R_TEST_RUN_STATE_RUNNING;
-          run->start = r_time_get_ts_monotonic ();
-          run->lastpos.ts = run->start;
-          run->lastpos.file = __FILE__;
-          run->lastpos.line = __LINE__;
-          run->lastpos.func = R_STRFUNC;
-          run->lastpos.assert = FALSE;
+          ret->runs[cur].state = R_TEST_RUN_STATE_RUNNING;
+          ret->runs[cur].start = r_time_get_ts_monotonic ();
+          ret->runs[cur].lastpos.ts = ret->runs[cur].start;
+          ret->runs[cur].lastpos.file = __FILE__;
+          ret->runs[cur].lastpos.line = __LINE__;
+          ret->runs[cur].lastpos.func = R_STRFUNC;
+          ret->runs[cur].lastpos.assert = FALSE;
 
 #ifdef R_OS_UNIX
-          run->pid = getpid ();
+          ret->runs[cur].pid = getpid ();
 #else
-          run->pid = 0;
+          ret->runs[cur].pid = 0;
 #endif
-          run->state = runner (test, it, notimeout,
-              &run->lastpos, &run->failpos, &run->pid);
-          run->end = r_time_get_ts_monotonic ();
+          ret->runs[cur].state = runner (ret->runs[cur].test, it, notimeout,
+              &ret->runs[cur].lastpos, &ret->runs[cur].failpos, &ret->runs[cur].pid);
+          ret->runs[cur].end = r_time_get_ts_monotonic ();
 
-          switch (run->state) {
+          switch (ret->runs[cur].state) {
             case R_TEST_RUN_STATE_SKIP:
               /* This shouldn't happen */
               ret->run--;
@@ -808,13 +815,14 @@ r_test_run_local_tests_full (RTestFilterFunc filter, rpointer data)
               break;
           }
         } else {
-          run->start = run->end = r_time_get_ts_monotonic ();
-          run->state = R_TEST_RUN_STATE_SKIP;
+          ret->runs[cur].start = ret->runs[cur].end = r_time_get_ts_monotonic ();
+          ret->runs[cur].state = R_TEST_RUN_STATE_SKIP;
           ret->skip++;
         }
       }
     }
     ret->end = r_time_get_ts_monotonic ();
+    ret->total = cur;
   } else {
     ret = NULL;
   }
@@ -832,27 +840,31 @@ static rboolean
 r_test_filter_default (const RTest * test, rsize __i, rpointer data)
 {
   RTestFilterCtx * ctx = data;
-  rboolean noskip = !test->skip || ctx->ignore_skip;
-  rboolean type = (ctx->type & test->type) != 0;
-  rchar fullname[1024];
+  rchar fullname[1024], * wf;
+  rboolean ret;
 
   (void)__i;
 
-  return type && noskip &&
-    r_test_fill_path (test, fullname, sizeof (fullname)) &&
-    r_str_match_simple_pattern (fullname, -1, ctx->filter);
+  if ((ctx->type & test->type) == 0 || (!ctx->ignore_skip && test->skip))
+    return FALSE;
+  if (ctx->filter == NULL)
+    return TRUE;
+
+  fullname[0] = 0;
+  r_test_fill_path (test, fullname, sizeof (fullname));
+  wf = r_strprintf ("*%s*", ctx->filter);
+  ret = r_str_match_simple_pattern (fullname, -1, wf);
+  r_free (wf);
+
+  return ret;
 }
 
 RTestReport *
-r_test_run_local_tests (RTestType type, const rchar * filter, rboolean ignore_skip)
+r_test_run_tests (const RTest * tests, rsize count,
+    RTestType type, const rchar * filter, rboolean ignore_skip)
 {
-  rchar * wf = r_strprintf ("*%s*", filter);
-  RTestFilterCtx ctx = { type, wf, ignore_skip };
-  RTestReport * ret;
-
-  ret = r_test_run_local_tests_full (r_test_filter_default, &ctx);
-  r_free (wf);
-  return ret;
+  RTestFilterCtx ctx = { type, filter, ignore_skip };
+  return r_test_run_tests_full (tests, count, r_test_filter_default, &ctx);
 }
 
 void
