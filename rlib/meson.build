@@ -23,6 +23,7 @@ rlib_sources = [
   'rmem.c',
   'rmemfile.c',
   'rmemscan.c',
+  'rmodule.c',
   'rmpint.c',
   'rmpint_montgomery.c',
   'rmsgdigest.c',

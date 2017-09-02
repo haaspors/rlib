@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,61 +22,15 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
-#ifdef R_OS_WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-
-typedef HMODULE   RMODULE;
-static inline rboolean r_module_open (RMODULE * mod, const rchar * path)
-{
-  return GetModuleHandleExA (0, path, mod);
-}
-static inline rpointer r_module_lookup (RMODULE mod, const rchar * sym)
-{
-  return GetProcAddress (mod, sym);
-}
-static inline void r_module_close (RMODULE mod)
-{
-  FreeLibrary (mod);
-}
-#elif HAVE_DLFCN_H
-#include <dlfcn.h>
-
-typedef rpointer RMODULE;
-static inline rboolean r_module_open (RMODULE * mod, const rchar * path)
-{
-  *mod = dlopen (path, RTLD_NOW);
-  return *mod != NULL;
-}
-static inline rpointer r_module_lookup (RMODULE mod, const rchar * sym)
-{
-  return dlsym (mod, sym);
-}
-static inline void r_module_close (RMODULE mod)
-{
-  dlclose (mod);
-}
-#else
-typedef rpointer RMODULE;
-static inline rboolean r_module_open (RMODULE * mod, const rchar * path)
-{
-  (void) mod;
-  (void) path;
-  return FALSE;
-}
-static inline rpointer r_module_lookup (RMODULE mod, const rchar * sym)
-{
-  (void) mod;
-  (void) sym;
-  return NULL;
-}
-static inline void r_module_close (RMODULE mod)
-{
-  (void) mod;
-}
-#endif
+#include <rlib/rtypes.h>
 
 R_BEGIN_DECLS
+
+typedef rpointer RMODULE;
+
+R_API rboolean r_module_open (RMODULE * mod, const rchar * path);
+R_API rpointer r_module_lookup (RMODULE mod, const rchar * sym);
+R_API void r_module_close (RMODULE mod);
 
 R_END_DECLS
 
