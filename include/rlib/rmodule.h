@@ -28,7 +28,12 @@ R_BEGIN_DECLS
 
 typedef rpointer RMODULE;
 
-R_API rboolean r_module_open (RMODULE * mod, const rchar * path);
+typedef enum {
+  R_MODULE_ERROR_OK = 0,
+  R_MODULE_ERROR_NOT_FOUND,
+} RModuleError;
+
+R_API RMODULE r_module_open (const rchar * path, rboolean lazy, RModuleError * err);
 R_API rpointer r_module_lookup (RMODULE mod, const rchar * sym);
 R_API void r_module_close (RMODULE mod);
 

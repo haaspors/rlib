@@ -41,7 +41,7 @@ r_networking_init (void)
 #endif
 
 #ifdef R_OS_WIN32
-  if (r_module_open (&g_r_win32_ws2_32_dll, "ws2_32.dll")) {
+  if ((g_r_win32_ws2_32_dll = r_module_open ("ws2_32.dll", TRUE, NULL)) != NULL) {
     r_win32_inet_pton = r_module_lookup (g_r_win32_ws2_32_dll, "inet_pton");
     r_win32_inet_ntop = r_module_lookup (g_r_win32_ws2_32_dll, "inet_ntop");
   } else {

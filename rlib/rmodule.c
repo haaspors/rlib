@@ -17,16 +17,33 @@
  */
 
 #include "config.h"
+#include "rlib-private.h"
 #include <rlib/rmodule.h>
+
+#define R_LOG_CAT_DEFAULT &rlib_logcat
 
 #if defined (R_OS_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-rboolean
-r_module_open (RMODULE * mod, const rchar * path)
+RMODULE
+r_module_open (const rchar * path, rboolean lazy, RModuleError * err)
 {
-  return GetModuleHandleExA (0, path, mod);
+  HMODULE mod;
+
+  (void) lazy;
+
+  if (err != NULL)
+    *err = R_MODULE_ERROR_OK;
+
+  if (!GetModuleHandleExA (0, path, &mod)) {
+    if ((mod = LoadLibraryEx (path, NULL, 0)) == NULL) {
+      if (err != NULL)
+        *err = R_MODULE_ERROR_NOT_FOUND;
+    }
+  }
+
+  return (RMODULE)mod;
 }
 rpointer
 r_module_lookup (RMODULE mod, const rchar * sym)
@@ -41,11 +58,17 @@ r_module_close (RMODULE mod)
 #elif defined (HAVE_DLFCN_H)
 #include <dlfcn.h>
 
-rboolean
-r_module_open (RMODULE * mod, const rchar * path)
+RMODULE
+r_module_open (const rchar * path, rboolean lazy, RModuleError * err)
 {
-  *mod = dlopen (path, RTLD_NOW);
-  return *mod != NULL;
+  RMODULE mod;
+
+  if ((mod = dlopen (path, lazy ? RTLD_LAZY : RTLD_NOW)) == NULL) {
+    if (err != NULL)
+      *err = R_MODULE_ERROR_NOT_FOUND;
+  }
+
+  return mod;
 }
 rpointer
 r_module_lookup (RMODULE mod, const rchar * sym)
@@ -59,10 +82,11 @@ r_module_close (RMODULE mod)
 }
 #else
 rboolean
-r_module_open (RMODULE * mod, const rchar * path)
+r_module_open (const rchar * path, rboolean lazy, RModuleError * err)
 {
-  (void) mod;
   (void) path;
+  (void) lazy;
+  (void) err;
   return FALSE;
 }
 rpointer

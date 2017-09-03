@@ -250,7 +250,7 @@ r_test_get_local_tests (rsize * tests, rsize * runs)
   const RTest * begin, * end, * sym, * cur;
   rsize count;
   RMODULE mod;
-  if (!r_module_open (&mod, NULL))
+  if ((mod = r_module_open (NULL, TRUE, NULL)) == NULL)
     return NULL;
 
   sym = r_test_find_magic_sym (mod);

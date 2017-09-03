@@ -40,12 +40,14 @@
 #endif
 
 
-#if defined(R_OS_WIN32)
+#if defined (R_OS_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 typedef void (WINAPI * r_win32_get_system_time) (LPFILETIME ft);
 static r_win32_get_system_time  g__r_timer_win32GetSystemTime = GetSystemTimeAsFileTime;
 static ruint                    g__r_time_ts_monotonic_num    = 100;
 static ruint                    g__r_time_ts_monotonic_denom  = 1;
-#elif defined(HAVE_MACH_MACH_TIME_H)
+#elif defined (HAVE_MACH_MACH_TIME_H)
 static ruint                    g__r_time_ts_monotonic_denom  = 1;
 #endif
 
@@ -55,7 +57,7 @@ r_time_init (void)
 #if defined(R_OS_WIN32)
   LARGE_INTEGER frequency;
   RMODULE mod;
-  if (r_module_open (&mod, "kernel32.dll")) {
+  if ((mod = r_module_open ("kernel32.dll", TRUE, NULL)) != NULL) {
     rpointer win32gst = r_module_lookup (mod, "GetSystemTimePreciseAsFileTime");
     if (win32gst != NULL)
       g__r_timer_win32GetSystemTime = (r_win32_get_system_time) win32gst;
