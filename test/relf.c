@@ -80,6 +80,27 @@ RTEST (relf, phdr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (relf, find_shdr, RTEST_FAST)
+{
+  RElfParser * parser;
+  RElf64SHdr * hdr;
+
+  r_assert_cmpptr ((parser =
+        r_elf_parser_new_from_mem (elf_o, sizeof (elf_o))), !=, NULL);
+
+  r_assert_cmpptr ((hdr = r_elf_parser_find_shdr64 (parser, "foobar", -1)), ==, NULL);
+  r_assert_cmpptr ((hdr = r_elf_parser_find_shdr64 (parser, ".text", -1)), !=, NULL);
+  r_assert_cmpuint (hdr->type, ==, R_ELF_STYPE_PROGBITS);
+  r_assert_cmpstr (r_elf_parser_shdr64_get_name (parser, hdr), ==, ".text");
+
+  r_assert_cmpptr ((hdr = r_elf_parser_find_shdr64 (parser, ".data", -1)), !=, NULL);
+  r_assert_cmpuint (hdr->type, ==, R_ELF_STYPE_PROGBITS);
+  r_assert_cmpstr (r_elf_parser_shdr64_get_name (parser, hdr), ==, ".data");
+
+  r_elf_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (relf, shdr, RTEST_FAST)
 {
   RElfParser * parser;

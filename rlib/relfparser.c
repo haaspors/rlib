@@ -22,6 +22,7 @@
 #include <rlib/ratomic.h>
 #include <rlib/rmem.h>
 #include <rlib/rmemfile.h>
+#include <rlib/rstr.h>
 
 struct _RElfParser {
   rauint refcount;
@@ -387,6 +388,50 @@ r_elf_parser_ehdr64_get_shdr64 (RElfParser * parser, RElf64EHdr * ehdr, ruint16 
   ptr += ehdr->shoff;
   ptr += ehdr->shentsize * idx;
   return (RElf64SHdr *)ptr;
+}
+
+RElf32SHdr *
+r_elf_parser_ehdr32_find_shdr32 (RElfParser * parser, RElf32EHdr * ehdr,
+    const rchar * name, rssize size)
+{
+  ruint16 i;
+  ruint8 * ptr = parser->mem;
+  if (ehdr == NULL) {
+    if ((ehdr = r_elf_parser_get_ehdr32 (parser)) == NULL)
+      return NULL;
+  }
+  ptr += ehdr->shoff;
+
+  for (i = 0; i < ehdr->shnum; i++) {
+    RElf32SHdr * shdr = (RElf32SHdr *)(ptr + ehdr->shentsize * i);
+    rchar * secname = r_elf_parser_ehdr32_strtbl_get_str (parser, ehdr, shdr->name);
+    if (r_strcmp_size (name, size, secname, -1) == 0)
+      return shdr;
+  }
+
+  return NULL;
+}
+
+RElf64SHdr *
+r_elf_parser_ehdr64_find_shdr64 (RElfParser * parser, RElf64EHdr * ehdr,
+    const rchar * name, rssize size)
+{
+  ruint16 i;
+  ruint8 * ptr = parser->mem;
+  if (ehdr == NULL) {
+    if ((ehdr = r_elf_parser_get_ehdr64 (parser)) == NULL)
+      return NULL;
+  }
+  ptr += ehdr->shoff;
+
+  for (i = 0; i < ehdr->shnum; i++) {
+    RElf64SHdr * shdr = (RElf64SHdr *)(ptr + ehdr->shentsize * i);
+    rchar * secname = r_elf_parser_ehdr64_strtbl_get_str (parser, ehdr, shdr->name);
+    if (r_strcmp_size (name, size, secname, -1) == 0)
+      return shdr;
+  }
+
+  return NULL;
 }
 
 rchar *

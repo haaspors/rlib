@@ -29,7 +29,6 @@
 /* FIXME: Figure out how to read non-native endianess formats */
 /* FIXME: Add high level API: */
 /*    * TODO: Add find symbol by name */
-/*    * TODO: Add find section by name */
 /*    * TODO: Add find corresponding rel/rela section for text/data section */
 /* FIXME: Go over ELF chapter 2 loading and dynamic linking */
 /*    * TODO: Improve Program header API */
@@ -78,10 +77,16 @@ R_API ruint8 * r_elf_parser_get_section_header_table (RElfParser * parser);
   r_elf_parser_ehdr32_get_shdr32 (parser, NULL, idx)
 #define r_elf_parser_get_shdr64(parser, idx)                                  \
   r_elf_parser_ehdr64_get_shdr64 (parser, NULL, idx)
+#define r_elf_parser_find_shdr32(parser, name, size)                          \
+  r_elf_parser_ehdr32_find_shdr32 (parser, NULL, name, size)
+#define r_elf_parser_find_shdr64(parser, name, size)                          \
+  r_elf_parser_ehdr64_find_shdr64 (parser, NULL, name, size)
 R_API ruint16 r_elf_parser_ehdr32_section_header_count (RElfParser * parser, RElf32EHdr * ehdr);
 R_API ruint16 r_elf_parser_ehdr64_section_header_count (RElfParser * parser, RElf64EHdr * ehdr);
 R_API RElf32SHdr * r_elf_parser_ehdr32_get_shdr32 (RElfParser * parser, RElf32EHdr * ehdr, ruint16 idx);
 R_API RElf64SHdr * r_elf_parser_ehdr64_get_shdr64 (RElfParser * parser, RElf64EHdr * ehdr, ruint16 idx);
+R_API RElf32SHdr * r_elf_parser_ehdr32_find_shdr32 (RElfParser * parser, RElf32EHdr * ehdr, const rchar * name, rssize size);
+R_API RElf64SHdr * r_elf_parser_ehdr64_find_shdr64 (RElfParser * parser, RElf64EHdr * ehdr, const rchar * name, rssize size);
 R_API rchar * r_elf_parser_shdr32_get_name (RElfParser * parser, RElf32SHdr * shdr);
 R_API rchar * r_elf_parser_shdr64_get_name (RElfParser * parser, RElf64SHdr * shdr);
 R_API ruint8 * r_elf_parser_shdr32_get_data (RElfParser * parser, RElf32SHdr * shdr, rsize * size);
