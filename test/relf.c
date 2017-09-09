@@ -133,8 +133,8 @@ RTEST (relf, strtbl, RTEST_FAST)
 
   r_assert_cmpptr ((parser =
         r_elf_parser_new_from_mem (elf_o, sizeof (elf_o))), !=, NULL);
-  r_assert_cmpptr (r_elf_parser_ehdr32_get_strtbl (parser, NULL), ==, NULL);
-  r_assert_cmpptr ((hdr = r_elf_parser_ehdr64_get_strtbl (parser, NULL)), !=, NULL);
+  r_assert_cmpptr (r_elf_parser_get_strtbl32 (parser), ==, NULL);
+  r_assert_cmpptr ((hdr = r_elf_parser_get_strtbl64 (parser)), !=, NULL);
 
   r_assert_cmpuint (hdr->name, ==, 17);
   r_assert_cmpuint (hdr->type, ==, R_ELF_STYPE_STRTAB);

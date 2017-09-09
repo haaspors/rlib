@@ -24,50 +24,54 @@
 #include <rlib/rmemfile.h>
 #include <rlib/rstr.h>
 
+#define RELF32_IDX  0
+#define RELF64_IDX  1
+
 struct _RElfParser {
   rauint refcount;
   RMemFile * file;
   rpointer mem;
   rsize size;
+  int elfidx;
 };
 
-static rboolean
+static int
 _check_elf32_header (RElf32EHdr * hdr, rsize size)
 {
   rsize phsize, shsize;
 
   if (R_UNLIKELY (size < sizeof (RElf32EHdr) || size < hdr->ehsize))
-    return FALSE;
+    return -1;
 
   phsize = hdr->phentsize * hdr->phnum;
   shsize = hdr->shentsize + hdr->shnum;
   if (size < hdr->ehsize + phsize + shsize)
-    return FALSE;
+    return -1;
   if (size < hdr->phoff + phsize || size < hdr->shoff + shsize)
-    return FALSE;
+    return -1;
 
-  return TRUE;
+  return RELF32_IDX;
 }
 
-static rboolean
+static int
 _check_elf64_header (RElf64EHdr * hdr, rsize size)
 {
   rsize phsize, shsize;
 
   if (R_UNLIKELY (size < sizeof (RElf64EHdr) || size < hdr->ehsize))
-    return FALSE;
+    return -1;
 
   phsize = hdr->phentsize * hdr->phnum;
   shsize = hdr->shentsize + hdr->shnum;
   if (size < hdr->ehsize + phsize + shsize)
-    return FALSE;
+    return -1;
   if (size < hdr->phoff + phsize || size < hdr->shoff + shsize)
-    return FALSE;
+    return -1;
 
-  return TRUE;
+  return RELF64_IDX;
 }
 
-static rboolean
+static int
 _check_elf_header (rpointer mem, rsize size)
 {
   if (size >= R_ELF_NIDENT && mem != NULL) {
@@ -81,29 +85,31 @@ _check_elf_header (rpointer mem, rsize size)
           return _check_elf64_header (mem, size);
         case R_ELF_CLASSNONE:
         default:
-          return FALSE;
+         break;;
       }
     }
   }
 
-  return FALSE;
+  return -1;
 }
 
 static RElfParser *
 r_elf_parser_new_from_mem_file (RMemFile * file)
 {
   RElfParser * ret = NULL;
+  int elfidx;
 
   if (file != NULL) {
     rpointer mem = r_mem_file_get_mem (file);
     rsize size = r_mem_file_get_size (file);
 
-    if (_check_elf_header (mem, size)) {
+    if ((elfidx = _check_elf_header (mem, size)) >= 0) {
       if (R_LIKELY (ret = r_mem_new (RElfParser))) {
         r_atomic_uint_store (&ret->refcount, 1);
         ret->file = r_mem_file_ref (file);
         ret->mem = mem;
         ret->size = size;
+        ret->elfidx = elfidx;
       }
     }
   }
@@ -145,13 +151,15 @@ RElfParser *
 r_elf_parser_new_from_mem (rpointer mem, rsize size)
 {
   RElfParser * ret = NULL;
+  int elfidx;
 
-  if (_check_elf_header (mem, size)) {
+  if ((elfidx = _check_elf_header (mem, size)) >= 0) {
     if (R_LIKELY (ret = r_mem_new (RElfParser))) {
       r_atomic_uint_store (&ret->refcount, 1);
       ret->file = NULL;
       ret->mem = mem;
       ret->size = size;
+      ret->elfidx = elfidx;
     }
   }
 
@@ -219,216 +227,180 @@ r_elf_parser_get_elf_header (RElfParser * parser)
 RElf32EHdr *
 r_elf_parser_get_ehdr32 (RElfParser * parser)
 {
-  return r_elf_parser_get_class (parser) == R_ELF_CLASS32 ? parser->mem : NULL;
+  return parser->elfidx == RELF32_IDX ? parser->mem : NULL;
 }
 
 RElf64EHdr *
 r_elf_parser_get_ehdr64 (RElfParser * parser)
 {
-  return r_elf_parser_get_class (parser) == R_ELF_CLASS64 ? parser->mem : NULL;
+  return parser->elfidx == RELF64_IDX ? parser->mem : NULL;
+}
+
+static ruint16
+r_elf_parser_ehdr32_prg_header_count (RElfParser * parser)
+{
+  RElf32EHdr * ehdr = r_elf_parser_get_ehdr32 (parser);
+  return ehdr->phnum;
+}
+
+static ruint16
+r_elf_parser_ehdr64_prg_header_count (RElfParser * parser)
+{
+  RElf64EHdr * ehdr = r_elf_parser_get_ehdr64 (parser);
+  return ehdr->phnum;
 }
 
 ruint16
 r_elf_parser_prg_header_count (RElfParser * parser)
 {
-  switch (r_elf_parser_get_class (parser)) {
-    case R_ELF_CLASS32:
-      return r_elf_parser_ehdr32_prg_header_count (parser, parser->mem);
-    case R_ELF_CLASS64:
-      return r_elf_parser_ehdr64_prg_header_count (parser, parser->mem);
-  }
+  ruint16 (*ft[])() = {
+    r_elf_parser_ehdr32_prg_header_count,
+    r_elf_parser_ehdr64_prg_header_count,
+  };
 
-  return 0;
-}
-
-ruint8 *
-r_elf_parser_get_prg_header_table (RElfParser * parser)
-{
-  switch (r_elf_parser_get_class (parser)) {
-    case R_ELF_CLASS32:
-      return (ruint8 *)r_elf_parser_ehdr32_get_phdr32 (parser, parser->mem, 0);
-    case R_ELF_CLASS64:
-      return (ruint8 *)r_elf_parser_ehdr64_get_phdr64 (parser, parser->mem, 0);
-  }
-
-  return NULL;
-}
-
-ruint16
-r_elf_parser_ehdr32_prg_header_count (RElfParser * parser, RElf32EHdr * ehdr)
-{
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr32 (parser)) == NULL)
-      return 0;
-  }
-
-  return ehdr->phnum;
-}
-
-ruint16
-r_elf_parser_ehdr64_prg_header_count (RElfParser * parser, RElf64EHdr * ehdr)
-{
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr64 (parser)) == NULL)
-      return 0;
-  }
-
-  return ehdr->phnum;
+  return ft[parser->elfidx] (parser);
 }
 
 RElf32PHdr *
-r_elf_parser_ehdr32_get_phdr32 (RElfParser * parser,
-    RElf32EHdr * ehdr, ruint16 idx)
+r_elf_parser_get_phdr32 (RElfParser * parser, ruint16 idx)
 {
-  ruint8 * ptr = parser->mem;
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr32 (parser)) == NULL)
-      return NULL;
-  }
-  if (idx >= ehdr->phnum || ehdr->phoff == 0)
+  RElf32EHdr * ehdr = r_elf_parser_get_ehdr32 (parser);
+  ruint8 * ptr;
+  if (ehdr == NULL || idx >= ehdr->phnum || ehdr->phoff == 0)
     return NULL;
 
+  ptr = parser->mem;
   ptr += ehdr->phoff;
   ptr += ehdr->phentsize * idx;
   return (RElf32PHdr *)ptr;
 }
 
 RElf64PHdr *
-r_elf_parser_ehdr64_get_phdr64 (RElfParser * parser,
-    RElf64EHdr * ehdr, ruint16 idx)
+r_elf_parser_get_phdr64 (RElfParser * parser, ruint16 idx)
 {
-  ruint8 * ptr = parser->mem;
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr64 (parser)) == NULL)
-      return NULL;
-  }
-  if (idx >= ehdr->phnum || ehdr->phoff == 0)
+  RElf64EHdr * ehdr = r_elf_parser_get_ehdr64 (parser);
+  ruint8 * ptr;
+  if (ehdr == NULL || idx >= ehdr->phnum || ehdr->phoff == 0)
     return NULL;
 
+  ptr = parser->mem;
   ptr += ehdr->phoff;
   ptr += ehdr->phentsize * idx;
   return (RElf64PHdr *)ptr;
 }
 
+ruint8 *
+r_elf_parser_get_prg_header_table (RElfParser * parser)
+{
+  RFuncUniversalReturn ft[] = {
+    (RFuncUniversalReturn) r_elf_parser_get_phdr32,
+    (RFuncUniversalReturn) r_elf_parser_get_phdr64,
+  };
+
+  return ft[parser->elfidx] (parser, 0);
+}
+
+static ruint16
+r_elf_parser_ehdr32_section_header_count (RElfParser * parser)
+{
+  RElf32EHdr * ehdr = r_elf_parser_get_ehdr32 (parser);
+  return ehdr->shnum;
+}
+
+static ruint16
+r_elf_parser_ehdr64_section_header_count (RElfParser * parser)
+{
+  RElf64EHdr * ehdr = r_elf_parser_get_ehdr64 (parser);
+  return ehdr->shnum;
+}
+
 ruint16
 r_elf_parser_section_header_count (RElfParser * parser)
 {
-  switch (r_elf_parser_get_class (parser)) {
-    case R_ELF_CLASS32:
-      return r_elf_parser_ehdr32_section_header_count (parser, parser->mem);
-    case R_ELF_CLASS64:
-      return r_elf_parser_ehdr64_section_header_count (parser, parser->mem);
-  }
+  ruint16 (*ft[])() = {
+    r_elf_parser_ehdr32_section_header_count,
+    r_elf_parser_ehdr64_section_header_count,
+  };
 
-  return 0;
+  return ft[parser->elfidx] (parser);
 }
 
 ruint8 *
 r_elf_parser_get_section_header_table (RElfParser * parser)
 {
-  switch (r_elf_parser_get_class (parser)) {
-    case R_ELF_CLASS32:
-      return (ruint8 *)r_elf_parser_ehdr32_get_shdr32 (parser, parser->mem, 0);
-    case R_ELF_CLASS64:
-      return (ruint8 *)r_elf_parser_ehdr64_get_shdr64 (parser, parser->mem, 0);
-  }
+  RFuncUniversalReturn ft[] = {
+    (RFuncUniversalReturn) r_elf_parser_get_shdr32,
+    (RFuncUniversalReturn) r_elf_parser_get_shdr64,
+  };
 
-  return NULL;
-}
-
-ruint16
-r_elf_parser_ehdr32_section_header_count (RElfParser * parser, RElf32EHdr * ehdr)
-{
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr32 (parser)) == NULL)
-      return 0;
-  }
-
-  return ehdr->shnum;
-}
-
-ruint16
-r_elf_parser_ehdr64_section_header_count (RElfParser * parser, RElf64EHdr * ehdr)
-{
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr64 (parser)) == NULL)
-      return 0;
-  }
-
-  return ehdr->shnum;
+  return ft[parser->elfidx] (parser, 0);
 }
 
 RElf32SHdr *
-r_elf_parser_ehdr32_get_shdr32 (RElfParser * parser, RElf32EHdr * ehdr, ruint16 idx)
+r_elf_parser_get_shdr32 (RElfParser * parser, ruint16 idx)
 {
-  ruint8 * ptr = parser->mem;
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr32 (parser)) == NULL)
-      return NULL;
-  }
-  if (idx >= ehdr->shnum || ehdr->shoff == 0)
+  RElf32EHdr * ehdr = r_elf_parser_get_ehdr32 (parser);
+  ruint8 * ptr;
+  if (ehdr == NULL || idx >= ehdr->shnum || ehdr->shoff == 0)
     return NULL;
 
+  ptr = parser->mem;
   ptr += ehdr->shoff;
   ptr += ehdr->shentsize * idx;
   return (RElf32SHdr *)ptr;
 }
 
 RElf64SHdr *
-r_elf_parser_ehdr64_get_shdr64 (RElfParser * parser, RElf64EHdr * ehdr, ruint16 idx)
+r_elf_parser_get_shdr64 (RElfParser * parser, ruint16 idx)
 {
-  ruint8 * ptr = parser->mem;
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr64 (parser)) == NULL)
-      return NULL;
-  }
-  if (idx >= ehdr->shnum || ehdr->shoff == 0)
+  RElf64EHdr * ehdr = r_elf_parser_get_ehdr64 (parser);
+  ruint8 * ptr;
+  if (ehdr == NULL || idx >= ehdr->shnum || ehdr->shoff == 0)
     return NULL;
 
+  ptr = parser->mem;
   ptr += ehdr->shoff;
   ptr += ehdr->shentsize * idx;
   return (RElf64SHdr *)ptr;
 }
 
 RElf32SHdr *
-r_elf_parser_ehdr32_find_shdr32 (RElfParser * parser, RElf32EHdr * ehdr,
-    const rchar * name, rssize size)
+r_elf_parser_find_shdr32 (RElfParser * parser, const rchar * name, rssize size)
 {
-  ruint16 i;
-  ruint8 * ptr = parser->mem;
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr32 (parser)) == NULL)
-      return NULL;
-  }
-  ptr += ehdr->shoff;
+  RElf32EHdr * ehdr;
 
-  for (i = 0; i < ehdr->shnum; i++) {
-    RElf32SHdr * shdr = (RElf32SHdr *)(ptr + ehdr->shentsize * i);
-    rchar * secname = r_elf_parser_ehdr32_strtbl_get_str (parser, ehdr, shdr->name);
-    if (r_strcmp_size (name, size, secname, -1) == 0)
-      return shdr;
+  if ((ehdr = r_elf_parser_get_ehdr32 (parser)) != NULL) {
+    ruint16 i;
+    ruint8 * ptr = parser->mem;
+    ptr += ehdr->shoff;
+
+    for (i = 0; i < ehdr->shnum; i++) {
+      RElf32SHdr * shdr = (RElf32SHdr *)(ptr + ehdr->shentsize * i);
+      rchar * secname = r_elf_parser_strtbl_get_str (parser, shdr->name);
+      if (r_strcmp_size (name, size, secname, -1) == 0)
+        return shdr;
+    }
   }
 
   return NULL;
 }
 
 RElf64SHdr *
-r_elf_parser_ehdr64_find_shdr64 (RElfParser * parser, RElf64EHdr * ehdr,
-    const rchar * name, rssize size)
+r_elf_parser_find_shdr64 (RElfParser * parser, const rchar * name, rssize size)
 {
-  ruint16 i;
-  ruint8 * ptr = parser->mem;
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr64 (parser)) == NULL)
-      return NULL;
-  }
-  ptr += ehdr->shoff;
+  RElf64EHdr * ehdr;
 
-  for (i = 0; i < ehdr->shnum; i++) {
-    RElf64SHdr * shdr = (RElf64SHdr *)(ptr + ehdr->shentsize * i);
-    rchar * secname = r_elf_parser_ehdr64_strtbl_get_str (parser, ehdr, shdr->name);
-    if (r_strcmp_size (name, size, secname, -1) == 0)
-      return shdr;
+  if ((ehdr = r_elf_parser_get_ehdr64 (parser)) != NULL) {
+    ruint16 i;
+    ruint8 * ptr = parser->mem;
+    ptr += ehdr->shoff;
+
+    for (i = 0; i < ehdr->shnum; i++) {
+      RElf64SHdr * shdr = (RElf64SHdr *)(ptr + ehdr->shentsize * i);
+      rchar * secname = r_elf_parser_strtbl_get_str (parser, shdr->name);
+      if (r_strcmp_size (name, size, secname, -1) == 0)
+        return shdr;
+    }
   }
 
   return NULL;
@@ -474,88 +446,63 @@ r_elf_parser_shdr64_get_data (RElfParser * parser, RElf64SHdr * shdr, rsize * si
   return NULL;
 }
 
+static ruint16
+r_elf_parser_ehdr32_strtbl_idx (RElfParser * parser)
+{
+  RElf32EHdr * ehdr = r_elf_parser_get_ehdr32 (parser);
+  return ehdr->shstrndx;
+}
+
+static ruint16
+r_elf_parser_ehdr64_strtbl_idx (RElfParser * parser)
+{
+  RElf64EHdr * ehdr = r_elf_parser_get_ehdr64 (parser);
+  return ehdr->shstrndx;
+}
+
 ruint16
 r_elf_parser_strtbl_idx (RElfParser * parser)
 {
-  switch (r_elf_parser_get_class (parser)) {
-    case R_ELF_CLASS32:
-      return r_elf_parser_ehdr32_strtbl_idx (parser, parser->mem);
-    case R_ELF_CLASS64:
-      return r_elf_parser_ehdr64_strtbl_idx (parser, parser->mem);
-  }
+  ruint16 (*ft[])() = {
+    r_elf_parser_ehdr32_strtbl_idx,
+    r_elf_parser_ehdr64_strtbl_idx,
+  };
 
-  return R_ELF_SHN_UNDEF;
-}
-
-ruint16
-r_elf_parser_ehdr32_strtbl_idx (RElfParser * parser, RElf32EHdr * ehdr)
-{
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr32 (parser)) == NULL)
-      return R_ELF_SHN_UNDEF;
-  }
-
-  return ehdr->shstrndx;
-}
-
-ruint16
-r_elf_parser_ehdr64_strtbl_idx (RElfParser * parser, RElf64EHdr * ehdr)
-{
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr64 (parser)) == NULL)
-      return R_ELF_SHN_UNDEF;
-  }
-
-  return ehdr->shstrndx;
+  return ft[parser->elfidx] (parser);
 }
 
 RElf32SHdr *
-r_elf_parser_ehdr32_get_strtbl (RElfParser * parser, RElf32EHdr * ehdr)
+r_elf_parser_get_strtbl32 (RElfParser * parser)
 {
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr32 (parser)) == NULL)
-      return NULL;
-  }
-
-  return r_elf_parser_ehdr32_get_shdr32 (parser, ehdr, ehdr->shstrndx);
+  RElf32EHdr * ehdr = r_elf_parser_get_ehdr32 (parser);
+  return ehdr != NULL ? r_elf_parser_get_shdr32 (parser, ehdr->shstrndx) : NULL;
 }
 
 RElf64SHdr *
-r_elf_parser_ehdr64_get_strtbl (RElfParser * parser, RElf64EHdr * ehdr)
+r_elf_parser_get_strtbl64 (RElfParser * parser)
 {
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr64 (parser)) == NULL)
-      return NULL;
-  }
-
-  return r_elf_parser_ehdr64_get_shdr64 (parser, ehdr, ehdr->shstrndx);
+  RElf64EHdr * ehdr = r_elf_parser_get_ehdr64 (parser);
+  return ehdr != NULL ? r_elf_parser_get_shdr64 (parser, ehdr->shstrndx) : NULL;
 }
 
 rchar *
-r_elf_parser_strtbl_get_str(RElfParser * parser, ruint32 idx)
+r_elf_parser_strtbl_get_str (RElfParser * parser, ruint32 idx)
 {
-  switch (r_elf_parser_get_class (parser)) {
-    case R_ELF_CLASS32:
-      return r_elf_parser_ehdr32_strtbl_get_str (parser, parser->mem, idx);
-    case R_ELF_CLASS64:
-      return r_elf_parser_ehdr64_strtbl_get_str (parser, parser->mem, idx);
-  }
+  rchar * (*ft[])() = {
+    r_elf_parser_strtbl32_get_str,
+    r_elf_parser_strtbl64_get_str,
+  };
 
-  return NULL;
+  return ft[parser->elfidx] (parser, NULL, idx);
 }
 
 rchar *
-r_elf_parser_ehdr32_strtbl32_get_str (RElfParser * parser,
-    RElf32EHdr * ehdr, RElf32SHdr * shdr, ruint32 idx)
+r_elf_parser_strtbl32_get_str (RElfParser * parser, RElf32SHdr * shdr, ruint32 idx)
 {
   rchar * ret;
 
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr32 (parser)) == NULL)
-      return NULL;
-  }
   if (shdr == NULL) {
-    if ((shdr = r_elf_parser_ehdr32_get_strtbl (parser, ehdr)) == NULL)
+    if ((shdr = r_elf_parser_get_strtbl32 (parser)) == NULL)
       return NULL;
   }
   if (shdr->type != R_ELF_STYPE_STRTAB)
@@ -567,17 +514,12 @@ r_elf_parser_ehdr32_strtbl32_get_str (RElfParser * parser,
 }
 
 rchar *
-r_elf_parser_ehdr64_strtbl64_get_str (RElfParser * parser,
-    RElf64EHdr * ehdr, RElf64SHdr * shdr, ruint64 idx)
+r_elf_parser_strtbl64_get_str (RElfParser * parser, RElf64SHdr * shdr, ruint64 idx)
 {
   rchar * ret;
 
-  if (ehdr == NULL) {
-    if ((ehdr = r_elf_parser_get_ehdr64 (parser)) == NULL)
-      return NULL;
-  }
   if (shdr == NULL) {
-    if ((shdr = r_elf_parser_ehdr64_get_strtbl (parser, ehdr)) == NULL)
+    if ((shdr = r_elf_parser_get_strtbl64 (parser)) == NULL)
       return NULL;
   }
   if (shdr->type != R_ELF_STYPE_STRTAB)
