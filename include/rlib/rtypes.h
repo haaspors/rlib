@@ -134,6 +134,9 @@ typedef rsize (*RHashFunc) (rconstpointer key);
 typedef void (*RKeyValueFunc) (rpointer key, rpointer value, rpointer user);
 typedef rboolean (*RFuncReturn) (rpointer data, rpointer user);
 typedef rboolean (*RKeyValueFuncReturn) (rpointer key, rpointer value, rpointer user);
+typedef void (*RFuncUniversal) ();
+typedef rpointer (*RFuncUniversalReturn) ();
+
 
 R_END_DECLS
 
