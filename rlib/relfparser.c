@@ -44,7 +44,7 @@ _check_elf32_header (RElf32EHdr * hdr, rsize size)
     return -1;
 
   phsize = hdr->phentsize * hdr->phnum;
-  shsize = hdr->shentsize + hdr->shnum;
+  shsize = hdr->shentsize * hdr->shnum;
   if (size < hdr->ehsize + phsize + shsize)
     return -1;
   if (size < hdr->phoff + phsize || size < hdr->shoff + shsize)
@@ -62,7 +62,7 @@ _check_elf64_header (RElf64EHdr * hdr, rsize size)
     return -1;
 
   phsize = hdr->phentsize * hdr->phnum;
-  shsize = hdr->shentsize + hdr->shnum;
+  shsize = hdr->shentsize * hdr->shnum;
   if (size < hdr->ehsize + phsize + shsize)
     return -1;
   if (size < hdr->phoff + phsize || size < hdr->shoff + shsize)
