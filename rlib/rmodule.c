@@ -24,6 +24,8 @@
 #include <rlib/rproc.h>
 #include <rlib/rstr.h>
 
+#ifdef RLIB_HAVE_MODULE
+
 #define R_LOG_CAT_DEFAULT &rlib_logcat
 
 #if defined (R_OS_WIN32)
@@ -197,6 +199,9 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
   return ret;
 }
 #else
+#error no MODULE imlementation - consider disabling support
+#endif
+#else
 rboolean
 r_module_open (const rchar * path, rboolean lazy, RModuleError * err)
 {
@@ -220,9 +225,11 @@ rpointer
 r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
     rsize * secsize)
 {
+  (void) mod;
   (void) name;
   (void) nsize;
-  (void) secsize;
+  if (secsize != NULL)
+    *secsize = 0;
   return NULL;
 }
 #endif
