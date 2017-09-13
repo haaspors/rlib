@@ -283,7 +283,7 @@ RTEST (relf, relocation, RTEST_FAST)
       (rchar *)r_elf_parser_symtbl64_sym64_get_data (parser,
         symtbl, sym, NULL) + rela->addend);
   r_assert_cmpptr (r_elf_parser_rela64_get_dst (parser, hdr, rela), ==,
-      r_elf_parser_shdr64_get_data_by_idx (parser, hdr->info, NULL) + rela->offset);
+      (ruint8 *)r_elf_parser_shdr64_get_data_by_idx (parser, hdr->info, NULL) + rela->offset);
 
   r_elf_parser_unref (parser);
 }

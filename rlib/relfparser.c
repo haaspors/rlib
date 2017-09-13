@@ -254,7 +254,7 @@ r_elf_parser_get_abi_version (RElfParser * parser)
   return ((ruint8 *)parser->mem)[R_ELF_IDX_ABIVERSION];
 }
 
-ruint8 *
+rpointer
 r_elf_parser_get_elf_header (RElfParser * parser)
 {
   return parser->mem;
@@ -325,7 +325,7 @@ r_elf_parser_get_phdr64 (RElfParser * parser, ruint16 idx)
   return (RElf64PHdr *)ptr;
 }
 
-ruint8 *
+rpointer
 r_elf_parser_get_prg_header_table (RElfParser * parser)
 {
   RFuncUniversalReturn ft[] = {
@@ -361,7 +361,7 @@ r_elf_parser_section_header_count (RElfParser * parser)
   return ft[parser->elfidx] (parser);
 }
 
-ruint8 *
+rpointer
 r_elf_parser_get_section_header_table (RElfParser * parser)
 {
   RFuncUniversalReturn ft[] = {
@@ -458,7 +458,7 @@ r_elf_parser_shdr64_get_name (RElfParser * parser, RElf64SHdr * shdr)
   return NULL;
 }
 
-ruint8 *
+rpointer
 r_elf_parser_shdr32_get_data (RElfParser * parser, RElf32SHdr * shdr, rsize * size)
 {
   if (shdr != NULL && shdr->offset > 0) {
@@ -470,7 +470,7 @@ r_elf_parser_shdr32_get_data (RElfParser * parser, RElf32SHdr * shdr, rsize * si
   return NULL;
 }
 
-ruint8 *
+rpointer
 r_elf_parser_shdr64_get_data (RElfParser * parser, RElf64SHdr * shdr, rsize * size)
 {
   if (shdr != NULL && shdr->offset > 0) {
@@ -482,7 +482,7 @@ r_elf_parser_shdr64_get_data (RElfParser * parser, RElf64SHdr * shdr, rsize * si
   return NULL;
 }
 
-static ruint8 *
+static rpointer
 r_elf_parser_find_shdr32_data (RElfParser * parser,
     const rchar * name, rssize size, rsize * secsize)
 {
@@ -490,7 +490,7 @@ r_elf_parser_find_shdr32_data (RElfParser * parser,
       r_elf_parser_find_shdr32 (parser, name, size), secsize);
 }
 
-static ruint8 *
+static rpointer
 r_elf_parser_find_shdr64_data (RElfParser * parser,
     const rchar * name, rssize size, rsize * secsize)
 {
@@ -498,7 +498,7 @@ r_elf_parser_find_shdr64_data (RElfParser * parser,
       r_elf_parser_find_shdr64 (parser, name, size), secsize);
 }
 
-ruint8 *
+rpointer
 r_elf_parser_find_section_data (RElfParser * parser,
     const rchar * name, rssize size, rsize * secsize)
 {
@@ -664,7 +664,7 @@ r_elf_parser_symtbl64_sym64_get_name (RElfParser * parser, RElf64SHdr * shdr, RE
   return NULL;
 }
 
-ruint8 *
+rpointer
 r_elf_parser_symtbl32_sym32_get_data (RElfParser * parser, RElf32SHdr * shdr, RElf32Sym * sym, rsize * size)
 {
   if (parser != NULL && shdr != NULL && sym != NULL && sym->shndx != 0 &&
@@ -681,7 +681,7 @@ r_elf_parser_symtbl32_sym32_get_data (RElfParser * parser, RElf32SHdr * shdr, RE
   return NULL;
 }
 
-ruint8 *
+rpointer
 r_elf_parser_symtbl64_sym64_get_data (RElfParser * parser, RElf64SHdr * shdr, RElf64Sym * sym, rsize * size)
 {
   if (parser != NULL && shdr != NULL && sym != NULL && sym->shndx != 0 &&
@@ -795,7 +795,7 @@ r_elf_parser_rela32_get_dst (RElfParser * parser,
       return RUINT_TO_POINTER (rela->offset);
     } else {
       if (shdr->info != R_ELF_SHN_UNDEF) {
-        return (ruint32 *)(r_elf_parser_shdr32_get_data_by_idx (parser,
+        return (ruint32 *)((ruint8 *)r_elf_parser_shdr32_get_data_by_idx (parser,
               shdr->info, NULL) + rela->offset);
       }
     }
@@ -813,7 +813,7 @@ r_elf_parser_rela64_get_dst (RElfParser * parser,
       return RUINT_TO_POINTER (rela->offset);
     } else {
       if (shdr->info != R_ELF_SHN_UNDEF) {
-        return (ruint64 *)(r_elf_parser_shdr64_get_data_by_idx (parser,
+        return (ruint64 *)((ruint8 *)r_elf_parser_shdr64_get_data_by_idx (parser,
               shdr->info, NULL) + rela->offset);
       }
     }

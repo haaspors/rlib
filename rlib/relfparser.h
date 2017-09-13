@@ -57,32 +57,32 @@ R_API ruint8 r_elf_parser_get_osabi (RElfParser * parser);
 R_API ruint8 r_elf_parser_get_abi_version (RElfParser * parser);
 
 /* ELF Header */
-R_API ruint8 * r_elf_parser_get_elf_header (RElfParser * parser);
+R_API rpointer r_elf_parser_get_elf_header (RElfParser * parser);
 R_API RElf32EHdr * r_elf_parser_get_ehdr32 (RElfParser * parser);
 R_API RElf64EHdr * r_elf_parser_get_ehdr64 (RElfParser * parser);
 
 /* ELF Program Header */
 R_API ruint16 r_elf_parser_prg_header_count (RElfParser * parser);
-R_API ruint8 * r_elf_parser_get_prg_header_table (RElfParser * parser);
+R_API rpointer r_elf_parser_get_prg_header_table (RElfParser * parser);
 R_API RElf32PHdr * r_elf_parser_get_phdr32 (RElfParser * parser, ruint16 idx);
 R_API RElf64PHdr * r_elf_parser_get_phdr64 (RElfParser * parser, ruint16 idx);
 
 /* ELF Section Header */
 R_API ruint16 r_elf_parser_section_header_count (RElfParser * parser);
-R_API ruint8 * r_elf_parser_get_section_header_table (RElfParser * parser);
+R_API rpointer r_elf_parser_get_section_header_table (RElfParser * parser);
 R_API RElf32SHdr * r_elf_parser_get_shdr32 (RElfParser * parser, ruint16 idx);
 R_API RElf64SHdr * r_elf_parser_get_shdr64 (RElfParser * parser, ruint16 idx);
 R_API RElf32SHdr * r_elf_parser_find_shdr32 (RElfParser * parser, const rchar * name, rssize size);
 R_API RElf64SHdr * r_elf_parser_find_shdr64 (RElfParser * parser, const rchar * name, rssize size);
 R_API rchar * r_elf_parser_shdr32_get_name (RElfParser * parser, RElf32SHdr * shdr);
 R_API rchar * r_elf_parser_shdr64_get_name (RElfParser * parser, RElf64SHdr * shdr);
-R_API ruint8 * r_elf_parser_shdr32_get_data (RElfParser * parser, RElf32SHdr * shdr, rsize * size);
-R_API ruint8 * r_elf_parser_shdr64_get_data (RElfParser * parser, RElf64SHdr * shdr, rsize * size);
+R_API rpointer r_elf_parser_shdr32_get_data (RElfParser * parser, RElf32SHdr * shdr, rsize * size);
+R_API rpointer r_elf_parser_shdr64_get_data (RElfParser * parser, RElf64SHdr * shdr, rsize * size);
 #define r_elf_parser_shdr32_get_data_by_idx(parser, idx, size)                \
   r_elf_parser_shdr32_get_data (parser, r_elf_parser_get_shdr32 (parser, idx), size)
 #define r_elf_parser_shdr64_get_data_by_idx(parser, idx, size)                \
   r_elf_parser_shdr64_get_data (parser, r_elf_parser_get_shdr64 (parser, idx), size)
-R_API ruint8 * r_elf_parser_find_section_data (RElfParser * parser,
+R_API rpointer r_elf_parser_find_section_data (RElfParser * parser,
     const rchar * name, rssize size, rsize * secsize);
 
 /* ELF Section Header - string table */
@@ -103,8 +103,8 @@ R_API RElf64Sym * r_elf_parser_symtbl64_get_sym (RElfParser * parser, RElf64SHdr
 /* ELF Symbol table entry */
 R_API rchar * r_elf_parser_symtbl32_sym32_get_name (RElfParser * parser, RElf32SHdr * shdr, RElf32Sym * sym);
 R_API rchar * r_elf_parser_symtbl64_sym64_get_name (RElfParser * parser, RElf64SHdr * shdr, RElf64Sym * sym);
-R_API ruint8 * r_elf_parser_symtbl32_sym32_get_data (RElfParser * parser, RElf32SHdr * shdr, RElf32Sym * sym, rsize * size);
-R_API ruint8 * r_elf_parser_symtbl64_sym64_get_data (RElfParser * parser, RElf64SHdr * shdr, RElf64Sym * sym, rsize * size);
+R_API rpointer r_elf_parser_symtbl32_sym32_get_data (RElfParser * parser, RElf32SHdr * shdr, RElf32Sym * sym, rsize * size);
+R_API rpointer r_elf_parser_symtbl64_sym64_get_data (RElfParser * parser, RElf64SHdr * shdr, RElf64Sym * sym, rsize * size);
 
 /* ELF Section Header - relocation */
 /*R_API ruint32 r_elf_parser_reltbl32_rel_count (RElfParser * parser, RElf32SHdr * shdr);*/
