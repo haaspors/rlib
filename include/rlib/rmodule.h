@@ -37,6 +37,9 @@ R_API RMODULE r_module_open (const rchar * path, rboolean lazy, RModuleError * e
 R_API rpointer r_module_lookup (RMODULE mod, const rchar * sym);
 R_API void r_module_close (RMODULE mod);
 
+R_API rpointer r_module_find_section (RMODULE mod,
+    const rchar * name, rssize nsize, rsize * secsize);
+
 R_END_DECLS
 
 #endif /* __R_MODULE_H__ */

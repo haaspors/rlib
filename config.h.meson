@@ -8,7 +8,6 @@
 #mesondefine HAVE_FLOAT_H
 #mesondefine HAVE_STRING_H
 #mesondefine HAVE_ALLOCA_H
-#mesondefine HAVE_DLFCN_H
 #mesondefine HAVE_SCHED_H
 #mesondefine HAVE_FCNTL_H
 #mesondefine HAVE_ARPA_INET_H
@@ -58,6 +57,10 @@
 #mesondefine HAVE_SETITIMER
 #mesondefine HAVE_GETTID
 #mesondefine HAVE_ALARM
+#mesondefine HAVE_DLFCN_H
+#mesondefine HAVE_LINK_H
+#mesondefine HAVE_DLINFO
+#mesondefine HAVE_DLADDR
 #mesondefine HAVE_PTHREAD_H
 #mesondefine HAVE_PTHREAD_GETNAME_NP
 #mesondefine HAVE_PTHREAD_SETNAME_NP_WITH_TID

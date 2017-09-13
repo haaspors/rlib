@@ -20,6 +20,10 @@
 #include "rlib-private.h"
 #include <rlib/rmodule.h>
 
+#include <rlib/relfparser.h>
+#include <rlib/rproc.h>
+#include <rlib/rstr.h>
+
 #define R_LOG_CAT_DEFAULT &rlib_logcat
 
 #if defined (R_OS_WIN32)
@@ -55,8 +59,21 @@ r_module_close (RMODULE mod)
 {
   FreeLibrary (mod);
 }
+rpointer
+r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
+    rsize * secsize)
+{
+  (void) name;
+  (void) nsize;
+  (void) secsize;
+  /* TODO: PE/COFF */
+  return NULL;
+}
 #elif defined (HAVE_DLFCN_H)
 #include <dlfcn.h>
+#ifdef HAVE_LINK_H
+#include <link.h>
+#endif
 
 RMODULE
 r_module_open (const rchar * path, rboolean lazy, RModuleError * err)
@@ -80,6 +97,105 @@ r_module_close (RMODULE mod)
 {
   dlclose (mod);
 }
+
+#ifdef __ELF__
+static rpointer
+_find_elf_section (rpointer mem, const rchar * file,
+    const rchar * name, rssize nsize, rsize * secsize)
+{
+  RElfParser * f;
+  rpointer ret = NULL;
+
+  if (R_UNLIKELY (!r_elf_is_valid (mem)))
+    return NULL;
+
+  if ((f = r_elf_parser_new (file)) != NULL) {
+    switch (r_elf_parser_get_class (f)) {
+      case R_ELF_CLASS32:
+        {
+          RElf32SHdr * shdr;
+          if ((shdr = r_elf_parser_find_shdr32 (f, name, nsize)) != NULL) {
+            if (secsize != NULL)
+              *secsize = shdr->size;
+            ret = (ruint8 *)mem + shdr->addr;
+          }
+        }
+        break;
+      case R_ELF_CLASS64:
+        {
+          RElf64SHdr * shdr;
+          if ((shdr = r_elf_parser_find_shdr64 (f, name, nsize)) != NULL) {
+            if (secsize != NULL)
+              *secsize = shdr->size;
+            ret = (ruint8 *)mem + shdr->addr;
+          }
+        }
+        break;
+    }
+    r_elf_parser_unref (f);
+  }
+
+  return ret;
+}
+#endif
+
+rpointer
+r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
+    rsize * secsize)
+{
+  rpointer ret = NULL;
+#ifdef __ELF__
+  rpointer sym;
+#ifdef HAVE_LINK_H
+  struct link_map * lmap;
+#endif
+#endif
+
+  if (R_UNLIKELY (mod == NULL)) return NULL;
+  if (R_UNLIKELY (name == NULL)) return NULL;
+  if (nsize < 0) nsize = r_strlen (name);
+
+#ifdef __ELF__
+#ifdef HAVE_LINK_H
+#ifdef HAVE_DLINFO
+  if (dlinfo (mod, RTLD_DI_LINKMAP, &lmap) == 0)
+    sym = lmap->l_ld;
+  else
+    sym = NULL;
+#else
+  sym = ((struct link_map *)mod)->l_ld;
+#endif
+#else
+  if ((sym = dlsym (mod, "_init")) == NULL)
+    sym = dlsym (mod, "__bss_start");
+#endif
+#ifdef HAVE_DLADDR
+  if (sym != NULL) {
+    Dl_info info;
+    if (dladdr (sym, &info) != 0 && info.dli_fbase != NULL) {
+      rchar * fn;
+      if (info.dli_fname != NULL && *info.dli_fname != 0)
+        fn = r_strdup (info.dli_fname);
+      else if (lmap->l_name != NULL && *lmap->l_name != 0)
+        fn = r_strdup (lmap->l_name);
+      else
+        fn = r_proc_get_exe_path ();
+      ret = _find_elf_section (info.dli_fbase, fn, name, nsize, secsize);
+      r_free (fn);
+    }
+  }
+#endif
+#else
+  /* TODO: Mach-O */
+#endif
+
+  if (R_UNLIKELY (ret == NULL)) {
+    if (secsize != NULL)
+      *secsize = 0;
+  }
+
+  return ret;
+}
 #else
 rboolean
 r_module_open (const rchar * path, rboolean lazy, RModuleError * err)
@@ -99,6 +215,15 @@ r_module_lookup (RMODULE mod, const rchar * sym)
 void r_module_close (RMODULE mod)
 {
   (void) mod;
+}
+rpointer
+r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
+    rsize * secsize)
+{
+  (void) name;
+  (void) nsize;
+  (void) secsize;
+  return NULL;
 }
 #endif
 

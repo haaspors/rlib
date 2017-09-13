@@ -213,6 +213,7 @@ req_headers = [
 check_headers = [
   'alloca.h',
   'dlfcn.h',
+  'link.h',
   'sched.h',
   'fcntl.h',
   'pthread.h',
@@ -306,6 +307,18 @@ if conf.has('HAVE_ALLOCA_H')
   rconf.set('RLIB_DEFINE_HAVE_ALLOCA_H', '#define RLIB_HAVE_ALLOCA_H      1')
 else
   rconf.set('RLIB_DEFINE_HAVE_ALLOCA_H', '/* #undef RLIB_HAVE_ALLOCA_H */')
+endif
+
+if conf.has('HAVE_DLFCN_H')
+  dl_prefix = '''#define _GNU_SOURCE 1
+    #include <dlfcn.h>
+    '''
+  if cc.has_function('dlinfo', prefix : dl_prefix, dependencies : libdl)
+    conf.set('HAVE_DLINFO', 1)
+  endif
+  if cc.has_function('dladdr', prefix : dl_prefix, dependencies : libdl)
+    conf.set('HAVE_DLADDR', 1)
+  endif
 endif
 
 if conf.has('HAVE_PTHREAD_H')
