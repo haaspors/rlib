@@ -40,6 +40,7 @@ rlibtest_sources = [
   'rmemallocator.c',
   'rmem.c',
   'rmemfile.c',
+  'rmodule.c',
   'rmpint.c',
   'rmsgdigest.c',
   'roptparse.c',

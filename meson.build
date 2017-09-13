@@ -17,6 +17,7 @@ install_subdir('include', install_dir : '')
 rconf.set('RLIB_DEFINE_HAVE_THREADS', '#define RLIB_HAVE_THREADS       1')
 rconf.set('RLIB_DEFINE_HAVE_SIGNALS', '#define RLIB_HAVE_SIGNALS       1')
 rconf.set('RLIB_DEFINE_HAVE_FILES',   '#define RLIB_HAVE_FILES         1')
+rconf.set('RLIB_DEFINE_HAVE_MODULE',  '#define RLIB_HAVE_MODULE        1')
 
 
 # OS
