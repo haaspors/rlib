@@ -1,6 +1,14 @@
 #include <rlib/rlib.h>
 #include "elfobj.inc"
 
+RTEST (relf, calc_size, RTEST_FAST)
+{
+  ruint8 bad_elf[] = { 0xBA, 0xDE, 0x1F, 0x01, 0xBA, 0xDE, 0x1F, 0x02 };
+  r_assert (!r_elf_is_valid (bad_elf));
+  r_assert_cmpuint (r_elf_calc_size (elf_o), ==, sizeof (elf_o));
+}
+RTEST_END;
+
 RTEST (relf, from_mem, RTEST_FAST)
 {
   RElfParser * parser;

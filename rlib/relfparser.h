@@ -38,6 +38,9 @@
 
 R_BEGIN_DECLS
 
+#define r_elf_is_valid(mem) (r_elf_calc_size (mem) > 0)
+R_API rsize r_elf_calc_size (rpointer mem);
+
 typedef struct _RElfParser RElfParser;
 
 R_API RElfParser * r_elf_parser_new (const rchar * filename);

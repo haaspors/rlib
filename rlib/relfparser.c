@@ -35,6 +35,42 @@ struct _RElfParser {
   int elfidx;
 };
 
+rsize
+r_elf_calc_size (rpointer mem)
+{
+  ruint8 * ident = mem;
+  if (ident[R_ELF_IDX_MAG0] == R_ELF_MAG0 && ident[R_ELF_IDX_MAG1] == R_ELF_MAG1 &&
+      ident[R_ELF_IDX_MAG2] == R_ELF_MAG2 && ident[R_ELF_IDX_MAG3] == R_ELF_MAG3) {
+    rsize phend, shend;
+
+    switch (ident[R_ELF_IDX_CLASS]) {
+      case R_ELF_CLASS32:
+        {
+          RElf32EHdr * hdr = mem;
+          phend = hdr->phoff + hdr->phentsize * hdr->phnum;
+          shend = hdr->shoff + hdr->shentsize * hdr->shnum;
+        }
+        break;
+      case R_ELF_CLASS64:
+        {
+          RElf64EHdr * hdr = mem;
+          phend = hdr->phoff + hdr->phentsize * hdr->phnum;
+          shend = hdr->shoff + hdr->shentsize * hdr->shnum;
+        }
+        break;
+      case R_ELF_CLASSNONE:
+      default:
+       goto beach;
+    }
+
+    return MAX (phend, shend);
+  }
+
+beach:
+  return 0;
+}
+
+
 static int
 _check_elf32_header (RElf32EHdr * hdr, rsize size)
 {
