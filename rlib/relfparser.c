@@ -482,6 +482,34 @@ r_elf_parser_shdr64_get_data (RElfParser * parser, RElf64SHdr * shdr, rsize * si
   return NULL;
 }
 
+static ruint8 *
+r_elf_parser_find_shdr32_data (RElfParser * parser,
+    const rchar * name, rssize size, rsize * secsize)
+{
+  return r_elf_parser_shdr32_get_data (parser,
+      r_elf_parser_find_shdr32 (parser, name, size), secsize);
+}
+
+static ruint8 *
+r_elf_parser_find_shdr64_data (RElfParser * parser,
+    const rchar * name, rssize size, rsize * secsize)
+{
+  return r_elf_parser_shdr64_get_data (parser,
+      r_elf_parser_find_shdr64 (parser, name, size), secsize);
+}
+
+ruint8 *
+r_elf_parser_find_section_data (RElfParser * parser,
+    const rchar * name, rssize size, rsize * secsize)
+{
+  RFuncUniversalReturn ft[] = {
+    (RFuncUniversalReturn) r_elf_parser_find_shdr32_data,
+    (RFuncUniversalReturn) r_elf_parser_find_shdr64_data,
+  };
+
+  return ft[parser->elfidx] (parser, name, size, secsize);
+}
+
 static ruint16
 r_elf_parser_ehdr32_strtbl_idx (RElfParser * parser)
 {

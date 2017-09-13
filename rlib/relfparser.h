@@ -82,6 +82,8 @@ R_API ruint8 * r_elf_parser_shdr64_get_data (RElfParser * parser, RElf64SHdr * s
   r_elf_parser_shdr32_get_data (parser, r_elf_parser_get_shdr32 (parser, idx), size)
 #define r_elf_parser_shdr64_get_data_by_idx(parser, idx, size)                \
   r_elf_parser_shdr64_get_data (parser, r_elf_parser_get_shdr64 (parser, idx), size)
+R_API ruint8 * r_elf_parser_find_section_data (RElfParser * parser,
+    const rchar * name, rssize size, rsize * secsize);
 
 /* ELF Section Header - string table */
 R_API ruint16 r_elf_parser_strtbl_idx (RElfParser * parser);
