@@ -1,6 +1,8 @@
 language: c
 dist: trusty
 sudo: required
+python:
+  - 3.5
 
 compiler:
   - clang
@@ -30,6 +32,7 @@ before_install:
   - export PATH="`pwd`/build:${PATH}"
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update && brew install python3 ninja; fi
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then wget https://github.com/ninja-build/ninja/releases/download/v1.7.2/ninja-linux.zip && unzip -q ninja-linux.zip -d build; fi
+  - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then pyenv global system 3.5; fi
   - pip3 install meson
 
 script:
