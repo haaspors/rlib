@@ -21,6 +21,7 @@
 #include <rlib/rmodule.h>
 
 #include <rlib/relfparser.h>
+#include <rlib/rmachoparser.h>
 #include <rlib/rproc.h>
 #include <rlib/rstr.h>
 
@@ -141,55 +142,94 @@ _find_elf_section (rpointer mem, const rchar * file,
 }
 #endif
 
+#ifdef __MACH__
+static rpointer
+_find_macho_section (rpointer mem, const rchar * file,
+    const rchar * name, rssize nsize, rsize * secsize)
+{
+  RMachoParser * f;
+  rpointer ret = NULL;
+
+  if (R_UNLIKELY (!r_macho_is_valid (mem)))
+    return NULL;
+
+  if ((f = r_macho_parser_new (file)) != NULL) {
+    switch (r_macho_parser_get_magic (f)) {
+      case R_MACHO_MAGIC_32:
+        {
+          RMachoSection32 * sec;
+          if ((sec = r_macho_parser_find_section32 (f, name, nsize)) != NULL) {
+            if (secsize != NULL)
+              *secsize = sec->size;
+            ret = (ruint8 *)mem + sec->addr;
+          }
+        }
+        break;
+      case R_MACHO_MAGIC_64:
+        {
+          RMachoSection64 * sec;
+          if ((sec = r_macho_parser_find_section64 (f, name, nsize)) != NULL) {
+            if (secsize != NULL)
+              *secsize = sec->size;
+            ret = (ruint8 *)mem + sec->addr;
+          }
+        }
+        break;
+    }
+    r_macho_parser_unref (f);
+  }
+
+  return ret;
+}
+#endif
+
 rpointer
 r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
     rsize * secsize)
 {
   rpointer ret = NULL;
-#ifdef __ELF__
-  rpointer sym;
+  rpointer sym = NULL;
 #ifdef HAVE_LINK_H
   struct link_map * lmap;
-#endif
 #endif
 
   if (R_UNLIKELY (mod == NULL)) return NULL;
   if (R_UNLIKELY (name == NULL)) return NULL;
   if (nsize < 0) nsize = r_strlen (name);
 
-#ifdef __ELF__
 #ifdef HAVE_LINK_H
 #ifdef HAVE_DLINFO
   if (dlinfo (mod, RTLD_DI_LINKMAP, &lmap) == 0)
     sym = lmap->l_ld;
-  else
-    sym = NULL;
 #else
   sym = ((struct link_map *)mod)->l_ld;
 #endif
-#else
-  if ((sym = dlsym (mod, "_init")) == NULL)
-    sym = dlsym (mod, "__bss_start");
 #endif
-#ifdef HAVE_DLADDR
+  if (sym == NULL && (sym = dlsym (mod, "_init")) == NULL)
+    sym = dlsym (mod, "__bss_start");
+
   if (sym != NULL) {
+#ifdef HAVE_DLADDR
     Dl_info info;
     if (dladdr (sym, &info) != 0 && info.dli_fbase != NULL) {
       rchar * fn;
       if (info.dli_fname != NULL && *info.dli_fname != 0)
         fn = r_strdup (info.dli_fname);
+#ifdef HAVE_LINK_H
       else if (lmap->l_name != NULL && *lmap->l_name != 0)
         fn = r_strdup (lmap->l_name);
+#endif
       else
         fn = r_proc_get_exe_path ();
+#if defined (__ELF__)
       ret = _find_elf_section (info.dli_fbase, fn, name, nsize, secsize);
+#elif defined (__MACH__)
+      ret = _find_macho_section (info.dli_fbase, fn, name, nsize, secsize);
+#endif
       r_free (fn);
     }
+#endif
   }
-#endif
-#else
-  /* TODO: Mach-O */
-#endif
 
   if (R_UNLIKELY (ret == NULL)) {
     if (secsize != NULL)
