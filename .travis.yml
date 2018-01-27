@@ -38,9 +38,9 @@ script:
   - test "$TRAVIS_BRANCH" != "coverity_scan" || exit 0
   - meson --buildtype=${BLDTYPE} build
   - ninja -C build
-  - if [[ "$TESTTYPE" == "normal" ]]; then mesontest -C build --print-errorlogs; fi
-  - if [[ "$TESTTYPE" == "valgrind" ]]; then RNOTIMEOUT=1 mesontest -C build --print-errorlogs -t 100 --wrap='valgrind -q --error-exitcode=42 --tool=memcheck --leak-check=full'; fi
-  - if [[ "$TESTTYPE" == "bench" ]]; then mesontest -C build --benchmark -t 100 --print-errorlogs; fi
+  - if [[ "$TESTTYPE" == "normal" ]]; then meson test -C build --print-errorlogs; fi
+  - if [[ "$TESTTYPE" == "valgrind" ]]; then RNOTIMEOUT=1 meson test -C build --print-errorlogs -t 100 --wrapper='valgrind -q --error-exitcode=42 --tool=memcheck --leak-check=full'; fi
+  - if [[ "$TESTTYPE" == "bench" ]]; then meson test -C build --benchmark -t 100 --print-errorlogs; fi
 
 after_failure:
   - if [[ -e $TRAVIS_BUILD_DIR/build/meson-logs/testlog.txt ]]; then cat $TRAVIS_BUILD_DIR/build/meson-logs/testlog.txt; fi
