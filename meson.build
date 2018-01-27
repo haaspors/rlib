@@ -32,6 +32,8 @@ if host_machine.system() == 'linux'
   rconf.set('RLIB_OS_EXTRA', '#define R_OS_LINUX              1')
 elif host_machine.system() == 'darwin'
   rconf.set('RLIB_OS_EXTRA', '#define R_OS_DARWIN             1')
+else
+  rconf.set('RLIB_OS_EXTRA', '')
 endif
 
 
