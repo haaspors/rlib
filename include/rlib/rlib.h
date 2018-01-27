@@ -44,6 +44,8 @@
 #include <rlib/rhzrptr.h>
 #include <rlib/rlist.h>
 #include <rlib/rlog.h>
+#include <rlib/rmacho.h>
+#include <rlib/rmachoparser.h>
 #include <rlib/rmacros.h>
 #include <rlib/rmath.h>
 #include <rlib/rmem.h>

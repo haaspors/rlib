@@ -9,6 +9,7 @@ examples = [
   'ropt',
   'rprint',
   'rtest',
+  'rmachodump',
   'rmodulesection',
   'rthratomic',
   'rthreadaffinity',

@@ -19,6 +19,8 @@ rlib_sources = [
   'rhzrptr.c',
   'rlibinit.c',
   'rlog.c',
+  'rmacho.c',
+  'rmachoparser.c',
   'rmath.c',
   'rmemallocator.c',
   'rmem.c',

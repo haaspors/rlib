@@ -37,6 +37,7 @@ rlibtest_sources = [
   'rhzrptr.c',
   'rlist.c',
   'rlog.c',
+  'rmacho.c',
   'rmemallocator.c',
   'rmem.c',
   'rmemfile.c',
