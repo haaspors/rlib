@@ -93,7 +93,7 @@ r_sys_cpu_linux_package_func (rsize bit, rpointer data)
 
   r_snprintf (tmp, sizeof (tmp), R_SYSFS_CPU_FMT R_SYSFS_CPU_TOPO_PKG_ID,
       (ruint)bit);
-  if (!r_bitset_set_bit (pack, r_file_read_uint (tmp, pack->bsize), TRUE))
+  if (!r_bitset_set_bit (pack, r_file_read_uint (tmp, pack->bits), TRUE))
     R_LOG_WARNING ("Found weird package ID in %s", tmp);
 }
 
@@ -106,7 +106,7 @@ r_sys_cpu_linux_phys_func (rsize bit, rpointer data)
       (ruint)bit);
 
   /* This reads the first number out of the human readable list file */
-  if (!r_bitset_set_bit (phys, r_file_read_uint (tmp, phys->bsize), TRUE))
+  if (!r_bitset_set_bit (phys, r_file_read_uint (tmp, phys->bits), TRUE))
     R_LOG_WARNING ("Found weird siblings ID in %s", tmp);
 }
 #endif
@@ -299,7 +299,7 @@ r_sys_cpuset_allowed (RBitset * cpuset)
       while (r_file_read_line (f, buf, sizeof (buf)) == R_FILE_ERROR_OK) {
         if (r_str_has_prefix (buf, "Cpus_allowed_list:")) {
           RBitset * bs;
-          ret = r_bitset_init_stack (bs, cpuset->bsize) &&
+          ret = r_bitset_init_stack (bs, cpuset->bits) &&
             r_bitset_set_from_human_readable (bs, buf + 18, NULL) &&
             r_bitset_and (cpuset, cpuset, bs);
           break;

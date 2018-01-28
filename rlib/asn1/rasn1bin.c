@@ -437,7 +437,7 @@ r_asn1_bin_tlv_parse_bit_string (const RAsn1BinTLV * tlv, RBitset ** bitset)
     return R_ASN1_DECODER_OOM;
 
   r_bitset_shr (*bitset, tlv->value[0]);
-  (*bitset)->bsize -= tlv->value[0];
+  (*bitset)->bits -= tlv->value[0];
 
   return R_ASN1_DECODER_OK;
 }

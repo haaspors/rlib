@@ -77,7 +77,7 @@ RTEST_F (rthread, new_with_affinity, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert (r_sys_cpuset_allowed (cpuset));
   r_assert_cmpuint (r_bitset_popcount (cpuset), >, 0);
-  r_assert_cmpuint ((first = r_bitset_ctz (cpuset)), <, cpuset->bsize);
+  r_assert_cmpuint ((first = r_bitset_ctz (cpuset)), <, cpuset->bits);
   r_assert (r_bitset_clear (cpuset));
   r_assert (r_bitset_set_bit (cpuset, first, TRUE));
   r_assert_cmpuint (r_bitset_popcount (cpuset), ==, 1);

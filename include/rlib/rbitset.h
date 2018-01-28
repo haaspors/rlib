@@ -31,16 +31,19 @@ typedef ruint64 rbsword;
 typedef void (*RBitsetFunc) (rsize bit, rpointer user);
 
 typedef struct {
-  rsize   bsize;
-  rbsword bits[0];
+  rsize   bits;
+  rsize   words;
+  rbsword data[0];
 } RBitset;
 
-#define _R_BITSET_BITS_SIZE(bits) (((bits) + sizeof (rbsword) * 8 - 1) / 8)
-#define _R_BITSET_SIZE(bits)      (sizeof (RBitset) + _R_BITSET_BITS_SIZE (bits))
-#define r_bitset_init_stack(bs, bits)                                         \
-  (((bs) = r_alloca0 (_R_BITSET_SIZE (bits))) != NULL && (((bs)->bsize = (bits)) > 0))
-#define r_bitset_init_heap(bs, bits)                                          \
-  (((bs) = r_malloc0 (_R_BITSET_SIZE (bits))) != NULL && (((bs)->bsize = (bits)) > 0))
+#define r_bitset_init_stack(BS, BITS)                                         \
+    (((BS) = r_alloca0 (sizeof (RBitset) + sizeof (rbsword) * (1 + (BITS - 1) / (sizeof (rbsword) * 8)))) != NULL && \
+    ((BS)->bits = (BITS)) > 0 &&                                              \
+    ((BS)->words = (1 + (BITS - 1) / (sizeof (rbsword) * 8))) > 0)
+#define r_bitset_init_heap(BS, BITS)                                          \
+    (((BS) = r_malloc0 (sizeof (RBitset) + sizeof (rbsword) * (1 + (BITS - 1) / (sizeof (rbsword) * 8)))) != NULL && \
+    ((BS)->bits = (BITS)) > 0 &&                                              \
+    ((BS)->words = (1 + (BITS - 1) / (sizeof (rbsword) * 8))) > 0)
 
 R_API RBitset * r_bitset_new_from_binary (rconstpointer data, rsize size);
 R_API rboolean r_bitset_copy (RBitset * dest, const RBitset * src);

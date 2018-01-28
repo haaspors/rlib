@@ -151,7 +151,7 @@ RTEST (rasn1der, parse_bit_string, RTEST_FAST)
   r_assert_cmpint (r_asn1_bin_tlv_parse_bit_string (&tlv, &bitset), ==,
       R_ASN1_DECODER_OK);
   r_assert_cmpptr (bitset, !=, NULL);
-  r_assert_cmpuint (bitset->bsize, ==, 4);
+  r_assert_cmpuint (bitset->bits, ==, 4);
   r_assert_cmpuint (r_bitset_popcount (bitset), ==, 4);
   r_free (bitset);
 

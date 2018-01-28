@@ -368,7 +368,7 @@ r_srtp_stream_replay_check (RSRTPState * s, ruint64 idx, ruint32 ssrc)
       ssrc, s->index, idx);
 
   if (idx <= s->index) {
-    if (idx + s->window->bsize < s->index) {
+    if (idx + s->window->bits < s->index) {
       R_LOG_INFO ("stream: 0x%.8x: est 0x%"R_RTP_SEQIDX_FMT" is too old"
           " (cur 0x%"R_RTP_SEQIDX_FMT")",
           ssrc, s->index, idx);

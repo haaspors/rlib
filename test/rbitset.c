@@ -5,6 +5,8 @@ RTEST (rbitset, stack, RTEST_FAST)
   RBitset * bitset;
 
   r_assert (r_bitset_init_stack (bitset, 80));
+  r_assert_cmpuint (bitset->bits, ==, 80);
+  r_assert_cmpuint (bitset->words, ==, 2);
 
   r_assert_cmpuint (r_bitset_popcount (bitset), ==, 0);
   r_assert (!r_bitset_set_bit (bitset, 80, TRUE));
@@ -15,8 +17,8 @@ RTEST (rbitset, stack, RTEST_FAST)
   r_assert_cmpuint (r_bitset_popcount (bitset), ==, 0);
 
   r_assert (r_bitset_init_stack (bitset, sizeof (rbsword) * 8));
-  r_assert_cmpuint (_R_BITSET_BITS_SIZE (bitset->bsize) / sizeof (rbsword), ==, 1);
-
+  r_assert_cmpuint (bitset->bits, ==, sizeof (rbsword) * 8);
+  r_assert_cmpuint (bitset->words, ==, 1);
 }
 RTEST_END;
 
@@ -44,7 +46,7 @@ RTEST (rbitset, new_from_binary, RTEST_FAST)
   const ruint8 data[] = { 0xf0, 0x33, 0xff, 0x0e };
 
   r_assert_cmpptr ((bitset = r_bitset_new_from_binary (data, sizeof (data))), !=, NULL);
-  r_assert_cmpuint (bitset->bsize, ==, sizeof (data) * 8);
+  r_assert_cmpuint (bitset->bits, ==, sizeof (data) * 8);
   r_assert_cmpuint (r_bitset_popcount (bitset), ==, 19);
 
   r_assert (!r_bitset_is_bit_set (bitset,  0));
@@ -105,12 +107,12 @@ RTEST (rbitset, copy, RTEST_FAST)
   r_assert (!r_bitset_copy (a, b));
   r_assert_cmpuint (r_bitset_popcount (b), ==, 0);
   r_assert (r_bitset_copy (b, a));
-  r_assert_cmpuint (r_bitset_popcount (b), ==, a->bsize);
+  r_assert_cmpuint (r_bitset_popcount (b), ==, a->bits);
 
   r_assert (r_bitset_clear (c));
   r_assert_cmpuint (r_bitset_popcount (c), ==, 0);
   r_assert (r_bitset_copy (c, a));
-  r_assert_cmpuint (r_bitset_popcount (c), ==, a->bsize);
+  r_assert_cmpuint (r_bitset_popcount (c), ==, a->bits);
 }
 RTEST_END;
 
@@ -246,18 +248,27 @@ RTEST_END;
 
 RTEST (rbitset, set_all, RTEST_FAST)
 {
-  RBitset * bitset;
+  RBitset * a, * b;
 
   r_assert (!r_bitset_set_all (NULL, TRUE));
 
-  r_assert (r_bitset_init_stack (bitset, 76));
-  r_assert_cmpuint (r_bitset_popcount (bitset), ==, 0);
+  r_assert (r_bitset_init_stack (a, 76));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 0);
 
-  r_assert (r_bitset_set_all (bitset, TRUE));
-  r_assert_cmpuint (r_bitset_popcount (bitset), ==, 76);
+  r_assert (r_bitset_set_all (a, TRUE));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, a->bits);
 
-  r_assert (r_bitset_clear (bitset));
-  r_assert_cmpuint (r_bitset_popcount (bitset), ==, 0);
+  r_assert (r_bitset_clear (a));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 0);
+
+  r_assert (r_bitset_init_stack (b, sizeof (rbsword) * 8));
+  r_assert_cmpuint (r_bitset_popcount (b), ==, 0);
+
+  r_assert (r_bitset_set_all (b, TRUE));
+  r_assert_cmpuint (r_bitset_popcount (b), ==, b->bits);
+
+  r_assert (r_bitset_clear (b));
+  r_assert_cmpuint (r_bitset_popcount (b), ==, 0);
 }
 RTEST_END;
 
