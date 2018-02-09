@@ -106,36 +106,38 @@ static rpointer
 _find_elf_section (rpointer mem, const rchar * file,
     const rchar * name, rssize nsize, rsize * secsize)
 {
-  RElfParser * f;
+  RElfParser * fp;
   rpointer ret = NULL;
 
   if (R_UNLIKELY (!r_elf_is_valid (mem)))
     return NULL;
 
-  if ((f = r_elf_parser_new (file)) != NULL) {
-    switch (r_elf_parser_get_class (f)) {
+  if ((fp = r_elf_parser_new (file)) != NULL) {
+    switch (r_elf_parser_get_class (fp)) {
       case R_ELF_CLASS32:
         {
           RElf32SHdr * shdr;
-          if ((shdr = r_elf_parser_find_shdr32 (f, name, nsize)) != NULL) {
+          if ((shdr = r_elf_parser_find_shdr32 (fp, name, nsize)) != NULL) {
+            ruint32 baddr = r_elf_parser_get_base_addr32 (fp);
             if (secsize != NULL)
               *secsize = shdr->size;
-            ret = (ruint8 *)mem + shdr->addr;
+            ret = (ruint8 *)mem + shdr->addr - baddr;
           }
         }
         break;
       case R_ELF_CLASS64:
         {
           RElf64SHdr * shdr;
-          if ((shdr = r_elf_parser_find_shdr64 (f, name, nsize)) != NULL) {
+          if ((shdr = r_elf_parser_find_shdr64 (fp, name, nsize)) != NULL) {
+            ruint64 baddr = r_elf_parser_get_base_addr64 (fp);
             if (secsize != NULL)
               *secsize = shdr->size;
-            ret = (ruint8 *)mem + shdr->addr;
+            ret = (ruint8 *)mem + shdr->addr - baddr;
           }
         }
         break;
     }
-    r_elf_parser_unref (f);
+    r_elf_parser_unref (fp);
   }
 
   return ret;
