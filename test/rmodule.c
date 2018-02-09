@@ -10,7 +10,7 @@ RTEST (rmodule, self_open_close, RTEST_FAST)
 }
 RTEST_END;
 
-#ifdef __ELF__
+#if defined (__ELF__) || defined (__MACH__)
 RTEST (rmodule, find_section, RTEST_FAST)
 {
   RMODULE mod;
