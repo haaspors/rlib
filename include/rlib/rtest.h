@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -26,6 +26,7 @@
 #include <rlib/rtest-internal.h>
 
 #include <rlib/rlist.h>
+#include <rlib/rmodule.h>
 #include <rlib/rtime.h>
 
 #include <stdio.h>
@@ -197,7 +198,7 @@ int main (int argc, rchar ** argv) {                                          \
         const RTest * tests;                                                  \
         rsize count;                                                          \
                                                                               \
-        if ((tests = r_test_get_local_tests (&count, NULL)) != NULL &&        \
+        if ((tests = r_test_get_module_tests (NULL, &count)) != NULL &&        \
             (report = r_test_run_tests (tests, count, R_TEST_ALL_MASK,        \
                 filter, igskip)) != NULL) {                                   \
           FILE * f = stdout;                                                  \
@@ -228,8 +229,7 @@ int main (int argc, rchar ** argv) {                                          \
 R_API rchar * r_test_dup_path (const RTest * test) R_ATTR_MALLOC;
 R_API rboolean r_test_fill_path (const RTest * test, rchar * path, rsize size);
 
-R_API rsize r_test_get_local_test_count (rsize * total);
-R_API const RTest * r_test_get_local_tests (rsize * tests, rsize * runs);
+R_API const RTest * r_test_get_module_tests (RMODULE mod, rsize * count);
 
 R_API RTestRunState r_test_run_fork (const RTest * test, rsize __i,
     rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);

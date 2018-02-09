@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -23,7 +23,6 @@
 #include <rlib/rassert.h>
 #include <rlib/renv.h>
 #include <rlib/rlog.h>
-#include <rlib/rmodule.h>
 #include <rlib/rproc.h>
 #include <rlib/rsignal.h>
 #include <rlib/rstr.h>
@@ -216,14 +215,6 @@ r_test_fill_path (const RTest * test, rchar * path, rsize size)
   return r_strnjoin (path, size, "/", "", test->suite, test->name, NULL) != NULL;
 }
 
-rsize
-r_test_get_local_test_count (rsize * total)
-{
-  rsize ret = 0;
-  r_test_get_local_tests (&ret, total);
-  return ret;
-}
-
 static const RTest *
 r_test_find_magic_sym (RMODULE mod)
 {
@@ -245,16 +236,11 @@ r_test_find_magic_sym (RMODULE mod)
 }
 
 const RTest *
-r_test_get_local_tests (rsize * tests, rsize * runs)
+r_test_get_module_tests_using_magic (RMODULE mod, rsize * count)
 {
   const RTest * begin, * end, * sym, * cur;
-  rsize count;
-  RMODULE mod;
-  if ((mod = r_module_open (NULL, TRUE, NULL)) == NULL)
-    return NULL;
 
   sym = r_test_find_magic_sym (mod);
-  r_module_close (mod);
 
   if (sym == NULL) {
     R_LOG_CRITICAL ("%s not found", R_STRINGIFY (_RTEST_SYM_));
@@ -274,19 +260,35 @@ r_test_get_local_tests (rsize * tests, rsize * runs)
 
   R_LOG_TRACE ("Found RTESTs: first %p, last %p (size: %"RSIZE_FMT")",
       begin, end, sizeof (RTest));
-  for (cur = begin, count = 0; cur <= end; cur++) {
-    if (cur->type & R_TEST_FLAG_LOOP)
-      count += (cur->loop_end - cur->loop_start);
-    else
-      count++;
-  }
 
-  if (tests != NULL)
-    *tests = (end - begin) + 1;
-  if (runs != NULL)
-    *runs = count;
+  if (count != NULL)
+    *count = (end - begin) + 1;
 
   return begin;
+}
+
+const RTest *
+r_test_get_module_tests (RMODULE mod, rsize * count)
+{
+  const RTest * ret;
+  RMODULE closemod;
+
+  if (mod == NULL) {
+    if ((closemod = mod = r_module_open (NULL, TRUE, NULL)) == NULL)
+      return NULL;
+  } else {
+    closemod = NULL;
+  }
+
+  /* TODO: Add r_module_find_section based impl */
+
+  /* Fallback using the magic symbol */
+  ret = r_test_get_module_tests_using_magic (mod, count);
+
+  if (closemod != NULL)
+    r_module_close (mod);
+
+  return ret;
 }
 
 #if defined (R_OS_WIN32)

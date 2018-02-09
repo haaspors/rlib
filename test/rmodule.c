@@ -14,11 +14,14 @@ RTEST_END;
 RTEST (rmodule, find_section, RTEST_FAST)
 {
   RMODULE mod;
+  rpointer sec;
+  ruint32 magic = _RTEST_MAGIC;
   rsize size;
 
   r_assert_cmpptr ((mod = r_module_open (NULL, TRUE, NULL)), !=, NULL);
-  r_assert_cmpptr (r_module_find_section (mod, ".rtest", -1, &size), !=, NULL);
-  r_assert_cmpuint (size, ==, r_test_get_local_test_count (NULL) * RLIB_SIZEOF_RTEST);
+  r_assert_cmpptr ((sec = r_module_find_section (mod, ".rtest", -1, &size)), !=, NULL);
+  r_assert_cmpuint (size % RLIB_SIZEOF_RTEST, ==, 0);
+  r_assert_cmpmem (sec, ==, &magic, sizeof (ruint32));
   r_module_close (mod);
 }
 RTEST_END;
