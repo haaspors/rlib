@@ -67,6 +67,9 @@ R_API rpointer r_elf_parser_get_prg_header_table (RElfParser * parser);
 R_API RElf32PHdr * r_elf_parser_get_phdr32 (RElfParser * parser, ruint16 idx);
 R_API RElf64PHdr * r_elf_parser_get_phdr64 (RElfParser * parser, ruint16 idx);
 
+R_API ruint32 r_elf_parser_get_base_addr32 (RElfParser * parser);
+R_API ruint64 r_elf_parser_get_base_addr64 (RElfParser * parser);
+
 /* ELF Section Header */
 R_API ruint16 r_elf_parser_section_header_count (RElfParser * parser);
 R_API rpointer r_elf_parser_get_section_header_table (RElfParser * parser);

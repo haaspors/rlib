@@ -336,6 +336,34 @@ r_elf_parser_get_prg_header_table (RElfParser * parser)
   return ft[parser->elfidx] (parser, 0);
 }
 
+ruint32
+r_elf_parser_get_base_addr32 (RElfParser * parser)
+{
+  ruint16 i, count = r_elf_parser_ehdr32_prg_header_count (parser);
+
+  for (i = 0; i < count; i++) {
+    RElf32PHdr * hdr = r_elf_parser_get_phdr32 (parser, i);
+    if (hdr->type == R_ELF_PTYPE_LOAD)
+      return hdr->vaddr;
+  }
+
+  return 0;
+}
+
+ruint64
+r_elf_parser_get_base_addr64 (RElfParser * parser)
+{
+  ruint16 i, count = r_elf_parser_ehdr64_prg_header_count (parser);
+
+  for (i = 0; i < count; i++) {
+    RElf64PHdr * hdr = r_elf_parser_get_phdr64 (parser, i);
+    if (hdr->type == R_ELF_PTYPE_LOAD)
+      return hdr->vaddr;
+  }
+
+  return 0;
+}
+
 static ruint16
 r_elf_parser_ehdr32_section_header_count (RElfParser * parser)
 {
