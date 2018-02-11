@@ -301,16 +301,15 @@ r_macho_parser_find_section32 (RMachoParser * parser, const rchar * name, rssize
     return NULL;
 
   hdr = parser->mem;
-  for (i = 0; i < hdr->ncmds; i++) {
-    lc = ((RMachoLoadCmd *)parser->lc) + i;
+  for (i = hdr->ncmds, lc = parser->lc; i > 0;
+      i--, lc = (RMachoLoadCmd *)(RPOINTER_TO_SIZE (lc) + lc->cmdsize)) {
     if (lc->cmd == R_MACHO_LC_SEGMENT) {
       RMachoSegment32Cmd * seg = (RMachoSegment32Cmd *)lc;
-      RMachoSection32 * sec;
+      RMachoSection32 * sec = (RMachoSection32 * )(seg + 1);
 
       for (j = 0; j < seg->nsects; j++) {
-        sec = (RMachoSection32 * )(seg + 1) + j;
-        if (r_strcmp_size (sec->sectname, sizeof (sec->sectname), name, size) == 0)
-          return sec;
+        if (r_strcmp_size (sec->sectname, -1, name, size) == 0)
+          return &sec[j];
       }
     }
   }
@@ -329,16 +328,15 @@ r_macho_parser_find_section64 (RMachoParser * parser, const rchar * name, rssize
     return NULL;
 
   hdr = parser->mem;
-  for (i = 0; i < hdr->ncmds; i++) {
-    lc = ((RMachoLoadCmd *)parser->lc) + i;
-    if (lc->cmd == R_MACHO_LC_SEGMENT) {
+  for (i = hdr->ncmds, lc = parser->lc; i > 0;
+      i--, lc = (RMachoLoadCmd *)(RPOINTER_TO_SIZE (lc) + lc->cmdsize)) {
+    if (lc->cmd == R_MACHO_LC_SEGMENT_64) {
       RMachoSegment64Cmd * seg = (RMachoSegment64Cmd *)lc;
-      RMachoSection64 * sec;
+      RMachoSection64 * sec = (RMachoSection64 * )(seg + 1);
 
       for (j = 0; j < seg->nsects; j++) {
-        sec = (RMachoSection64 * )(seg + 1) + j;
-        if (r_strcmp_size (sec->sectname, sizeof (sec->sectname), name, size) == 0)
-          return sec;
+        if (r_strcmp_size (sec[j].sectname, -1, name, size) == 0)
+          return &sec[j];
       }
     }
   }
