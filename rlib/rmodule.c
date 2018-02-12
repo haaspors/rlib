@@ -69,7 +69,7 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
   (void) name;
   (void) nsize;
   (void) secsize;
-  /* TODO: PE/COFF */
+#pragma message ("TODO: PE/COFF")
   return NULL;
 }
 #elif defined (HAVE_DLFCN_H)
@@ -227,9 +227,13 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
       ret = _find_elf_section (info.dli_fbase, fn, name, nsize, secsize);
 #elif defined (__MACH__)
       ret = _find_macho_section (info.dli_fbase, fn, name, nsize, secsize);
+#else
+#pragma message ("Unsupported platform for module binary lookup")
 #endif
       r_free (fn);
     }
+#else
+#pragma message ("Unsupported platform for module binary lookup")
 #endif
   }
 
