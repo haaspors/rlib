@@ -47,6 +47,9 @@ R_API RMacho64Hdr * r_macho_parser_get_hdr64 (RMachoParser * parser);
 R_API rsize r_macho_parser_get_loadcmd_count (RMachoParser * parser);
 R_API RMachoLoadCmd * r_macho_parser_get_loadcmd (RMachoParser * parser, ruint16 idx);
 
+R_API RMachoSegment32Cmd * r_macho_parser_find_segment32 (RMachoParser * parser, const rchar * name, rssize size);
+R_API RMachoSegment64Cmd * r_macho_parser_find_segment64 (RMachoParser * parser, const rchar * name, rssize size);
+
 R_API RMachoSection32 * r_macho_parser_get_section32 (RMachoParser * parser, RMachoSegment32Cmd * cmd, ruint16 idx);
 R_API RMachoSection64 * r_macho_parser_get_section64 (RMachoParser * parser, RMachoSegment64Cmd * cmd, ruint16 idx);
 R_API RMachoSection32 * r_macho_parser_find_section32 (RMachoParser * parser, const rchar * name, rssize size);

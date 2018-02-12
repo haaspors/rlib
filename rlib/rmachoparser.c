@@ -274,6 +274,48 @@ r_macho_parser_get_loadcmd (RMachoParser * parser, ruint16 idx)
   return lc;
 }
 
+RMachoSegment32Cmd *
+r_macho_parser_find_segment32 (RMachoParser * parser, const rchar * name, rssize size)
+{
+  const RMacho32Hdr * hdr;
+
+  if ((hdr = r_macho_parser_get_hdr32 (parser)) != NULL) {
+    RMachoLoadCmd * lc;
+    ruint16 i;
+    for (i = hdr->ncmds, lc = parser->lc; i > 0;
+        i--, lc = (RMachoLoadCmd *)(RPOINTER_TO_SIZE (lc) + lc->cmdsize)) {
+      if (lc->cmd == R_MACHO_LC_SEGMENT) {
+        RMachoSegment32Cmd * seg = (RMachoSegment32Cmd *)lc;
+        if (r_strcmp_size (seg->segname, -1, name, size) == 0)
+          return seg;
+      }
+    }
+  }
+
+  return NULL;
+}
+
+RMachoSegment64Cmd *
+r_macho_parser_find_segment64 (RMachoParser * parser, const rchar * name, rssize size)
+{
+  const RMacho64Hdr * hdr;
+
+  if ((hdr = r_macho_parser_get_hdr64 (parser)) != NULL) {
+    RMachoLoadCmd * lc;
+    ruint16 i;
+    for (i = hdr->ncmds, lc = parser->lc; i > 0;
+        i--, lc = (RMachoLoadCmd *)(RPOINTER_TO_SIZE (lc) + lc->cmdsize)) {
+      if (lc->cmd == R_MACHO_LC_SEGMENT_64) {
+        RMachoSegment64Cmd * seg = (RMachoSegment64Cmd *)lc;
+        if (r_strcmp_size (seg->segname, -1, name, size) == 0)
+          return seg;
+      }
+    }
+  }
+
+  return NULL;
+}
+
 RMachoSection32 *
 r_macho_parser_get_section32 (RMachoParser * parser, RMachoSegment32Cmd * cmd, ruint16 idx)
 {

@@ -116,3 +116,25 @@ RTEST (rmacho, segment_cmd_get_data, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmacho, find_segment, RTEST_FAST)
+{
+  RMachoParser * parser;
+  RMachoSegment32Cmd * sc;
+
+  r_assert_cmpptr ((parser =
+        r_macho_parser_new_from_mem (mach_o_32_tiny, sizeof (mach_o_32_tiny))), !=, NULL);
+
+  r_assert_cmpptr ((sc = (RMachoSegment32Cmd *)r_macho_parser_find_segment32 (parser, R_STR_WITH_SIZE_ARGS (R_MACHO_SEG_TEXT))), !=, NULL);
+  r_assert_cmpuint (sc->lc.cmd, ==, R_MACHO_LC_SEGMENT);
+  r_assert_cmpstr (sc->segname, ==, R_MACHO_SEG_TEXT);
+  r_assert_cmpuint (sc->vmaddr, ==, 0);
+  r_assert_cmpuint (sc->vmsize, ==, 0x1000);
+  r_assert_cmpuint (sc->fileoff, ==, 0);
+  r_assert_cmpuint (sc->filesize, ==, 0x40);
+  r_assert_cmpuint (sc->nsects, ==, 0);
+  r_assert_cmpuint (sc->flags, ==, 0);
+
+  r_macho_parser_unref (parser);
+}
+RTEST_END;
+
