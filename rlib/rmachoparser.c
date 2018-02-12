@@ -253,6 +253,34 @@ r_macho_parser_get_hdr64 (RMachoParser * parser)
   return parser->machoidx == RMACHO64_IDX ? parser->mem : NULL;
 }
 
+ruint32
+r_macho_parser_get_base_addr32 (RMachoParser * parser)
+{
+  RMachoSegment32Cmd * seg;
+
+  if ((seg = r_macho_parser_find_segment32 (parser, R_STR_WITH_SIZE_ARGS (R_MACHO_SEG_PAGEZERO))) != NULL) {
+    return seg->vmsize;
+  } else if ((seg = r_macho_parser_find_segment32 (parser, R_STR_WITH_SIZE_ARGS (R_MACHO_SEG_TEXT))) != NULL) {
+    return seg->vmaddr;
+  }
+
+  return RUINT32_MAX;
+}
+
+ruint64
+r_macho_parser_get_base_addr64 (RMachoParser * parser)
+{
+  RMachoSegment64Cmd * seg;
+
+  if ((seg = r_macho_parser_find_segment64 (parser, R_STR_WITH_SIZE_ARGS (R_MACHO_SEG_PAGEZERO))) != NULL) {
+    return seg->vmsize;
+  } else if ((seg = r_macho_parser_find_segment64 (parser, R_STR_WITH_SIZE_ARGS (R_MACHO_SEG_TEXT))) != NULL) {
+    return seg->vmaddr;
+  }
+
+  return RUINT32_MAX;
+}
+
 rsize
 r_macho_parser_get_loadcmd_count (RMachoParser * parser)
 {

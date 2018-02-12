@@ -44,6 +44,9 @@ R_API ruint32 r_macho_parser_get_magic (RMachoParser * parser);
 R_API RMacho32Hdr * r_macho_parser_get_hdr32 (RMachoParser * parser);
 R_API RMacho64Hdr * r_macho_parser_get_hdr64 (RMachoParser * parser);
 
+R_API ruint32 r_macho_parser_get_base_addr32 (RMachoParser * parser);
+R_API ruint64 r_macho_parser_get_base_addr64 (RMachoParser * parser);
+
 R_API rsize r_macho_parser_get_loadcmd_count (RMachoParser * parser);
 R_API RMachoLoadCmd * r_macho_parser_get_loadcmd (RMachoParser * parser, ruint16 idx);
 
