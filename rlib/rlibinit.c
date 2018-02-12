@@ -37,6 +37,7 @@ R_INITIALIZER (rlib_init)
   r_ev_loop_init ();
   r_http_server_init ();
   r_mem_allocator_init ();
+  r_module_init ();
   r_networking_init ();
   r_rtc_init ();
   r_srtp_init ();

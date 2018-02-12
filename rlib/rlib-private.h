@@ -36,6 +36,8 @@ R_API_HIDDEN void r_http_server_init (void);
 R_API_HIDDEN void r_mem_allocator_init (void);
 R_API_HIDDEN void r_mem_allocator_deinit (void);
 
+R_API_HIDDEN void r_module_init (void);
+
 R_API_HIDDEN void r_networking_init (void);
 R_API_HIDDEN void r_networking_deinit (void);
 

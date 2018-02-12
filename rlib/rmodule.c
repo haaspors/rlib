@@ -22,12 +22,22 @@
 
 #include <rlib/relfparser.h>
 #include <rlib/rmachoparser.h>
+
+#include <rlib/rlog.h>
 #include <rlib/rproc.h>
 #include <rlib/rstr.h>
 
 #ifdef RLIB_HAVE_MODULE
 
-#define R_LOG_CAT_DEFAULT &rlib_logcat
+R_LOG_CATEGORY_DEFINE_STATIC (rmodule_logcat, "module", "Module logger",
+    R_CLR_FG_CYAN | R_CLR_BG_BLUE | R_CLR_FMT_BOLD);
+#define R_LOG_CAT_DEFAULT &rmodule_logcat
+
+void
+r_module_init (void)
+{
+  r_log_category_register (&rmodule_logcat);
+}
 
 #if defined (R_OS_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -50,6 +60,7 @@ r_module_open (const rchar * path, rboolean lazy, RModuleError * err)
     }
   }
 
+  R_LOG_TRACE ("Open module %s (lazy: %s) -> %p", path, lazy ? "Y" : "N", mod);
   return (RMODULE)mod;
 }
 rpointer
@@ -60,16 +71,18 @@ r_module_lookup (RMODULE mod, const rchar * sym)
 void
 r_module_close (RMODULE mod)
 {
+  R_LOG_TRACE ("Close module %p", mod);
   FreeLibrary (mod);
 }
 rpointer
 r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
     rsize * secsize)
 {
-  (void) name;
   (void) nsize;
-  (void) secsize;
 #pragma message ("TODO: PE/COFF")
+  R_LOG_FIXME ("Used but not implemented (mod %p, name: '%s'", mod, name);
+  if (secsize != NULL)
+    *secsize = 0;
   return NULL;
 }
 #elif defined (HAVE_DLFCN_H)
@@ -88,6 +101,7 @@ r_module_open (const rchar * path, rboolean lazy, RModuleError * err)
       *err = R_MODULE_ERROR_NOT_FOUND;
   }
 
+  R_LOG_TRACE ("Open module %s (lazy: %s) -> %p", path, lazy ? "Y" : "N", mod);
   return mod;
 }
 rpointer
@@ -98,6 +112,7 @@ r_module_lookup (RMODULE mod, const rchar * sym)
 void
 r_module_close (RMODULE mod)
 {
+  R_LOG_TRACE ("Close module %p", mod);
   dlclose (mod);
 }
 
@@ -211,6 +226,7 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
     sym = dlsym (mod, "__bss_start");
 
   if (sym != NULL) {
+    R_LOG_TRACE ("Found a symbol in module %p -> %p", mod, sym);
 #ifdef HAVE_DLADDR
     Dl_info info;
     if (dladdr (sym, &info) != 0 && info.dli_fbase != NULL) {
@@ -223,6 +239,7 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
 #endif
       else
         fn = r_proc_get_exe_path ();
+
 #if defined (__ELF__)
       ret = _find_elf_section (info.dli_fbase, fn, name, nsize, secsize);
 #elif defined (__MACH__)
@@ -230,11 +247,14 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
 #else
 #pragma message ("Unsupported platform for module binary lookup")
 #endif
+      R_LOG_TRACE ("Found section '%s' in binary '%s' -> %p", name, fn, ret);
       r_free (fn);
     }
 #else
 #pragma message ("Unsupported platform for module binary lookup")
 #endif
+  } else {
+    R_LOG_INFO ("Didn't find symbol in module, when finding section '%s'", name);
   }
 
   if (R_UNLIKELY (ret == NULL)) {
