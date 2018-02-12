@@ -22,7 +22,7 @@
 #error "#include <rlib.h> pelase."
 #endif
 
-
+#define RTEST_SECTION                         ".rtest"
 #define _RTEST_MAGIC                          0x42424242
 #define _RTEST_SYM_                           _r_test_sym
 #define _RTEST_DATA_NAME(suite, test)         __rtest_##suite##_##test##_data
@@ -34,7 +34,7 @@
 #define _RTEST_FIXTURE_ARG(suite)  R_ATTR_UNUSED _RTEST_FIXTURE_STRUCT(suite) * fixture
 
 #define __RTEST(suite, test, skip, type, timeout, start, end, setup, teardown, fdata)\
-  R_ATTR_UNUSED R_ATTR_DATA_SECTION (".rtest")                                \
+  R_ATTR_UNUSED R_ATTR_DATA_SECTION (RTEST_SECTION)                           \
   const RTest _RTEST_DATA_NAME (suite, test) = { _RTEST_MAGIC, skip,          \
     #suite, #test, (type), (timeout),                                         \
     _RTEST_FUNC_NAME(suite, test), start, end,                                \
