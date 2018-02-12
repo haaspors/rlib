@@ -176,9 +176,10 @@ _find_macho_section (rpointer mem, const rchar * file,
         {
           RMachoSection32 * sec;
           if ((sec = r_macho_parser_find_section32 (f, name, nsize)) != NULL) {
+            ruint32 baddr = r_macho_parser_get_base_addr32 (f);
             if (secsize != NULL)
               *secsize = sec->size;
-            ret = (ruint8 *)mem + sec->addr;
+            ret = (ruint8 *)mem + sec->addr - baddr;
           }
         }
         break;
@@ -186,9 +187,10 @@ _find_macho_section (rpointer mem, const rchar * file,
         {
           RMachoSection64 * sec;
           if ((sec = r_macho_parser_find_section64 (f, name, nsize)) != NULL) {
+            ruint64 baddr = r_macho_parser_get_base_addr64 (f);
             if (secsize != NULL)
               *secsize = sec->size;
-            ret = (ruint8 *)mem + sec->addr;
+            ret = (ruint8 *)mem + sec->addr - baddr;
           }
         }
         break;
