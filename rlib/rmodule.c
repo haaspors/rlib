@@ -222,6 +222,10 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
   sym = ((struct link_map *)mod)->l_ld;
 #endif
 #endif
+#ifdef __MACH__
+  if (sym == NULL && (sym = dlsym (mod, "_mh_dylib_header")) == NULL)
+    sym = dlsym (mod, "_mh_execute_header");
+#endif
   if (sym == NULL && (sym = dlsym (mod, "_init")) == NULL)
     sym = dlsym (mod, "__bss_start");
 
