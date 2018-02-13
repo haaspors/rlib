@@ -215,7 +215,23 @@ r_test_fill_path (const RTest * test, rchar * path, rsize size)
   return r_strnjoin (path, size, "/", "", test->suite, test->name, NULL) != NULL;
 }
 
-const RTest *
+static const RTest *
+r_test_get_module_tests_using_find_section (RMODULE mod, rsize * count)
+{
+  rpointer sec;
+  rsize secsize = 0;
+
+  sec = r_module_find_section (mod, R_STR_WITH_SIZE_ARGS (RTEST_SECTION), &secsize);
+  if (count != NULL)
+    *count = secsize / sizeof (RTest);
+
+  R_LOG_INFO ("Find '"RTEST_SECTION"' section in module %p -> %p (0x%"RSIZE_MODIFIER"x)",
+      mod, sec, secsize);
+
+  return sec;
+}
+
+static const RTest *
 r_test_get_module_tests_using_magic (RMODULE mod, rsize * count)
 {
   rchar name[] = R_STRINGIFY (_RTEST_SYM_)"0";
@@ -270,10 +286,12 @@ r_test_get_module_tests (RMODULE mod, rsize * count)
     closemod = NULL;
   }
 
-  /* TODO: Add r_module_find_section based impl */
-
-  /* Fallback using the magic symbol */
-  ret = r_test_get_module_tests_using_magic (mod, count);
+  /* Try the r_module_find_section based impl */
+  if ((ret = r_test_get_module_tests_using_find_section (mod, count)) == NULL) {
+    /* Fallback using the magic symbol */
+    R_LOG_CRITICAL ("Use fallback when finding module tests (using RTEST magic)");
+    ret = r_test_get_module_tests_using_magic (mod, count);
+  }
 
   if (closemod != NULL)
     r_module_close (mod);
