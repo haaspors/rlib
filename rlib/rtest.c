@@ -215,51 +215,41 @@ r_test_fill_path (const RTest * test, rchar * path, rsize size)
   return r_strnjoin (path, size, "/", "", test->suite, test->name, NULL) != NULL;
 }
 
-static const RTest *
-r_test_find_magic_sym (RMODULE mod)
-{
-  const RTest ** sym;
-  int i;
-  rchar name[] = R_STRINGIFY (_RTEST_SYM_)"\0\0\0";
-
-  if (mod == NULL)
-    return NULL;
-
-  for (i = 0; i < 10; i++) {
-    name[sizeof (R_STRINGIFY (_RTEST_SYM_))-1] = '0' + i;
-    R_LOG_TRACE ("resolving %s", name);
-    if ((sym = r_module_lookup (mod, name)) != NULL)
-      return *sym;
-  }
-
-  return NULL;
-}
-
 const RTest *
 r_test_get_module_tests_using_magic (RMODULE mod, rsize * count)
 {
-  const RTest * begin, * end, * sym, * cur;
+  rchar name[] = R_STRINGIFY (_RTEST_SYM_)"0";
+  const RTest * begin = RSIZE_TO_POINTER (RSIZE_MAX), * end = NULL, * cur, ** sym;
+  int i;
 
-  sym = r_test_find_magic_sym (mod);
-
-  if (sym == NULL) {
-    R_LOG_CRITICAL ("%s not found", R_STRINGIFY (_RTEST_SYM_));
-    return NULL;
-  } else if (sym->magic != _RTEST_MAGIC) {
-    R_LOG_CRITICAL ("%s found, but magic (0x%x) was not 0x%x",
-        R_STRINGIFY (_RTEST_SYM_), sym->magic, _RTEST_MAGIC);
-    return NULL;
+  R_LOG_INFO ("Trying to find '"R_STRINGIFY (_RTEST_SYM_)"' symbols"
+      " then iterate looking for RTEST magic");
+  for (i = 0; i < 10; i++) {
+    name[sizeof (R_STRINGIFY (_RTEST_SYM_))-1] = '0' + i;
+    if ((sym = r_module_lookup (mod, name)) != NULL &&
+        (*sym)->magic == _RTEST_MAGIC) {
+      R_LOG_DEBUG ("Resolved '%s': %p", name, *sym);
+      begin = MIN (begin, *sym);
+      end = MAX (end, *sym);
+    } else {
+      R_LOG_DEBUG ("Not found '%s'", name);
+    }
   }
 
-  begin = end = sym;
+  if (end == NULL) {
+    R_LOG_CRITICAL ("Didn't find any '"R_STRINGIFY (_RTEST_SYM_)"' symbols");
+    return NULL;
+  }
 
   for (cur = begin - 1; cur->magic == _RTEST_MAGIC; cur--)
     begin = cur;
   for (cur = end + 1; cur->magic == _RTEST_MAGIC; cur++)
     end = cur;
 
-  R_LOG_TRACE ("Found RTESTs: first %p, last %p (size: %"RSIZE_FMT")",
-      begin, end, sizeof (RTest));
+  R_LOG_INFO ("Found RTESTs: first %p, last %p"
+      " (size: 0x%"RSIZE_MODIFIER"x / 0x%"RSIZE_MODIFIER"x == %"RSIZE_FMT")",
+      begin, end, RPOINTER_TO_SIZE (end) - RPOINTER_TO_SIZE (begin), sizeof (RTest),
+      (RPOINTER_TO_SIZE (end) - RPOINTER_TO_SIZE (begin)) / sizeof (RTest));
 
   if (count != NULL)
     *count = (end - begin) + 1;
