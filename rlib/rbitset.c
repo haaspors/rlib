@@ -31,9 +31,10 @@
 #define R_BITSET_BIT_IDX(bit) ((bit) / R_BSWORD_BITS)
 #define R_BITSET_BIT_POS(bit) ((bit) % R_BSWORD_BITS)
 #define R_BITSET_BIT_MASK(bit) (RBSWORD_CONSTANT (1) << R_BITSET_BIT_POS (bit))
-#define R_BITSET_CLAMP(bs) \
-  if (((bs)->words * R_BSWORD_BITS) != (bs)->bits) { \
-    (bs)->data[(bs)->words - 1] &= (RBSWORD_CONSTANT (1) << (bs)->bits) - 1; \
+#define R_BITSET_CLAMP(bs)                                                      \
+  if (((bs)->words * R_BSWORD_BITS) != (bs)->bits) {                            \
+    (bs)->data[(bs)->words - 1] &=                                              \
+      (RBSWORD_CONSTANT (1) << ((bs)->bits & (R_BSWORD_BITS - 1))) - 1;         \
   }
 
 RBitset *
