@@ -11,6 +11,7 @@ examples = [
   'rtest',
   'rmachodump',
   'rmodulesection',
+  'rpedump',
   'rthratomic',
   'rthreadaffinity',
   'rthreadsleep',

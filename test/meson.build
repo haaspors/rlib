@@ -45,6 +45,7 @@ rlibtest_sources = [
   'rmpint.c',
   'rmsgdigest.c',
   'roptparse.c',
+  'rpecoff.c',
   'rprng-kiss.c',
   'rprng-mt.c',
   'rproc.c',

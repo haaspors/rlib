@@ -31,6 +31,8 @@ rlib_sources = [
   'rmpint_montgomery.c',
   'rmsgdigest.c',
   'roptparse.c',
+  'rpecoff.c',
+  'rpeparser.c',
   'rprng-kiss.c',
   'rprng-mt.c',
   'rproc.c',

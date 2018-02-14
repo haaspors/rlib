@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -55,6 +55,8 @@
 #include <rlib/rmpint.h>
 #include <rlib/rmsgdigest.h>
 #include <rlib/roptparse.h>
+#include <rlib/rpecoff.h>
+#include <rlib/rpeparser.h>
 #include <rlib/rproc.h>
 #include <rlib/rptrarray.h>
 #include <rlib/rqueue.h>
