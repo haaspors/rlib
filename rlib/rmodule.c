@@ -22,6 +22,7 @@
 
 #include <rlib/relfparser.h>
 #include <rlib/rmachoparser.h>
+#include <rlib/rpeparser.h>
 
 #include <rlib/rlog.h>
 #include <rlib/rproc.h>
@@ -78,12 +79,25 @@ rpointer
 r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
     rsize * secsize)
 {
-  (void) nsize;
-#pragma message ("TODO: PE/COFF")
-  R_LOG_FIXME ("Used but not implemented (mod %p, name: '%s'", mod, name);
+  RPeParser * pep;
+  rpointer ret = NULL;
+
   if (secsize != NULL)
     *secsize = 0;
-  return NULL;
+
+  if ((pep = r_pe_parser_new_from_mem (mod, 42)) != NULL) {
+    RPeSectionHdr * sec;
+
+    if ((sec = r_pe_parser_get_section_hdr_by_name (pep, name, nsize)) != NULL) {
+      ret = ((ruint8 *)mod) + sec->vmaddr;
+      if (secsize != NULL)
+        *secsize = sec->vmsize;
+    }
+
+    r_pe_parser_unref (pep);
+  }
+
+  return ret;
 }
 #elif defined (HAVE_DLFCN_H)
 #include <dlfcn.h>
