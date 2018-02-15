@@ -558,12 +558,12 @@ r_stpncpy (rchar * dst, const rchar * src, rsize len)
 
 static inline RStrParse
 r_str_to_int_parse (const rchar * str, const rchar ** endptr, ruint base,
-    ruint bits, rintmax * val)
+    ruint bits, rint64 * val)
 {
   RStrParse ret = R_STR_PARSE_INVAL;
   const rchar * ptr, * start;
   rboolean neg = FALSE;
-  ruintmax v = 0, m = RUINTMAX_MAX >> (RLIB_SIZEOF_INTMAX * 8 - (bits - 1));
+  ruint64 v = 0, m = RUINT64_MAX >> (sizeof (ruint64) * 8 - (bits - 1));
 
   *val = 0;
   if (endptr != NULL)
@@ -608,7 +608,7 @@ r_str_to_int_parse (const rchar * str, const rchar ** endptr, ruint base,
 
   for (start = ptr; *ptr != 0;) {
     rchar c;
-    ruintmax nv;
+    ruint64 nv;
 
     if (r_ascii_isdigit (*ptr))       c = *ptr - '0';
     else if (r_ascii_islower (*ptr))  c = 10 + *ptr - 'a';
@@ -630,7 +630,7 @@ r_str_to_int_parse (const rchar * str, const rchar ** endptr, ruint base,
   }
 
   if (start != ptr)
-    *val = !neg ? v : -v;
+    *val = !neg ? (rint64)v : -(rint64)v;
   else
     ret = R_STR_PARSE_INVAL;
 
@@ -643,11 +643,11 @@ beach:
 
 static inline RStrParse
 r_str_to_uint_parse (const rchar * str, const rchar ** endptr, ruint base,
-    ruint bits, ruintmax * val)
+    ruint bits, ruint64 * val)
 {
   RStrParse ret = R_STR_PARSE_INVAL;
   const rchar * ptr, * start;
-  ruintmax v = 0, m = RUINTMAX_MAX >> (RLIB_SIZEOF_INTMAX * 8 - bits);
+  ruint64 v = 0, m = RUINT64_MAX >> (sizeof (ruint64) * 8 - bits);
 
   *val = 0;
   if (endptr != NULL)
@@ -681,7 +681,7 @@ r_str_to_uint_parse (const rchar * str, const rchar ** endptr, ruint base,
 
   for (start = ptr; *ptr != 0;) {
     rchar c;
-    ruintmax nv;
+    ruint64 nv;
 
     if (r_ascii_isdigit (*ptr))       c = *ptr - '0';
     else if (r_ascii_islower (*ptr))  c = 10 + *ptr - 'a';
@@ -717,7 +717,7 @@ beach:
 rint8
 r_str_to_int8 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
 {
-  rintmax ret;
+  rint64 ret;
   RStrParse r = r_str_to_int_parse (str, endptr, base, 8, &ret);
   if (res != NULL)
     *res = r;
@@ -727,7 +727,7 @@ r_str_to_int8 (const rchar * str, const rchar ** endptr, ruint base, RStrParse *
 ruint8
 r_str_to_uint8 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
 {
-  ruintmax ret;
+  ruint64 ret;
   RStrParse r = r_str_to_uint_parse (str, endptr, base, 8, &ret);
   if (res != NULL)
     *res = r;
@@ -737,7 +737,7 @@ r_str_to_uint8 (const rchar * str, const rchar ** endptr, ruint base, RStrParse 
 rint16
 r_str_to_int16 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
 {
-  rintmax ret;
+  rint64 ret;
   RStrParse r = r_str_to_int_parse (str, endptr, base, 16, &ret);
   if (res != NULL)
     *res = r;
@@ -747,7 +747,7 @@ r_str_to_int16 (const rchar * str, const rchar ** endptr, ruint base, RStrParse 
 ruint16
 r_str_to_uint16 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
 {
-  ruintmax ret;
+  ruint64 ret;
   RStrParse r = r_str_to_uint_parse (str, endptr, base, 16, &ret);
   if (res != NULL)
     *res = r;
@@ -757,7 +757,7 @@ r_str_to_uint16 (const rchar * str, const rchar ** endptr, ruint base, RStrParse
 rint32
 r_str_to_int32 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
 {
-  rintmax ret;
+  rint64 ret;
   RStrParse r = r_str_to_int_parse (str, endptr, base, 32, &ret);
   if (res != NULL)
     *res = r;
@@ -767,7 +767,7 @@ r_str_to_int32 (const rchar * str, const rchar ** endptr, ruint base, RStrParse 
 ruint32
 r_str_to_uint32 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
 {
-  ruintmax ret;
+  ruint64 ret;
   RStrParse r = r_str_to_uint_parse (str, endptr, base, 32, &ret);
   if (res != NULL)
     *res = r;
@@ -777,21 +777,21 @@ r_str_to_uint32 (const rchar * str, const rchar ** endptr, ruint base, RStrParse
 rint64
 r_str_to_int64 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
 {
-  rintmax ret;
+  rint64 ret;
   RStrParse r = r_str_to_int_parse (str, endptr, base, 64, &ret);
   if (res != NULL)
     *res = r;
-  return (rint64)ret;
+  return ret;
 }
 
 ruint64
 r_str_to_uint64 (const rchar * str, const rchar ** endptr, ruint base, RStrParse * res)
 {
-  ruintmax ret;
+  ruint64 ret;
   RStrParse r = r_str_to_uint_parse (str, endptr, base, 64, &ret);
   if (res != NULL)
     *res = r;
-  return (ruint64)ret;
+  return ret;
 }
 
 rfloat
