@@ -444,7 +444,11 @@ r_sys_node_discover (rsize idx, RSysTopology * topo)
     ret->idx = idx;
 
 #if defined (R_OS_WIN32)
-    GetNumaAvailableMemoryNode ((ruchar)idx, &ret->availablemem);
+    {
+      ULONGLONG availmem = 0;
+      GetNumaAvailableMemoryNode ((ruchar)idx, &availmem);
+      ret->availablemem = (rsize)availmem;
+    }
     if (r_bitset_init_heap (ret->cpuset, sizeof (ULONGLONG) * 8)) {
       ULONGLONG mask;
       if (idx < RUINT8_MAX && GetNumaNodeProcessorMask ((ruchar)idx, &mask))
