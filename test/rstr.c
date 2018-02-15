@@ -453,7 +453,7 @@ RTEST (rstr, to_int64_base0, RTEST_FAST)
   r_assert_cmpint (res, ==, R_STR_PARSE_OK);
   r_assert_cmpstr (e, ==, "");
   r_assert_cmpint (r_str_to_int64 ("-4200000000000000e", &e, 0, &res), ==,
-      RUINT64_CONSTANT (-4200000000000000));
+      RINT64_CONSTANT (-4200000000000000));
   r_assert_cmpint (res, ==, R_STR_PARSE_OK);
   r_assert_cmpstr (e, ==, "e");
   r_assert_cmpint (r_str_to_int64 ("9223372036854775807e", &e, 0, &res), ==, RINT64_MAX);
