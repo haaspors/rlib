@@ -312,7 +312,7 @@ static void
 _r_sdp_msg_add_t_line (rpointer data, rpointer user)
 {
   const RSdpTime * t = data;
-  r_string_append_printf (user, "t=%"RSIZE_FMT" %"RSIZE_FMT"\r\n",
+  r_string_append_printf (user, "t=%"RUINT64_FMT" %"RUINT64_FMT"\r\n",
       t->start, t->stop);
   r_ptr_array_foreach (t->repeat, _r_sdp_msg_add_r_line, user);
 }
