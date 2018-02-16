@@ -93,6 +93,12 @@ typedef enum {
   R_TEST_RUN_STATE_TIMEOUT    = 6
 } RTestRunState;
 
+typedef enum {
+  R_TEST_RUN_FLAG_NONE          = 0,
+  R_TEST_RUN_FLAG_IGNORE_SKIP   = 1 << 0,
+  R_TEST_RUN_FLAG_PRINT         = 1 << 1,
+} RTestRunFlag;
+
 typedef struct {
   RClockTime ts;
   const rchar * file;
@@ -113,6 +119,11 @@ typedef struct {
   RClockTime start;
   RClockTime end;
 } RTestRun;
+
+typedef enum {
+  R_TEST_REPORT_FLAG_NONE         = 0,
+  R_TEST_REPORT_FLAG_VERBOSE      = (1 << 0),
+} RTestReportFlag;
 
 typedef struct {
   rsize total;
@@ -168,13 +179,17 @@ int main (int argc, rchar ** argv) {                                          \
   ROptionParser * parser = r_option_parser_new (NULL, version_str);           \
   RTestReport * report;                                                       \
   int ret = -1;                                                               \
+  RTestReportFlag report_flags = R_TEST_REPORT_FLAG_NONE;                     \
+  RTestRunFlag run_flags = R_TEST_RUN_FLAG_NONE;                              \
                                                                               \
-  rboolean verbose, igskip;                                                   \
+  rboolean verbose, print_run, igskip;                                        \
   rchar * output, * filter;                                                   \
   const ROptionArgument args[] = {                                            \
-    R_OPT_ARG ("verbose",     'v', R_OPTION_TYPE_NONE,      &verbose,         \
+    R_OPT_ARG ("verbose",     'v', R_OPTION_TYPE_BOOL,      &verbose,         \
         R_OPTION_FLAG_NONE, "Print verbose info", NULL),                      \
-    R_OPT_ARG ("ignore-skip", 'i', R_OPTION_TYPE_NONE,      &igskip,          \
+    R_OPT_ARG ("print",       'p', R_OPTION_TYPE_BOOL,      &print_run,       \
+        R_OPTION_FLAG_NONE, "Print all tests which ran", NULL),               \
+    R_OPT_ARG ("ignore-skip", 'i', R_OPTION_TYPE_BOOL,      &igskip,          \
         R_OPTION_FLAG_NONE, "Run tests that default would be skipped", NULL), \
     R_OPT_ARG ("filter",      'f', R_OPTION_TYPE_STRING,    &filter,          \
         R_OPTION_FLAG_NONE,                                                   \
@@ -197,19 +212,23 @@ int main (int argc, rchar ** argv) {                                          \
       {                                                                       \
         const RTest * tests;                                                  \
         rsize count;                                                          \
+        FILE * f = stdout;                                                    \
                                                                               \
-        if ((tests = r_test_get_module_tests (NULL, &count)) != NULL &&        \
-            (report = r_test_run_tests (tests, count, R_TEST_ALL_MASK,        \
-                filter, igskip)) != NULL) {                                   \
-          FILE * f = stdout;                                                  \
-          if (output != NULL && !r_str_equals (output, "-"))                  \
-            f = fopen (output, "w");                                          \
-          r_test_report_print (report, verbose, f);                           \
-          if (f != stdout)                                                    \
-            fclose (f);                                                       \
+        if (verbose) report_flags |= R_TEST_REPORT_FLAG_VERBOSE;              \
+        if (igskip) run_flags |= R_TEST_RUN_FLAG_IGNORE_SKIP;                 \
+        if (print_run) run_flags |= R_TEST_RUN_FLAG_PRINT;                    \
+                                                                              \
+        if (output != NULL && !r_str_equals (output, "-"))                    \
+          f = fopen (output, "w");                                            \
+        if ((tests = r_test_get_module_tests (NULL, &count)) != NULL &&       \
+            (report = r_test_run_tests (tests, count, run_flags, f,           \
+                R_TEST_ALL_MASK, filter)) != NULL) {                          \
+          r_test_report_print (report, report_flags, f);                      \
           ret = report->fail + report->error;                                 \
           r_test_report_free (report);                                        \
         }                                                                     \
+        if (f != stdout)                                                      \
+          fclose (f);                                                         \
       }                                                                       \
       break;                                                                  \
     default:                                                                  \
@@ -236,11 +255,11 @@ R_API RTestRunState r_test_run_fork (const RTest * test, rsize __i,
 R_API RTestRunState r_test_run_nofork (const RTest * test, rsize __i,
     rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);
 R_API RTestReport * r_test_run_tests_full (const RTest * tests, rsize count,
-    RTestFilterFunc filter, rpointer data);
+    RTestRunFlag flags, FILE * f, RTestFilterFunc filter, rpointer data);
 R_API RTestReport * r_test_run_tests (const RTest * tests, rsize count,
-    RTestType type, const rchar * filter, rboolean ignore_skip);
+    RTestRunFlag flags, FILE * f, RTestType type, const rchar * filter);
 
-R_API void r_test_report_print (RTestReport * report, rboolean verbose, FILE * f);
+R_API void r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f);
 #define r_test_report_free(report)  r_free (report)
 
 R_END_DECLS

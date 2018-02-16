@@ -51,6 +51,22 @@
 
 static RTss                         g__r_test_last_pos_tss = R_TSS_INIT (NULL);
 
+#ifdef R_OS_UNIX
+#define _DO_CLR(SGR)  (r_isatty (r_fileno (f))) ? SGR : ""
+#else
+#define _DO_CLR(SGR) ""
+#endif
+
+#define _RESET_CLR    _DO_CLR (R_TTY_SGR_RESET)
+#define _TIME_CLR     _DO_CLR (R_TTY_SGR1 (R_TTY_SGR_FG_ARG (R_CLR_CYAN)))
+#define _TIME_ERR_CLR _DO_CLR (R_TTY_SGR1 (R_TTY_SGR_FG_ARG (R_CLR_YELLOW)))
+#define _RES_CLR(CLR) _DO_CLR (R_TTY_SGR2 (R_TTY_SGR_BOLD_ARG, R_TTY_SGR_FG_ARG(CLR)))
+
+#define _SKIP_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_BLUE)) : "", COUNT, _RESET_CLR
+#define _SUCC_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_GREEN)) : "", COUNT, _RESET_CLR
+#define _FAIL_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_RED)) : "", COUNT, _RESET_CLR
+#define _ERR_ARGS(COUNT)  (COUNT) ? (_RES_CLR (R_CLR_MAGENTA)) : "", COUNT, _RESET_CLR
+
 #if defined (R_OS_WIN32)
 static const int g__r_test_sigs[] = {
   SIGABRT, SIGFPE, SIGSEGV, SIGILL
@@ -120,6 +136,31 @@ static void r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx);
 R_LOG_CATEGORY_DEFINE_STATIC (rtest_logcat, "test", "Test logger",
     R_CLR_BG_MAGENTA | R_CLR_FMT_BOLD);
 #define R_LOG_CAT_DEFAULT &rtest_logcat
+
+static const rchar *
+r_test_get_run_str (RTestRunState state, const rchar ** runresclr, FILE * f)
+{
+  switch (state) {
+    case R_TEST_RUN_STATE_SUCCESS:
+      *runresclr = _RES_CLR (R_CLR_GREEN);
+      return "SUCCESS:";
+    case R_TEST_RUN_STATE_FAILED:
+      *runresclr = _RES_CLR (R_CLR_RED);
+      return "FAIL:";
+    case R_TEST_RUN_STATE_ERROR:
+      *runresclr = _RES_CLR (R_CLR_MAGENTA);
+      return "ERROR:";
+    case R_TEST_RUN_STATE_SKIP:
+      *runresclr = _RES_CLR (R_CLR_BLUE);
+      return "SKIP:";
+    case R_TEST_RUN_STATE_TIMEOUT:
+      *runresclr = _RES_CLR (R_CLR_MAGENTA);
+      return "TIMEOUT:";
+    default:
+      *runresclr = _RES_CLR (R_CLR_CYAN);
+      return "INTERR:";
+  };
+}
 
 void
 r_test_init (void)
@@ -740,7 +781,7 @@ r_test_run_nofork (const RTest * test, rsize __i, rboolean notimeout,
 }
 
 RTestReport *
-r_test_run_tests_full (const RTest * tests, rsize count,
+r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FILE * f,
     RTestFilterFunc filter, rpointer data)
 {
   typedef RTestRunState (*RTestRunFunc) (const RTest *, rsize, rboolean,
@@ -824,6 +865,26 @@ r_test_run_tests_full (const RTest * tests, rsize count,
               ret->error++;
               break;
           }
+
+          if (flags & R_TEST_RUN_FLAG_PRINT) {
+            const rchar * runres, * runresclr;
+
+            runres = r_test_get_run_str (ret->runs[cur].state, &runresclr, f);
+
+            if (ret->runs[cur].test->type & R_TEST_FLAG_LOOP) {
+              r_print ("%s%-9s%s[%s%"R_TIME_FORMAT"%s] %s/%s/%s/%"RSIZE_FMT"%s [pid: %d]\n",
+                  runresclr, runres, _RESET_CLR,
+                  _TIME_CLR, R_TIME_ARGS (ret->runs[cur].end - ret->runs[cur].start), _RESET_CLR,
+                  runresclr, ret->runs[cur].test->suite, ret->runs[cur].test->name, ret->runs[cur].__i, _RESET_CLR,
+                  ret->runs[cur].pid);
+            } else {
+              r_print ("%s%-9s%s[%s%"R_TIME_FORMAT"%s] %s/%s/%s%s [pid: %d]\n",
+                  runresclr, runres, _RESET_CLR,
+                  _TIME_CLR, R_TIME_ARGS (ret->runs[cur].end - ret->runs[cur].start), _RESET_CLR,
+                  runresclr, ret->runs[cur].test->suite, ret->runs[cur].test->name, _RESET_CLR,
+                  ret->runs[cur].pid);
+            }
+          }
         } else {
           ret->runs[cur].start = ret->runs[cur].end = r_time_get_ts_monotonic ();
           ret->runs[cur].state = R_TEST_RUN_STATE_SKIP;
@@ -843,7 +904,7 @@ r_test_run_tests_full (const RTest * tests, rsize count,
 typedef struct {
   RTestType type;
   const rchar * filter;
-  rboolean ignore_skip;
+  RTestRunFlag flags;
 } RTestFilterCtx;
 
 static rboolean
@@ -855,7 +916,9 @@ r_test_filter_default (const RTest * test, rsize __i, rpointer data)
 
   (void)__i;
 
-  if ((ctx->type & test->type) == 0 || (!ctx->ignore_skip && test->skip))
+  if ((ctx->type & test->type) == 0)
+    return FALSE;
+  if (test->skip && (ctx->flags & R_TEST_RUN_FLAG_IGNORE_SKIP) == 0)
     return FALSE;
   if (ctx->filter == NULL)
     return TRUE;
@@ -870,70 +933,36 @@ r_test_filter_default (const RTest * test, rsize __i, rpointer data)
 }
 
 RTestReport *
-r_test_run_tests (const RTest * tests, rsize count,
-    RTestType type, const rchar * filter, rboolean ignore_skip)
+r_test_run_tests (const RTest * tests, rsize count, RTestRunFlag flags, FILE * f,
+    RTestType type, const rchar * filter)
 {
-  RTestFilterCtx ctx = { type, filter, ignore_skip };
-  return r_test_run_tests_full (tests, count, r_test_filter_default, &ctx);
+  RTestFilterCtx ctx = { type, filter, flags };
+  return r_test_run_tests_full (tests, count, flags, f, r_test_filter_default, &ctx);
 }
 
 void
-r_test_report_print (RTestReport * report, rboolean verbose, FILE * f)
+r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
 {
   rsize i;
   RClockTime elapsed;
   const rchar * runresclr;
 
-#ifdef R_OS_UNIX
-#define _DO_CLR(SGR)  (r_isatty (r_fileno (f))) ? SGR : ""
-#else
-#define _DO_CLR(SGR) ""
-#endif
-
-#define _RESET_CLR    _DO_CLR (R_TTY_SGR_RESET)
-#define _TIME_CLR     _DO_CLR (R_TTY_SGR1 (R_TTY_SGR_FG_ARG (R_CLR_CYAN)))
-#define _TIME_ERR_CLR _DO_CLR (R_TTY_SGR1 (R_TTY_SGR_FG_ARG (R_CLR_YELLOW)))
-#define _RES_CLR(CLR) _DO_CLR (R_TTY_SGR2 (R_TTY_SGR_BOLD_ARG, R_TTY_SGR_FG_ARG(CLR)))
-
-#define _SKIP_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_BLUE)) : "", COUNT, _RESET_CLR
-#define _SUCC_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_GREEN)) : "", COUNT, _RESET_CLR
-#define _FAIL_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_RED)) : "", COUNT, _RESET_CLR
-#define _ERR_ARGS(COUNT)  (COUNT) ? (_RES_CLR (R_CLR_MAGENTA)) : "", COUNT, _RESET_CLR
+  if ((flags & R_TEST_REPORT_FLAG_VERBOSE) == R_TEST_REPORT_FLAG_VERBOSE) {
+    r_fprintf (f,
+        "================================================================================\n"
+        "Test report:\n"
+        "================================================================================\n");
+  }
 
   for (i = 0; i < report->total; i++) {
     RTestRun * run = &report->runs[i];
-    if (run->state > R_TEST_RUN_STATE_SUCCESS || verbose) {
+    if (run->state > R_TEST_RUN_STATE_SUCCESS ||
+        (flags & R_TEST_REPORT_FLAG_VERBOSE) == R_TEST_REPORT_FLAG_VERBOSE) {
       elapsed = run->end - run->start;
       const rchar * runres;
       rchar * extra, * name;
 
-      switch (run->state) {
-        case R_TEST_RUN_STATE_SUCCESS:
-          runres = "SUCCESS:";
-          runresclr = _RES_CLR (R_CLR_GREEN);
-          break;
-        case R_TEST_RUN_STATE_FAILED:
-          runres = "FAIL:";
-          runresclr = _RES_CLR (R_CLR_RED);
-          break;
-        case R_TEST_RUN_STATE_ERROR:
-          runres = "ERROR:";
-          runresclr = _RES_CLR (R_CLR_MAGENTA);
-          break;
-        case R_TEST_RUN_STATE_SKIP:
-          runres = "SKIP:";
-          runresclr = _RES_CLR (R_CLR_BLUE);
-          break;
-        case R_TEST_RUN_STATE_TIMEOUT:
-          runres = "TIMEOUT:";
-          runresclr = _RES_CLR (R_CLR_MAGENTA);
-          break;
-        default:
-          runres = "INTERR:";
-          runresclr = _RES_CLR (R_CLR_CYAN);
-          break;
-      };
-
+      runres = r_test_get_run_str (run->state, &runresclr, f);
       if (run->test->type & R_TEST_FLAG_LOOP)
         name = r_strprintf ("/%s/%s/%"RSIZE_FMT,
             run->test->suite, run->test->name, run->__i);
