@@ -22,7 +22,6 @@ foreach e : examples
     include_directories : inc,
     dependencies : [ libm, libdl, libthread, librt ],
     link_with : rlibsh,
-    link_args : '-rdynamic',
     install : false)
 endforeach
 
