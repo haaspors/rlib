@@ -838,12 +838,7 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
           ret->runs[cur].lastpos.line = __LINE__;
           ret->runs[cur].lastpos.func = R_STRFUNC;
           ret->runs[cur].lastpos.assert = FALSE;
-
-#ifdef R_OS_UNIX
-          ret->runs[cur].pid = getpid ();
-#else
-          ret->runs[cur].pid = 0;
-#endif
+          ret->runs[cur].pid = r_proc_get_id ();
           ret->runs[cur].state = runner (ret->runs[cur].test, it, notimeout,
               &ret->runs[cur].lastpos, &ret->runs[cur].failpos, &ret->runs[cur].pid);
           ret->runs[cur].end = r_time_get_ts_monotonic ();

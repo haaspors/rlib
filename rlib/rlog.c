@@ -22,18 +22,13 @@
 #include <rlib/renv.h>
 #include <rlib/rlist.h>
 #include <rlib/rmem.h>
+#include <rlib/rproc.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>
 #include <rlib/rtty.h>
 #include <stdio.h>
 #include <string.h>
-#ifdef R_OS_WIN32
-#include <process.h>
-#define pid_t int
-#else
-#include <unistd.h>
-#endif
 
 
 rauint _r_log_level_min = R_LOG_LEVEL_DEFAULT;
@@ -385,7 +380,6 @@ r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
     const rchar * msg, rpointer user_data)
 {
   FILE * f = user_data == NULL ? stderr : (FILE *)user_data;
-  pid_t pid = getpid ();
   RClockTime elapsed = r_time_get_ts_monotonic () - g__r_log_ts_start;
 
 #define CLK_FMT "%"R_TIME_FORMAT
@@ -406,7 +400,7 @@ r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
 
     r_fprintf (f,
         CLK_FMT" "PID_FMT" "THR_FMT" %s"LVL_FMT" %s"CAT_FMT R_TTY_SGR_RESET" "MSG_FMT"\n",
-        R_TIME_ARGS (elapsed), pid, r_thread_current (),
+        R_TIME_ARGS (elapsed), r_proc_get_id (), r_thread_current (),
         r_log_level_get_term_clr_code (lvl), r_log_level_get_name (lvl),
         clr, cat->name, file, line, func,
         msg);
@@ -416,7 +410,7 @@ r_log_default_handler (RLogCategory * cat, RLogLevel lvl,
 #endif
   {
     r_fprintf (f, CLK_FMT" "PID_FMT" "THR_FMT" "LVL_FMT" "CAT_FMT" "MSG_FMT"\n",
-        R_TIME_ARGS (elapsed), pid, r_thread_current (),
+        R_TIME_ARGS (elapsed), r_proc_get_id (), r_thread_current (),
         r_log_level_get_name (lvl),
         cat->name, file, line, func, msg);
   }

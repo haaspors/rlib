@@ -26,6 +26,8 @@ R_API rboolean r_proc_is_debugger_attached (void);
 R_API rchar * r_proc_get_exe_path (void) R_ATTR_MALLOC;
 R_API rchar * r_proc_get_exe_name (void) R_ATTR_MALLOC;
 
+R_API int r_proc_get_id (void);
+
 R_END_DECLS
 
 #endif /* __R_PROC_H__ */

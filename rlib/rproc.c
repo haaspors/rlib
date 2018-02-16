@@ -26,6 +26,7 @@
 #include <string.h>
 #ifdef R_OS_WIN32
 #include <windows.h>
+#include <process.h>
 #else
 #ifdef R_OS_DARWIN
 #include <mach-o/dyld.h>
@@ -121,5 +122,11 @@ r_proc_get_exe_name (void)
 
   r_free (path);
   return ret;
+}
+
+int
+r_proc_get_id (void)
+{
+  return getpid ();
 }
 
