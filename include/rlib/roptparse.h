@@ -46,7 +46,7 @@ typedef enum {
 
 typedef struct _ROptionParser ROptionParser;
 typedef struct _ROptionGroup  ROptionGroup;
-typedef struct _ROptionArgument {
+typedef struct _ROptionEntry {
   const rchar * longarg;
   rchar         shortarg;
   ROptionType   type;
@@ -54,7 +54,7 @@ typedef struct _ROptionArgument {
   ROptionFlags  flags;
   const rchar * desc;
   const rchar * argname;
-} ROptionArgument;
+} ROptionEntry;
 
 #define R_OPT_ARG(l,s,t,v,f,d,lbl)  { l, s, t, v, f, d, lbl }
 
@@ -74,8 +74,8 @@ R_API ROptionGroup * r_option_group_new (const rchar * name, const rchar * desc,
 #define r_option_group_ref r_ref_ref
 #define r_option_group_unref r_ref_unref
 
-R_API rboolean r_option_group_add_arguments (ROptionGroup * group,
-    const ROptionArgument * args, rsize count);
+R_API rboolean r_option_group_add_entries (ROptionGroup * group,
+    const ROptionEntry * args, rsize count);
 
 R_API ROptionParser * r_option_parser_new (const rchar * app, const rchar * version) R_ATTR_MALLOC;
 R_API void r_option_parser_free (ROptionParser * parser);
@@ -95,8 +95,8 @@ R_API rchar * r_option_parser_get_help_output (ROptionParser * parser) R_ATTR_MA
 R_ATTR_WARN_UNUSED_RESULT
 R_API rchar * r_option_parser_get_version_output (ROptionParser * parser) R_ATTR_MALLOC;
 
-R_API rboolean r_option_parser_add_arguments (ROptionParser * parser,
-    const ROptionArgument * args, rsize count);
+R_API rboolean r_option_parser_add_entries (ROptionParser * parser,
+    const ROptionEntry * args, rsize count);
 
 R_ATTR_WARN_UNUSED_RESULT
 R_API ROptionParseResult r_option_parser_parse (ROptionParser * parser,

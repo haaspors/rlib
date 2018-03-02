@@ -7,11 +7,11 @@ main (int argc, char ** argv)
   ROptionParser * parser = r_option_parser_new (NULL, "1.0");
   ROptionParseResult res;
   rboolean hr;
-  const ROptionArgument args[] = {
+  const ROptionEntry entries[] = {
     R_OPT_ARG ("hr", 0, R_OPTION_TYPE_NONE, &hr, R_OPTION_FLAG_NONE, "Human readable format", NULL),
   };
 
-  r_option_parser_add_arguments (parser, args, R_N_ELEMENTS (args));
+  r_option_parser_add_entries (parser, entries, R_N_ELEMENTS (entries));
   res = r_option_parser_parse (parser, &argc, &argv);
 
   switch (res) {

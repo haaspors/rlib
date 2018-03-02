@@ -184,7 +184,7 @@ int main (int argc, rchar ** argv) {                                          \
                                                                               \
   rboolean verbose, print_run, igskip;                                        \
   rchar * output, * filter;                                                   \
-  const ROptionArgument args[] = {                                            \
+  const ROptionEntry entries[] = {                                            \
     R_OPT_ARG ("verbose",     'v', R_OPTION_TYPE_BOOL,      &verbose,         \
         R_OPTION_FLAG_NONE, "Print verbose info", NULL),                      \
     R_OPT_ARG ("print",       'p', R_OPTION_TYPE_BOOL,      &print_run,       \
@@ -198,7 +198,7 @@ int main (int argc, rchar ** argv) {                                          \
         R_OPTION_FLAG_NONE,                                                   \
         "File to print results to, use - for stdout [default]", NULL),        \
   };                                                                          \
-  r_option_parser_add_arguments (parser, args, R_N_ELEMENTS (args));          \
+  r_option_parser_add_entries (parser, entries, R_N_ELEMENTS (entries));      \
                                                                               \
   switch (r_option_parser_parse (parser, &argc, &argv)) {                     \
     case R_OPTION_PARSE_VERSION:                                              \

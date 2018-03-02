@@ -9,13 +9,13 @@ main (int argc, char ** argv)
   rboolean foo;
   rchar * input;
   int ret = 0;
-  const ROptionArgument args[] = {
+  const ROptionEntry entries[] = {
     R_OPT_ARG ("foo", 'f', R_OPTION_TYPE_NONE, &foo, R_OPTION_FLAG_NONE, "Do Foo", NULL),
     R_OPT_ARG ("input", 'i', R_OPTION_TYPE_STRING, &input, R_OPTION_FLAG_NONE, "Do Foo", NULL),
     R_OPT_ARG ("ret", 'r', R_OPTION_TYPE_INT, &ret, R_OPTION_FLAG_NONE, "Return value program will return", NULL),
   };
 
-  r_option_parser_add_arguments (parser, args, R_N_ELEMENTS (args));
+  r_option_parser_add_entries (parser, entries, R_N_ELEMENTS (entries));
   res = r_option_parser_parse (parser, &argc, &argv);
 
   switch (res) {
