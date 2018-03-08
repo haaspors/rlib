@@ -594,7 +594,7 @@ RTEST (roptparse, parse_string, RTEST_FAST)
   int argc;
 
   r_assert (r_option_parser_add_entries (parser, entries, R_N_ELEMENTS (entries)));
-  r_assert_cmpint (foo, ==, .0);
+  r_assert_cmpptr (foo, ==, NULL);
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "42", NULL);
   argc = r_strv_len (argv);
