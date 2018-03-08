@@ -106,9 +106,6 @@ RTEST (roptparse, args_error, RTEST_FAST)
   static ROptionEntry missing_long[] = {
     R_OPT_ARG ("", 'f', R_OPTION_TYPE_NONE, &foo, R_OPTION_FLAG_NONE, "Do foo", NULL),
   };
-  static ROptionEntry missing_variable[] = {
-    R_OPT_ARG ("foo", 0, R_OPTION_TYPE_NONE, NULL, R_OPTION_FLAG_NONE, "Do foo", NULL),
-  };
   static ROptionEntry bad_type[] = {
     R_OPT_ARG ("foo", 0, R_OPTION_TYPE_COUNT, &foo, R_OPTION_FLAG_NONE, "Do foo", NULL),
   };
@@ -133,7 +130,6 @@ RTEST (roptparse, args_error, RTEST_FAST)
 
   r_assert (!r_option_parser_add_entries (parser, NULL, 0));
   r_assert (!r_option_parser_add_entries (parser, missing_long, 1));
-  r_assert (!r_option_parser_add_entries (parser, missing_variable, 1));
   r_assert (!r_option_parser_add_entries (parser, bad_type, 1));
   r_assert (!r_option_parser_add_entries (parser, duplicate_longarg, 2));
   r_assert (!r_option_parser_add_entries (parser, duplicate_shortarg, 2));
@@ -147,6 +143,17 @@ RTEST (roptparse, args_error, RTEST_FAST)
   r_assert (res);
   /* 2 options was added, --foo and --bar */
 
+  r_option_parser_free (parser);
+}
+RTEST_END;
+
+RTEST (roptparse, no_val_works, RTEST_FAST)
+{
+  ROptionParser * parser = r_option_parser_new (NULL, NULL);
+  static ROptionEntry missing_val[] = {
+    R_OPT_ARG ("foo", 0, R_OPTION_TYPE_NONE, NULL, R_OPTION_FLAG_NONE, "Do foo", NULL),
+  };
+  r_assert (r_option_parser_add_entries (parser, missing_val, 1));
   r_option_parser_free (parser);
 }
 RTEST_END;
@@ -707,6 +714,38 @@ RTEST (roptparse, parse_unknown_option, RTEST_FAST)
   r_assert (foo);
 
   r_option_parser_free (parser);
+}
+RTEST_END;
+
+RTEST (roptparse, get_value_by_longarg, RTEST_FAST)
+{
+  static ROptionEntry entries[] = {
+    R_OPT_ARG ("foo", 'f', R_OPTION_TYPE_STRING, NULL, R_OPTION_FLAG_NONE, "Do foo", NULL),
+    R_OPT_ARG ("bar", 'b', R_OPTION_TYPE_NONE, NULL, R_OPTION_FLAG_NONE, "Do bar", NULL),
+  };
+  ROptionParser * parser = r_option_parser_new (NULL, NULL);
+  rchar ** strv, ** argv, * foo = NULL;
+  rboolean bar;
+  ROptionType type;
+  int argc;
+
+  r_assert (r_option_parser_add_entries (parser, entries, R_N_ELEMENTS (entries)));
+
+  strv = argv = r_strv_new ("rlibtest", "--foo", "42", NULL);
+  argc = r_strv_len (argv);
+  r_assert_cmpint (r_option_parser_parse (parser, &argc, &argv), ==, R_OPTION_PARSE_OK);
+
+  r_assert (!r_option_parser_get_value_by_longarg (parser, "dummy", &foo, NULL));
+  r_assert (r_option_parser_get_value_by_longarg (parser, "foo", &foo, &type));
+  r_assert_cmpstr (foo, ==, "42"); r_free (foo);
+  r_assert_cmpint (type, ==, R_OPTION_TYPE_STRING);
+
+  r_assert (r_option_parser_get_value_by_longarg (parser, "bar", &bar, &type));
+  r_assert (bar == FALSE);
+  r_assert_cmpint (type, ==, R_OPTION_TYPE_BOOL);
+
+  r_option_parser_unref (parser);
+  r_strv_free (strv);
 }
 RTEST_END;
 

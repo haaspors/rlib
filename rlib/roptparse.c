@@ -53,6 +53,12 @@ struct _ROptionParser
   RSList * parse_ctx;
 };
 
+typedef struct
+{
+  ROptionEntry opt;
+  const rchar * argval;
+} ROptionEntryCtx;
+
 struct _ROptionGroup
 {
   RRef ref;
@@ -63,7 +69,7 @@ struct _ROptionGroup
   rpointer user;
   RDestroyNotify notify;
 
-  ROptionEntry * entries;
+  ROptionEntryCtx * entries;
   rsize count;
 };
 
@@ -118,72 +124,71 @@ r_option_group_free (ROptionGroup * group)
 }
 
 static rboolean
-r_option_entry_validate (ROptionEntry * opt)
+r_option_entry_ctx_init (ROptionEntryCtx * ctx, const ROptionEntry * opt)
 {
   /* Hard requirements */
   if (opt->longarg == NULL)
     return FALSE;
-  if (opt->variable == NULL)
-    return FALSE;
   if (opt->type >= R_OPTION_TYPE_COUNT)
     return FALSE;
+
+  ctx->argval = NULL;
+  ctx->opt = *opt;
 
   /* Soft requirements */
   if (opt->shortarg == '-' || (opt->shortarg != 0 && !r_ascii_isprint (opt->shortarg))) {
     R_LOG_CAT_WARNING (&rlib_logcat,
         "ignoring incompatible short opt name for --%s", opt->longarg);
-    opt->shortarg = 0;
+    ctx->opt.shortarg = 0;
   }
   if (opt->type != R_OPTION_TYPE_NONE && (opt->flags & R_OPTION_FLAG_INVERSE)) {
     R_LOG_CAT_WARNING (&rlib_logcat,
         "ignoring incompatible inverse flag for --%s", opt->longarg);
-    opt->flags &= ~R_OPTION_FLAG_INVERSE;
+    ctx->opt.flags &= ~R_OPTION_FLAG_INVERSE;
+  }
+
+  if (ctx->opt.val != NULL) {
+    switch (ctx->opt.type) {
+      case R_OPTION_TYPE_NONE:
+        *(rboolean *)ctx->opt.val = (ctx->opt.flags & R_OPTION_FLAG_INVERSE) == R_OPTION_FLAG_INVERSE;
+        break;
+      case R_OPTION_TYPE_INT:
+        *(int *)ctx->opt.val = 0;
+        break;
+      case R_OPTION_TYPE_INT64:
+        *(rint64 *)ctx->opt.val = 0;
+        break;
+      case R_OPTION_TYPE_DOUBLE:
+        *(rdouble *)ctx->opt.val = .0;
+        break;
+      case R_OPTION_TYPE_STRING:
+      case R_OPTION_TYPE_FILENAME:
+        *(rpointer *)ctx->opt.val = NULL;
+        break;
+      default:
+        r_assert_not_reached ();
+        break;
+    }
   }
 
   return TRUE;
 }
 
-static void
-r_option_entry_initialize (ROptionEntry * opt)
-{
-  switch (opt->type) {
-    case R_OPTION_TYPE_NONE:
-      *(rboolean *)opt->variable = (opt->flags & R_OPTION_FLAG_INVERSE) == R_OPTION_FLAG_INVERSE;
-      break;
-    case R_OPTION_TYPE_INT:
-      *(int *)opt->variable = 0;
-      break;
-    case R_OPTION_TYPE_INT64:
-      *(rint64 *)opt->variable = 0;
-      break;
-    case R_OPTION_TYPE_DOUBLE:
-      *(rdouble *)opt->variable = .0;
-      break;
-    case R_OPTION_TYPE_STRING:
-    case R_OPTION_TYPE_FILENAME:
-      *(rpointer *)opt->variable = NULL;
-      break;
-    default:
-      r_assert_not_reached ();
-      break;
-  }
-}
-
-static ROptionEntry *
+static ROptionEntryCtx *
 r_option_group_find_entry_by_shortarg (const ROptionGroup * group,
     rchar shortarg)
 {
   rsize i;
 
   for (i = 0; i < group->count; i++) {
-    if (group->entries[i].shortarg == shortarg)
+    if (group->entries[i].opt.shortarg == shortarg)
       return &group->entries[i];
   }
 
   return NULL;
 }
 
-static ROptionEntry *
+static ROptionEntryCtx *
 r_option_group_find_entry_by_longarg (const ROptionGroup * group,
     const rchar * longarg)
 {
@@ -196,7 +201,7 @@ r_option_group_find_entry_by_longarg (const ROptionGroup * group,
     len = r_strlen (longarg);
 
   for (i = 0; i < group->count; i++) {
-    if (r_strncmp (longarg, group->entries[i].longarg, len) == 0)
+    if (r_strncmp (longarg, group->entries[i].opt.longarg, len) == 0)
       return &group->entries[i];
   }
 
@@ -209,7 +214,7 @@ r_option_group_check_required (const ROptionGroup * group, RSList * ctx)
   rsize i;
 
   for (i = 0; i < group->count; i++) {
-    ROptionEntry * opt = &group->entries[i];
+    ROptionEntry * opt = &group->entries[i].opt;
     if ((opt->flags & R_OPTION_FLAG_REQUIRED) && !r_slist_contains (ctx, opt))
       return FALSE;
   }
@@ -218,21 +223,20 @@ r_option_group_check_required (const ROptionGroup * group, RSList * ctx)
 }
 
 static rboolean
-r_option_group_is_duplicate_arg (const ROptionGroup * group,
-    rchar shortarg, const rchar * longarg)
+r_option_group_has_option (const ROptionGroup * group, const ROptionEntry * opt)
 {
   rsize i;
 
-  if (shortarg != 0) {
+  if (opt->shortarg != 0) {
     for (i = 0; i < group->count; i++) {
-      if (group->entries[i].shortarg == shortarg)
+      if (group->entries[i].opt.shortarg == opt->shortarg)
         return TRUE;
-      if (r_str_equals (group->entries[i].longarg, longarg))
+      if (r_str_equals (group->entries[i].opt.longarg, opt->longarg))
         return TRUE;
     }
   } else {
     for (i = 0; i < group->count; i++) {
-      if (r_str_equals (group->entries[i].longarg, longarg))
+      if (r_str_equals (group->entries[i].opt.longarg, opt->longarg))
         return TRUE;
     }
   }
@@ -249,18 +253,15 @@ r_option_group_add_entries (ROptionGroup * group,
   if (R_UNLIKELY (entries == NULL))
     return FALSE;
 
-  if ((group->entries = r_realloc (group->entries, (group->count + count) * sizeof (ROptionEntry))) == NULL)
+  if ((group->entries = r_realloc (group->entries, (group->count + count) * sizeof (ROptionEntryCtx))) == NULL)
     return FALSE;
 
-  r_memcpy (group->entries + group->count, args, sizeof (ROptionArgument) * count);
   for (i = 0; i < count; i++) {
-    ROptionEntry * opt = &group->entries[group->count];
-    if (!r_option_entry_validate (opt) ||
-        r_option_group_is_duplicate_arg (group, opt->shortarg, opt->longarg)) {
+    if (r_option_group_has_option (group, &entries[i]) ||
+        !r_option_entry_ctx_init (&group->entries[group->count], &entries[i])) {
       group->count -= i;
       return FALSE;
     }
-    r_option_entry_initialize (opt);
 
     group->count++;
   }
@@ -405,7 +406,7 @@ r_option_group_append_help (const ROptionGroup * group, RString * str)
     r_string_append_printf (str, "%s:\n", group->desc);
 
   for (i = 0; i < group->count; i++)
-    r_option_entry_append_help (&group->entries[i], str);
+    r_option_entry_append_help (&group->entries[i].opt, str);
 }
 
 rchar *
@@ -426,7 +427,7 @@ r_option_parser_get_help_output (ROptionParser * parser)
 
   r_string_append_printf (str, "\n%s:\n", parser->entries->desc);
   for (i = (parser->help_enabled) ? 0 : 3; i < parser->entries->count; i++)
-    r_option_entry_append_help (&parser->entries->entries[i], str);
+    r_option_entry_append_help (&parser->entries->entries[i].opt, str);
 
   r_slist_foreach (parser->groups, (RFunc)r_option_group_append_help, str);
 
@@ -462,11 +463,11 @@ r_option_parser_add_entries (ROptionParser * parser,
   return r_option_group_add_entries (parser->entries, entries, count);
 }
 
-static ROptionEntry *
+static ROptionEntryCtx *
 r_option_parser_find_entry_by_shortarg (const ROptionParser * parser,
     rchar shortarg)
 {
-  ROptionEntry * ret;
+  ROptionEntryCtx * ret;
   RSList * it;
 
   ret = r_option_group_find_entry_by_shortarg (parser->entries, shortarg);
@@ -476,11 +477,11 @@ r_option_parser_find_entry_by_shortarg (const ROptionParser * parser,
   return ret;
 }
 
-static ROptionEntry *
+static ROptionEntryCtx *
 r_option_parser_find_entry_by_longarg (const ROptionParser * parser,
     const rchar * longarg)
 {
-  ROptionEntry * ret;
+  ROptionEntryCtx * ret;
   RSList * it;
 
   ret = r_option_group_find_entry_by_longarg (parser->entries, longarg);
@@ -504,7 +505,19 @@ r_option_parser_check_required (ROptionParser * parser)
 }
 
 static ROptionParseResult
-r_option_entry_parse_int (ROptionEntry * opt, const rchar ** str)
+r_option_entry_ctx_parse_none (const rchar ** str, rboolean * val, rboolean inv)
+{
+  if (str == NULL)
+    return R_OPTION_PARSE_ERROR;
+
+  if (val != NULL)
+    *val = !inv ? *str != NULL : *str == NULL;
+
+  return R_OPTION_PARSE_OK;
+}
+
+static ROptionParseResult
+r_option_entry_parse_int (const rchar ** str, int * val)
 {
   int value;
   RStrParse error;
@@ -516,12 +529,13 @@ r_option_entry_parse_int (ROptionEntry * opt, const rchar ** str)
   if (error != R_STR_PARSE_OK || *str == 0)
     return R_OPTION_PARSE_VALUE_ERROR;
 
-  *(int *)opt->variable = value;
+  if (val != NULL)
+    *val = value;
   return R_OPTION_PARSE_OK;
 }
 
 static ROptionParseResult
-r_option_entry_parse_int64 (ROptionEntry * opt, const rchar ** str)
+r_option_entry_parse_int64 (const rchar ** str, rint64 * val)
 {
   rint64 value;
   RStrParse error;
@@ -533,12 +547,13 @@ r_option_entry_parse_int64 (ROptionEntry * opt, const rchar ** str)
   if (error != R_STR_PARSE_OK || *str == 0)
     return R_OPTION_PARSE_VALUE_ERROR;
 
-  *(rint64 *)opt->variable = value;
+  if (val != NULL)
+    *val = value;
   return R_OPTION_PARSE_OK;
 }
 
 static ROptionParseResult
-r_option_entry_parse_double (ROptionEntry * opt, const rchar ** str)
+r_option_entry_parse_double (const rchar ** str, rdouble * val)
 {
   rdouble value;
   RStrParse error;
@@ -550,96 +565,77 @@ r_option_entry_parse_double (ROptionEntry * opt, const rchar ** str)
   if (error != R_STR_PARSE_OK || *str == 0)
     return R_OPTION_PARSE_VALUE_ERROR;
 
-  *(rdouble *)opt->variable = value;
+  if (val != NULL)
+    *val = value;
   return R_OPTION_PARSE_OK;
 }
 
 static ROptionParseResult
-r_option_entry_parse_string (ROptionEntry * opt, const rchar ** str)
+r_option_entry_parse_string (const rchar ** str, rchar ** val)
 {
-  if (str == NULL || **str == 0)
+  if (str == NULL)
     return R_OPTION_PARSE_ERROR;
 
-  r_free (*(rpointer *)opt->variable);
-  *(rchar **)opt->variable = r_strdup (*str);
+  if (val != NULL) {
+    r_free (*val);
+    *val = (*str != NULL && **str != 0) ? r_strdup (*str) : NULL;
+  }
+
   *str += r_strlen (*str);
   return R_OPTION_PARSE_OK;
 }
 
 static ROptionParseResult
-r_option_parser_parse_option (ROptionParser * parser, ROptionEntry * opt,
+r_option_parser_parse_option_ctx (ROptionParser * parser, ROptionEntryCtx * ctx,
     const rchar ** arg, int * argc, const rchar *** argv)
 {
   ROptionParseResult ret = R_OPTION_PARSE_ERROR;
 
-  switch (opt->type) {
-    case R_OPTION_TYPE_NONE:
-      *(rboolean *)opt->variable = (opt->flags & R_OPTION_FLAG_INVERSE) == 0;
-      ret = R_OPTION_PARSE_OK;
-      break;
-    case R_OPTION_TYPE_INT:
-      if (arg != NULL && **arg != 0) {
-        ret = r_option_entry_parse_int (opt, arg);
-      } else if (*argc > 0) {
-        const rchar * str = **argv;
-        ret = r_option_entry_parse_int (opt, &str);
-        if (ret == R_OPTION_PARSE_OK) {
-          (*argc)--;
-          (*argv)++;
-        }
+  if (ctx->opt.type == R_OPTION_TYPE_NONE) {
+    ctx->argval = *arg;
+    ret = r_option_entry_ctx_parse_none (arg, ctx->opt.val,
+        (ctx->opt.flags & R_OPTION_FLAG_INVERSE) == R_OPTION_FLAG_INVERSE);
+  } else {
+    const rchar * str;
+
+    if (arg != NULL && *arg != NULL && **arg != 0) {
+      str = ctx->argval = *arg;
+    } else if (*argc > 0) {
+      str = ctx->argval = **argv;
+    } else {
+      return R_OPTION_PARSE_ERROR;
+    }
+
+    switch (ctx->opt.type) {
+      case R_OPTION_TYPE_INT:
+        ret = r_option_entry_parse_int (&str, ctx->opt.val);
+        break;
+      case R_OPTION_TYPE_INT64:
+        ret = r_option_entry_parse_int64 (&str, ctx->opt.val);
+        break;
+      case R_OPTION_TYPE_DOUBLE:
+        ret = r_option_entry_parse_double (&str, ctx->opt.val);
+        break;
+      case R_OPTION_TYPE_STRING:
+      case R_OPTION_TYPE_FILENAME:
+        ret = r_option_entry_parse_string (&str, ctx->opt.val);
+        break;
+      default:
+        r_assert_not_reached ();
+        break;
+    }
+
+    if (ret == R_OPTION_PARSE_OK) {
+      if (arg != NULL && *arg != NULL && **arg != 0) {
+        *arg = str;
       } else {
-        ret = R_OPTION_PARSE_ERROR;
+        (*argc)--;
+        (*argv)++;
       }
-      break;
-    case R_OPTION_TYPE_INT64:
-      if (arg != NULL && **arg != 0) {
-        ret = r_option_entry_parse_int64 (opt, arg);
-      } else if (*argc > 0) {
-        const rchar * str = **argv;
-        ret = r_option_entry_parse_int64 (opt, &str);
-        if (ret == R_OPTION_PARSE_OK) {
-          (*argc)--;
-          (*argv)++;
-        }
-      } else {
-        ret = R_OPTION_PARSE_ERROR;
-      }
-      break;
-    case R_OPTION_TYPE_DOUBLE:
-      if (arg != NULL && **arg != 0) {
-        ret = r_option_entry_parse_double (opt, arg);
-      } else if (*argc > 0) {
-        const rchar * str = **argv;
-        ret = r_option_entry_parse_double (opt, &str);
-        if (ret == R_OPTION_PARSE_OK) {
-          (*argc)--;
-          (*argv)++;
-        }
-      } else {
-        ret = R_OPTION_PARSE_ERROR;
-      }
-      break;
-    case R_OPTION_TYPE_STRING:
-    case R_OPTION_TYPE_FILENAME:
-      if (arg != NULL && **arg != 0) {
-        ret = r_option_entry_parse_string (opt, arg);
-      } else if (*argc > 0) {
-        const rchar * str = **argv;
-        ret = r_option_entry_parse_string (opt, &str);
-        if (ret == R_OPTION_PARSE_OK) {
-          (*argc)--;
-          (*argv)++;
-        }
-      } else {
-        ret = R_OPTION_PARSE_ERROR;
-      }
-      break;
-    default:
-      r_assert_not_reached ();
-      break;
+    }
   }
 
-  parser->parse_ctx = r_slist_prepend (parser->parse_ctx, opt);
+  parser->parse_ctx = r_slist_prepend (parser->parse_ctx, &ctx->opt);
 
   return ret;
 }
@@ -648,13 +644,13 @@ static ROptionParseResult
 r_option_parser_parse_short_option (ROptionParser * parser,
     const rchar ** arg, int * argc, const rchar *** argv)
 {
-  ROptionEntry * opt;
+  ROptionEntryCtx * ctx;
 
-  if ((opt = r_option_parser_find_entry_by_shortarg (parser, **arg)) != NULL) {
+  if ((ctx = r_option_parser_find_entry_by_shortarg (parser, **arg)) != NULL) {
     (*arg)++;
     if (**arg == '=')
       (*arg)++;
-    return r_option_parser_parse_option (parser, opt, arg, argc, argv);
+    return r_option_parser_parse_option_ctx (parser, ctx, arg, argc, argv);
   } else if (!parser->ignore_unknown) {
     return R_OPTION_PARSE_UNKNOWN_OPTION;
   }
@@ -667,14 +663,14 @@ static ROptionParseResult
 r_option_parser_parse_long_option (ROptionParser * parser,
     const rchar ** arg, int * argc, const rchar *** argv)
 {
-  ROptionEntry * opt;
+  ROptionEntryCtx * ctx;
 
-  if ((opt = r_option_parser_find_entry_by_longarg (parser, *arg)) != NULL) {
-    *arg += r_strlen (opt->longarg);
+  if ((ctx = r_option_parser_find_entry_by_longarg (parser, *arg)) != NULL) {
+    *arg += r_strlen (ctx->opt.longarg);
     if (**arg == '=')
       (*arg)++;
 
-    return r_option_parser_parse_option (parser, opt, arg, argc, argv);
+    return r_option_parser_parse_option_ctx (parser, ctx, arg, argc, argv);
   } else if (!parser->ignore_unknown) {
     return R_OPTION_PARSE_UNKNOWN_OPTION;
   }
@@ -731,5 +727,46 @@ r_option_parser_parse (ROptionParser * parser,
   parser->parse_ctx = NULL;
 
   return ret;
+}
+
+rboolean
+r_option_parser_get_value_by_longarg (ROptionParser * parser,
+    const rchar * longarg, rpointer val, ROptionType * type)
+{
+  ROptionEntryCtx * ctx;
+
+  if ((ctx = r_option_parser_find_entry_by_longarg (parser, longarg)) != NULL) {
+    if (val != NULL) {
+      const rchar * arg = ctx->argval;
+      switch (ctx->opt.type) {
+        case R_OPTION_TYPE_BOOL:
+          r_option_entry_ctx_parse_none (&arg, val,
+              (ctx->opt.flags & R_OPTION_FLAG_INVERSE) == R_OPTION_FLAG_INVERSE);
+          break;
+        case R_OPTION_TYPE_INT:
+          r_option_entry_parse_int (&arg, val);
+          break;
+        case R_OPTION_TYPE_INT64:
+          r_option_entry_parse_int64 (&arg, val);
+          break;
+        case R_OPTION_TYPE_DOUBLE:
+          r_option_entry_parse_double (&arg, val);
+          break;
+        case R_OPTION_TYPE_STRING:
+        case R_OPTION_TYPE_FILENAME:
+          r_option_entry_parse_string (&arg, val);
+          break;
+        default:
+          return FALSE;
+      }
+    }
+
+    if (type != NULL)
+      *type = ctx->opt.type;
+
+    return TRUE;
+  }
+
+  return FALSE;
 }
 

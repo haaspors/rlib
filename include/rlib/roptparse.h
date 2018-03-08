@@ -50,7 +50,7 @@ typedef struct _ROptionEntry {
   const rchar * longarg;
   rchar         shortarg;
   ROptionType   type;
-  rpointer      variable;
+  rpointer      val;
   ROptionFlags  flags;
   const rchar * desc;
   const rchar * argname;
@@ -97,6 +97,8 @@ R_API rchar * r_option_parser_get_version_output (ROptionParser * parser) R_ATTR
 
 R_API rboolean r_option_parser_add_entries (ROptionParser * parser,
     const ROptionEntry * args, rsize count);
+R_API rboolean r_option_parser_get_value_by_longarg (ROptionParser * parser,
+    const rchar * longarg, rpointer val, ROptionType * type);
 
 R_ATTR_WARN_UNUSED_RESULT
 R_API ROptionParseResult r_option_parser_parse (ROptionParser * parser,
