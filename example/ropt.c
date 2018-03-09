@@ -42,7 +42,7 @@ main (int argc, char ** argv)
 
   r_free (input);
   r_free (output);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 
   return ret;
 }

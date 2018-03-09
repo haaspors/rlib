@@ -16,7 +16,7 @@ RTEST (roptparse, new_n_free, RTEST_FAST)
 {
   ROptionParser * parser = r_option_parser_new (NULL, NULL);
   r_assert_cmpptr (parser, !=, NULL);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -42,7 +42,7 @@ RTEST (roptparse, help_help_options, RTEST_FAST)
   r_free (help);
   r_free (exe);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -60,7 +60,7 @@ RTEST (roptparse, help_summary, RTEST_FAST)
   r_free (help);
   r_free (exe);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -78,7 +78,7 @@ RTEST (roptparse, help_epilog, RTEST_FAST)
   r_free (help);
   r_free (exe);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -143,7 +143,7 @@ RTEST (roptparse, args_error, RTEST_FAST)
   r_assert (res);
   /* 2 options was added, --foo and --bar */
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -154,7 +154,7 @@ RTEST (roptparse, no_val_works, RTEST_FAST)
     R_OPT_ARG ("foo", 0, R_OPTION_TYPE_NONE, NULL, R_OPTION_FLAG_NONE, "Do foo", NULL),
   };
   r_assert (r_option_parser_add_entries (parser, missing_val, 1));
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -180,7 +180,7 @@ RTEST (roptparse, help_args, RTEST_FAST)
   r_free (help);
   r_free (exe);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -221,7 +221,7 @@ RTEST (roptparse, help_argname, RTEST_FAST)
   r_free (help);
   r_free (exe);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -247,7 +247,7 @@ RTEST (roptparse, parse_shortargs, RTEST_FAST)
   r_assert (!bar);
 
   r_strv_free (strv);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -271,7 +271,7 @@ RTEST (roptparse, parse_shortargs_chain, RTEST_FAST)
   r_assert (!bar);
 
   r_strv_free (strv);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -295,7 +295,7 @@ RTEST (roptparse, parse_longargs, RTEST_FAST)
   r_assert (!bar);
 
   r_strv_free (strv);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -320,7 +320,7 @@ RTEST (roptparse, parse_help, RTEST_FAST)
   r_assert_cmpint (r_option_parser_parse (parser, &argc, &argv), ==, R_OPTION_PARSE_HELP);
   r_strv_free (strv);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -335,7 +335,7 @@ RTEST (roptparse, parse_version, RTEST_FAST)
   r_assert_cmpint (r_option_parser_parse (parser, &argc, &argv), ==, R_OPTION_PARSE_VERSION);
   r_strv_free (strv);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -348,13 +348,13 @@ RTEST (roptparse, get_version_output, RTEST_FAST)
   r_assert_cmpptr ((verstr = r_option_parser_get_version_output (parser)), !=, NULL);
   r_assert_cmpstr (verstr, ==, "rlibtest"R_EXE_SUFFIX" (\"version not specified\")\n");
   r_free (verstr);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 
   parser = r_option_parser_new ("myapp", "1.0 (myversion)");
   r_assert_cmpptr ((verstr = r_option_parser_get_version_output (parser)), !=, NULL);
   r_assert_cmpstr (verstr, ==, "myapp version 1.0 (myversion)\n");
   r_free (verstr);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -378,7 +378,7 @@ RTEST (roptparse, parse_partial, RTEST_FAST)
   r_assert_cmpstr (*argv, ==, "command");
 
   r_strv_free (strv);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -401,7 +401,7 @@ RTEST (roptparse, parse_stop_after_dash_dash, RTEST_FAST)
   r_assert_cmpint (argc, ==, 3);
 
   r_strv_free (strv);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -471,7 +471,7 @@ RTEST (roptparse, parse_int, RTEST_FAST)
   r_assert_cmpint (r_option_parser_parse (parser, &argc, &argv), ==, R_OPTION_PARSE_ERROR);
   r_strv_free (strv);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -541,7 +541,7 @@ RTEST (roptparse, parse_int64, RTEST_FAST)
   r_assert_cmpint (r_option_parser_parse (parser, &argc, &argv), ==, R_OPTION_PARSE_ERROR);
   r_strv_free (strv);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -579,7 +579,7 @@ RTEST (roptparse, parse_double, RTEST_FAST)
   r_assert_cmpint (argc, ==, 0);
   r_assert_cmpint (foo, ==, -0.2);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -631,7 +631,7 @@ RTEST (roptparse, parse_string, RTEST_FAST)
   r_strv_free (strv);
 
   r_free (foo);
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -667,7 +667,7 @@ RTEST (roptparse, parse_required, RTEST_FAST)
   r_assert_cmpint (argc, ==, 0);
   r_assert_cmpint (foo, ==, 0);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 
@@ -713,7 +713,7 @@ RTEST (roptparse, parse_unknown_option, RTEST_FAST)
   r_assert_cmpint (argc, ==, 0);
   r_assert (foo);
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 }
 RTEST_END;
 

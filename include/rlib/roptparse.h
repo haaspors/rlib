@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -23,6 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rref.h>
 
 R_BEGIN_DECLS
 
@@ -78,7 +79,8 @@ R_API rboolean r_option_group_add_entries (ROptionGroup * group,
     const ROptionEntry * args, rsize count);
 
 R_API ROptionParser * r_option_parser_new (const rchar * app, const rchar * version) R_ATTR_MALLOC;
-R_API void r_option_parser_free (ROptionParser * parser);
+#define r_option_parser_ref r_ref_ref
+#define r_option_parser_unref r_ref_unref
 
 R_API void r_option_parser_set_summary (ROptionParser * parser, const rchar * summary);
 R_API void r_option_parser_set_epilog (ROptionParser * parser, const rchar * epilog);

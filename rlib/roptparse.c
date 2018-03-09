@@ -36,6 +36,8 @@
 
 struct _ROptionParser
 {
+  RRef ref;
+
   rchar * appname;
   rchar * options;
   rchar * version;
@@ -269,31 +271,7 @@ r_option_group_add_entries (ROptionGroup * group,
   return TRUE;
 }
 
-ROptionParser *
-r_option_parser_new (const rchar * app, const rchar * version)
-{
-  ROptionParser * ret = r_mem_new0 (ROptionParser);
-  const ROptionEntry r_op_help_args[] = {
-    R_OPT_ARG ("version",  0, R_OPTION_TYPE_NONE, &ret->optver,
-        R_OPTION_FLAG_NONE, "Show application version number and exit", NULL),
-    R_OPT_ARG ("help",   'h', R_OPTION_TYPE_NONE, &ret->opthlp,
-        R_OPTION_FLAG_NONE, "Show this help message and exit", NULL),
-    R_OPT_ARG ("",       '?', R_OPTION_TYPE_NONE, &ret->opthlp,
-        R_OPTION_FLAG_HIDDEN, NULL, NULL),
-  };
-
-  ret->help_enabled = TRUE;
-  ret->appname = app != NULL ? r_strdup (app) : r_proc_get_exe_name ();
-  ret->options = r_strdup ("[options]");
-  ret->version = r_strdup (version);
-  ret->entries = r_option_group_new_internal (NULL, "Options", NULL, NULL, NULL);
-  r_option_group_add_entries (ret->entries,
-      r_op_help_args, R_N_ELEMENTS (r_op_help_args));
-
-  return ret;
-}
-
-void
+static void
 r_option_parser_free (ROptionParser * parser)
 {
   if (R_LIKELY (parser != NULL)) {
@@ -306,6 +284,35 @@ r_option_parser_free (ROptionParser * parser)
 
     r_free (parser);
   }
+}
+
+ROptionParser *
+r_option_parser_new (const rchar * app, const rchar * version)
+{
+  ROptionParser * ret = r_mem_new0 (ROptionParser);
+
+  if (R_LIKELY (ret != NULL)) {
+    const ROptionEntry r_op_help_args[] = {
+      R_OPT_ARG ("version",  0, R_OPTION_TYPE_NONE, &ret->optver,
+          R_OPTION_FLAG_NONE, "Show application version number and exit", NULL),
+      R_OPT_ARG ("help",   'h', R_OPTION_TYPE_NONE, &ret->opthlp,
+          R_OPTION_FLAG_NONE, "Show this help message and exit", NULL),
+      R_OPT_ARG ("",       '?', R_OPTION_TYPE_NONE, &ret->opthlp,
+          R_OPTION_FLAG_HIDDEN, NULL, NULL),
+    };
+
+    r_ref_init (ret, r_option_parser_free);
+
+    ret->help_enabled = TRUE;
+    ret->appname = app != NULL ? r_strdup (app) : r_proc_get_exe_name ();
+    ret->options = r_strdup ("[options]");
+    ret->version = r_strdup (version);
+    ret->entries = r_option_group_new_internal (NULL, "Options", NULL, NULL, NULL);
+    r_option_group_add_entries (ret->entries,
+        r_op_help_args, R_N_ELEMENTS (r_op_help_args));
+  }
+
+  return ret;
 }
 
 void

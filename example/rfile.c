@@ -69,7 +69,7 @@ main (int argc, char ** argv)
       break;
   }
 
-  r_option_parser_free (parser);
+  r_option_parser_unref (parser);
 
   return ret;
 }

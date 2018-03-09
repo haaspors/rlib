@@ -239,7 +239,7 @@ int main (int argc, rchar ** argv) {                                          \
       }                                                                       \
       break;                                                                  \
   }                                                                           \
-  r_option_parser_free (parser);                                              \
+  r_option_parser_unref (parser);                                             \
   r_free (output);                                                            \
   r_free (filter);                                                            \
   return ret;                                                                 \
