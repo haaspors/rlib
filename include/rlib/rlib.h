@@ -97,14 +97,4 @@
 #include <rlib/ev/revtcp.h>
 #include <rlib/ev/revudp.h>
 
-/* NET */
-#include <rlib/net/rhttpserver.h>
-#include <rlib/net/rsrtp.h>
-#include <rlib/net/rtlsserver.h>
-#include <rlib/net/proto/rhttp.h>
-#include <rlib/net/proto/rrtp.h>
-#include <rlib/net/proto/rsdp.h>
-#include <rlib/net/proto/rstun.h>
-#include <rlib/net/proto/rtls.h>
-
 #endif /* __R_LIB_H__ */

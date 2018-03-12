@@ -1,3 +1,4 @@
+#include <rlib/rnet.h>
 #include <rlib/rrtc.h>
 
 static const rchar sdp_rfc_4566[] =

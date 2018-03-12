@@ -1,3 +1,4 @@
+#include <rlib/rnet.h>
 #include <rlib/rcrypto.h>
 
 const rchar testcertpem[] =
