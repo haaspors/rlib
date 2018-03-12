@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rcrypto.h>
 
 RTEST (raes, new_args, RTEST_FAST)
 {

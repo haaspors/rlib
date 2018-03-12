@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rcrypto.h>
 
 RTEST (rcryptokey, import_ssh_public_key, RTEST_FAST)
 {

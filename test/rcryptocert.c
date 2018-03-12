@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rcrypto.h>
 
 RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
 {

@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rcrypto.h>
 
 RTEST (rrsa, pub_key_init, RTEST_FAST)
 {

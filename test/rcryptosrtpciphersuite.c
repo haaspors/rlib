@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rcrypto.h>
 
 RTEST (rsrtpciphersuite, is_supported, RTEST_FAST)
 {

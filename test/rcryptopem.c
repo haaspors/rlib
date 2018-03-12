@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rcrypto.h>
 
 static const rchar pem_invalid[] =
   "---BEGIN PRIVATE KEY-----\n"

@@ -1,4 +1,5 @@
 #include <rlib/rrtc.h>
+#include <rlib/rcrypto.h>
 
 static const rchar pemcert[] =
   "-----BEGIN CERTIFICATE-----\r\n"

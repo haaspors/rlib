@@ -91,20 +91,6 @@
 #include <rlib/asn1/rasn1.h>
 #include <rlib/asn1/roid.h>
 
-/* CRYPTO */
-#include <rlib/crypto/raes.h>
-#include <rlib/crypto/rcert.h>
-#include <rlib/crypto/rcipher.h>
-#include <rlib/crypto/rdsa.h>
-#include <rlib/crypto/recc.h>
-#include <rlib/crypto/rhmac.h>
-#include <rlib/crypto/rkey.h>
-#include <rlib/crypto/rpem.h>
-#include <rlib/crypto/rrsa.h>
-#include <rlib/crypto/rsrtpciphersuite.h>
-#include <rlib/crypto/rtlsciphersuite.h>
-#include <rlib/crypto/rx509.h>
-
 /* EV */
 #include <rlib/ev/revloop.h>
 #include <rlib/ev/revresolve.h>

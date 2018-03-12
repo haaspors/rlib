@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rcrypto.h>
 
 const rchar testcertpem[] =
   "-----BEGIN CERTIFICATE-----\r\n"

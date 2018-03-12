@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rcrypto.h>
 
 RTEST (rcryptomac, hmac_md5, R_TEST_TYPE_FAST)
 {
