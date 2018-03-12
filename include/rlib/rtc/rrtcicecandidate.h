@@ -23,12 +23,12 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rtc/rrtctypes.h>
 #include <rlib/rref.h>
 
 #include <rlib/rsocketaddress.h>
 #include <rlib/rstr.h>
 
-#include <rlib/rtc/rrtc.h>
 
 R_BEGIN_DECLS
 

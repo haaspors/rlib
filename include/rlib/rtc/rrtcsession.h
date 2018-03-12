@@ -23,11 +23,11 @@
 #endif
 
 #include <rlib/rtypes.h>
-
-#include <rlib/rrand.h>
+#include <rlib/rtc/rrtctypes.h>
 #include <rlib/rref.h>
 
-#include <rlib/rtc/rrtc.h>
+#include <rlib/rrand.h>
+
 #include <rlib/rtc/rrtcicetransport.h>
 #include <rlib/rtc/rrtccryptotransport.h>
 #include <rlib/rtc/rrtcrtpreceiver.h>

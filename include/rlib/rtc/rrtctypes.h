@@ -15,8 +15,8 @@
  * License along with this library.
  * See the COPYING file at the root of the source repository.
  */
-#ifndef __R_RTC_H__
-#define __R_RTC_H__
+#ifndef __R_RTC_TYPES_H__
+#define __R_RTC_TYPES_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
 #error "#include <rlib.h> only pelase."
@@ -117,5 +117,5 @@ typedef void (*RRtcBufferCb) (rpointer data, RBuffer * buf, rpointer ctx);
 
 R_END_DECLS
 
-#endif /* __R_RTC_H__ */
+#endif /* __R_RTC_TYPES_H__ */
 

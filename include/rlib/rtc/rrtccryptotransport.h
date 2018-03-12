@@ -23,10 +23,9 @@
 #endif
 
 #include <rlib/rtypes.h>
-
+#include <rlib/rtc/rrtctypes.h>
 #include <rlib/rref.h>
 
-#include <rlib/rtc/rrtc.h>
 
 R_BEGIN_DECLS
 

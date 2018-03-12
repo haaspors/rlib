@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rrtc.h>
 
 RTEST (rrtcrtpparameters, new, RTEST_FAST)
 {

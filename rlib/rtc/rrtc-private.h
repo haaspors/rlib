@@ -22,7 +22,7 @@
 #error "rrtc-private.h should only be used internally in rlib!"
 #endif
 
-#include <rlib/rtc/rrtc.h>
+#include <rlib/rtc/rrtctypes.h>
 #include <rlib/rtc/rrtcicecandidate.h>
 #include <rlib/rtc/rrtcicetransport.h>
 #include <rlib/rtc/rrtccryptotransport.h>

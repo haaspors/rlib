@@ -121,17 +121,4 @@
 #include <rlib/net/proto/rstun.h>
 #include <rlib/net/proto/rtls.h>
 
-/* RTC */
-#include <rlib/rtc/rrtc.h>
-#include <rlib/rtc/rrtccryptotransport.h>
-#include <rlib/rtc/rrtcicecandidate.h>
-#include <rlib/rtc/rrtcicetransport.h>
-#include <rlib/rtc/rrtcrtplistener.h>
-#include <rlib/rtc/rrtcrtpparameters.h>
-#include <rlib/rtc/rrtcrtpreceiver.h>
-#include <rlib/rtc/rrtcrtpsender.h>
-#include <rlib/rtc/rrtcrtptransceiver.h>
-#include <rlib/rtc/rrtcsession.h>
-#include <rlib/rtc/rrtcsessiondescription.h>
-
 #endif /* __R_LIB_H__ */

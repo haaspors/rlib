@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rrtc.h>
 
 RTEST (rrtcicecandidate, new, RTEST_FAST)
 {

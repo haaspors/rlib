@@ -23,10 +23,9 @@
 #endif
 
 #include <rlib/rtypes.h>
-
+#include <rlib/rtc/rrtctypes.h>
 #include <rlib/rref.h>
 
-#include <rlib/rtc/rrtc.h>
 #include <rlib/rtc/rrtcrtpparameters.h>
 
 #include <rlib/ev/revloop.h>
