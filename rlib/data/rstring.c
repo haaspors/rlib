@@ -21,7 +21,6 @@
 
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
-#include <string.h>
 
 #define R_STRING_ALLOC_MASK           0x3F
 
@@ -41,9 +40,9 @@ r_string_new (const rchar * cstr)
   if (R_UNLIKELY (cstr == NULL))
     return r_string_new_sized (0);
 
-  len = strlen (cstr);
+  len = r_strlen (cstr);
   str = r_string_new_sized (len + 1);
-  memcpy (str->cstr, cstr, len + 1);
+  r_memcpy (str->cstr, cstr, len + 1);
   str->len = len;
 
   return str;
@@ -121,11 +120,11 @@ r_string_reset (RString * str, const rchar * cstr)
 
   if (R_UNLIKELY (cstr == NULL))
     return 0;
-  ret = strlen (cstr);
+  ret = r_strlen (cstr);
   if (R_UNLIKELY (!r_string_ensure_size (str, ret)))
     return 0;
 
-  memcpy (str->cstr, cstr, ret + 1);
+  r_memcpy (str->cstr, cstr, ret + 1);
 
   return ret;
 }
@@ -136,7 +135,7 @@ r_string_append (RString * str, const rchar * cstr)
   if (R_UNLIKELY (cstr == NULL))
     return 0;
 
-  return r_string_append_len (str, cstr, strlen (cstr));
+  return r_string_append_len (str, cstr, r_strlen (cstr));
 }
 
 rsize
@@ -147,7 +146,7 @@ r_string_append_len (RString * str, const rchar * cstr, rsize len)
   if (R_UNLIKELY (!r_string_ensure_additional_size (str, len)))
     return 0;
 
-  memcpy (str->cstr + str->len, cstr, len);
+  r_memcpy (str->cstr + str->len, cstr, len);
   str->len += len;
   str->cstr[str->len] = 0;
 
@@ -181,7 +180,7 @@ r_string_prepend (RString * str, const rchar * cstr)
   if (R_UNLIKELY (cstr == NULL))
     return 0;
 
-  return r_string_prepend_len (str, cstr, strlen (cstr));
+  return r_string_prepend_len (str, cstr, r_strlen (cstr));
 }
 
 rsize
@@ -192,8 +191,8 @@ r_string_prepend_len (RString * str, const rchar * cstr, rsize len)
   if (R_UNLIKELY (!r_string_ensure_additional_size (str, len)))
     return 0;
 
-  memmove (str->cstr + len, str->cstr, str->len + 1);
-  memcpy (str->cstr, cstr, len);
+  r_memmove (str->cstr + len, str->cstr, str->len + 1);
+  r_memcpy (str->cstr, cstr, len);
   str->len += len;
 
   return len;
@@ -217,7 +216,7 @@ r_string_prepend_vprintf (RString * str, const rchar * fmt, va_list ap)
   rsize ret;
 
   if ((cstr = r_strvprintf (fmt, ap)) != NULL) {
-    rsize len = strlen (cstr);
+    rsize len = r_strlen (cstr);
     if ((ret = r_string_prepend_len (str, cstr, len)) == len)
       ret++;
     r_free (cstr);
@@ -234,7 +233,7 @@ r_string_insert (RString * str, rsize pos, const rchar * cstr)
   if (R_UNLIKELY (cstr == NULL))
     return 0;
 
-  return r_string_insert_len (str, pos, cstr, strlen (cstr));
+  return r_string_insert_len (str, pos, cstr, r_strlen (cstr));
 }
 
 rsize
@@ -248,8 +247,8 @@ r_string_insert_len (RString * str, rsize pos, const rchar * cstr, rsize len)
 
   if (R_UNLIKELY (!r_string_ensure_additional_size (str, len)))
     return 0;
-  memmove (str->cstr + pos + len, str->cstr + pos, str->len - pos + 1);
-  memcpy (str->cstr + pos, cstr, len);
+  r_memmove (str->cstr + pos + len, str->cstr + pos, str->len - pos + 1);
+  r_memcpy (str->cstr + pos, cstr, len);
   str->len += len;
 
   return len;
@@ -261,7 +260,7 @@ r_string_overwrite (RString * str, rsize pos, const rchar * cstr)
   if (R_UNLIKELY (cstr == NULL))
     return 0;
 
-  return r_string_overwrite_len (str, pos, cstr, strlen (cstr));
+  return r_string_overwrite_len (str, pos, cstr, r_strlen (cstr));
 }
 
 rsize
@@ -276,11 +275,11 @@ r_string_overwrite_len (RString * str, rsize pos, const rchar * cstr, rsize len)
   if (pos + len > str->len) {
     if (R_UNLIKELY (!r_string_ensure_additional_size (str, pos + len - str->len)))
       return 0;
-    memcpy (str->cstr + pos, cstr, len);
+    r_memcpy (str->cstr + pos, cstr, len);
     str->len = pos + len;
     str->cstr[str->len] = 0;
   } else {
-    memcpy (str->cstr + pos, cstr, len);
+    r_memcpy (str->cstr + pos, cstr, len);
   }
 
   return len;
@@ -308,7 +307,7 @@ r_string_erase (RString * str, rsize pos, rsize len)
     return r_string_truncate (str, pos);
 
   str->len -= len;
-  memmove (str->cstr + pos, str->cstr + pos + len, str->len - pos + 1);
+  r_memmove (str->cstr + pos, str->cstr + pos + len, str->len - pos + 1);
 
   return str->len;
 }

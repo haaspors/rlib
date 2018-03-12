@@ -29,8 +29,6 @@
 #include <rlib/rmemfile.h>
 #include <rlib/rstr.h>
 
-#include <string.h>
-
 void
 r_crypto_key_destroy (RCryptoKey * key)
 {
@@ -199,7 +197,7 @@ r_crypto_key_import_ssh_public_key (const rchar * data, rsize size)
   if (size == 0)
     size = r_strlen (data);
 
-  if ((next = memchr (data, ' ', size)) != NULL) {
+  if ((next = r_strnchr (data, ' ', size)) != NULL) {
     ruint8 * keydata;
 
     size -= (++next - data);

@@ -19,16 +19,16 @@
 #include "config.h"
 #include "rlib-private.h"
 #include <rlib/rlog.h>
-#include <rlib/os/renv.h>
+
 #include <rlib/data/rlist.h>
-#include <rlib/rmem.h>
+#include <rlib/os/renv.h>
 #include <rlib/os/rproc.h>
+
+#include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>
 #include <rlib/rtty.h>
-#include <stdio.h>
-#include <string.h>
 
 
 rauint _r_log_level_min = R_LOG_LEVEL_DEFAULT;
@@ -457,7 +457,7 @@ r_log_keep_last_begin_full (RLogKeepLastCtx * ctx, RLogCategory * cat,
   r_log_update_level_min (R_LOG_LEVEL_MAX);
   g__r_log_ignore_threshold = ignore_threshold;
 
-  memset (ctx, 0, sizeof (RLogKeepLastCtx));
+  r_memset (ctx, 0, sizeof (RLogKeepLastCtx));
   ctx->oldfunc = r_log_override_default_handler (r_log_keep_last_handler,
       ctx, &ctx->olddata);
   ctx->cat = cat;
@@ -480,6 +480,6 @@ void
 r_log_keep_last_reset (RLogKeepLastCtx * ctx)
 {
   r_free (ctx->last.msg);
-  memset (&ctx->last, 0, sizeof (ctx->last));
+  r_memset (&ctx->last, 0, sizeof (ctx->last));
 }
 

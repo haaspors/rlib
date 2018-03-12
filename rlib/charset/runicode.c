@@ -21,7 +21,7 @@
 #include <rlib/charset/runicode.h>
 
 #include <rlib/rmem.h>
-#include <string.h>
+#include <rlib/rstr.h>
 
 /* FIXME: Implement BOM validation ByteOrderMark */
 
@@ -178,7 +178,7 @@ r_utf8_to_utf16 (const rchar * str, rlong len,
   runichar2 * ret, * pos;
   rlong i, r;
 
-  if (len < 0) len = strlen (str);
+  if (len < 0) len = r_strlen (str);
   if (retlen != NULL) *retlen = 0;
   if (inlen != NULL) *inlen = 0;
 

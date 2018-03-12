@@ -27,15 +27,15 @@
 #include <rlib/ratomic.h>
 #include <rlib/rassert.h>
 #include <rlib/rlog.h>
+#include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>
 #include <rlib/rtty.h>
 
-#include <stdlib.h>
 #include <setjmp.h>
 #include <signal.h>
-#include <string.h>
+
 #ifdef R_OS_UNIX
 #include <unistd.h>
 #include <sys/types.h>
@@ -384,9 +384,9 @@ r_test_run_fork (const RTest * test, rsize __i, rboolean notimeout,
 
   if (ctx.state != R_TEST_RUN_STATE_NONE) {
     if (ctx.lastpos != NULL)
-      memcpy (lastpos, ctx.lastpos, sizeof (RTestLastPos));
+      r_memcpy (lastpos, ctx.lastpos, sizeof (RTestLastPos));
     if (ctx.failpos != NULL) {
-      memcpy (failpos, ctx.failpos, sizeof (RTestLastPos));
+      r_memcpy (failpos, ctx.failpos, sizeof (RTestLastPos));
       ctx.state = R_TEST_RUN_STATE_FAILED; /* Assert on some thread, set failed */
     }
 
@@ -689,7 +689,7 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
   ctx->timer = r_sig_alrm_timer_new_oneshot (timeout,
       _r_test_nofork_timeout_handler);
 
-  memset (_r_test_lastpos, 0, sizeof (_r_test_lastpos));
+  r_memset (_r_test_lastpos, 0, sizeof (_r_test_lastpos));
   ctx->pos = _r_test_lastpos;
   ctx->maxposcount = R_TEST_THREADS;
   ctx->poscount = 0;
@@ -772,11 +772,11 @@ r_test_run_nofork (const RTest * test, rsize __i, rboolean notimeout,
     ret = (RTestRunState)jmpres;
   }
 
-  memcpy (lastpos, ctx.lastpos ? ctx.lastpos : ctx.pos, sizeof (RTestLastPos));
+  r_memcpy (lastpos, ctx.lastpos ? ctx.lastpos : ctx.pos, sizeof (RTestLastPos));
   if (ctx.failpos != NULL)
-    memcpy (failpos, ctx.failpos, sizeof (RTestLastPos));
+    r_memcpy (failpos, ctx.failpos, sizeof (RTestLastPos));
   else
-    memset (failpos, 0, sizeof (RTestLastPos));
+    r_memset (failpos, 0, sizeof (RTestLastPos));
   r_test_run_nofork_cleanup (&ctx);
 
   R_LOG_TRACE ("/%s/%s/%"RSIZE_FMT": %u", test->suite, test->name, __i, ret);
@@ -974,7 +974,7 @@ r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
             "last ", _TIME_ERR_CLR, R_TIME_ARGS (attime), _RESET_CLR,
             run->lastpos.file, run->lastpos.line, run->lastpos.func);
         if (run->failpos.ts != 0 &&
-            memcmp (&run->lastpos, &run->failpos, sizeof (RTestLastPos)) != 0) {
+            r_memcmp (&run->lastpos, &run->failpos, sizeof (RTestLastPos)) != 0) {
           rchar * prev = extra;
           attime = run->failpos.ts - run->start;
           extra = r_strprintf ("%s\n%9s[%s%"R_TIME_FORMAT"%s] @ %s:%u -> %s()",

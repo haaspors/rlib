@@ -29,7 +29,6 @@
 #include <rlib/rmem.h>
 #include <rlib/os/rproc.h>
 #include <rlib/rstr.h>
-#include <string.h> /* memcpy */
 
 /* TODO: Add API to customize options usage string + (get|set)ters appname++ */
 /* TODO: Add add_groups API */
@@ -189,12 +188,12 @@ r_option_group_find_argument_by_longarg (const ROptionGroup * group,
     const rchar * longarg)
 {
   rsize i, len;
-  rchar * eq = strchr (longarg, (int)'=');
+  rchar * eq = r_strchr (longarg, (int)'=');
 
   if (eq != NULL)
     len = eq - longarg;
   else
-    len = strlen (longarg);
+    len = r_strlen (longarg);
 
   for (i = 0; i < group->count; i++) {
     if (r_strncmp (longarg, group->args[i].longarg, len) == 0)
@@ -253,7 +252,7 @@ r_option_group_add_arguments (ROptionGroup * group,
   if ((group->args = r_realloc (group->args, (group->count + count) * sizeof (ROptionArgument))) == NULL)
     return FALSE;
 
-  memcpy (group->args + group->count, args, sizeof (ROptionArgument) * count);
+  r_memcpy (group->args + group->count, args, sizeof (ROptionArgument) * count);
   for (i = 0; i < count; i++) {
     ROptionArgument * arg = &group->args[group->count];
     if (!r_option_argument_validate (arg) ||
@@ -563,7 +562,7 @@ r_option_argument_parse_string (ROptionArgument * arg, const rchar ** str)
 
   r_free (*(rpointer *)arg->variable);
   *(rchar **)arg->variable = r_strdup (*str);
-  *str += strlen (*str);
+  *str += r_strlen (*str);
   return R_OPTION_PARSE_OK;
 }
 
@@ -671,7 +670,7 @@ r_option_parser_parse_long_option (ROptionParser * parser,
   ROptionArgument * opt;
 
   if ((opt = r_option_parser_find_argument_by_longarg (parser, *arg)) != NULL) {
-    *arg += strlen (opt->longarg);
+    *arg += r_strlen (opt->longarg);
     if (**arg == '=')
       (*arg)++;
 

@@ -1,6 +1,5 @@
 #include <rlib/rlib.h>
 #include <signal.h>
-#include <string.h>
 
 /********************************************************/
 /* Define a fixture for rtest suite                     */

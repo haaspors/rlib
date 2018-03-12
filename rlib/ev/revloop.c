@@ -24,8 +24,6 @@
 #include <rlib/rmem.h>
 #include <rlib/rthreads.h>
 
-#include <sys/types.h>
-#include <string.h>
 #ifdef R_OS_UNIX
 #include <unistd.h>
 #endif
@@ -41,7 +39,10 @@
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
+
+/* TODO: Add strerror to rstr? */
 #include <errno.h>
+#include <string.h>
 
 R_LOG_CATEGORY_DEFINE (revlogcat, "ev", "RLib EvLoop",
     R_CLR_BG_CYAN | R_CLR_FG_RED | R_CLR_FMT_BOLD);

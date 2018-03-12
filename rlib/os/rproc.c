@@ -25,8 +25,6 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-#include <stdlib.h>
-#include <string.h>
 #ifdef R_OS_WIN32
 #include <windows.h>
 #include <process.h>
