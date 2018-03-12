@@ -18,14 +18,15 @@
 
 #include "config.h"
 #include "../rlib-private.h"
-#include <rlib/ev/rev-private.h>
+#include "../ev/rev-private.h"
 #include <rlib/net/rhttpserver.h>
 
 #include <rlib/ev/revtcp.h>
 
-#include <rlib/rdirtree.h>
+#include <rlib/data/rdirtree.h>
+#include <rlib/data/rptrarray.h>
+
 #include <rlib/rmem.h>
-#include <rlib/rptrarray.h>
 
 struct _RHttpServer {
   RRef ref;

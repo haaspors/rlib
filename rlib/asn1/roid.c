@@ -18,9 +18,11 @@
 
 #include "config.h"
 #include <rlib/asn1/roid.h>
+
+#include <rlib/charset/rascii.h>
+
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
-#include <rlib/rascii.h>
 
 rchar *
 r_asn1_oid_to_dot (const ruint32 * oid, rsize oidlen)

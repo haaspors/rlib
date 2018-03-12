@@ -18,11 +18,11 @@
 
 #include "config.h"
 #include "rcrypto-private.h"
-
 #include <rlib/crypto/rx509.h>
 
 #include <rlib/asn1/roid.h>
-#include <rlib/rlist.h>
+#include <rlib/data/rlist.h>
+
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 

@@ -23,11 +23,11 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rref.h>
 
 #include <rlib/net/proto/rhttp.h>
 #include <rlib/ev/revloop.h>
 
-#include <rlib/rref.h>
 #include <rlib/rsocketaddress.h>
 
 R_BEGIN_DECLS

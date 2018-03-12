@@ -23,7 +23,7 @@
 #endif
 
 #include <rlib/rconfig.h>
-#include <rlib/rmacros.h>
+#include <rlib/types/rmacros.h>
 /* *** Some headers are included at the bottom of this file! *** */
 
 #include <limits.h>
@@ -140,7 +140,7 @@ typedef rpointer (*RFuncUniversalReturn) ();
 
 R_END_DECLS
 
-#include <rlib/rendianness.h>
-#include <rlib/rbitops.h>
+#include <rlib/types/rendianness.h>
+#include <rlib/types/rbitops.h>
 
 #endif /* __R_TYPES_H__ */

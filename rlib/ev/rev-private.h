@@ -22,14 +22,15 @@
 #error "rev-private.h should only be used internally in rlib!"
 #endif
 
-#include <rlib/rtypes.h>
-
 #include <rlib/ev/revloop.h>
-#include <rlib/rfd.h>
-#include <rlib/rlist.h>
+
+#include <rlib/os/rfd.h>
+#include <rlib/os/rsys.h>
+
+#include <rlib/data/rlist.h>
+#include <rlib/data/rqueue.h>
+
 #include <rlib/rlog.h>
-#include <rlib/rsys.h>
-#include <rlib/rqueue.h>
 
 R_BEGIN_DECLS
 

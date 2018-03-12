@@ -18,7 +18,8 @@
 
 #include "config.h"
 #include <rlib/rmem.h>
-#include <rlib/rascii.h>
+
+#include <rlib/charset/rascii.h>
 
 rpointer
 r_mem_scan_simple_pattern (rconstpointer mem, rsize size,

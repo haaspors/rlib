@@ -20,11 +20,13 @@
 #include "rlib-private.h"
 #include <rlib/rthreads.h>
 
-#include <rlib/rlist.h>
+#include <rlib/os/rsys.h>
+
+#include <rlib/data/rlist.h>
+
 #include <rlib/rlog.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
-#include <rlib/rsys.h>
 #include <rlib/rtime.h>
 
 #ifdef HAVE_PTHREAD_H

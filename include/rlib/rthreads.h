@@ -24,7 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/ratomic.h>
-#include <rlib/rbitset.h>
+#include <rlib/data/rbitset.h>
 #include <rlib/rref.h>
 
 R_BEGIN_DECLS

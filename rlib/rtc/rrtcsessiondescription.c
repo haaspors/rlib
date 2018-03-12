@@ -25,7 +25,8 @@
 #include <rlib/rbase64.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
-#include <rlib/rstring.h>
+
+#include <rlib/data/rstring.h>
 
 #include <rlib/net/proto/rsdp.h>
 

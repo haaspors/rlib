@@ -19,11 +19,12 @@
 #include "config.h"
 #include <rlib/rthreadpool.h>
 
+#include <rlib/data/rlist.h>
+#include <rlib/os/rsys.h>
+
 #include <rlib/rassert.h>
-#include <rlib/rlist.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
-#include <rlib/rsys.h>
 
 
 struct _RThreadPool

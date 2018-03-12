@@ -23,9 +23,10 @@
 #endif
 
 #include <rlib/rtypes.h>
-
-#include <rlib/rbitset.h>
 #include <rlib/rref.h>
+
+#include <rlib/data/rbitset.h>
+
 #include <rlib/rthreads.h>
 
 R_BEGIN_DECLS

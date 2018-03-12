@@ -20,8 +20,9 @@
 #include "rrtc-private.h"
 #include <rlib/rtc/rrtcicecandidate.h>
 
+#include <rlib/data/rstring.h>
+
 #include <rlib/rmem.h>
-#include <rlib/rstring.h>
 
 static void
 r_rtc_ice_candidate_free (RRtcIceCandidate * candidate)

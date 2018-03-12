@@ -17,9 +17,10 @@
  */
 
 #include "config.h"
+#include "rnet-private.h"
+#include "rsocket-private.h"
 #include "../rlib-private.h"
-#include "../rsocket-private.h"
-#include "../net/rnet-private.h"
+
 #include <rlib/net/rresolve.h>
 
 #include <rlib/rlog.h>

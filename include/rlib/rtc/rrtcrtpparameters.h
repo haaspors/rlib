@@ -23,9 +23,9 @@
 #endif
 
 #include <rlib/rtypes.h>
-
-#include <rlib/rptrarray.h>
 #include <rlib/rref.h>
+
+#include <rlib/data/rptrarray.h>
 
 #include <rlib/net/proto/rrtp.h>
 

@@ -22,62 +22,70 @@
 #define __RLIB_H_INCLUDE_GUARD__
 #endif
 
-#include <rlib/rascii.h>
+#include <rlib/rtypes.h>
+
 #include <rlib/rassert.h>
 #include <rlib/ratomic.h>
 #include <rlib/rbase64.h>
-#include <rlib/rbitset.h>
 #include <rlib/rbuffer.h>
 #include <rlib/rclock.h>
 #include <rlib/rclr.h>
 #include <rlib/rcrc.h>
-#include <rlib/rdirtree.h>
-#include <rlib/relf.h>
-#include <rlib/relfparser.h>
-#include <rlib/renv.h>
-#include <rlib/rfd.h>
-#include <rlib/rfile.h>
-#include <rlib/rfs.h>
-#include <rlib/rhashfuncs.h>
-#include <rlib/rhashset.h>
-#include <rlib/rhashtable.h>
-#include <rlib/rhzrptr.h>
-#include <rlib/rlist.h>
 #include <rlib/rlog.h>
-#include <rlib/rmacho.h>
-#include <rlib/rmachoparser.h>
-#include <rlib/rmacros.h>
 #include <rlib/rmath.h>
 #include <rlib/rmem.h>
 #include <rlib/rmemallocator.h>
 #include <rlib/rmemfile.h>
 #include <rlib/rmodule.h>
-#include <rlib/rmpint.h>
 #include <rlib/rmsgdigest.h>
 #include <rlib/roptparse.h>
-#include <rlib/rpecoff.h>
-#include <rlib/rpeparser.h>
-#include <rlib/rproc.h>
-#include <rlib/rptrarray.h>
-#include <rlib/rqueue.h>
 #include <rlib/rrand.h>
 #include <rlib/rref.h>
-#include <rlib/rsignal.h>
 #include <rlib/rsocket.h>
 #include <rlib/rsocketaddress.h>
 #include <rlib/rstr.h>
-#include <rlib/rstring.h>
-#include <rlib/rsys.h>
 #include <rlib/rtaskqueue.h>
 #include <rlib/rtest.h>
 #include <rlib/rthreads.h>
 #include <rlib/rthreadpool.h>
 #include <rlib/rtime.h>
-#include <rlib/rtimeoutcblist.h>
 #include <rlib/rtty.h>
-#include <rlib/rtypes.h>
-#include <rlib/runicode.h>
 #include <rlib/ruri.h>
+
+/* BIN FORMAT */
+#include <rlib/binfmt/relf.h>
+#include <rlib/binfmt/relfparser.h>
+#include <rlib/binfmt/rmacho.h>
+#include <rlib/binfmt/rmachoparser.h>
+#include <rlib/binfmt/rpecoff.h>
+#include <rlib/binfmt/rpeparser.h>
+
+/* CHARACTER SET */
+#include <rlib/charset/rascii.h>
+#include <rlib/charset/runicode.h>
+
+/* OS */
+#include <rlib/os/renv.h>
+#include <rlib/os/rfd.h>
+#include <rlib/os/rfile.h>
+#include <rlib/os/rfs.h>
+#include <rlib/os/rproc.h>
+#include <rlib/os/rsignal.h>
+#include <rlib/os/rsys.h>
+
+/* DATA TYPES */
+#include <rlib/data/rbitset.h>
+#include <rlib/data/rdirtree.h>
+#include <rlib/data/rhashfuncs.h>
+#include <rlib/data/rhashset.h>
+#include <rlib/data/rhashtable.h>
+#include <rlib/data/rhzrptr.h>
+#include <rlib/data/rlist.h>
+#include <rlib/data/rmpint.h>
+#include <rlib/data/rptrarray.h>
+#include <rlib/data/rqueue.h>
+#include <rlib/data/rstring.h>
+#include <rlib/data/rtimeoutcblist.h>
 
 /* ASN.1 */
 #include <rlib/asn1/rasn1.h>
@@ -104,14 +112,14 @@
 #include <rlib/ev/revudp.h>
 
 /* NET */
+#include <rlib/net/rhttpserver.h>
+#include <rlib/net/rsrtp.h>
+#include <rlib/net/rtlsserver.h>
 #include <rlib/net/proto/rhttp.h>
 #include <rlib/net/proto/rrtp.h>
 #include <rlib/net/proto/rsdp.h>
 #include <rlib/net/proto/rstun.h>
 #include <rlib/net/proto/rtls.h>
-#include <rlib/net/rhttpserver.h>
-#include <rlib/net/rsrtp.h>
-#include <rlib/net/rtlsserver.h>
 
 /* RTC */
 #include <rlib/rtc/rrtc.h>

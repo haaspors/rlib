@@ -18,8 +18,10 @@
 
 #include "config.h"
 #include <rlib/rmemfile.h>
-#include <rlib/rfd.h>
+
 #include <rlib/rmem.h>
+
+#include <rlib/os/rfd.h>
 
 #include <sys/stat.h>
 #if defined (R_OS_WIN32)

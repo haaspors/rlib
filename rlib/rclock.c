@@ -19,7 +19,7 @@
 #include "config.h"
 #include <rlib/rclock.h>
 
-#include "rtimeoutcblist-private.h"
+#include "data/rtimeoutcblist-private.h"
 
 #include <rlib/rassert.h>
 #include <rlib/rmem.h>

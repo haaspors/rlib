@@ -23,9 +23,10 @@
 #include <rlib/crypto/rcipher.h>
 #include <rlib/crypto/rhmac.h>
 
-#include <rlib/rbitset.h>
-#include <rlib/rhashtable.h>
-#include <rlib/rlist.h>
+#include <rlib/data/rbitset.h>
+#include <rlib/data/rhashtable.h>
+#include <rlib/data/rlist.h>
+
 #include <rlib/rmem.h>
 
 #define R_SRTP_MAX_SALT_SIZE      16

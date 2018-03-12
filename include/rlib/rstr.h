@@ -23,7 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
-#include <rlib/rlist.h>
+#include <rlib/data/rlist.h>
 #include <stdarg.h>
 #include <stdio.h>
 

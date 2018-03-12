@@ -22,8 +22,9 @@
 
 #include <rlib/crypto/rx509.h>
 
+#include <rlib/data/rqueue.h>
+
 #include <rlib/rmem.h>
-#include <rlib/rqueue.h>
 #include <rlib/rstr.h>
 
 typedef enum {

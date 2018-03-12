@@ -23,11 +23,11 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rref.h>
 
 #include <rlib/rbuffer.h>
 #include <rlib/rmsgdigest.h>
 #include <rlib/rrand.h>
-#include <rlib/rref.h>
 #include <rlib/rsocketaddress.h>
 
 #include <rlib/rtc/rrtc.h>

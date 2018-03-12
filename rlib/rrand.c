@@ -22,11 +22,11 @@
 #include <rlib/rbase64.h>
 #include <rlib/rmem.h>
 #include <rlib/rtime.h>
-#ifdef R_OS_WIN32
+
+#if defined (R_OS_WIN32)
 #include <wincrypt.h>
-#endif
-#ifdef R_OS_UNIX
-#include <rlib/rfile.h>
+#elif defined (R_OS_UNIX)
+#include <rlib/os/rfile.h>
 #endif
 
 ruint64

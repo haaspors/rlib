@@ -22,10 +22,6 @@
 #error "rrtc-private.h should only be used internally in rlib!"
 #endif
 
-#include <rlib/rhashtable.h>
-#include <rlib/rlog.h>
-#include <rlib/rptrarray.h>
-
 #include <rlib/rtc/rrtc.h>
 #include <rlib/rtc/rrtcicecandidate.h>
 #include <rlib/rtc/rrtcicetransport.h>
@@ -39,6 +35,11 @@
 #include <rlib/ev/revudp.h>
 #include <rlib/net/rtlsserver.h>
 #include <rlib/net/rsrtp.h>
+
+#include <rlib/data/rhashtable.h>
+#include <rlib/data/rptrarray.h>
+
+#include <rlib/rlog.h>
 
 R_BEGIN_DECLS
 

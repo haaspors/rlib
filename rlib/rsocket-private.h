@@ -24,8 +24,8 @@
 #endif
 
 #include <rlib/rtypes.h>
-
 #include <rlib/rref.h>
+
 #include <rlib/rsocket.h>
 
 /* FIXME: Do this by configuration? */

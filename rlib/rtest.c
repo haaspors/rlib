@@ -19,16 +19,19 @@
 #include "config.h"
 #include "rlib-private.h"
 #include <rlib/rtest.h>
+
+#include <rlib/os/renv.h>
+#include <rlib/os/rproc.h>
+#include <rlib/os/rsignal.h>
+
 #include <rlib/ratomic.h>
 #include <rlib/rassert.h>
-#include <rlib/renv.h>
 #include <rlib/rlog.h>
-#include <rlib/rproc.h>
-#include <rlib/rsignal.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>
 #include <rlib/rtty.h>
+
 #include <stdlib.h>
 #include <setjmp.h>
 #include <signal.h>

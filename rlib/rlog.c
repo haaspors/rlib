@@ -19,10 +19,10 @@
 #include "config.h"
 #include "rlib-private.h"
 #include <rlib/rlog.h>
-#include <rlib/renv.h>
-#include <rlib/rlist.h>
+#include <rlib/os/renv.h>
+#include <rlib/data/rlist.h>
 #include <rlib/rmem.h>
-#include <rlib/rproc.h>
+#include <rlib/os/rproc.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>

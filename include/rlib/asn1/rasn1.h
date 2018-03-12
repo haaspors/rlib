@@ -23,12 +23,13 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rref.h>
 
-#include <rlib/rbitset.h>
+#include <rlib/data/rbitset.h>
+#include <rlib/data/rmpint.h>
+
 #include <rlib/rbuffer.h>
 #include <rlib/rmsgdigest.h>
-#include <rlib/rmpint.h>
-#include <rlib/rref.h>
 
 R_BEGIN_DECLS
 

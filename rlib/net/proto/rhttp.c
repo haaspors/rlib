@@ -19,7 +19,8 @@
 #include "config.h"
 #include <rlib/net/proto/rhttp.h>
 
-#include <rlib/rascii.h>
+#include <rlib/charset/rascii.h>
+
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 

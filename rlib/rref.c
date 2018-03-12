@@ -19,7 +19,7 @@
 #include "config.h"
 #include <rlib/rref.h>
 
-#include <rlib/rlist.h>
+#include <rlib/data/rlist.h>
 
 rpointer
 r_ref_ref (rpointer ref)

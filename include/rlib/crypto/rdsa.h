@@ -24,7 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/crypto/rkey.h>
-#include <rlib/rmpint.h>
+#include <rlib/data/rmpint.h>
 
 R_BEGIN_DECLS
 

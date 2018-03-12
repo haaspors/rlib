@@ -21,7 +21,7 @@
 
 #include <rlib/asn1/roid.h>
 #include <rlib/rstr.h>
-#include <rlib/rstring.h>
+#include <rlib/data/rstring.h>
 #include <rlib/rtime.h>
 
 RAsn1DecoderStatus

@@ -19,10 +19,12 @@
 #include "config.h"
 #include <rlib/rtaskqueue.h>
 
-#include <rlib/rlist.h>
+#include <rlib/data/rlist.h>
+#include <rlib/data/rqueue.h>
+
+#include <rlib/os/rsys.h>
+
 #include <rlib/rlog.h>
-#include <rlib/rqueue.h>
-#include <rlib/rsys.h>
 #include <rlib/rthreadpool.h>
 
 R_LOG_CATEGORY_DEFINE_STATIC (tqcat, "taskqueue", "RLib TaskQueue",

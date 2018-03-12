@@ -23,9 +23,10 @@
 #include <rlib/crypto/rrsa.h>
 #include <rlib/crypto/rx509.h>
 
+#include <rlib/charset/rascii.h>
+
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
-#include <rlib/rascii.h>
 #include <rlib/rbase64.h>
 
 #define R_PEM_BEGIN_START     "-----BEGIN "

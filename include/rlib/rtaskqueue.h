@@ -23,9 +23,9 @@
 #endif
 
 #include <rlib/rtypes.h>
-
-#include <rlib/rbitset.h>
 #include <rlib/rref.h>
+
+#include <rlib/data/rbitset.h>
 
 #include <stdarg.h>
 

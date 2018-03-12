@@ -17,13 +17,13 @@
  */
 
 #include "config.h"
-
 #include <rlib/ruri.h>
 
-#include <rlib/rascii.h>
+#include <rlib/charset/rascii.h>
+#include <rlib/data/rstring.h>
+
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
-#include <rlib/rstring.h>
 
 rchar *
 r_uri_escape_str (const rchar * str, rssize size, rsize * out)

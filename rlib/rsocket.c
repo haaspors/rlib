@@ -17,12 +17,13 @@
  */
 
 #include "config.h"
-#include "rlib-private.h"
 #include "rsocket-private.h"
 #include "net/rnet-private.h"
+#include "rlib-private.h"
 
-#include <rlib/rfd.h>
 #include <rlib/rmem.h>
+
+#include <rlib/os/rfd.h>
 
 
 static inline RSocketStatus

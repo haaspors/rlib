@@ -20,12 +20,13 @@
 #include "rlib-private.h"
 #include <rlib/rmodule.h>
 
-#include <rlib/relfparser.h>
-#include <rlib/rmachoparser.h>
-#include <rlib/rpeparser.h>
+#include <rlib/binfmt/relfparser.h>
+#include <rlib/binfmt/rmachoparser.h>
+#include <rlib/binfmt/rpeparser.h>
+
+#include <rlib/os/rproc.h>
 
 #include <rlib/rlog.h>
-#include <rlib/rproc.h>
 #include <rlib/rstr.h>
 
 #ifdef RLIB_HAVE_MODULE

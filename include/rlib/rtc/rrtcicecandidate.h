@@ -23,8 +23,8 @@
 #endif
 
 #include <rlib/rtypes.h>
-
 #include <rlib/rref.h>
+
 #include <rlib/rsocketaddress.h>
 #include <rlib/rstr.h>
 

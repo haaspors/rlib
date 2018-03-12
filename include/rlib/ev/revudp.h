@@ -26,8 +26,8 @@
 
 #include <rlib/ev/revloop.h>
 #include <rlib/rbuffer.h>
-#include <rlib/rref.h>
 #include <rlib/rsocketaddress.h>
+#include <rlib/rref.h>
 
 R_BEGIN_DECLS
 

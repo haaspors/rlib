@@ -25,7 +25,7 @@
 #include <rlib/rtypes.h>
 #include <rlib/rtest-internal.h>
 
-#include <rlib/rlist.h>
+#include <rlib/data/rlist.h>
 #include <rlib/rmodule.h>
 #include <rlib/rtime.h>
 

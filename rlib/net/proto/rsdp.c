@@ -19,10 +19,11 @@
 #include "config.h"
 #include <rlib/net/proto/rsdp.h>
 
+#include <rlib/data/rptrarray.h>
+#include <rlib/data/rstring.h>
+
 #include <rlib/rassert.h>
 #include <rlib/rmem.h>
-#include <rlib/rptrarray.h>
-#include <rlib/rstring.h>
 
 typedef struct {
   rchar * nettype;

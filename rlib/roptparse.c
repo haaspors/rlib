@@ -19,15 +19,16 @@
 #include "config.h"
 #include "rlib-private.h"
 #include <rlib/roptparse.h>
-#include <rlib/rascii.h>
+
+#include <rlib/charset/rascii.h>
 #include <rlib/rassert.h>
 #include <rlib/rref.h>
-#include <rlib/rlist.h>
+#include <rlib/data/rlist.h>
+#include <rlib/data/rstring.h>
 #include <rlib/rlog.h>
 #include <rlib/rmem.h>
-#include <rlib/rproc.h>
+#include <rlib/os/rproc.h>
 #include <rlib/rstr.h>
-#include <rlib/rstring.h>
 #include <string.h> /* memcpy */
 
 /* TODO: Add API to customize options usage string + (get|set)ters appname++ */

@@ -24,8 +24,10 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/crypto/rkey.h>
+
+#include <rlib/data/rmpint.h>
+
 #include <rlib/rrand.h>
-#include <rlib/rmpint.h>
 
 R_BEGIN_DECLS
 
