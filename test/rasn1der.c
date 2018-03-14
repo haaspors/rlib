@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rasn1.h>
 
 RTEST (rasn1der, into_out, RTEST_FAST)
 {

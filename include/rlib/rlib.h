@@ -76,8 +76,4 @@
 #include <rlib/file/rfile.h>
 #include <rlib/file/rfs.h>
 
-/* ASN.1 */
-#include <rlib/asn1/rasn1.h>
-#include <rlib/asn1/roid.h>
-
 #endif /* __R_LIB_H__ */
