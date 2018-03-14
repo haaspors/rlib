@@ -26,6 +26,7 @@
 #include <rlib/rtc/rrtctypes.h>
 #include <rlib/rref.h>
 
+#include <rlib/ev/revloop.h>
 
 R_BEGIN_DECLS
 

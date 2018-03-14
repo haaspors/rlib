@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rev.h>
 #include <rlib/ros.h>
 
 RTEST (revloop, default, RTEST_FAST)

@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rev.h>
 
 #if defined (R_OS_WIN32)
 SKIP_RTEST (revudp, dummy, RTEST_FAST)

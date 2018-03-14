@@ -80,10 +80,4 @@
 #include <rlib/asn1/rasn1.h>
 #include <rlib/asn1/roid.h>
 
-/* EV */
-#include <rlib/ev/revloop.h>
-#include <rlib/ev/revresolve.h>
-#include <rlib/ev/revtcp.h>
-#include <rlib/ev/revudp.h>
-
 #endif /* __R_LIB_H__ */

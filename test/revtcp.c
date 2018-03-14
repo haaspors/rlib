@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rev.h>
 
 #if defined (R_OS_WIN32)
 SKIP_RTEST (revtcp, dummy, RTEST_FAST)
