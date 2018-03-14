@@ -16,7 +16,7 @@ environment:
 
 install:
   - ps: (new-object net.webclient).DownloadFile("https://www.dropbox.com/s/cyghxjrvgplu7sy/ninja.exe?dl=1", "$env:USERPROFILE\ninja.exe")
-  - cmd: set "MESON_PYTHON_PATH=C:\python34-x64"
+  - cmd: set "MESON_PYTHON_PATH=C:\python36-x64"
   - cmd: set "PATH=%USERPROFILE%;%MESON_PYTHON_PATH%\Scripts;%MESON_PYTHON_PATH%;%PATH%"
   - cmd: echo Using Python at %MESON_PYTHON_PATH%
   - cmd: pip install meson
