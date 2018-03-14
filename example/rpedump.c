@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rbinfmt.h>
 
 static void
 dump_opt_hdr (RPeOptHdr * opt)

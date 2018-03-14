@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rbinfmt.h>
 #include "elfobj.inc"
 
 RTEST (relf, calc_size, RTEST_FAST)

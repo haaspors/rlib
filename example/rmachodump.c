@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rbinfmt.h>
 
 static void
 dump_section32 (const RMachoSection32 * s)

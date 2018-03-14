@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rbinfmt.h>
 #include "macho32.inc"
 
 RTEST (rmacho, is_valid, RTEST_FAST)

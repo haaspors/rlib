@@ -52,14 +52,6 @@
 #include <rlib/rtty.h>
 #include <rlib/ruri.h>
 
-/* BIN FORMAT */
-#include <rlib/binfmt/relf.h>
-#include <rlib/binfmt/relfparser.h>
-#include <rlib/binfmt/rmacho.h>
-#include <rlib/binfmt/rmachoparser.h>
-#include <rlib/binfmt/rpecoff.h>
-#include <rlib/binfmt/rpeparser.h>
-
 /* CHARACTER SET */
 #include <rlib/charset/rascii.h>
 #include <rlib/charset/runicode.h>

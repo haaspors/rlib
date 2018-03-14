@@ -1,4 +1,4 @@
-#include <rlib/rlib.h>
+#include <rlib/rbinfmt.h>
 #include "pe32.inc"
 #include "pe32plus.inc"
 
