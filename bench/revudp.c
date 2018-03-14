@@ -1,4 +1,5 @@
 #include <rlib/rlib.h>
+#include <rlib/ros.h>
 
 #define INTERVAL  (10 * R_SECOND)
 #define TOTAL_LENGTH  (30 * R_SECOND)

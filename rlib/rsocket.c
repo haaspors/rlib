@@ -21,9 +21,8 @@
 #include "net/rnet-private.h"
 #include "rlib-private.h"
 
+#include <rlib/file/rfd.h>
 #include <rlib/rmem.h>
-
-#include <rlib/os/rfd.h>
 
 
 static inline RSocketStatus

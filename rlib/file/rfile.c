@@ -17,10 +17,9 @@
  */
 
 #include "config.h"
-#include <rlib/os/rfile.h>
+#include <rlib/file/rfile.h>
 
-#include <rlib/os/rfs.h>
-
+#include <rlib/file/rfs.h>
 #include <rlib/rmem.h>
 
 #include <stdio.h>

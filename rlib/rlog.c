@@ -21,9 +21,9 @@
 #include <rlib/rlog.h>
 
 #include <rlib/data/rlist.h>
-#include <rlib/os/renv.h>
 #include <rlib/os/rproc.h>
 
+#include <rlib/renv.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>

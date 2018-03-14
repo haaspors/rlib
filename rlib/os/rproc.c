@@ -19,9 +19,8 @@
 #include "config.h"
 #include <rlib/os/rproc.h>
 
-#include <rlib/os/rfd.h>
-#include <rlib/os/rfs.h>
-
+#include <rlib/file/rfd.h>
+#include <rlib/file/rfs.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 

@@ -31,6 +31,7 @@
 #include <rlib/rclock.h>
 #include <rlib/rclr.h>
 #include <rlib/rcrc.h>
+#include <rlib/renv.h>
 #include <rlib/rlog.h>
 #include <rlib/rmath.h>
 #include <rlib/rmem.h>
@@ -56,15 +57,6 @@
 #include <rlib/charset/rascii.h>
 #include <rlib/charset/runicode.h>
 
-/* OS */
-#include <rlib/os/renv.h>
-#include <rlib/os/rfd.h>
-#include <rlib/os/rfile.h>
-#include <rlib/os/rfs.h>
-#include <rlib/os/rproc.h>
-#include <rlib/os/rsignal.h>
-#include <rlib/os/rsys.h>
-
 /* DATA TYPES */
 #include <rlib/data/rbitset.h>
 #include <rlib/data/rdirtree.h>
@@ -78,6 +70,11 @@
 #include <rlib/data/rqueue.h>
 #include <rlib/data/rstring.h>
 #include <rlib/data/rtimeoutcblist.h>
+
+/* FILE */
+#include <rlib/file/rfd.h>
+#include <rlib/file/rfile.h>
+#include <rlib/file/rfs.h>
 
 /* ASN.1 */
 #include <rlib/asn1/rasn1.h>

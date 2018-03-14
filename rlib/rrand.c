@@ -26,7 +26,7 @@
 #if defined (R_OS_WIN32)
 #include <wincrypt.h>
 #elif defined (R_OS_UNIX)
-#include <rlib/os/rfile.h>
+#include <rlib/file/rfile.h>
 #endif
 
 ruint64

@@ -1,4 +1,5 @@
 #include <rlib/rlib.h>
+#include <rlib/ros.h>
 
 static void
 simple_adder (rpointer data, RTaskQueue * tq, RTask * task)

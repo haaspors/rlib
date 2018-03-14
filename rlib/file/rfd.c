@@ -18,10 +18,9 @@
 
 #include "config.h"
 #define _LARGEFILE64_SOURCE
-#include <rlib/os/rfd.h>
+#include <rlib/file/rfd.h>
 
-#include <rlib/os/rfs.h>
-
+#include <rlib/file/rfs.h>
 #include <rlib/rstr.h>
 
 #ifdef RLIB_HAVE_FILES

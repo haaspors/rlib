@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/os/renv.h>
+#include <rlib/renv.h>
 
 #include <stdlib.h>
 
@@ -26,11 +26,7 @@
 const rchar *
 r_getenv (const rchar * key)
 {
-#ifdef R_OS_WIN32
   return getenv (key);
-#else
-  return getenv (key);
-#endif
 }
 
 rboolean

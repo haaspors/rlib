@@ -1,4 +1,5 @@
 #include <rlib/rlib.h>
+#include <rlib/ros.h>
 
 RTEST (revloop, default, RTEST_FAST)
 {

@@ -19,8 +19,8 @@
 #include "config.h"
 #include "rlib-private.h"
 
+#include <rlib/file/rfile.h>
 #include <rlib/os/rsys.h>
-#include <rlib/os/rfile.h>
 
 #include <rlib/rlog.h>
 #include <rlib/rmem.h>
@@ -43,7 +43,6 @@
 #define R_SYSFS_NODE                  "/sys/devices/system/node"
 #define R_SYSFS_NODE_FMT              "/sys/devices/system/node/node%u"
 
-#include <rlib/os/rfile.h>
 #include <rlib/rthreads.h>
 #endif
 

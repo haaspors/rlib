@@ -1,4 +1,5 @@
 #include <rlib/rlib.h>
+#include <rlib/ros.h>
 
 static rchar g__roptparse_usage_tmpl[] =
   "Usage:\n"

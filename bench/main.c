@@ -1,4 +1,5 @@
 #include <rlib/rlib.h>
+#include <rlib/ros.h>
 
 RTEST_BENCH (rbench, system, RTEST_FAST | RTEST_SYSTEM)
 {

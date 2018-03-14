@@ -17,8 +17,7 @@
  */
 
 #include "config.h"
-
-#include <rlib/os/rfs.h>
+#include <rlib/file/rfs.h>
 
 #include <rlib/rstr.h>
 #include <rlib/rrand.h>

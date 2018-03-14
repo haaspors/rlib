@@ -1,5 +1,4 @@
-
-#include <rlib/rlib.h>
+#include <rlib/ros.h>
 
 RTEST (rsys, cpu, RTEST_FAST | RTEST_SYSTEM)
 {

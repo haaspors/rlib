@@ -1,4 +1,5 @@
 #include <rlib/rlib.h>
+#include <rlib/ros.h>
 
 #ifdef RLIB_HAVE_THREADS
 RTEST_FIXTURE_STRUCT (rthreadpool)

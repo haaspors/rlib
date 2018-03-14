@@ -19,9 +19,9 @@
 #include "config.h"
 #include <rlib/data/rbitset.h>
 
-#include <rlib/os/rfile.h>
-
+#include <rlib/file/rfile.h>
 #include <rlib/rstr.h>
+
 
 #define R_BSWORD_BYTES    (sizeof (rbsword))
 #define R_BSWORD_BITS     (sizeof (rbsword) * 8)
