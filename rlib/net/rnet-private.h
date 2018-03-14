@@ -38,18 +38,9 @@
 R_BEGIN_DECLS
 
 #ifdef R_OS_WIN32
-R_API_HIDDEN int (* r_win32_inet_pton) (int, const rchar *, rpointer);
-R_API_HIDDEN const rchar * (* r_win32_inet_ntop) (int, rpointer, rchar *, size_t);
-
-#if _WIN32_WINNT < 0x0600
-#define inet_pton r_win32_inet_pton
-#define inet_ntop r_win32_inet_ntop
+R_API_HIDDEN int (__stdcall * r_win32_inet_pton) (int, const rchar *, rpointer);
+R_API_HIDDEN const rchar * (__stdcall * r_win32_inet_ntop) (int, rpointer, rchar *, size_t);
 #endif
-#ifndef HAVE_INET_PTON
-#define HAVE_INET_PTON            1
-#endif
-#endif
-
 
 R_END_DECLS
 

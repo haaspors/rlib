@@ -25,8 +25,8 @@
 #ifdef R_OS_WIN32
 #include <rlib/rmodule.h>
 
-static int r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst);
-static const rchar * r_win32_sim_inet_ntop (int family, rconstpointer src,
+static int __stdcall r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst);
+static const rchar * __stdcall r_win32_sim_inet_ntop (int family, rconstpointer src,
     rchar * dst, size_t size);
 static RMODULE g_r_win32_ws2_32_dll = NULL;
 #endif
@@ -64,7 +64,7 @@ r_networking_deinit (void)
 }
 
 #ifdef R_OS_WIN32
-static int
+static int __stdcall
 r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst)
 {
   struct sockaddr_storage ss;
@@ -94,7 +94,7 @@ r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst)
   return 0;
 }
 
-static const rchar *
+static const rchar * __stdcall
 r_win32_sim_inet_ntop (int family, rconstpointer src, rchar * dst, size_t size)
 {
   DWORD len, dstsize = (DWORD)size;

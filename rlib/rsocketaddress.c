@@ -120,6 +120,9 @@ r_socket_address_ipv4_new_from_string (const rchar * ip, ruint16 port)
 #if defined (HAVE_INET_PTON)
   if (inet_pton (AF_INET, ip, &in) < 1)
     return NULL;
+#elif defined (R_OS_WIN32)
+  if (r_win32_inet_pton (AF_INET, ip, &in) < 1)
+    return NULL;
 #else
   if (inet_aton (ip, &in) < 1)
     return NULL;
@@ -235,6 +238,17 @@ r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port,
 
 #if defined (HAVE_INET_PTON)
   if (inet_ntop (AF_INET, &addr_in->sin_addr, str, size) == NULL)
+    return FALSE;
+  if (port) {
+    rchar p[8];
+    r_sprintf (p, ":%"RUINT16_FMT, r_ntohs (addr_in->sin_port));
+    if (size <= r_strlen (str) + r_strlen (p))
+      return FALSE;
+
+    r_strcat (str, p);
+  }
+#elif defined (R_OS_WIN32)
+  if (r_win32_inet_ntop (AF_INET, &addr_in->sin_addr, str, size) == NULL)
     return FALSE;
   if (port) {
     rchar p[8];
