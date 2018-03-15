@@ -59,6 +59,7 @@
 
 /* DATA TYPES */
 #include <rlib/data/rbitset.h>
+#include <rlib/data/rdictionary.h>
 #include <rlib/data/rdirtree.h>
 #include <rlib/data/rhashfuncs.h>
 #include <rlib/data/rhashset.h>
