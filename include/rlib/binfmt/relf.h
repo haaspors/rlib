@@ -26,6 +26,8 @@
 
 R_BEGIN_DECLS
 
+#pragma pack(push, 1)
+
 /* ELF header */
 #define R_ELF_IDX_MAG0                0
 #define R_ELF_IDX_MAG1                1
@@ -712,6 +714,8 @@ typedef struct {
   ruint32 descsz;
   ruint32 type;
 } RElf64NHdr;
+
+#pragma pack(pop)
 
 R_END_DECLS
 

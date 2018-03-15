@@ -26,6 +26,8 @@
 
 R_BEGIN_DECLS
 
+#pragma pack(push, 1)
+
 typedef ruint32 RMachoStrOffset;
 
 #define R_MACHO_MAGIC_32              0xfeedface
@@ -653,6 +655,8 @@ typedef struct {
 #define R_MACHO_DICE_KIND_JUMP_TABLE16      0x0003
 #define R_MACHO_DICE_KIND_JUMP_TABLE32      0x0004
 #define R_MACHO_DICE_KIND_ABS_JUMP_TABLE32  0x0005
+
+#pragma pack(pop)
 
 R_END_DECLS
 

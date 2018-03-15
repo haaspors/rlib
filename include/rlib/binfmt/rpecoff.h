@@ -26,6 +26,8 @@
 
 R_BEGIN_DECLS
 
+#pragma pack(push, 1)
+
 #define R_PE_DOS_MAGIC                      0x5a4d
 #define R_PE_IMAGE_MAGIC                    0x00004550
 #define R_PE_PE32_MAGIC                     0x010b
@@ -349,6 +351,7 @@ typedef struct {
   ruint64 nsehandler;
 } RPeLoadConfigDirectory64;
 
+#pragma pack(pop)
 
 R_END_DECLS
 
