@@ -96,7 +96,7 @@ r_macho_is_valid (rconstpointer mem)
 rsize
 r_macho_calc_size (rconstpointer mem)
 {
-  const RMachoLoadCmd * lc;
+  const ruint8 * ptr = mem;
   rsize hdrsize, datasize;
   ruint32 ncmds;
 
@@ -105,7 +105,7 @@ r_macho_calc_size (rconstpointer mem)
       {
         const RMacho32Hdr * hdr = mem;
         ncmds = hdr->ncmds;
-        lc = (const RMachoLoadCmd *)(hdr + 1);
+        ptr += sizeof (RMacho32Hdr);
         hdrsize = sizeof (RMacho32Hdr) + hdr->sizeofcmds;
       }
       break;
@@ -113,7 +113,7 @@ r_macho_calc_size (rconstpointer mem)
       {
         const RMacho64Hdr * hdr = mem;
         ncmds = hdr->ncmds;
-        lc = (const RMachoLoadCmd *)(hdr + 1);
+        ptr += sizeof (RMacho64Hdr);
         hdrsize = sizeof (RMacho64Hdr) + hdr->sizeofcmds;
       }
       break;
@@ -121,24 +121,29 @@ r_macho_calc_size (rconstpointer mem)
      return 0;
   }
 
-  for (datasize = 0; ncmds > 0; ncmds--, lc = (const RMachoLoadCmd *)RPOINTER_TO_SIZE (lc) + lc->cmdsize) {
+  for (datasize = 0; ncmds > 0; ncmds--) {
+    const RMachoLoadCmd * lc = (const RMachoLoadCmd *)ptr;
     rsize cursize;
+
     switch (lc->cmd) {
       case R_MACHO_LC_SEGMENT:
         {
           const RMachoSegment32Cmd * cmd = (const RMachoSegment32Cmd *)lc;
           cursize = cmd->fileoff + cmd->filesize;
-          datasize = MAX (cursize, datasize);
+          if (cursize > datasize)
+            datasize = cursize;
         }
         break;
       case R_MACHO_LC_SEGMENT_64:
         {
           const RMachoSegment64Cmd * cmd = (const RMachoSegment64Cmd *)lc;
           cursize = cmd->fileoff + cmd->filesize;
-          datasize = MAX (cursize, datasize);
+          if (cursize > datasize)
+            datasize = cursize;
         }
         break;
     }
+    ptr += lc->cmdsize;
   }
 
   return hdrsize + datasize;
