@@ -65,6 +65,7 @@
 #include <rlib/data/rhashset.h>
 #include <rlib/data/rhashtable.h>
 #include <rlib/data/rhzrptr.h>
+#include <rlib/data/rkvptrarray.h>
 #include <rlib/data/rlist.h>
 #include <rlib/data/rmpint.h>
 #include <rlib/data/rptrarray.h>

@@ -62,6 +62,7 @@ rlib_sources = [
   'data/rhashset.c',
   'data/rhashtable.c',
   'data/rhzrptr.c',
+  'data/rkvptrarray.c',
   'data/rmpint.c',
   'data/rmpint_montgomery.c',
   'data/rptrarray.c',
