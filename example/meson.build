@@ -1,12 +1,12 @@
 
 examples = [
   'ralloc',
+  'rargparse',
   'rassert',
   'ratomic',
   'rfile',
   'rlog',
   'ronce',
-  'ropt',
   'rprint',
   'rtest',
   'rmachodump',

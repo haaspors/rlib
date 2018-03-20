@@ -174,75 +174,68 @@ typedef struct {
 /* Instead of defining main() yourself, just use RTEST_MAIN()
  * Usually at the bottom of your main test runner .c file.
  */
-#define RTEST_MAIN(version_str)                                               \
-int main (int argc, rchar ** argv) {                                          \
-  ROptionParser * parser = r_option_parser_new (NULL, version_str);           \
-  RTestReport * report;                                                       \
-  int ret = -1;                                                               \
-  RTestReportFlag report_flags = R_TEST_REPORT_FLAG_NONE;                     \
-  RTestRunFlag run_flags = R_TEST_RUN_FLAG_NONE;                              \
-                                                                              \
-  rboolean verbose, print_run, igskip;                                        \
-  rchar * output, * filter;                                                   \
-  const ROptionEntry entries[] = {                                            \
-    R_OPT_ARG ("verbose",     'v', R_OPTION_TYPE_BOOL,      &verbose,         \
-        R_OPTION_FLAG_NONE, "Print verbose info", NULL),                      \
-    R_OPT_ARG ("print",       'p', R_OPTION_TYPE_BOOL,      &print_run,       \
-        R_OPTION_FLAG_NONE, "Print all tests which ran", NULL),               \
-    R_OPT_ARG ("ignore-skip", 'i', R_OPTION_TYPE_BOOL,      &igskip,          \
-        R_OPTION_FLAG_NONE, "Run tests that default would be skipped", NULL), \
-    R_OPT_ARG ("filter",      'f', R_OPTION_TYPE_STRING,    &filter,          \
-        R_OPTION_FLAG_NONE,                                                   \
-        "Filter on test path - default is * (\"/<suite>/<name>\")", NULL),    \
-    R_OPT_ARG ("output",      'o', R_OPTION_TYPE_FILENAME,  &output,          \
-        R_OPTION_FLAG_NONE,                                                   \
-        "File to print results to, use - for stdout [default]", NULL),        \
-  };                                                                          \
-  r_option_parser_add_entries (parser, entries, R_N_ELEMENTS (entries));      \
-                                                                              \
-  switch (r_option_parser_parse (parser, &argc, &argv)) {                     \
-    case R_OPTION_PARSE_VERSION:                                              \
-      {                                                                       \
-        rchar * verstr = r_option_parser_get_version_output (parser);         \
-        r_print ("%s", verstr);                                               \
-        r_free (verstr);                                                      \
-      }                                                                       \
-      break;                                                                  \
-    case R_OPTION_PARSE_OK:                                                   \
-      {                                                                       \
-        const RTest * tests;                                                  \
-        rsize count;                                                          \
-        FILE * f = stdout;                                                    \
-                                                                              \
-        if (verbose) report_flags |= R_TEST_REPORT_FLAG_VERBOSE;              \
-        if (igskip) run_flags |= R_TEST_RUN_FLAG_IGNORE_SKIP;                 \
-        if (print_run) run_flags |= R_TEST_RUN_FLAG_PRINT;                    \
-                                                                              \
-        if (output != NULL && !r_str_equals (output, "-"))                    \
-          f = fopen (output, "w");                                            \
-        if ((tests = r_test_get_module_tests (NULL, &count)) != NULL &&       \
-            (report = r_test_run_tests (tests, count, run_flags, f,           \
-                R_TEST_ALL_MASK, filter)) != NULL) {                          \
-          r_test_report_print (report, report_flags, f);                      \
-          ret = report->fail + report->error;                                 \
-          r_test_report_free (report);                                        \
-        }                                                                     \
-        if (f != stdout)                                                      \
-          fclose (f);                                                         \
-      }                                                                       \
-      break;                                                                  \
-    default:                                                                  \
-      {                                                                       \
-        rchar * help = r_option_parser_get_help_output (parser);              \
-        r_print ("%s", help);                                                 \
-        r_free (help);                                                        \
-      }                                                                       \
-      break;                                                                  \
-  }                                                                           \
-  r_option_parser_unref (parser);                                             \
-  r_free (output);                                                            \
-  r_free (filter);                                                            \
-  return ret;                                                                 \
+#define RTEST_MAIN(version_str)                                                 \
+int main (int argc, rchar ** argv) {                                            \
+  RArgParser * parser = r_arg_parser_new (NULL, version_str);                   \
+  RArgParseCtx * ctx;                                                           \
+  RTestReport * report;                                                         \
+  int ret = -1;                                                                 \
+                                                                                \
+  const RArgOptionEntry entries[] = {                                           \
+    { "verbose",     'v', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
+      "Print verbose info", NULL },                                             \
+    { "print",       'p', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
+      "Print all tests which ran", NULL },                                      \
+    { "ignore-skip", 'i', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
+      "Run tests that default would be skipped", NULL },                        \
+    { "filter",      'f', R_ARG_OPTION_TYPE_STRING,   R_ARG_OPTION_FLAG_NONE,   \
+      "Filter on test path - default is * (\"/<suite>/<name>\")", NULL },       \
+    { "output",      'o', R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_NONE,   \
+      "File to print results to, use - for stdout [default]", NULL },           \
+  };                                                                            \
+  r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries));    \
+                                                                                \
+  if ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,                 \
+      &argc, (const rchar ***)&argv, NULL)) != NULL) {                          \
+    const RTest * tests;                                                        \
+    rsize count;                                                                \
+    FILE * f = stdout;                                                          \
+    RTestReportFlag report_flags = R_TEST_REPORT_FLAG_NONE;                     \
+    RTestRunFlag run_flags = R_TEST_RUN_FLAG_NONE;                              \
+    rchar * output, * filter = NULL;                                            \
+                                                                                \
+    if (r_arg_parse_ctx_get_option_bool (ctx, "verbose"))                       \
+      report_flags |= R_TEST_REPORT_FLAG_VERBOSE;                               \
+    if (r_arg_parse_ctx_get_option_bool (ctx, "print"))                         \
+      run_flags |= R_TEST_RUN_FLAG_PRINT;                                       \
+    if (r_arg_parse_ctx_get_option_bool (ctx, "igskip"))                        \
+      run_flags |= R_TEST_RUN_FLAG_IGNORE_SKIP;                                 \
+                                                                                \
+    if ((output = r_arg_parse_ctx_get_option_string (ctx, "output")) != NULL && \
+        !r_str_equals (output, "-")) {                                          \
+      f = fopen (output, "w");                                                  \
+      r_free (output);                                                          \
+    }                                                                           \
+                                                                                \
+    filter = r_arg_parse_ctx_get_option_string (ctx, "filter");                 \
+    if ((tests = r_test_get_module_tests (NULL, &count)) != NULL &&             \
+        (report = r_test_run_tests (tests, count, run_flags, f,                 \
+            R_TEST_ALL_MASK, filter)) != NULL) {                                \
+      r_test_report_print (report, report_flags, f);                            \
+      ret = report->fail + report->error;                                       \
+      r_test_report_free (report);                                              \
+    }                                                                           \
+    if (f != stdout)                                                            \
+      fclose (f);                                                               \
+                                                                                \
+    r_free (filter);                                                            \
+    r_arg_parse_ctx_unref (ctx);                                                \
+  } else {                                                                      \
+    ret = r_arg_parser_print_help (parser, R_ARG_PARSE_FLAG_DONT_EXIT, NULL, 1);\
+  }                                                                             \
+                                                                                \
+  r_arg_parser_unref (parser);                                                  \
+  return ret;                                                                   \
 }
 
 R_API rchar * r_test_dup_path (const RTest * test) R_ATTR_MALLOC;

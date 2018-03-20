@@ -1,6 +1,7 @@
 pkg = import('pkgconfig')
 
 rlib_sources = [
+  'rargparse.c',
   'ratomic.c',
   'rbase64.c',
   'rbuffer.c',
@@ -16,7 +17,6 @@ rlib_sources = [
   'rmemscan.c',
   'rmodule.c',
   'rmsgdigest.c',
-  'roptparse.c',
   'rprng-kiss.c',
   'rprng-mt.c',
   'rrand.c',

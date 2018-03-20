@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/rargparse.h>
 #include <rlib/rassert.h>
 #include <rlib/ratomic.h>
 #include <rlib/rbase64.h>
@@ -39,7 +40,6 @@
 #include <rlib/rmemfile.h>
 #include <rlib/rmodule.h>
 #include <rlib/rmsgdigest.h>
-#include <rlib/roptparse.h>
 #include <rlib/rrand.h>
 #include <rlib/rref.h>
 #include <rlib/rsocket.h>
