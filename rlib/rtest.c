@@ -250,7 +250,7 @@ r_test_assertion_msg (RLogCategory * cat,
 rchar *
 r_test_dup_path (const RTest * test)
 {
-  return r_strjoin_dup ("/", "", test->suite, test->name, NULL);
+  return r_strjoin ("/", "", test->suite, test->name, NULL);
 }
 
 rboolean

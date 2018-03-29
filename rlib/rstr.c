@@ -1472,20 +1472,20 @@ r_str_kv_is_value (const RStrKV * kv, const rchar * val, rssize size)
 }
 
 rchar *
-r_strjoin_dup (const rchar * delim, ...)
+r_strjoin (const rchar * delim, ...)
 {
   rchar * ret;
   va_list args;
 
   va_start (args, delim);
-  ret = r_strjoinv_dup (delim, args);
+  ret = r_strjoinv (delim, args);
   va_end (args);
 
   return ret;
 }
 
 rchar *
-r_strjoinv_dup (const rchar * delim, va_list args)
+r_strjoinv (const rchar * delim, va_list args)
 {
   rchar * ret, * ptr;
   const rchar * cur;

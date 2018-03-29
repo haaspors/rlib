@@ -145,8 +145,8 @@ R_API rboolean r_str_kv_is_key (const RStrKV * kv, const rchar * key, rssize siz
 R_API rboolean r_str_kv_is_value (const RStrKV * kv, const rchar * val, rssize size);
 
 /* Join and split */
-R_API rchar * r_strjoin_dup (const rchar * delim, ...) R_ATTR_NULL_TERMINATED;
-R_API rchar * r_strjoinv_dup (const rchar * delim, va_list args);
+R_API rchar * r_strjoin (const rchar * delim, ...) R_ATTR_NULL_TERMINATED;
+R_API rchar * r_strjoinv (const rchar * delim, va_list args);
 R_API rchar * r_strnjoin (rchar * str, rsize size, const rchar * delim, ...) R_ATTR_NULL_TERMINATED;
 R_API rchar * r_strnjoinv (rchar * str, rsize size, const rchar * delim, va_list args);
 R_API rchar ** r_strsplit (const rchar * str, const rchar * delim, rsize max);

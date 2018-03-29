@@ -897,19 +897,19 @@ RTEST (rstrv, contains, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rstr, join_dup, RTEST_FAST)
+RTEST (rstr, join, RTEST_FAST)
 {
   rchar * join;
 
-  r_assert_cmpptr (r_strjoin_dup (NULL, foo, bar, NULL), ==, NULL);
+  r_assert_cmpptr (r_strjoin (NULL, foo, bar, NULL), ==, NULL);
 
-  r_assert_cmpstr ((join = r_strjoin_dup ("", foo, bar, NULL)), ==, foobar); r_free (join);
-  r_assert_cmpstr ((join = r_strjoin_dup ("", foobar, NULL)), ==, foobar); r_free (join);
-  r_assert_cmpstr ((join = r_strjoin_dup ("-", foo, bar, NULL)), ==, "foo-bar"); r_free (join);
+  r_assert_cmpstr ((join = r_strjoin ("", foo, bar, NULL)), ==, foobar); r_free (join);
+  r_assert_cmpstr ((join = r_strjoin ("", foobar, NULL)), ==, foobar); r_free (join);
+  r_assert_cmpstr ((join = r_strjoin ("-", foo, bar, NULL)), ==, "foo-bar"); r_free (join);
 }
 RTEST_END;
 
-RTEST (rstr, join, RTEST_FAST)
+RTEST (rstr, njoin, RTEST_FAST)
 {
   rchar join[24];
 
