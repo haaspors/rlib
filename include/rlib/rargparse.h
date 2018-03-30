@@ -73,6 +73,7 @@ typedef enum {
   R_ARG_PARSE_UNKNOWN_OPTION,
   R_ARG_PARSE_MISSING_OPTION,
   R_ARG_PARSE_VALUE_ERROR,
+  R_ARG_PARSE_MISSING_COMMAND,
   R_ARG_PARSE_OOM,
   R_ARG_PARSE_ERROR,
 } RArgParseResult;
@@ -98,6 +99,7 @@ R_API rchar * r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
 R_ATTR_WARN_UNUSED_RESULT
 R_API rchar * r_arg_parser_get_version (RArgParser * parser) R_ATTR_MALLOC;
 
+/* Options */
 R_API rboolean r_arg_parser_add_option_entries (RArgParser * parser,
     const RArgOptionEntry * args, rsize count);
 R_API rboolean r_arg_parser_add_option_entry (RArgParser * parser,
@@ -107,6 +109,12 @@ R_API rboolean r_arg_parser_add_option_entry (RArgParser * parser,
 R_API rboolean r_arg_parser_add_option_group (RArgParser * parser,
     RArgOptionGroup * group);
 
+/* Commands */
+R_ATTR_WARN_UNUSED_RESULT
+R_API RArgParser * r_arg_parser_add_command (RArgParser * parser,
+    const rchar * cmd, const rchar * desc);
+
+/* Parsing, help, version  */
 R_ATTR_WARN_UNUSED_RESULT
 R_API RArgParseCtx * r_arg_parser_parse (RArgParser * parser, RArgParseFlags flags,
     int * argc, const rchar *** argv, RArgParseResult * res) R_ATTR_MALLOC;
@@ -144,6 +152,9 @@ R_API rint64 r_arg_parse_ctx_get_option_int64 (RArgParseCtx * ctx, const rchar *
 R_API rdouble r_arg_parse_ctx_get_option_double (RArgParseCtx * ctx, const rchar * longarg);
 R_API rchar * r_arg_parse_ctx_get_option_string (RArgParseCtx * ctx, const rchar * longarg) R_ATTR_MALLOC;
 R_API rchar * r_arg_parse_ctx_get_option_filename (RArgParseCtx * ctx, const rchar * longarg) R_ATTR_MALLOC;
+
+R_API const rchar * r_arg_parse_ctx_get_command (const RArgParseCtx * ctx);
+R_API RArgParseCtx * r_arg_parse_ctx_get_command_ctx (RArgParseCtx * ctx);
 
 R_END_DECLS
 

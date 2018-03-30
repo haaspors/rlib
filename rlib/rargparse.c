@@ -24,6 +24,7 @@
 #include <rlib/rassert.h>
 #include <rlib/rref.h>
 #include <rlib/data/rdictionary.h>
+#include <rlib/data/rkvptrarray.h>
 #include <rlib/data/rlist.h>
 #include <rlib/data/rstring.h>
 #include <rlib/rlog.h>
@@ -33,7 +34,6 @@
 #include <rlib/rtty.h>
 
 /* TODO: Add API to customize options usage string + (get|set)ters appname++ */
-/* TODO: Add commands API? */
 
 struct _RArgParser
 {
@@ -47,7 +47,14 @@ struct _RArgParser
 
   RArgOptionGroup * main;
   RSList * groups;
+
+  RKVPtrArray commands;
 };
+
+static RArgParseCtx *
+r_arg_parser_parse_internal (RArgParser * parser, RArgParseFlags flags,
+    const rchar * appname, int * argc, const rchar *** argv,
+    RArgParseResult * res);
 
 struct _RArgParseCtx
 {
@@ -60,14 +67,14 @@ struct _RArgParseCtx
   RDictionary * options;
 
   rchar * command;
-  RArgParseCtx * cmd_ctx;
+  RArgParseCtx * cmdctx;
 };
 
 static void
 r_arg_parse_ctx_free (RArgParseCtx * ctx)
 {
-  if (ctx->cmd_ctx)
-    r_arg_parse_ctx_unref (ctx->cmd_ctx);
+  if (ctx->cmdctx)
+    r_arg_parse_ctx_unref (ctx->cmdctx);
   r_free (ctx->command);
 
   r_dictionary_unref (ctx->options);
@@ -78,7 +85,7 @@ r_arg_parse_ctx_free (RArgParseCtx * ctx)
 }
 
 static inline RArgParseCtx *
-r_arg_parse_ctx_new_internal (RArgParser * parser, RArgParseFlags flags,
+r_arg_parse_ctx_new (RArgParser * parser, RArgParseFlags flags,
     const rchar * appname)
 {
   RArgParseCtx * ret;
@@ -287,8 +294,10 @@ r_arg_option_group_add_entry (RArgOptionGroup * group,
   return r_arg_option_group_add_entries (group, &entry, 1);
 }
 
-static const RArgOptionEntry r_arg_help_args[] = {
+static const RArgOptionEntry r_arg_version_args[] = {
   { "version",  0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Show application version number and exit", NULL },
+};
+static const RArgOptionEntry r_arg_help_args[] = {
   { "help",   'h', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Show this help message and exit", NULL },
   { "",       '?', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_HIDDEN, NULL, NULL },
 };
@@ -306,6 +315,7 @@ r_arg_parser_free (RArgParser * parser)
     r_arg_option_group_unref (parser->main);
     r_slist_destroy_full (parser->groups, r_arg_option_group_unref);
 
+    r_kv_ptr_array_clear (&parser->commands);
     r_free (parser);
   }
 }
@@ -323,7 +333,11 @@ r_arg_parser_new (const rchar * app, const rchar * version)
     ret->version = r_strdup (version);
     ret->main = r_arg_option_group_new_internal (NULL, "Options", NULL, NULL, NULL);
     r_arg_option_group_add_entries (ret->main,
+        r_arg_version_args, R_N_ELEMENTS (r_arg_version_args));
+    r_arg_option_group_add_entries (ret->main,
         r_arg_help_args, R_N_ELEMENTS (r_arg_help_args));
+
+    r_kv_ptr_array_init (&ret->commands, r_str_equal);
   }
 
   return ret;
@@ -390,7 +404,8 @@ r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
   while (spacing > 0)
     spacing -= r_string_append (str, " ");
 
-  r_string_append_printf (str, " %s\n", opt->desc);
+  r_string_append (str, opt->desc);
+  r_string_append (str, "\n");
 }
 
 static void
@@ -406,6 +421,24 @@ r_arg_option_group_append_help (const RArgOptionGroup * group, RString * str)
     r_arg_option_entry_append_help (&group->entries[i], str);
 }
 
+static void
+r_arg_command_append_help (rpointer key, rpointer val, rpointer user)
+{
+  rchar * cmd = key;
+  RArgParser * parser = val;
+  RString * str = user;
+  int spacing = 32;
+
+  spacing -= r_string_append_printf (str, "  %s", cmd);
+  if (parser->summary != NULL) {
+    while (spacing > 0)
+      spacing -= r_string_append (str, " ");
+    r_string_append (str, parser->summary);
+  }
+
+  r_string_append (str, "\n");
+}
+
 rchar *
 r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
     const rchar * appname)
@@ -417,8 +450,11 @@ r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
     return NULL;
 
   str = r_string_new_sized (1024);
-  r_string_append_printf (str, "Usage:\n  %s %s\n",
+  r_string_append_printf (str, "Usage:\n  %s %s",
       appname != NULL ? appname : parser->appname, parser->options);
+  if (r_kv_ptr_array_size (&parser->commands) > 0)
+    r_string_append (str, " <command>");
+  r_string_append (str, "\n");
 
   if (parser->summary != NULL)
     r_string_append_printf (str, "\n%s\n", parser->summary);
@@ -427,11 +463,16 @@ r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
 
   i = 0;
   if ((flags & R_ARG_PARSE_FLAG_DISALE_HELP) == R_ARG_PARSE_FLAG_DISALE_HELP)
-    i += R_N_ELEMENTS (r_arg_help_args);
+    i += R_N_ELEMENTS (r_arg_version_args) + R_N_ELEMENTS (r_arg_help_args);
   for (; i < parser->main->count; i++)
     r_arg_option_entry_append_help (&parser->main->entries[i], str);
 
   r_slist_foreach (parser->groups, (RFunc)r_arg_option_group_append_help, str);
+
+  if (r_kv_ptr_array_size (&parser->commands) > 0) {
+    r_string_append (str, "\nCommands:\n");
+    r_kv_ptr_array_foreach (&parser->commands, r_arg_command_append_help, str);
+  }
 
   if (parser->epilog != NULL)
     r_string_append_printf (str, "\n%s\n", parser->epilog);
@@ -757,24 +798,76 @@ r_arg_parser_parse_options (RArgParser * parser, RArgParseCtx * ctx,
   return ret;
 }
 
-RArgParseCtx *
-r_arg_parser_parse (RArgParser * parser, RArgParseFlags flags,
-    int * argc, const rchar *** argv, RArgParseResult * res)
+static RArgParser *
+r_arg_parser_add_command_internal (RArgParser * parser,
+    const rchar * cmd, const rchar * desc)
+{
+  rchar * appname;
+  RArgParser * ret;
+
+  if ((appname = r_strjoin (" ", parser->appname, cmd, NULL)) != NULL &&
+      (ret = r_arg_parser_new (appname, NULL)) != NULL) {
+    ret->summary = r_strdup (desc);
+    ret->main->entries[0].flags |= R_ARG_OPTION_FLAG_HIDDEN; /* hide --version */
+    r_kv_ptr_array_add (&parser->commands, r_strdup (cmd), r_free,
+          ret, r_arg_parser_unref);
+  }
+
+  r_free (appname);
+  return ret;
+}
+
+RArgParser *
+r_arg_parser_add_command (RArgParser * parser, const rchar * cmd, const rchar * desc)
+{
+  RArgParser * ret;
+
+  if (R_UNLIKELY (cmd == NULL || *cmd == 0)) return NULL;
+
+  if (r_kv_ptr_array_size (&parser->commands) == 0)
+    r_arg_parser_add_command_internal (parser, r_arg_help_args[0].longarg, r_arg_help_args[0].desc);
+
+  ret = r_arg_parser_add_command_internal (parser, cmd, desc);
+  return ret != NULL ? r_arg_parser_ref (ret) : NULL;
+}
+
+static RArgParseResult
+r_arg_parser_parse_command (RArgParser * parser, RArgParseFlags flags,
+    RArgParseCtx * ctx, int * argc, const rchar *** argv)
+{
+  RArgParseResult ret;
+  const rchar * cmd = (*argv)[0];
+  rsize idx;
+
+  if (r_kv_ptr_array_size (&parser->commands) == 0) {
+    ret = R_ARG_PARSE_OK;
+  } else if ((idx = r_kv_ptr_array_find (&parser->commands, cmd)) != R_KV_PTR_ARRAY_INVALID_IDX) {
+    RArgParser * cmdparser = r_kv_ptr_array_get_val (&parser->commands, idx);
+    ctx->command = r_strdup (cmd);
+    (*argv)++;
+    (*argc)--;
+    ret = R_ARG_PARSE_OK;
+    ctx->cmdctx = r_arg_parser_parse_internal (cmdparser, flags,
+        cmd, argc, argv, &ret);
+  } else {
+    ret = R_ARG_PARSE_MISSING_COMMAND;
+  }
+
+  return ret;
+}
+
+static RArgParseCtx *
+r_arg_parser_parse_internal (RArgParser * parser, RArgParseFlags flags,
+    const rchar * appname, int * argc, const rchar *** argv,
+    RArgParseResult * res)
 {
   RArgParseCtx * ret;
   RArgParseResult curres;
 
-  if (R_UNLIKELY (argc == NULL || *argc < 1 || argv == NULL)) {
-    if (res != NULL)
-      *res = R_ARG_PARSE_ARG_ERROR;
-    return NULL;
-  }
-
-  if ((ret = r_arg_parse_ctx_new_internal (parser, flags, (*argv)[0])) != NULL) {
-    (*argv)++;
-    (*argc)--;
-
-    curres = r_arg_parser_parse_options (parser, ret, argc, argv);
+  if ((ret = r_arg_parse_ctx_new (parser, flags, appname)) != NULL) {
+    if ((curres = r_arg_parser_parse_options (parser, ret, argc, argv)) == R_ARG_PARSE_OK) {
+      curres = r_arg_parser_parse_command (parser, flags, ret, argc, argv);
+    }
 
     if (curres != R_ARG_PARSE_OK) {
       r_arg_parse_ctx_unref (ret);
@@ -787,6 +880,24 @@ r_arg_parser_parse (RArgParser * parser, RArgParseFlags flags,
   if (res != NULL)
     *res = curres;
   return ret;
+}
+
+RArgParseCtx *
+r_arg_parser_parse (RArgParser * parser, RArgParseFlags flags,
+    int * argc, const rchar *** argv, RArgParseResult * res)
+{
+  const rchar * appname;
+
+  if (R_UNLIKELY (argc == NULL || *argc < 1 || argv == NULL)) {
+    if (res != NULL)
+      *res = R_ARG_PARSE_ARG_ERROR;
+    return NULL;
+  }
+
+  appname = (*argv)[0];
+  (*argv)++;
+  (*argc)--;
+  return r_arg_parser_parse_internal (parser, flags, appname, argc, argv, res);
 }
 
 void
@@ -974,5 +1085,17 @@ r_arg_parse_ctx_get_option_filename (RArgParseCtx * ctx, const rchar * longarg)
   }
 
   return ret;
+}
+
+const rchar *
+r_arg_parse_ctx_get_command (const RArgParseCtx * ctx)
+{
+  return ctx->command;
+}
+
+RArgParseCtx *
+r_arg_parse_ctx_get_command_ctx (RArgParseCtx * ctx)
+{
+  return ctx->cmdctx != NULL ? r_arg_parse_ctx_ref (ctx->cmdctx) : NULL;
 }
 

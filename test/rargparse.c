@@ -9,8 +9,8 @@ static rchar rargparse_help_tmpl[] =
   "%s"
   "%s";
 static rchar rargparse_helpopt[] =
-  "  --version                      Show application version number and exit\n"
-  "  -h, --help                     Show this help message and exit\n";
+  "  --version                     Show application version number and exit\n"
+  "  -h, --help                    Show this help message and exit\n";
 
 RTEST (rargparse, new_n_free, RTEST_FAST)
 {
@@ -158,8 +158,8 @@ RTEST (rargparse, help_args, RTEST_FAST)
     { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL },
   };
   const rchar * args_help =
-    "  -f, --foo                      Do foo\n"
-    "  -b, --bar                      Do bar\n";
+    "  -f, --foo                     Do foo\n"
+    "  -b, --bar                     Do bar\n";
   rchar * expected, * help, * exe;
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
 
@@ -190,16 +190,16 @@ RTEST (rargparse, help_argname, RTEST_FAST)
     { "instr", 's', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Input string", NULL },
   };
   const rchar * args_help =
-    "  -f, --foo                      Do foo\n"
-    "  -b, --bar                      Do bar\n"
-    "  -n, --num=NUM                  Integer\n"
-    "  --val=VALUE                    Value\n"
-    "  --num64=NUM                    Integer 64bit\n"
-    "  -d, --double=NUM               Double\n"
-    "  -o, --output=FILE              Output file\n"
-    "  -i, --input=FILENAME           Input file\n"
-    "  -u, --outstr=STR               Output string\n"
-    "  -s, --instr=STRING             Input string\n";
+    "  -f, --foo                     Do foo\n"
+    "  -b, --bar                     Do bar\n"
+    "  -n, --num=NUM                 Integer\n"
+    "  --val=VALUE                   Value\n"
+    "  --num64=NUM                   Integer 64bit\n"
+    "  -d, --double=NUM              Double\n"
+    "  -o, --output=FILE             Output file\n"
+    "  -i, --input=FILENAME          Input file\n"
+    "  -u, --outstr=STR              Output string\n"
+    "  -s, --instr=STRING            Input string\n";
   rchar * expected, * help, * exe;
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
 
@@ -827,3 +827,105 @@ RTEST (rargparse, get_value, RTEST_FAST)
   r_strv_free (strv);
 }
 RTEST_END;
+
+static rchar rargparse_help_with_cmd_tmpl[] =
+  "Usage:\n"
+  "  %s [options] <command>\n"
+  "%s"
+  "\nOptions:\n"
+  "%s"
+  "\nCommands:\n"
+  "%s"
+  "%s";
+
+RTEST (rargparse, add_command_should_incl_help, RTEST_FAST)
+{
+  RArgParser * parser, * cmd;
+  rchar * expected, * help, * exe;
+
+  r_assert_cmpptr ((parser = r_arg_parser_new (NULL, NULL)), !=, NULL);
+
+  r_assert_cmpptr (r_arg_parser_add_command (parser, NULL, NULL), ==, NULL);
+  r_assert_cmpptr ((cmd = r_arg_parser_add_command (parser, "foo", "bar")), !=, NULL);
+  r_arg_parser_unref (cmd);
+
+  r_assert_cmpptr ((exe = r_proc_get_exe_name ()), !=, NULL);
+
+  expected = r_strprintf (rargparse_help_with_cmd_tmpl, exe, "", rargparse_helpopt,
+      "  help                          Show this help message and exit\n"
+      "  foo                           bar\n", "");
+  r_assert_cmpstr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_NONE, NULL)), ==, expected);
+  r_free (expected);
+  r_free (help);
+  r_free (exe);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, command_help, RTEST_FAST)
+{
+  RArgParser * parser, * cmd;
+  rchar * expected, * help, * exe, * tmp;
+
+  r_assert_cmpptr ((parser = r_arg_parser_new (NULL, NULL)), !=, NULL);
+
+  r_assert_cmpptr (r_arg_parser_add_command (parser, NULL, NULL), ==, NULL);
+  r_assert_cmpptr ((cmd = r_arg_parser_add_command (parser, "foo", "bar")), !=, NULL);
+
+  r_assert_cmpptr ((exe = r_proc_get_exe_name ()), !=, NULL);
+  tmp = r_strprintf ("%s foo", exe);
+  r_free (exe);
+  exe = tmp;
+
+  expected = r_strprintf (rargparse_help_tmpl, exe, "\nbar\n",
+      "  -h, --help                    Show this help message and exit\n", "");
+  r_assert_cmpstr ((help = r_arg_parser_get_help (cmd, R_ARG_PARSE_FLAG_NONE, NULL)), ==, expected);
+  r_free (expected);
+  r_free (help);
+  r_free (exe);
+
+  r_arg_parser_unref (cmd);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, add_command_and_parse, RTEST_FAST)
+{
+  RArgParser * parser, * cmd;
+  rchar ** strv, ** argv/*, * foo*/ = NULL;
+  int argc;
+  RArgParseCtx * ctx, * cmdctx;
+  RArgParseResult res;
+
+  r_assert_cmpptr ((parser = r_arg_parser_new (NULL, NULL)), !=, NULL);
+
+  r_assert_cmpptr ((cmd = r_arg_parser_add_command (parser, "foo", "bar")), !=, NULL);
+  r_arg_parser_unref (cmd);
+
+  strv = argv = r_strv_new ("rlibtest", "--foo", "--bar", "0", NULL);
+  argc = r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, &res)), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_UNKNOWN_OPTION);
+  r_strv_free (strv);
+
+  strv = argv = r_strv_new ("rlibtest", "foo", "0", NULL);
+  argc = r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_OK);
+  r_assert_cmpint (argc, ==, 1);
+  r_assert_cmpint (r_arg_parse_ctx_option_count (ctx), ==, 0);
+  r_assert (!r_arg_parse_ctx_get_option_bool (ctx, "foo"));
+  r_assert_cmpstr (r_arg_parse_ctx_get_command (ctx), ==, "foo");
+  r_assert_cmpptr ((cmdctx = r_arg_parse_ctx_get_command_ctx (ctx)), !=, NULL);
+  r_assert_cmpint (r_arg_parse_ctx_option_count (cmdctx), ==, 0);
+  r_arg_parse_ctx_unref (cmdctx);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_arg_parser_unref (parser);
+  r_strv_free (strv);
+}
+RTEST_END;
+
