@@ -774,9 +774,6 @@ r_arg_parser_parse_options (RArgParser * parser, RArgParseCtx * ctx,
     }
   }
 
-  if (ret != R_ARG_PARSE_OK)
-    return ret;
-
   /* Check version */
   if (r_arg_parse_ctx_get_option_bool (ctx, "version")) {
     r_arg_parser_print_version (parser, ctx->flags);
@@ -792,8 +789,10 @@ r_arg_parser_parse_options (RArgParser * parser, RArgParseCtx * ctx,
     }
   }
 
-  if (!r_arg_parser_check_required_options (parser, ctx))
-    ret = R_ARG_PARSE_MISSING_OPTION;
+  if (ret == R_ARG_PARSE_OK) {
+    if (!r_arg_parser_check_required_options (parser, ctx))
+      ret = R_ARG_PARSE_MISSING_OPTION;
+  }
 
   return ret;
 }
