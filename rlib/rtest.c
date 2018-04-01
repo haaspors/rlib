@@ -358,18 +358,21 @@ r_test_run_pseudo_fork (rpointer data)
   RTestRunState ret;
 
   ret = r_test_run_nofork (win32run->test, win32run->__i, win32run->notimeout,
-      win32run->lastpos, win32run->failpos, NULL);
+      win32run->lastpos, win32run->failpos, NULL, NULL);
 
   return RINT_TO_POINTER (ret);
 }
 
 RTestRunState
 r_test_run_fork (const RTest * test, rsize __i, rboolean notimeout,
-    RTestLastPos * lastpos, RTestLastPos * failpos, int * pid)
+    RTestLastPos * lastpos, RTestLastPos * failpos, int * pid, int * exitcode)
 {
   RTestWin32Run win32run = { test, __i, notimeout, lastpos, failpos };
   RTestRunForkCtx ctx = { R_TEST_RUN_STATE_NONE, NULL, NULL, NULL, NULL };
   rpointer res;
+
+  (void) pid;
+  (void) exitcode;
 
   if (g__r_test_fork_ctx != NULL) abort (); /* Can't use r_assert* here */
   if (g__r_test_nofork_ctx != NULL) abort (); /* Can't use r_assert* here */
@@ -449,7 +452,7 @@ r_test_run_fork_cleanup (RTestRunForkCtx * ctx)
 
 RTestRunState
 r_test_run_fork (const RTest * test, rsize __i, rboolean notimeout,
-    RTestLastPos * lastpos, RTestLastPos * failpos, int * pidout)
+    RTestLastPos * lastpos, RTestLastPos * failpos, int * pidout, int * exitcode)
 {
   RTestRunState ret = R_TEST_RUN_STATE_ERROR;
   pid_t pid, wpid;
@@ -477,31 +480,32 @@ r_test_run_fork (const RTest * test, rsize __i, rboolean notimeout,
     wpid = waitpid (pid, &status, 0);
     r_test_run_fork_cleanup (&ctx);
 
-    if (ctx.state != R_TEST_RUN_STATE_NONE)
-      ret = ctx.state;
-
     if (wpid == pid) {
-      if (WIFEXITED (status)) {
-        ret = (RTestRunState)WEXITSTATUS (status);
-
-        if (read (fdp[0], lastpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
+      if (WIFEXITED (status) && (*exitcode = WEXITSTATUS (status)) == 0) {
+        if (read (fdp[0], &ret, sizeof (RTestRunState)) != sizeof (RTestRunState)) {
           R_LOG_WARNING ("Failed to read from pipe to forked child");
-        if (read (fdp[0], failpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
-          R_LOG_WARNING ("Failed to read from pipe to forked child");
+          ret = R_TEST_RUN_STATE_ERROR;
+        }
+        read (fdp[0], lastpos, sizeof (RTestLastPos));
+        read (fdp[0], failpos, sizeof (RTestLastPos));
       }
     }
     close(fdp[0]);
-  } else if (pid == 0) {
-    RTestRunState res;
-    close(fdp[0]);
-    res = r_test_run_nofork (test, __i, notimeout, lastpos, failpos, NULL);
 
+    if (ctx.state != R_TEST_RUN_STATE_NONE)
+      ret = ctx.state;
+  } else if (pid == 0) {
+    close(fdp[0]);
+    ret = r_test_run_nofork (test, __i, notimeout, lastpos, failpos, NULL, NULL);
+
+    if (write (fdp[1], &ret, sizeof (RTestRunState)) != sizeof (RTestRunState))
+      R_LOG_ERROR ("Failed to write to pipe to parent (forker)");
     if (write (fdp[1], lastpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
-      R_LOG_WARNING ("Failed to write to pipe to parent (forker)");
+      R_LOG_ERROR ("Failed to write to pipe to parent (forker)");
     if (write (fdp[1], failpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
-      R_LOG_WARNING ("Failed to write to pipe to parent (forker)");
+      R_LOG_ERROR ("Failed to write to pipe to parent (forker)");
     close (fdp[1]);
-    exit ((int)res);
+    exit (0);
   } else {
     R_LOG_ERROR ("Failed to fork test /%s/%s/%"RSIZE_FMT,
         test->suite, test->name, __i);
@@ -738,13 +742,14 @@ r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
 
 RTestRunState
 r_test_run_nofork (const RTest * test, rsize __i, rboolean notimeout,
-    RTestLastPos * lastpos, RTestLastPos * failpos, int * pid)
+    RTestLastPos * lastpos, RTestLastPos * failpos, int * pid, int * exitcode)
 {
   RTestRunState ret = R_TEST_RUN_STATE_ERROR;
   RTestRunNoForkCtx ctx;
   int jmpres;
 
   (void) pid;
+  (void) exitcode;
 
   if (R_UNLIKELY (test == NULL))
     return ret;
@@ -788,7 +793,7 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
     RTestFilterFunc filter, rpointer data)
 {
   typedef RTestRunState (*RTestRunFunc) (const RTest *, rsize, rboolean,
-      RTestLastPos *, RTestLastPos *, int * pid);
+      RTestLastPos *, RTestLastPos *, int * pid, int * exitcode);
   RTestRunFunc runner = r_test_run_nofork;
   RTestReport * ret;
   rboolean notimeout;
@@ -842,8 +847,10 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
           ret->runs[cur].lastpos.func = R_STRFUNC;
           ret->runs[cur].lastpos.assert = FALSE;
           ret->runs[cur].pid = r_proc_get_id ();
+          ret->runs[cur].exitcode = 0;
           ret->runs[cur].state = runner (ret->runs[cur].test, it, notimeout,
-              &ret->runs[cur].lastpos, &ret->runs[cur].failpos, &ret->runs[cur].pid);
+              &ret->runs[cur].lastpos, &ret->runs[cur].failpos,
+              &ret->runs[cur].pid, &ret->runs[cur].exitcode);
           ret->runs[cur].end = r_time_get_ts_monotonic ();
 
           switch (ret->runs[cur].state) {
@@ -870,17 +877,17 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
             runres = r_test_get_run_str (ret->runs[cur].state, &runresclr, f);
 
             if (ret->runs[cur].test->type & R_TEST_FLAG_LOOP) {
-              r_print ("%s%-9s%s[%s%"R_TIME_FORMAT"%s] %s/%s/%s/%"RSIZE_FMT"%s [pid: %d]\n",
+              r_print ("%s%-9s%s[%s%"R_TIME_FORMAT"%s] %s/%s/%s/%"RSIZE_FMT"%s [pid: %d, exit: %d]\n",
                   runresclr, runres, _RESET_CLR,
                   _TIME_CLR, R_TIME_ARGS (ret->runs[cur].end - ret->runs[cur].start), _RESET_CLR,
                   runresclr, ret->runs[cur].test->suite, ret->runs[cur].test->name, ret->runs[cur].__i, _RESET_CLR,
-                  ret->runs[cur].pid);
+                  ret->runs[cur].pid, ret->runs[cur].exitcode);
             } else {
-              r_print ("%s%-9s%s[%s%"R_TIME_FORMAT"%s] %s/%s/%s%s [pid: %d]\n",
+              r_print ("%s%-9s%s[%s%"R_TIME_FORMAT"%s] %s/%s/%s%s [pid: %d, exit: %d]\n",
                   runresclr, runres, _RESET_CLR,
                   _TIME_CLR, R_TIME_ARGS (ret->runs[cur].end - ret->runs[cur].start), _RESET_CLR,
                   runresclr, ret->runs[cur].test->suite, ret->runs[cur].test->name, _RESET_CLR,
-                  ret->runs[cur].pid);
+                  ret->runs[cur].pid, ret->runs[cur].exitcode);
             }
           }
         } else {
@@ -986,10 +993,10 @@ r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
         extra = r_strdup ("");
       }
 
-      r_fprintf (f, "%s%-9s%s[%s%"R_TIME_FORMAT"%s] %s%s%s [pid: %d]%s\n",
+      r_fprintf (f, "%s%-9s%s[%s%"R_TIME_FORMAT"%s] %s%s%s [pid: %d, exit: %d]%s\n",
           runresclr, runres, _RESET_CLR,
           _TIME_CLR, R_TIME_ARGS (elapsed), _RESET_CLR,
-          runresclr, name, _RESET_CLR, run->pid, extra);
+          runresclr, name, _RESET_CLR, run->pid, run->exitcode, extra);
       r_free (name);
       r_free (extra);
     }

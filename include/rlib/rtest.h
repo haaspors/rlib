@@ -112,6 +112,7 @@ typedef struct {
   RTestRunState state;
   rsize __i;
   int pid;
+  int exitcode;
 
   RTestLastPos lastpos;
   RTestLastPos failpos;
@@ -244,9 +245,11 @@ R_API rboolean r_test_fill_path (const RTest * test, rchar * path, rsize size);
 R_API const RTest * r_test_get_module_tests (RMODULE mod, rsize * count);
 
 R_API RTestRunState r_test_run_fork (const RTest * test, rsize __i,
-    rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);
+    rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos,
+    int * pid, int * exitcode);
 R_API RTestRunState r_test_run_nofork (const RTest * test, rsize __i,
-    rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos, int * pid);
+    rboolean notimeout, RTestLastPos * lastpos, RTestLastPos * failpos,
+    int * pid, int * exitcode);
 R_API RTestReport * r_test_run_tests_full (const RTest * tests, rsize count,
     RTestRunFlag flags, FILE * f, RTestFilterFunc filter, rpointer data);
 R_API RTestReport * r_test_run_tests (const RTest * tests, rsize count,
