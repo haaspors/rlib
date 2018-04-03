@@ -1365,12 +1365,18 @@ r_str_chunk_splitv (RStrChunk * buf, const rchar * delim, va_list args)
 }
 
 void
-r_str_chunk_wstrip (RStrChunk * buf)
+r_str_chunk_lwstrip (RStrChunk * buf)
 {
   while (buf->size > 0 && r_ascii_isspace (buf->str[0])) {
     buf->str++;
     buf->size--;
   }
+}
+
+void
+r_str_chunk_wstrip (RStrChunk * buf)
+{
+  r_str_chunk_lwstrip (buf);
   while (buf->size > 0 && (buf->str[buf->size - 1] == 0 ||
         r_ascii_isspace (buf->str[buf->size - 1]))) {
     buf->size--;
