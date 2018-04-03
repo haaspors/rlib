@@ -110,6 +110,7 @@ typedef struct {
 } RStrChunk;
 #define R_STR_CHUNK_INIT        { NULL, 0 }
 #define r_str_chunk_dup(chunk)  r_strndup ((chunk)->str, (chunk)->size)
+#define r_str_chunk_end(chunk)  ((chunk)->str + (chunk)->size)
 R_API int r_str_chunk_cmp (const RStrChunk * buf, const rchar * str, rssize size);
 R_API int r_str_chunk_casecmp (const RStrChunk * buf, const rchar * str, rssize size);
 R_API rboolean r_str_chunk_has_prefix (const RStrChunk * buf, const rchar * str, rssize size);
