@@ -810,6 +810,8 @@ r_arg_parser_add_command_internal (RArgParser * parser,
     ret->main->entries[0].flags |= R_ARG_OPTION_FLAG_HIDDEN; /* hide --version */
     r_kv_ptr_array_add (&parser->commands, r_strdup (cmd), r_free,
           ret, r_arg_parser_unref);
+  } else {
+    ret = NULL;
   }
 
   r_free (appname);
