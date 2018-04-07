@@ -34,6 +34,7 @@ typedef struct _RKVPtrArray RKVPtrArray;
 #define R_KV_PTR_ARRAY_INIT       R_KV_PTR_ARRAY_INIT_WITH_FUNC (NULL)
 #define R_KV_PTR_ARRAY_INIT_STR   R_KV_PTR_ARRAY_INIT_WITH_FUNC (r_str_equal)
 R_API void r_kv_ptr_array_init (RKVPtrArray * array, REqualFunc eqfunc);
+#define r_kv_ptr_array_init_str(array) r_kv_ptr_array_init (array, r_str_equal)
 R_API void r_kv_ptr_array_clear (RKVPtrArray * array);
 
 /* Create using ref counting */
