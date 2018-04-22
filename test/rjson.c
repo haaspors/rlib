@@ -162,3 +162,45 @@ RTEST (rjson, object_composite_wikipedia, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rjson, create_object, RTEST_FAST)
+{
+  RJsonValue * obj, * tmp;
+
+  r_assert_cmpint (r_json_object_add_field (NULL, NULL, NULL), ==, R_JSON_INVAL);
+
+  r_assert_cmpptr ((obj = r_json_object_new ()), !=, NULL);
+  r_assert_cmpptr ((tmp = (RJsonValue *)r_json_null_new ()), !=, NULL);
+  r_assert_cmpuint (r_json_value_get_object_field_count (obj), ==, 0);
+
+  r_assert_cmpint (r_json_object_add_field (obj, NULL, NULL), ==, R_JSON_INVAL);
+  r_assert_cmpint (r_json_object_add_field (obj, "foo", NULL), ==, R_JSON_INVAL);
+  r_assert_cmpint (r_json_object_add_field (obj, NULL, tmp), ==, R_JSON_INVAL);
+
+  r_assert_cmpint (r_json_object_add_field (obj, "foo", tmp), ==, R_JSON_OK);
+  r_assert_cmpuint (r_json_value_get_object_field_count (obj), ==, 1);
+  r_json_value_unref (tmp);
+
+  r_json_value_unref (obj);
+}
+RTEST_END;
+
+RTEST (rjson, create_array, RTEST_FAST)
+{
+  RJsonValue * array, * tmp;
+
+  r_assert_cmpint (r_json_array_add_value (NULL, NULL), ==, R_JSON_INVAL);
+
+  r_assert_cmpptr ((array = r_json_array_new ()), !=, NULL);
+  r_assert_cmpuint (r_json_value_get_object_field_count (array), ==, 0);
+
+  r_assert_cmpint (r_json_array_add_value (array, NULL), ==, R_JSON_INVAL);
+
+  r_assert_cmpptr ((tmp = (RJsonValue *)r_json_null_new ()), !=, NULL);
+  r_assert_cmpint (r_json_array_add_value (array, tmp), ==, R_JSON_OK);
+  r_assert_cmpuint (r_json_value_get_array_size (array), ==, 1);
+  r_json_value_unref (tmp);
+
+  r_json_value_unref (array);
+}
+RTEST_END;
+

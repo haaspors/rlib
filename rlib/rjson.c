@@ -171,6 +171,35 @@ r_json_value_new (RJsonType type)
 }
 
 
+RJsonResult
+r_json_object_add_field (RJsonValue * obj, const rchar * key, RJsonValue * value)
+{
+  if (obj != NULL && obj->type == R_JSON_TYPE_OBJECT &&
+      key != NULL && value != NULL) {
+    RJsonObject * o = (RJsonObject *)obj;
+
+    r_kv_ptr_array_add (&o->array, r_strdup (key), r_free,
+        r_json_value_ref (value), r_json_value_unref);
+    return R_JSON_OK;
+  }
+
+  return R_JSON_INVAL;
+}
+
+RJsonResult
+r_json_array_add_value (RJsonValue * array, RJsonValue * value)
+{
+  if (array != NULL && array->type == R_JSON_TYPE_ARRAY && value != NULL) {
+    RJsonArray * a = (RJsonArray *)array;
+
+    r_ptr_array_add (&a->array, r_json_value_ref (value), r_json_value_unref);
+    return R_JSON_OK;
+  }
+
+  return R_JSON_INVAL;
+}
+
+
 rsize
 r_json_value_get_object_field_count (const RJsonValue * value)
 {
