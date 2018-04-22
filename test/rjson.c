@@ -1,5 +1,20 @@
 #include <rlib/rlib.h>
 
+static const rchar json_wikipedia[] =
+  "{\n"
+  "  \"id\": 1,\n"
+  "  \"name\": \"Foo\",\n"
+  "  \"price\": 123,\n"
+  "  \"tags\": [\n"
+  "    \"Bar\",\n"
+  "    \"Eek\"\n"
+  "  ],\n"
+  "  \"stock\": {\n"
+  "    \"warehouse\": 300,\n"
+  "    \"retail\": 20\n"
+  "  }\n"
+  "}";
+
 RTEST (rjson, array_of_strings, RTEST_FAST)
 {
   static const rchar json_array_of_strings[] =
@@ -104,25 +119,10 @@ RTEST_END;
 
 RTEST (rjson, object_composite_wikipedia, RTEST_FAST)
 {
-  static const rchar json_object_composite[] =
-    "{\n"
-    "  \"id\": 1,\n"
-    "  \"name\": \"Foo\",\n"
-    "  \"price\": 123,\n"
-    "  \"tags\": [\n"
-    "    \"Bar\",\n"
-    "    \"Eek\"\n"
-    "  ],\n"
-    "  \"stock\": {\n"
-    "    \"warehouse\": 300,\n"
-    "    \"retail\": 20\n"
-    "  }\n"
-    "}";
-
   RJsonResult res;
   RJsonValue * v, * tmp;
 
-  r_assert_cmpptr ((v = r_json_parse (R_STR_WITH_SIZE_ARGS (json_object_composite), &res)), !=, NULL);
+  r_assert_cmpptr ((v = r_json_parse (R_STR_WITH_SIZE_ARGS (json_wikipedia), &res)), !=, NULL);
   r_assert_cmpint (v->type, ==, R_JSON_TYPE_OBJECT);
   r_assert_cmpuint (r_json_value_get_object_field_count (v), ==, 5);
 
@@ -203,6 +203,70 @@ RTEST (rjson, create_array, RTEST_FAST)
   r_json_value_unref (tmp);
 
   r_json_value_unref (array);
+}
+RTEST_END;
+
+RTEST (rjson, value_to_buffer_array, RTEST_FAST)
+{
+  RJsonValue * array, * tmp;
+  RBuffer * buf;
+  RJsonResult res;
+
+  r_assert_cmpptr (r_json_value_to_buffer (NULL, R_JSON_NOFLAGS, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_JSON_INVAL);
+
+  r_assert_cmpptr ((array = r_json_array_new ()), !=, NULL);
+
+  r_assert_cmpptr ((buf = r_json_value_to_buffer (array, R_JSON_NOFLAGS, &res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "[]");
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((tmp = r_json_string_new_static ("foo")), !=, NULL);
+  r_assert_cmpint (r_json_array_add_value (array, tmp), ==, R_JSON_OK);
+  r_json_value_unref (tmp);
+  r_assert_cmpptr ((tmp = r_json_string_new_static ("bar")), !=, NULL);
+  r_assert_cmpint (r_json_array_add_value (array, tmp), ==, R_JSON_OK);
+  r_json_value_unref (tmp);
+  r_assert_cmpuint (r_json_value_get_array_size (array), ==, 2);
+
+  r_assert_cmpptr ((buf = r_json_value_to_buffer (array, R_JSON_COMPACT, &res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "[\"foo\",\"bar\"]");
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_json_value_to_buffer (array, R_JSON_NOFLAGS, &res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "[\n  \"foo\",\n  \"bar\"\n]");
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_json_value_to_buffer (array, R_JSON_USE_TABS, &res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "[\n\t\"foo\",\n\t\"bar\"\n]");
+  r_buffer_unref (buf);
+
+  r_json_value_unref (array);
+}
+RTEST_END;
+
+RTEST (rjson, parse_then_value_to_buffer, RTEST_FAST)
+{
+  RJsonResult res;
+  RJsonValue * v;
+  RBuffer * buf;
+  static const rchar json_wikipedia_compact[] =
+    "{\"id\":1,\"name\":\"Foo\",\"price\":123,"
+    "\"tags\":[\"Bar\",\"Eek\"],"
+    "\"stock\":{\"warehouse\":300,\"retail\":20}"
+    "}";
+
+  r_assert_cmpptr ((v = r_json_parse (R_STR_WITH_SIZE_ARGS (json_wikipedia), &res)), !=, NULL);
+
+  r_assert_cmpptr ((buf = r_json_value_to_buffer (v, R_JSON_NOFLAGS, &res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, json_wikipedia);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_json_value_to_buffer (v, R_JSON_COMPACT, &res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, json_wikipedia_compact);
+  r_buffer_unref (buf);
+
+  r_json_value_unref (v);
 }
 RTEST_END;
 

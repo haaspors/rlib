@@ -58,7 +58,9 @@ typedef enum {
 } RJsonResult;
 
 typedef enum {
-  R_JSON_PRETTY_WHITESPACE      = (1 << 0),
+  R_JSON_NOFLAGS        = 0,
+  R_JSON_COMPACT        = (1 << 0),
+  R_JSON_USE_TABS       = (1 << 1),
 } RJsonFlags;
 
 typedef struct {
@@ -72,7 +74,8 @@ typedef struct {
 /* JSON simple value API */
 R_API RJsonValue * r_json_parse (rconstpointer data, rsize len, RJsonResult * res);
 R_API RJsonValue * r_json_parse_buffer (RBuffer * buf, RJsonResult * res);
-R_API RBuffer * r_json_value_to_buffer (const RJsonValue * value, RJsonFlags flags);
+R_API RBuffer * r_json_value_to_buffer (const RJsonValue * value,
+    RJsonFlags flags, RJsonResult * res);
 
 
 /* RJsonValue API */

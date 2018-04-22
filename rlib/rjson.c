@@ -21,6 +21,9 @@
 #include <rlib/rjsonparser.h>
 
 #include <rlib/rmem.h>
+#include <rlib/data/rstring.h>
+
+#include <math.h>
 
 static RJsonResult
 r_json_str_unescape (rchar * dst, const rchar * src, rssize size)
@@ -30,6 +33,17 @@ r_json_str_unescape (rchar * dst, const rchar * src, rssize size)
 
   /* TODO: Implement unescaping... */
   r_memcpy (dst, src, size);
+  return R_JSON_OK;
+}
+
+static RJsonResult
+r_json_str_escape (RString * dst, const rchar * src, rssize size)
+{
+  if (size < 0)
+    size = r_strlen (src);
+
+  /* TODO: Escape string... */
+  r_string_append_len (dst, src, size);
   return R_JSON_OK;
 }
 
@@ -81,15 +95,194 @@ r_json_parse_buffer (RBuffer * buf, RJsonResult * res)
   return ret;
 }
 
-#if 0
-RBuffer *
-r_json_value_to_buffer (const RJsonValue * value)
+
+typedef struct {
+  RJsonFlags flags;
+  RString * str;
+
+  int indent;
+  RJsonResult res;
+} RJsonAppendCtx;
+#define R_JSON_APPEND_CTX_INIT(flags)   { flags, NULL, 0, R_JSON_OK };
+
+typedef void (*RJsonValueAppendFunc) (RJsonAppendCtx * ctx, const RJsonValue * value);
+
+static void
+r_json_append_ctx_newline (RJsonAppendCtx * ctx)
 {
-  /* TODO */
-  (void) value;
-  return NULL;
+  if ((ctx->flags & R_JSON_COMPACT) != R_JSON_COMPACT) {
+    if (ctx->indent == 0) {
+      r_string_append_c (ctx->str, '\n');
+    } else if ((ctx->flags & R_JSON_USE_TABS) == R_JSON_USE_TABS) {
+      r_string_append_printf (ctx->str, "\n%*c", ctx->indent, '\t');
+    } else {
+      r_string_append_printf (ctx->str, "\n%*c", ctx->indent * 2, ' ');
+    }
+  }
 }
-#endif
+
+static void
+r_json_append_ctx_value (RJsonAppendCtx * ctx, const RJsonValue * value);
+
+static void
+r_json_append_ctx_object (RJsonAppendCtx * ctx, const RJsonValue * value)
+{
+  const RJsonObject * o = (const RJsonObject *) value;
+  const RJsonValue * k, * v;
+  rsize i;
+
+  r_string_append_c (ctx->str, '{');
+  ctx->indent++;
+
+  for (i = 0; i < o->array.nsize; i++) {
+    if (i > 0)
+      r_string_append_c (ctx->str, ',');
+    r_json_append_ctx_newline (ctx);
+
+    v = r_kv_ptr_array_get_const (&o->array, i, (rconstpointer *)&k);
+    r_json_append_ctx_value (ctx, k);
+    r_string_append_c (ctx->str, ':');
+    if ((ctx->flags & R_JSON_COMPACT) != R_JSON_COMPACT)
+      r_string_append_c (ctx->str, ' ');
+    r_json_append_ctx_value (ctx, v);
+  }
+
+  ctx->indent--;
+  if (o->array.nsize > 0)
+    r_json_append_ctx_newline (ctx);
+  r_string_append_c (ctx->str, '}');
+}
+
+static void
+r_json_append_ctx_array (RJsonAppendCtx * ctx, const RJsonValue * value)
+{
+  const RJsonArray * a = (const RJsonArray *) value;
+  rsize i;
+
+  r_string_append_c (ctx->str, '[');
+  ctx->indent++;
+
+  for (i = 0; i < a->array.nsize; i++) {
+    if (i > 0)
+      r_string_append_c (ctx->str, ',');
+    r_json_append_ctx_newline (ctx);
+    r_json_append_ctx_value (ctx, r_ptr_array_get_const (&a->array, i));
+  }
+
+  ctx->indent--;
+  if (a->array.nsize > 0)
+    r_json_append_ctx_newline (ctx);
+  r_string_append_c (ctx->str, ']');
+}
+
+static void
+r_json_append_ctx_number (RJsonAppendCtx * ctx, const RJsonValue * value)
+{
+  const RJsonNumber * num = (const RJsonNumber *)value;
+  rdouble intpart;
+
+  if (modf (num->v, &intpart) == 0.0)
+    r_string_append_printf (ctx->str, "%d", (int)num->v);
+  else
+    r_string_append_printf (ctx->str, "%f", num->v);
+}
+
+static void
+r_json_append_ctx_string (RJsonAppendCtx * ctx, const RJsonValue * value)
+{
+  r_string_append_c (ctx->str, '"');
+  r_json_str_escape (ctx->str, ((const RJsonString *)value)->v, -1);
+  r_string_append_c (ctx->str, '"');
+}
+
+static void
+r_json_append_ctx_true (RJsonAppendCtx * ctx, const RJsonValue * value)
+{
+  (void) value;
+  r_string_append (ctx->str, "true");
+}
+
+static void
+r_json_append_ctx_false (RJsonAppendCtx * ctx, const RJsonValue * value)
+{
+  (void) value;
+  r_string_append (ctx->str, "false");
+}
+
+static void
+r_json_append_ctx_null (RJsonAppendCtx * ctx, const RJsonValue * value)
+{
+  (void) value;
+  r_string_append (ctx->str, "null");
+}
+
+
+static void
+r_json_append_ctx_value (RJsonAppendCtx * ctx, const RJsonValue * value)
+{
+  RJsonValueAppendFunc funcs[] = {
+    r_json_append_ctx_object,
+    r_json_append_ctx_array,
+    r_json_append_ctx_number,
+    r_json_append_ctx_string,
+    r_json_append_ctx_true,
+    r_json_append_ctx_false,
+    r_json_append_ctx_null,
+  };
+
+  funcs[value->type] (ctx, value);
+}
+
+static RJsonResult
+r_json_value_append_output (const RJsonValue * value, RJsonAppendCtx * ctx)
+{
+  r_json_append_ctx_value (ctx, value);
+  return ctx->res;
+}
+
+RBuffer *
+r_json_value_to_buffer (const RJsonValue * value,
+    RJsonFlags flags, RJsonResult * res)
+{
+  RBuffer * ret;
+  RJsonResult r = R_JSON_OOM;
+
+  if (R_UNLIKELY (value == NULL)) {
+    ret = NULL;
+    r = R_JSON_INVAL;
+  } else if ((ret = r_buffer_new ()) != NULL) {
+    RJsonAppendCtx ctx = R_JSON_APPEND_CTX_INIT (flags);
+
+    if ((ctx.str = r_string_new_sized (4096)) != NULL &&
+        (r = r_json_value_append_output (value, &ctx)) == R_JSON_OK) {
+      rsize alloc_size = r_string_alloc_size (ctx.str);
+      rsize len = r_string_length (ctx.str);
+      rchar * data = r_string_free_keep (ctx.str);
+      RMem * mem = r_mem_new_take (R_MEM_FLAG_NONE, data, alloc_size, len, 0);
+
+      if (R_UNLIKELY (mem == NULL)) {
+        r_buffer_unref (ret);
+        ret = NULL;
+        r = R_JSON_OOM;
+      } else if (r_buffer_mem_append (ret, mem)) {
+        r_mem_unref (mem);
+      } else {
+        r_mem_unref (mem);
+        r_buffer_unref (ret);
+        ret = NULL;
+        r = R_JSON_MAP_FAILED;
+      }
+    } else {
+      r_string_free (ctx.str);
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  if (res != NULL)
+    *res = r;
+  return ret;
+}
 
 static rboolean
 r_json_value_equal (rconstpointer a, rconstpointer b)
