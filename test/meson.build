@@ -37,6 +37,8 @@ rlibtest_sources = [
   'rhttp.c',
   'rhttpserver.c',
   'rhzrptr.c',
+  'rjson.c',
+  'rjson_parser.c',
   'rkvptrarray.c',
   'rlist.c',
   'rlog.c',

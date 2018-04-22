@@ -33,6 +33,8 @@
 #include <rlib/rclr.h>
 #include <rlib/rcrc.h>
 #include <rlib/renv.h>
+#include <rlib/rjson.h>
+#include <rlib/rjsonparser.h>
 #include <rlib/rlog.h>
 #include <rlib/rmath.h>
 #include <rlib/rmem.h>
