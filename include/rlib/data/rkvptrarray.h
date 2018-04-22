@@ -49,6 +49,7 @@ R_API RKVPtrArray * r_kv_ptr_array_new_sized (rsize size, REqualFunc eqfunc) R_A
 R_API rpointer r_kv_ptr_array_get_key (RKVPtrArray * array, rsize idx);
 R_API rpointer r_kv_ptr_array_get_val (RKVPtrArray * array, rsize idx);
 R_API rpointer r_kv_ptr_array_get (RKVPtrArray * array, rsize idx, rpointer * key);
+R_API rconstpointer r_kv_ptr_array_get_const (const RKVPtrArray * array, rsize idx, rconstpointer * key);
 
 #define r_kv_ptr_array_find(array, key) r_kv_ptr_array_find_range (array, key, 0, -1)
 R_API rsize r_kv_ptr_array_find_range (RKVPtrArray * array, rconstpointer key, rsize idx, rssize size);

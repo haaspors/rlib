@@ -128,6 +128,15 @@ r_kv_ptr_array_get (RKVPtrArray * array, rsize idx, rpointer * key)
   return R_KV_PTR_ARRAY_N (array, idx).val;
 }
 
+rconstpointer
+r_kv_ptr_array_get_const (const RKVPtrArray * array, rsize idx, rconstpointer * key)
+{
+  if (R_UNLIKELY (idx >= array->nsize)) return NULL;
+  if (key != NULL)
+    *key = R_KV_PTR_ARRAY_N (array, idx).key;
+  return R_KV_PTR_ARRAY_N (array, idx).val;
+}
+
 rboolean
 r_ptr_equal (rconstpointer a, rconstpointer b)
 {
