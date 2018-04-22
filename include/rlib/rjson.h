@@ -95,7 +95,7 @@ R_API RJsonValue * r_json_value_new (RJsonType type);
 #define r_json_false_new() r_json_value_new (R_JSON_TYPE_FALSE)
 #define r_json_null_new() r_json_value_new (R_JSON_TYPE_NULL)
 
-R_API RJsonResult r_json_object_add_field (RJsonValue * obj, const rchar * key, RJsonValue * value);
+R_API RJsonResult r_json_object_add_field (RJsonValue * obj, RJsonValue * key, RJsonValue * value);
 R_API RJsonResult r_json_array_add_value (RJsonValue * array, RJsonValue * value);
 
 R_API rsize r_json_value_get_object_field_count (const RJsonValue * value);

@@ -49,7 +49,7 @@ typedef enum {
 #define R_JSON_RESULT_AS_IT_RESULT(r) ((RJsonItResult)(r))
 
 typedef RJsonItResult (*RJsonParserItFunc) (const RJsonParser * parser,
-    const RStrChunk * name, const RJsonScanCtx * value, rchar ** endptr, rpointer user);
+    const RStrChunk * key, const RJsonScanCtx * value, rchar ** endptr, rpointer user);
 
 R_API RJsonResult r_json_parser_scan_start (RJsonParser * parser, RJsonScanCtx * ctx);
 R_API RJsonResult r_json_parser_scan_end (RJsonParser * parser, RJsonScanCtx * ctx);
@@ -61,9 +61,9 @@ R_API rchar * r_json_scan_ctx_endptr (const RJsonScanCtx * ctx, RJsonResult * re
 
 /* JSON object */
 R_API RJsonResult r_json_scan_ctx_scan_object_field (RJsonScanCtx * ctx,
-    RStrChunk * name, RJsonScanCtx * value);
+    RStrChunk * key, RJsonScanCtx * value);
 R_API RJsonResult r_json_scan_ctx_parse_object_field (const RJsonScanCtx * ctx,
-    RStrChunk * name, RJsonScanCtx * value, rchar ** endptr);
+    RStrChunk * key, RJsonScanCtx * value, rchar ** endptr);
 R_API RJsonResult r_json_scan_ctx_parse_object_foreach_field (const RJsonScanCtx * ctx,
     RJsonParserItFunc func, rpointer user, rchar ** endptr);
 /* JSON array */

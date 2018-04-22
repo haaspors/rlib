@@ -112,28 +112,35 @@ typedef RJsonValue * (*RJsonParseValueFunc) (const RJsonScanCtx * ctx,
 
 static RJsonItResult
 r_json_parser_object_field_cb (const RJsonParser * parser,
-    const RStrChunk * name, const RJsonScanCtx * value,
+    const RStrChunk * key, const RJsonScanCtx * value,
     rchar ** endptr, rpointer user)
 {
   RJsonObject * object = user;
-  RJsonValue * v;
+  RJsonValue * k, * v;
+  RJsonItResult ret;
   RJsonResult r;
-  rchar * namestr;
 
-  if ((namestr = r_json_str_unescape_dup (name->str, name->size)) != NULL) {
+  if ((k = r_json_string_new (key->str, key->size)) != NULL) {
     if ((v = r_json_scan_ctx_to_value (value, &r, endptr)) != NULL) {
-      r_kv_ptr_array_add (&object->array, namestr, r_free, v, r_json_value_unref);
       if (endptr != NULL)
         r_assert_cmpptr (*endptr, !=, NULL);
-      return R_JSON_CONTINUE;
+
+      if ((r = r_json_object_add_field (&object->value, k, v)) == R_JSON_OK)
+        ret = R_JSON_CONTINUE;
+      else
+        ret = R_JSON_RESULT_AS_IT_RESULT (r);
+
+      r_json_value_unref (v);
+    } else {
+      ret = R_JSON_RESULT_AS_IT_RESULT (r);
     }
 
-    r_free (namestr);
+    r_json_value_unref (k);
   } else {
-    r = R_JSON_FAILED_TO_UNESCAPE_STRING;
+    ret = R_JSON_RESULT_AS_IT_RESULT (R_JSON_FAILED_TO_UNESCAPE_STRING);
   }
 
-  return R_JSON_RESULT_AS_IT_RESULT (r);
+  return ret;
 }
 
 static RJsonValue *
@@ -154,21 +161,28 @@ r_json_scan_ctx_to_object (const RJsonScanCtx * ctx, RJsonResult * res, rchar **
 }
 
 static RJsonItResult
-r_json_parser_value_cb (const RJsonParser * parser, const RStrChunk * name,
+r_json_parser_value_cb (const RJsonParser * parser, const RStrChunk * key,
     const RJsonScanCtx * value, rchar ** endptr, rpointer user)
 {
   RJsonArray * array = user;
   RJsonValue * v;
   RJsonResult r;
+  RJsonItResult ret;
 
-  (void) name;
+  (void) key;
 
   if ((v = r_json_scan_ctx_to_value (value, &r, endptr)) != NULL) {
-    r_ptr_array_add (&array->array, v, r_json_value_unref);
-    return R_JSON_CONTINUE;
+    if ((r = r_json_array_add_value (&array->value, v)) == R_JSON_OK)
+      ret = R_JSON_CONTINUE;
+    else
+      ret = R_JSON_RESULT_AS_IT_RESULT (r);
+
+    r_json_value_unref (v);
+  } else {
+    ret = R_JSON_RESULT_AS_IT_RESULT (r);
   }
 
-  return R_JSON_RESULT_AS_IT_RESULT (r);
+  return ret;
 }
 
 static RJsonValue *
@@ -442,12 +456,12 @@ r_json_scan_ctx_endptr (const RJsonScanCtx * ctx, RJsonResult * res)
 
 RJsonResult
 r_json_scan_ctx_scan_object_field (RJsonScanCtx * ctx,
-    RStrChunk * name, RJsonScanCtx * value)
+    RStrChunk * key, RJsonScanCtx * value)
 {
   RJsonResult ret;
   rchar * endptr = ctx->data.str;
 
-  if ((ret = r_json_scan_ctx_parse_object_field (ctx, name, value, &endptr)) == R_JSON_OK) {
+  if ((ret = r_json_scan_ctx_parse_object_field (ctx, key, value, &endptr)) == R_JSON_OK) {
     ctx->data.size -= RPOINTER_TO_SIZE (endptr) - RPOINTER_TO_SIZE (ctx->data.str);
     ctx->data.str = endptr;
     r_json_scan_ctx_scan_whitespace (ctx);
@@ -458,22 +472,23 @@ r_json_scan_ctx_scan_object_field (RJsonScanCtx * ctx,
 
 RJsonResult
 r_json_scan_ctx_parse_object_field (const RJsonScanCtx * ctx,
-    RStrChunk * name, RJsonScanCtx * value, rchar ** endptr)
+    RStrChunk * key, RJsonScanCtx * value, rchar ** endptr)
 {
   RJsonResult ret;
 
-  if (R_UNLIKELY (name == NULL || value == NULL ||
-        ctx == NULL || ctx->type != R_JSON_TYPE_OBJECT))
+  if (R_UNLIKELY (ctx == NULL || key == NULL || value == NULL))
     return R_JSON_INVAL;
+  if (R_UNLIKELY (ctx->type != R_JSON_TYPE_OBJECT))
+    return R_JSON_WRONG_TYPE;
 
   if (*ctx->data.str == '{' || *ctx->data.str == ',') {
-    RJsonScanCtx namectx = R_JSON_SCAN_CTX_INIT;
+    RJsonScanCtx keyctx = R_JSON_SCAN_CTX_INIT;
     rchar * eptr;
 
-    if ((ret = r_json_parser_scan_init_at (ctx->parser, &namectx, ctx->data.str + 1)) == R_JSON_OK &&
-        (ret = r_json_scan_ctx_parse_string (&namectx, name, &eptr)) == R_JSON_OK) {
+    if ((ret = r_json_parser_scan_init_at (ctx->parser, &keyctx, ctx->data.str + 1)) == R_JSON_OK &&
+        (ret = r_json_scan_ctx_parse_string (&keyctx, key, &eptr)) == R_JSON_OK) {
       value->data.str = eptr;
-      value->data.size = RPOINTER_TO_SIZE (r_json_parser_get_end (ctx->parser)) - RPOINTER_TO_SIZE (eptr);
+      value->data.size = RPOINTER_TO_SIZE (r_json_parser_get_end (ctx->parser)) - RPOINTER_TO_SIZE (value->data.str);
       r_json_scan_ctx_scan_whitespace (value);
 
       if (*value->data.str == ':') {
@@ -505,14 +520,14 @@ r_json_scan_ctx_parse_object_foreach_field (const RJsonScanCtx * ctx,
     RJsonParserItFunc func, rpointer user, rchar ** endptr)
 {
   RJsonScanCtx next = *ctx, val = R_JSON_SCAN_CTX_INIT;
-  RStrChunk name = R_STR_CHUNK_INIT;
+  RStrChunk key = R_STR_CHUNK_INIT;
   RJsonResult ret;
   RJsonItResult res;
   rchar * eptr = NULL;
 
-  while ((ret = r_json_scan_ctx_parse_object_field (&next, &name, &val, NULL)) == R_JSON_OK) {
+  while ((ret = r_json_scan_ctx_parse_object_field (&next, &key, &val, NULL)) == R_JSON_OK) {
     eptr = NULL;
-    switch ((res = func (ctx->parser, &name, &val, &eptr, user))) {
+    switch ((res = func (ctx->parser, &key, &val, &eptr, user))) {
       case R_JSON_CONTINUE:
         if (eptr == NULL) {
           eptr = r_json_scan_ctx_endptr (&val, &ret);

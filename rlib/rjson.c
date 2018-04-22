@@ -22,24 +22,7 @@
 
 #include <rlib/rmem.h>
 
-rchar *
-r_json_str_unescape_dup (const rchar * str, rssize size)
-{
-  rchar * ret;
-
-  if (size < 0)
-    size = r_strlen (str);
-
-  if ((ret = r_malloc (size + 1)) != NULL) {
-    ret[size] = 0;
-    r_json_str_unescape (ret, str, size);
-    ret[size] = 0;
-  }
-
-  return ret;
-}
-
-RJsonResult
+static RJsonResult
 r_json_str_unescape (rchar * dst, const rchar * src, rssize size)
 {
   if (size < 0)
@@ -108,6 +91,33 @@ r_json_value_to_buffer (const RJsonValue * value)
 }
 #endif
 
+static rboolean
+r_json_value_equal (rconstpointer a, rconstpointer b)
+{
+  const RJsonValue * va = a, * vb = b;
+
+  if (va->type == vb->type) {
+    switch (va->type) {
+      case R_JSON_TYPE_OBJECT:
+      case R_JSON_TYPE_ARRAY:
+        /* FIXME: Implement?? */
+        return a == b;
+      case R_JSON_TYPE_NUMBER:
+        return ((const RJsonNumber *)va)->v == ((const RJsonNumber *)vb)->v;
+      case R_JSON_TYPE_STRING:
+        return r_str_equals (((const RJsonString *)va)->v, ((const RJsonString *)vb)->v);
+      case R_JSON_TYPE_TRUE:
+      case R_JSON_TYPE_FALSE:
+      case R_JSON_TYPE_NULL:
+        return TRUE;
+      default:
+        break;
+    }
+  }
+
+  return FALSE;
+}
+
 static void
 r_json_object_free (RJsonObject * object)
 {
@@ -123,7 +133,7 @@ r_json_object_new (void)
   if ((ret = r_mem_new0 (RJsonObject)) != NULL) {
     r_ref_init (ret, r_json_object_free);
     ret->value.type = R_JSON_TYPE_OBJECT;
-    r_kv_ptr_array_init_str (&ret->array);
+    r_kv_ptr_array_init (&ret->array, r_json_value_equal);
   }
 
   return &ret->value;
@@ -233,31 +243,32 @@ r_json_value_new (RJsonType type)
 
 
 RJsonResult
-r_json_object_add_field (RJsonValue * obj, const rchar * key, RJsonValue * value)
+r_json_object_add_field (RJsonValue * obj, RJsonValue * key, RJsonValue * value)
 {
-  if (obj != NULL && obj->type == R_JSON_TYPE_OBJECT &&
-      key != NULL && value != NULL) {
-    RJsonObject * o = (RJsonObject *)obj;
+  RJsonObject * o = (RJsonObject *)obj;
 
-    r_kv_ptr_array_add (&o->array, r_strdup (key), r_free,
-        r_json_value_ref (value), r_json_value_unref);
-    return R_JSON_OK;
-  }
+  if (R_UNLIKELY (obj == NULL || key == NULL || value == NULL))
+    return R_JSON_INVAL;
+  if (R_UNLIKELY (obj->type != R_JSON_TYPE_OBJECT || key->type != R_JSON_TYPE_STRING))
+    return R_JSON_WRONG_TYPE;
 
-  return R_JSON_INVAL;
+  r_kv_ptr_array_add (&o->array, r_json_value_ref (key), r_json_value_unref,
+      r_json_value_ref (value), r_json_value_unref);
+  return R_JSON_OK;
 }
 
 RJsonResult
 r_json_array_add_value (RJsonValue * array, RJsonValue * value)
 {
-  if (array != NULL && array->type == R_JSON_TYPE_ARRAY && value != NULL) {
-    RJsonArray * a = (RJsonArray *)array;
+  RJsonArray * a = (RJsonArray *)array;
 
-    r_ptr_array_add (&a->array, r_json_value_ref (value), r_json_value_unref);
-    return R_JSON_OK;
-  }
+  if (R_UNLIKELY (array == NULL || value == NULL))
+    return R_JSON_INVAL;
+  if (R_UNLIKELY (array->type != R_JSON_TYPE_ARRAY))
+    return R_JSON_WRONG_TYPE;
 
-  return R_JSON_INVAL;
+  r_ptr_array_add (&a->array, r_json_value_ref (value), r_json_value_unref);
+  return R_JSON_OK;
 }
 
 
@@ -277,8 +288,9 @@ r_json_value_get_object_field_name (RJsonValue * value, rsize idx)
 {
   if (value != NULL && value->type == R_JSON_TYPE_OBJECT) {
     RJsonObject * object = (RJsonObject *) value;
+    const RJsonValue * key = r_kv_ptr_array_get_key (&object->array, idx);
 
-    return r_kv_ptr_array_get_key (&object->array, idx);
+    return r_json_value_get_string (key);
   }
 
   return NULL;
@@ -304,17 +316,17 @@ r_json_value_get_object_field_value (RJsonValue * value, rsize idx)
 RJsonValue *
 r_json_value_get_object_field (RJsonValue * value, const rchar * key)
 {
-  RJsonValue * ret;
+  RJsonValue * ret = NULL;
 
   if (value != NULL && value->type == R_JSON_TYPE_OBJECT) {
     RJsonObject * object = (RJsonObject *) value;
+    RJsonValue * cmp = r_json_string_new_static (key);
 
     if ((ret = r_kv_ptr_array_get_val (&object->array,
-            r_kv_ptr_array_find (&object->array, key))) != NULL) {
+            r_kv_ptr_array_find (&object->array, cmp))) != NULL) {
       r_json_value_ref (ret);
     }
-  } else {
-    ret = NULL;
+    r_json_value_unref (cmp);
   }
 
   return ret;

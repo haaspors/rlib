@@ -164,21 +164,23 @@ RTEST_END;
 
 RTEST (rjson, create_object, RTEST_FAST)
 {
-  RJsonValue * obj, * tmp;
+  RJsonValue * obj, * k, * v;
 
   r_assert_cmpint (r_json_object_add_field (NULL, NULL, NULL), ==, R_JSON_INVAL);
 
   r_assert_cmpptr ((obj = r_json_object_new ()), !=, NULL);
-  r_assert_cmpptr ((tmp = (RJsonValue *)r_json_null_new ()), !=, NULL);
+  r_assert_cmpptr ((k = r_json_string_new_static ("foo")), !=, NULL);
+  r_assert_cmpptr ((v = r_json_null_new ()), !=, NULL);
   r_assert_cmpuint (r_json_value_get_object_field_count (obj), ==, 0);
 
   r_assert_cmpint (r_json_object_add_field (obj, NULL, NULL), ==, R_JSON_INVAL);
-  r_assert_cmpint (r_json_object_add_field (obj, "foo", NULL), ==, R_JSON_INVAL);
-  r_assert_cmpint (r_json_object_add_field (obj, NULL, tmp), ==, R_JSON_INVAL);
+  r_assert_cmpint (r_json_object_add_field (obj, k, NULL), ==, R_JSON_INVAL);
+  r_assert_cmpint (r_json_object_add_field (obj, NULL, v), ==, R_JSON_INVAL);
 
-  r_assert_cmpint (r_json_object_add_field (obj, "foo", tmp), ==, R_JSON_OK);
+  r_assert_cmpint (r_json_object_add_field (obj, k, v), ==, R_JSON_OK);
   r_assert_cmpuint (r_json_value_get_object_field_count (obj), ==, 1);
-  r_json_value_unref (tmp);
+  r_json_value_unref (k);
+  r_json_value_unref (v);
 
   r_json_value_unref (obj);
 }
