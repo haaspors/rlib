@@ -29,8 +29,8 @@
 
 R_BEGIN_DECLS
 
-/* TODO: Implement unescaping */
-#define r_json_str_chunk_unescape(chunk) r_str_chunk_dup (chunk)
+R_API_HIDDEN rchar * r_json_str_unescape_dup (const rchar * str, rssize size);
+R_API_HIDDEN RJsonResult r_json_str_unescape (rchar * dst, const rchar * src, rssize size);
 
 struct _RJsonObject {
   RJsonValue value;
@@ -49,7 +49,7 @@ struct _RJsonNumber {
 
 struct _RJsonString {
   RJsonValue value;
-  rchar * v;
+  const rchar * v;
 };
 
 struct _RJsonTrue {

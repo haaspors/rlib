@@ -87,7 +87,9 @@ typedef struct _RJsonNull   RJsonNull;
 R_API RJsonValue * r_json_object_new (void);
 R_API RJsonValue * r_json_array_new (void);
 R_API RJsonValue * r_json_number_new_double (rdouble value);
-R_API RJsonValue * r_json_string_new_data (RStrChunk * value);
+R_API RJsonValue * r_json_string_new (const rchar * value, rssize size);
+R_API RJsonValue * r_json_string_new_unescaped (const rchar * value, rssize size);
+R_API RJsonValue * r_json_string_new_static (const rchar * value);
 R_API RJsonValue * r_json_value_new (RJsonType type);
 #define r_json_true_new() r_json_value_new (R_JSON_TYPE_TRUE)
 #define r_json_false_new() r_json_value_new (R_JSON_TYPE_FALSE)

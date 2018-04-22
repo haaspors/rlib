@@ -120,7 +120,7 @@ r_json_parser_object_field_cb (const RJsonParser * parser,
   RJsonResult r;
   rchar * namestr;
 
-  if ((namestr = r_json_str_chunk_unescape (name)) != NULL) {
+  if ((namestr = r_json_str_unescape_dup (name->str, name->size)) != NULL) {
     if ((v = r_json_scan_ctx_to_value (value, &r, endptr)) != NULL) {
       r_kv_ptr_array_add (&object->array, namestr, r_free, v, r_json_value_unref);
       if (endptr != NULL)
@@ -213,7 +213,7 @@ r_json_scan_ctx_to_string (const RJsonScanCtx * ctx, RJsonResult * res, rchar **
     res = &r;
 
   if ((*res = r_json_scan_ctx_parse_string (ctx, &data, endptr)) == R_JSON_OK)
-    return (RJsonValue *)r_json_string_new_data (&data);
+    return (RJsonValue *)r_json_string_new (data.str, data.size);
 
   return NULL;
 }

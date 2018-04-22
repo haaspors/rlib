@@ -22,6 +22,34 @@
 
 #include <rlib/rmem.h>
 
+rchar *
+r_json_str_unescape_dup (const rchar * str, rssize size)
+{
+  rchar * ret;
+
+  if (size < 0)
+    size = r_strlen (str);
+
+  if ((ret = r_malloc (size + 1)) != NULL) {
+    ret[size] = 0;
+    r_json_str_unescape (ret, str, size);
+    ret[size] = 0;
+  }
+
+  return ret;
+}
+
+RJsonResult
+r_json_str_unescape (rchar * dst, const rchar * src, rssize size)
+{
+  if (size < 0)
+    size = r_strlen (src);
+
+  /* TODO: Implement unescaping... */
+  r_memcpy (dst, src, size);
+  return R_JSON_OK;
+}
+
 RJsonValue *
 r_json_parse (rconstpointer data, rsize len, RJsonResult * res)
 {
@@ -136,22 +164,55 @@ r_json_number_new_double (rdouble value)
   return &ret->value;
 }
 
-static void
-r_json_string_free (RJsonString * str)
+RJsonValue *
+r_json_string_new (const rchar * value, rssize size)
 {
-  r_free (str->v);
-  r_free (str);
+  RJsonString * ret;
+
+  if (size < 0)
+    size = r_strlen (value);
+
+  if ((ret = r_malloc (sizeof (RJsonString) + size + 1)) != NULL) {
+    rchar * data = (rchar *) (ret + 1);
+    r_ref_init (ret, r_free);
+    ret->value.type = R_JSON_TYPE_STRING;
+    r_json_str_unescape (data, value, size);
+    data[size] = 0;
+    ret->v = data;
+  }
+
+  return &ret->value;
 }
 
 RJsonValue *
-r_json_string_new_data (RStrChunk * value)
+r_json_string_new_unescaped (const rchar * value, rssize size)
+{
+  RJsonString * ret;
+
+  if (size < 0)
+    size = r_strlen (value);
+
+  if ((ret = r_malloc (sizeof (RJsonString) + size + 1)) != NULL) {
+    rchar * data = (rchar *) (ret + 1);
+    r_ref_init (ret, r_free);
+    ret->value.type = R_JSON_TYPE_STRING;
+    r_memcpy (data, value, size);
+    data[size] = 0;
+    ret->v = data;
+  }
+
+  return &ret->value;
+}
+
+RJsonValue *
+r_json_string_new_static (const rchar * value)
 {
   RJsonString * ret;
 
   if ((ret = r_mem_new (RJsonString)) != NULL) {
-    r_ref_init (ret, r_json_string_free);
+    r_ref_init (ret, r_free);
     ret->value.type = R_JSON_TYPE_STRING;
-    ret->v = r_json_str_chunk_unescape (value);
+    ret->v = value;
   }
 
   return &ret->value;
