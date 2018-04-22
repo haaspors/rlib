@@ -46,6 +46,7 @@ R_API int r_string_cmp_cstr (RString * str, const rchar * cstr);
 
 R_API rsize r_string_reset (RString * str, const rchar * cstr);
 
+R_API rsize r_string_append_c (RString * str, rchar c);
 R_API rsize r_string_append (RString * str, const rchar * cstr);
 R_API rsize r_string_append_len (RString * str, const rchar * cstr, rsize len);
 R_API rsize r_string_append_printf (RString * str, const rchar * fmt, ...) R_ATTR_PRINTF (2, 3);

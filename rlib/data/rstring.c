@@ -130,6 +130,19 @@ r_string_reset (RString * str, const rchar * cstr)
 }
 
 rsize
+r_string_append_c (RString * str, rchar c)
+{
+  if (R_UNLIKELY (!r_string_ensure_additional_size (str, 1)))
+    return 0;
+
+  str->cstr[str->len] = c;
+  str->len++;
+  str->cstr[str->len] = 0;
+
+  return 1;
+}
+
+rsize
 r_string_append (RString * str, const rchar * cstr)
 {
   if (R_UNLIKELY (cstr == NULL))
