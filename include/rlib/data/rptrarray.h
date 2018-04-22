@@ -46,6 +46,7 @@ R_API RPtrArray * r_ptr_array_new_sized (rsize size) R_ATTR_MALLOC;
 #define r_ptr_array_size(array) (array)->nsize
 #define r_ptr_array_alloc_size(array) (array)->nalloc
 R_API rpointer r_ptr_array_get (RPtrArray * array, rsize idx);
+R_API rconstpointer r_ptr_array_get_const (const RPtrArray * array, rsize idx);
 
 #define r_ptr_array_find(array, data) r_ptr_array_find_range (array, data, 0, -1)
 R_API rsize r_ptr_array_find_range (RPtrArray * array, rpointer data, rsize idx, rssize size);

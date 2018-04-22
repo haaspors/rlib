@@ -117,6 +117,13 @@ r_ptr_array_get (RPtrArray * array, rsize idx)
   return R_PTR_ARRAY_N (array, idx).ptr;
 }
 
+rconstpointer
+r_ptr_array_get_const (const RPtrArray * array, rsize idx)
+{
+  if (R_UNLIKELY (idx >= array->nsize)) return NULL;
+  return R_PTR_ARRAY_N (array, idx).ptr;
+}
+
 rsize
 r_ptr_array_add (RPtrArray * array, rpointer data, RDestroyNotify notify)
 {
