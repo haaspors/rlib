@@ -30,10 +30,24 @@ typedef ruint32   runichar;
 typedef ruint32   runichar4;
 typedef ruint16   runichar2;
 
-R_API runichar2 * r_utf8_to_utf16 (const rchar * str, rlong len,
-    rboolean * error, rlong * inlen, rlong * retlen) R_ATTR_MALLOC;
-R_API rchar * r_utf16_to_utf8 (const runichar2 * str, rlong len,
-    rboolean * error, rlong * inlen, rlong * retlen) R_ATTR_MALLOC;
+typedef enum {
+  R_UNICODE_OK = 0,
+  R_UNICODE_OOM,
+  R_UNICODE_INVAL,
+  R_UNICODE_OVERFLOW,
+  R_UNICODE_INVALID_CODE_POINT,
+  R_UNICODE_INCOMPLETE_CODE_POINT,
+} RUnicodeResult;
+
+R_API RUnicodeResult r_utf8_to_utf16 (runichar2 * dst, rsize dstsize,
+    const rchar * src, rssize srcsize, rsize * dstoutsize, rchar ** srcendptr);
+R_API RUnicodeResult r_utf16_to_utf8 (rchar * dst, rsize dstsize,
+    const runichar2 * src, rsize srcsize, rsize * dstoutsize, runichar2 ** srcendptr);
+
+R_API runichar2 * r_utf8_to_utf16_dup (const rchar * src, rssize srcsize,
+    RUnicodeResult * res, rsize * retsize, rchar ** endptr) R_ATTR_MALLOC;
+R_API rchar * r_utf16_to_utf8_dup (const runichar2 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, runichar2 ** endptr) R_ATTR_MALLOC;
 
 #if 0
 R_API runichar * r_utf8_to_uft32 (const rchar * str, rlong len,

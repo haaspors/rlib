@@ -211,7 +211,7 @@ r_fs_get_cur_dir (void)
 
   curdir = r_mem_new_n (runichar2, len);
   if (GetCurrentDirectoryW (len, curdir) == len - 1)
-    ret = r_utf16_to_utf8 (curdir, -1, NULL, NULL, NULL);
+    ret = r_utf16_to_utf8_dup (curdir, -1, NULL, NULL, NULL);
   r_free (curdir);
 #elif defined (R_OS_UNIX)
   rsize maxlen = 1024;
@@ -245,7 +245,7 @@ r_fs_get_filesize (const rchar * path)
 #ifdef R_OS_WIN32
   runichar2 * upath;
 
-  if ((upath = r_utf8_to_utf16 (path, -1, NULL, NULL, NULL)) != NULL) {
+  if ((upath = r_utf8_to_utf16_dup (path, -1, NULL, NULL, NULL)) != NULL) {
     struct __stat64 s;
     if (_wstat64 (upath, &s) == 0) {
       ret = s.st_size;
@@ -273,7 +273,7 @@ r_fs_get_file_attributes (const rchar * path)
   DWORD ret;
   runichar2 * upath;
 
-  if ((upath = r_utf8_to_utf16 (path, -1, NULL, NULL, NULL)) != NULL) {
+  if ((upath = r_utf8_to_utf16_dup (path, -1, NULL, NULL, NULL)) != NULL) {
     ret = GetFileAttributesW (upath);
     r_free (upath);
   } else {
@@ -289,7 +289,7 @@ r_fs_get_file_access (const rchar * path, DWORD req)
   DWORD ret = 0;
   runichar2 * upath;
 
-  if ((upath = r_utf8_to_utf16 (path, -1, NULL, NULL, NULL)) != NULL) {
+  if ((upath = r_utf8_to_utf16_dup (path, -1, NULL, NULL, NULL)) != NULL) {
     DWORD len = 0;
     HANDLE token = NULL;
 
@@ -462,7 +462,7 @@ r_fs_mkdir (const rchar * path, int mode)
 
   (void) mode;
 
-  if ((upath = r_utf8_to_utf16 (path, -1, NULL, NULL, NULL)) != NULL) {
+  if ((upath = r_utf8_to_utf16_dup (path, -1, NULL, NULL, NULL)) != NULL) {
     ret = _wmkdir (upath) == 0;
     r_free (upath);
   } else {

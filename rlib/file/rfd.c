@@ -56,7 +56,7 @@ r_fd_open (const rchar * file, int flags, int mode)
 
 #ifdef RLIB_HAVE_FILES
 #if defined (R_OS_WIN32)
-  wchar_t * utf16file = r_utf8_to_utf16 (file, -1, NULL, NULL, NULL);
+  wchar_t * utf16file = r_utf8_to_utf16_dup (file, -1, NULL, NULL, NULL);
   fd = _wopen (utf16file, flags, mode);
   r_free (utf16file);
 #elif defined (R_OS_UNIX)
