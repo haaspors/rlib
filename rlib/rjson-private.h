@@ -47,6 +47,7 @@ struct _RJsonNumber {
 struct _RJsonString {
   RJsonValue value;
   const rchar * v;
+  rsize len;
 };
 
 struct _RJsonTrue {

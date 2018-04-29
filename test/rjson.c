@@ -270,3 +270,71 @@ RTEST (rjson, parse_then_value_to_buffer, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rjson, string_get_string_quoted, RTEST_FAST)
+{
+  RJsonValue * v;
+  rchar * str;
+
+  r_assert_cmpptr ((v = r_json_string_new ("foo", -1, NULL)), !=, NULL);
+  r_assert_cmpstr ((str = r_json_value_get_string_quoted (v)), ==, "\"foo\"");
+  r_free (str);
+  r_json_value_unref (v);
+}
+RTEST_END;
+
+RTEST (rjson, string_unescape, RTEST_FAST)
+{
+  static const rchar json_string[] = "\"foo\\\\foo\\b\\nbar\\t\"\n";
+  static const rchar json_unicode[] = "\"\\u00a2\\u20ac\"";
+  static const rchar json_unicode_ascii[] = "\"\\u002F\\u002f\"";
+  static const rchar json_unicode_error[] = "\"\\u02F foo\"";
+  static const rchar json_unicode_error_short[] = "\"\\u02F\"";
+  RJsonValue * v;
+  RJsonResult res;
+
+  r_assert_cmpptr ((v = r_json_parse (R_STR_WITH_SIZE_ARGS (json_string), NULL)), !=, NULL);
+  r_assert_cmpint (v->type, ==, R_JSON_TYPE_STRING);
+  r_assert_cmpstr (r_json_value_get_string (v), ==, "foo\\foo\b\nbar\t");
+  r_json_value_unref (v);
+
+  r_assert_cmpptr (r_json_parse (R_STR_WITH_SIZE_ARGS (json_unicode_error), &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_JSON_FAILED_TO_UNESCAPE_STRING);
+
+  r_assert_cmpptr (r_json_parse (R_STR_WITH_SIZE_ARGS (json_unicode_error_short), &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_JSON_FAILED_TO_UNESCAPE_STRING);
+
+  r_assert_cmpptr ((v = r_json_parse (R_STR_WITH_SIZE_ARGS (json_unicode_ascii), NULL)), !=, NULL);
+  r_assert_cmpint (v->type, ==, R_JSON_TYPE_STRING);
+  r_assert_cmpstr (r_json_value_get_string (v), ==, "//");
+  r_json_value_unref (v);
+
+  r_assert_cmpptr ((v = r_json_parse (R_STR_WITH_SIZE_ARGS (json_unicode), NULL)), !=, NULL);
+  r_assert_cmpint (v->type, ==, R_JSON_TYPE_STRING);
+  r_assert_cmpstr (r_json_value_get_string (v), ==, "\xc2\xa2\xe2\x82\xac");
+  r_json_value_unref (v);
+}
+RTEST_END;
+
+RTEST (rjson, string_escape, RTEST_FAST)
+{
+  static const rchar json_string[] = "\"foo\\\\foo\\b\\nbar\\t\"\n";
+  static const rchar json_unicode[] = "\"\\u00a2\\u20acfoo\"";
+  RJsonValue * v;
+  rchar * str;
+
+  r_assert_cmpptr ((v = r_json_parse (R_STR_WITH_SIZE_ARGS (json_string), NULL)), !=, NULL);
+  r_assert_cmpint (v->type, ==, R_JSON_TYPE_STRING);
+  r_assert_cmpstr (r_json_value_get_string (v), ==, "foo\\foo\b\nbar\t");
+  r_assert_cmpstr ((str = r_json_value_get_string_quoted (v)), ==, "\"foo\\\\foo\\b\\nbar\\t\"");
+  r_free (str);
+  r_json_value_unref (v);
+
+  r_assert_cmpptr ((v = r_json_parse (R_STR_WITH_SIZE_ARGS (json_unicode), NULL)), !=, NULL);
+  r_assert_cmpint (v->type, ==, R_JSON_TYPE_STRING);
+  r_assert_cmpstr (r_json_value_get_string (v), ==, "\xc2\xa2\xe2\x82\xac""foo");
+  r_assert_cmpstr ((str = r_json_value_get_string_quoted (v)), ==, json_unicode);
+  r_free (str);
+  r_json_value_unref (v);
+}
+RTEST_END;
+

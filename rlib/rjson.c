@@ -22,28 +22,139 @@
 
 #include <rlib/rmem.h>
 #include <rlib/data/rstring.h>
+#include <rlib/charset/rascii.h>
+#include <rlib/charset/runicode.h>
 
 #include <math.h>
 
 static RJsonResult
-r_json_str_unescape (rchar * dst, const rchar * src, rssize size)
+r_json_str_unescape (rchar * dst, const rchar * src, rssize size, rsize * dstsize)
 {
+  const rchar * end, * ptr, * last, * next;
+  rchar * dstptr;
+
   if (size < 0)
     size = r_strlen (src);
 
-  /* TODO: Implement unescaping... */
-  r_memcpy (dst, src, size);
+  end = src + size;
+  for (ptr = last = src, dstptr = dst; ptr < end; ptr = next) {
+    rchar c;
+
+    if ((next = r_str_ptr_of_c (ptr, RPOINTER_TO_SIZE (end - ptr), '\\')) == NULL)
+      break;
+
+    switch (next[1]) {
+      case '\"':
+      case '\\':
+      case '/':
+        c = next[1];
+        break;
+      case 'b':
+        c = '\b';
+        break;
+      case 'f':
+        c = '\f';
+        break;
+      case 'n':
+        c = '\n';
+        break;
+      case 'r':
+        c = '\r';
+        break;
+      case 't':
+        c = '\t';
+        break;
+      case 'u':
+        r_memcpy (dstptr, last, next - last);
+        dstptr += next - last;
+        next += 2;
+
+        if (next + 4 <= end &&
+            r_ascii_isxdigit (next[0]) && r_ascii_isxdigit (next[1]) &&
+            r_ascii_isxdigit (next[2]) && r_ascii_isxdigit (next[3])) {
+          rsize s;
+          runichar2 uc2 = ((r_ascii_xdigit_value (next[0]) & 0xf) << 12) |
+            ((r_ascii_xdigit_value (next[1]) & 0xf) << 8) |
+            ((r_ascii_xdigit_value (next[2]) & 0xf) << 4) |
+             (r_ascii_xdigit_value (next[3]) & 0xf);
+
+          if (r_utf16_to_utf8 (dstptr, 6, &uc2, 1, &s, NULL) != R_UNICODE_OK)
+            return R_JSON_FAILED_TO_UNESCAPE_STRING;
+
+          dstptr += s;
+        } else {
+          return R_JSON_FAILED_TO_UNESCAPE_STRING;
+        }
+
+        next += 4;
+        last = next;
+        continue;
+      default:
+        next++;
+        continue;
+    }
+
+    r_memcpy (dstptr, last, next - last);
+    dstptr += next - last;
+    *dstptr++ = c;
+    next += 2;
+    last = next;
+  }
+
+  r_memcpy (dstptr, last, end - last);
+  dstptr += end - last;
+  *dstptr = 0;
+
+  *dstsize = dstptr - dst;
   return R_JSON_OK;
 }
 
 static RJsonResult
 r_json_str_escape (RString * dst, const rchar * src, rssize size)
 {
+  rssize i;
+
   if (size < 0)
     size = r_strlen (src);
 
-  /* TODO: Escape string... */
-  r_string_append_len (dst, src, size);
+  for (i = 0; i < size && src[i] != 0; i++) {
+    switch (src[i]) {
+      case '\"': r_string_append (dst, "\\\"");   break;
+      case '\\': r_string_append (dst, "\\\\");   break;
+      case '\b': r_string_append (dst, "\\b");    break;
+      case '\f': r_string_append (dst, "\\f");    break;
+      case '\n': r_string_append (dst, "\\n");    break;
+      case '\r': r_string_append (dst, "\\r");    break;
+      case '\t': r_string_append (dst, "\\t");    break;
+      default:
+        if ((ruint8)src[i] < 0x80) {
+          r_string_append_c (dst, src[i]);
+        } else {
+          runichar2 * uc2;
+          rssize j;
+          rsize usize;
+          rchar * end;
+
+          for (j = i + 1; j < size && src[j] != 0; j++) {
+            if ((ruint8)src[j] < 0x80)
+              break;
+          }
+
+          usize = (rsize)(j - i);
+          uc2 = r_mem_newa_n (runichar2, usize);
+          if (r_utf8_to_utf16 (uc2, usize, &src[i], usize, &usize, &end) == R_UNICODE_OK) {
+            rsize k;
+            for (k = 0; k < usize; k++)
+              r_string_append_printf (dst, "\\u%.4x", uc2[k]);
+            i = (rssize)RPOINTER_TO_SIZE (end - src) - 1;
+          } else {
+            return R_JSON_FAILED_TO_UNESCAPE_STRING;
+          }
+        }
+        break;
+    }
+  }
+
   return R_JSON_OK;
 }
 
@@ -106,6 +217,7 @@ typedef struct {
 #define R_JSON_APPEND_CTX_INIT(flags)   { flags, NULL, 0, R_JSON_OK };
 
 typedef void (*RJsonValueAppendFunc) (RJsonAppendCtx * ctx, const RJsonValue * value);
+static void r_json_append_ctx_value (RJsonAppendCtx * ctx, const RJsonValue * value);
 
 static void
 r_json_append_ctx_newline (RJsonAppendCtx * ctx)
@@ -120,9 +232,6 @@ r_json_append_ctx_newline (RJsonAppendCtx * ctx)
     }
   }
 }
-
-static void
-r_json_append_ctx_value (RJsonAppendCtx * ctx, const RJsonValue * value);
 
 static void
 r_json_append_ctx_object (RJsonAppendCtx * ctx, const RJsonValue * value)
@@ -190,8 +299,10 @@ r_json_append_ctx_number (RJsonAppendCtx * ctx, const RJsonValue * value)
 static void
 r_json_append_ctx_string (RJsonAppendCtx * ctx, const RJsonValue * value)
 {
+  const RJsonString * string = (const RJsonString *)value;
+
   r_string_append_c (ctx->str, '"');
-  r_json_str_escape (ctx->str, ((const RJsonString *)value)->v, -1);
+  r_json_str_escape (ctx->str, string->v, string->len);
   r_string_append_c (ctx->str, '"');
 }
 
@@ -368,18 +479,24 @@ r_json_number_new_double (rdouble value)
 }
 
 RJsonValue *
-r_json_string_new (const rchar * value, rssize size)
+r_json_string_new (const rchar * value, rssize size, RJsonResult * res)
 {
   RJsonString * ret;
+  RJsonResult r;
 
   if (size < 0)
     size = r_strlen (value);
+  if (res == NULL)
+    res = &r;
 
   if ((ret = r_malloc (sizeof (RJsonString) + size + 1)) != NULL) {
     rchar * data = (rchar *) (ret + 1);
     r_ref_init (ret, r_free);
     ret->value.type = R_JSON_TYPE_STRING;
-    r_json_str_unescape (data, value, size);
+    if ((*res = r_json_str_unescape (data, value, size, &ret->len)) != R_JSON_OK) {
+      r_free (ret);
+      return NULL;
+    }
     data[size] = 0;
     ret->v = data;
   }
@@ -402,6 +519,7 @@ r_json_string_new_unescaped (const rchar * value, rssize size)
     r_memcpy (data, value, size);
     data[size] = 0;
     ret->v = data;
+    ret->len = size;
   }
 
   return &ret->value;
@@ -416,6 +534,7 @@ r_json_string_new_static (const rchar * value)
     r_ref_init (ret, r_free);
     ret->value.type = R_JSON_TYPE_STRING;
     ret->v = value;
+    ret->len = r_strlen (value);
   }
 
   return &ret->value;
@@ -601,6 +720,27 @@ r_json_value_get_string (const RJsonValue * value)
   if (value != NULL && value->type == R_JSON_TYPE_STRING) {
     const RJsonString * string = (const RJsonString *)value;
     return string->v;
+  }
+
+  return NULL;
+}
+
+rchar *
+r_json_value_get_string_quoted (const RJsonValue * value)
+{
+  if (value != NULL && value->type == R_JSON_TYPE_STRING) {
+    const RJsonString * string = (const RJsonString *)value;
+    RString * str;
+
+    if ((str = r_string_new_sized ((string->len * 2) + 4)) != NULL) {
+      const RJsonString * string = (const RJsonString *)value;
+
+      r_string_append_c (str, '"');
+      r_json_str_escape (str, string->v, string->len);
+      r_string_append_c (str, '"');
+
+      return r_string_free_keep (str);
+    }
   }
 
   return NULL;

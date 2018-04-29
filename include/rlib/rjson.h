@@ -90,7 +90,7 @@ typedef struct _RJsonNull   RJsonNull;
 R_API RJsonValue * r_json_object_new (void);
 R_API RJsonValue * r_json_array_new (void);
 R_API RJsonValue * r_json_number_new_double (rdouble value);
-R_API RJsonValue * r_json_string_new (const rchar * value, rssize size);
+R_API RJsonValue * r_json_string_new (const rchar * value, rssize size, RJsonResult * res);
 R_API RJsonValue * r_json_string_new_unescaped (const rchar * value, rssize size);
 R_API RJsonValue * r_json_string_new_static (const rchar * value);
 R_API RJsonValue * r_json_value_new (RJsonType type);
@@ -112,6 +112,7 @@ R_API void r_json_value_foreach_array_value (RJsonValue * value, RFunc func, rpo
 R_API int r_json_value_get_number_int (const RJsonValue * value);
 R_API rdouble r_json_value_get_number_double (const RJsonValue * value);
 R_API const rchar * r_json_value_get_string (const RJsonValue * value);
+R_API rchar * r_json_value_get_string_quoted (const RJsonValue * value);
 R_API rboolean r_json_value_is_true (const RJsonValue * value);
 R_API rboolean r_json_value_is_false (const RJsonValue * value);
 R_API rboolean r_json_value_is_null (const RJsonValue * value);
