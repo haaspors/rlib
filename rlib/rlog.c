@@ -119,6 +119,8 @@ r_log_init (void)
 void
 r_log_deinit (void)
 {
+  r_slist_destroy (g__r_log_cats);
+  g__r_log_cats = NULL;
   r_strv_free (g__r_log_dbg_strv);
   if (g__r_log_file != NULL)
     fclose (g__r_log_file);
