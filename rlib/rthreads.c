@@ -124,6 +124,14 @@ r_thread_init (void)
 void
 r_thread_deinit (void)
 {
+  RThread * thread = r_thread_current ();
+
+  if (thread != NULL && thread->is_root) {
+    r_tss_set (&g__r_thread_self, NULL);
+    /* FIXME: Should this be necessary?? */
+    r_thread_unref (thread);
+  }
+
 #if defined (R_OS_WIN32)
   r_slist_destroy (g__r_tss_win32_dtors);
   g__r_tss_win32_dtors = NULL;
@@ -491,7 +499,8 @@ r_thread_free (RThread * thread)
 #elif defined (HAVE_PTHREAD_H)
     if (R_UNLIKELY (!thread->joined))
       pthread_detach (thread->thread);
-    r_mutex_clear (&thread->join_mutex);
+    if (!thread->is_root)
+      r_mutex_clear (&thread->join_mutex);
 #endif
 #endif
     r_free (thread->name);
@@ -578,6 +587,7 @@ r_thread_new_full (const rchar * name,
     ret->retval = NULL;
     ret->joined = FALSE;
     ret->is_rthread = TRUE;
+    ret->is_root = FALSE;
 #ifdef RLIB_HAVE_THREADS
 #if defined (R_OS_WIN32)
     if ((ret->thread = (HANDLE)_beginthreadex (NULL, 0, r_thread_trampoline, ret,
@@ -688,7 +698,7 @@ r_thread_current (void)
 {
   RThread * thread = r_tss_get (&g__r_thread_self);
 
-  if (R_UNLIKELY (!thread)) {
+  if (R_UNLIKELY (thread == NULL)) {
     if ((thread = r_mem_new0 (RThread)) != NULL) {
       r_ref_init (thread, r_thread_free);
 #ifdef RLIB_HAVE_THREADS
