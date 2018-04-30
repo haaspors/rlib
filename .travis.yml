@@ -13,18 +13,8 @@ env:
   global:
     - secure: "fKqQXaILVkLVxGKZImTZtCUGr8YXdmNU2VRl+tPBJE866pt1X6FXJ4IVnbE32NTsWiBvkmgy0Y690wF9Lt5L4DatIrINLBTVnHsWjsO8F1kpfTYsK00umXdbj0W0Paba9JH/6erYsEKWrfoR38Hpxt8X+rgZlEO/E+0DDzq8gITdslh3jVp+6wxML5krCQ3KvGQs4KNKHVWhJNVuNYF/DyQmzfBJ98djijL9foC1QrxsuB6KOo93bBiHCYv8Cx0GYFhXFmqDlTqeiioBvu0NMnNBlMm9HXRN6H46RW6L+BnV8trYtuFppXKEquihoGs2wN27FNFs5+N+b/tsSc8lhgEMJcOaDIMPvBEHkcLjpiVDyV9tbsqW9EAWe6vhjlF5CKYxNiEpI1rSSD0dzLdeRV7nDRa1YZDr+v9AbBkrBZSLnQxQBx67B9paNDl+rAOHpl2GbOJaZ7WSdABZWH26LDv9Tav1mIKkKS2McdnYkWajyJH+IIlgtdwATXYlFtwCj51QBLgyd20YuLOFu7oso2bpXJ9pBg1nqCOFCpSfOxhAhEDR2Hv9PCkCJWch20+fLHUqwG62dUHkpsoPKh3Vlxs9bQ1MU5XdkAtIbnbVlKgdcP7jL0GYGZG+WR3s8L2cbToNYtlM2ii1ZvYQe5UCt+PBRqqa9kTBOLzHi64Nd/4="
   matrix:
-    - BLDTYPE=debug   TESTTYPE=valgrind
-    - BLDTYPE=release TESTTYPE=valgrind
-    - BLDTYPE=debug   TESTTYPE=normal
-    - BLDTYPE=release TESTTYPE=normal
-    - BLDTYPE=release TESTTYPE=bench
-
-matrix:
-  exclude:
-    - os: osx
-      env: BLDTYPE=debug   TESTTYPE=valgrind
-    - os: osx
-      env: BLDTYPE=release TESTTYPE=valgrind
+    - BLDTYPE=debug
+    - BLDTYPE=release
 
 before_install:
   - test "$TRAVIS_BRANCH" != "coverity_scan" || test "$TRAVIS_OS_NAME" = "linux" -a "$BLDTYPE" = "release" -a "$CC" = "gcc" -a -z "$VG_OPT" || exit 0
@@ -38,9 +28,9 @@ script:
   - test "$TRAVIS_BRANCH" != "coverity_scan" || exit 0
   - meson --buildtype=${BLDTYPE} build
   - ninja -C build
-  - if [[ "$TESTTYPE" == "normal" ]]; then meson test -C build --print-errorlogs; fi
-  - if [[ "$TESTTYPE" == "valgrind" ]]; then RNOTIMEOUT=1 meson test -C build --print-errorlogs -t 100 --wrapper='valgrind -q --error-exitcode=42 --tool=memcheck --leak-check=full'; fi
-  - if [[ "$TESTTYPE" == "bench" ]]; then meson test -C build --benchmark -t 100 --print-errorlogs; fi
+  - meson test -C build --print-errorlogs
+  - if [[ "$BLDTYPE" == "release" ]]; then meson test -C build --benchmark -t 100 --print-errorlogs; fi
+  - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then RNOTIMEOUT=1 meson test -C build --print-errorlogs -t 100 --wrapper='valgrind -q --error-exitcode=42 --tool=memcheck --leak-check=full'; fi
   - cat $TRAVIS_BUILD_DIR/build/meson-logs/testlog*.txt
 
 addons:
