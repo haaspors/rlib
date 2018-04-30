@@ -16,6 +16,11 @@ env:
     - BLDTYPE=debug
     - BLDTYPE=release
 
+matrix:
+  exclude:
+    - os: osx
+      compiler: gcc
+
 before_install:
   - test "$TRAVIS_BRANCH" != "coverity_scan" || test "$TRAVIS_OS_NAME" = "linux" -a "$BLDTYPE" = "release" -a "$CC" = "gcc" -a -z "$VG_OPT" || exit 0
   - export PATH="`pwd`/build:${PATH}"
