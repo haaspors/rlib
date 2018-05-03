@@ -440,7 +440,7 @@ r_json_object_new (void)
     r_kv_ptr_array_init (&ret->array, r_json_value_equal);
   }
 
-  return &ret->value;
+  return (RJsonValue *)ret;
 }
 
 static void
@@ -461,7 +461,7 @@ r_json_array_new (void)
     r_ptr_array_init (&ret->array);
   }
 
-  return &ret->value;
+  return (RJsonValue *)ret;
 }
 
 RJsonValue *
@@ -475,7 +475,7 @@ r_json_number_new_double (rdouble value)
     ret->v = value;
   }
 
-  return &ret->value;
+  return (RJsonValue *)ret;
 }
 
 RJsonValue *
@@ -492,16 +492,19 @@ r_json_string_new (const rchar * value, rssize size, RJsonResult * res)
   if ((ret = r_malloc (sizeof (RJsonString) + size + 1)) != NULL) {
     rchar * data = (rchar *) (ret + 1);
     r_ref_init (ret, r_free);
-    ret->value.type = R_JSON_TYPE_STRING;
-    if ((*res = r_json_str_unescape (data, value, size, &ret->len)) != R_JSON_OK) {
+    if ((*res = r_json_str_unescape (data, value, size, &ret->len)) == R_JSON_OK) {
+      ret->value.type = R_JSON_TYPE_STRING;
+      ret->v = data;
+      data[size] = 0;
+    } else {
       r_free (ret);
-      return NULL;
+      ret = NULL;
     }
-    data[size] = 0;
-    ret->v = data;
+  } else {
+    *res = R_JSON_OOM;
   }
 
-  return &ret->value;
+  return (RJsonValue *)ret;
 }
 
 RJsonValue *
@@ -522,7 +525,7 @@ r_json_string_new_unescaped (const rchar * value, rssize size)
     ret->len = size;
   }
 
-  return &ret->value;
+  return (RJsonValue *)ret;
 }
 
 RJsonValue *
@@ -537,7 +540,7 @@ r_json_string_new_static (const rchar * value)
     ret->len = r_strlen (value);
   }
 
-  return &ret->value;
+  return (RJsonValue *)ret;
 }
 
 RJsonValue *
