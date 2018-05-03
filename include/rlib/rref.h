@@ -27,7 +27,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RRef {
+typedef struct {
   rauint refcount;
   raptr weaklst;
   RDestroyNotify notify;
