@@ -529,7 +529,7 @@ r_json_string_new_unescaped (const rchar * value, rssize size)
 }
 
 RJsonValue *
-r_json_string_new_static (const rchar * value)
+r_json_string_new_static_unescaped (const rchar * value)
 {
   RJsonString * ret;
 
@@ -635,7 +635,7 @@ r_json_value_get_object_field (RJsonValue * value, const rchar * key)
 
   if (value != NULL && value->type == R_JSON_TYPE_OBJECT) {
     RJsonObject * object = (RJsonObject *) value;
-    RJsonValue * cmp = r_json_string_new_static (key);
+    RJsonValue * cmp = r_json_string_new_static_unescaped (key);
 
     if ((ret = r_kv_ptr_array_get_val (&object->array,
             r_kv_ptr_array_find (&object->array, cmp))) != NULL) {
