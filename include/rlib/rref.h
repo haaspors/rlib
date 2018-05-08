@@ -27,18 +27,63 @@
 
 R_BEGIN_DECLS
 
+/**
+ * RRef:
+ * @refcount: internal refcount. Use #r_ref_refcount to read.
+ * @weaklst:  internal list of weak references.
+ * @notify:   notify function callback.
+ *
+ * Base struct for reference counted instances.
+ */
 typedef struct {
   rauint refcount;
   raptr weaklst;
   RDestroyNotify notify;
 } RRef;
 
+/**
+ * r_ref_refcount:
+ * @ref: #RRef instance.
+ *
+ * Returns: current reference count.
+ */
 #define r_ref_refcount(ref) r_atomic_uint_load (&((RRef *)ref)->refcount)
+
 #define R_REF_STATIC_INIT(destroy)        { 0, 0, (RDestroyNotify)destroy }
-#define r_ref_init(self, destroy)         R_STMT_START {                      \
-  r_atomic_uint_store (&((RRef *)self)->refcount, 1);                         \
-  r_atomic_ptr_store (&((RRef *)self)->weaklst, NULL);                        \
-  ((RRef *)self)->notify = (RDestroyNotify)destroy;                           \
+
+/**
+ * r_ref_init:
+ * @ref: #RRef instance.
+ *
+ * Initializes reference struct. This is basically what should be done after
+ * allocating memory for the instance.
+ * E.g.
+ * |[<!-- language="C" -->
+ * typedef struct {
+ *   RRef ref;
+ *   int bar;
+ * } Foo;
+ *
+ * Foo *
+ * foo_new (int bar)
+ * {
+ *   Foo * ret;
+ *
+ *   if ((ret = r_mem_new (Foo)) != NULL) {
+ *     r_ref_init (ret, r_free);
+ *     ret->bar = bar;
+ *   }
+ *
+ *   return ret;
+ * }
+ * ]|
+ *
+ * Returns: current reference count.
+ */
+#define r_ref_init(ref, destroy)          R_STMT_START {                      \
+  r_atomic_uint_store (&((RRef *)ref)->refcount, 1);                          \
+  r_atomic_ptr_store (&((RRef *)ref)->weaklst, NULL);                         \
+  ((RRef *)ref)->notify = (RDestroyNotify)destroy;                            \
 } R_STMT_END
 
 R_API rpointer r_ref_ref (rpointer ref);
