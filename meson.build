@@ -517,6 +517,7 @@ endif
 ###############################################################################
 subdir('rlib')
 subdir('test')
+subdir('docs')
 subdir('example')
 subdir('bench')
 

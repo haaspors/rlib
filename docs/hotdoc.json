@@ -1,0 +1,29 @@
+{
+    "html_extra_theme": "theme/extra/",
+    "c_include_directories": [
+        "../include"
+    ],
+    "c_sources": [
+        "../rlib/rref.c",
+        "../include/rlib/rref.h"
+    ],
+    "extra_c_flags": [
+        "-DRLIB_COMPILATION"
+    ],
+    "extra_assets": [
+        "assets"
+    ],
+    "git_repo": "..",
+    "index": "markdown/index.md",
+    "languages": [
+        "c"
+    ],
+    "c_smart_index": true,
+    "c_index": "markdown/c-index.md",
+    "project_name": "rlib",
+    "project_version": "1.0",
+    "sitemap": "sitemap.txt",
+    "syntax_highlighting_activate": true,
+    "devhelp_activate": true,
+    "edit_on_github_repository": "https://github.com/haaspors/rlib/"
+}
