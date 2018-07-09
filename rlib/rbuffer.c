@@ -21,6 +21,24 @@
 
 #include <rlib/rmem.h>
 
+/**
+ * SECTION:rbuffer
+ * @title: Buffer
+ * @short_description: a structure containg one or more memory chunks.
+ *
+ * A RBuffer provides an abstraction to memory to allow building up a buffer
+ * from multiple memory chunks. This makes it simpler to just append to a buffer
+ * without reallocating or knowing the total buffer size up front.
+ *
+ * Another important abstraction #RMem allows is different allocators and the
+ * concept of mapping/unmapping buffers/mem chunks, which makes #RBuffer able
+ * to hold pointers to externally allocated memory not directly addressable.
+ *
+ * It also allows for a scatter/gather IO (Vectored IO).
+ *
+ * See #RMem.
+ */
+
 /* FIXME: Add logging??? */
 
 #define R_BUFFER_MAX_MEM    32
@@ -44,6 +62,13 @@ r_buffer_free (RBuffer * buf)
   r_free (buf);
 }
 
+/**
+ * r_buffer_new:
+ *
+ * Create and return a bare #RBuffer without and memory attached to it.
+ *
+ * Returns: a #RBuffer instance or **NULL** if out of memory.
+ */
 RBuffer *
 r_buffer_new (void)
 {
@@ -55,6 +80,18 @@ r_buffer_new (void)
   return ret;
 }
 
+/**
+ * r_buffer_new_alloc:
+ * @allocator: Allocator responsible for actually allocating the requested size.
+ * @allocsize: Number of bytes to allocate.
+ * @params:    Optional #RMemAllocationParams structure.
+ *
+ * Create and return a #RBuffer with *one* #RMem instance allocated with
+ * the given @allocator of size @allocsize using @params or **NULL** for
+ * default #RMemAllocationParams.
+ *
+ * Returns: a #RBuffer instance or **NULL** if out of memory.
+ */
 RBuffer *
 r_buffer_new_alloc (RMemAllocator * allocator, rsize allocsize,
     const RMemAllocationParams * params)
@@ -74,6 +111,23 @@ r_buffer_new_alloc (RMemAllocator * allocator, rsize allocsize,
   return ret;
 }
 
+/**
+ * r_buffer_new_wrapped:
+ * @flags:      Flags for given @data.
+ * @data:       Pointer to data/memory to be wrapped.
+ * @allocsize:  Total allocated size of @data.
+ * @size:       Current size of @data.
+ * @offset:     Current offset into @data.
+ * @user:       Optional user supplied context associated to the #RMem structure.
+ * @usernotify: Optional callback which gets called to deallocate/free @user
+ *              when this buffer and/or it's underlying #RMem structure is
+ *              destroyed.
+ *
+ * Create and return a #RBuffer with *one* #RMem instance attached.
+ * The #RMem instance attached will wrap the given memory provided.
+ *
+ * Returns: a #RBuffer instance or **NULL** if out of memory.
+ */
 RBuffer *
 r_buffer_new_wrapped (RMemFlags flags, rpointer data,
     rsize allocsize, rsize size, rsize offset, rpointer user, RDestroyNotify usernotify)
@@ -94,6 +148,43 @@ r_buffer_new_wrapped (RMemFlags flags, rpointer data,
   return ret;
 }
 
+/**
+ * r_buffer_new_take:
+ * @data:       Pointer to data/memory to be overtaken.
+ * @size:       Current size of @data.
+ *
+ * Create and return a #RBuffer with *one* #RMem instance attached.
+ * The #RMem instance attached will wrap the given memory provided.
+ * It will also be freed togheter with the buffer instance when all references
+ * are cleared.
+ *
+ * Returns: a #RBuffer instance or **NULL** if out of memory.
+ */
+
+/**
+ * r_buffer_new_dup:
+ * @data:       Pointer to data/memory to duplicate.
+ * @size:       Current size of @data.
+ *
+ * Create and return a #RBuffer with *one* #RMem instance attached.
+ * The #RMem instance attached will duplicate/memcpy the given data.
+ *
+ * Returns: a #RBuffer instance or **NULL** if out of memory.
+ */
+
+/**
+ * r_buffer_view:
+ * @from:   #RBuffer to create view of.
+ * @offset: Offset into @from.
+ * @size:   Size of view or negative to specify rest of available size.
+ *
+ * Create a view of @from #RBuffer.
+ * Be aware that the view will hold references to the same #RMem structures
+ * as @from. If the data changes thew view might need to be invalidated,
+ * or recreated.
+ *
+ * Returns: a #RBuffer instance or **NULL** if out of memory or failure.
+ */
 RBuffer *
 r_buffer_view (RBuffer * from, rsize offset, rssize size)
 {
@@ -140,6 +231,17 @@ error:
   return NULL;
 }
 
+/**
+ * r_buffer_copy:
+ * @from:   #RBuffer to copy.
+ * @offset: Offset into @from.
+ * @size:   Size of view or negative to specify rest of available size.
+ *
+ * Deep copy the @from #RBuffer.
+ * See #r_buffer_view to create a shallow copy instead.
+ *
+ * Returns: a #RBuffer instance or **NULL** if out of memory or failure.
+ */
 RBuffer *
 r_buffer_copy (RBuffer * from, rsize offset, rssize size)
 {
@@ -186,6 +288,12 @@ error:
   return NULL;
 }
 
+/**
+ * r_buffer_is_all_writable:
+ * @buffer: #RBuffer instance.
+ *
+ * Returns: whether or not this buffer can be written to.
+ */
 rboolean
 r_buffer_is_all_writable (const RBuffer * buffer)
 {
@@ -201,6 +309,14 @@ r_buffer_is_all_writable (const RBuffer * buffer)
   return TRUE;
 }
 
+/**
+ * r_buffer_mem_is_writable:
+ * @buffer: #RBuffer instance.
+ * @idx:    #RMem index.
+ *
+ * Returns: whether or not the specified #RMem index can be written to. **FALSE**
+ * if index out of bounds or @buffer is **NULL**.
+ */
 rboolean
 r_buffer_mem_is_writable (const RBuffer * buffer, ruint idx)
 {
@@ -210,6 +326,12 @@ r_buffer_mem_is_writable (const RBuffer * buffer, ruint idx)
   return r_mem_is_writable (buffer->mem[idx]);
 }
 
+/**
+ * r_buffer_get_size:
+ * @buffer: #RBuffer instance.
+ *
+ * Returns: Total size of the buffer.
+ */
 rsize
 r_buffer_get_size (const RBuffer * buffer)
 {
@@ -223,6 +345,12 @@ r_buffer_get_size (const RBuffer * buffer)
   return ret;
 }
 
+/**
+ * r_buffer_get_allocsize:
+ * @buffer: #RBuffer instance.
+ *
+ * Returns: Total allocated size of the buffer.
+ */
 rsize
 r_buffer_get_allocsize (const RBuffer * buffer)
 {
@@ -236,6 +364,14 @@ r_buffer_get_allocsize (const RBuffer * buffer)
   return ret;
 }
 
+/**
+ * r_buffer_get_offset:
+ * @buffer: #RBuffer instance.
+ *
+ * Returns: Offset into first active #RMem instance. Note that there might be
+ * zero sized #RMem instances in front. So calculating available headroom
+ * should not be using this function.
+ */
 rsize
 r_buffer_get_offset (const RBuffer * buffer)
 {
@@ -251,6 +387,12 @@ r_buffer_get_offset (const RBuffer * buffer)
   return ret;
 }
 
+/**
+ * r_buffer_mem_count:
+ * @buffer: #RBuffer instance.
+ *
+ * Returns: Number of #RMem instances making up this buffer.
+ */
 ruint
 r_buffer_mem_count (const RBuffer * buffer)
 {
@@ -258,6 +400,20 @@ r_buffer_mem_count (const RBuffer * buffer)
   return buffer->mem_count;
 }
 
+/**
+ * r_buffer_mem_insert:
+ * @buffer: #RBuffer instance.
+ * @mem:    #RMem instance to be inserted.
+ * @idx:    Index where @mem should be inserted.
+ *
+ * Insert @mem into @buffer at given index @idx.
+ * If @idx is greater than current count, @mem is appended.
+ * FIXME: This function should merge internal memory if max is reached,
+ * this is currently not implemented. A new function r_buffer_mem_insert_full
+ * might need to implemented to control automatic merging or not.
+ *
+ * Returns: whether or not @mem was inserted.
+ */
 rboolean
 r_buffer_mem_insert (RBuffer * buffer, RMem * mem, ruint idx)
 {
@@ -275,12 +431,31 @@ r_buffer_mem_insert (RBuffer * buffer, RMem * mem, ruint idx)
   return TRUE;
 }
 
+/**
+ * r_buffer_mem_prepend:
+ * @buffer: #RBuffer instance.
+ * @mem:    #RMem instance to be inserted.
+ *
+ * Inserts @mem to the beginning of the buffer.
+ *
+ * Returns: whether or not @mem was prepended.
+ */
 rboolean
 r_buffer_mem_prepend (RBuffer * buffer, RMem * mem)
 {
   return r_buffer_mem_insert (buffer, mem, 0);
 }
 
+/**
+ * r_buffer_mem_append:
+ * @buffer: #RBuffer instance.
+ * @mem:    #RMem instance to be inserted.
+ *
+ * Inserts @mem to the end of the buffer.
+ * Note that the internal #RMem instances might be merged.
+ *
+ * Returns: whether or not @mem was appended.
+ */
 rboolean
 r_buffer_mem_append (RBuffer * buffer, RMem * mem)
 {
@@ -300,6 +475,17 @@ r_buffer_mem_append (RBuffer * buffer, RMem * mem)
   return TRUE;
 }
 
+/**
+ * r_buffer_mem_replace_range:
+ * @buffer:     #RBuffer instance.
+ * @idx:        Index of first #RMem to be replaced.
+ * @mem_count:  Count from @idx or negative to indicate the rest.
+ * @mem:        #RMem instance to replace given range.
+ *
+ * Replaces given range by @idx and @mem_count with @mem.
+ *
+ * Returns: whether or not the replace operation succeeded.
+ */
 rboolean
 r_buffer_mem_replace_range (RBuffer * buffer, ruint idx, int mem_count, RMem * mem)
 {
@@ -326,6 +512,36 @@ r_buffer_mem_replace_range (RBuffer * buffer, ruint idx, int mem_count, RMem * m
   return TRUE;
 }
 
+/**
+ * r_buffer_mem_replace:
+ * @buf:    #RBuffer instance.
+ * @idx:    Index of #RMem to replace.
+ * @mem:    #RMem instance which replaces given index.
+ *
+ * Replaces given index (by @idx) with @mem.
+ *
+ * Returns: whether or not the replace operation succeeded.
+ */
+
+/**
+ * r_buffer_mem_replace_all:
+ * @buf:    #RBuffer instance.
+ * @mem:    #RMem instance which replaces all current #RMem instances.
+ *
+ * Replaces all #RMem instances with @mem.
+ *
+ * Returns: whether or not the replace operation succeeded.
+ */
+
+/**
+ * r_buffer_mem_peek:
+ * @buffer: #RBuffer instance.
+ * @idx:    Index of #RMem to peek.
+ *
+ * *Note*: Increases reference count of the returned #RMem instance with one.
+ *
+ * Returns: a new reference #RMem instance at @idx.
+ */
 RMem *
 r_buffer_mem_peek (RBuffer * buffer, ruint idx)
 {
@@ -335,6 +551,17 @@ r_buffer_mem_peek (RBuffer * buffer, ruint idx)
   return r_mem_ref (buffer->mem[idx]);
 }
 
+/**
+ * r_buffer_mem_remove:
+ * @buffer: #RBuffer instance.
+ * @idx:    Index of #RMem to peek.
+ *
+ * Removes given index @idx by returning the reference held internally.
+ * This effectively transfers ownership of the returned #RMem instance to the
+ * caller.
+ *
+ * Returns: the #RMem instance or **NULL** if @idx out of range or invalid @buffer.
+ */
 RMem *
 r_buffer_mem_remove (RBuffer * buffer, ruint idx)
 {
@@ -352,6 +579,14 @@ r_buffer_mem_remove (RBuffer * buffer, ruint idx)
   return ret;
 }
 
+/**
+ * r_buffer_mem_clear:
+ * @buffer: #RBuffer instance.
+ *
+ * Removes all internal #RMem instances.
+ * This turns the @buffer into a newly allocated #RBuffer without any #RMem
+ * instances.
+ */
 void
 r_buffer_mem_clear (RBuffer * buffer)
 {
@@ -364,6 +599,24 @@ r_buffer_mem_clear (RBuffer * buffer)
   }
 }
 
+/**
+ * r_buffer_mem_find:
+ * @buffer:       #RBuffer instance.
+ * @offset:       Data offset.
+ * @size:         Size of contiguous data or negative indicating rest.
+ * @idx:          [out] First #RMem instance.
+ * @count:        [out] Number of #RMem instances starting from @idx.
+ * @first_offset: [out] Offset into @idx #RMem instance.
+ * @last_size:    [out] Size of last #RMem instance.
+ *
+ * Find #RMem instance spanning the given data.
+ * Specify the range by @offset and @size.
+ * #RMem instances is returned by @idx and @count.
+ * @first_offset gives the byte offset into first #RMem instance and
+ * @last_size gives the byte size of the last #RMem instance.
+ *
+ * Returns: whether or not find operation succeeded.
+ */
 rboolean
 r_buffer_mem_find (const RBuffer * buffer, rsize offset, rssize size,
     ruint * idx, ruint * count, rsize * first_offset, rsize * last_size)
@@ -407,6 +660,16 @@ r_buffer_mem_find (const RBuffer * buffer, rsize offset, rssize size,
   return TRUE;
 }
 
+/**
+ * r_buffer_append_mem_from_buffer:
+ * @buffer: #RBuffer instance to append into.
+ * @from:   #RBuffer instance to append from.
+ *
+ * Appends all internal #RMem instances from @from into @buffer.
+ * All #RMem instances will be placed after the #RMem instances already present.
+ *
+ * Returns: whether or not append operation succeeded.
+ */
 rboolean
 r_buffer_append_mem_from_buffer (RBuffer * buffer, RBuffer * from)
 {
@@ -422,6 +685,20 @@ r_buffer_append_mem_from_buffer (RBuffer * buffer, RBuffer * from)
   return ret;
 }
 
+/**
+ * r_buffer_append_view:
+ * @buffer: #RBuffer instance to append into.
+ * @from:   #RBuffer instance to append from.
+ * @offset: Offset into @from to start view.
+ * @size:   Size starting from @offset into @from to end view or negative to
+ *          indicate the rest of the buffer/data.
+ *
+ * Appends a view into @from to @buffer.
+ * All #RMem instances in the view will be placed after the #RMem instances
+ * already present.
+ *
+ * Returns: whether or not append operation succeeded.
+ */
 rboolean
 r_buffer_append_view (RBuffer * buffer, RBuffer * from,
     rsize offset, rssize size)
@@ -475,6 +752,16 @@ r_buffer_append_view (RBuffer * buffer, RBuffer * from,
   return ret;
 }
 
+/**
+ * r_buffer_merge_take:
+ * @a:    First buffer to merge.
+ * @...:  More buffers to merge. Remember to terminate with **NULL**.
+ *
+ * Merge all given buffers into one single #RBuffer.
+ * This function takes ownership of all given buffers.
+ *
+ * Returns: a newly created #RBuffer instance containing the union of the buffers given.
+ */
 RBuffer *
 r_buffer_merge_take (RBuffer * a, ...)
 {
@@ -488,6 +775,16 @@ r_buffer_merge_take (RBuffer * a, ...)
   return ret;
 }
 
+/**
+ * r_buffer_merge_takev:
+ * @a:    First buffer to merge.
+ * @args: More buffers to merge. Terminated with **NULL**.
+ *
+ * Merge all given buffers into one single #RBuffer.
+ * This function takes ownership of all given buffers.
+ *
+ * Returns: a newly created #RBuffer instance containing the union of the buffers given.
+ */
 RBuffer *
 r_buffer_merge_takev (RBuffer * a, va_list args)
 {
@@ -518,6 +815,16 @@ r_buffer_merge_takev (RBuffer * a, va_list args)
   return a;
 }
 
+/**
+ * r_buffer_merge_take_array:
+ * @arr:    Array of buffer to merge.
+ * @count:  Array size.
+ *
+ * Merge all given buffers into one single #RBuffer.
+ * This function takes ownership of all given buffers.
+ *
+ * Returns: a newly created #RBuffer instance containing the union of the buffers given.
+ */
 RBuffer *
 r_buffer_merge_take_array (RBuffer ** arr, ruint count)
 {
@@ -554,6 +861,17 @@ r_buffer_merge_take_array (RBuffer ** arr, ruint count)
   return ret;
 }
 
+/**
+ * r_buffer_replace_byte_range:
+ * @buffer: #RBuffer instance.
+ * @offset: Offset into @buffer.
+ * @from:   A #RBuffer which will replace given range.
+ *
+ * Creates a new buffer where given range (in bytes) from @buffer is replaced
+ * with all #RMem instances in @from #RBuffer.
+ *
+ * Returns: a newly created #RBuffer.
+ */
 RBuffer *
 r_buffer_replace_byte_range (RBuffer * buffer, rsize offset, rssize size,
     RBuffer * from)
@@ -666,11 +984,22 @@ r_buffer_resize_fast (RBuffer * buffer, rsize offset, rsize size)
   return TRUE;
 }
 
-/* FIXME: Resize buffer without changing prefix and padding on individual
- *        memory chunks if possible. */
+/**
+ * r_buffer_resize:
+ * @buffer: #RBuffer instance.
+ * @offset: New offset into @buffer.
+ * @size:   New size.
+ *
+ * Resizes the buffer.
+ * FIXME: This implementation will break consistency if offset is changed.
+ *
+ * Returns: whether the resize operations succeeded.
+ */
 rboolean
 r_buffer_resize (RBuffer * buffer, rsize offset, rsize size)
 {
+  /* FIXME: Resize buffer without changing prefix and padding on individual
+   *        memory chunks if possible. */
 #if 0
   ruint i;
   RMem * mem;
@@ -715,6 +1044,16 @@ r_buffer_resize (RBuffer * buffer, rsize offset, rsize size)
 #endif
 }
 
+/**
+ * r_buffer_shrink:
+ * @buffer: #RBuffer instance to shrink.
+ * @size:   New size.
+ *
+ * Shrink buffer size.
+ * FIXME: Should be implemented by r_buffer_resize.
+ *
+ * Returns: whether or not the shrink operation succeeded.
+ */
 rboolean
 r_buffer_shrink (RBuffer * buffer, rsize size)
 {
@@ -746,6 +1085,26 @@ r_buffer_shrink (RBuffer * buffer, rsize size)
   return (size == 0);
 }
 
+/**
+ * r_buffer_map_mem_range:
+ * @buffer:     #RBuffer instance.
+ * @idx:        Index of first #RMem to be mapped.
+ * @mem_count:  Count from @idx or negative to indicate the rest.
+ * @info:       #RMemMapInfo context instance.
+ * @flags:      Flags controlling the map operation.
+ *
+ * Maps internal #RMem to a contiguous range so that the buffer can be accessed
+ * in terms of given @flags.
+ * *NOTE*: If the map operation spans multiple internal #RMem instances and
+ *         if even possible the resulting contiguous #RMem instance created
+ *         will replace the internal memory.
+ *
+ * FIXME: Improve and fix auto merging:
+ * 1. Disable flag through @flags
+ * 2. Don't merge if @flags is read only.
+ *
+ * Returns: whether or not the map operation succeeded.
+ */
 rboolean
 r_buffer_map_mem_range (RBuffer * buffer, ruint idx, int mem_count,
     RMemMapInfo * info, RMemMapFlags flags)
@@ -791,6 +1150,23 @@ r_buffer_map_mem_range (RBuffer * buffer, ruint idx, int mem_count,
   return ret;
 }
 
+/**
+ * r_buffer_map_byte_range:
+ * @buffer:     #RBuffer instance.
+ * @offset:     Offset into @buffer.
+ * @size:       Size of contiguous data or negative indicating rest.
+ * @info:       #RMemMapInfo context instance.
+ * @flags:      Flags controlling the map operation.
+ *
+ * Maps internal #RMem to a contiguous range so that the buffer can be accessed
+ * in terms of given @flags.
+ * *NOTE*: this function uses #r_buffer_map_mem_range by first using
+ *         #r_buffer_mem_find to acquire the correct #RMem instances.
+ * *NOTE*: #r_buffer_map_mem_range may automatically replace internal memory
+ *         if possible.
+ *
+ * Returns: whether or not the map operation succeeded.
+ */
 rboolean
 r_buffer_map_byte_range (RBuffer * buffer, rsize offset, rssize size,
     RMemMapInfo * info, RMemMapFlags flags)
@@ -814,6 +1190,14 @@ r_buffer_map_byte_range (RBuffer * buffer, rsize offset, rssize size,
   return ret;
 }
 
+/**
+ * r_buffer_unmap:
+ * @buffer: #RBuffer instance.
+ * @info:   #RMemMapInfo context instance.
+ *
+ *
+ * Returns: whether or not the unmap operation succeeded.
+ */
 rboolean
 r_buffer_unmap (RBuffer * buffer, RMemMapInfo * info)
 {
@@ -827,6 +1211,18 @@ r_buffer_unmap (RBuffer * buffer, RMemMapInfo * info)
   return TRUE;
 }
 
+/**
+ * r_buffer_fill:
+ * @buffer: destination #RBuffer instance.
+ * @offset: offset into @buffer.
+ * @src:    source data.
+ * @size:   number of bytes to fill/copy.
+ *
+ * Fill @buffer with given memory/data from @src.
+ * This is basically a memcopy from @src to internal #RMem instances of @buffer.
+ *
+ * Returns: number of bytes filled/copied.
+ */
 rsize
 r_buffer_fill (RBuffer * buffer, rsize offset, rconstpointer src, rsize size)
 {
@@ -871,6 +1267,17 @@ r_buffer_fill (RBuffer * buffer, rsize offset, rconstpointer src, rsize size)
   return ret;
 }
 
+/**
+ * r_buffer_extract:
+ * @buffer: source #RBuffer instance.
+ * @offset: offset into @buffer.
+ * @dst:    destination data.
+ * @size:   number of bytes to fill/copy, negative to indicate rest.
+ *
+ * Extracts/copies from @buffer into @dst.
+ *
+ * Returns: number of bytes copied to @dst.
+ */
 rsize
 r_buffer_extract (RBuffer * buffer, rsize offset, rpointer dst, rssize size)
 {
@@ -916,6 +1323,17 @@ r_buffer_extract (RBuffer * buffer, rsize offset, rpointer dst, rssize size)
   return ret;
 }
 
+/**
+ * r_buffer_extract_dup:
+ * @buffer:   source #RBuffer instance.
+ * @offset:   offset into @buffer.
+ * @size:     number of bytes to fill/copy, negative to indicate rest.
+ * @dstsize:  [out] size of returned data.
+ *
+ * Extracts/copies from @buffer and returns the copied data.
+ *
+ * Returns: The extracted/copied data as a pointer to system memory.
+ */
 rpointer
 r_buffer_extract_dup (RBuffer * buffer, rsize offset, rssize size, rsize * dstsize)
 {
@@ -936,6 +1354,17 @@ r_buffer_extract_dup (RBuffer * buffer, rsize offset, rssize size, rsize * dstsi
   return dst;
 }
 
+/**
+ * r_buffer_memset:
+ * @buffer: #RBuffer instance.
+ * @offset: offset into @buffer.
+ * @val:    byte value to set all bytes to.
+ * @size:   size in bytes to memset or negative for the rest.
+ *
+ * Set each byte from @offset into @buffer to the value @val.
+ *
+ * Returns: number of bytes memset.
+ */
 rsize
 r_buffer_memset (RBuffer * buffer, rsize offset, ruint8 val, rsize size)
 {
@@ -975,12 +1404,25 @@ r_buffer_memset (RBuffer * buffer, rsize offset, ruint8 val, rsize size)
   return ret;
 }
 
+/**
+ * r_buffer_cmp:
+ * @buf1:     First #RBuffer instance.
+ * @offset1:  Offset into @buf1.
+ * @buf2:     Second #RBuffer instance.
+ * @offset2:  Offset into @buf2.
+ * @size:   Size in bytes of both @buffer and @mem to compare.
+ *
+ * Compares memory of two given buffers.
+ *
+ * Returns: 0 if equal or positive/negative just like #memcmp would.
+ */
 int
 r_buffer_cmp (RBuffer * buf1, rsize offset1, RBuffer * buf2, rsize offset2, rsize size)
 {
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
   int ret;
 
+  /* FIXME: check buf1 and buf2 pointer equality */
   if (R_UNLIKELY (buf1 == NULL)) return -1;
   if (R_UNLIKELY (buf2 == NULL)) return 1;
 
@@ -997,6 +1439,17 @@ r_buffer_cmp (RBuffer * buf1, rsize offset1, RBuffer * buf2, rsize offset2, rsiz
   return ret;
 }
 
+/**
+ * r_buffer_memcmp:
+ * @buffer: #RBuffer instance.
+ * @offset: Offset into @buffer.
+ * @mem:    Pointer to the start ov memory to compare
+ * @size:   Size in bytes of both @buffer and @mem to compare.
+ *
+ * Compares memory given with the internal #RMem instances view of memory.
+ *
+ * Returns: 0 if equal or positive/negative just like #memcmp would.
+ */
 int
 r_buffer_memcmp (RBuffer * buffer, rsize offset, rconstpointer mem, rsize size)
 {

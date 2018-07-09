@@ -49,6 +49,7 @@ static inline RBuffer * r_buffer_new_take (rpointer data, rsize size)
 { return r_buffer_new_wrapped (R_MEM_FLAG_NONE, data, size, size, 0, data, r_free); }
 static inline RBuffer * r_buffer_new_dup (rconstpointer data, rsize size)
 { return r_buffer_new_take (r_memdup (data, size), size); }
+
 R_API RBuffer * r_buffer_view (RBuffer * from, rsize offset, rssize size);
 R_API RBuffer * r_buffer_copy (RBuffer * from, rsize offset, rssize size);
 

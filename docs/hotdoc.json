@@ -4,9 +4,12 @@
         "../include"
     ],
     "c_sources": [
+        "../rlib/rbuffer.c",
         "../rlib/rjson.c",
         "../rlib/rref.c",
+        "../include/rlib/rbuffer.h",
         "../include/rlib/rjson.h",
+        "../include/rlib/rmemallocator.h",
         "../include/rlib/rref.h"
     ],
     "extra_c_flags": [
