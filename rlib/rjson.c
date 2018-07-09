@@ -158,6 +158,17 @@ r_json_str_escape (RString * dst, const rchar * src, rssize size)
   return R_JSON_OK;
 }
 
+/**
+ * r_json_parse:
+ * @data: JSON data.
+ * @len:  size/length of @data.
+ * @res:  *[out]* result of the parse operation. **NULL** is allowed.
+ *
+ * Parses JSON data into a JSON structure.
+ * See #RJsonResult for error codes if **NULL** is returned.
+ *
+ * Returns: a #RJsonValue instance or **NULL** if parsing fails.
+ */
 RJsonValue *
 r_json_parse (rconstpointer data, rsize len, RJsonResult * res)
 {
@@ -182,6 +193,16 @@ r_json_parse (rconstpointer data, rsize len, RJsonResult * res)
   return ret;
 }
 
+/**
+ * r_json_parse_buffer:
+ * @buf:  #RBuffer containg JSON data.
+ * @res:  *[out]* result of the parse operation. **NULL** is allowed.
+ *
+ * Parses JSON data into a JSON structure.
+ * See #RJsonResult for error codes if **NULL** is returned.
+ *
+ * Returns: a #RJsonValue instance or **NULL** if parsing fails.
+ */
 RJsonValue *
 r_json_parse_buffer (RBuffer * buf, RJsonResult * res)
 {
@@ -351,6 +372,16 @@ r_json_value_append_output (const RJsonValue * value, RJsonAppendCtx * ctx)
   return ctx->res;
 }
 
+/**
+ * r_json_value_to_buffer:
+ * @value:  JSON value instance.
+ * @flags:  flags to control JSON data output.
+ * @res:    *[out]* result of the parse operation. **NULL** is allowed.
+ *
+ * Encodes the given @value as JSON data.
+ *
+ * Returns: a #RBuffer containg JSON data.
+ */
 RBuffer *
 r_json_value_to_buffer (const RJsonValue * value,
     RJsonFlags flags, RJsonResult * res)
@@ -429,6 +460,13 @@ r_json_object_free (RJsonObject * object)
   r_free (object);
 }
 
+/**
+ * r_json_object_new:
+ *
+ * Creates a new #RJsonObject instance with no fields.
+ *
+ * Returns: the newcly created #RJsonObject as #RJsonValue instance.
+ */
 RJsonValue *
 r_json_object_new (void)
 {
@@ -450,6 +488,13 @@ r_json_array_free (RJsonArray * array)
   r_free (array);
 }
 
+/**
+ * r_json_array_new:
+ *
+ * Creates a new #RJsonArray instance with no elements.
+ *
+ * Returns: the newcly created #RJsonArray as #RJsonValue instance.
+ */
 RJsonValue *
 r_json_array_new (void)
 {
@@ -464,6 +509,14 @@ r_json_array_new (void)
   return (RJsonValue *)ret;
 }
 
+/**
+ * r_json_number_new_double:
+ * @value: numeric value.
+ *
+ * Creates a new #RJsonNumber instance wrapping the native @value.
+ *
+ * Returns: the newcly created #RJsonNumber as #RJsonValue instance.
+ */
 RJsonValue *
 r_json_number_new_double (rdouble value)
 {
@@ -478,6 +531,25 @@ r_json_number_new_double (rdouble value)
   return (RJsonValue *)ret;
 }
 
+/**
+ * r_json_string_new:
+ * @value:  string value. The string will be unescaped.
+ * @size:   size of value string or negative if zero terminated.
+ * @res:  *[out]* result of the parse operation. **NULL** is allowed.
+ *
+ * Creates a new #RJsonNumber instance wrapping @value.
+ * @value will be unescaped.
+ * * `\"` becomes `"`
+ * * `\\` becomes `\`
+ * * `\/` becomes `/`
+ * * `\b` becomes backspace `U+0008`
+ * * `\f` becomes form feed `U+000c`
+ * * `\n` becomes line feed `U+000a`
+ * * `\r` becomes carriage return `U+000d`
+ * * `\t` becomes tabulation character `U+0009`
+ *
+ * Returns: the newcly created #RJsonString as #RJsonValue instance.
+ */
 RJsonValue *
 r_json_string_new (const rchar * value, rssize size, RJsonResult * res)
 {
@@ -507,6 +579,15 @@ r_json_string_new (const rchar * value, rssize size, RJsonResult * res)
   return (RJsonValue *)ret;
 }
 
+/**
+ * r_json_string_new_unescaped:
+ * @value:  string value. The string **MUST NOT** include escape codes.
+ * @size:   size of value string or negative if zero terminated.
+ *
+ * Creates a new #RJsonNumber instance wrapping @value.
+ *
+ * Returns: the newcly created #RJsonString as #RJsonValue instance.
+ */
 RJsonValue *
 r_json_string_new_unescaped (const rchar * value, rssize size)
 {
@@ -528,6 +609,14 @@ r_json_string_new_unescaped (const rchar * value, rssize size)
   return (RJsonValue *)ret;
 }
 
+/**
+ * r_json_string_new_static_unescaped:
+ * @value:  string value zero terminated. The string **MUST NOT** include escape codes.
+ *
+ * Creates a new #RJsonNumber instance wrapping @value.
+ *
+ * Returns: the newcly created #RJsonString as #RJsonValue instance.
+ */
 RJsonValue *
 r_json_string_new_static_unescaped (const rchar * value)
 {

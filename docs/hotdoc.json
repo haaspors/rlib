@@ -4,7 +4,9 @@
         "../include"
     ],
     "c_sources": [
+        "../rlib/rjson.c",
         "../rlib/rref.c",
+        "../include/rlib/rjson.h",
         "../include/rlib/rref.h"
     ],
     "extra_c_flags": [
