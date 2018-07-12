@@ -29,8 +29,6 @@
 #include <rlib/rlog.h>
 #include <rlib/rstr.h>
 
-#ifdef RLIB_HAVE_MODULE
-
 R_LOG_CATEGORY_DEFINE_STATIC (rmodule_logcat, "module", "Module logger",
     R_CLR_FG_CYAN | R_CLR_BG_BLUE | R_CLR_FMT_BOLD);
 #define R_LOG_CAT_DEFAULT &rmodule_logcat
@@ -40,6 +38,8 @@ r_module_init (void)
 {
   r_log_category_register (&rmodule_logcat);
 }
+
+#ifdef RLIB_HAVE_MODULE
 
 #if defined (R_OS_WIN32)
 #define WIN32_LEAN_AND_MEAN
