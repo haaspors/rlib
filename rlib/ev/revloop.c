@@ -264,7 +264,7 @@ static void
 r_ev_loop_move_done_callbacks (REvLoop * loop)
 {
   r_mutex_lock (&loop->done_mutex);
-  R_LOG_TRACE ("loop %p - Move callbacks: %"RUINT64_FMT,
+  R_LOG_TRACE ("loop %p - Move callbacks: %"RSIZE_FMT,
       loop, r_cbqueue_size (&loop->dcbs));
   r_cbqueue_merge (&loop->acbs, &loop->dcbs);
   r_mutex_unlock (&loop->done_mutex);
