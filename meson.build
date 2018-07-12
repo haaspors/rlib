@@ -219,6 +219,7 @@ check_headers = [
   'sched.h',
   'fcntl.h',
   'pthread.h',
+  'signal.h',
   'netdb.h',
   'arpa/inet.h',
   'netinet/in.h',
@@ -370,6 +371,16 @@ if conf.has('HAVE_PTHREAD_H')
   if cc.has_function('pthread_attr_setaffinity_np', prefix : pthread_prefix, args : '-pthread')
     conf.set('HAVE_PTHREAD_ATTR_SETAFFINITY_NP', 1)
   endif
+endif
+
+if conf.has('HAVE_SIGNAL_H')
+  if cc.has_member('siginfo_t', 'si_status', prefix : '#include <signal.h>')
+    conf.set('HAVE_SIGINFO_T_SI_STATUS', 1)
+  endif
+
+endif
+if cc.has_header_symbol('signal.h', 'sys_siglist')
+  conf.set('HAVE_SYS_SIGLIST', 1)
 endif
 
 rconf_defines = []

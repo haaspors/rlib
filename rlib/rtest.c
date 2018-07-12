@@ -631,7 +631,11 @@ _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
     }
 
     r_thread_kill (g__r_test_nofork_ctx->thread, sig);
+#ifdef HAVE_SIGINFO_T_SI_STATUS
     r_thread_exit (RINT_TO_POINTER (si->si_status));
+#else
+    r_thread_exit (RINT_TO_POINTER (si->si_value.sival_int));
+#endif
   } else {
     int val;
     const rchar * errfile = "???";
@@ -647,8 +651,13 @@ _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
       val = R_TEST_RUN_STATE_ERROR;
     }
 
+#ifdef HAVE_SYS_SIGLIST
     r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
         "%s (%d)", sys_siglist[sig], sig);
+#else
+    r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+        "signal: %d", sig);
+#endif
     longjmp (g__r_test_nofork_ctx->jb, val);
   }
 }

@@ -21,7 +21,9 @@
 
 #include <rlib/rmem.h>
 #ifdef RLIB_HAVE_SIGNALS
+#ifdef HAVE_SIGNAL_H
 #include <signal.h>
+#endif
 #include <time.h>
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
