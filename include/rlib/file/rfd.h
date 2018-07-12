@@ -52,6 +52,8 @@
 #endif
 #endif
 
+/* FIXME: Add type for file size to support large files on 32bit systems */
+
 R_API int r_fd_open (const rchar * file, int flags, int mode);
 R_API int r_fd_open_tmp (const rchar * dir, const rchar * pre, rchar ** path);
 R_API int r_fd_open_tmp_full (const rchar * dir, const rchar * fileprefix,

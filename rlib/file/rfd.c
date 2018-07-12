@@ -159,8 +159,10 @@ r_fd_tell (int fd)
 #ifdef RLIB_HAVE_FILES
 #if defined (R_OS_WIN32)
   res = (rssize)_telli64 (fd);
-#elif defined (R_OS_UNIX)
-  res = lseek64 (fd, 0, SEEK_CUR);
+#elif defined (HAVE_LSEEK64)
+  res = (rssize)lseek64 (fd, 0, SEEK_CUR);
+#elif defined (HAVE_LSEEK)
+  res = (rssize)lseek (fd, 0, SEEK_CUR);
 #endif
 #else
   (void) fd;
@@ -176,8 +178,10 @@ r_fd_seek (int fd, rssize offset, int mode)
 #ifdef RLIB_HAVE_FILES
 #if defined (R_OS_WIN32)
   res = (rssize)_lseeki64 (fd, (__int64)offset, mode);
-#elif defined (R_OS_UNIX)
-  res = lseek64 (fd, offset, mode);
+#elif defined (HAVE_LSEEK64)
+  res = (rssize)lseek64 (fd, offset, mode);
+#elif defined (HAVE_LSEEK)
+  res = (rssize)lseek (fd, offset, mode);
 #endif
 #else
   (void) fd;

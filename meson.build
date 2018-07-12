@@ -245,6 +245,8 @@ endif
 check_funcs = [
   # unistd
   [ 'alarm', 'unistd.h' ],
+  [ 'lseek', 'unistd.h' ],
+  [ 'lseek64', 'unistd.h' ],
   # string
   [ 'stpcpy', 'string.h' ],
   [ 'stpncpy', 'string.h' ],
