@@ -243,12 +243,8 @@ elif host_machine.system() == 'darwin'
 endif
 
 check_funcs = [
-  [ 'fcntl', 'fcntl.h' ],
-  [ 'ioctl', 'sys/ioctl.h' ],
-  [ 'sysctlbyname', 'sys/sysctl.h' ],
-  [ 'kqueue', 'sys/event.h' ],
-  [ 'epoll_ctl', 'sys/epoll.h' ],
-  [ 'eventfd', 'sys/eventfd.h' ],
+  # unistd
+  [ 'alarm', 'unistd.h' ],
   # string
   [ 'stpcpy', 'string.h' ],
   [ 'stpncpy', 'string.h' ],
@@ -268,13 +264,21 @@ check_funcs = [
   [ 'asprintf', 'stdio.h' ],
   [ 'vasprintf', 'stdio.h' ],
   [ '_vscprintf', 'stdio.h' ],
-  [ 'inet_pton', 'arpa/inet.h' ],
-  [ 'inet_ntop', 'arpa/inet.h' ],
+  # time
   [ 'timer_create', 'time.h' ],
   [ 'clock_gettime', 'time.h' ],
   [ 'setitimer', 'sys/time.h' ],
+  # arpa/inet
+  [ 'inet_pton', 'arpa/inet.h' ],
+  [ 'inet_ntop', 'arpa/inet.h' ],
+  # other
+  [ 'fcntl', 'fcntl.h' ],
+  [ 'ioctl', 'sys/ioctl.h' ],
+  [ 'sysctlbyname', 'sys/sysctl.h' ],
+  [ 'kqueue', 'sys/event.h' ],
+  [ 'epoll_ctl', 'sys/epoll.h' ],
+  [ 'eventfd', 'sys/eventfd.h' ],
   [ 'gettid', 'sys/types.h' ],
-  [ 'alarm', 'unistd.h' ],
 ]
 if host_machine.system() == 'windows'
   check_funcs += [
