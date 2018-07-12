@@ -14,4 +14,4 @@
 /.lock*
 /waf*-*-*
 /.waf*
-/_build_
+/_build*
