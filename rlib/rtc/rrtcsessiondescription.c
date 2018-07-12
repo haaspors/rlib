@@ -1018,7 +1018,7 @@ r_rtc_session_description_to_sdp (RRtcSessionDescription * sd, RRtcError * err)
     goto beach;
   }
 
-  tmp = r_strprintf ("%"RSIZE_FMT, sd->session_ver);
+  tmp = r_strprintf ("%"RUINT64_FMT, sd->session_ver);
   if (r_sdp_msg_set_originator (ctx.msg, sd->username, -1, sd->session_id, -1, tmp, -1,
         sd->orig_nettype, -1, sd->orig_addrtype, -1, sd->orig_addr, -1) != R_SDP_OK ||
       r_sdp_msg_set_session_name (ctx.msg, sd->session_name, -1) != R_SDP_OK ||
