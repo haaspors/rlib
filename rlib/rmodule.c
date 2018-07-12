@@ -289,13 +289,13 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
 #error no MODULE imlementation - consider disabling support
 #endif
 #else
-rboolean
+RMODULE
 r_module_open (const rchar * path, rboolean lazy, RModuleError * err)
 {
   (void) path;
   (void) lazy;
   (void) err;
-  return FALSE;
+  return NULL;
 }
 rpointer
 r_module_lookup (RMODULE mod, const rchar * sym)
