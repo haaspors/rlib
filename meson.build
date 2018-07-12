@@ -13,13 +13,6 @@ rconf = configuration_data()
 
 install_subdir('include', install_dir : '')
 
-# FIXME: options
-rconf.set('RLIB_DEFINE_HAVE_THREADS', '#define RLIB_HAVE_THREADS       1')
-rconf.set('RLIB_DEFINE_HAVE_SIGNALS', '#define RLIB_HAVE_SIGNALS       1')
-rconf.set('RLIB_DEFINE_HAVE_FILES',   '#define RLIB_HAVE_FILES         1')
-rconf.set('RLIB_DEFINE_HAVE_MODULE',  '#define RLIB_HAVE_MODULE        1')
-
-
 # OS
 if host_machine.system() == 'windows'
   rconf.set('RLIB_OS', 'R_OS_WIN32              ')
@@ -423,6 +416,31 @@ endforeach
 
 configure_file(input : 'config.h.meson', output : 'config.h', configuration : conf)
 
+###############################################################################
+# options
+# FIXME: disable by meson build options
+###############################################################################
+if libthread.found()
+  rconf.set('RLIB_DEFINE_HAVE_THREADS', '#define RLIB_HAVE_THREADS       1')
+else
+  rconf.set('RLIB_DEFINE_HAVE_THREADS', '/* #undef RLIB_HAVE_THREADS */')
+endif
+if host_machine.system() == 'windows' or libdl.found()
+  rconf.set('RLIB_DEFINE_HAVE_MODULE',  '#define RLIB_HAVE_MODULE        1')
+else
+  rconf.set('RLIB_DEFINE_HAVE_MODULE',  '/* #undef RLIB_HAVE_MODULE */')
+endif
+if conf.has('HAVE_SIGNAL_H')
+  rconf.set('RLIB_DEFINE_HAVE_SIGNALS', '#define RLIB_HAVE_SIGNALS       1')
+else
+  rconf.set('RLIB_DEFINE_HAVE_SIGNALS', '/* #undef RLIB_HAVE_SIGNALS */')
+endif
+
+rconf.set('RLIB_DEFINE_HAVE_FILES',   '#define RLIB_HAVE_FILES         1')
+
+###############################################################################
+# subdirs
+###############################################################################
 subdir('rlib')
 subdir('test')
 subdir('example')
