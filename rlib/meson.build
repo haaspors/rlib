@@ -130,6 +130,6 @@ pkg.generate(
   name : rlib_name,
   version : rlib_version,
   description : 'Convenience library for useful things.',
-  libraries : [ rlibsh, '-ldl' ], # FIXME: Use dependency/find_library
-  libraries_private : [ '-lm', '-pthread', '-lrt' ])
+  libraries : [ rlibsh, libdl ],
+  libraries_private : [ libm, libthread, librt ])
 
