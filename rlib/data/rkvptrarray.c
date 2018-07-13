@@ -42,12 +42,8 @@ r_kv_ptr_array_notify_idx (RKVPtrArray * array, rsize idx)
 static inline void
 r_kv_ptr_array_notify_range (RKVPtrArray * array, rsize idx, rsize until)
 {
-  for (; idx < until; idx++) {
-    if (R_KV_PTR_ARRAY_N (array, idx).keynotify != NULL)
-      R_KV_PTR_ARRAY_N (array, idx).keynotify (R_KV_PTR_ARRAY_N (array, idx).key);
-    if (R_KV_PTR_ARRAY_N (array, idx).valnotify != NULL)
-      R_KV_PTR_ARRAY_N (array, idx).valnotify (R_KV_PTR_ARRAY_N (array, idx).val);
-  }
+  for (; idx < until; idx++)
+    r_kv_ptr_array_notify_idx (array, idx);
 }
 
 
