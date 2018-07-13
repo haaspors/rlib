@@ -49,9 +49,7 @@
 #define R_API_HIDDEN
 #endif
 
-#if defined(RLIB_STLIB)
-#define R_API
-#elif defined(RLIB_COMPILATION)
+#if defined(RLIB_COMPILATION)
 #define R_API R_API_EXPORT
 #else
 #define R_API R_API_IMPORT

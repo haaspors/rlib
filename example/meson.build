@@ -21,7 +21,7 @@ foreach e : examples
   executable(e, e + '.c',
     include_directories : inc,
     dependencies : [ libm, libdl, libthread, librt ],
-    link_with : rlibsh,
+    link_with : librlib,
     install : false)
 endforeach
 

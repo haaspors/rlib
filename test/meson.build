@@ -90,7 +90,7 @@ rlibtest = executable('rlibtest',
   sources : rlibtest_sources,
   include_directories : inc,
   dependencies : [ libm, libdl, libthread, librt ],
-  link_with : rlibsh,
+  link_with : librlib,
   install : false)
 
 test('rlib test', rlibtest)

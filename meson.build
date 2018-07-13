@@ -1,6 +1,10 @@
 project('rlib', 'c',
   version : '1.0.0',
-  default_options : [ 'buildtype=debugoptimized' ])
+  meson_version : '>=0.46',
+  default_options : [
+    'buildtype=debugoptimized',
+    'default_library=both',
+  ])
 
 rlib_name = meson.project_name()
 rlib_version = meson.project_version()
