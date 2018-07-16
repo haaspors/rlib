@@ -70,14 +70,14 @@ r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst)
   struct sockaddr_storage ss;
   int len = sizeof (ss);
 
-  if (family != AF_INET && family != AF_INET6) {
+  if (family != R_AF_INET && family != R_AF_INET6) {
     WSASetLastError (WSAEAFNOSUPPORT);
     return -1;
   }
 
   if (r_strchr (src, (int)':') == NULL) {
     struct sockaddr_in * sin = (struct sockaddr_in *)&ss;
-    if (WSAStringToAddressA ((rchar *)src, AF_INET, NULL, (struct sockaddr *) &ss, &len) == 0) {
+    if (WSAStringToAddressA ((rchar *)src, R_AF_INET, NULL, (struct sockaddr *) &ss, &len) == 0) {
       r_memcpy (dst, &sin->sin_addr, sizeof (sin->sin_addr));
       return 1;
     }
@@ -85,7 +85,7 @@ r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst)
 
   if (r_strchr (src, (int)']') == NULL) {
     struct sockaddr_in6 * sin6 = (struct sockaddr_in6 *)&ss;
-    if (WSAStringToAddressA ((rchar *)src, AF_INET6, NULL, (struct sockaddr *) &ss, &len) == 0) {
+    if (WSAStringToAddressA ((rchar *)src, R_AF_INET6, NULL, (struct sockaddr *) &ss, &len) == 0) {
       r_memcpy (dst, &sin6->sin6_addr, sizeof (sin6->sin6_addr));
       return 1;
     }
@@ -103,12 +103,12 @@ r_win32_sim_inet_ntop (int family, rconstpointer src, rchar * dst, size_t size)
   r_memset (&ss, 0, sizeof (ss));
   ss.ss_family = family;
 
-  if (ss.ss_family == AF_INET) {
+  if (ss.ss_family == R_AF_INET) {
     struct sockaddr_in * sin = (struct sockaddr_in *) &ss;
 
     len = sizeof (struct sockaddr_in);
     r_memcpy (&sin->sin_addr, src, sizeof (sin->sin_addr));
-  } else if (ss.ss_family == AF_INET6) {
+  } else if (ss.ss_family == R_AF_INET6) {
     struct sockaddr_in6 * sin6 = (struct sockaddr_in6 *) &ss;
 
     len = sizeof (struct sockaddr_in6);
