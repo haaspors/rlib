@@ -89,17 +89,17 @@ print_udp_bench_ctx_stats (REvUDPBenchCtx * ctx, RClockTime now)
   RClockTimeDiff cd = R_CLOCK_DIFF (ctx->ts, now);
 
   r_print ("%"R_TIME_FORMAT
-      "  TX: %12"RSIZE_FMT" (%5"RSIZE_FMT") %16"RSIZE_FMT" pps: %8"RSIZE_FMT" bps: %12"RSIZE_FMT"\n"
+      "  TX: %12"RSIZE_FMT" (%5"RSIZE_FMT") %16"RSIZE_FMT" pps: %8"RINT64_FMT" bps: %12"RINT64_FMT"\n"
       "                 "
-      "  RX: %12"RSIZE_FMT" (%5"RSIZE_FMT") %16"RSIZE_FMT" pps: %8"RSIZE_FMT" bps: %12"RSIZE_FMT"\n",
+      "  RX: %12"RSIZE_FMT" (%5"RSIZE_FMT") %16"RSIZE_FMT" pps: %8"RINT64_FMT" bps: %12"RINT64_FMT"\n",
       R_TIME_ARGS (now - ctx->start),
       ctx->tx.packets, ctx->tx.failed, ctx->tx.bytes,
-      ((ctx->tx.packets - ctx->tx_.packets) * R_SECOND) / cd,
-      (((ctx->tx.bytes - ctx->tx_.bytes) * R_SECOND) / cd) * 8,
+      ((rint64)(ctx->tx.packets - ctx->tx_.packets) * R_SECOND) / cd,
+      (((rint64)(ctx->tx.bytes - ctx->tx_.bytes) * R_SECOND) / cd) * 8,
 
       ctx->rx.packets, ctx->rx.failed, ctx->rx.bytes,
-      ((ctx->rx.packets - ctx->rx_.packets) * R_SECOND) / cd,
-      (((ctx->rx.bytes - ctx->rx_.bytes) * R_SECOND) / cd) * 8);
+      ((rint64)(ctx->rx.packets - ctx->rx_.packets) * R_SECOND) / cd,
+      (((rint64)(ctx->rx.bytes - ctx->rx_.bytes) * R_SECOND) / cd) * 8);
 }
 
 static void
