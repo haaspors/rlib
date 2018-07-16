@@ -119,8 +119,10 @@ typedef struct {
   LPTOP_LEVEL_EXCEPTION_FILTER ouef;
   void (*osigabrt) (int);
 #elif defined (R_OS_UNIX)
+#ifdef HAVE_SIGALTSTACK
   stack_t ss;
   stack_t oss;
+#endif
   struct sigaction sa, osa[R_N_ELEMENTS (g__r_test_sigs)];
 #endif
 #endif
@@ -670,7 +672,9 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 #ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_UNIX)
   rsize i;
+#ifdef HAVE_SIGALTSTACK
   static ruint8 _r_test_sigstack[SIGSTKSZ];
+#endif
 #endif
 #endif
   static RTestLastPos _r_test_lastpos[R_TEST_THREADS];
@@ -685,10 +689,12 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
   _set_abort_behavior (0, _CALL_REPORTFAULT | _WRITE_ABORT_MSG);
   ctx->osigabrt = signal (SIGABRT, _r_test_win32_err_handler);
 #elif defined (R_OS_UNIX)
+#ifdef HAVE_SIGALTSTACK
   ctx->ss.ss_size = sizeof (_r_test_sigstack);
   ctx->ss.ss_sp = _r_test_sigstack;
   ctx->ss.ss_flags = 0;
   sigaltstack (&ctx->ss, &ctx->oss);
+#endif
 
   ctx->sa.sa_sigaction = _r_test_nofork_signalhandler;
   sigemptyset (&ctx->sa.sa_mask);
@@ -741,7 +747,9 @@ r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
   for (i = R_N_ELEMENTS (g__r_test_sigs); i > 0; i--)
     sigaction (g__r_test_sigs[i-1], &ctx->osa[i-1], NULL);
 
+#ifdef HAVE_SIGALTSTACK
   sigaltstack (&ctx->oss, NULL);
+#endif
 #endif
 #endif
 

@@ -60,6 +60,7 @@
 #mesondefine HAVE_GETTID
 #mesondefine HAVE_SIGNAL_H
 #mesondefine HAVE_SIGINFO_T_SI_STATUS
+#mesondefine HAVE_SIGALTSTACK
 #mesondefine HAVE_ALARM
 #mesondefine HAVE_DLFCN_H
 #mesondefine HAVE_LINK_H

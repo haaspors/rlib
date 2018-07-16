@@ -285,6 +285,7 @@ check_funcs = [
   [ 'epoll_ctl', 'sys/epoll.h' ],
   [ 'eventfd', 'sys/eventfd.h' ],
   [ 'gettid', 'sys/types.h' ],
+  [ 'sigaltstack', 'signal.h' ],
 ]
 if host_machine.system() == 'windows'
   check_funcs += [
