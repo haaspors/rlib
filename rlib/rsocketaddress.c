@@ -118,10 +118,10 @@ r_socket_address_ipv4_new_from_string (const rchar * ip, ruint16 port)
   if (R_UNLIKELY (ip == NULL)) return NULL;
 
 #if defined (HAVE_INET_PTON)
-  if (inet_pton (AF_INET, ip, &in) < 1)
+  if (inet_pton (R_AF_INET, ip, &in) < 1)
     return NULL;
 #elif defined (R_OS_WIN32)
-  if (r_win32_inet_pton (AF_INET, ip, &in) < 1)
+  if (r_win32_inet_pton (R_AF_INET, ip, &in) < 1)
     return NULL;
 #else
   if (inet_aton (ip, &in) < 1)
@@ -237,7 +237,7 @@ r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port,
   addr_in = (struct sockaddr_in *)&addr->addr;
 
 #if defined (HAVE_INET_PTON)
-  if (inet_ntop (AF_INET, &addr_in->sin_addr, str, size) == NULL)
+  if (inet_ntop (R_AF_INET, &addr_in->sin_addr, str, size) == NULL)
     return FALSE;
   if (port) {
     rchar p[8];
@@ -248,7 +248,7 @@ r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port,
     r_strcat (str, p);
   }
 #elif defined (R_OS_WIN32)
-  if (r_win32_inet_ntop (AF_INET, &addr_in->sin_addr, str, size) == NULL)
+  if (r_win32_inet_ntop (R_AF_INET, &addr_in->sin_addr, str, size) == NULL)
     return FALSE;
   if (port) {
     rchar p[8];

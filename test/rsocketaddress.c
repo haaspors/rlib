@@ -12,7 +12,7 @@ RTEST (rsocketaddress, ipv4_native, RTEST_FAST)
   RSocketAddress * addr;
 
   r_memset (&ipv4, 0, sizeof (ipv4));
-  ipv4.sin_family = AF_INET;
+  ipv4.sin_family = R_AF_INET;
   ipv4.sin_port = r_htons (42);
   ipv4.sin_addr.s_addr = INADDR_LOOPBACK;
 
