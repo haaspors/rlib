@@ -26,7 +26,9 @@
 #ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
 #endif
+#ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
+#endif
 
 #if defined (R_OS_WIN32)
 #include <windows.h>
@@ -109,34 +111,48 @@ RMemFile *
 r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
 {
   RMemFile * ret = NULL;
-  struct stat st;
 
-  if (fstat (fd, &st) == 0) {
-    if (R_LIKELY ((ret = r_mem_new (RMemFile)) != NULL)) {
-      r_ref_init (ret, r_mem_file_free);
-      ret->size = (rsize)st.st_size;
+  if (R_LIKELY ((ret = r_mem_new (RMemFile)) != NULL)) {
+    r_ref_init (ret, r_mem_file_free);
+    ret->size = 0;
+
+    {
+#if defined (HAVE_FSTAT)
+      struct stat st;
+      if (fstat (fd, &st) == 0)
+        ret->size = (rsize)st.st_size;
+#else
+      rssize seek_res;
+      /* FIXME: Use r_fd_get_size() */
+      if ((seek_res = r_fd_seek (fd, 0, SEEK_END)) > 0)
+        ret->size = (rsize)seek_res;
+#endif
+    }
 #if defined (R_OS_WIN32)
-      if ((ret->handle = CreateFileMapping ((HANDLE) _get_osfhandle (fd), NULL,
-              _get_page_flags (prot), 0, 0, NULL)) != NULL) {
-        if ((ret->mem = MapViewOfFile (ret->handle,
-                _get_file_flags (prot, writeback), 0, 0, 0)) == NULL) {
-          CloseHandle (ret->handle);
-          r_free (ret);
-          ret = NULL;
-        }
-      } else {
+    if ((ret->handle = CreateFileMapping ((HANDLE) _get_osfhandle (fd), NULL,
+            _get_page_flags (prot), 0, 0, NULL)) != NULL) {
+      if ((ret->mem = MapViewOfFile (ret->handle,
+              _get_file_flags (prot, writeback), 0, 0, 0)) == NULL) {
+        CloseHandle (ret->handle);
         r_free (ret);
         ret = NULL;
       }
+    } else {
+      r_free (ret);
+      ret = NULL;
+    }
 #elif defined (HAVE_MMAP)
+    if (ret->size > 0) {
       ret->mem = mmap (NULL, ret->size, prot,
           writeback ? MAP_SHARED : MAP_PRIVATE, fd, 0);
-#else
-      (void) prot;
-      (void) writeback;
+    } else {
       ret->mem = NULL;
-#endif
     }
+#else
+    (void) prot;
+    (void) writeback;
+    ret->mem = NULL;
+#endif
   }
 
   return ret;
