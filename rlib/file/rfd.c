@@ -187,7 +187,7 @@ r_fd_seek (int fd, rssize offset, int mode)
   (void) fd;
   (void) offset;
   (void) mode;
-  res = 0;
+  res = -1;
 #endif
   return res;
 }
