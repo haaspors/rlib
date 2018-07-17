@@ -238,6 +238,7 @@ check_headers = [
   'sys/socket.h',
   'sys/ioctl.h',
   'sys/sysctl.h',
+  'sys/stat.h',
   'sys/time.h',
   'sys/epoll.h',
 ]
@@ -261,6 +262,12 @@ check_funcs = [
   [ 'alarm', 'unistd.h' ],
   [ 'lseek', 'unistd.h' ],
   [ 'lseek64', 'unistd.h' ],
+  [ 'access', 'unistd.h' ],
+  # sys/stat
+  [ 'mkdir', 'sys/stat.h' ],
+  [ 'stat', 'sys/stat.h' ],
+  [ 'lstat', 'sys/stat.h' ],
+  [ 'fstat', 'sys/stat.h' ],
   # string
   [ 'stpcpy', 'string.h' ],
   [ 'stpncpy', 'string.h' ],

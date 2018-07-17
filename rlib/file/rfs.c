@@ -23,8 +23,13 @@
 #include <rlib/rrand.h>
 #include <rlib/rthreads.h>
 
+#ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
+#endif
+#ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
+#endif
+
 #if defined (R_OS_WIN32)
 #include <rlib/charset/runicode.h>
 #include <windows.h>
@@ -242,7 +247,7 @@ rssize
 r_fs_get_filesize (const rchar * path)
 {
   rssize ret;
-#ifdef R_OS_WIN32
+#if defined (R_OS_WIN32)
   runichar2 * upath;
 
   if ((upath = r_utf8_to_utf16_dup (path, -1, NULL, NULL, NULL)) != NULL) {
@@ -255,13 +260,15 @@ r_fs_get_filesize (const rchar * path)
   } else {
     ret = -1;
   }
-#else
+#elif defined (HAVE_STAT)
   struct stat s;
   if (stat (path, &s) == 0) {
     ret = s.st_size;
   } else {
     ret = -1;
   }
+#else
+  ret = -1;
 #endif
   return ret;
 }
@@ -345,7 +352,7 @@ r_fs_test_exists (const rchar * path)
 {
 #if defined (R_OS_WIN32)
   return r_fs_get_file_attributes (path) != INVALID_FILE_ATTRIBUTES;
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_ACCESS)
   return access (path, F_OK) == 0;
 #else
   (void) path;
@@ -359,7 +366,7 @@ r_fs_test_is_directory (const rchar * path)
 #if defined (R_OS_WIN32)
   DWORD a = r_fs_get_file_attributes (path);
   return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_STAT)
   struct stat s;
   return (stat (path, &s) == 0) && S_ISDIR (s.st_mode);
 #else
@@ -374,7 +381,7 @@ r_fs_test_is_regular (const rchar * path)
 #if defined (R_OS_WIN32)
   DWORD a = r_fs_get_file_attributes (path);
   return (a & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_DEVICE)) == 0;
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_STAT)
   struct stat s;
   return (stat (path, &s) == 0) && S_ISREG (s.st_mode);
 #else
@@ -389,7 +396,7 @@ r_fs_test_is_device (const rchar * path)
 #if defined (R_OS_WIN32)
   DWORD a = r_fs_get_file_attributes (path);
   return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DEVICE);
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_STAT)
   struct stat s;
   return (stat (path, &s) == 0) && (S_ISCHR (s.st_mode) || S_ISBLK (s.st_mode));
 #else
@@ -405,7 +412,7 @@ r_fs_test_is_symlink (const rchar * path)
   /* FIXME: Symlinks on windows? */
   (void) path;
   return FALSE;
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_LSTAT)
   struct stat s;
   return (lstat (path, &s) == 0) && S_ISLNK (s.st_mode);
 #else
@@ -419,7 +426,7 @@ r_fs_test_read_access (const rchar * path)
 {
 #if defined (R_OS_WIN32)
   return r_fs_get_file_access (path, GENERIC_READ) != 0;
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_ACCESS)
   return access (path, R_OK) == 0;
 #else
   (void) path;
@@ -432,7 +439,7 @@ r_fs_test_write_access (const rchar * path)
 {
 #if defined (R_OS_WIN32)
   return r_fs_get_file_access (path, GENERIC_WRITE) != 0;
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_ACCESS)
   return access (path, W_OK) == 0;
 #else
   (void) path;
@@ -445,7 +452,7 @@ r_fs_test_exec_access (const rchar * path)
 {
 #if defined (R_OS_WIN32)
   return r_fs_get_file_access (path, GENERIC_EXECUTE) != 0;
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_ACCESS)
   return access (path, X_OK) == 0;
 #else
   (void) path;
@@ -470,7 +477,7 @@ r_fs_mkdir (const rchar * path, int mode)
   }
 
   return ret;
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_MKDIR)
   return mkdir (path, mode) == 0;
 #else
   (void) path;
