@@ -24,28 +24,41 @@
 #include <rlib/rstr.h>
 
 #ifdef RLIB_HAVE_FILES
-#if defined (R_OS_WIN32)
-#include <rlib/charset/runicode.h>
-#define WIN32_LEAN_AND_MEAN 1
-#include <windows.h>
-#elif defined (R_OS_UNIX)
-#include <unistd.h>
-#else
-#error "Not Implemented"
+#ifdef HAVE_SYS_STAT_H
+#include <sys/stat.h>
 #endif
-#endif
-
 #ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
 #endif
 #ifdef HAVE_FCNTL_H
 #include <fcntl.h>
 #endif
-#include <errno.h>
+
+#if defined (R_OS_WIN32)
+#include <rlib/charset/runicode.h>
+#define WIN32_LEAN_AND_MEAN 1
+#include <windows.h>
+
+#ifdef fstat
+#undef fstat
+#endif
+#ifdef stat
+#undef stat
+#endif
+#define fstat(a,b) _fstati64(a,b)
+#define stat _stati64
+#elif defined (R_OS_UNIX)
+#include <unistd.h>
+#else
+#error "Not Implemented"
+#endif
 
 #if defined (__APPLE__) && defined (__MACH__)
 #define lseek64 lseek
 #endif
+#endif
+
+#include <errno.h>
 
 int
 r_fd_open (const rchar * file, int flags, int mode)
@@ -193,6 +206,28 @@ r_fd_seek (int fd, roffset offset, RSeekMode mode)
   (void) offset;
   (void) mode;
   ret = -1;
+#endif
+
+  return ret;
+}
+
+ruint64
+r_fd_get_filesize (int fd)
+{
+  ruint64 ret = 0;
+
+#ifdef RLIB_HAVE_FILES
+#if defined (HAVE_FSTAT)
+  struct stat st;
+  if (fstat (fd, &st) == 0)
+    ret = (ruint64)st.st_size;
+#else
+  roffset res, cur;
+  cur = r_fd_tell (fd);
+  if ((res = r_fd_seek (fd, 0, R_SEEK_MODE_END)) >= 0)
+    ret = (ruint64)res;
+  r_fd_seek (fd, cur, R_SEEK_MODE_SET)
+#endif
 #endif
 
   return ret;

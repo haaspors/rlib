@@ -51,6 +51,9 @@ RTEST (rfd, write_seek_read, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpstr (buffer, ==, "foobarbadger");
   r_assert_cmpint (r_fd_tell (fd), ==, sizeof (testdata));
 
+  r_assert (r_fd_flush (fd));
+  r_assert_cmpuint (r_fd_get_filesize (fd), ==, sizeof (testdata));
+
   r_assert (r_fd_close (fd));
 }
 RTEST_END;

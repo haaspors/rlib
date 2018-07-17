@@ -69,6 +69,8 @@ R_API rboolean r_fd_flush (int fd);
 R_API roffset r_fd_tell (int fd);
 R_API roffset r_fd_seek (int fd, roffset offset, RSeekMode mode);
 
+R_API ruint64 r_fd_get_filesize (int fd);
+
 #ifdef R_OS_UNIX
 R_API rboolean r_fd_unix_set_nonblocking (int fd, rboolean set);
 R_API rboolean r_fd_unix_set_cloexec (int fd, rboolean set);
