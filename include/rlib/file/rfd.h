@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,8 +22,9 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
-#include <rlib/rtypes.h>
+#include <rlib/file/rfiletypes.h>
 #include <fcntl.h>
+
 #if defined (R_OS_WIN32)
 #include <io.h>
 
@@ -52,7 +53,7 @@
 #endif
 #endif
 
-/* FIXME: Add type for file size to support large files on 32bit systems */
+R_BEGIN_DECLS
 
 R_API int r_fd_open (const rchar * file, int flags, int mode);
 R_API int r_fd_open_tmp (const rchar * dir, const rchar * pre, rchar ** path);
@@ -65,8 +66,8 @@ R_API rssize r_fd_read (int fd, rpointer buf, rsize size);
 
 R_API rboolean r_fd_truncate (int fd, rsize size);
 R_API rboolean r_fd_flush (int fd);
-R_API rssize r_fd_tell (int fd);
-R_API rssize r_fd_seek (int fd, rssize offset, int mode);
+R_API roffset r_fd_tell (int fd);
+R_API roffset r_fd_seek (int fd, roffset offset, RSeekMode mode);
 
 #ifdef R_OS_UNIX
 R_API rboolean r_fd_unix_set_nonblocking (int fd, rboolean set);

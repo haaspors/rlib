@@ -45,7 +45,7 @@ RTEST (rfd, write_seek_read, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpint (r_fd_write (fd, testdata, sizeof (testdata)), ==, sizeof (testdata));
   r_assert_cmpint (r_fd_tell (fd), ==, sizeof (testdata));
-  r_assert_cmpint (r_fd_seek (fd, 0, SEEK_SET), ==, 0);
+  r_assert_cmpint (r_fd_seek (fd, 0, R_SEEK_MODE_SET), ==, 0);
   r_assert_cmpint (r_fd_tell (fd), ==, 0);
   r_assert_cmpint (r_fd_read (fd, buffer, sizeof (testdata)), ==, sizeof (testdata));
   r_assert_cmpstr (buffer, ==, "foobarbadger");

@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,7 +22,7 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
-#include <rlib/rtypes.h>
+#include <rlib/file/rfiletypes.h>
 #include <rlib/rref.h>
 #include <stdarg.h>
 
@@ -35,20 +35,6 @@ R_API ruint r_file_read_uint (const rchar * filename, ruint def);
 R_API int   r_file_read_int (const rchar * filename, int def);
 
 typedef struct _RFile RFile;
-
-typedef enum {
-  R_SEEK_MODE_SET,
-  R_SEEK_MODE_CUR,
-  R_SEEK_MODE_END
-} RSeekMode;
-
-typedef enum {
-  R_FILE_ERROR_OK,
-  R_FILE_ERROR_AGAIN,
-  R_FILE_ERROR_INVAL,
-  R_FILE_ERROR_BAD_FILE,
-  R_FILE_ERROR_ERROR
-} RIOError;
 
 R_API RFile * r_file_open (const rchar * file, const rchar * mode);
 #define r_file_new_tmp(dir, pre, path) r_file_new_tmp_full (dir, pre, "w", path)
@@ -64,8 +50,8 @@ R_API RIOError r_file_read_line (RFile * file, rchar * data, rsize maxsize);
 R_API RIOError r_file_write (RFile * file, rconstpointer data, rsize size, rsize * actual);
 R_API RIOError r_file_scanf (RFile * file, const rchar * fmt, rsize * actual, ...) R_ATTR_SCANF (2, 4);
 R_API RIOError r_file_vscanf (RFile * file, const rchar * fmt, rsize * actual, va_list args) R_ATTR_SCANF (2, 0);
-R_API RIOError r_file_seek (RFile * file, rsize size, RSeekMode mode);
-R_API rssize   r_file_tell (RFile * file);
+R_API roffset  r_file_seek (RFile * file, roffset offset, RSeekMode mode);
+R_API roffset  r_file_tell (RFile * file);
 
 R_API rboolean r_file_is_eof (RFile * file);
 R_API rboolean r_file_has_error (RFile * file);

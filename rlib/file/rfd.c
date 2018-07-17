@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#define _LARGEFILE64_SOURCE
+#include "rfile-private.h"
 #include <rlib/file/rfd.h>
 
 #include <rlib/file/rfs.h>
@@ -152,17 +152,17 @@ r_fd_read (int fd, rpointer buf, rsize size)
   return res;
 }
 
-rssize
+roffset
 r_fd_tell (int fd)
 {
-  rssize res;
+  roffset res;
 #ifdef RLIB_HAVE_FILES
 #if defined (R_OS_WIN32)
-  res = (rssize)_telli64 (fd);
+  res = (roffset)_telli64 (fd);
 #elif defined (HAVE_LSEEK64)
-  res = (rssize)lseek64 (fd, 0, SEEK_CUR);
+  res = (roffset)lseek64 (fd, 0, SEEK_CUR);
 #elif defined (HAVE_LSEEK)
-  res = (rssize)lseek (fd, 0, SEEK_CUR);
+  res = (roffset)lseek (fd, 0, SEEK_CUR);
 #endif
 #else
   (void) fd;
@@ -171,25 +171,31 @@ r_fd_tell (int fd)
   return res;
 }
 
-rssize
-r_fd_seek (int fd, rssize offset, int mode)
+roffset
+r_fd_seek (int fd, roffset offset, RSeekMode mode)
 {
-  rssize res;
+  roffset ret;
 #ifdef RLIB_HAVE_FILES
 #if defined (R_OS_WIN32)
-  res = (rssize)_lseeki64 (fd, (__int64)offset, mode);
+  ret = (roffset)_lseeki64 (fd, offset, r_file_seek_mode_to_whence (mode));
 #elif defined (HAVE_LSEEK64)
-  res = (rssize)lseek64 (fd, offset, mode);
+  ret = (roffset)lseek64 (fd, offset, r_file_seek_mode_to_whence (mode));
 #elif defined (HAVE_LSEEK)
-  res = (rssize)lseek (fd, offset, mode);
+  ret = (roffset)lseek (fd, (off_t)offset, r_file_seek_mode_to_whence (mode));
+#else
+  (void) fd;
+  (void) offset;
+  (void) mode;
+  ret = -1;
 #endif
 #else
   (void) fd;
   (void) offset;
   (void) mode;
-  res = -1;
+  ret = -1;
 #endif
-  return res;
+
+  return ret;
 }
 
 rboolean

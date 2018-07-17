@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,6 +17,7 @@
  */
 
 #include "config.h"
+#include "rfile-private.h"
 #include <rlib/file/rfile.h>
 
 #include <rlib/file/rfs.h>
@@ -190,34 +191,16 @@ r_file_scanf (RFile * file, const rchar * fmt, rsize * actual, ...)
   return ret;
 }
 
-static int
-_r_seek_mode_to_whence (RSeekMode mode)
+roffset
+r_file_seek (RFile * file, roffset offset, RSeekMode mode)
 {
-  switch (mode) {
-    case R_SEEK_MODE_CUR:
-      return SEEK_CUR;
-    case R_SEEK_MODE_SET:
-      return SEEK_SET;
-    case R_SEEK_MODE_END:
-      return SEEK_END;
-    default:
-      return -1;
-  }
+  return (roffset)fseek (file->file, offset, r_file_seek_mode_to_whence (mode));
 }
 
-RIOError
-r_file_seek (RFile * file, rsize size, RSeekMode mode)
-{
-  if (fseek (file->file, size, _r_seek_mode_to_whence (mode)) == 0)
-    return R_FILE_ERROR_OK;
-
-  return _r_errno_to_io_error (errno);
-}
-
-rssize
+roffset
 r_file_tell (RFile * file)
 {
-  return ftell (file->file);
+  return (roffset)ftell (file->file);
 }
 
 rboolean

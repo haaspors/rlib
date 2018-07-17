@@ -124,7 +124,7 @@ r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
 #else
       rssize seek_res;
       /* FIXME: Use r_fd_get_size() */
-      if ((seek_res = r_fd_seek (fd, 0, SEEK_END)) > 0)
+      if ((seek_res = r_fd_seek (fd, 0, R_SEEK_MODE_END)) > 0)
         ret->size = (rsize)seek_res;
 #endif
     }

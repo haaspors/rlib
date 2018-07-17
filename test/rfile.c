@@ -46,7 +46,7 @@ RTEST (rfile, write_seek_read, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpint (r_file_write (file, testdata, sizeof (testdata), &res), ==, R_FILE_ERROR_OK);
   r_assert_cmpuint (res, ==, sizeof (testdata));
   r_assert_cmpint (r_file_tell (file), ==, sizeof (testdata));
-  r_assert_cmpint (r_file_seek (file, 0, SEEK_SET), ==, 0);
+  r_assert_cmpint (r_file_seek (file, 0, R_SEEK_MODE_SET), ==, 0);
   r_assert_cmpint (r_file_tell (file), ==, 0);
   r_assert_cmpint (r_file_read (file, buffer, sizeof (testdata), &res), ==, R_FILE_ERROR_OK);
   r_assert_cmpuint (res, ==, sizeof (testdata));
