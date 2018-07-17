@@ -26,21 +26,10 @@
 #ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
 #endif
-#ifdef HAVE_SYS_STAT_H
-#include <sys/stat.h>
-#endif
 
 #if defined (R_OS_WIN32)
 #include <windows.h>
 #include <io.h>
-#ifdef fstat
-#undef fstat
-#endif
-#ifdef stat
-#undef stat
-#endif
-#define fstat(a,b) _fstati64(a,b)
-#define stat _stati64
 #elif defined (R_OS_UNIX)
 #include <unistd.h>
 #endif
@@ -111,23 +100,12 @@ RMemFile *
 r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
 {
   RMemFile * ret = NULL;
+  ruint64 size = r_fd_get_filesize (fd);
 
-  if (R_LIKELY ((ret = r_mem_new (RMemFile)) != NULL)) {
+  if (R_LIKELY (size <= RSIZE_MAX && (ret = r_mem_new (RMemFile)) != NULL)) {
     r_ref_init (ret, r_mem_file_free);
-    ret->size = 0;
+    ret->size = size;
 
-    {
-#if defined (HAVE_FSTAT)
-      struct stat st;
-      if (fstat (fd, &st) == 0)
-        ret->size = (rsize)st.st_size;
-#else
-      rssize seek_res;
-      /* FIXME: Use r_fd_get_size() */
-      if ((seek_res = r_fd_seek (fd, 0, R_SEEK_MODE_END)) > 0)
-        ret->size = (rsize)seek_res;
-#endif
-    }
 #if defined (R_OS_WIN32)
     if ((ret->handle = CreateFileMapping ((HANDLE) _get_osfhandle (fd), NULL,
             _get_page_flags (prot), 0, 0, NULL)) != NULL) {
