@@ -201,7 +201,13 @@ rconf.set('RLIB_SIZEOF_INTMAX', sizeof_void_p)
 rconf.set('RLIB_SIZEOF_SIZE_T', sizeof_size_t)
 
 # LIBS
-libthread = dependency('threads')
+# Need to improve thread detection, Mesonbuilds attempt at making thread lib
+# build integration easy is flawed.
+if host_machine.system() != 'bare'
+  libthread = dependency('threads')
+else
+  libthread = declare_dependency()
+endif
 libm = cc.find_library('m', required : false)
 libdl = cc.find_library('dl', required : false)
 librt = cc.find_library('rt', required : false)
