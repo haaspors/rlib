@@ -51,6 +51,8 @@ elif host_machine.cpu() == 'aarch64'
   rconf.set('RLIB_ARCH', 'R_ARCH_AARCH64          ')
 elif host_machine.cpu() == 'sparc'
   rconf.set('RLIB_ARCH', 'R_ARCH_SPARC            ')
+elif host_machine.cpu() == 'xtensa'
+  rconf.set('RLIB_ARCH', 'R_ARCH_XTENSA           ')
 else
   error('architecture ' + host_machine.cpu() + 'not supported')
 endif
