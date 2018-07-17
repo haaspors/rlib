@@ -303,6 +303,7 @@ check_funcs = [
   [ 'epoll_ctl', 'sys/epoll.h' ],
   [ 'eventfd', 'sys/eventfd.h' ],
   [ 'gettid', 'sys/types.h' ],
+  [ 'sigaction', 'signal.h' ],
   [ 'sigaltstack', 'signal.h' ],
 ]
 if host_machine.system() == 'windows'
@@ -404,6 +405,9 @@ if conf.has('HAVE_SIGNAL_H')
     conf.set('HAVE_SIGINFO_T_SI_STATUS', 1)
   endif
 
+  if cc.has_member('struct sigaction', 'sa_sigaction', prefix : '#include <signal.h>')
+    conf.set('HAVE_SIGACTION_SA_SIGACTION', 1)
+  endif
 endif
 if cc.has_header_symbol('signal.h', 'sys_siglist')
   conf.set('HAVE_SYS_SIGLIST', 1)

@@ -123,7 +123,9 @@ typedef struct {
   stack_t ss;
   stack_t oss;
 #endif
+#ifdef HAVE_SIGACTION
   struct sigaction sa, osa[R_N_ELEMENTS (g__r_test_sigs)];
+#endif
 #endif
 #endif
 
@@ -610,6 +612,7 @@ _r_test_win32_exception_filter (PEXCEPTION_POINTERS ep)
 }
 #elif defined (R_OS_UNIX)
 #ifdef RLIB_HAVE_SIGNALS
+#ifdef HAVE_SIGACTION
 static void
 _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
 {
@@ -665,15 +668,18 @@ _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
 }
 #endif
 #endif
+#endif
 
 static void
 r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 {
 #ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_UNIX)
-  rsize i;
 #ifdef HAVE_SIGALTSTACK
   static ruint8 _r_test_sigstack[SIGSTKSZ];
+#endif
+#ifdef HAVE_SIGACTION
+  rsize i;
 #endif
 #endif
 #endif
@@ -696,12 +702,14 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
   sigaltstack (&ctx->ss, &ctx->oss);
 #endif
 
+#ifdef HAVE_SIGACTION
   ctx->sa.sa_sigaction = _r_test_nofork_signalhandler;
   sigemptyset (&ctx->sa.sa_mask);
   ctx->sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
 
   for (i = 0; i < R_N_ELEMENTS (g__r_test_sigs); i++)
     sigaction (g__r_test_sigs[i], &ctx->sa, &ctx->osa[i]);
+#endif
 #endif
 #endif
 
@@ -726,7 +734,9 @@ r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
 {
 #ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_UNIX)
+#ifdef HAVE_SIGACTION
   rsize i;
+#endif
 #endif
 #endif
 
@@ -744,8 +754,10 @@ r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
   signal (SIGABRT, ctx->osigabrt);
   SetUnhandledExceptionFilter (ctx->ouef);
 #elif defined (R_OS_UNIX)
+#ifdef HAVE_SIGACTION
   for (i = R_N_ELEMENTS (g__r_test_sigs); i > 0; i--)
     sigaction (g__r_test_sigs[i-1], &ctx->osa[i-1], NULL);
+#endif
 
 #ifdef HAVE_SIGALTSTACK
   sigaltstack (&ctx->oss, NULL);
