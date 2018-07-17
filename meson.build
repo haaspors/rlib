@@ -405,24 +405,52 @@ if host_machine.system() == 'windows'
 else
   socket_h = '#include <sys/socket.h>'
   netdb_h = '#include <netdb.h>'
+  if conf.has('HAVE_SYS_SOCKET_H')
+    rconf_defines += [
+      [ 'R_AF_UNIX',      cc.get_define('AF_UNIX', prefix : socket_h) ],
+      [ 'R_AF_BLUETOOTH', cc.get_define('AF_BLUETOOTH', prefix : socket_h) ],
+    ]
+  else
+    rconf_defines += [
+      [ 'R_AF_UNIX',      '1' ],
+      [ 'R_AF_BLUETOOTH', '0' ],
+    ]
+  endif
+endif
+
+if host_machine.system() == 'windows' or conf.has('HAVE_SYS_SOCKET_H')
   rconf_defines += [
-    [ 'R_AF_UNIX',      cc.get_define('AF_UNIX', prefix : socket_h) ],
-    [ 'R_AF_BLUETOOTH', cc.get_define('AF_BLUETOOTH', prefix : socket_h) ],
+    [ 'R_AF_INET',        cc.get_define('AF_INET', prefix : socket_h) ],
+    [ 'R_AF_INET6',       cc.get_define('AF_INET6', prefix : socket_h) ],
+    [ 'R_AF_IRDA',        cc.get_define('AF_IRDA', prefix : socket_h) ],
+  ]
+else
+  rconf_defines += [
+    [ 'R_AF_INET',        '0' ],
+    [ 'R_AF_INET6',       '0' ],
+    [ 'R_AF_IRDA',        '0' ],
   ]
 endif
 
-rconf_defines += [
-  [ 'R_AF_INET',        cc.get_define('AF_INET', prefix : socket_h) ],
-  [ 'R_AF_INET6',       cc.get_define('AF_INET6', prefix : socket_h) ],
-  [ 'R_AF_IRDA',        cc.get_define('AF_IRDA', prefix : socket_h) ],
-
-  [ 'R_AI_PASSIVE',     cc.get_define('AI_PASSIVE', prefix : netdb_h) ],
-  [ 'R_AI_CANONNAME',   cc.get_define('AI_CANONNAME', prefix : netdb_h) ],
-  [ 'R_AI_NUMERICHOST', cc.get_define('AI_NUMERICHOST', prefix : netdb_h) ],
-  [ 'R_AI_V4MAPPED',    cc.get_define('AI_V4MAPPED', prefix : netdb_h) ],
-  [ 'R_AI_ALL',         cc.get_define('AI_ALL', prefix : netdb_h) ],
-  [ 'R_AI_ADDRCONFIG',  cc.get_define('AI_ADDRCONFIG', prefix : netdb_h) ],
-]
+if host_machine.system() == 'windows' or conf.has('HAVE_NETDB_H')
+  rconf_defines += [
+    [ 'R_AI_PASSIVE',     cc.get_define('AI_PASSIVE', prefix : netdb_h) ],
+    [ 'R_AI_CANONNAME',   cc.get_define('AI_CANONNAME', prefix : netdb_h) ],
+    [ 'R_AI_NUMERICHOST', cc.get_define('AI_NUMERICHOST', prefix : netdb_h) ],
+    [ 'R_AI_V4MAPPED',    cc.get_define('AI_V4MAPPED', prefix : netdb_h) ],
+    [ 'R_AI_ALL',         cc.get_define('AI_ALL', prefix : netdb_h) ],
+    [ 'R_AI_ADDRCONFIG',  cc.get_define('AI_ADDRCONFIG', prefix : netdb_h) ],
+  ]
+else
+  rconf_defines += [
+    [ 'R_AI_PASSIVE',     '0' ],
+    [ 'R_AI_CANONNAME',   '0' ],
+    [ 'R_AI_NUMERICHOST', '0' ],
+    [ 'R_AI_V4MAPPED',    '0' ],
+    [ 'R_AI_ALL',         '0' ],
+    [ 'R_AI_ADDRCONFIG',  '0' ],
+  ]
+endif
 
 foreach d : rconf_defines
   if d[1].strip() == ''
