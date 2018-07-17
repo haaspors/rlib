@@ -110,13 +110,14 @@ configure_file(input : 'rconfig.h.in', output : 'rconfig.h',
   configuration : rconf,
   install_dir : 'include/rlib/types')
 
-librlib = library(rlib_name,
+librlib = build_target(rlib_name,
   sources : [ rlib_sources ],
   include_directories : inc,
   dependencies : [ libm, libdl, libthread, librt ],
   version : rlib_version,
   c_args : [ '-DRLIB_COMPILATION' ],
-  install : true)
+  install : true,
+  target_type : rlib_build_target)
 
 pkg.generate(librlib,
   name : rlib_name,

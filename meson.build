@@ -9,6 +9,7 @@ project('rlib', 'c',
 rlib_name = meson.project_name()
 rlib_version = meson.project_version()
 rlib_api_version = '1.0'
+rlib_build_target = meson.get_cross_property('build_target', 'library')
 
 cc = meson.get_compiler('c')
 inc = include_directories([ '.', 'include' ])
