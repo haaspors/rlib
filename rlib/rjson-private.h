@@ -19,7 +19,7 @@
 #define __R_JSON_PRIV_H__
 
 #if !defined(RLIB_COMPILATION)
-#error "rprng-private.h should only be used internally in rlib!"
+#error "rjson-private.h should only be used internally in rlib!"
 #endif
 
 #include <rlib/rjson.h>
