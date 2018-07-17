@@ -233,8 +233,9 @@ check_headers = [
   'netdb.h',
   'arpa/inet.h',
   'netinet/in.h',
-  'sys/socket.h',
   'sys/types.h',
+  'sys/mman.h',
+  'sys/socket.h',
   'sys/ioctl.h',
   'sys/sysctl.h',
   'sys/time.h',
@@ -289,6 +290,7 @@ check_funcs = [
   # other
   [ 'fcntl', 'fcntl.h' ],
   [ 'ioctl', 'sys/ioctl.h' ],
+  [ 'mmap', 'sys/mman.h' ],
   [ 'sysctlbyname', 'sys/sysctl.h' ],
   [ 'kqueue', 'sys/event.h' ],
   [ 'epoll_ctl', 'sys/epoll.h' ],

@@ -23,7 +23,11 @@
 #include <rlib/rmem.h>
 
 
+#ifdef HAVE_SYS_MMAN_H
+#include <sys/mman.h>
+#endif
 #include <sys/stat.h>
+
 #if defined (R_OS_WIN32)
 #include <windows.h>
 #include <io.h>
@@ -36,7 +40,6 @@
 #define fstat(a,b) _fstati64(a,b)
 #define stat _stati64
 #elif defined (R_OS_UNIX)
-#include <sys/mman.h>
 #include <unistd.h>
 #endif
 
@@ -56,7 +59,7 @@ r_mem_file_free (RMemFile * file)
 #if defined (R_OS_WIN32)
     UnmapViewOfFile (file->mem);
     CloseHandle (file->handle);
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_MMAP)
     munmap (file->mem, file->size);
 #endif
 
@@ -125,7 +128,7 @@ r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
         r_free (ret);
         ret = NULL;
       }
-#elif defined (R_OS_UNIX)
+#elif defined (HAVE_MMAP)
       ret->mem = mmap (NULL, ret->size, prot,
           writeback ? MAP_SHARED : MAP_PRIVATE, fd, 0);
 #else
