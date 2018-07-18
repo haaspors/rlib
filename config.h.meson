@@ -60,6 +60,7 @@
 #mesondefine HAVE_ASPRINTF
 #mesondefine HAVE_VASPRINTF
 #mesondefine HAVE__VSCPRINTF
+#mesondefine HAVE_INET_ATON
 #mesondefine HAVE_INET_PTON
 #mesondefine HAVE_INET_NTOP
 #mesondefine HAVE_TIMER_CREATE

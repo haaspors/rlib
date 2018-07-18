@@ -123,9 +123,12 @@ r_socket_address_ipv4_new_from_string (const rchar * ip, ruint16 port)
 #elif defined (R_OS_WIN32)
   if (r_win32_inet_pton (R_AF_INET, ip, &in) < 1)
     return NULL;
-#else
+#elif defined (HAVE_INET_ATON)
   if (inet_aton (ip, &in) < 1)
     return NULL;
+#else
+  /* FIXME: Implement parsing and remove inet_pton/inet_aton */
+  return NULL;
 #endif
 
   if ((ret = r_mem_new0 (RSocketAddress)) != NULL) {

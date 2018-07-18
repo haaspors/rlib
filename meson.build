@@ -296,6 +296,7 @@ check_funcs = [
   [ 'clock_gettime', 'time.h' ],
   [ 'setitimer', 'sys/time.h' ],
   # arpa/inet
+  [ 'inet_aton', 'arpa/inet.h' ],
   [ 'inet_pton', 'arpa/inet.h' ],
   [ 'inet_ntop', 'arpa/inet.h' ],
   # other
