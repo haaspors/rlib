@@ -43,7 +43,7 @@ r_socket_address_new_from_native (rconstpointer addr, rsize addrsize)
   RSocketAddress * ret;
 
   if (R_UNLIKELY (addr == NULL)) return NULL;
-  if (R_UNLIKELY (addrsize == 0 || addrsize > sizeof (struct sockaddr_storage))) return NULL;
+  if (R_UNLIKELY (addrsize == 0 || addrsize > sizeof (ret->addr))) return NULL;
 
   if ((ret = r_mem_new0 (RSocketAddress)) != NULL) {
     r_ref_init (ret, r_free);
@@ -64,7 +64,7 @@ r_socket_address_copy (const RSocketAddress * addr)
   if ((ret = r_mem_new (RSocketAddress)) != NULL) {
     r_ref_init (ret, r_free);
     ret->addrlen = addr->addrlen;
-    r_memcpy (&ret->addr, &addr->addr, sizeof (struct sockaddr_storage));
+    r_memcpy (&ret->addr, &addr->addr, sizeof (ret->addr));
   }
 
   return ret;
@@ -186,7 +186,7 @@ r_socket_address_cmp (const RSocketAddress * a, const RSocketAddress * b)
         }
         break;
       default:
-        ret = r_memcmp (&a->addr, &b->addr, sizeof (struct sockaddr_storage));
+        ret = r_memcmp (&a->addr, &b->addr, sizeof (a->addr));
     }
   }
 
