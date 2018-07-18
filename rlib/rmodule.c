@@ -39,7 +39,7 @@ r_module_init (void)
   r_log_category_register (&rmodule_logcat);
 }
 
-#ifdef RLIB_HAVE_MODULE
+#ifdef RLIB_HAVE_MODULES
 
 #if defined (R_OS_WIN32)
 #define WIN32_LEAN_AND_MEAN

@@ -497,7 +497,7 @@ if rlib_have_threads
   rconf.set('RLIB_HAVE_THREADS', 1)
 endif
 if rlib_have_modules
-  rconf.set('RLIB_HAVE_MODULE',  1)
+  rconf.set('RLIB_HAVE_MODULES', 1)
 endif
 if rlib_have_signals
   rconf.set('RLIB_HAVE_SIGNALS', 1)

@@ -1,6 +1,6 @@
 #include <rlib/rlib.h>
 
-#ifdef RLIB_HAVE_MODULE
+#ifdef RLIB_HAVE_MODULES
 RTEST (rmodule, self_open_close, RTEST_FAST)
 {
   RMODULE mod;
