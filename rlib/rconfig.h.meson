@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,6 +21,32 @@
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
 #error "#include <rlib.h> only pelase."
 #endif
+
+/* Options */
+#mesondefine RLIB_HAVE_THREADS
+#mesondefine RLIB_HAVE_SIGNALS
+#mesondefine RLIB_HAVE_FILES
+#mesondefine RLIB_HAVE_MODULE
+
+/* Architecture */
+#mesondefine R_ARCH_X86
+#mesondefine R_ARCH_X86_64
+#mesondefine R_ARCH_IA64
+#mesondefine R_ARCH_ARM
+#mesondefine R_ARCH_THUMB
+#mesondefine R_ARCH_AARCH64
+#mesondefine R_ARCH_SPARC
+#mesondefine R_ARCH_XTENSA
+
+/* Operating System */
+#mesondefine R_OS_BARE_METAL
+#mesondefine R_OS_WIN32
+#mesondefine R_OS_UNIX
+#mesondefine R_OS_LINUX
+#mesondefine R_OS_BSD
+#mesondefine R_OS_DARWIN
+#mesondefine R_OS_RTEMS
+
 
 typedef signed char             rint8;
 typedef signed @RINT16_TYPE@    rint16;
@@ -94,15 +120,8 @@ typedef unsigned @RINTPTR_TYPE@ ruintptr;
 #define R_AI_ALL                @R_AI_ALL@
 #define R_AI_ADDRCONFIG         @R_AI_ADDRCONFIG@
 
-#define @RLIB_OS@1
-@RLIB_OS_EXTRA@
-#define @RLIB_ARCH@1
 
-@RLIB_DEFINE_HAVE_ALLOCA_H@
-@RLIB_DEFINE_HAVE_THREADS@
-@RLIB_DEFINE_HAVE_SIGNALS@
-@RLIB_DEFINE_HAVE_FILES@
-@RLIB_DEFINE_HAVE_MODULE@
+#mesondefine RLIB_HAVE_ALLOCA_H
 
 #endif /* __R_CONFIG_H__ */
 

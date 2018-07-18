@@ -18,44 +18,48 @@ rconf = configuration_data()
 
 install_subdir('include', install_dir : '')
 
-# OS
-if host_machine.system() == 'windows'
-  rconf.set('RLIB_OS', 'R_OS_WIN32              ')
-else
-  rconf.set('RLIB_OS', 'R_OS_UNIX               ')
+if host_machine.system() != 'windows'
   add_global_arguments('-D_GNU_SOURCE=1', language : 'c')
-  #cfg.define('_GNU_SOURCE', 1)
-endif
-if host_machine.system() == 'linux'
-  rconf.set('RLIB_OS_EXTRA', '#define R_OS_LINUX              1')
-elif host_machine.system() == 'darwin'
-  rconf.set('RLIB_OS_EXTRA', '#define R_OS_DARWIN             1')
-elif host_machine.system() == 'rtems'
-  rconf.set('RLIB_OS_EXTRA', '#define R_OS_RTEMS              1')
-else
-  rconf.set('RLIB_OS_EXTRA', '')
 endif
 
 
 # ARCH
 if host_machine.cpu() == 'x86_64' or host_machine.cpu() == 'amd64' or host_machine.cpu() == 'x64'
-  rconf.set('RLIB_ARCH', 'R_ARCH_X86_64           ')
+  rconf.set('R_ARCH_X86_64', 1)
 elif host_machine.cpu() == 'x86'
-  rconf.set('RLIB_ARCH', 'R_ARCH_X86              ')
+  rconf.set('R_ARCH_X86', 1)
 elif host_machine.cpu() == 'ia'
-  rconf.set('RLIB_ARCH', 'R_ARCH_IA64             ')
+  rconf.set('R_ARCH_IA64', 1)
 elif host_machine.cpu() == 'arm'
-  rconf.set('RLIB_ARCH', 'R_ARCH_ARM              ')
+  rconf.set('R_ARCH_ARM', 1)
 elif host_machine.cpu() == 'thumb'
-  rconf.set('RLIB_ARCH', 'R_ARCH_THUMB            ')
+  rconf.set('R_ARCH_THUMB', 1)
 elif host_machine.cpu() == 'aarch64'
-  rconf.set('RLIB_ARCH', 'R_ARCH_AARCH64          ')
+  rconf.set('R_ARCH_AARCH64', 1)
 elif host_machine.cpu() == 'sparc'
-  rconf.set('RLIB_ARCH', 'R_ARCH_SPARC            ')
+  rconf.set('R_ARCH_SPARC', 1)
 elif host_machine.cpu() == 'xtensa'
-  rconf.set('RLIB_ARCH', 'R_ARCH_XTENSA           ')
+  rconf.set('R_ARCH_XTENSA', 1)
 else
   error('architecture ' + host_machine.cpu() + 'not supported')
+endif
+
+
+# OS
+if host_machine.system() == 'bare'
+  rconf.set('R_OS_BARE_METAL', 1)
+elif host_machine.system() == 'windows'
+  rconf.set('R_OS_WIN32', 1)
+elif host_machine.system() == 'linux'
+  rconf.set('R_OS_UNIX', 1)
+  rconf.set('R_OS_LINUX', 1)
+elif host_machine.system() == 'darwin'
+  rconf.set('R_OS_UNIX', 1)
+  rconf.set('R_OS_BSD', 1)
+  rconf.set('R_OS_DARWIN', 1)
+elif host_machine.system() == 'rtems'
+  rconf.set('R_OS_UNIX', 1)
+  rconf.set('R_OS_RTEMS', 1)
 endif
 
 
@@ -334,9 +338,7 @@ foreach f : check_funcs
 endforeach
 
 if conf.has('HAVE_ALLOCA_H')
-  rconf.set('RLIB_DEFINE_HAVE_ALLOCA_H', '#define RLIB_HAVE_ALLOCA_H      1')
-else
-  rconf.set('RLIB_DEFINE_HAVE_ALLOCA_H', '/* #undef RLIB_HAVE_ALLOCA_H */')
+  rconf.set('RLIB_HAVE_ALLOCA_H',     1)
 endif
 
 if conf.has('HAVE_DLFCN_H')
@@ -486,22 +488,16 @@ configure_file(input : 'config.h.meson', output : 'config.h', configuration : co
 # FIXME: disable by meson build options
 ###############################################################################
 if libthread.found()
-  rconf.set('RLIB_DEFINE_HAVE_THREADS', '#define RLIB_HAVE_THREADS       1')
-else
-  rconf.set('RLIB_DEFINE_HAVE_THREADS', '/* #undef RLIB_HAVE_THREADS */')
+  rconf.set('RLIB_HAVE_THREADS', 1)
 endif
 if host_machine.system() == 'windows' or libdl.found()
-  rconf.set('RLIB_DEFINE_HAVE_MODULE',  '#define RLIB_HAVE_MODULE        1')
-else
-  rconf.set('RLIB_DEFINE_HAVE_MODULE',  '/* #undef RLIB_HAVE_MODULE */')
+  rconf.set('RLIB_HAVE_MODULE',  1)
 endif
 if conf.has('HAVE_SIGNAL_H')
-  rconf.set('RLIB_DEFINE_HAVE_SIGNALS', '#define RLIB_HAVE_SIGNALS       1')
-else
-  rconf.set('RLIB_DEFINE_HAVE_SIGNALS', '/* #undef RLIB_HAVE_SIGNALS */')
+  rconf.set('RLIB_HAVE_SIGNALS', 1)
 endif
 
-rconf.set('RLIB_DEFINE_HAVE_FILES',   '#define RLIB_HAVE_FILES         1')
+rconf.set('RLIB_HAVE_FILES', 1)
 
 ###############################################################################
 # subdirs

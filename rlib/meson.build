@@ -106,7 +106,7 @@ rlib_sources = [
   'rtc/rrtcsessiondescription.c',
 ]
 
-configure_file(input : 'rconfig.h.in', output : 'rconfig.h',
+configure_file(input : 'rconfig.h.meson', output : 'rconfig.h',
   configuration : rconf,
   install_dir : 'include/rlib/types')
 
