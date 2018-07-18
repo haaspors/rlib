@@ -488,17 +488,23 @@ configure_file(input : 'config.h.meson', output : 'config.h', configuration : co
 # options
 # FIXME: disable by meson build options
 ###############################################################################
-if libthread.found()
+rlib_have_threads = get_option('enable_threads') and libthread.found()
+rlib_have_modules = get_option('enable_modules') and (host_machine.system() == 'windows' or libdl.found())
+rlib_have_signals = get_option('enable_signals') and conf.has('HAVE_SIGNAL_H')
+rlib_have_files   = get_option('enable_files')
+
+if rlib_have_threads
   rconf.set('RLIB_HAVE_THREADS', 1)
 endif
-if host_machine.system() == 'windows' or libdl.found()
+if rlib_have_modules
   rconf.set('RLIB_HAVE_MODULE',  1)
 endif
-if conf.has('HAVE_SIGNAL_H')
+if rlib_have_signals
   rconf.set('RLIB_HAVE_SIGNALS', 1)
 endif
-
-rconf.set('RLIB_HAVE_FILES', 1)
+if rlib_have_files
+  rconf.set('RLIB_HAVE_FILES', 1)
+endif
 
 ###############################################################################
 # subdirs

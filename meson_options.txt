@@ -1,0 +1,20 @@
+option('enable_threads',
+    type : 'boolean',
+    value : true,
+    description : 'build with threads support')
+
+option('enable_modules',
+    type : 'boolean',
+    value : true,
+    description : 'build with modules support')
+
+option('enable_files',
+    type : 'boolean',
+    value : true,
+    description : 'build with files support')
+
+option('enable_signals',
+    type : 'boolean',
+    value : true,
+    description : 'build with signals support')
+
