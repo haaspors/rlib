@@ -45,7 +45,7 @@ typedef ruint REvIOEvents;
 typedef HANDLE REvHandle;
 #define R_EV_HANDLE_FMT       "p"
 #define R_EV_HANDLE_INVALID   INVALID_HANDLE_VALUE
-#elif defined (R_OS_UNIX)
+#else
 typedef int REvHandle;
 #define R_EV_HANDLE_FMT       "i"
 #define R_EV_HANDLE_INVALID   -1
