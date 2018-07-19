@@ -52,12 +52,13 @@ R_API RSocketAddress * r_socket_address_ipv4_new_from_string (const rchar * ip, 
 R_API RSocketFamily r_socket_address_get_family (const RSocketAddress * addr);
 R_API int r_socket_address_cmp (const RSocketAddress * a, const RSocketAddress * b);
 #define r_socket_address_is_equal(a, b) (r_socket_address_cmp (a, b) == 0)
-R_API rchar * r_socket_address_to_str (const RSocketAddress * addr) R_ATTR_MALLOC;
 
 R_API ruint16 r_socket_address_ipv4_get_port (const RSocketAddress * addr);
 R_API ruint32 r_socket_address_ipv4_get_ip (const RSocketAddress * addr);
 R_API rboolean r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port, rchar * str, rsize size);
 R_API rchar * r_socket_address_ipv4_to_str (const RSocketAddress * addr, rboolean port);
+
+R_API rchar * r_socket_address_to_str (const RSocketAddress * addr) R_ATTR_MALLOC;
 
 R_END_DECLS
 
