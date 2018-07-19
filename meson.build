@@ -210,7 +210,7 @@ rconf.set('RLIB_SIZEOF_SIZE_T', sizeof_size_t)
 if host_machine.system() != 'bare'
   libthread = dependency('threads')
 else
-  libthread = declare_dependency()
+  libthread = dependency('', required: false)
 endif
 libm = cc.find_library('m', required : false)
 libdl = cc.find_library('dl', required : false)
