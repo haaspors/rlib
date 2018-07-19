@@ -473,7 +473,7 @@ configure_file(input : 'config.h.meson', output : 'config.h', configuration : co
 rlib_have_threads = get_option('enable_threads') and libthread.found()
 rlib_have_modules = get_option('enable_modules') and (host_machine.system() == 'windows' or libdl.found())
 rlib_have_signals = get_option('enable_signals') and conf.has('HAVE_SIGNAL_H')
-rlib_have_files   = get_option('enable_files')
+rlib_have_files   = get_option('enable_files') and host_machine.system() != 'bare'
 
 if rlib_have_threads
   rconf.set('RLIB_HAVE_THREADS', 1)
