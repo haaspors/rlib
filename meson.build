@@ -324,7 +324,7 @@ foreach h : req_headers
   if cc.has_header(h)
     conf.set('HAVE_' + h.underscorify().to_upper(), 1)
   else
-    error('missing string.h')
+    error('missing ' + h)
   endif
 endforeach
 
