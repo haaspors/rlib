@@ -1,11 +1,5 @@
 #include <rlib/rev.h>
 
-#ifdef R_OS_WIN32
-#include <winsock2.h>
-#else
-#include <netinet/in.h>
-#endif
-
 RTEST (rresolve, sync_addr_host, RTEST_FAST | RTEST_SYSTEM)
 {
   RResolveResult res;
@@ -20,12 +14,12 @@ RTEST (rresolve, sync_addr_host, RTEST_FAST | RTEST_SYSTEM)
     switch (addr->hints.family) {
       case R_SOCKET_FAMILY_IPV4:
         r_assert_cmpuint (r_socket_address_ipv4_get_port (addr->addr), ==, 0);
-        r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr->addr), ==, INADDR_LOOPBACK);
+        r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr->addr), ==, R_SOCKET_ADDRESS_IPV4_LOOPBACK);
         break;
       case R_SOCKET_FAMILY_IPV6:
 #if 0
         r_assert_cmpuint (r_socket_address_ipv6_get_port (addr->addr), ==, 0);
-        r_assert_cmpuint (r_socket_address_ipv6_get_ip (addr->addr), ==, IN6ADDR_LOOPBACK);
+        r_assert_cmpuint (r_socket_address_ipv6_get_ip (addr->addr), ==, R_SOCKET_ADDRESS_IPV6_LOOPBACK);
 #endif
         break;
       default:
@@ -68,12 +62,12 @@ RTEST (revresolve, addr_host, RTEST_FAST | RTEST_SYSTEM)
     switch (addr->hints.family) {
       case R_SOCKET_FAMILY_IPV4:
         r_assert_cmpuint (r_socket_address_ipv4_get_port (addr->addr), ==, 0);
-        r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr->addr), ==, INADDR_LOOPBACK);
+        r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr->addr), ==, R_SOCKET_ADDRESS_IPV4_LOOPBACK);
         break;
       case R_SOCKET_FAMILY_IPV6:
 #if 0
         r_assert_cmpuint (r_socket_address_ipv6_get_port (addr->addr), ==, 0);
-        r_assert_cmpuint (r_socket_address_ipv6_get_ip (addr->addr), ==, IN6ADDR_LOOPBACK);
+        r_assert_cmpuint (r_socket_address_ipv6_get_ip (addr->addr), ==, R_SOCKET_ADDRESS_IPV6_LOOPBACK);
 #endif
         break;
       default:

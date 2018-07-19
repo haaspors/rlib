@@ -14,7 +14,7 @@ RTEST (rsocketaddress, ipv4_native, RTEST_FAST)
   r_memset (&ipv4, 0, sizeof (ipv4));
   ipv4.sin_family = R_AF_INET;
   ipv4.sin_port = r_htons (42);
-  ipv4.sin_addr.s_addr = INADDR_LOOPBACK;
+  ipv4.sin_addr.s_addr = R_SOCKET_ADDRESS_IPV4_LOOPBACK;
 
   r_assert_cmpptr (r_socket_address_new_from_native (NULL, 0), ==, NULL);
   r_assert_cmpptr (r_socket_address_new_from_native (&ipv4, 0), ==, NULL);
@@ -30,22 +30,22 @@ RTEST (rsocketaddress, ipv4_new, RTEST_FAST)
 {
   RSocketAddress * addr_u32, * addr_u8, * addr_str;
 
-  r_assert_cmpptr ((addr_u32 = r_socket_address_ipv4_new_uint32 (INADDR_LOOPBACK, 42)), !=, NULL);
+  r_assert_cmpptr ((addr_u32 = r_socket_address_ipv4_new_uint32 (R_SOCKET_ADDRESS_IPV4_LOOPBACK, 42)), !=, NULL);
   r_assert_cmpptr (r_socket_address_get_family (addr_u32), ==, R_SOCKET_FAMILY_IPV4);
   r_assert_cmpuint (r_socket_address_ipv4_get_port (addr_u32), ==, 42);
-  r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr_u32), ==, INADDR_LOOPBACK);
+  r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr_u32), ==, R_SOCKET_ADDRESS_IPV4_LOOPBACK);
 
   r_assert_cmpptr ((addr_u8 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 42)), !=, NULL);
   r_assert_cmpptr (r_socket_address_get_family (addr_u8), ==, R_SOCKET_FAMILY_IPV4);
   r_assert_cmpuint (r_socket_address_ipv4_get_port (addr_u8), ==, 42);
-  r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr_u8), ==, INADDR_LOOPBACK);
+  r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr_u8), ==, R_SOCKET_ADDRESS_IPV4_LOOPBACK);
 
   r_assert_cmpptr (r_socket_address_ipv4_new_from_string (NULL, 42), ==, NULL);
   r_assert_cmpptr (r_socket_address_ipv4_new_from_string ("foobar", 42), ==, NULL);
   r_assert_cmpptr ((addr_str = r_socket_address_ipv4_new_from_string ("127.0.0.1", 42)), !=, NULL);
   r_assert_cmpptr (r_socket_address_get_family (addr_str), ==, R_SOCKET_FAMILY_IPV4);
   r_assert_cmpuint (r_socket_address_ipv4_get_port (addr_str), ==, 42);
-  r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr_str), ==, INADDR_LOOPBACK);
+  r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr_str), ==, R_SOCKET_ADDRESS_IPV4_LOOPBACK);
 
   r_assert_cmpint (r_socket_address_cmp (addr_u32, addr_u8), ==, 0);
   r_assert_cmpint (r_socket_address_cmp (addr_str, addr_u8), ==, 0);
@@ -61,7 +61,7 @@ RTEST (rsocketaddress, ipv4_to_str, RTEST_FAST)
   RSocketAddress * addr_u32, * addr_str;
   rchar str[22], * dupstr;
 
-  r_assert_cmpptr ((addr_u32 = r_socket_address_ipv4_new_uint32 (INADDR_LOOPBACK, 42)), !=, NULL);
+  r_assert_cmpptr ((addr_u32 = r_socket_address_ipv4_new_uint32 (R_SOCKET_ADDRESS_IPV4_LOOPBACK, 42)), !=, NULL);
   r_assert_cmpptr ((addr_str = r_socket_address_ipv4_new_from_string ("192.168.100.200", RUINT16_MAX-1)), !=, NULL);
 
   r_assert (!r_socket_address_ipv4_build_str (NULL, TRUE, str, sizeof (str)));
@@ -90,13 +90,13 @@ RTEST (rsocketaddress, copy, RTEST_FAST)
 {
   RSocketAddress * addr, * copy;
 
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint32 (INADDR_LOOPBACK, 42)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint32 (R_SOCKET_ADDRESS_IPV4_LOOPBACK, 42)), !=, NULL);
   r_assert_cmpptr ((copy = r_socket_address_copy (addr)), !=, NULL);
   r_socket_address_unref (addr);
 
   r_assert_cmpptr (r_socket_address_get_family (copy), ==, R_SOCKET_FAMILY_IPV4);
   r_assert_cmpuint (r_socket_address_ipv4_get_port (copy), ==, 42);
-  r_assert_cmpuint (r_socket_address_ipv4_get_ip (copy), ==, INADDR_LOOPBACK);
+  r_assert_cmpuint (r_socket_address_ipv4_get_ip (copy), ==, R_SOCKET_ADDRESS_IPV4_LOOPBACK);
   r_socket_address_unref (copy);
 }
 RTEST_END;
@@ -107,7 +107,7 @@ RTEST (rsocketaddress, to_str, RTEST_FAST)
   rchar * tmp;
 
   /* ipv4 */
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint32 (INADDR_LOOPBACK, 42)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint32 (R_SOCKET_ADDRESS_IPV4_LOOPBACK, 42)), !=, NULL);
   r_assert_cmpstr ((tmp = r_socket_address_to_str (addr)), ==, "127.0.0.1:42"); r_free (tmp);
   r_socket_address_unref (addr);
 
