@@ -439,14 +439,14 @@ else
 
   rconf_defines += [
     [ 'R_AF_UNIX',      cc.get_define('AF_UNIX',      prefix : socket_h), '1' ],
-    [ 'R_AF_BLUETOOTH', cc.get_define('AF_BLUETOOTH', prefix : socket_h), 'R_SOCKET_FAMILY_NONE' ],
+    [ 'R_AF_BLUETOOTH', cc.get_define('AF_BLUETOOTH', prefix : socket_h), '31' ],
   ]
 endif
 
 rconf_defines += [
-  [ 'R_AF_INET',        cc.get_define('AF_INET',  prefix : socket_h), 'R_SOCKET_FAMILY_NONE' ],
-  [ 'R_AF_INET6',       cc.get_define('AF_INET6', prefix : socket_h), 'R_SOCKET_FAMILY_NONE' ],
-  [ 'R_AF_IRDA',        cc.get_define('AF_IRDA',  prefix : socket_h), 'R_SOCKET_FAMILY_NONE' ],
+  [ 'R_AF_INET',        cc.get_define('AF_INET',  prefix : socket_h), '2' ],
+  [ 'R_AF_INET6',       cc.get_define('AF_INET6', prefix : socket_h), '10' ],
+  [ 'R_AF_IRDA',        cc.get_define('AF_IRDA',  prefix : socket_h), '23' ],
 ]
 
 rconf_defines += [
