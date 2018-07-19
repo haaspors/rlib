@@ -7,6 +7,7 @@
 #mesondefine HAVE_LIMITS_H
 #mesondefine HAVE_FLOAT_H
 #mesondefine HAVE_STRING_H
+#mesondefine HAVE_UNISTD_H
 #mesondefine HAVE_ALLOCA_H
 #mesondefine HAVE_SCHED_H
 #mesondefine HAVE_FCNTL_H
@@ -24,6 +25,7 @@
 #mesondefine HAVE_SYS_SYSINFO_H
 #mesondefine HAVE_SYS_STAT_H
 #mesondefine HAVE_SYS_TIME_H
+#mesondefine HAVE_SYS_WAIT_H
 #mesondefine HAVE_MACH_CLOCK_H
 #mesondefine HAVE_MACH_THREAD_POLICY_H
 #mesondefine HAVE_MACH_MACH_TIME_H

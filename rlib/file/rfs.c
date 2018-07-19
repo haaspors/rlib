@@ -29,14 +29,15 @@
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 
 #if defined (R_OS_WIN32)
 #include <rlib/charset/runicode.h>
 #include <windows.h>
-#elif defined (R_OS_UNIX)
-#include <unistd.h>
-#include <errno.h>
 #endif
+#include <errno.h>
 
 #define RFS_PATH_RAND_MAX_TRIES    1024
 

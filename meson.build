@@ -227,6 +227,7 @@ req_headers = [
   'string.h',
 ]
 check_headers = [
+  'unistd.h',
   'alloca.h',
   'dlfcn.h',
   'link.h',
@@ -244,6 +245,7 @@ check_headers = [
   'sys/sysctl.h',
   'sys/stat.h',
   'sys/time.h',
+  'sys/wait.h',
   'sys/epoll.h',
 ]
 

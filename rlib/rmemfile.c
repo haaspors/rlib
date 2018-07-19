@@ -30,7 +30,8 @@
 #if defined (R_OS_WIN32)
 #include <windows.h>
 #include <io.h>
-#elif defined (R_OS_UNIX)
+#endif
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 

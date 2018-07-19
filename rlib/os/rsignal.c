@@ -20,7 +20,9 @@
 #include <rlib/os/rsignal.h>
 
 #include <rlib/rmem.h>
+
 #ifdef RLIB_HAVE_SIGNALS
+
 #ifdef HAVE_SIGNAL_H
 #include <signal.h>
 #endif
@@ -28,19 +30,20 @@
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+
 #if defined (R_OS_WIN32)
 #include <windows.h>
 #ifndef SIGALRM
 #define SIGALRM 14
 #endif
-#elif defined (R_OS_UNIX)
-#include <unistd.h>
 #endif
 
 
 struct _RSigAlrmTimer {
   RSignalFunc ofunc;
-#ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_WIN32)
   HANDLE timer;
 #elif defined (HAVE_TIMER_CREATE)
@@ -51,9 +54,8 @@ struct _RSigAlrmTimer {
   struct itimerval itv;
 #elif defined (HAVE_ALARM)
   ruint secs;
-#else
+#elif !defined (RLIB_HAVE_SIGNALS)
 #error "Not implemented"
-#endif
 #endif
 };
 

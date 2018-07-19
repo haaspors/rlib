@@ -27,13 +27,15 @@
 #ifdef R_OS_WIN32
 #include <windows.h>
 #include <process.h>
-#else
+#endif
 #ifdef R_OS_DARWIN
 #include <mach-o/dyld.h>
 #endif
+
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
-#include <errno.h>
 #endif
+#include <errno.h>
 #ifdef HAVE_SYS_SYSCTL_H
 #include <sys/sysctl.h>
 #endif

@@ -28,6 +28,14 @@
 
 #include <rlib/rsocket.h>
 
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#include <errno.h>
+#ifdef HAVE_SYS_TYPES_H
+#include <sys/types.h>
+#endif
+
 /* FIXME: Do this by configuration? */
 #ifdef R_OS_WIN32
 #define HAVE_WINSOCK2
@@ -43,13 +51,6 @@
 #pragma comment(lib, "Ws2_32.lib")
 #endif
 
-#ifdef R_OS_UNIX
-#include <unistd.h>
-#endif
-#include <errno.h>
-#ifdef HAVE_SYS_TYPES_H
-#include <sys/types.h>
-#endif
 #ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
 #endif

@@ -48,9 +48,13 @@
 #if defined (R_OS_WIN32)
 #include <windows.h>
 #include <process.h>
-#else
+#endif
+
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
 #include <errno.h>
+#ifdef HAVE_SIGNAL_H
 #include <signal.h>
 #endif
 

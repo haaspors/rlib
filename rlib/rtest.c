@@ -34,11 +34,17 @@
 #include <rlib/rtty.h>
 
 #include <setjmp.h>
+#ifdef HAVE_SIGNAL_H
 #include <signal.h>
+#endif
 
-#ifdef R_OS_UNIX
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+#ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
+#endif
+#ifdef HAVE_SYS_WAIT_H
 #include <sys/wait.h>
 #endif
 
@@ -118,7 +124,7 @@ typedef struct {
 #if defined (R_OS_WIN32)
   LPTOP_LEVEL_EXCEPTION_FILTER ouef;
   void (*osigabrt) (int);
-#elif defined (R_OS_UNIX)
+#else
 #ifdef HAVE_SIGALTSTACK
   stack_t ss;
   stack_t oss;

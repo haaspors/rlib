@@ -23,7 +23,6 @@
 #include <rlib/file/rfs.h>
 #include <rlib/rstr.h>
 
-#ifdef RLIB_HAVE_FILES
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
@@ -32,6 +31,9 @@
 #endif
 #ifdef HAVE_FCNTL_H
 #include <fcntl.h>
+#endif
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
 #endif
 
 #if defined (R_OS_WIN32)
@@ -47,15 +49,10 @@
 #endif
 #define fstat(a,b) _fstati64(a,b)
 #define stat _stati64
-#elif defined (R_OS_UNIX)
-#include <unistd.h>
-#else
-#error "Not Implemented"
 #endif
 
 #if defined (__APPLE__) && defined (__MACH__)
 #define lseek64 lseek
-#endif
 #endif
 
 #include <errno.h>

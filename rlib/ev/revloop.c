@@ -24,7 +24,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rthreads.h>
 
-#ifdef R_OS_UNIX
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 #ifdef HAVE_KQUEUE
