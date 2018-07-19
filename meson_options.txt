@@ -8,13 +8,18 @@ option('enable_modules',
     value : true,
     description : 'build with modules support')
 
+option('enable_signals',
+    type : 'boolean',
+    value : true,
+    description : 'build with signals support')
+
 option('enable_files',
     type : 'boolean',
     value : true,
     description : 'build with files support')
 
-option('enable_signals',
+option('enable_sockets',
     type : 'boolean',
     value : true,
-    description : 'build with signals support')
+    description : 'build with sockets support')
 

@@ -27,6 +27,7 @@
 #mesondefine RLIB_HAVE_MODULES
 #mesondefine RLIB_HAVE_SIGNALS
 #mesondefine RLIB_HAVE_FILES
+#mesondefine RLIB_HAVE_SOCKETS
 
 /* Architecture */
 #mesondefine R_ARCH_X86

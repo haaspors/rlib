@@ -80,10 +80,12 @@ r_socket_handle_close (RSocketHandle handle)
 {
   int res;
   do {
-#ifdef HAVE_WINSOCK2
+#if defined (HAVE_WINSOCK2)
     res = closesocket (handle);
-#else
+#elif defined (HAVE_POSIX_SOCKETS)
     res = close (handle);
+#else
+    res = ENOTSUP;
 #endif
   } while (res != 0 && R_SOCKET_ERRNO == EINTR);
 
@@ -103,19 +105,22 @@ r_socket_handle_new (RSocketFamily family, RSocketType type, RSocketProtocol pro
   RSocketHandle handle;
 #ifdef HAVE_WINSOCK2
   handle = WSASocket (family, type, proto, NULL, 0, 0);
-#else
+#elif defined (HAVE_POSIX_SOCKETS)
 #ifdef SOCK_CLOEXEC
   if ((handle = socket (family, type | SOCK_CLOEXEC, proto)) >= 0)
     return handle;
 
   if (errno == EINVAL || errno == EPROTOTYPE)
-#endif
     handle = socket (family, type, proto);
-
+#else
+  handle = socket (family, type, proto);
 #ifdef R_OS_UNIX
-  if (handle >= 0)
+  if (handle != R_SOCKET_HANDLE_INVALID)
     r_fd_unix_set_cloexec (handle, TRUE);
 #endif
+#endif
+#else
+  handle = R_SOCKET_HANDLE_INVALID;
 #endif
 
   return handle;
@@ -186,11 +191,16 @@ RSocketAddress *
 r_socket_get_local_address (RSocket * socket)
 {
   RSocketAddress * ret = NULL;
+
+  if (R_UNLIKELY (socket == NULL)) return NULL;
+
+#ifndef HAVE_MOCK_SOCKETS
   struct sockaddr_storage ss;
   socklen_t len = sizeof (struct sockaddr_storage);
 
   if (getsockname (socket->handle, (struct sockaddr *)&ss, &len) == 0)
     ret = r_socket_address_new_from_native (&ss, len);
+#endif
 
   return ret;
 }
@@ -199,12 +209,17 @@ RSocketAddress *
 r_socket_get_remote_address (RSocket * socket)
 {
   RSocketAddress * ret = NULL;
+
+  if (R_UNLIKELY (socket == NULL)) return NULL;
+
+#ifndef HAVE_MOCK_SOCKETS
   struct sockaddr_storage ss;
   socklen_t len = sizeof (struct sockaddr_storage);
 
   if (getpeername (socket->handle, (struct sockaddr *)&ss, &len) == 0) {
     ret = r_socket_address_new_from_native (&ss, len);
   }
+#endif
 
   return ret;
 }
@@ -212,8 +227,14 @@ r_socket_get_remote_address (RSocket * socket)
 rboolean
 r_socket_get_option (RSocket * socket, int level, int optname, int * value)
 {
+  if (R_UNLIKELY (socket == NULL)) return FALSE;
   if (R_UNLIKELY (value == NULL)) return FALSE;
 
+#ifdef HAVE_MOCK_SOCKETS
+  (void) level;
+  (void) optname;
+  return FALSE;
+#else
   socklen_t size = sizeof (int);
   *value = 0;
   if (getsockopt (socket->handle, level, optname, (rpointer)value, &size) != 0)
@@ -225,14 +246,21 @@ r_socket_get_option (RSocket * socket, int level, int optname, int * value)
 #endif
 
   return TRUE;
+#endif
 }
 
 RSocketStatus
 r_socket_get_error (RSocket * socket)
 {
+  if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
+
+#ifdef HAVE_MOCK_SOCKETS
+  return R_SOCKET_NOT_SUPPORTED;
+#else
   int val = -1;
   r_socket_get_option (socket, SOL_SOCKET, SO_ERROR, &val);
   return r_socket_err_to_socket_status (val);
+#endif
 }
 
 rboolean
@@ -244,20 +272,34 @@ r_socket_get_blocking (RSocket * socket)
 rboolean
 r_socket_get_broadcast (RSocket * socket)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  return FALSE;
+#else
   int val;
   return r_socket_get_option (socket, SOL_SOCKET, SO_BROADCAST, &val) && !!val;
+#endif
 }
 
 rboolean
 r_socket_get_keepalive (RSocket * socket)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  return FALSE;
+#else
   int val;
   return r_socket_get_option (socket, SOL_SOCKET, SO_KEEPALIVE, &val) && !!val;
+#endif
 }
 
 rboolean
 r_socket_get_multicast_loop (RSocket * socket)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  return FALSE;
+#else
   int lvl, val;
 
   switch (socket->family) {
@@ -272,11 +314,16 @@ r_socket_get_multicast_loop (RSocket * socket)
   }
 
   return r_socket_get_option (socket, lvl, IP_MULTICAST_LOOP, &val) && !!val;
+#endif
 }
 
 ruint
 r_socket_get_multicast_ttl (RSocket * socket)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  return 0;
+#else
   rboolean res;
   int val;
 
@@ -292,11 +339,16 @@ r_socket_get_multicast_ttl (RSocket * socket)
   }
 
   return res ? MAX (val, 0) : 0;
+#endif
 }
 
 ruint
 r_socket_get_ttl (RSocket * socket)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  return 0;
+#else
   rboolean res;
   int val;
 
@@ -312,6 +364,7 @@ r_socket_get_ttl (RSocket * socket)
   }
 
   return res ? MAX (val, 0) : 0;
+#endif
 }
 
 rboolean
@@ -320,7 +373,7 @@ r_socket_set_option (RSocket * socket, int level, int optname, int value)
 #ifdef HAVE_WINSOCK2
   return (setsockopt (socket->handle, level, optname,
         (rconstpointer)&value, sizeof (int)) == 0);
-#else
+#elif defined (HAVE_POSIX_SOCKETS)
   if (setsockopt (socket->handle, level, optname, &value, sizeof (int)) == 0)
     return TRUE;
 
@@ -336,6 +389,12 @@ r_socket_set_option (RSocket * socket, int level, int optname, int value)
 #endif
 
   return FALSE;
+#else
+  (void) socket;
+  (void) level;
+  (void) optname;
+  (void) value;
+  return FALSE;
 #endif
 }
 
@@ -343,11 +402,13 @@ rboolean
 r_socket_set_blocking (RSocket * socket, rboolean blocking)
 {
   rboolean ret;
-#ifdef HAVE_WINSOCK2
+#if defined (HAVE_WINSOCK2)
   rulong val = !blocking;
   ret = (ioctlsocket (socket->handle, FIONBIO, &val) != SOCKET_ERROR);
-#else
+#elif defined (R_OS_UNIX)
   ret = r_fd_unix_set_nonblocking (socket->handle, !blocking);
+#else
+  ret = FALSE;
 #endif
 
   if (ret) {
@@ -363,13 +424,25 @@ r_socket_set_blocking (RSocket * socket, rboolean blocking)
 rboolean
 r_socket_set_broadcast (RSocket * socket, rboolean broadcast)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) broadcast;
+  return FALSE;
+#else
   return r_socket_set_option (socket, SOL_SOCKET, SO_BROADCAST, (int)broadcast);
+#endif
 }
 
 rboolean
 r_socket_set_keepalive (RSocket * socket, rboolean keepalive)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) keepalive;
+  return FALSE;
+#else
   return r_socket_set_option (socket, SOL_SOCKET, SO_KEEPALIVE, (int)keepalive);
+#endif
 }
 
 rboolean
@@ -377,6 +450,11 @@ r_socket_set_multicast_loop (RSocket * socket, rboolean loop)
 {
   rboolean ret;
 
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) loop;
+  ret = FALSE;
+#else
   switch (socket->family) {
     case R_SOCKET_FAMILY_IPV6:
       if (!r_socket_set_option (socket, IPPROTO_IPV6, IP_MULTICAST_LOOP, loop))
@@ -386,8 +464,10 @@ r_socket_set_multicast_loop (RSocket * socket, rboolean loop)
       ret = r_socket_set_option (socket, IPPROTO_IP, IP_MULTICAST_LOOP, loop);
       break;
     default:
-      return FALSE;
+      ret = FALSE;
+      break;
   }
+#endif
 
   return ret;
 }
@@ -397,6 +477,11 @@ r_socket_set_multicast_ttl (RSocket * socket, ruint ttl)
 {
   rboolean ret;
 
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) ttl;
+  ret = FALSE;
+#else
   switch (socket->family) {
     case R_SOCKET_FAMILY_IPV6:
       if (!r_socket_set_option (socket, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, ttl))
@@ -406,8 +491,10 @@ r_socket_set_multicast_ttl (RSocket * socket, ruint ttl)
       ret = r_socket_set_option (socket, IPPROTO_IP, IP_MULTICAST_TTL, ttl);
       break;
     default:
-      return FALSE;
+      ret = FALSE;
+      break;
   }
+#endif
 
   return ret;
 }
@@ -417,6 +504,11 @@ r_socket_set_ttl (RSocket * socket, ruint ttl)
 {
   rboolean ret;
 
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) ttl;
+  ret = FALSE;
+#else
   switch (socket->family) {
     case R_SOCKET_FAMILY_IPV6:
       if (!r_socket_set_option (socket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, ttl))
@@ -426,8 +518,10 @@ r_socket_set_ttl (RSocket * socket, ruint ttl)
       ret = r_socket_set_option (socket, IPPROTO_IP, IP_TTL, ttl);
       break;
     default:
-      return FALSE;
+      ret = FALSE;
+      break;
   }
+#endif
 
   return ret;
 }
@@ -453,8 +547,13 @@ r_socket_close (RSocket * socket)
 RSocketStatus
 r_socket_bind (RSocket * socket, const RSocketAddress * address, rboolean reuse)
 {
+  if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
   if (R_UNLIKELY (address == NULL)) return R_SOCKET_INVAL;
 
+#ifdef HAVE_MOCK_SOCKETS
+  (void) reuse;
+  return R_SOCKET_NOT_SUPPORTED;
+#else
   r_socket_set_option (socket, SOL_SOCKET, SO_REUSEADDR, !!reuse);
 #ifdef SO_REUSEPORT
   r_socket_set_option (socket, SOL_SOCKET, SO_REUSEPORT,
@@ -465,17 +564,25 @@ r_socket_bind (RSocket * socket, const RSocketAddress * address, rboolean reuse)
     return R_SOCKET_OK;
 
   return r_socket_errno_to_socket_status ();
+#endif
 }
 
 RSocketStatus
 r_socket_listen_full (RSocket * socket, ruint8 backlog)
 {
+  if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
+
+#ifdef HAVE_MOCK_SOCKETS
+  (void) backlog;
+  return R_SOCKET_NOT_SUPPORTED;
+#else
   if (listen (socket->handle, MIN (backlog, 128)) == 0) {
     socket->flags |= R_SOCKET_FLAG_LISTENING;
     return R_SOCKET_OK;
   }
 
   return r_socket_errno_to_socket_status ();
+#endif
 }
 
 RSocket *
@@ -490,6 +597,12 @@ r_socket_accept (RSocket * socket, RSocketStatus * res)
     return NULL;
   }
 
+#ifdef HAVE_MOCK_SOCKETS
+  (void) handle;
+  if (res != NULL)
+    *res = R_SOCKET_NOT_SUPPORTED;
+  ret = NULL;
+#else
   /* FIXME: Use accept4 ?? */
   do {
     handle = accept (socket->handle, NULL, 0);
@@ -524,6 +637,7 @@ r_socket_accept (RSocket * socket, RSocketStatus * res)
     else
       *res = R_SOCKET_OK;
   }
+#endif
 
   return ret;
 }
@@ -534,8 +648,13 @@ r_socket_connect (RSocket * socket, const RSocketAddress * address)
   int res;
   RSocketStatus ret;
 
+  if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
   if (R_UNLIKELY (address == NULL)) return R_SOCKET_INVAL;
 
+#ifdef HAVE_MOCK_SOCKETS
+  (void) res;
+  ret = R_SOCKET_NOT_SUPPORTED;
+#else
   do {
     if ((res = connect (socket->handle, (struct sockaddr *)&address->addr, address->addrlen)) == 0) {
       socket->flags &= ~R_SOCKET_FLAG_CONNECTING;
@@ -546,6 +665,7 @@ r_socket_connect (RSocket * socket, const RSocketAddress * address)
 
   if ((ret = r_socket_errno_to_socket_status ()) == R_SOCKET_WOULD_BLOCK)
     socket->flags |= R_SOCKET_FLAG_CONNECTING;
+#endif
 
   return ret;
 }
@@ -555,8 +675,13 @@ r_socket_shutdown (RSocket * socket, rboolean rx, rboolean tx)
 {
   int how;
 
+  if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
   if (R_UNLIKELY (!rx && !tx)) return R_SOCKET_INVAL;
 
+#ifdef HAVE_MOCK_SOCKETS
+  (void) how;
+  return R_SOCKET_NOT_SUPPORTED;
+#else
 #ifdef HAVE_WINSOCK2
   if (rx && tx) how = SD_BOTH;
   else if (rx)  how = SD_RECEIVE;
@@ -574,11 +699,19 @@ r_socket_shutdown (RSocket * socket, rboolean rx, rboolean tx)
   }
 
   return r_socket_errno_to_socket_status ();
+#endif
 }
 
 RSocketStatus
 r_socket_receive (RSocket * socket, ruint8 * buffer, rsize size, rsize * received)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) buffer;
+  (void) size;
+  (void) received;
+  return R_SOCKET_NOT_SUPPORTED;
+#else
 #ifdef HAVE_WINSOCK2
   int res;
 #else
@@ -596,11 +729,20 @@ r_socket_receive (RSocket * socket, ruint8 * buffer, rsize size, rsize * receive
   }
 
   return r_socket_errno_to_socket_status ();
+#endif
 }
 
 RSocketStatus
 r_socket_receive_from (RSocket * socket, RSocketAddress * address, ruint8 * buffer, rsize size, rsize * received)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) address;
+  (void) buffer;
+  (void) size;
+  (void) received;
+  return R_SOCKET_NOT_SUPPORTED;
+#else
 #ifdef HAVE_WINSOCK2
   int res;
 #else
@@ -619,12 +761,20 @@ r_socket_receive_from (RSocket * socket, RSocketAddress * address, ruint8 * buff
   }
 
   return r_socket_errno_to_socket_status ();
+#endif
 }
 
 RSocketStatus
 r_socket_receive_message (RSocket * socket, RSocketAddress * address,
     RBuffer * buf, rsize * received)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) address;
+  (void) buf;
+  (void) received;
+  return R_SOCKET_NOT_SUPPORTED;
+#else
   rsize i, mem_count, b;
   RMemMapInfo * info;
 #ifdef HAVE_WINSOCK2
@@ -726,11 +876,19 @@ r_socket_receive_message (RSocket * socket, RSocketAddress * address,
 #endif
 
   return r_socket_errno_to_socket_status ();
+#endif
 }
 
 RSocketStatus
 r_socket_send (RSocket * socket, const ruint8 * buffer, rsize size, rsize * sent)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) buffer;
+  (void) size;
+  (void) sent;
+  return R_SOCKET_NOT_SUPPORTED;
+#else
   rssize res;
 
   do {
@@ -744,12 +902,21 @@ r_socket_send (RSocket * socket, const ruint8 * buffer, rsize size, rsize * sent
   }
 
   return r_socket_errno_to_socket_status ();
+#endif
 }
 
 RSocketStatus
 r_socket_send_to (RSocket * socket, const RSocketAddress * address,
     const ruint8 * buffer, rsize size, rsize * sent)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) address;
+  (void) buffer;
+  (void) size;
+  (void) sent;
+  return R_SOCKET_NOT_SUPPORTED;
+#else
 #ifdef HAVE_WINSOCK2
   int res;
 #else
@@ -768,12 +935,20 @@ r_socket_send_to (RSocket * socket, const RSocketAddress * address,
   }
 
   return r_socket_errno_to_socket_status ();
+#endif
 }
 
 RSocketStatus
 r_socket_send_message (RSocket * socket, const RSocketAddress * address,
     RBuffer * buf, rsize * sent)
 {
+#ifdef HAVE_MOCK_SOCKETS
+  (void) socket;
+  (void) address;
+  (void) buf;
+  (void) sent;
+  return R_SOCKET_NOT_SUPPORTED;
+#else
   rsize i, mem_count;
   RMemMapInfo * info;
 #ifdef HAVE_WINSOCK2
@@ -865,5 +1040,6 @@ r_socket_send_message (RSocket * socket, const RSocketAddress * address,
 #endif
 
   return r_socket_errno_to_socket_status ();
+#endif
 }
 

@@ -44,10 +44,19 @@ RResolvedAddr *
 r_resolve_sync (const rchar * host, const rchar * service,
     RResolveAddrFlags flags, const RResolveHints * hints, RResolveResult * res)
 {
+  RResolvedAddr * ret = NULL;
+#ifdef HAVE_MOCK_SOCKETS
+  (void) host;
+  (void) service;
+  (void) flags;
+  (void) hints;
+
+  if (res != NULL)
+    *res = R_RESOLVE_NOT_SUPPORTED;
+#else
   struct addrinfo aihints;
   struct addrinfo * aires;
   int r;
-  RResolvedAddr * ret = NULL;
 
   r_memclear (&aihints, sizeof (aihints));
   aihints.ai_flags = (int)flags;
@@ -102,6 +111,7 @@ r_resolve_sync (const rchar * host, const rchar * service,
     if (res != NULL)
       *res = R_RESOLVE_ERROR;
   }
+#endif
 
   return ret;
 }

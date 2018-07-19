@@ -73,6 +73,7 @@ typedef enum {
   R_SOCKET_CONN_ABORTED     = -9,
   R_SOCKET_CONN_REFUSED     = -10,
   R_SOCKET_CONN_RESET       = -11,
+  R_SOCKET_NOT_SUPPORTED    = -12,
 } RSocketStatus;
 
 #if 0

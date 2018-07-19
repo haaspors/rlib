@@ -474,6 +474,7 @@ rlib_have_threads = get_option('enable_threads') and libthread.found()
 rlib_have_modules = get_option('enable_modules') and (host_machine.system() == 'windows' or libdl.found())
 rlib_have_signals = get_option('enable_signals') and conf.has('HAVE_SIGNAL_H')
 rlib_have_files   = get_option('enable_files') and host_machine.system() != 'bare'
+rlib_have_sockets = get_option('enable_sockets') and (host_machine.system() == 'windows' or conf.has('HAVE_SYS_SOCKET_H'))
 
 if rlib_have_threads
   rconf.set('RLIB_HAVE_THREADS', 1)
@@ -486,6 +487,9 @@ if rlib_have_signals
 endif
 if rlib_have_files
   rconf.set('RLIB_HAVE_FILES', 1)
+endif
+if rlib_have_sockets
+  rconf.set('RLIB_HAVE_SOCKETS', 1)
 endif
 
 ###############################################################################

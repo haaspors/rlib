@@ -1,5 +1,6 @@
 #include <rlib/rlib.h>
 
+#ifdef RLIB_HAVE_SOCKETS
 #ifdef R_OS_WIN32
 #include <winsock2.h>
 #else
@@ -25,6 +26,7 @@ RTEST (rsocketaddress, ipv4_native, RTEST_FAST)
   r_socket_address_unref (addr);
 }
 RTEST_END;
+#endif
 
 RTEST (rsocketaddress, ipv4_new, RTEST_FAST)
 {

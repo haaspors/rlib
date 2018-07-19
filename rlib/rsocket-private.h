@@ -37,11 +37,22 @@
 #endif
 
 /* FIXME: Do this by configuration? */
-#ifdef R_OS_WIN32
-#define HAVE_WINSOCK2
+#if !defined (RLIB_HAVE_SOCKETS)
+#define HAVE_MOCK_SOCKETS   1
+#elif defined (R_OS_WIN32)
+#define HAVE_WINSOCK2       1
+#elif defined (HAVE_SYS_SOCKET_H)
+#define HAVE_POSIX_SOCKETS  1
+#else
+#define HAVE_MOCK_SOCKETS   1
 #endif
 
-#ifdef HAVE_WINSOCK2
+#if defined (HAVE_POSIX_SOCKETS)
+#include <sys/socket.h>
+#ifdef HAVE_NETDB_H
+#include <netdb.h>
+#endif
+#elif defined (HAVE_WINSOCK2)
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0501
 #endif
@@ -49,13 +60,6 @@
 #include <ws2tcpip.h>
 #include <wspiapi.h>
 #pragma comment(lib, "Ws2_32.lib")
-#endif
-
-#ifdef HAVE_SYS_SOCKET_H
-#include <sys/socket.h>
-#endif
-#ifdef HAVE_NETDB_H
-#include <netdb.h>
 #endif
 
 R_BEGIN_DECLS
@@ -69,6 +73,33 @@ typedef int socklen_t;
 #define R_SOCKET_HANDLE_INVALID   -1
 typedef int RSocketHandle;
 #define R_SOCKET_ERRNO            errno
+
+#if defined (HAVE_MOCK_SOCKETS)
+struct in_addr {
+  ruint32 s_addr;
+};
+struct in6_addr {
+  ruint8 s6_addr[16];
+};
+
+struct sockaddr_in {
+  RSocketFamily   sin_family;
+  ruint16         sin_port;
+  struct in_addr  sin_addr;
+};
+struct sockaddr_in6 {
+  RSocketFamily   sin6_family;
+  ruint16         sin6_port;
+  ruint32         sin6_flowinfo;
+  struct in6_addr sin6_addr;
+  ruint32         sin6_scope_id;
+};
+struct sockaddr_storage {
+  RSocketFamily   ss_family;
+  char            ss_data[128 - sizeof(RSocketFamily)];
+};
+typedef int socklen_t;
+#endif
 #endif
 
 struct _RSocket {
