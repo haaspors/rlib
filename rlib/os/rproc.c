@@ -98,10 +98,9 @@ r_proc_get_exe_path (void)
 #elif defined(R_OS_SOLARIS)
   ret = r_strdup (getexename ());
 #else
-  rsize size = 64;
-  while (TRUE) {
+  rsize size;
+  for (size = 64; (ret = r_realloc (ret, size + 1)) != NULL; size *= 2) {
     rssize linksize;
-    ret = r_malloc (size + 1);
     if ((linksize = readlink ("/proc/self/exe", ret, size)) >= 0) {
       ret[linksize] = 0;
       break;
@@ -110,7 +109,6 @@ r_proc_get_exe_path (void)
       ret = NULL;
       break;
     }
-    size *= 2;
   }
 #endif
   return ret;
