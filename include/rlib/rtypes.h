@@ -124,6 +124,7 @@ typedef const void*             rconstpointer;
 typedef ruint64                 RClockTime;
 typedef rint64                  RClockTimeDiff;
 #define R_CLOCK_TIME_NONE       ((RClockTime) -1)
+#define R_CLOCK_TIME_INFINITE   R_CLOCK_TIME_NONE
 
 /* IO Handle */
 #if defined (R_OS_WIN32)

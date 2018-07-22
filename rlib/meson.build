@@ -19,6 +19,7 @@ rlib_sources = [
   'rmemscan.c',
   'rmodule.c',
   'rmsgdigest.c',
+  'rpoll.c',
   'rprng-kiss.c',
   'rprng-mt.c',
   'rrand.c',

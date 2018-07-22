@@ -233,6 +233,7 @@ check_headers = [
   'link.h',
   'sched.h',
   'fcntl.h',
+  'poll.h',
   'pthread.h',
   'signal.h',
   'netdb.h',
@@ -242,6 +243,7 @@ check_headers = [
   'sys/mman.h',
   'sys/socket.h',
   'sys/ioctl.h',
+  'sys/select.h',
   'sys/sysctl.h',
   'sys/stat.h',
   'sys/time.h',
@@ -310,6 +312,8 @@ check_funcs = [
   [ 'epoll_ctl', 'sys/epoll.h' ],
   [ 'eventfd', 'sys/eventfd.h' ],
   [ 'gettid', 'sys/types.h' ],
+  [ 'poll', 'poll.h' ],
+  [ 'select', 'sys/select.h' ],
   [ 'sigaction', 'signal.h' ],
   [ 'sigaltstack', 'signal.h' ],
 ]
@@ -422,6 +426,7 @@ rconf_defines = []
 if host_machine.system() == 'windows'
   socket_h = '#include <winsock2.h>'
   netdb_h = '#include <ws2tcpip.h>'
+  poll_h = '#include <winsock2.h>'
   rconf_defines += [
     [ 'R_AF_UNIX', '1' ],
     [ 'R_AF_BLUETOOTH', cc.get_define('AF_BTH', prefix : socket_h) ],
@@ -438,6 +443,8 @@ else
   else
     netdb_h = ''
   endif
+
+  poll_h = '#include <poll.h>'
 
   rconf_defines += [
     [ 'R_AF_UNIX',      cc.get_define('AF_UNIX',      prefix : socket_h), '1' ],
@@ -458,6 +465,15 @@ rconf_defines += [
   [ 'R_AI_V4MAPPED',    cc.get_define('AI_V4MAPPED',    prefix : netdb_h), '0' ],
   [ 'R_AI_ALL',         cc.get_define('AI_ALL',         prefix : netdb_h), '0' ],
   [ 'R_AI_ADDRCONFIG',  cc.get_define('AI_ADDRCONFIG',  prefix : netdb_h), '0' ],
+]
+
+rconf_defines += [
+  [ 'R_IO_IN',   cc.get_define('POLLIN',   prefix: poll_h),  '1' ],
+  [ 'R_IO_OUT',  cc.get_define('POLLOUT',  prefix: poll_h),  '4' ],
+  [ 'R_IO_PRI',  cc.get_define('POLLPRI',  prefix: poll_h),  '2' ],
+  [ 'R_IO_ERR',  cc.get_define('POLLERR',  prefix: poll_h),  '8' ],
+  [ 'R_IO_HUP',  cc.get_define('POLLHUP',  prefix: poll_h), '16' ],
+  [ 'R_IO_NVAL', cc.get_define('POLLNVAL', prefix: poll_h), '32' ],
 ]
 
 foreach d : rconf_defines

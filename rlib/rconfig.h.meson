@@ -121,6 +121,13 @@ typedef unsigned @RINTPTR_TYPE@ ruintptr;
 #define R_AI_ALL                @R_AI_ALL@
 #define R_AI_ADDRCONFIG         @R_AI_ADDRCONFIG@
 
+#define R_IO_IN                 @R_IO_IN@
+#define R_IO_OUT                @R_IO_OUT@
+#define R_IO_PRI                @R_IO_PRI@
+#define R_IO_ERR                @R_IO_ERR@
+#define R_IO_HUP                @R_IO_HUP@
+#define R_IO_NVAL               @R_IO_NVAL@
+
 
 #mesondefine RLIB_HAVE_ALLOCA_H
 

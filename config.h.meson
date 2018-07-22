@@ -14,6 +14,7 @@
 #mesondefine HAVE_ARPA_INET_H
 #mesondefine HAVE_NETINET_IN_H
 #mesondefine HAVE_NETDB_H
+#mesondefine HAVE_POLL_H
 #mesondefine HAVE_SYS_TYPES_H
 #mesondefine HAVE_SYS_SOCKET_H
 #mesondefine HAVE_SYS_MMAN_H
@@ -22,6 +23,7 @@
 #mesondefine HAVE_SYS_EPOLL_H
 #mesondefine HAVE_SYS_EVENTFD_H
 #mesondefine HAVE_SYS_PRCTL_H
+#mesondefine HAVE_SYS_SELECT_H
 #mesondefine HAVE_SYS_SYSINFO_H
 #mesondefine HAVE_SYS_STAT_H
 #mesondefine HAVE_SYS_TIME_H
@@ -34,6 +36,8 @@
 #mesondefine HAVE_FCNTL
 #mesondefine HAVE_IOCTL
 #mesondefine HAVE_MMAP
+#mesondefine HAVE_POLL
+#mesondefine HAVE_SELECT
 #mesondefine HAVE_ACCESS
 #mesondefine HAVE_STAT
 #mesondefine HAVE_FSTAT
