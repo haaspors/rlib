@@ -63,7 +63,7 @@ static raptr g__r_ev_loop_default; /* (REvLoop *) */
 static RTss  g__r_ev_loop_tss = R_TSS_INIT (NULL);
 
 static rboolean
-r_ev_handle_close (REvHandle handle)
+r_io_handle_close (RIOHandle handle)
 {
 #if defined (R_OS_WIN32)
   return CloseHandle (handle);
@@ -107,7 +107,7 @@ struct _REvLoop {
   RCBRList * idle;
 
   /* For IO events */
-  REvHandle evhandle;
+  RIOHandle handle;
   RQueue active;
   RQueue chg;
 };
@@ -134,17 +134,17 @@ r_ev_loop_free (REvLoop * loop)
 
 #ifdef HAVE_EPOLL_CTL
 #ifdef HAVE_EVENTFD
-    r_ev_handle_close (loop->evfd);
+    r_io_handle_close (loop->evfd);
 #else
-    r_ev_handle_close (loop->pipefd[0]);
-    r_ev_handle_close (loop->pipefd[1]);
+    r_io_handle_close (loop->pipefd[0]);
+    r_io_handle_close (loop->pipefd[1]);
 #endif
     r_cbqueue_clear (&loop->evio_wakeup.iocbq);
 #endif
 
-  if (loop->evhandle != R_EV_HANDLE_INVALID) {
-    r_ev_handle_close (loop->evhandle);
-    loop->evhandle = R_EV_HANDLE_INVALID;
+  if (loop->handle != R_IO_HANDLE_INVALID) {
+    r_io_handle_close (loop->handle);
+    loop->handle = R_IO_HANDLE_INVALID;
   }
 
   r_free (loop);
@@ -171,9 +171,9 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
 
 #if defined (R_OS_WIN32)
 #elif defined (HAVE_EPOLL_CTL)
-  if ((loop->evhandle = epoll_create1 (0)) != R_EV_HANDLE_INVALID) {
+  if ((loop->handle = epoll_create1 (0)) != R_IO_HANDLE_INVALID) {
     struct epoll_event ev;
-    REvHandle fd;
+    RIOHandle fd;
 
 #ifdef HAVE_EVENTFD
     fd = loop->evfd = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
@@ -196,17 +196,17 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
 
     ev.data.ptr = &loop->evio_wakeup;
     ev.events = EPOLLIN | EPOLLET;
-    if (epoll_ctl (loop->evhandle, EPOLL_CTL_ADD, fd, &ev) != 0) {
+    if (epoll_ctl (loop->handle, EPOLL_CTL_ADD, fd, &ev) != 0) {
       R_LOG_ERROR ("Failed to add tq event fd %d for loop %p",
           ev.data.fd, loop);
       abort ();
     }
   }
 #elif defined (HAVE_KQUEUE)
-  if ((loop->evhandle = kqueue ()) != R_EV_HANDLE_INVALID) {
+  if ((loop->handle = kqueue ()) != R_IO_HANDLE_INVALID) {
     struct kevent ev;
     EV_SET (&ev, 1, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
-    if (kevent (loop->evhandle, &ev, 1, NULL, 0, NULL) != 0) {
+    if (kevent (loop->handle, &ev, 1, NULL, 0, NULL) != 0) {
       R_LOG_ERROR ("Failed to initialize EVFILT_USER for loop %p", loop);
       abort ();
     }
@@ -322,7 +322,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     REvIOEvents pending = 0;
     int op;
 
-    if (R_UNLIKELY (evio->handle == R_EV_HANDLE_INVALID))
+    if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID))
       continue;
 
     pending = evio->events | r_ev_io_get_iocbq_events (evio);
@@ -336,7 +336,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     if (pending & R_EV_IO_HANGUP)   ev->events |= EPOLLRDHUP;
     op = (evio->events == 0) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
 
-    if (epoll_ctl (loop->evhandle, op, evio->handle, ev) == 0) {
+    if (epoll_ctl (loop->handle, op, evio->handle, ev) == 0) {
       evio->events = pending;
       evio->chglnk = NULL;
     } else {
@@ -362,7 +362,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     if (R_CLOCK_TIME_IS_VALID (timeout))
       tms = MAX (R_TIME_AS_MSECONDS (timeout), 1);
     R_LOG_TRACE ("executing epoll_wait for loop %p with timeout %d", loop, tms);
-    ret = epoll_wait (loop->evhandle, events, R_N_ELEMENTS (events), tms);
+    ret = epoll_wait (loop->handle, events, R_N_ELEMENTS (events), tms);
   } while (ret < 0 && errno == EINTR);
 
   if (ret < 0) {
@@ -391,7 +391,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
   REvIOEvents pending;
 
   while ((evio = r_queue_pop (&loop->chg)) != NULL) {
-    if (R_UNLIKELY (evio->handle == R_EV_HANDLE_INVALID))
+    if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID))
       continue;
 
     pending = evio->events | r_ev_io_get_iocbq_events (evio);
@@ -411,7 +411,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     evio->chglnk = NULL;
 
     if (R_UNLIKELY (nev > (R_EV_LOOP_MAX_EVENTS - 4))) {
-      if (kevent (loop->evhandle, events, nev, NULL, 0, NULL) != 0) {
+      if (kevent (loop->handle, events, nev, NULL, 0, NULL) != 0) {
         R_LOG_ERROR ("kevent for loop %p failed %d: \"%s\" with %d changes",
             loop, errno, strerror (errno), nev);
         abort ();
@@ -428,7 +428,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
   R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
   do {
     R_LOG_TRACE ("executing kevent for loop %p with changelst of %d events", loop, nev);
-    ret = kevent (loop->evhandle, events, nev, events, R_N_ELEMENTS (events),
+    ret = kevent (loop->handle, events, nev, events, R_N_ELEMENTS (events),
         R_CLOCK_TIME_IS_VALID (deadline) ? &spec : NULL);
   } while (ret < 0 && errno == EINTR);
 
@@ -626,7 +626,7 @@ static void
 r_ev_loop_eventfd_io_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
   REvLoop * loop = data;
-  REvHandle fd = evio->handle;
+  RIOHandle fd = evio->handle;
 
   if (events & R_EV_IO_ERROR) {
     R_LOG_ERROR ("Wakeup evio "R_EV_IO_FORMAT" received error event for loop %p",
@@ -678,7 +678,7 @@ r_ev_loop_wakeup (REvLoop * loop)
   int res;
 
   EV_SET (&ev, 1, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
-  res = kevent (loop->evhandle, &ev, 1, NULL, 0, NULL);
+  res = kevent (loop->handle, &ev, 1, NULL, 0, NULL);
   R_LOG_DEBUG ("loop %p wakeup! res %d", loop, res);
 #endif
 }
@@ -808,7 +808,7 @@ r_ev_io_validate_taskgroup (REvIO * evio, ruint taskgroup)
 }
 
 void
-r_ev_io_init (REvIO * evio, REvLoop * loop, REvHandle handle, RDestroyNotify notify)
+r_ev_io_init (REvIO * evio, REvLoop * loop, RIOHandle handle, RDestroyNotify notify)
 {
   r_ref_init (evio, notify);
 
@@ -816,7 +816,7 @@ r_ev_io_init (REvIO * evio, REvLoop * loop, REvHandle handle, RDestroyNotify not
   evio->handle = handle;
 
 #ifdef R_OS_UNIX
-  if (handle != R_EV_HANDLE_INVALID)
+  if (handle != R_IO_HANDLE_INVALID)
     r_fd_unix_set_nonblocking (handle, TRUE);
 #endif
 }
@@ -829,7 +829,7 @@ r_ev_io_free (REvIO * evio)
 }
 
 REvIO *
-r_ev_loop_init_handle (REvLoop * loop, REvHandle handle)
+r_ev_loop_init_handle (REvLoop * loop, RIOHandle handle)
 {
   REvIO * ret;
 
@@ -911,9 +911,9 @@ r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
 
   R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT, evio->loop, R_EV_IO_ARGS (evio));
 
-  if (evio->handle != R_EV_HANDLE_INVALID) {
-    r_ev_handle_close (evio->handle);
-    evio->handle = R_EV_HANDLE_INVALID;
+  if (evio->handle != R_IO_HANDLE_INVALID) {
+    r_io_handle_close (evio->handle);
+    evio->handle = R_IO_HANDLE_INVALID;
   }
 
   if (R_EV_IO_IS_ACTIVE (evio))

@@ -48,7 +48,7 @@ struct _REvIO {
   RList * alnk; /* If NULL -> inactive, else -> link in REvLoop::active queue */
   RList * chglnk; /* If not NULL -> changing link in REvLoop::chg queue */
 
-  REvHandle handle;
+  RIOHandle handle;
   REvIOEvents events;
   RCBQueue iocbq;
 
@@ -56,13 +56,13 @@ struct _REvIO {
   RDestroyNotify usernotify;
 };
 
-#define R_EV_IO_FORMAT        "%p [%"R_EV_HANDLE_FMT"]"
-#define R_EV_IO_ARGS(evio)    evio, (evio != NULL ? ((REvIO *)evio)->handle : R_EV_HANDLE_INVALID)
+#define R_EV_IO_FORMAT        "%p [%"R_IO_HANDLE_FMT"]"
+#define R_EV_IO_ARGS(evio)    evio, (evio != NULL ? ((REvIO *)evio)->handle : R_IO_HANDLE_INVALID)
 
 #define R_EV_IO_IS_ACTIVE(evio) ((evio->alnk) != NULL)
 #define R_EV_IO_IS_CHANGING(evio) ((evio->chglnk) != NULL)
 
-R_API_HIDDEN void r_ev_io_init (REvIO * evio, REvLoop * loop, REvHandle handle,
+R_API_HIDDEN void r_ev_io_init (REvIO * evio, REvLoop * loop, RIOHandle handle,
     RDestroyNotify notify);
 R_API_HIDDEN void r_ev_io_clear (REvIO * evio);
 R_API_HIDDEN rboolean r_ev_io_validate_taskgroup (REvIO * evio, ruint taskgroup);

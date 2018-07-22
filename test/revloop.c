@@ -429,7 +429,7 @@ RTEST (revio, user, RTEST_FAST)
   r_clock_unref (clock);
 
   /* dummy fd/handle 42 */
-  r_assert_cmpptr ((evio = r_ev_loop_init_handle (loop, R_EV_HANDLE_INVALID)), !=, NULL);
+  r_assert_cmpptr ((evio = r_ev_loop_init_handle (loop, R_IO_HANDLE_INVALID)), !=, NULL);
   r_assert_cmpptr (r_ev_io_get_user (evio), ==, NULL);
 
   r_assert_cmpptr ((data = r_malloc (42)), !=, NULL);

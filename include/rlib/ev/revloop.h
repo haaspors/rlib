@@ -41,16 +41,6 @@ typedef enum {
 } REvIOEvent;
 typedef ruint REvIOEvents;
 
-#if defined (R_OS_WIN32)
-typedef HANDLE REvHandle;
-#define R_EV_HANDLE_FMT       "p"
-#define R_EV_HANDLE_INVALID   INVALID_HANDLE_VALUE
-#else
-typedef int REvHandle;
-#define R_EV_HANDLE_FMT       "i"
-#define R_EV_HANDLE_INVALID   -1
-#endif
-
 typedef struct _REvIO REvIO;
 typedef void (*REvIOFunc) (rpointer data, REvIO * evio);
 typedef void (*REvIOCB) (rpointer data, REvIOEvents events, REvIO * evio);
@@ -101,7 +91,7 @@ R_API RTask * r_ev_loop_add_task_full_v (REvLoop * loop, ruint taskgroup,
     RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify,
     va_list args); /* RTasks as dependencies*/
 
-R_API REvIO * r_ev_loop_init_handle (REvLoop * loop, REvHandle handle);
+R_API REvIO * r_ev_loop_init_handle (REvLoop * loop, RIOHandle handle);
 #define r_ev_io_ref r_ref_ref
 #define r_ev_io_unref r_ref_unref
 

@@ -125,6 +125,18 @@ typedef ruint64                 RClockTime;
 typedef rint64                  RClockTimeDiff;
 #define R_CLOCK_TIME_NONE       ((RClockTime) -1)
 
+/* IO Handle */
+#if defined (R_OS_WIN32)
+typedef rpointer RIOHandle;
+#define R_IO_HANDLE_FMT       "p"
+#define R_IO_HANDLE_INVALID   INVALID_HANDLE_VALUE
+#else
+typedef int RIOHandle;
+#define R_IO_HANDLE_FMT       "i"
+#define R_IO_HANDLE_INVALID   -1
+#endif
+
+
 /* Function prototypes */
 typedef void (*RDestroyNotify) (rpointer ptr);
 typedef void (*RFunc) (rpointer data, rpointer user);
