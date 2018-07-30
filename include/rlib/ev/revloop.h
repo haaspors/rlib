@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,7 +22,7 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
-#include <rlib/rtypes.h>
+#include <rlib/ev/revio.h>
 
 #include <rlib/rclock.h>
 #include <rlib/rref.h>
@@ -31,19 +31,6 @@
 #include <stdarg.h>
 
 R_BEGIN_DECLS
-
-typedef enum {
-  R_EV_IO_READABLE    = (1 << 0),
-  /*R_EV_IO_PRI         = (1 << 1),*/
-  R_EV_IO_WRITABLE    = (1 << 2),
-  R_EV_IO_ERROR       = (1 << 3),
-  R_EV_IO_HANGUP      = (1 << 4),
-} REvIOEvent;
-typedef ruint REvIOEvents;
-
-typedef struct _REvIO REvIO;
-typedef void (*REvIOFunc) (rpointer data, REvIO * evio);
-typedef void (*REvIOCB) (rpointer data, REvIOEvents events, REvIO * evio);
 
 typedef enum {
   R_EV_LOOP_RUN_LOOP,
@@ -91,18 +78,8 @@ R_API RTask * r_ev_loop_add_task_full_v (REvLoop * loop, ruint taskgroup,
     RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify,
     va_list args); /* RTasks as dependencies*/
 
-R_API REvIO * r_ev_loop_create_ev_io (REvLoop * loop, RIOHandle handle);
-#define r_ev_io_ref r_ref_ref
-#define r_ev_io_unref r_ref_unref
-
-R_API void r_ev_io_set_user (REvIO * evio, rpointer user, RDestroyNotify notify);
-R_API rpointer r_ev_io_get_user (REvIO * evio) R_ATTR_WARN_UNUSED_RESULT;
-
-R_API rpointer r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
-    rpointer data, RDestroyNotify datanotify) R_ATTR_WARN_UNUSED_RESULT;
-R_API rboolean r_ev_io_stop (REvIO * evio, rpointer ctx);
-R_API rboolean r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
-    rpointer data, RDestroyNotify datanotify);
+static inline REvIO * r_ev_loop_create_ev_io (REvLoop * loop, RIOHandle handle)
+{ return r_ev_io_new (loop, handle); }
 
 R_END_DECLS
 

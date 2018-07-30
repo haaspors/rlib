@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -837,7 +837,7 @@ r_ev_io_free (REvIO * evio)
 }
 
 REvIO *
-r_ev_loop_create_ev_io (REvLoop * loop, RIOHandle handle)
+r_ev_io_new (REvLoop * loop, RIOHandle handle)
 {
   REvIO * ret;
 
