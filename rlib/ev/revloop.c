@@ -75,10 +75,6 @@ r_io_handle_close (RIOHandle handle)
 #endif
 }
 
-#ifdef HAVE_EPOLL_CTL
-static void r_ev_loop_eventfd_io_cb (rpointer data, REvIOEvents events, REvIO * evio);
-#endif
-
 
 struct _REvLoop {
   RRef ref;
@@ -139,7 +135,7 @@ r_ev_loop_free (REvLoop * loop)
     r_io_handle_close (loop->pipefd[0]);
     r_io_handle_close (loop->pipefd[1]);
 #endif
-    r_cbqueue_clear (&loop->evio_wakeup.iocbq);
+    r_ev_io_clear (&loop->evio_wakeup);
 #endif
 
   if (loop->handle != R_IO_HANDLE_INVALID) {
@@ -149,6 +145,10 @@ r_ev_loop_free (REvLoop * loop)
 
   r_free (loop);
 }
+
+#ifdef HAVE_EPOLL_CTL
+static void r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio);
+#endif
 
 static void
 r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
@@ -186,14 +186,10 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
     r_fd_unix_set_nonblocking (fd, TRUE);
 #endif
 
-    r_ref_init (&loop->evio_wakeup.ref, NULL);
-    loop->evio_wakeup.loop = loop;
-    loop->evio_wakeup.alnk = loop->evio_wakeup.chglnk = NULL;
-    loop->evio_wakeup.handle = fd;
+    r_ev_io_init (&loop->evio_wakeup, NULL, fd, NULL);
     loop->evio_wakeup.events = R_EV_IO_READABLE;
-    r_cbqueue_init (&loop->evio_wakeup.iocbq);
     r_cbqueue_push (&loop->evio_wakeup.iocbq,
-        (RFunc)r_ev_loop_eventfd_io_cb, loop, NULL, NULL, NULL);
+        (RFunc)r_ev_loop_wakeup_cb, loop, NULL, NULL, NULL);
 
     ev.data.ptr = &loop->evio_wakeup;
     ev.events = EPOLLIN | EPOLLET;
@@ -624,7 +620,7 @@ r_ev_loop_cancel_timer (REvLoop * loop, RClockEntry * timer)
 
 #ifdef HAVE_EPOLL_CTL
 static void
-r_ev_loop_eventfd_io_cb (rpointer data, REvIOEvents events, REvIO * evio)
+r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
   REvLoop * loop = data;
   RIOHandle fd = evio->handle;
@@ -798,7 +794,8 @@ r_ev_io_clear (REvIO * evio)
 
   r_cbqueue_clear (&evio->iocbq);
 
-  r_ev_loop_unref (evio->loop);
+  if (evio->loop != NULL)
+    r_ev_loop_unref (evio->loop);
 }
 
 rboolean
@@ -813,8 +810,15 @@ r_ev_io_init (REvIO * evio, REvLoop * loop, RIOHandle handle, RDestroyNotify not
 {
   r_ref_init (evio, notify);
 
-  evio->loop = r_ev_loop_ref (loop);
+  if (loop != NULL)
+    r_ev_loop_ref (loop);
+  evio->loop = loop;
+  evio->alnk = evio->chglnk = NULL;
   evio->handle = handle;
+  evio->events = 0;
+  r_cbqueue_init (&evio->iocbq);
+  evio->user = NULL;
+  evio->usernotify = NULL;
 
 #ifdef R_OS_UNIX
   if (handle != R_IO_HANDLE_INVALID)
@@ -830,9 +834,11 @@ r_ev_io_free (REvIO * evio)
 }
 
 REvIO *
-r_ev_loop_init_handle (REvLoop * loop, RIOHandle handle)
+r_ev_loop_create_ev_io (REvLoop * loop, RIOHandle handle)
 {
   REvIO * ret;
+
+  if (R_UNLIKELY (loop == NULL)) return NULL;
 
   if ((ret = r_mem_new0 (REvIO)) != NULL)
     r_ev_io_init (ret, loop, handle, (RDestroyNotify)r_ev_io_free);

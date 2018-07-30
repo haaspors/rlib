@@ -91,7 +91,7 @@ R_API RTask * r_ev_loop_add_task_full_v (REvLoop * loop, ruint taskgroup,
     RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify,
     va_list args); /* RTasks as dependencies*/
 
-R_API REvIO * r_ev_loop_init_handle (REvLoop * loop, RIOHandle handle);
+R_API REvIO * r_ev_loop_create_ev_io (REvLoop * loop, RIOHandle handle);
 #define r_ev_io_ref r_ref_ref
 #define r_ev_io_unref r_ref_unref
 
