@@ -1,4 +1,4 @@
-rlib [![Build Status](https://travis-ci.org/ieei/rlib.svg?branch=master)](https://travis-ci.org/ieei/rlib) [![Appveyor Status](https://ci.appveyor.com/api/projects/status/github/ieei/rlib?branch=master&svg=true)](https://ci.appveyor.com/project/ieei/rlib) [![Coverity Status](https://scan.coverity.com/projects/6732/badge.svg)](https://scan.coverity.com/projects/ieei-rlib) [![License](https://img.shields.io/badge/license-LGPL-blue.svg)](https://github.com/ieei/rlib/blob/master/LICENSE) [![Gitter](https://badges.gitter.im/rliborg/Lobby.svg)](https://gitter.im/rliborg/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+rlib [![Build Status](https://travis-ci.org/haaspors/rlib.svg?branch=master)](https://travis-ci.org/haaspors/rlib) [![Appveyor Status](https://ci.appveyor.com/api/projects/status/github/haaspors/rlib?branch=master&svg=true)](https://ci.appveyor.com/project/haaspors/rlib) [![Coverity Status](https://scan.coverity.com/projects/6732/badge.svg)](https://scan.coverity.com/projects/ieei-rlib) [![License](https://img.shields.io/badge/license-LGPL-blue.svg)](https://github.com/haaspors/rlib/blob/master/LICENSE) [![Gitter](https://badges.gitter.im/rliborg/Lobby.svg)](https://gitter.im/rliborg/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 ========
 rlib is a c library which contains abstractions for OS, platform and CPU architecture.
 It's a convenience library for useful things. :-)
@@ -48,7 +48,7 @@ Features
 
 Getting the code
 --------
-Currently you'll find the code @ [github](https://github.com/ieei/rlib) (https://github.com/ieei/rlib)
+Currently you'll find the code @ [github](https://github.com/haaspors/rlib) (https://github.com/haaspors/rlib)
 
 Dependencies
 --------
