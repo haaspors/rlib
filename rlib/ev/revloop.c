@@ -297,6 +297,7 @@ r_ev_io_get_iocbq_events (REvIO * evio)
   return ret;
 }
 
+#if defined (HAVE_EPOLL_CTL)
 static int
 r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 {
@@ -304,17 +305,6 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
   RClockTime timeout;
   int ret, i;
 
-#if defined (R_OS_WIN32)
-  (void) loop;
-  (void) deadline;
-  (void) timeout;
-  (void) evio;
-  (void) i;
-
-  /* TODO: Implement win32 backend */
-  ret = -1;
-  goto beach;
-#elif defined (HAVE_EPOLL_CTL)
   struct epoll_event events[R_EV_LOOP_MAX_EVENTS], * ev = events;
 
   /* FIXME: clear->pop! which makes us able to move stuff back on the queue */
@@ -365,26 +355,35 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     ret = epoll_wait (loop->handle, events, R_N_ELEMENTS (events), tms);
   } while (ret < 0 && errno == EINTR);
 
-  if (ret < 0) {
+  if (ret >= 0) {
+    R_LOG_DEBUG ("epoll_wait for loop %p with %d events", loop, ret);
+    for (i = 0; i < ret; i++) {
+      REvIOEvents rev = 0;
+      ev = &events[i];
+      evio = ev->data.ptr;
+
+      if (ev->events & EPOLLERR)  rev |= R_EV_IO_ERROR;
+      if (ev->events & EPOLLHUP)  rev |= R_EV_IO_HANGUP;
+      if (ev->events & EPOLLIN)   rev |= R_EV_IO_READABLE;
+      if (ev->events & EPOLLOUT)  rev |= R_EV_IO_WRITABLE;
+
+      if (R_LIKELY (rev != 0))
+        r_ev_io_invoke_iocb (evio, rev);
+    }
+  } else {
     R_LOG_ERROR ("epoll_wait for loop %p failed with error %d", loop, ret);
-    goto beach;
   }
 
-  R_LOG_DEBUG ("epoll_wait for loop %p with %d events", loop, ret);
-  for (i = 0; i < ret; i++) {
-    REvIOEvents rev = 0;
-    ev = &events[i];
-    evio = ev->data.ptr;
-
-    if (ev->events & EPOLLERR)  rev |= R_EV_IO_ERROR;
-    if (ev->events & EPOLLHUP)  rev |= R_EV_IO_HANGUP;
-    if (ev->events & EPOLLIN)   rev |= R_EV_IO_READABLE;
-    if (ev->events & EPOLLOUT)  rev |= R_EV_IO_WRITABLE;
-
-    if (R_LIKELY (rev != 0))
-      r_ev_io_invoke_iocb (evio, rev);
-  }
+  return ret;
+}
 #elif defined (HAVE_KQUEUE)
+static int
+r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
+{
+  REvIO * evio;
+  RClockTime timeout;
+  int ret, i;
+
   struct kevent events[R_EV_LOOP_MAX_EVENTS], * ev;
   struct timespec spec = { 0, 0 };
   int nev = 0;
@@ -432,56 +431,67 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
         R_CLOCK_TIME_IS_VALID (deadline) ? &spec : NULL);
   } while (ret < 0 && errno == EINTR);
 
-  if (ret < 0) {
-    R_LOG_ERROR ("kevent for loop %p failed with error %d", loop, ret);
-    goto beach;
-  }
+  if (ret >= 0) {
+    R_LOG_DEBUG ("kevent for loop %p with eventlst of %d events", loop, ret);
+    for (i = 0; i < ret; i++) {
+      REvIOEvents rev = 0;
+      ev = &events[i];
 
-  R_LOG_DEBUG ("kevent for loop %p with eventlst of %d events", loop, ret);
-  for (i = 0; i < ret; i++) {
-    REvIOEvents rev = 0;
-    ev = &events[i];
+      if (ev->flags & EV_ERROR)
+        rev |= R_EV_IO_ERROR;
+      if ((evio = ev->udata) != NULL) {
+        if ((ev->flags & EV_EOF) && (evio->events & R_EV_IO_HANGUP))
+          rev |= R_EV_IO_HANGUP;
+      }
 
-    if (ev->flags & EV_ERROR)
-      rev |= R_EV_IO_ERROR;
-    if ((evio = ev->udata) != NULL) {
-      if ((ev->flags & EV_EOF) && (evio->events & R_EV_IO_HANGUP))
-        rev |= R_EV_IO_HANGUP;
-    }
-
-    switch (ev->filter) {
-      case EVFILT_READ:
-        R_LOG_DEBUG ("evio "R_EV_IO_FORMAT" gives READ"
-            " flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
-            R_EV_IO_ARGS (evio), ev->flags, ev->fflags);
-        rev |= R_EV_IO_READABLE;
-        break;
-      case EVFILT_WRITE:
-        R_LOG_DEBUG ("evio "R_EV_IO_FORMAT" gives WRITE"
-            " flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
-            R_EV_IO_ARGS (evio), ev->flags, ev->fflags);
-        rev |= R_EV_IO_WRITABLE;
-        break;
-      case EVFILT_USER:
-        R_LOG_DEBUG ("USER flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
-            ev->flags, ev->fflags);
-        r_ev_loop_move_done_callbacks (loop);
-        continue;
-      default:
-        R_LOG_DEBUG ("evio "R_EV_IO_FORMAT" gives filter: %"RINT16_FMT
-            " flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
-            R_EV_IO_ARGS (evio), ev->filter, ev->flags, ev->fflags);
-        if (rev == 0)
+      switch (ev->filter) {
+        case EVFILT_READ:
+          R_LOG_DEBUG ("evio "R_EV_IO_FORMAT" gives READ"
+              " flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
+              R_EV_IO_ARGS (evio), ev->flags, ev->fflags);
+          rev |= R_EV_IO_READABLE;
+          break;
+        case EVFILT_WRITE:
+          R_LOG_DEBUG ("evio "R_EV_IO_FORMAT" gives WRITE"
+              " flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
+              R_EV_IO_ARGS (evio), ev->flags, ev->fflags);
+          rev |= R_EV_IO_WRITABLE;
+          break;
+        case EVFILT_USER:
+          R_LOG_DEBUG ("USER flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
+              ev->flags, ev->fflags);
+          r_ev_loop_move_done_callbacks (loop);
           continue;
-    }
+        default:
+          R_LOG_DEBUG ("evio "R_EV_IO_FORMAT" gives filter: %"RINT16_FMT
+              " flags: 0x%"RINT16_MODIFIER"x fflags: 0x%"RINT32_MODIFIER"x",
+              R_EV_IO_ARGS (evio), ev->filter, ev->flags, ev->fflags);
+          if (rev == 0)
+            continue;
+      }
 
-    r_ev_io_invoke_iocb (evio, rev);
+      r_ev_io_invoke_iocb (evio, rev);
+    }
+  } else {
+    R_LOG_ERROR ("kevent for loop %p failed with error %d", loop, ret);
   }
-#endif
-beach:
 
   return ret;
 }
+#else
+/* TODO: Implement win32 backend */
+/* TODO: Implement r_poll based backend */
+static int
+r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
+{
+  int ret = -1;
+
+  (void) loop;
+  (void) deadline;
+
+  return ret;
+}
+#endif
 
 static ruint
 r_ev_loop_outstanding_events (REvLoop * loop)
