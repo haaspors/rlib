@@ -182,7 +182,8 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
       R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
       abort ();
     }
-    fd = loop->pipefd[1];
+    fd = loop->pipefd[0];
+    r_fd_unix_set_nonblocking (fd, TRUE);
 #endif
 
     r_ref_init (&loop->evio_wakeup.ref, NULL);
@@ -639,7 +640,7 @@ r_ev_loop_eventfd_io_cb (rpointer data, REvIOEvents events, REvIO * evio)
     while (TRUE) {
       do {
         r = read (fd, &buf, sizeof (ruint64));
-      } while (r == sizeof (ruint64));
+      } while (r >= 0);
 
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         break;
