@@ -37,6 +37,8 @@
 #mesondefine HAVE_IOCTL
 #mesondefine HAVE_MMAP
 #mesondefine HAVE_POLL
+#mesondefine HAVE_PIPE
+#mesondefine HAVE_PIPE2
 #mesondefine HAVE_SELECT
 #mesondefine HAVE_ACCESS
 #mesondefine HAVE_STAT

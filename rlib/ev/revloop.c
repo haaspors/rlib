@@ -89,9 +89,7 @@ struct _REvLoop {
   RMutex done_mutex;
 #ifdef HAVE_EPOLL_CTL
   REvIO evio_wakeup;
-#ifdef HAVE_EVENTFD
-  int evfd;
-#else
+#ifndef HAVE_EVENTFD
   int pipefd[2];
 #endif
 #endif
@@ -129,10 +127,8 @@ r_ev_loop_free (REvLoop * loop)
   r_mutex_clear (&loop->done_mutex);
 
 #ifdef HAVE_EPOLL_CTL
-#ifdef HAVE_EVENTFD
-    r_io_handle_close (loop->evfd);
-#else
-    r_io_handle_close (loop->pipefd[0]);
+    r_io_handle_close (loop->evio_wakeup.handle);
+#ifndef HAVE_EVENTFD
     r_io_handle_close (loop->pipefd[1]);
 #endif
     r_ev_io_clear (&loop->evio_wakeup);
@@ -173,29 +169,36 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
 #elif defined (HAVE_EPOLL_CTL)
   if ((loop->handle = epoll_create1 (0)) != R_IO_HANDLE_INVALID) {
     struct epoll_event ev;
-    RIOHandle fd;
+    RIOHandle handle;
 
-#ifdef HAVE_EVENTFD
-    fd = loop->evfd = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
-#else
+#if defined (HAVE_EVENTFD)
+    handle = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
+#elif defined (HAVE_PIPE2)
+    if (pipe2 (loop->pipefd, O_CLOEXEC | O_NONBLOCK) != 0) {
+      R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
+      abort ();
+    }
+    handle = loop->pipefd[0];
+#elif defined (HAVE_PIPE)
     if (pipe (loop->pipefd) != 0) {
       R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
       abort ();
     }
-    fd = loop->pipefd[0];
-    r_fd_unix_set_nonblocking (fd, TRUE);
+    handle = loop->pipefd[0];
+    r_fd_unix_set_nonblocking (handle, TRUE);
+#else
+#error What kind of linux is this? Supporting epoll, but not pipe?
 #endif
 
-    r_ev_io_init (&loop->evio_wakeup, NULL, fd, NULL);
+    r_ev_io_init (&loop->evio_wakeup, NULL, handle, NULL);
     loop->evio_wakeup.events = R_EV_IO_READABLE;
     r_cbqueue_push (&loop->evio_wakeup.iocbq,
         (RFunc)r_ev_loop_wakeup_cb, loop, NULL, NULL, NULL);
 
     ev.data.ptr = &loop->evio_wakeup;
     ev.events = EPOLLIN | EPOLLET;
-    if (epoll_ctl (loop->handle, EPOLL_CTL_ADD, fd, &ev) != 0) {
-      R_LOG_ERROR ("Failed to add tq event fd %d for loop %p",
-          ev.data.fd, loop);
+    if (epoll_ctl (loop->handle, EPOLL_CTL_ADD, handle, &ev) != 0) {
+      R_LOG_ERROR ("Failed to add wakeup fd %d for loop %p", handle, loop);
       abort ();
     }
   }
@@ -660,10 +663,10 @@ r_ev_loop_wakeup (REvLoop * loop)
 #elif defined (HAVE_EPOLL_CTL)
   ruint64 buf = r_atomic_uint_load (&loop->tqitems);
   int res;
-#ifdef HAVE_EVENTFD
-  int fd = loop->evfd;
+#if defined (HAVE_EVENTFD)
+  RIOHandle fd = loop->evio_wakeup.handle;
 #else
-  int fd = loop->pipefd[1];
+  RIOHandle fd = loop->pipefd[1];
 #endif
   R_LOG_DEBUG ("loop %p wakeup!", loop);
   if ((res = write (fd, &buf, sizeof (ruint64))) != sizeof (ruint64)) {
