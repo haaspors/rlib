@@ -127,7 +127,7 @@ RTEST_F (rthreadpool, start_thread_on_each_cpu, RTEST_FAST)
   RThreadPool * pool;
   rsize cpus;
 
-  r_assert_cmpuint ((cpus = r_sys_cpu_logical_count ()), >, 0);
+  r_assert_cmpuint ((cpus = r_sys_cpu_allowed_count ()), >, 0);
 
   r_mutex_lock (&fixture->mutex);
   r_assert_cmpptr ((pool = r_thread_pool_new ("pool",
