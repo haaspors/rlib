@@ -13,6 +13,7 @@ RTEST_BENCH (rbench, system, RTEST_FAST | RTEST_SYSTEM)
   r_print ("\t\tMAX:      %4u\n", r_sys_cpu_max_count ());
   r_print ("\t\tPyhsical: %4u\n", r_sys_cpu_physical_count ());
   r_print ("\t\tLogical:  %4u\n", r_sys_cpu_logical_count ());
+  r_print ("\t\tAllowed:  %4u\n", r_sys_cpu_allowed_count ());
   if (r_sys_cpuset_online (cpuset)) {
     rchar * online;
     r_print ("\t\tOnline:   [%s]\n", (online = r_bitset_to_human_readable (cpuset)));

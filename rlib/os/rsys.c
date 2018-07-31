@@ -219,6 +219,21 @@ r_sys_cpu_logical_count (void)
 }
 
 ruint
+r_sys_cpu_allowed_count (void)
+{
+  RBitset * cpuset;
+  ruint ret;
+
+  if (r_bitset_init_stack (cpuset, r_sys_cpu_max_count ()) &&
+      r_sys_cpuset_allowed (cpuset))
+    ret = r_bitset_popcount (cpuset);
+  else
+    ret = 0;
+
+  return ret;
+}
+
+ruint
 r_sys_cpu_max_count (void)
 {
   ruint ret;

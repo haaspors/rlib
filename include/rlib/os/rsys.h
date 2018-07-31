@@ -32,6 +32,7 @@ R_BEGIN_DECLS
 R_API ruint r_sys_cpu_packages (void);
 R_API ruint r_sys_cpu_physical_count (void);
 R_API ruint r_sys_cpu_logical_count (void);
+R_API ruint r_sys_cpu_allowed_count (void);
 R_API ruint r_sys_cpu_max_count (void);
 
 R_API ruint r_sys_cpuset_max_count (void);
