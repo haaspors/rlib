@@ -189,7 +189,7 @@ RTEST_BENCH (revudp, multi_loopback_receive, RTEST_FASTSLOW | RTEST_SYSTEM)
   tctxcount = CLAMP ((cpus / 2), 1, R_N_ELEMENTS (ctx));
   r_assert_cmpptr ((tctx = r_alloca (sizeof (REvUDPBenchThreadCtx) * tctxcount)), !=, NULL);
 
-  r_assert_cmpptr ((tq = r_task_queue_new_thread_per_group (tctxcount)), !=, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new (tctxcount, 1)), !=, NULL);
   r_print ("\tTaskQueue with %u threads and %u groups\n",
       r_task_queue_thread_count (tq), r_task_queue_group_count (tq));
 

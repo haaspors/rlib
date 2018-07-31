@@ -42,12 +42,11 @@ R_API rboolean r_task_add_dep_v (RTask * task, RTask * dep, va_list args);
 R_API rboolean r_task_cancel (RTask * task, rboolean wait_if_running);
 R_API rboolean r_task_wait (RTask * task);
 
-R_API RTaskQueue * r_task_queue_new_simple (ruint threads) R_ATTR_MALLOC;
-R_API RTaskQueue * r_task_queue_new_thread_per_group (ruint groups) R_ATTR_MALLOC;
-R_API RTaskQueue * r_task_queue_new_per_numa_simple (ruint thrpernode) R_ATTR_MALLOC;
-R_API RTaskQueue * r_task_queue_new_per_numa_each_cpu (void) R_ATTR_MALLOC;
-R_API RTaskQueue * r_task_queue_new_per_numa_each_cpu_with_cpuset (const RBitset * cpuset) R_ATTR_MALLOC;
-R_API RTaskQueue * r_task_queue_new_per_cpu_simple (ruint cpupergroup) R_ATTR_MALLOC;
+R_API RTaskQueue * r_task_queue_new (ruint groups, ruint threads_per_group) R_ATTR_MALLOC;
+R_API RTaskQueue * r_task_queue_new_pin_and_group_on_numa_node (const RBitset * nodeset, ruint threads_per_group) R_ATTR_MALLOC;
+R_API RTaskQueue * r_task_queue_new_pin_on_cpu_group_numa_node (const RBitset * nodeset) R_ATTR_MALLOC;
+R_API RTaskQueue * r_task_queue_new_pin_on_each_cpu (const RBitset * cpuset, ruint groups) R_ATTR_MALLOC;
+R_API RTaskQueue * r_task_queue_new_pin_on_each_cpu_group_numa_node (const RBitset * cpuset) R_ATTR_MALLOC;
 #define r_task_queue_ref    r_ref_ref
 #define r_task_queue_unref  r_ref_unref
 R_API RTaskQueue * r_task_queue_current (void);

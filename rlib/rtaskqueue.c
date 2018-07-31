@@ -24,6 +24,7 @@
 
 #include <rlib/os/rsys.h>
 
+#include <rlib/rassert.h>
 #include <rlib/rlog.h>
 #include <rlib/rthreadpool.h>
 
@@ -220,157 +221,151 @@ r_task_queue_alloc (rsize ctxcount)
 
 
 RTaskQueue *
-r_task_queue_new_simple (ruint threads)
-{
-  RTaskQueue * ret;
-
-  if (R_UNLIKELY (threads == 0)) return NULL;
-
-  if ((ret = r_task_queue_alloc (1)) != NULL) {
-    R_LOG_DEBUG ("New simple task queue: %p, %u threads", ret, threads);
-    while (threads--)
-      r_thread_pool_start_thread (ret->pool, NULL, NULL, ret->ctx);
-  }
-
-  return ret;
-}
-
-RTaskQueue *
-r_task_queue_new_thread_per_group (ruint groups)
+r_task_queue_new (ruint groups, ruint threads_per_group)
 {
   RTaskQueue * ret;
 
   if (R_UNLIKELY (groups == 0)) return NULL;
+  if (R_UNLIKELY (threads_per_group == 0)) return NULL;
 
   if ((ret = r_task_queue_alloc (groups)) != NULL) {
-    ruint i;
-    for (i = 0; i < groups; i++)
-      r_thread_pool_start_thread (ret->pool, NULL, NULL, &ret->ctx[i]);
-  }
-
-  return ret;
-}
-
-RTaskQueue *
-r_task_queue_new_per_numa_simple (ruint thrpernode)
-{
-  RSysTopology * topo;
-  RTaskQueue * ret = NULL;
-  RBitset * cpuset;
-
-  if (!r_bitset_init_stack (cpuset, r_sys_cpuset_max ()))
-    return NULL;
-
-  if ((topo = r_sys_topology_discover ()) != NULL) {
-    rsize i, nodes = r_sys_topology_node_count (topo);
-    if ((ret = r_task_queue_alloc (nodes)) != NULL) {
-      for (i = 0; i < nodes; i++) {
-        RSysNode * node;
-
-        if ((node = r_sys_topology_node (topo, i)) != NULL) {
-          r_bitset_clear (cpuset);
-          if (r_sys_topology_node_cpuset (node, cpuset) &&
-              r_bitset_popcount (cpuset) > 0) {
-            ruint j;
-            for (j = 0; j < thrpernode; j++)
-              r_thread_pool_start_thread (ret->pool, NULL, cpuset, &ret->ctx[i]);
-          }
-          r_sys_node_unref (node);
-        }
+    ruint g, t;
+    for (g = 0; g < groups; g++) {
+      for (t = 0; t < threads_per_group; t++) {
+        r_thread_pool_start_thread (ret->pool, NULL, NULL, &ret->ctx[g]);
       }
     }
-
-    r_sys_topology_unref (topo);
   }
 
   return ret;
 }
 
 RTaskQueue *
-r_task_queue_new_per_numa_each_cpu (void)
+r_task_queue_new_pin_and_group_on_numa_node (const RBitset * nodeset, ruint threads_per_group)
 {
-  RSysTopology * topo;
-  RTaskQueue * ret = NULL;
-  RBitset * cpuset;
+  RTaskQueue * ret;
+  RBitset * cpuset, * cpuset_allowed, * nodeset_allowed;
+  rsize i, g, groups;
 
-  if (!r_bitset_init_stack (cpuset, r_sys_cpuset_max ()))
-    return NULL;
+  if (R_UNLIKELY (!r_bitset_init_stack (cpuset, r_sys_cpuset_max ()) ||
+        !r_bitset_init_stack (cpuset_allowed, r_sys_cpuset_max ()) ||
+        !r_bitset_init_stack (nodeset_allowed, r_sys_nodeset_max ())))
+      return NULL;
 
-  if ((topo = r_sys_topology_discover ()) != NULL) {
-    rsize i, nodes = r_sys_topology_node_count (topo);
-    if ((ret = r_task_queue_alloc (nodes)) != NULL) {
-      for (i = 0; i < nodes; i++) {
-        RSysNode * node;
+  if (R_UNLIKELY (threads_per_group == 0)) return NULL;
+  if (R_UNLIKELY (!r_sys_cpuset_allowed (cpuset_allowed))) return NULL;
+  if (R_UNLIKELY (!r_sys_nodeset_for_cpuset (nodeset_allowed, cpuset_allowed))) return NULL;
+  if (nodeset != NULL)
+    r_bitset_and (nodeset_allowed, nodeset_allowed, nodeset);
+  if (R_UNLIKELY ((groups = r_bitset_popcount (nodeset_allowed)) == 0)) return NULL;
 
-        if ((node = r_sys_topology_node (topo, i)) != NULL) {
-          r_bitset_clear (cpuset);
-          if (r_sys_topology_node_cpuset (node, cpuset) &&
-              r_bitset_popcount (cpuset) > 0) {
-            r_thread_pool_start_thread_on_each_cpu (ret->pool, cpuset,
-                &ret->ctx[i]);
-          }
-          r_sys_node_unref (node);
-        }
+  if ((ret = r_task_queue_alloc (groups)) != NULL) {
+    for (i = g = 0; i < nodeset_allowed->bits; i++) {
+      r_bitset_clear (cpuset);
+      if (r_bitset_is_bit_set (nodeset_allowed, i) &&
+          r_sys_cpuset_for_node (cpuset, (ruint)i) &&
+          r_bitset_and (cpuset, cpuset, cpuset_allowed) &&
+          r_bitset_popcount (cpuset) > 0) {
+        ruint j;
+        for (j = 0; j < threads_per_group; j++)
+          r_thread_pool_start_thread_on_cpuset (ret->pool, cpuset, &ret->ctx[g]);
+        g++;
       }
     }
-
-    r_sys_topology_unref (topo);
+    r_assert_cmpuint (g, ==, groups);
   }
 
   return ret;
 }
 
 RTaskQueue *
-r_task_queue_new_per_numa_each_cpu_with_cpuset (const RBitset * cpuset)
+r_task_queue_new_pin_on_cpu_group_numa_node (const RBitset * nodeset)
 {
-  RSysTopology * topo;
-  RTaskQueue * ret = NULL;
-  RBitset * ncpuset;
+  RTaskQueue * ret;
+  RBitset * cpuset, * cpuset_allowed, * nodeset_allowed;
+  rsize i, g, groups;
 
-  if (cpuset == NULL)
-    return r_task_queue_new_per_numa_each_cpu ();
+  if (R_UNLIKELY (!r_bitset_init_stack (cpuset, r_sys_cpuset_max ()) ||
+        !r_bitset_init_stack (cpuset_allowed, r_sys_cpuset_max ()) ||
+        !r_bitset_init_stack (nodeset_allowed, r_sys_nodeset_max ())))
+      return NULL;
 
-  if (!r_bitset_init_stack (ncpuset, r_sys_cpuset_max ()))
-    return NULL;
+  if (R_UNLIKELY (!r_sys_cpuset_allowed (cpuset_allowed))) return NULL;
+  if (R_UNLIKELY (!r_sys_nodeset_for_cpuset (nodeset_allowed, cpuset_allowed))) return NULL;
+  if (nodeset != NULL)
+    r_bitset_and (nodeset_allowed, nodeset_allowed, nodeset);
+  if (R_UNLIKELY ((groups = r_bitset_popcount (nodeset_allowed)) == 0)) return NULL;
 
-  if ((topo = r_sys_topology_discover ()) != NULL) {
-    rsize i, nodes = r_sys_topology_node_count (topo);
-    if ((ret = r_task_queue_alloc (nodes)) != NULL) {
-      for (i = 0; i < nodes; i++) {
-        RSysNode * node;
-
-        if ((node = r_sys_topology_node (topo, i)) != NULL) {
-          r_bitset_clear (ncpuset);
-          if (r_sys_topology_node_cpuset (node, ncpuset) &&
-              r_bitset_or (ncpuset, ncpuset, cpuset) &&
-              r_bitset_popcount (ncpuset) > 0) {
-            r_thread_pool_start_thread_on_each_cpu (ret->pool, ncpuset,
-                &ret->ctx[i]);
-          }
-          r_sys_node_unref (node);
-        }
-      }
+  if ((ret = r_task_queue_alloc (groups)) != NULL) {
+    for (i = g = 0; i < nodeset_allowed->bits; i++) {
+      r_bitset_clear (cpuset);
+      if (r_bitset_is_bit_set (nodeset_allowed, i) &&
+          r_sys_cpuset_for_node (cpuset, (ruint)i) &&
+          r_bitset_and (cpuset, cpuset, cpuset_allowed) &&
+          r_bitset_popcount (cpuset) > 0)
+        r_thread_pool_start_thread_on_each_cpu (ret->pool, cpuset, &ret->ctx[g++]);
     }
-
-    r_sys_topology_unref (topo);
+    r_assert_cmpuint (g, ==, groups);
   }
 
   return ret;
 }
 
 RTaskQueue *
-r_task_queue_new_per_cpu_simple (ruint cpupergroup)
+r_task_queue_new_pin_on_each_cpu (const RBitset * cpuset, ruint groups)
 {
-  RTaskQueue * ret = NULL;
-  ruint i, g, cpus = r_sys_cpu_logical_count ();
+  RTaskQueue * ret;
+  RBitset * cpuset_allowed;
 
-  if (R_UNLIKELY (cpupergroup == 0)) return NULL;
-  g = (cpus + cpupergroup - 1) / cpupergroup;
-  if (R_UNLIKELY (g == 0)) g = 1;
+  if (R_UNLIKELY (groups == 0)) return NULL;
+  if (R_UNLIKELY (!r_bitset_init_stack (cpuset_allowed, r_sys_cpuset_max ()))) return NULL;
+  if (R_UNLIKELY (!r_sys_cpuset_allowed (cpuset_allowed))) return NULL;
+  if (cpuset != NULL)
+    r_bitset_and (cpuset_allowed, cpuset_allowed, cpuset);
+  if (R_UNLIKELY (r_bitset_popcount (cpuset_allowed) == 0)) return NULL;
+  if (groups > r_bitset_popcount (cpuset_allowed))
+    groups = r_bitset_popcount (cpuset_allowed);
 
-  if ((ret = r_task_queue_alloc (g)) != NULL) {
-    for (i = 0; i < cpus; i++)
-      r_thread_pool_start_thread_on_cpu (ret->pool, i, &ret->ctx[i / cpupergroup]);
+  if ((ret = r_task_queue_alloc (groups)) != NULL) {
+    rsize i;
+    for (i = 0; i < cpuset_allowed->bits; i++) {
+      if (r_bitset_is_bit_set (cpuset_allowed, i))
+        r_thread_pool_start_thread_on_cpu (ret->pool, i, &ret->ctx[i % groups]);
+    }
+  }
+
+  return ret;
+}
+
+RTaskQueue *
+r_task_queue_new_pin_on_each_cpu_group_numa_node (const RBitset * cpuset)
+{
+  RTaskQueue * ret;
+  RBitset * cpuset_allowed, * nodeset_allowed, * cpuset_node;
+  rsize i, g, groups;
+
+  if (R_UNLIKELY (!r_bitset_init_stack (cpuset_allowed, r_sys_cpuset_max ()) ||
+        !r_bitset_init_stack (nodeset_allowed, r_sys_cpuset_max ()) ||
+        !r_bitset_init_stack (cpuset_node, r_sys_nodeset_max ())))
+      return NULL;
+
+  if (R_UNLIKELY (!r_sys_cpuset_allowed (cpuset_allowed))) return NULL;
+  if (cpuset != NULL)
+    r_bitset_and (cpuset_allowed, cpuset_allowed, cpuset);
+  if (R_UNLIKELY (r_bitset_popcount (cpuset_allowed) == 0)) return NULL;
+  if (R_UNLIKELY (!r_sys_nodeset_for_cpuset (nodeset_allowed, cpuset_allowed))) return NULL;
+  if (R_UNLIKELY ((groups = r_bitset_popcount (nodeset_allowed)) == 0)) return NULL;
+
+  if ((ret = r_task_queue_alloc (groups)) != NULL) {
+    for (i = g = 0; i < nodeset_allowed->bits; i++) {
+      r_bitset_clear (cpuset_node);
+      if (r_bitset_is_bit_set (nodeset_allowed, i) &&
+          r_sys_cpuset_for_node (cpuset_node, (ruint)i) &&
+          r_bitset_and (cpuset_node, cpuset_node, cpuset_allowed) &&
+          r_bitset_popcount (cpuset_node) > 0)
+        r_thread_pool_start_thread_on_each_cpu (ret->pool, cpuset_node, &ret->ctx[g++]);
+    }
+    r_assert_cmpuint (g, ==, groups);
   }
 
   return ret;

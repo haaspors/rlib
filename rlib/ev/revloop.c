@@ -161,7 +161,7 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
   loop->ts = r_clock_get_time (loop->clock);
 
   loop->tq = tq != NULL ? r_task_queue_ref (tq) :
-    r_task_queue_new_simple (R_EV_LOOP_DEFAULT_TASK_THREADS);
+    r_task_queue_new (1, R_EV_LOOP_DEFAULT_TASK_THREADS);
   r_atomic_uint_store (&loop->tqitems, 0);
   r_mutex_init (&loop->done_mutex);
 

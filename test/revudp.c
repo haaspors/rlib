@@ -142,7 +142,7 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
   sentbuf = NULL;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
-  r_assert_cmpptr ((tq = r_task_queue_new_per_cpu_simple (1)), !=, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new_pin_on_each_cpu (NULL, 1)), !=, NULL);
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, tq)), !=, NULL);
   r_clock_unref (clock);
 

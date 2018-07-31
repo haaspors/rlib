@@ -10,18 +10,20 @@ simple_adder (rpointer data, RTaskQueue * tq, RTask * task)
   r_atomic_uint_fetch_add (counter, 1);
 }
 
-RTEST (rtaskqueue, simple, RTEST_FAST)
+RTEST (rtaskqueue, new, RTEST_FAST)
 {
   RTaskQueue * tq;
   rauint counter;
   RTask * t;
 
-  r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr (r_task_queue_new_simple (0), ==, NULL);
-  r_assert_cmpptr ((tq = r_task_queue_new_simple (1)), !=, NULL);
+  r_assert_cmpptr (r_task_queue_new (0, 1), ==, NULL);
+  r_assert_cmpptr (r_task_queue_new (1, 0), ==, NULL);
+
+  r_assert_cmpptr ((tq = r_task_queue_new (1, 1)), !=, NULL);
   r_assert_cmpuint (r_task_queue_group_count (tq), ==, 1);
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, 1);
 
+  r_atomic_uint_store (&counter, 0);
   r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
   r_assert (r_task_wait (t));
   r_assert_cmpuint (r_atomic_uint_load (&counter), ==, 1);
@@ -45,7 +47,7 @@ RTEST (rtaskqueue, current, RTEST_FAST)
   RTaskQueue * tq, * cur = NULL;
   RTask * t;
 
-  r_assert_cmpptr ((tq = r_task_queue_new_simple (1)), !=, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new (1, 1)), !=, NULL);
 
   r_assert_cmpptr (r_task_queue_current (), ==, NULL);
   r_assert_cmpptr (cur, ==, NULL);
@@ -84,7 +86,7 @@ RTEST (rtaskqueue, chain, RTEST_FAST)
   RTask * t[3];
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr ((tq = r_task_queue_new_simple (1)), !=, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new (1, 1)), !=, NULL);
 
   r_assert_cmpptr ((t[0] = r_task_queue_add (tq, chain_adder, &counter, NULL)), !=, NULL);
   r_assert_cmpptr ((t[1] = r_task_queue_add (tq, chain_adder, &counter, NULL)), !=, NULL);
@@ -142,7 +144,7 @@ RTEST (rtaskqueue, dep, RTEST_FAST)
   };
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr ((tq = r_task_queue_new_simple (4)), !=, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new (1, 4)), !=, NULL);
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, 4);
 
   r_assert_cmpptr ((t[0] = r_task_queue_add_full (tq, 0, chain_ctx, &ctx[0], NULL, NULL)), !=, NULL);
@@ -172,7 +174,7 @@ RTEST (rtaskqueue, allocate_manually, RTEST_FAST)
   };
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr ((tq = r_task_queue_new_simple (4)), !=, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new (1, 4)), !=, NULL);
 
   r_assert_cmpptr ((t[0] = r_task_queue_allocate (tq, chain_ctx, &ctx[0], NULL)), !=, NULL);
   r_assert_cmpptr ((t[1] = r_task_queue_allocate (tq, chain_ctx, &ctx[1], NULL)), !=, NULL);
@@ -229,7 +231,7 @@ RTEST (rtaskqueue, cancel_task, RTEST_FAST)
   RTQWaitCtx wctx;
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr ((tq = r_task_queue_new_simple (1)), !=, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new (1, 1)), !=, NULL);
   r_assert_cmpptr ((t = r_task_queue_allocate (tq, simple_adder, &counter, NULL)), !=, NULL);
 
   r_assert (!r_task_cancel (t, TRUE));
@@ -271,16 +273,16 @@ RTEST (rtaskqueue, cancel_task, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rtaskqueue, per_numa, RTEST_FAST)
+RTEST (rtaskqueue, group_numa_node, RTEST_FAST)
 {
   RTaskQueue * tq;
   rauint counter;
   RTask * t;
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr ((tq = r_task_queue_new_per_numa_simple (2)), !=, NULL);
-  r_assert_cmpuint (r_task_queue_group_count (tq), ==, r_sys_node_count ());
-  r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_node_count () * 2);
+  r_assert_cmpptr ((tq = r_task_queue_new_pin_and_group_on_numa_node (NULL, 2)), !=, NULL);
+  r_assert_cmpuint (r_task_queue_group_count (tq), ==, r_sys_node_count_with_allowed_cpus ());
+  r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_node_count_with_allowed_cpus () * 2);
 
   r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
   r_assert (r_task_wait (t));
@@ -291,17 +293,16 @@ RTEST (rtaskqueue, per_numa, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rtaskqueue, per_numa_each_cpu, RTEST_FAST)
+RTEST (rtaskqueue, pin_on_cpu_group_numa_node, RTEST_FAST)
 {
   RTaskQueue * tq;
   rauint counter;
   RTask * t;
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr (r_task_queue_new_simple (0), ==, NULL);
-  r_assert_cmpptr ((tq = r_task_queue_new_per_numa_each_cpu ()), !=, NULL);
-  r_assert_cmpuint (r_task_queue_group_count (tq), ==, r_sys_node_count ());
-  r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_cpu_logical_count ());
+  r_assert_cmpptr ((tq = r_task_queue_new_pin_on_cpu_group_numa_node (NULL)), !=, NULL);
+  r_assert_cmpuint (r_task_queue_group_count (tq), ==, r_sys_node_count_with_allowed_cpus ());
+  r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_cpu_allowed_count ());
 
   r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
   r_assert (r_task_wait (t));
@@ -312,17 +313,22 @@ RTEST (rtaskqueue, per_numa_each_cpu, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rtaskqueue, per_cpu, RTEST_FAST)
+RTEST (rtaskqueue, pin_on_each_cpu, RTEST_FAST)
 {
   RTaskQueue * tq;
   rauint counter;
   RTask * t;
+  RBitset * cpuset;
+
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpu_max_count ()));
+  r_assert (r_sys_cpuset_allowed (cpuset));
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr (r_task_queue_new_simple (0), ==, NULL);
-  r_assert_cmpptr ((tq = r_task_queue_new_per_cpu_simple (2)), !=, NULL);
-  r_assert_cmpuint (r_task_queue_group_count (tq), ==, (r_sys_cpu_logical_count () + 1) / 2);
-  r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_cpu_logical_count ());
+  r_assert_cmpptr (r_task_queue_new_pin_on_each_cpu (NULL, 0), ==, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new_pin_on_each_cpu (NULL, 2)), !=, NULL);
+  r_assert_cmpuint (r_task_queue_group_count (tq), >, 0);
+  r_assert_cmpuint (r_task_queue_group_count (tq), <=, 2);
+  r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_bitset_popcount (cpuset));
 
   r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
   r_assert (r_task_wait (t));

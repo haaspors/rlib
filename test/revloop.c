@@ -358,57 +358,39 @@ RTEST (revloop, add_task_with_taskgroup, RTEST_FAST)
 {
   REvLoop * loop;
   RClock * clock;
-  RThread * thread = NULL;
+  RThread * thread[2] = { NULL, NULL };
   RTaskQueue * tq;
   RTask * task;
   rsize it = 0;
-#if 0
-  RBitset * cpuset;
-  /* FIXME: This doesn't seem to work.... */
-  r_assert (r_bitset_init_stack (cpuset, r_sys_cpu_max_count ()));
-#endif
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
-  r_assert_cmpptr ((tq = r_task_queue_new_per_cpu_simple (1)), !=, NULL);
+  r_assert_cmpptr ((tq = r_task_queue_new (2, 1)), !=, NULL);
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, tq)), !=, NULL);
   r_assert (r_ev_loop_add_prepare (loop, prepare_cb, &it, NULL));
 
   r_assert_cmpptr ((task = r_ev_loop_add_task_with_taskgroup (loop, 0,
-          register_thread_task, task_done, &thread, NULL)), !=, NULL);
+          register_thread_task, task_done, &thread[0], NULL)), !=, NULL);
 
   r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
   r_assert_cmpuint (it, ==, 1);
-  r_assert_cmpptr (thread, !=, r_thread_current ());
+  r_assert_cmpptr (thread[0], !=, r_thread_current ());
   r_task_unref (task);
-#if 0
-  r_assert (r_thread_get_affinity (thread, cpuset));
-  r_assert_cmpuint (r_bitset_popcount (cpuset), ==, 1);
-  r_assert (r_bitset_is_bit_set (cpuset, 0));
-#endif
 
-  if (r_sys_cpu_physical_count () > 1) {
-    RThread * thread2;
-    r_assert_cmpptr ((task = r_ev_loop_add_task_with_taskgroup (loop, 1,
-            register_thread_task, task_done, &thread2, NULL)), !=, NULL);
-    r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
-    r_assert_cmpuint (it, ==, 2);
-    r_assert_cmpptr (thread2, !=, r_thread_current ());
-    r_assert_cmpptr (thread, !=, thread2);
-    r_task_unref (task);
-#if 0
-    r_assert (r_thread_get_affinity (thread2, cpuset));
-    r_assert_cmpuint (r_bitset_popcount (cpuset), ==, 1);
-    r_assert (r_bitset_is_bit_set (cpuset, 0));
-#endif
+  r_assert_cmpptr ((task = r_ev_loop_add_task_with_taskgroup (loop, 1,
+          register_thread_task, task_done, &thread[1], NULL)), !=, NULL);
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+  r_assert_cmpuint (it, ==, 2);
+  r_assert_cmpptr (thread[1], !=, r_thread_current ());
+  r_assert_cmpptr (thread[0], !=, thread[1]);
+  r_task_unref (task);
 
-    r_assert_cmpptr ((task = r_ev_loop_add_task_with_taskgroup (loop, 0,
-            register_thread_task, task_done, &thread2, NULL)), !=, NULL);
-    r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
-    r_assert_cmpuint (it, ==, 3);
-    r_assert_cmpptr (thread2, !=, r_thread_current ());
-    r_assert_cmpptr (thread, ==, thread2);
-    r_task_unref (task);
-  }
+  r_assert_cmpptr ((task = r_ev_loop_add_task_with_taskgroup (loop, 0,
+          register_thread_task, task_done, &thread[1], NULL)), !=, NULL);
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+  r_assert_cmpuint (it, ==, 3);
+  r_assert_cmpptr (thread[1], !=, r_thread_current ());
+  r_assert_cmpptr (thread[0], ==, thread[1]);
+  r_task_unref (task);
 
   r_ev_loop_unref (loop);
   r_clock_unref (clock);
