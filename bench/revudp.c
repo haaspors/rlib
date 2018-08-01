@@ -183,7 +183,7 @@ RTEST_BENCH (revudp, multi_loopback_receive, RTEST_FASTSLOW | RTEST_SYSTEM)
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
 
   r_memclear (ctx, R_N_ELEMENTS (ctx) * sizeof (REvUDPBenchCtx));
-  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max_count ()));
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max ()));
   r_assert (r_sys_cpuset_allowed (cpuset));
   r_assert_cmpptr ((cpus = r_bitset_popcount (cpuset)), >, 0);
   tctxcount = CLAMP ((cpus / 2), 1, R_N_ELEMENTS (ctx));

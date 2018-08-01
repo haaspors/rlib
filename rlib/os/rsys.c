@@ -224,7 +224,7 @@ r_sys_cpu_allowed_count (void)
   RBitset * cpuset;
   ruint ret;
 
-  if (r_bitset_init_stack (cpuset, r_sys_cpu_max_count ()) &&
+  if (r_bitset_init_stack (cpuset, r_sys_cpuset_max ()) &&
       r_sys_cpuset_allowed (cpuset))
     ret = r_bitset_popcount (cpuset);
   else
@@ -245,17 +245,26 @@ r_sys_cpu_max_count (void)
 #elif defined (R_OS_LINUX)
   ret = r_sys_cpu_linux_max_cpus ();
 #else
-  ret = 0;
+  ret = r_sys_cpu_logical_count ();
 #endif
 
   return ret;
 }
 
 ruint
-r_sys_cpuset_max_count (void)
+r_sys_cpuset_max (void)
 {
   ruint ret = r_sys_cpu_max_count ();
   return MAX (ret, 1024);
+}
+
+RBitset *
+r_sys_cpuset_new (void)
+{
+  RBitset * ret = NULL;
+  if (!r_bitset_init_heap (ret, r_sys_cpuset_max ()))
+    ret = NULL;
+  return ret;
 }
 
 rboolean
@@ -329,6 +338,45 @@ r_sys_cpuset_allowed (RBitset * cpuset)
   return ret;
 }
 
+rboolean
+r_sys_cpuset_for_node (RBitset * cpuset, ruint node)
+{
+  rboolean ret = FALSE;
+
+  if (R_UNLIKELY (cpuset == NULL)) return FALSE;
+
+  r_bitset_clear (cpuset);
+#if defined (R_OS_WIN32)
+  {
+    ULONGLONG mask;
+    if (node < RUINT8_MAX && GetNumaNodeProcessorMask ((ruchar)node, &mask))
+      ret = r_bitset_set_u64_at (cpuset, mask, 0);
+  }
+#elif defined (R_OS_LINUX)
+  {
+    rchar tmp[256];
+    r_snprintf (tmp, sizeof (tmp), R_SYSFS_NODE_FMT "/cpulist", (ruint)node);
+    ret = r_bitset_set_from_human_readable_file (cpuset, tmp, NULL);
+  }
+#elif defined (HAVE_SYSCTLBYNAME)
+  {
+    size_t size = 0;
+    if (sysctlbyname("hw.cacheconfig", NULL, &size, NULL, 0) == 0) {
+      ruint64 * cc = r_alloca (size);
+      if (sysctlbyname("hw.cacheconfig", cc, &size, NULL, 0) == 0 &&
+          node < r_sys_cpu_logical_count () / cc[0]) {
+        ret = r_bitset_set_n_bits_at (cpuset, cc[0], node * cc[0], TRUE);
+      }
+    }
+  }
+#else
+  /* TODO: r_sys_cpuset_for_node */
+  (void) node;
+#endif
+
+  return ret;
+}
+
 ruint
 r_sys_node_count (void)
 {
@@ -356,6 +404,116 @@ r_sys_node_count (void)
 
   return ret;
 }
+
+ruint
+r_sys_node_count_with_online_cpus (void)
+{
+  ruint ret;
+  RBitset * nodeset;
+
+  if (r_bitset_init_stack (nodeset, r_sys_nodeset_max ()) &&
+      r_sys_nodeset_with_online_cpus (nodeset))
+    ret = (ruint)r_bitset_popcount (nodeset);
+  else
+    ret = 0;
+
+  return ret;
+}
+
+ruint
+r_sys_node_count_with_allowed_cpus (void)
+{
+  ruint ret;
+  RBitset * nodeset;
+
+  if (r_bitset_init_stack (nodeset, r_sys_nodeset_max ()) &&
+      r_sys_nodeset_with_allowed_cpus (nodeset))
+    ret = (ruint)r_bitset_popcount (nodeset);
+  else
+    ret = 0;
+
+  return ret;
+}
+
+ruint
+r_sys_nodeset_max (void)
+{
+  return r_sys_cpuset_max ();
+}
+
+RBitset *
+r_sys_nodeset_new (void)
+{
+  return r_sys_cpuset_new ();
+}
+
+rboolean
+r_sys_nodeset_possible (RBitset * nodeset)
+{
+  if (R_UNLIKELY (nodeset == NULL)) return FALSE;
+
+  r_bitset_clear (nodeset);
+#if defined (R_OS_LINUX)
+  return r_bitset_set_from_human_readable_file (nodeset, R_SYSFS_NODE "/possible", NULL);
+#else
+  return r_bitset_set_n_bits_at (nodeset, r_sys_node_count (), 0, TRUE);
+#endif
+}
+
+rboolean
+r_sys_nodeset_online (RBitset * nodeset)
+{
+  if (R_UNLIKELY (nodeset == NULL)) return FALSE;
+
+  r_bitset_clear (nodeset);
+#if defined (R_OS_LINUX)
+  return r_bitset_set_from_human_readable_file (nodeset, R_SYSFS_NODE "/online", NULL);
+#else
+  return r_bitset_set_n_bits_at (nodeset, r_sys_node_count (), 0, TRUE);
+#endif
+}
+
+rboolean
+r_sys_nodeset_with_online_cpus (RBitset * nodeset)
+{
+  RBitset * cpuset;
+
+  return r_bitset_init_stack (cpuset, r_sys_cpuset_max ()) &&
+    r_sys_cpuset_online (cpuset) &&
+    r_sys_nodeset_for_cpuset (nodeset, cpuset);
+}
+
+rboolean
+r_sys_nodeset_with_allowed_cpus (RBitset * nodeset)
+{
+  RBitset * cpuset;
+
+  return r_bitset_init_stack (cpuset, r_sys_cpuset_max ()) &&
+    r_sys_cpuset_allowed (cpuset) &&
+    r_sys_nodeset_for_cpuset (nodeset, cpuset);
+}
+
+rboolean
+r_sys_nodeset_for_cpuset (RBitset * nodeset, const RBitset * cpuset)
+{
+  ruint i;
+  RBitset * cpuset_node;
+
+  if (R_UNLIKELY (nodeset == NULL)) return FALSE;
+  if (cpuset == NULL)
+    return r_sys_nodeset_possible (nodeset);
+  if (R_UNLIKELY (!r_bitset_init_stack (cpuset_node, r_sys_cpuset_max ()))) return FALSE;
+
+  r_bitset_clear (nodeset);
+  for (i = 0; r_sys_cpuset_for_node (cpuset_node, i); i++, r_bitset_clear (cpuset_node)) {
+    if (r_bitset_and (cpuset_node, cpuset_node, cpuset) &&
+        r_bitset_popcount (cpuset_node) > 0)
+      r_bitset_set_bit (nodeset, i, TRUE);
+  }
+
+  return TRUE;
+}
+
 
 
 struct _RSysTopology {
@@ -457,6 +615,10 @@ r_sys_node_discover (rsize idx, RSysTopology * topo)
   if ((ret = r_mem_new0 (RSysNode)) != NULL) {
     r_ref_init (ret, r_sys_node_free);
     ret->idx = idx;
+    ret->cpuset = r_sys_cpuset_new ();
+    r_sys_cpuset_for_node (ret->cpuset, idx);
+    ret->cpus = r_mem_new_n (RSysCpu *, r_bitset_popcount (ret->cpuset));
+    r_bitset_foreach (ret->cpuset, TRUE, r_sys_topology_prepend_cpu, ret);
 
 #if defined (R_OS_WIN32)
     {
@@ -464,30 +626,11 @@ r_sys_node_discover (rsize idx, RSysTopology * topo)
       GetNumaAvailableMemoryNode ((ruchar)idx, &availmem);
       ret->availablemem = (rsize)availmem;
     }
-    if (r_bitset_init_heap (ret->cpuset, sizeof (ULONGLONG) * 8)) {
-      ULONGLONG mask;
-      if (idx < RUINT8_MAX && GetNumaNodeProcessorMask ((ruchar)idx, &mask))
-        r_bitset_set_u64_at (ret->cpuset, mask, 0);
-    }
-#elif defined (HAVE_SYSCTLBYNAME)
-    /* FIXME: Read out available memory */
-    if (r_bitset_init_heap (ret->cpuset, r_sys_cpu_logical_count ())) {
-      r_bitset_set_n_bits_at (ret->cpuset,
-          topo->cachecfg[0], idx * topo->cachecfg[0], TRUE);
-    }
 #elif defined (R_OS_LINUX)
     /* FIXME: Read out available memory */
-    if (r_bitset_init_heap (ret->cpuset, r_sys_cpu_linux_max_cpus ())) {
-      rchar tmp[256];
-      r_snprintf (tmp, sizeof (tmp), R_SYSFS_NODE_FMT "/cpulist", (ruint)idx);
-      r_bitset_set_from_human_readable_file (ret->cpuset, tmp, NULL);
-    }
+#elif defined (HAVE_SYSCTLBYNAME)
+    /* FIXME: Read out available memory */
 #endif
-
-    if (R_LIKELY (ret->cpuset != NULL)) {
-      ret->cpus = r_mem_new_n (RSysCpu *, r_bitset_popcount (ret->cpuset));
-      r_bitset_foreach (ret->cpuset, TRUE, r_sys_topology_prepend_cpu, ret);
-    }
   }
 
   return ret;
@@ -507,32 +650,27 @@ r_sys_topology_discover (void)
 
   if ((ret = r_mem_new0 (RSysTopology)) != NULL) {
     r_ref_init (ret, r_sys_topology_free);
+    ret->nodeset = r_sys_nodeset_new ();
 
     R_STMT_START {
 #if defined (R_OS_WIN32)
       ULONG hnn = 0;
-      if (GetNumaHighestNodeNumber (&hnn)) {
-        if (r_bitset_init_heap (ret->nodeset, hnn + 1))
-          r_bitset_set_all (ret->nodeset, TRUE);
-      }
+      if (GetNumaHighestNodeNumber (&hnn))
+        r_bitset_set_n_bits_at (ret->nodeset, hnn + 1, 0, TRUE);
 #elif defined (HAVE_SYSCTLBYNAME)
       size_t size = 0;
       if (sysctlbyname("hw.cacheconfig", NULL, &size, NULL, 0) == 0) {
         ret->cachecfg = r_malloc (size);
         ret->cachelvl = size / sizeof (ruint64);
-        if (sysctlbyname("hw.cacheconfig", ret->cachecfg, &size, NULL, 0) == 0) {
-          if (r_bitset_init_heap (ret->nodeset, r_sys_cpu_logical_count () / ret->cachecfg[0]))
-            r_bitset_set_all (ret->nodeset, TRUE);
-        }
+        if (sysctlbyname("hw.cacheconfig", ret->cachecfg, &size, NULL, 0) == 0)
+          r_bitset_set_n_bits_at (ret->nodeset, r_sys_cpu_logical_count () / ret->cachecfg[0], 0, TRUE);
       }
 #elif defined (R_OS_LINUX)
-      ruint max = r_sys_cpu_linux_max_cpus ();
-      if (r_bitset_init_heap (ret->nodeset, max))
-        r_bitset_set_from_human_readable_file (ret->nodeset, R_SYSFS_NODE "/online", NULL);
+      r_bitset_set_from_human_readable_file (ret->nodeset, R_SYSFS_NODE "/online", NULL);
 #endif
     } R_STMT_END;
 
-    if (R_LIKELY (ret->nodeset != NULL)) {
+    if (R_LIKELY (r_bitset_popcount (ret->nodeset))) {
       ret->nodes = r_mem_new_n (RSysNode *, r_bitset_popcount (ret->nodeset));
       r_bitset_foreach (ret->nodeset, TRUE, r_sys_topology_prepend_node, ret);
     }
@@ -574,5 +712,12 @@ r_sys_topology_node_cpu (RSysNode * node, rsize idx)
 {
   if (R_UNLIKELY (node == NULL)) return NULL;
   return idx < node->cpucount ? r_sys_cpu_ref (node->cpus[idx]) : NULL;
+}
+
+rsize
+r_sys_topology_node_available_memory (const RSysNode * node)
+{
+  if (R_UNLIKELY (node == NULL)) return 0;
+  return node->availablemem;
 }
 

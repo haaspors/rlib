@@ -35,13 +35,27 @@ R_API ruint r_sys_cpu_logical_count (void);
 R_API ruint r_sys_cpu_allowed_count (void);
 R_API ruint r_sys_cpu_max_count (void);
 
-R_API ruint r_sys_cpuset_max_count (void);
+R_API ruint r_sys_cpuset_max (void);
+R_API RBitset * r_sys_cpuset_new (void) R_ATTR_MALLOC;
 R_API rboolean r_sys_cpuset_possible (RBitset * cpuset);
 R_API rboolean r_sys_cpuset_present (RBitset * cpuset);
 R_API rboolean r_sys_cpuset_online (RBitset * cpuset);
 R_API rboolean r_sys_cpuset_allowed (RBitset * cpuset);
 
+R_API rboolean r_sys_cpuset_for_node (RBitset * cpuset, ruint node);
+
 R_API ruint r_sys_node_count (void);
+R_API ruint r_sys_node_count_with_online_cpus (void);
+R_API ruint r_sys_node_count_with_allowed_cpus (void);
+
+R_API ruint r_sys_nodeset_max (void);
+R_API RBitset * r_sys_nodeset_new (void) R_ATTR_MALLOC;
+R_API rboolean r_sys_nodeset_possible (RBitset * nodeset);
+R_API rboolean r_sys_nodeset_online (RBitset * nodeset);
+R_API rboolean r_sys_nodeset_with_online_cpus (RBitset * nodeset);
+R_API rboolean r_sys_nodeset_with_allowed_cpus (RBitset * nodeset);
+
+R_API rboolean r_sys_nodeset_for_cpuset (RBitset * nodeset, const RBitset * cpuset);
 
 /* Topology API */
 typedef struct _RSysTopology  RSysTopology;
@@ -56,6 +70,7 @@ R_API RSysNode * r_sys_topology_node (RSysTopology * topo, rsize idx);
 R_API rboolean r_sys_topology_node_cpuset (const RSysNode * node, RBitset * cpuset);
 R_API rsize r_sys_topology_node_cpu_count (const RSysNode * node);
 R_API RSysCpu * r_sys_topology_node_cpu (RSysNode * node, rsize idx);
+R_API rsize r_sys_topology_node_available_memory (const RSysNode * node);
 
 #define r_sys_topology_ref    r_ref_ref
 #define r_sys_topology_unref  r_ref_unref

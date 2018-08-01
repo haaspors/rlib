@@ -150,7 +150,7 @@ RTEST_F (rthreadpool, start_thread_on_cpuset, RTEST_FAST)
 
 
   /* Setup a cpuset which have half of the allowed cpus set */
-  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max_count ()));
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max ()));
   r_assert (r_sys_cpuset_allowed (cpuset));
   if (r_bitset_popcount (cpuset) > 1) {
     rsize i, target = r_bitset_popcount (cpuset) / 2;

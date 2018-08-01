@@ -258,7 +258,7 @@ r_task_queue_new_per_numa_simple (ruint thrpernode)
   RTaskQueue * ret = NULL;
   RBitset * cpuset;
 
-  if (!r_bitset_init_stack (cpuset, r_sys_cpu_max_count ()))
+  if (!r_bitset_init_stack (cpuset, r_sys_cpuset_max ()))
     return NULL;
 
   if ((topo = r_sys_topology_discover ()) != NULL) {
@@ -293,7 +293,7 @@ r_task_queue_new_per_numa_each_cpu (void)
   RTaskQueue * ret = NULL;
   RBitset * cpuset;
 
-  if (!r_bitset_init_stack (cpuset, r_sys_cpu_max_count ()))
+  if (!r_bitset_init_stack (cpuset, r_sys_cpuset_max ()))
     return NULL;
 
   if ((topo = r_sys_topology_discover ()) != NULL) {
@@ -330,7 +330,7 @@ r_task_queue_new_per_numa_each_cpu_with_cpuset (const RBitset * cpuset)
   if (cpuset == NULL)
     return r_task_queue_new_per_numa_each_cpu ();
 
-  if (!r_bitset_init_stack (ncpuset, r_sys_cpu_max_count ()))
+  if (!r_bitset_init_stack (ncpuset, r_sys_cpuset_max ()))
     return NULL;
 
   if ((topo = r_sys_topology_discover ()) != NULL) {

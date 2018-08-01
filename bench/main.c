@@ -5,7 +5,7 @@ RTEST_BENCH (rbench, system, RTEST_FAST | RTEST_SYSTEM)
 {
   RBitset * cpuset;
 
-  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max_count ()));
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max ()));
 
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   r_print ("\tCPU:\n");

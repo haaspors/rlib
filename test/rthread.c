@@ -69,7 +69,7 @@ RTEST_F (rthread, new_with_affinity, RTEST_FAST | RTEST_SYSTEM)
   RBitset * cpuset;
   rsize first;
 
-  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max_count ()));
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max ()));
 
   r_assert_cmpptr (r_thread_new_full (NULL, NULL, NULL, NULL), ==, NULL);
   r_assert_cmpptr (r_thread_new_full ("rthread-test", NULL, NULL, NULL), ==, NULL);
