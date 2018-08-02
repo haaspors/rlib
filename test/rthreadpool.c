@@ -122,6 +122,66 @@ RTEST_F (rthreadpool, specific_user_data, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST_F (rthreadpool, start_thread_on_cpuset, RTEST_FAST)
+{
+  RThreadPool * pool;
+  RBitset * cpuset;
+
+  r_mutex_lock (&fixture->mutex);
+  r_assert_cmpptr ((pool = r_thread_pool_new ("pool",
+          rthreadpool_test_wait_thread_func, fixture)), !=, NULL);
+  r_assert_cmpuint (r_thread_pool_running_threads (pool), ==, 0);
+
+  r_assert (!r_thread_pool_start_thread_on_cpuset (NULL, NULL, NULL));
+  r_assert (r_thread_pool_start_thread_on_cpuset (pool, NULL, NULL));
+  r_assert_cmpuint (r_thread_pool_running_threads (pool), <=, 1);
+
+  /* Wait for threads to start. */
+  while (r_thread_pool_running_threads (pool) < 1)
+    r_cond_wait (&fixture->startcond, &fixture->mutex);
+  r_assert_cmpuint (r_thread_pool_running_threads (pool), ==, 1);
+
+  fixture->running = FALSE;
+  r_cond_broadcast (&fixture->joincond);
+  r_mutex_unlock (&fixture->mutex);
+  r_thread_pool_join (pool);
+  r_assert_cmpuint (r_thread_pool_running_threads (pool), ==, 0);
+  r_thread_pool_unref (pool);
+
+
+  /* Setup a cpuset which have half of the allowed cpus set */
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max_count ()));
+  r_assert (r_sys_cpuset_allowed (cpuset));
+  if (r_bitset_popcount (cpuset) > 1) {
+    rsize i, target = r_bitset_popcount (cpuset) / 2;
+    for (i = 0; i < cpuset->bits && target < r_bitset_popcount (cpuset); i++)
+      r_bitset_set_bit (cpuset, i, FALSE);
+    r_assert_cmpuint (r_bitset_popcount (cpuset), ==, target);
+  }
+
+  fixture->running = TRUE;
+  r_mutex_lock (&fixture->mutex);
+  r_assert_cmpptr ((pool = r_thread_pool_new ("pool",
+          rthreadpool_test_wait_thread_func, fixture)), !=, NULL);
+  r_assert_cmpuint (r_thread_pool_running_threads (pool), ==, 0);
+
+  r_assert (r_thread_pool_start_thread_on_cpuset (pool, cpuset, NULL));
+  r_assert_cmpuint (r_thread_pool_running_threads (pool), <=, 1);
+
+  /* Wait for threads to start. */
+  while (r_thread_pool_running_threads (pool) < 1)
+    r_cond_wait (&fixture->startcond, &fixture->mutex);
+  r_assert_cmpuint (r_thread_pool_running_threads (pool), ==, 1);
+
+  fixture->running = FALSE;
+  r_cond_broadcast (&fixture->joincond);
+  r_mutex_unlock (&fixture->mutex);
+  r_thread_pool_join (pool);
+  r_assert_cmpuint (r_thread_pool_running_threads (pool), ==, 0);
+  r_thread_pool_unref (pool);
+}
+RTEST_END;
+
 RTEST_F (rthreadpool, start_thread_on_each_cpu, RTEST_FAST)
 {
   RThreadPool * pool;

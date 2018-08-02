@@ -44,6 +44,8 @@ R_API rboolean  r_thread_pool_start_thread (RThreadPool * pool,
     const rchar * name, const RBitset * affinity, rpointer data);
 R_API rboolean  r_thread_pool_start_thread_on_cpu (RThreadPool * pool,
     rsize cpuidx, rpointer data);
+R_API rboolean  r_thread_pool_start_thread_on_cpuset (RThreadPool * pool,
+    const RBitset * cpuset, rpointer data);
 R_API rboolean  r_thread_pool_start_thread_on_each_cpu (RThreadPool * pool,
     const RBitset * cpuset, rpointer data);
 

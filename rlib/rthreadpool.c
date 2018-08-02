@@ -174,7 +174,37 @@ r_thread_pool_start_thread_on_cpu (RThreadPool * pool, rsize cpuidx, rpointer da
 
   r_atomic_uint_fetch_add (&pool->counter, 1);
 
-  fullname = r_strprintf ("%s-%"RSIZE_FMT, pool->prefix, cpuidx);
+  fullname = r_strprintf ("%s-idx-%"RSIZE_FMT, pool->prefix, cpuidx);
+  t = r_thread_pool_start_thread_internal (pool, fullname, cpuset, data);
+  r_free (fullname);
+
+  return t != NULL;
+}
+
+rboolean
+r_thread_pool_start_thread_on_cpuset (RThreadPool * pool,
+    const RBitset * cpuset, rpointer data)
+{
+  RThread * t;
+  rchar * fullname, * setstr;
+
+  if (R_UNLIKELY (pool == NULL)) return FALSE;
+
+  if (cpuset == NULL) {
+    RBitset * cpuset_allowed;
+    if (R_UNLIKELY (!r_bitset_init_stack (cpuset_allowed, r_sys_cpu_max_count ())))
+      return FALSE;
+    if (!r_sys_cpuset_allowed (cpuset_allowed))
+      return FALSE;
+    cpuset = cpuset_allowed;
+  }
+
+  if (R_UNLIKELY (r_bitset_popcount (cpuset) == 0)) return FALSE;
+
+  r_atomic_uint_fetch_add (&pool->counter, 1);
+  setstr = r_bitset_to_human_readable (cpuset);
+  fullname = r_strprintf ("%s-set-%s", pool->prefix, setstr);
+  r_free (setstr);
   t = r_thread_pool_start_thread_internal (pool, fullname, cpuset, data);
   r_free (fullname);
 
