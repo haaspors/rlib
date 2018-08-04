@@ -165,7 +165,15 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
   r_atomic_uint_store (&loop->tqitems, 0);
   r_mutex_init (&loop->done_mutex);
 
-#if defined (R_OS_WIN32)
+#if defined (HAVE_KQUEUE)
+  if ((loop->handle = kqueue ()) != R_IO_HANDLE_INVALID) {
+    struct kevent ev;
+    EV_SET (&ev, 1, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
+    if (kevent (loop->handle, &ev, 1, NULL, 0, NULL) != 0) {
+      R_LOG_ERROR ("Failed to initialize EVFILT_USER for loop %p", loop);
+      abort ();
+    }
+  }
 #elif defined (HAVE_EPOLL_CTL)
   if ((loop->handle = epoll_create1 (0)) != R_IO_HANDLE_INVALID) {
     struct epoll_event ev;
@@ -199,15 +207,6 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
     ev.events = EPOLLIN | EPOLLET;
     if (epoll_ctl (loop->handle, EPOLL_CTL_ADD, handle, &ev) != 0) {
       R_LOG_ERROR ("Failed to add wakeup fd %d for loop %p", handle, loop);
-      abort ();
-    }
-  }
-#elif defined (HAVE_KQUEUE)
-  if ((loop->handle = kqueue ()) != R_IO_HANDLE_INVALID) {
-    struct kevent ev;
-    EV_SET (&ev, 1, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
-    if (kevent (loop->handle, &ev, 1, NULL, 0, NULL) != 0) {
-      R_LOG_ERROR ("Failed to initialize EVFILT_USER for loop %p", loop);
       abort ();
     }
   }
@@ -297,86 +296,7 @@ r_ev_io_get_iocbq_events (REvIO * evio)
   return ret;
 }
 
-#if defined (HAVE_EPOLL_CTL)
-static int
-r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
-{
-  REvIO * evio;
-  RClockTime timeout;
-  int ret, i;
-
-  struct epoll_event events[R_EV_LOOP_MAX_EVENTS], * ev = events;
-
-  /* FIXME: clear->pop! which makes us able to move stuff back on the queue */
-  while ((evio = r_queue_pop (&loop->chg)) != NULL) {
-    REvIOEvents pending = 0;
-    int op;
-
-    if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID))
-      continue;
-
-    pending = evio->events | r_ev_io_get_iocbq_events (evio);
-    R_LOG_DEBUG ("loop %p changes evio "R_EV_IO_FORMAT" %4x->%x",
-        loop, R_EV_IO_ARGS (evio), evio->events, pending);
-
-    ev->data.ptr = evio;
-    ev->events = EPOLLET;
-    if (pending & R_EV_IO_READABLE) ev->events |= EPOLLIN;
-    if (pending & R_EV_IO_WRITABLE) ev->events |= EPOLLOUT;
-    if (pending & R_EV_IO_HANGUP)   ev->events |= EPOLLRDHUP;
-    op = (evio->events == 0) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
-
-    if (epoll_ctl (loop->handle, op, evio->handle, ev) == 0) {
-      evio->events = pending;
-      evio->chglnk = NULL;
-    } else {
-      R_LOG_ERROR ("epoll_ctl for loop %p failed %d: \"%s\" with operation %d for fd: %d",
-          loop, errno, strerror (errno), op, evio->handle);
-
-      if (errno == EPERM)
-        r_ev_io_invoke_iocb (evio, R_EV_IO_ERROR);
-      else
-        abort ();
-      evio->chglnk = NULL; /*r_queue_push (&evio->loop->chg, evio)*/
-    }
-  }
-
-  if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
-    timeout = deadline - loop->ts;
-  else
-    timeout = R_CLOCK_TIME_NONE;
-
-  R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
-  do {
-    int tms = -1;
-    if (R_CLOCK_TIME_IS_VALID (timeout))
-      tms = MAX (R_TIME_AS_MSECONDS (timeout), 1);
-    R_LOG_TRACE ("executing epoll_wait for loop %p with timeout %d", loop, tms);
-    ret = epoll_wait (loop->handle, events, R_N_ELEMENTS (events), tms);
-  } while (ret < 0 && errno == EINTR);
-
-  if (ret >= 0) {
-    R_LOG_DEBUG ("epoll_wait for loop %p with %d events", loop, ret);
-    for (i = 0; i < ret; i++) {
-      REvIOEvents rev = 0;
-      ev = &events[i];
-      evio = ev->data.ptr;
-
-      if (ev->events & EPOLLERR)  rev |= R_EV_IO_ERROR;
-      if (ev->events & EPOLLHUP)  rev |= R_EV_IO_HANGUP;
-      if (ev->events & EPOLLIN)   rev |= R_EV_IO_READABLE;
-      if (ev->events & EPOLLOUT)  rev |= R_EV_IO_WRITABLE;
-
-      if (R_LIKELY (rev != 0))
-        r_ev_io_invoke_iocb (evio, rev);
-    }
-  } else {
-    R_LOG_ERROR ("epoll_wait for loop %p failed with error %d", loop, ret);
-  }
-
-  return ret;
-}
-#elif defined (HAVE_KQUEUE)
+#if defined (HAVE_KQUEUE)
 static int
 r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 {
@@ -474,6 +394,85 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     }
   } else {
     R_LOG_ERROR ("kevent for loop %p failed with error %d", loop, ret);
+  }
+
+  return ret;
+}
+#elif defined (HAVE_EPOLL_CTL)
+static int
+r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
+{
+  REvIO * evio;
+  RClockTime timeout;
+  int ret, i;
+
+  struct epoll_event events[R_EV_LOOP_MAX_EVENTS], * ev = events;
+
+  /* FIXME: clear->pop! which makes us able to move stuff back on the queue */
+  while ((evio = r_queue_pop (&loop->chg)) != NULL) {
+    REvIOEvents pending = 0;
+    int op;
+
+    if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID))
+      continue;
+
+    pending = evio->events | r_ev_io_get_iocbq_events (evio);
+    R_LOG_DEBUG ("loop %p changes evio "R_EV_IO_FORMAT" %4x->%x",
+        loop, R_EV_IO_ARGS (evio), evio->events, pending);
+
+    ev->data.ptr = evio;
+    ev->events = EPOLLET;
+    if (pending & R_EV_IO_READABLE) ev->events |= EPOLLIN;
+    if (pending & R_EV_IO_WRITABLE) ev->events |= EPOLLOUT;
+    if (pending & R_EV_IO_HANGUP)   ev->events |= EPOLLRDHUP;
+    op = (evio->events == 0) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
+
+    if (epoll_ctl (loop->handle, op, evio->handle, ev) == 0) {
+      evio->events = pending;
+      evio->chglnk = NULL;
+    } else {
+      R_LOG_ERROR ("epoll_ctl for loop %p failed %d: \"%s\" with operation %d for fd: %d",
+          loop, errno, strerror (errno), op, evio->handle);
+
+      if (errno == EPERM)
+        r_ev_io_invoke_iocb (evio, R_EV_IO_ERROR);
+      else
+        abort ();
+      evio->chglnk = NULL; /*r_queue_push (&evio->loop->chg, evio)*/
+    }
+  }
+
+  if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
+    timeout = deadline - loop->ts;
+  else
+    timeout = R_CLOCK_TIME_NONE;
+
+  R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
+  do {
+    int tms = -1;
+    if (R_CLOCK_TIME_IS_VALID (timeout))
+      tms = MAX (R_TIME_AS_MSECONDS (timeout), 1);
+    R_LOG_TRACE ("executing epoll_wait for loop %p with timeout %d", loop, tms);
+    ret = epoll_wait (loop->handle, events, R_N_ELEMENTS (events), tms);
+  } while (ret < 0 && errno == EINTR);
+
+  if (ret >= 0) {
+    R_LOG_DEBUG ("epoll_wait for loop %p with %d events", loop, ret);
+    for (i = 0; i < ret; i++) {
+      REvIOEvents rev = 0;
+      ev = &events[i];
+      evio = ev->data.ptr;
+
+      if (ev->events & EPOLLERR)  rev |= R_EV_IO_ERROR;
+      if (ev->events & EPOLLHUP)  rev |= R_EV_IO_HANGUP;
+      if (ev->events & EPOLLIN)   rev |= R_EV_IO_READABLE;
+      if (ev->events & EPOLLOUT)  rev |= R_EV_IO_WRITABLE;
+
+      if (R_LIKELY (rev != 0))
+        r_ev_io_invoke_iocb (evio, rev);
+    }
+  } else {
+    R_LOG_ERROR ("epoll_wait for loop %p failed with error %d", loop, ret);
   }
 
   return ret;
@@ -668,8 +667,13 @@ r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio)
 static void
 r_ev_loop_wakeup (REvLoop * loop)
 {
-#if defined (R_OS_WIN32)
-  R_LOG_DEBUG ("loop %p wakeup!", loop);
+#if defined (HAVE_KQUEUE)
+  struct kevent ev;
+  int res;
+
+  EV_SET (&ev, 1, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
+  res = kevent (loop->handle, &ev, 1, NULL, 0, NULL);
+  R_LOG_DEBUG ("loop %p wakeup! res %d", loop, res);
 #elif defined (HAVE_EPOLL_CTL)
   ruint64 buf = r_atomic_uint_load (&loop->tqitems);
   int res;
@@ -683,13 +687,8 @@ r_ev_loop_wakeup (REvLoop * loop)
     R_LOG_ERROR ("Write failed (res %d) to event fd %d for loop %p",
         res, fd, loop);
   }
-#elif defined (HAVE_KQUEUE)
-  struct kevent ev;
-  int res;
-
-  EV_SET (&ev, 1, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
-  res = kevent (loop->handle, &ev, 1, NULL, 0, NULL);
-  R_LOG_DEBUG ("loop %p wakeup! res %d", loop, res);
+#else
+  R_LOG_DEBUG ("loop %p wakeup!", loop);
 #endif
 }
 
