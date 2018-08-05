@@ -21,7 +21,7 @@
 #include "net/rnet-private.h"
 #include "rlib-private.h"
 
-#include <rlib/file/rfd.h>
+#include <rlib/rio.h>
 #include <rlib/rmem.h>
 
 
@@ -116,7 +116,7 @@ r_socket_handle_new (RSocketFamily family, RSocketType type, RSocketProtocol pro
   handle = socket (family, type, proto);
 #ifdef R_OS_UNIX
   if (handle != R_SOCKET_HANDLE_INVALID)
-    r_fd_unix_set_cloexec (handle, TRUE);
+    r_io_unix_set_cloexec (handle, TRUE);
 #endif
 #endif
 #else
@@ -406,7 +406,7 @@ r_socket_set_blocking (RSocket * socket, rboolean blocking)
   rulong val = !blocking;
   ret = (ioctlsocket (socket->handle, FIONBIO, &val) != SOCKET_ERROR);
 #elif defined (R_OS_UNIX)
-  ret = r_fd_unix_set_nonblocking (socket->handle, !blocking);
+  ret = r_io_unix_set_nonblocking (socket->handle, !blocking);
 #else
   ret = FALSE;
 #endif
@@ -619,7 +619,7 @@ r_socket_accept (RSocket * socket, RSocketStatus * res)
       WSAEventSelect (handle, NULL, 0);
 #endif
 #ifdef R_OS_UNIX
-      r_fd_unix_set_cloexec (handle, TRUE);
+      r_io_unix_set_cloexec (handle, TRUE);
 #endif
     } else {
       r_socket_handle_close (handle);

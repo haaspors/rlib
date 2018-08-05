@@ -8,6 +8,7 @@ rlib_sources = [
   'rclock.c',
   'rcrc.c',
   'renv.c',
+  'rio.c',
   'rjson.c',
   'rjsonparser.c',
   'rlibinit.c',

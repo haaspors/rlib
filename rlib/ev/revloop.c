@@ -21,6 +21,7 @@
 #include "rev-private.h"
 
 #include <rlib/ratomic.h>
+#include <rlib/rio.h>
 #include <rlib/rmem.h>
 #include <rlib/rthreads.h>
 
@@ -72,19 +73,6 @@ r_ev_loop_deinit (void)
 
 static raptr g__r_ev_loop_default; /* (REvLoop *) */
 static RTss  g__r_ev_loop_tss = R_TSS_INIT (NULL);
-
-static rboolean
-r_io_handle_close (RIOHandle handle)
-{
-#if defined (R_OS_WIN32)
-  return CloseHandle (handle);
-#elif defined (R_OS_UNIX)
-  return close (handle) == 0;
-#else
-  (void) handle;
-  return FALSE;
-#endif
-}
 
 
 struct _REvLoop {
@@ -139,12 +127,12 @@ r_ev_loop_free (REvLoop * loop)
 
 #ifdef USE_WAKEUP
   if (loop->wakeup_handle != R_IO_HANDLE_INVALID && loop->wakeup_handle != loop->evio_wakeup.handle) {
-    r_io_handle_close (loop->wakeup_handle);
+    r_io_close (loop->wakeup_handle);
     loop->wakeup_handle = R_IO_HANDLE_INVALID;
   }
 
   if (loop->evio_wakeup.handle != R_IO_HANDLE_INVALID) {
-    r_io_handle_close (loop->evio_wakeup.handle);
+    r_io_close (loop->evio_wakeup.handle);
     loop->evio_wakeup.handle = R_IO_HANDLE_INVALID;
   }
 
@@ -152,7 +140,7 @@ r_ev_loop_free (REvLoop * loop)
 #endif
 
   if (loop->handle != R_IO_HANDLE_INVALID) {
-    r_io_handle_close (loop->handle);
+    r_io_close (loop->handle);
     loop->handle = R_IO_HANDLE_INVALID;
   }
 
@@ -205,13 +193,14 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
     }
     wakeup_readable = pipefd[0];
     loop->wakeup_handle = pipefd[1];
-    r_fd_unix_set_nonblocking (wakeup_readable, TRUE);
-    r_fd_unix_set_cloexec (wakeup_readable, TRUE);
-    r_fd_unix_set_cloexec (loop->wakeup_handle, TRUE);
+#ifdef R_OS_UNIX
+    r_io_unix_set_nonblocking (wakeup_readable, TRUE);
+    r_io_unix_set_cloexec (wakeup_readable, TRUE);
+    r_io_unix_set_cloexec (loop->wakeup_handle, TRUE);
+#endif
 #else
 #error No wakeup mechanism available?
 #endif
-
 #endif
 
 #if defined (USE_KQUEUE)
@@ -676,7 +665,7 @@ r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio)
     int r;
     ruint64 buf;
     do {
-      r = read (evio->handle, &buf, sizeof (ruint64));
+      r = r_io_read (evio->handle, &buf, sizeof (ruint64));
     } while (r >= 0 || errno == EINTR);
 
     if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -702,10 +691,10 @@ r_ev_loop_wakeup (REvLoop * loop)
   R_LOG_DEBUG ("loop %p wakeup! res %d", loop, res);
 #elif defined (USE_WAKEUP)
   ruint64 buf = r_atomic_uint_load (&loop->tqitems);
-  int res;
+  rssize res;
   R_LOG_DEBUG ("loop %p wakeup!", loop);
-  if ((res = write (loop->wakeup_handle, &buf, sizeof (ruint64))) != sizeof (ruint64)) {
-    R_LOG_ERROR ("Write failed (res %d) to event fd %d for loop %p",
+  if ((res = r_io_write (loop->wakeup_handle, &buf, sizeof (ruint64))) != sizeof (ruint64)) {
+    R_LOG_ERROR ("Write failed (res %"RSSIZE_FMT") to event fd %d for loop %p",
         res, loop->wakeup_handle, loop);
   }
 #else
@@ -854,7 +843,7 @@ r_ev_io_init (REvIO * evio, REvLoop * loop, RIOHandle handle, RDestroyNotify not
 
 #ifdef R_OS_UNIX
   if (handle != R_IO_HANDLE_INVALID)
-    r_fd_unix_set_nonblocking (handle, TRUE);
+    r_io_unix_set_nonblocking (handle, TRUE);
 #endif
 }
 
@@ -951,7 +940,7 @@ r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
   R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT, evio->loop, R_EV_IO_ARGS (evio));
 
   if (evio->handle != R_IO_HANDLE_INVALID) {
-    r_io_handle_close (evio->handle);
+    r_io_close (evio->handle);
     evio->handle = R_IO_HANDLE_INVALID;
   }
 
