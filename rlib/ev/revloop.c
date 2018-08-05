@@ -879,10 +879,10 @@ r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
 {
   rpointer ret;
 
-  if (R_UNLIKELY (evio == NULL)) return FALSE;
-  if (R_UNLIKELY (events == 0)) return FALSE;
-  if (R_UNLIKELY (io_cb == NULL)) return FALSE;
-  if (R_UNLIKELY (evio->loop->stop_request)) return FALSE;
+  if (R_UNLIKELY (evio == NULL)) return NULL;
+  if (R_UNLIKELY (events == 0)) return NULL;
+  if (R_UNLIKELY (io_cb == NULL)) return NULL;
+  if (R_UNLIKELY (evio->loop->stop_request)) return NULL;
 
   R_LOG_TRACE ("loop %p start evio "R_EV_IO_FORMAT" %4x + %x",
       evio->loop, R_EV_IO_ARGS (evio), evio->events, events);
