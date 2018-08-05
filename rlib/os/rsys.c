@@ -501,7 +501,7 @@ r_sys_nodeset_for_cpuset (RBitset * nodeset, const RBitset * cpuset)
 
   if (R_UNLIKELY (nodeset == NULL)) return FALSE;
   if (cpuset == NULL)
-    return r_sys_nodeset_possible (nodeset);
+    return r_sys_nodeset_online (nodeset);
   if (R_UNLIKELY (!r_bitset_init_stack (cpuset_node, r_sys_cpuset_max ()))) return FALSE;
 
   r_bitset_clear (nodeset);
