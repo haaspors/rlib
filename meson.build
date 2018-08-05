@@ -249,6 +249,7 @@ check_headers = [
   'sys/time.h',
   'sys/wait.h',
   'sys/epoll.h',
+  'sys/event.h',
 ]
 
 if host_machine.system() == 'linux'

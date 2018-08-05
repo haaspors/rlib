@@ -21,6 +21,7 @@
 #mesondefine HAVE_SYS_IOCTL_H
 #mesondefine HAVE_SYS_SYSCTL_H
 #mesondefine HAVE_SYS_EPOLL_H
+#mesondefine HAVE_SYS_EVENT_H
 #mesondefine HAVE_SYS_EVENTFD_H
 #mesondefine HAVE_SYS_PRCTL_H
 #mesondefine HAVE_SYS_SELECT_H

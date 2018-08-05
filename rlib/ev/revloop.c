@@ -27,7 +27,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#ifdef HAVE_KQUEUE
+#ifdef HAVE_SYS_EVENT_H
 #include <sys/event.h>
 #endif
 #ifdef HAVE_SYS_EPOLL_H
