@@ -89,9 +89,7 @@ struct _REvLoop {
   RMutex done_mutex;
 #ifdef HAVE_EPOLL_CTL
   REvIO evio_wakeup;
-#ifndef HAVE_EVENTFD
-  int pipefd[2];
-#endif
+  RIOHandle wakeup_handle;
 #endif
 
   /* For various callbacks */
@@ -127,11 +125,17 @@ r_ev_loop_free (REvLoop * loop)
   r_mutex_clear (&loop->done_mutex);
 
 #ifdef HAVE_EPOLL_CTL
+  if (loop->wakeup_handle != R_IO_HANDLE_INVALID && loop->wakeup_handle != loop->evio_wakeup.handle) {
+    r_io_handle_close (loop->wakeup_handle);
+    loop->wakeup_handle = R_IO_HANDLE_INVALID;
+  }
+
+  if (loop->evio_wakeup.handle != R_IO_HANDLE_INVALID) {
     r_io_handle_close (loop->evio_wakeup.handle);
-#ifndef HAVE_EVENTFD
-    r_io_handle_close (loop->pipefd[1]);
-#endif
-    r_ev_io_clear (&loop->evio_wakeup);
+    loop->evio_wakeup.handle = R_IO_HANDLE_INVALID;
+  }
+
+  r_ev_io_clear (&loop->evio_wakeup);
 #endif
 
   if (loop->handle != R_IO_HANDLE_INVALID) {
@@ -180,19 +184,23 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
     RIOHandle handle;
 
 #if defined (HAVE_EVENTFD)
-    handle = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
+    loop->wakeup_handle = handle = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
 #elif defined (HAVE_PIPE2)
-    if (pipe2 (loop->pipefd, O_CLOEXEC | O_NONBLOCK) != 0) {
+    int pipefd[2];
+    if (pipe2 (pipefd, O_CLOEXEC | O_NONBLOCK) != 0) {
       R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
       abort ();
     }
-    handle = loop->pipefd[0];
+    handle = pipefd[0];
+    loop->wakeup_handle = pipefd[1];
 #elif defined (HAVE_PIPE)
-    if (pipe (loop->pipefd) != 0) {
+    int pipefd[2];
+    if (pipe (pipefd) != 0) {
       R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
       abort ();
     }
-    handle = loop->pipefd[0];
+    handle = pipefd[0];
+    loop->wakeup_handle = pipefd[1];
     r_fd_unix_set_nonblocking (handle, TRUE);
 #else
 #error What kind of linux is this? Supporting epoll, but not pipe?
@@ -635,7 +643,6 @@ static void
 r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
   REvLoop * loop = data;
-  RIOHandle fd = evio->handle;
 
   if (events & R_EV_IO_ERROR) {
     R_LOG_ERROR ("Wakeup evio "R_EV_IO_FORMAT" received error event for loop %p",
@@ -645,18 +652,14 @@ r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio)
   if (events & R_EV_IO_READABLE) {
     int r;
     ruint64 buf;
-    while (TRUE) {
-      do {
-        r = read (fd, &buf, sizeof (ruint64));
-      } while (r >= 0);
+    do {
+      r = read (evio->handle, &buf, sizeof (ruint64));
+    } while (r >= 0 || errno == EINTR);
 
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        break;
-      } else if (errno != EINTR) {
-        R_LOG_ERROR ("Read from wakeup eventfd failed, errno: %d for loop %p",
-            errno, loop);
-        abort ();
-      }
+    if (errno != EAGAIN && errno != EWOULDBLOCK) {
+      R_LOG_ERROR ("Read from wakeup eventfd failed, errno: %d for loop %p",
+          errno, loop);
+      abort ();
     }
 
     r_ev_loop_move_done_callbacks (loop);
@@ -677,15 +680,10 @@ r_ev_loop_wakeup (REvLoop * loop)
 #elif defined (HAVE_EPOLL_CTL)
   ruint64 buf = r_atomic_uint_load (&loop->tqitems);
   int res;
-#if defined (HAVE_EVENTFD)
-  RIOHandle fd = loop->evio_wakeup.handle;
-#else
-  RIOHandle fd = loop->pipefd[1];
-#endif
   R_LOG_DEBUG ("loop %p wakeup!", loop);
-  if ((res = write (fd, &buf, sizeof (ruint64))) != sizeof (ruint64)) {
+  if ((res = write (loop->wakeup_handle, &buf, sizeof (ruint64))) != sizeof (ruint64)) {
     R_LOG_ERROR ("Write failed (res %d) to event fd %d for loop %p",
-        res, fd, loop);
+        res, loop->wakeup_handle, loop);
   }
 #else
   R_LOG_DEBUG ("loop %p wakeup!", loop);
