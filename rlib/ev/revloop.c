@@ -44,6 +44,17 @@
 #include <errno.h>
 #include <string.h>
 
+
+/* Setup MACROS to select evloop backend! */
+#if defined (HAVE_KQUEUE)
+#define USE_KQUEUE  1
+#elif defined (HAVE_EPOLL_CTL)
+#define USE_EPOLL   1
+#define USE_WAKEUP  1
+#else
+#endif
+
+
 R_LOG_CATEGORY_DEFINE (revlogcat, "ev", "RLib EvLoop",
     R_CLR_BG_CYAN | R_CLR_FG_RED | R_CLR_FMT_BOLD);
 #define R_LOG_CAT_DEFAULT &revlogcat
@@ -87,7 +98,9 @@ struct _REvLoop {
   rauint tqitems;
   RCBQueue dcbs;
   RMutex done_mutex;
-#ifdef HAVE_EPOLL_CTL
+
+  /* Wakeup handle for backends not supporting it natively */
+#ifdef USE_WAKEUP
   REvIO evio_wakeup;
   RIOHandle wakeup_handle;
 #endif
@@ -124,7 +137,7 @@ r_ev_loop_free (REvLoop * loop)
   r_mutex_unlock (&loop->done_mutex);
   r_mutex_clear (&loop->done_mutex);
 
-#ifdef HAVE_EPOLL_CTL
+#ifdef USE_WAKEUP
   if (loop->wakeup_handle != R_IO_HANDLE_INVALID && loop->wakeup_handle != loop->evio_wakeup.handle) {
     r_io_handle_close (loop->wakeup_handle);
     loop->wakeup_handle = R_IO_HANDLE_INVALID;
@@ -146,13 +159,17 @@ r_ev_loop_free (REvLoop * loop)
   r_free (loop);
 }
 
-#ifdef HAVE_EPOLL_CTL
+#ifdef USE_WAKEUP
 static void r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio);
 #endif
 
 static void
 r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
 {
+#ifdef USE_WAKEUP
+  RIOHandle wakeup_readable;
+#endif
+
   loop->stop_request = FALSE;
   r_cbqueue_init (&loop->dcbs);
   r_cbqueue_init (&loop->bcbs);
@@ -169,7 +186,35 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
   r_atomic_uint_store (&loop->tqitems, 0);
   r_mutex_init (&loop->done_mutex);
 
-#if defined (HAVE_KQUEUE)
+#ifdef USE_WAKEUP
+#if defined (HAVE_EVENTFD)
+    loop->wakeup_handle = wakeup_readable = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
+#elif defined (HAVE_PIPE2)
+    int pipefd[2];
+    if (pipe2 (pipefd, O_CLOEXEC | O_NONBLOCK) != 0) {
+      R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
+      abort ();
+    }
+    wakeup_readable = pipefd[0];
+    loop->wakeup_handle = pipefd[1];
+#elif defined (HAVE_PIPE)
+    int pipefd[2];
+    if (pipe (pipefd) != 0) {
+      R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
+      abort ();
+    }
+    wakeup_readable = pipefd[0];
+    loop->wakeup_handle = pipefd[1];
+    r_fd_unix_set_nonblocking (wakeup_readable, TRUE);
+    r_fd_unix_set_cloexec (wakeup_readable, TRUE);
+    r_fd_unix_set_cloexec (loop->wakeup_handle, TRUE);
+#else
+#error No wakeup mechanism available?
+#endif
+
+#endif
+
+#if defined (USE_KQUEUE)
   if ((loop->handle = kqueue ()) != R_IO_HANDLE_INVALID) {
     struct kevent ev;
     EV_SET (&ev, 1, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
@@ -178,46 +223,24 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
       abort ();
     }
   }
-#elif defined (HAVE_EPOLL_CTL)
+#elif defined (USE_EPOLL)
   if ((loop->handle = epoll_create1 (0)) != R_IO_HANDLE_INVALID) {
     struct epoll_event ev;
-    RIOHandle handle;
 
-#if defined (HAVE_EVENTFD)
-    loop->wakeup_handle = handle = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
-#elif defined (HAVE_PIPE2)
-    int pipefd[2];
-    if (pipe2 (pipefd, O_CLOEXEC | O_NONBLOCK) != 0) {
-      R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
-      abort ();
-    }
-    handle = pipefd[0];
-    loop->wakeup_handle = pipefd[1];
-#elif defined (HAVE_PIPE)
-    int pipefd[2];
-    if (pipe (pipefd) != 0) {
-      R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
-      abort ();
-    }
-    handle = pipefd[0];
-    loop->wakeup_handle = pipefd[1];
-    r_fd_unix_set_nonblocking (handle, TRUE);
-#else
-#error What kind of linux is this? Supporting epoll, but not pipe?
-#endif
-
-    r_ev_io_init (&loop->evio_wakeup, NULL, handle, NULL);
+    r_ev_io_init (&loop->evio_wakeup, NULL, wakeup_readable, NULL);
     loop->evio_wakeup.events = R_EV_IO_READABLE;
     r_cbqueue_push (&loop->evio_wakeup.iocbq,
         (RFunc)r_ev_loop_wakeup_cb, loop, NULL, NULL, NULL);
 
     ev.data.ptr = &loop->evio_wakeup;
     ev.events = EPOLLIN | EPOLLET;
-    if (epoll_ctl (loop->handle, EPOLL_CTL_ADD, handle, &ev) != 0) {
-      R_LOG_ERROR ("Failed to add wakeup fd %d for loop %p", handle, loop);
+    if (epoll_ctl (loop->handle, EPOLL_CTL_ADD, wakeup_readable, &ev) != 0) {
+      R_LOG_ERROR ("Failed to add wakeup fd %d for loop %p", wakeup_readable, loop);
       abort ();
     }
   }
+#else
+  loop->handle = R_IO_HANDLE_INVALID;
 #endif
 }
 
@@ -304,7 +327,7 @@ r_ev_io_get_iocbq_events (REvIO * evio)
   return ret;
 }
 
-#if defined (HAVE_KQUEUE)
+#if defined (USE_KQUEUE)
 static int
 r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 {
@@ -406,7 +429,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
   return ret;
 }
-#elif defined (HAVE_EPOLL_CTL)
+#elif defined (USE_EPOLL)
 static int
 r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 {
@@ -638,7 +661,7 @@ r_ev_loop_cancel_timer (REvLoop * loop, RClockEntry * timer)
   return r_clock_cancel_entry (loop->clock, timer);
 }
 
-#ifdef HAVE_EPOLL_CTL
+#ifdef USE_WAKEUP
 static void
 r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
@@ -670,14 +693,14 @@ r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio)
 static void
 r_ev_loop_wakeup (REvLoop * loop)
 {
-#if defined (HAVE_KQUEUE)
+#if defined (USE_KQUEUE)
   struct kevent ev;
   int res;
 
   EV_SET (&ev, 1, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
   res = kevent (loop->handle, &ev, 1, NULL, 0, NULL);
   R_LOG_DEBUG ("loop %p wakeup! res %d", loop, res);
-#elif defined (HAVE_EPOLL_CTL)
+#elif defined (USE_WAKEUP)
   ruint64 buf = r_atomic_uint_load (&loop->tqitems);
   int res;
   R_LOG_DEBUG ("loop %p wakeup!", loop);
@@ -686,7 +709,6 @@ r_ev_loop_wakeup (REvLoop * loop)
         res, loop->wakeup_handle, loop);
   }
 #else
-  R_LOG_DEBUG ("loop %p wakeup!", loop);
 #endif
 }
 
