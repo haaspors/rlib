@@ -24,7 +24,29 @@
 
 #include <rlib/file/rfiletypes.h>
 
+#if defined (R_OS_WIN32)
+#define WIN32_LEAN_AND_MEAN 1
+#include <windows.h>
+#endif
+
 R_BEGIN_DECLS
+
+#ifdef R_OS_WIN32
+static inline ruint32
+r_file_seek_mode_to_method (RSeekMode mode)
+{
+  switch (mode) {
+    case R_SEEK_MODE_CUR:
+      return FILE_CURRENT;
+    case R_SEEK_MODE_SET:
+      return FILE_BEGIN;
+    case R_SEEK_MODE_END:
+      return FILE_END;
+    default:
+      return -1;
+  }
+}
+#endif
 
 static inline int
 r_file_seek_mode_to_whence (RSeekMode mode)

@@ -80,6 +80,7 @@ rlib_sources = [
   'file/rfd.c',
   'file/rfile.c',
   'file/rfs.c',
+  'file/rio.c',
   'net/proto/rhttp.c',
   'net/proto/rrtcp.c',
   'net/proto/rrtp.c',

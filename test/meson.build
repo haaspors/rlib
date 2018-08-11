@@ -31,6 +31,7 @@ rlibtest_sources = [
   'revudp.c',
   'rfd.c',
   'rfile.c',
+  'rfileio.c',
   'rfs.c',
   'rhashset.c',
   'rhashtable.c',
