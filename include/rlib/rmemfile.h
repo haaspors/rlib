@@ -37,7 +37,7 @@ typedef enum {
 } RMemProt;
 
 R_API RMemFile * r_mem_file_new (const rchar * file, RMemProt prot, rboolean writeback) R_ATTR_MALLOC;
-R_API RMemFile * r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback) R_ATTR_MALLOC;
+R_API RMemFile * r_mem_file_new_from_handle (RIOHandle handle, RMemProt prot, rboolean writeback) R_ATTR_MALLOC;
 #define r_mem_file_ref r_ref_ref
 #define r_mem_file_unref r_ref_unref
 

@@ -34,7 +34,7 @@ R_API rsize r_macho_calc_size (rconstpointer mem);
 typedef struct _RMachoParser RMachoParser;
 
 R_API RMachoParser * r_macho_parser_new (const rchar * filename);
-R_API RMachoParser * r_macho_parser_new_from_fd (int fd);
+R_API RMachoParser * r_macho_parser_new_from_handle (RIOHandle handle);
 R_API RMachoParser * r_macho_parser_new_from_mem (rpointer mem, rsize size);
 #define r_macho_parser_ref    r_ref_ref
 #define r_macho_parser_unref  r_ref_unref

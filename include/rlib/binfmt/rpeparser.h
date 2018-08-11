@@ -31,7 +31,7 @@ R_BEGIN_DECLS
 typedef struct _RPeParser RPeParser;
 
 R_API RPeParser * r_pe_parser_new (const rchar * filename);
-R_API RPeParser * r_pe_parser_new_from_fd (int fd);
+R_API RPeParser * r_pe_parser_new_from_handle (RIOHandle handle);
 R_API RPeParser * r_pe_parser_new_from_mem (rpointer mem, rsize size);
 #define r_pe_parser_ref    r_ref_ref
 #define r_pe_parser_unref  r_ref_unref

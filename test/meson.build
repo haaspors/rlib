@@ -29,7 +29,6 @@ rlibtest_sources = [
   'revloop.c',
   'revtcp.c',
   'revudp.c',
-  'rfd.c',
   'rfile.c',
   'rfileio.c',
   'rfs.c',

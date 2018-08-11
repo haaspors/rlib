@@ -4,7 +4,7 @@ RTEST (rmemfile, read, RTEST_FAST | RTEST_SYSTEM)
 {
   static const rchar testdata[] = "foobarfoobar";
   RMemFile * f, * f1;
-  int fd;
+  RIOHandle handle;
   rchar * tmpfile = NULL;
 
   r_assert_cmpptr ((f = r_mem_file_new ("/foo/bar/BADGER", R_MEM_PROT_READ, FALSE)), ==, NULL);
@@ -12,10 +12,10 @@ RTEST (rmemfile, read, RTEST_FAST | RTEST_SYSTEM)
   /********/
   /* Generate tmp file to read from */
   /********/
-  r_assert_cmpint ((fd = r_fd_open_tmp (NULL, NULL, &tmpfile)), >=, 0);
-  r_fd_write (fd, testdata, sizeof (testdata)); /* This also writes the terminating zero */
-  r_assert (r_fd_close (fd));
-  r_assert_cmpptr (tmpfile, !=, NULL);
+  r_assert_cmpint ((handle = r_io_open_tmp (NULL, NULL, &tmpfile)), >=, 0);
+  r_io_write (handle, testdata, sizeof (testdata)); /* This also writes the terminating zero */
+  r_assert (r_io_close (handle));
+  r_assert_cmpstr (tmpfile, !=, NULL);
   /********/
 
   r_assert_cmpptr ((f = r_mem_file_new (tmpfile, R_MEM_PROT_READ, FALSE)), !=, NULL);

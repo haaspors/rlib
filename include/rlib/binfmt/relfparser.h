@@ -44,7 +44,7 @@ R_API rsize r_elf_calc_size (rpointer mem);
 typedef struct _RElfParser RElfParser;
 
 R_API RElfParser * r_elf_parser_new (const rchar * filename);
-R_API RElfParser * r_elf_parser_new_from_fd (int fd);
+R_API RElfParser * r_elf_parser_new_from_handle (RIOHandle handle);
 R_API RElfParser * r_elf_parser_new_from_mem (rpointer mem, rsize size);
 R_API RElfParser * r_elf_parser_ref (RElfParser * parser);
 R_API void r_elf_parser_unref (RElfParser * parser);

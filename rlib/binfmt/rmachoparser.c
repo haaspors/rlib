@@ -225,12 +225,12 @@ r_macho_parser_new (const rchar * filename)
 }
 
 RMachoParser *
-r_macho_parser_new_from_fd (int fd)
+r_macho_parser_new_from_handle (RIOHandle handle)
 {
   RMachoParser * ret = NULL;
   RMemFile * file;
 
-  file = r_mem_file_new_from_fd (fd, R_MEM_PROT_READ|R_MEM_PROT_WRITE, FALSE);
+  file = r_mem_file_new_from_handle (handle, R_MEM_PROT_READ|R_MEM_PROT_WRITE, FALSE);
   if (file != NULL) {
     ret = r_macho_parser_new_from_mem_file (file);
     r_mem_file_unref (file);

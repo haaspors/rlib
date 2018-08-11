@@ -19,7 +19,7 @@
 #include "config.h"
 #include <rlib/os/rproc.h>
 
-#include <rlib/file/rfd.h>
+#include <rlib/file/rio.h>
 #include <rlib/file/rfs.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
@@ -47,7 +47,7 @@ r_proc_is_debugger_attached (void)
 {
   rboolean ret = FALSE;
 
-#if defined(R_OS_WIN32)
+#if defined (R_OS_WIN32)
   ret = IsDebuggerPresent ();
 #elif defined (P_TRACED)
   int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, 0 };
@@ -59,10 +59,11 @@ r_proc_is_debugger_attached (void)
     ret = (info.kp_proc.p_flag & P_TRACED) != 0;
 #else
     rchar buf[1024];
-    int fd;
+    RIOHandle handle;
 
-    if ((fd = r_fd_open ("/proc/self/status", O_RDONLY, 0)) >= 0) {
-      rssize num_read = r_fd_read (fd, buf, sizeof (buf) - 1);
+    if ((handle = r_io_open_file ("/proc/self/status", R_FILE_OPEN_EXISTING,
+            R_FILE_READ, R_FILE_SHARE_ALL, R_FILE_FLAG_NONE, NULL)) >= 0) {
+      rssize num_read = r_io_read (handle, buf, sizeof (buf) - 1);
 
       if (num_read > 0 && num_read < (rssize)sizeof (buf)) {
           rchar * tracer_pid;
@@ -71,7 +72,7 @@ r_proc_is_debugger_attached (void)
           if ((tracer_pid = r_strstr (buf, "TracerPid:")) != NULL)
             ret = r_str_to_int (tracer_pid + R_STR_SIZEOF ("TracerPid:"), NULL, 10, NULL) != 0;
       }
-      r_fd_close (fd);
+      r_io_close (handle);
     }
 
 #endif

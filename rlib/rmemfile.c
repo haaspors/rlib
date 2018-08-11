@@ -19,7 +19,7 @@
 #include "config.h"
 #include <rlib/rmemfile.h>
 
-#include <rlib/file/rfd.h>
+#include <rlib/file/rio.h>
 #include <rlib/rmem.h>
 
 
@@ -40,7 +40,7 @@ struct _RMemFile {
   rpointer mem;
   rsize size;
 #ifdef R_OS_WIN32
-  HANDLE handle;
+  RIOHandle handle;
 #endif
 };
 
@@ -50,7 +50,7 @@ r_mem_file_free (RMemFile * file)
   if (file != NULL) {
 #if defined (R_OS_WIN32)
     UnmapViewOfFile (file->mem);
-    CloseHandle (file->handle);
+    r_io_close (file->handle);
 #elif defined (HAVE_MMAP)
     munmap (file->mem, file->size);
 #endif
@@ -63,12 +63,13 @@ RMemFile *
 r_mem_file_new (const rchar * file, RMemProt prot, rboolean writeback)
 {
   RMemFile * ret = NULL;
-  int fd, flags;
+  RIOHandle handle;
+  RFileAccess access = writeback ? R_FILE_RDWR : R_FILE_READ;
 
-  flags = writeback ? O_RDWR : O_RDONLY;
-  if ((fd = r_fd_open (file, flags, 0)) >= 0) {
-    ret = r_mem_file_new_from_fd (fd, prot, writeback);
-    r_fd_close (fd);
+  if ((handle = r_io_open_file (file, R_FILE_OPEN_EXISTING, access,
+          R_FILE_SHARE_EXCLUSIVE, R_FILE_FLAG_NONE, NULL)) != R_IO_HANDLE_INVALID) {
+    ret = r_mem_file_new_from_handle (handle, prot, writeback);
+    r_io_close (handle);
   }
 
   return ret;
@@ -98,17 +99,17 @@ _get_file_flags (RMemProt prot, rboolean writeback)
 #endif
 
 RMemFile *
-r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
+r_mem_file_new_from_handle (RIOHandle handle, RMemProt prot, rboolean writeback)
 {
   RMemFile * ret = NULL;
-  ruint64 size = r_fd_get_filesize (fd);
+  ruint64 size = r_io_filesize (handle);
 
   if (R_LIKELY (size <= RSIZE_MAX && (ret = r_mem_new (RMemFile)) != NULL)) {
     r_ref_init (ret, r_mem_file_free);
     ret->size = size;
 
 #if defined (R_OS_WIN32)
-    if ((ret->handle = CreateFileMapping ((HANDLE) _get_osfhandle (fd), NULL,
+    if ((ret->handle = CreateFileMapping (handle, NULL,
             _get_page_flags (prot), 0, 0, NULL)) != NULL) {
       if ((ret->mem = MapViewOfFile (ret->handle,
               _get_file_flags (prot, writeback), 0, 0, 0)) == NULL) {
@@ -123,7 +124,7 @@ r_mem_file_new_from_fd (int fd, RMemProt prot, rboolean writeback)
 #elif defined (HAVE_MMAP)
     if (ret->size > 0) {
       ret->mem = mmap (NULL, ret->size, prot,
-          writeback ? MAP_SHARED : MAP_PRIVATE, fd, 0);
+          writeback ? MAP_SHARED : MAP_PRIVATE, handle, 0);
     } else {
       ret->mem = NULL;
     }

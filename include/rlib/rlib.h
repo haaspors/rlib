@@ -77,7 +77,6 @@
 #include <rlib/data/rtimeoutcblist.h>
 
 /* FILE */
-#include <rlib/file/rfd.h>
 #include <rlib/file/rfile.h>
 #include <rlib/file/rfs.h>
 #include <rlib/file/rio.h>
