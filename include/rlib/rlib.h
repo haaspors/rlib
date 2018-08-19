@@ -34,6 +34,7 @@
 #include <rlib/rcrc.h>
 #include <rlib/renv.h>
 #include <rlib/rio.h>
+#include <rlib/riosocket.h>
 #include <rlib/rjson.h>
 #include <rlib/rjsonparser.h>
 #include <rlib/rlog.h>

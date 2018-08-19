@@ -28,26 +28,10 @@
 #include <rlib/rbuffer.h>
 
 #include <rlib/rsocketaddress.h>
+/* RSocket enums */
+#include <rlib/riosocket.h>
 
 R_BEGIN_DECLS
-
-typedef enum
-{
-  R_SOCKET_TYPE_NONE      = 0,
-  R_SOCKET_TYPE_STREAM    = 1,
-  R_SOCKET_TYPE_DATAGRAM  = 2,
-  R_SOCKET_TYPE_RAW       = 3,
-  R_SOCKET_TYPE_RDM       = 4,
-  R_SOCKET_TYPE_SEQPACKET = 5,
-} RSocketType;
-
-typedef enum {
-  R_SOCKET_PROTOCOL_UNKNOWN = -1,
-  R_SOCKET_PROTOCOL_DEFAULT = 0,
-  R_SOCKET_PROTOCOL_TCP     = 6,
-  R_SOCKET_PROTOCOL_UDP     = 17,
-  R_SOCKET_PROTOCOL_SCTP    = 132,
-} RSocketProtocol;
 
 typedef enum {
   R_SOCKET_FLAG_INITIALIZED     = (1 << 0),
@@ -58,23 +42,6 @@ typedef enum {
   R_SOCKET_FLAG_LISTENING       = (1 << 5),
 } RSocketFlag;
 typedef ruint32 RSocketFlags;
-
-typedef enum {
-  R_SOCKET_WOULD_BLOCK      =  1,
-  R_SOCKET_OK               =  0,
-  R_SOCKET_INVAL            = -1,
-  R_SOCKET_OOM              = -2,
-  R_SOCKET_ERROR            = -3,
-  R_SOCKET_INVALID_OP       = -4,
-  R_SOCKET_CANCELED         = -5,
-  R_SOCKET_BAD              = -6,
-  R_SOCKET_NOT_BOUND        = -7,
-  R_SOCKET_NOT_CONNECTED    = -8,
-  R_SOCKET_CONN_ABORTED     = -9,
-  R_SOCKET_CONN_REFUSED     = -10,
-  R_SOCKET_CONN_RESET       = -11,
-  R_SOCKET_NOT_SUPPORTED    = -12,
-} RSocketStatus;
 
 #if 0
 typedef enum {

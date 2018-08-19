@@ -24,106 +24,11 @@
 #include <rlib/rio.h>
 #include <rlib/rmem.h>
 
-
-static inline RSocketStatus
-r_socket_err_to_socket_status (int err)
-{
-  switch (err) {
-#ifdef WSAEWOULDBLOCK
-    case WSAEWOULDBLOCK:
-    case WSAEINPROGRESS:
-#endif
-    case EAGAIN:
-    case EINPROGRESS:
-#if EWOULDBLOCK != EAGAIN
-    case EWOULDBLOCK:
-#endif
-      return R_SOCKET_WOULD_BLOCK;
-    case EBADF:
-      return R_SOCKET_BAD;
-    case ECANCELED:
-      return R_SOCKET_CANCELED;
-    case EDESTADDRREQ:
-      return R_SOCKET_NOT_BOUND;
-#ifdef WSAENOTCONN
-    case WSAENOTCONN:
-#endif
-    case ENOTCONN:
-      return R_SOCKET_NOT_CONNECTED;
-    case ECONNABORTED:
-      return R_SOCKET_CONN_ABORTED;
-    case ECONNREFUSED:
-      return R_SOCKET_CONN_REFUSED;
-    case ECONNRESET:
-      return R_SOCKET_CONN_RESET;
-#ifdef WSAEOPNOTSUPP
-    case WSAEOPNOTSUPP:
-#endif
-    case EOPNOTSUPP:
-      return R_SOCKET_INVALID_OP;
-    case 0:
-      return R_SOCKET_OK;
-    default:
-      return R_SOCKET_ERROR;
-  }
-}
-
-static inline RSocketStatus
-r_socket_errno_to_socket_status (void)
-{
-  return r_socket_err_to_socket_status (R_SOCKET_ERRNO);
-}
-
-
-static rboolean
-r_socket_handle_close (RSocketHandle handle)
-{
-  int res;
-  do {
-#if defined (HAVE_WINSOCK2)
-    res = closesocket (handle);
-#elif defined (HAVE_POSIX_SOCKETS)
-    res = close (handle);
-#else
-    res = ENOTSUP;
-#endif
-  } while (res != 0 && R_SOCKET_ERRNO == EINTR);
-
-  return res == 0;
-}
-
 static void
 r_socket_free (RSocket * socket)
 {
   r_socket_close (socket);
   r_free (socket);
-}
-
-static RSocketHandle
-r_socket_handle_new (RSocketFamily family, RSocketType type, RSocketProtocol proto)
-{
-  RSocketHandle handle;
-#ifdef HAVE_WINSOCK2
-  handle = WSASocket (family, type, proto, NULL, 0, 0);
-#elif defined (HAVE_POSIX_SOCKETS)
-#ifdef SOCK_CLOEXEC
-  if ((handle = socket (family, type | SOCK_CLOEXEC, proto)) >= 0)
-    return handle;
-
-  if (errno == EINVAL || errno == EPROTOTYPE)
-    handle = socket (family, type, proto);
-#else
-  handle = socket (family, type, proto);
-#ifdef R_OS_UNIX
-  if (handle != R_SOCKET_HANDLE_INVALID)
-    r_io_unix_set_cloexec (handle, TRUE);
-#endif
-#endif
-#else
-  handle = R_SOCKET_HANDLE_INVALID;
-#endif
-
-  return handle;
 }
 
 static RSocket *
@@ -149,7 +54,7 @@ r_socket_new (RSocketFamily family, RSocketType type, RSocketProtocol proto)
   RSocket * ret;
   RSocketHandle handle;
 
-  if ((handle = r_socket_handle_new (family, type, proto)) == R_SOCKET_HANDLE_INVALID)
+  if ((handle = r_io_socket (family, type, proto)) == R_IO_HANDLE_INVALID)
     return NULL;
 
   if ((ret = r_socket_new_with_handle (handle)) != NULL) {
@@ -157,7 +62,7 @@ r_socket_new (RSocketFamily family, RSocketType type, RSocketProtocol proto)
     ret->type = type;
     ret->proto = proto;
   } else {
-    r_socket_handle_close (handle);
+    r_io_socket_close (handle);
   }
 
   return ret;
@@ -227,40 +132,20 @@ r_socket_get_remote_address (RSocket * socket)
 rboolean
 r_socket_get_option (RSocket * socket, int level, int optname, int * value)
 {
-  if (R_UNLIKELY (socket == NULL)) return FALSE;
-  if (R_UNLIKELY (value == NULL)) return FALSE;
-
-#ifdef HAVE_MOCK_SOCKETS
-  (void) level;
-  (void) optname;
-  return FALSE;
-#else
-  socklen_t size = sizeof (int);
-  *value = 0;
-  if (getsockopt (socket->handle, level, optname, (rpointer)value, &size) != 0)
-    return FALSE;
-
-#if R_BYTE_ORDER == R_BIG_ENDIAN
-  if (size != sizeof (int))
-    *value >>= (8 * (sizeof (int) - size));
-#endif
-
-  return TRUE;
-#endif
+  return r_io_get_socket_option (socket->handle, level, optname, value) == R_SOCKET_OK;
 }
 
 RSocketStatus
 r_socket_get_error (RSocket * socket)
 {
+  RSocketStatus ret, res;
+
   if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
 
-#ifdef HAVE_MOCK_SOCKETS
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-  int val = -1;
-  r_socket_get_option (socket, SOL_SOCKET, SO_ERROR, &val);
-  return r_socket_err_to_socket_status (val);
-#endif
+  if ((ret = r_io_get_socket_error (socket->handle, &res)) == R_SOCKET_OK)
+    ret = res;
+
+  return ret;
 }
 
 rboolean
@@ -272,130 +157,80 @@ r_socket_get_blocking (RSocket * socket)
 rboolean
 r_socket_get_broadcast (RSocket * socket)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  return FALSE;
-#else
-  int val;
-  return r_socket_get_option (socket, SOL_SOCKET, SO_BROADCAST, &val) && !!val;
-#endif
+  rboolean ret = FALSE;
+  r_io_get_socket_broadcast (socket->handle, &ret);
+  return ret;
 }
 
 rboolean
 r_socket_get_keepalive (RSocket * socket)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  return FALSE;
-#else
-  int val;
-  return r_socket_get_option (socket, SOL_SOCKET, SO_KEEPALIVE, &val) && !!val;
-#endif
+  rboolean ret = FALSE;
+  r_io_get_socket_keepalive (socket->handle, &ret);
+  return ret;
 }
 
 rboolean
 r_socket_get_multicast_loop (RSocket * socket)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  return FALSE;
-#else
-  int lvl, val;
+  rboolean ret = FALSE;
 
   switch (socket->family) {
     case R_SOCKET_FAMILY_IPV4:
-      lvl = IPPROTO_IP;
+      r_io_get_socket_ipv4_multicast_loop (socket->handle, &ret);
       break;
     case R_SOCKET_FAMILY_IPV6:
-      lvl = IPPROTO_IPV6;
+      r_io_get_socket_ipv6_multicast_loop (socket->handle, &ret);
       break;
     default:
-      return FALSE;
+      break;
   }
 
-  return r_socket_get_option (socket, lvl, IP_MULTICAST_LOOP, &val) && !!val;
-#endif
+  return ret;
 }
 
 ruint
 r_socket_get_multicast_ttl (RSocket * socket)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  return 0;
-#else
-  rboolean res;
-  int val;
+  int val = 0;
 
   switch (socket->family) {
     case R_SOCKET_FAMILY_IPV4:
-      res = r_socket_get_option (socket, IPPROTO_IP, IP_MULTICAST_TTL, &val);
+      r_io_get_socket_ipv4_multicast_ttl (socket->handle, &val);
       break;
     case R_SOCKET_FAMILY_IPV6:
-      res = r_socket_get_option (socket, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &val);
+      r_io_get_socket_ipv6_multicast_ttl (socket->handle, &val);
       break;
     default:
-      return 0;
+      break;
   }
 
-  return res ? MAX (val, 0) : 0;
-#endif
+  return (ruint)MAX (val, 0);
 }
 
 ruint
 r_socket_get_ttl (RSocket * socket)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  return 0;
-#else
-  rboolean res;
   int val;
 
   switch (socket->family) {
     case R_SOCKET_FAMILY_IPV4:
-      res = r_socket_get_option (socket, IPPROTO_IP, IP_TTL, &val);
+      r_io_get_socket_ipv4_ttl (socket->handle, &val);
       break;
     case R_SOCKET_FAMILY_IPV6:
-      res = r_socket_get_option (socket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &val);
+      r_io_get_socket_ipv6_ttl (socket->handle, &val);
       break;
     default:
       return 0;
   }
 
-  return res ? MAX (val, 0) : 0;
-#endif
+  return (ruint)MAX (val, 0);
 }
 
 rboolean
 r_socket_set_option (RSocket * socket, int level, int optname, int value)
 {
-#ifdef HAVE_WINSOCK2
-  return (setsockopt (socket->handle, level, optname,
-        (rconstpointer)&value, sizeof (int)) == 0);
-#elif defined (HAVE_POSIX_SOCKETS)
-  if (setsockopt (socket->handle, level, optname, &value, sizeof (int)) == 0)
-    return TRUE;
-
-#ifndef R_OS_LINUX
-  /* Try to set value less than sizeof (int) */
-  if (errno == EINVAL && value >= RINT8_MIN && value <= RINT8_MAX) {
-#if R_BYTE_ORDER == R_BIG_ENDIAN
-      value = value << (8 * (sizeof (int) - 1));
-#endif
-      if (setsockopt (socket->handle, level, optname, &value, 1) == 0)
-        return TRUE;
-    }
-#endif
-
-  return FALSE;
-#else
-  (void) socket;
-  (void) level;
-  (void) optname;
-  (void) value;
-  return FALSE;
-#endif
+  return r_io_set_socket_option (socket->handle, level, optname, value) == R_SOCKET_OK;
 }
 
 rboolean
@@ -424,25 +259,15 @@ r_socket_set_blocking (RSocket * socket, rboolean blocking)
 rboolean
 r_socket_set_broadcast (RSocket * socket, rboolean broadcast)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) broadcast;
-  return FALSE;
-#else
-  return r_socket_set_option (socket, SOL_SOCKET, SO_BROADCAST, (int)broadcast);
-#endif
+  if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
+  return r_io_set_socket_broadcast (socket->handle, broadcast) == R_SOCKET_OK;
 }
 
 rboolean
 r_socket_set_keepalive (RSocket * socket, rboolean keepalive)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) keepalive;
-  return FALSE;
-#else
-  return r_socket_set_option (socket, SOL_SOCKET, SO_KEEPALIVE, (int)keepalive);
-#endif
+  if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
+  return r_io_set_socket_keepalive (socket->handle, keepalive) == R_SOCKET_OK;
 }
 
 rboolean
@@ -450,24 +275,17 @@ r_socket_set_multicast_loop (RSocket * socket, rboolean loop)
 {
   rboolean ret;
 
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) loop;
-  ret = FALSE;
-#else
   switch (socket->family) {
-    case R_SOCKET_FAMILY_IPV6:
-      if (!r_socket_set_option (socket, IPPROTO_IPV6, IP_MULTICAST_LOOP, loop))
-        return FALSE;
-      /* fall through */
     case R_SOCKET_FAMILY_IPV4:
-      ret = r_socket_set_option (socket, IPPROTO_IP, IP_MULTICAST_LOOP, loop);
+      ret = r_io_set_socket_ipv4_multicast_loop (socket->handle, loop);
+      break;
+    case R_SOCKET_FAMILY_IPV6:
+      ret = r_io_set_socket_ipv6_multicast_loop (socket->handle, loop);
       break;
     default:
       ret = FALSE;
       break;
   }
-#endif
 
   return ret;
 }
@@ -477,24 +295,17 @@ r_socket_set_multicast_ttl (RSocket * socket, ruint ttl)
 {
   rboolean ret;
 
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) ttl;
-  ret = FALSE;
-#else
   switch (socket->family) {
-    case R_SOCKET_FAMILY_IPV6:
-      if (!r_socket_set_option (socket, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, ttl))
-        return FALSE;
-      /* fall through */
     case R_SOCKET_FAMILY_IPV4:
-      ret = r_socket_set_option (socket, IPPROTO_IP, IP_MULTICAST_TTL, ttl);
+      ret = r_io_set_socket_ipv4_multicast_ttl (socket->handle, (int)ttl);
+      break;
+    case R_SOCKET_FAMILY_IPV6:
+      ret = r_io_set_socket_ipv6_multicast_ttl (socket->handle, (int)ttl);
       break;
     default:
       ret = FALSE;
       break;
   }
-#endif
 
   return ret;
 }
@@ -504,28 +315,20 @@ r_socket_set_ttl (RSocket * socket, ruint ttl)
 {
   rboolean ret;
 
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) ttl;
-  ret = FALSE;
-#else
   switch (socket->family) {
-    case R_SOCKET_FAMILY_IPV6:
-      if (!r_socket_set_option (socket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, ttl))
-        return FALSE;
-      /* fall through */
     case R_SOCKET_FAMILY_IPV4:
-      ret = r_socket_set_option (socket, IPPROTO_IP, IP_TTL, ttl);
+      ret = r_io_set_socket_ipv4_ttl (socket->handle, (int)ttl);
+      break;
+    case R_SOCKET_FAMILY_IPV6:
+      ret = r_io_set_socket_ipv6_ttl (socket->handle, (int)ttl);
       break;
     default:
       ret = FALSE;
       break;
   }
-#endif
 
   return ret;
 }
-
 
 
 RSocketStatus
@@ -533,13 +336,14 @@ r_socket_close (RSocket * socket)
 {
   RSocketStatus ret;
 
-  if (socket->handle != R_SOCKET_HANDLE_INVALID) {
-    ret = r_socket_handle_close (socket->handle) ? R_SOCKET_OK : R_SOCKET_ERROR;
-    socket->flags |= R_SOCKET_FLAG_CLOSED;
-    socket->handle = R_SOCKET_HANDLE_INVALID;
+  if (socket->handle != R_IO_HANDLE_INVALID) {
+    ret = r_io_socket_close (socket->handle);
+    socket->handle = R_IO_HANDLE_INVALID;
   } else {
     ret = R_SOCKET_OK;
   }
+
+  socket->flags |= R_SOCKET_FLAG_CLOSED;
 
   return ret;
 }
@@ -550,39 +354,26 @@ r_socket_bind (RSocket * socket, const RSocketAddress * address, rboolean reuse)
   if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
   if (R_UNLIKELY (address == NULL)) return R_SOCKET_INVAL;
 
-#ifdef HAVE_MOCK_SOCKETS
-  (void) reuse;
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-  r_socket_set_option (socket, SOL_SOCKET, SO_REUSEADDR, !!reuse);
+  r_io_set_socket_reuseaddr (socket->handle, reuse);
 #ifdef SO_REUSEPORT
-  r_socket_set_option (socket, SOL_SOCKET, SO_REUSEPORT,
+  r_io_set_socket_option (socket->handle, SOL_SOCKET, SO_REUSEPORT,
       (reuse && socket->type == R_SOCKET_TYPE_DATAGRAM) ? 1 : 0);
 #endif
 
-  if (bind (socket->handle, (const struct sockaddr *)&address->addr, address->addrlen) == 0)
-    return R_SOCKET_OK;
-
-  return r_socket_errno_to_socket_status ();
-#endif
+  return r_io_socket_bind (socket->handle, address);
 }
 
 RSocketStatus
 r_socket_listen_full (RSocket * socket, ruint8 backlog)
 {
+  RSocketStatus ret;
+
   if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
 
-#ifdef HAVE_MOCK_SOCKETS
-  (void) backlog;
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-  if (listen (socket->handle, MIN (backlog, 128)) == 0) {
+  if ((ret = r_io_socket_listen_full (socket->handle, backlog)) == R_SOCKET_OK)
     socket->flags |= R_SOCKET_FLAG_LISTENING;
-    return R_SOCKET_OK;
-  }
 
-  return r_socket_errno_to_socket_status ();
-#endif
+  return ret;
 }
 
 RSocket *
@@ -597,47 +388,21 @@ r_socket_accept (RSocket * socket, RSocketStatus * res)
     return NULL;
   }
 
-#ifdef HAVE_MOCK_SOCKETS
-  (void) handle;
-  if (res != NULL)
-    *res = R_SOCKET_NOT_SUPPORTED;
-  ret = NULL;
-#else
-  /* FIXME: Use accept4 ?? */
-  do {
-    handle = accept (socket->handle, NULL, 0);
-  } while (handle == R_SOCKET_HANDLE_INVALID && R_SOCKET_ERRNO == EINTR);
-
-  if (handle != R_SOCKET_HANDLE_INVALID) {
+  if ((handle = r_io_socket_accept (socket->handle, res)) != R_IO_HANDLE_INVALID) {
     if ((ret = r_socket_new_with_handle (handle)) != NULL) {
       ret->family = socket->family;
       ret->type = socket->type;
       ret->proto = socket->proto;
 
       ret->flags |= R_SOCKET_FLAG_CONNECTED;
-#ifdef HAVE_WINSOCK2
-      WSAEventSelect (handle, NULL, 0);
-#endif
-#ifdef R_OS_UNIX
-      r_io_unix_set_cloexec (handle, TRUE);
-#endif
     } else {
-      r_socket_handle_close (handle);
+      r_io_socket_close (handle);
       if (res != NULL)
         *res = R_SOCKET_OOM;
-      return NULL;
     }
   } else {
     ret = NULL;
   }
-
-  if (res != NULL) {
-    if (ret == NULL)
-      *res = r_socket_errno_to_socket_status ();
-    else
-      *res = R_SOCKET_OK;
-  }
-#endif
 
   return ret;
 }
@@ -645,27 +410,21 @@ r_socket_accept (RSocket * socket, RSocketStatus * res)
 RSocketStatus
 r_socket_connect (RSocket * socket, const RSocketAddress * address)
 {
-  int res;
   RSocketStatus ret;
 
   if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
   if (R_UNLIKELY (address == NULL)) return R_SOCKET_INVAL;
 
-#ifdef HAVE_MOCK_SOCKETS
-  (void) res;
-  ret = R_SOCKET_NOT_SUPPORTED;
-#else
-  do {
-    if ((res = connect (socket->handle, (struct sockaddr *)&address->addr, address->addrlen)) == 0) {
-      socket->flags &= ~R_SOCKET_FLAG_CONNECTING;
+  socket->flags |= R_SOCKET_FLAG_CONNECTING;
+  switch ((ret = r_io_socket_connect (socket->handle, address))) {
+    case R_SOCKET_WOULD_BLOCK:
+      break;
+    case R_SOCKET_OK:
       socket->flags |= R_SOCKET_FLAG_CONNECTED;
-      return R_SOCKET_OK;
-    }
-  } while (res != 0 && R_SOCKET_ERRNO == EINTR);
-
-  if ((ret = r_socket_errno_to_socket_status ()) == R_SOCKET_WOULD_BLOCK)
-    socket->flags |= R_SOCKET_FLAG_CONNECTING;
-#endif
+    default:
+      socket->flags &= ~R_SOCKET_FLAG_CONNECTING;
+      break;
+  }
 
   return ret;
 }
@@ -673,373 +432,52 @@ r_socket_connect (RSocket * socket, const RSocketAddress * address)
 RSocketStatus
 r_socket_shutdown (RSocket * socket, rboolean rx, rboolean tx)
 {
-  int how;
+  RSocketStatus ret;
 
-  if (R_UNLIKELY (socket == NULL)) return R_SOCKET_INVAL;
-  if (R_UNLIKELY (!rx && !tx)) return R_SOCKET_INVAL;
-
-#ifdef HAVE_MOCK_SOCKETS
-  (void) how;
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-#ifdef HAVE_WINSOCK2
-  if (rx && tx) how = SD_BOTH;
-  else if (rx)  how = SD_RECEIVE;
-  else          how = SD_SEND;
-#else
-  if (rx && tx) how = SHUT_RDWR;
-  else if (rx)  how = SHUT_RD;
-  else          how = SHUT_WR;
-#endif
-
-  if (shutdown (socket->handle, how) == 0) {
+  if ((ret = r_io_socket_shutdown (socket->handle, rx, tx)) == R_SOCKET_OK) {
     if (rx && tx)
       socket->flags &= ~R_SOCKET_FLAG_CONNECTED;
-    return R_SOCKET_OK;
   }
 
-  return r_socket_errno_to_socket_status ();
-#endif
+  return ret;
 }
 
 RSocketStatus
 r_socket_receive (RSocket * socket, ruint8 * buffer, rsize size, rsize * received)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) buffer;
-  (void) size;
-  (void) received;
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-#ifdef HAVE_WINSOCK2
-  int res;
-#else
-  rssize res;
-#endif
-
-  do {
-    res = recv (socket->handle, buffer, size, 0);
-  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
-
-  if (res >= 0) {
-    if (received != NULL)
-      *received = (rsize)res;
-    return R_SOCKET_OK;
-  }
-
-  return r_socket_errno_to_socket_status ();
-#endif
+  return r_io_socket_receive (socket->handle, buffer, size, received);
 }
 
 RSocketStatus
 r_socket_receive_from (RSocket * socket, RSocketAddress * address, ruint8 * buffer, rsize size, rsize * received)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) address;
-  (void) buffer;
-  (void) size;
-  (void) received;
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-#ifdef HAVE_WINSOCK2
-  int res;
-#else
-  rssize res;
-#endif
-
-  do {
-    res = recvfrom (socket->handle, buffer, size, 0,
-        (struct sockaddr *)&address->addr, &address->addrlen);
-  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
-
-  if (res >= 0) {
-    if (received != NULL)
-      *received = (rsize)res;
-    return R_SOCKET_OK;
-  }
-
-  return r_socket_errno_to_socket_status ();
-#endif
+  return r_io_socket_receive_from (socket->handle, address, buffer, size, received);
 }
 
 RSocketStatus
 r_socket_receive_message (RSocket * socket, RSocketAddress * address,
-    RBuffer * buf, rsize * received)
+    RBuffer * buffer, rsize * received)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) address;
-  (void) buf;
-  (void) received;
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-  rsize i, mem_count, b;
-  RMemMapInfo * info;
-#ifdef HAVE_WINSOCK2
-  int res;
-  LPWSABUF bufs;
-  DWORD winrecv, winflags;
-#else
-  rssize res;
-  struct msghdr msg;
-#endif
-
-  mem_count = r_buffer_mem_count (buf);
-
-#ifdef HAVE_WINSOCK2
-  bufs = r_alloca (mem_count * sizeof (WSABUF));
-#else
-  if (address != NULL) {
-    msg.msg_name = &address->addr;
-    msg.msg_namelen = address->addrlen;
-  } else {
-    msg.msg_name = NULL;
-    msg.msg_namelen = 0;
-  }
-  msg.msg_iov = r_alloca (mem_count * sizeof (struct iovec));
-  msg.msg_iovlen = mem_count;
-  msg.msg_control = NULL;
-  msg.msg_controllen = 0;
-  msg.msg_flags = 0;
-#endif
-
-  info = r_alloca (mem_count * sizeof (RMemMapInfo));
-  for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buf, i);
-    if (r_mem_map (mem, &info[i], R_MEM_MAP_WRITE)) {
-#ifdef HAVE_WINSOCK2
-      bufs[i].len = info[i].size;
-      bufs[i].buf = info[i].data;
-#else
-      msg.msg_iov[i].iov_base = info[i].data;
-      msg.msg_iov[i].iov_len = info[i].size;
-#endif
-    } else {
-      /* WARNING */
-#ifdef HAVE_WINSOCK2
-      bufs[i].len = 0;
-      bufs[i].buf = "";
-#else
-      msg.msg_iov[i].iov_base = "";
-      msg.msg_iov[i].iov_len = 0;
-#endif
-    }
-    r_mem_unref (mem);
-  }
-
-#ifdef HAVE_WINSOCK2
-  winrecv = winflags = 0;
-  if (address != NULL) {
-    res = WSARecvFrom (socket->handle, bufs, mem_count, &winrecv, &winflags,
-        (struct sockaddr *)&address->addr, &address->addrlen, NULL, NULL);
-  } else {
-    res = WSARecvFrom (socket->handle, bufs, mem_count, &winrecv, &winflags,
-        NULL, 0, NULL, NULL);
-  }
-  b = res != SOCKET_ERROR ? (rsize)winrecv : 0;
-#else
-  do {
-    res = recvmsg (socket->handle, &msg, 0);
-  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
-  if (address != NULL)
-    address->addrlen = msg.msg_namelen;
-  b = res > 0 ? (rsize)res : 0;
-#endif
-
-  for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buf, i);
-    r_mem_unmap (mem, &info[i]);
-
-    if (b >= mem->size) {
-      b -= mem->size;
-    } else {
-      r_mem_resize (mem, mem->offset, b);
-      b = 0;
-    }
-    r_mem_unref (mem);
-  }
-
-#ifdef HAVE_WINSOCK2
-  if (res != SOCKET_ERROR) {
-    if (received != NULL)
-      *received = (rsize)winrecv;
-    return R_SOCKET_OK;
-  }
-#else
-  if (res >= 0) {
-    if (received != NULL)
-      *received = (rsize)res;
-    return R_SOCKET_OK;
-  }
-#endif
-
-  return r_socket_errno_to_socket_status ();
-#endif
+  return r_io_socket_receive_message (socket->handle, address, buffer, received);
 }
 
 RSocketStatus
 r_socket_send (RSocket * socket, const ruint8 * buffer, rsize size, rsize * sent)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) buffer;
-  (void) size;
-  (void) sent;
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-  rssize res;
-
-  do {
-    res = send (socket->handle, buffer, size, 0);
-  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
-
-  if (res >= 0) {
-    if (sent != NULL)
-      *sent = (rsize)res;
-    return R_SOCKET_OK;
-  }
-
-  return r_socket_errno_to_socket_status ();
-#endif
+  return r_io_socket_send (socket->handle, buffer, size, sent);
 }
 
 RSocketStatus
 r_socket_send_to (RSocket * socket, const RSocketAddress * address,
     const ruint8 * buffer, rsize size, rsize * sent)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) address;
-  (void) buffer;
-  (void) size;
-  (void) sent;
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-#ifdef HAVE_WINSOCK2
-  int res;
-#else
-  rssize res;
-#endif
-
-  do {
-    res = sendto (socket->handle, buffer, size, 0,
-        (const struct sockaddr *)&address->addr, address->addrlen);
-  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
-
-  if (res >= 0) {
-    if (sent != NULL)
-      *sent = (rsize)res;
-    return R_SOCKET_OK;
-  }
-
-  return r_socket_errno_to_socket_status ();
-#endif
+  return r_io_socket_send_to (socket->handle, address, buffer, size, sent);
 }
 
 RSocketStatus
 r_socket_send_message (RSocket * socket, const RSocketAddress * address,
-    RBuffer * buf, rsize * sent)
+    RBuffer * buffer, rsize * sent)
 {
-#ifdef HAVE_MOCK_SOCKETS
-  (void) socket;
-  (void) address;
-  (void) buf;
-  (void) sent;
-  return R_SOCKET_NOT_SUPPORTED;
-#else
-  rsize i, mem_count;
-  RMemMapInfo * info;
-#ifdef HAVE_WINSOCK2
-  int res;
-  LPWSABUF bufs;
-  DWORD winsent;
-#else
-  rssize res;
-  struct msghdr msg;
-#endif
-
-  mem_count = r_buffer_mem_count (buf);
-
-#ifdef HAVE_WINSOCK2
-  bufs = r_alloca (mem_count * sizeof (WSABUF));
-#else
-  if (address != NULL) {
-    msg.msg_name = (rpointer)&address->addr;
-    msg.msg_namelen = address->addrlen;
-  } else {
-    msg.msg_name = NULL;
-    msg.msg_namelen = 0;
-  }
-  msg.msg_iovlen = mem_count;
-  msg.msg_iov = r_alloca (msg.msg_iovlen * sizeof (struct iovec));
-  msg.msg_control = NULL;
-  msg.msg_controllen = 0;
-  msg.msg_flags = 0;
-#endif
-
-  info = r_alloca (mem_count * sizeof (RMemMapInfo));
-  for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buf, i);
-    if (r_mem_map (mem, &info[i], R_MEM_MAP_READ)) {
-#ifdef HAVE_WINSOCK2
-      bufs[i].len = info[i].size;
-      bufs[i].buf = info[i].data;
-#else
-      msg.msg_iov[i].iov_base = info[i].data;
-      msg.msg_iov[i].iov_len = info[i].size;
-#endif
-    } else {
-      /* WARNING */
-#ifdef HAVE_WINSOCK2
-      bufs[i].len = 0;
-      bufs[i].buf = "";
-#else
-      msg.msg_iov[i].iov_base = "";
-      msg.msg_iov[i].iov_len = 0;
-#endif
-    }
-    r_mem_unref (mem);
-  }
-
-#ifdef HAVE_WINSOCK2
-  winsent = 0;
-  if (address != NULL) {
-    res = WSASendTo (socket->handle, bufs, mem_count, &winsent, 0,
-        (const struct sockaddr *)&address->addr, (int)address->addrlen,
-        NULL, NULL);
-  } else {
-    res = WSASendTo (socket->handle, bufs, mem_count, &winsent, 0, NULL, 0,
-        NULL, NULL);
-  }
-#else
-  do {
-    res = sendmsg (socket->handle, &msg, 0);
-  } while (res < 0 && R_SOCKET_ERRNO == EINTR);
-#endif
-
-  for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buf, i);
-    r_mem_unmap (mem, &info[i]);
-    r_mem_unref (mem);
-  }
-
-#ifdef HAVE_WINSOCK2
-  if (res != SOCKET_ERROR) {
-    if (sent != NULL)
-      *sent = (rsize)winsent;
-    return R_SOCKET_OK;
-  }
-#else
-  if (res >= 0) {
-    if (sent != NULL)
-      *sent = (rsize)res;
-    return R_SOCKET_OK;
-  }
-#endif
-
-  return r_socket_errno_to_socket_status ();
-#endif
+  return r_io_socket_send_message (socket->handle, address, buffer, sent);
 }
 

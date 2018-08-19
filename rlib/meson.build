@@ -9,6 +9,7 @@ rlib_sources = [
   'rcrc.c',
   'renv.c',
   'rio.c',
+  'riosocket.c',
   'rjson.c',
   'rjsonparser.c',
   'rlibinit.c',
