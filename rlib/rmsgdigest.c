@@ -22,16 +22,6 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-/* FIXME: Move or use stuff from rmacros.h?? */
-#define RUINT32_SHL(x, n)       (((x) & RUINT32_MAX) << (n))
-#define RUINT32_SHR(x, n)       (((x) & RUINT32_MAX) >> (n))
-#define RUINT32_ROTL(x, n)      (RUINT32_SHL (x, n) | RUINT32_SHR (x, 32-(n)))
-#define RUINT32_ROTR(x, n)      (RUINT32_SHR (x, n) | RUINT32_SHL (x, 32-(n)))
-#define RUINT64_SHL(x, n)       (((x) & RUINT64_MAX) << (n))
-#define RUINT64_SHR(x, n)       (((x) & RUINT64_MAX) >> (n))
-#define RUINT64_ROTL(x, n)      (RUINT64_SHL (x, n) | RUINT64_SHR (x, 64-(n)))
-#define RUINT64_ROTR(x, n)      (RUINT64_SHR (x, n) | RUINT64_SHL (x, 64-(n)))
-
 typedef     void (*RMDInit) (RMsgDigest * md);
 typedef rboolean (*RMDFinal) (RMsgDigest * md);
 typedef rboolean (*RMDUpdate) (RMsgDigest * md, rconstpointer data, rsize size);
