@@ -78,6 +78,7 @@ rlib_sources = [
   'ev/revresolve.c',
   'ev/revtcp.c',
   'ev/revudp.c',
+  'ev/revwakeup.c',
   'file/rfile.c',
   'file/rfs.c',
   'file/rio.c',

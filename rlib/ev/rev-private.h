@@ -23,6 +23,7 @@
 #endif
 
 #include <rlib/ev/revloop.h>
+#include <rlib/ev/revwakeup.h>
 
 #include <rlib/data/rlist.h>
 #include <rlib/data/rqueue.h>
@@ -75,6 +76,17 @@ R_API_HIDDEN rboolean r_ev_io_validate_taskgroup (REvIO * evio, ruint taskgroup)
       iocb (it->data, events, evio);                                          \
     }                                                                         \
   } R_STMT_END
+
+
+struct _REvWakeup {
+  REvIO evio;
+  RIOHandle close_handle;
+  RIOHandle signal_handle;
+};
+
+R_API_HIDDEN void r_ev_wakeup_init (REvWakeup * wakeup, REvLoop * loop, RDestroyNotify notify);
+R_API_HIDDEN void r_ev_wakeup_clear (REvWakeup * wakeup);
+R_API_HIDDEN void r_ev_wakeup_read (REvWakeup * wakeup);
 
 R_END_DECLS
 
