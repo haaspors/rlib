@@ -34,9 +34,6 @@
 #ifdef HAVE_SYS_EPOLL_H
 #include <sys/epoll.h>
 #endif
-#ifdef HAVE_SYS_EVENTFD_H
-#include <sys/eventfd.h>
-#endif
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
@@ -74,6 +71,10 @@ r_ev_loop_deinit (void)
 static raptr g__r_ev_loop_default; /* (REvLoop *) */
 static RTss  g__r_ev_loop_tss = R_TSS_INIT (NULL);
 
+#ifdef USE_WAKEUP
+static void r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio);
+#endif
+
 
 struct _REvLoop {
   RRef ref;
@@ -89,8 +90,7 @@ struct _REvLoop {
 
   /* Wakeup handle for backends not supporting it natively */
 #ifdef USE_WAKEUP
-  REvIO evio_wakeup;
-  RIOHandle wakeup_handle;
+  REvWakeup evio_wakeup;
 #endif
 
   /* For various callbacks */
@@ -111,6 +111,10 @@ r_ev_loop_free (REvLoop * loop)
   REvLoop * prev = loop;
   r_atomic_ptr_cmp_xchg_strong (&g__r_ev_loop_default, &prev, NULL);
 
+#ifdef USE_WAKEUP
+  r_ev_wakeup_clear (&loop->evio_wakeup);
+#endif
+
   r_queue_clear (&loop->chg, NULL);
   r_queue_clear (&loop->active, NULL);
   r_cbrlist_destroy (loop->prepare);  loop->prepare = NULL;
@@ -125,20 +129,6 @@ r_ev_loop_free (REvLoop * loop)
   r_mutex_unlock (&loop->done_mutex);
   r_mutex_clear (&loop->done_mutex);
 
-#ifdef USE_WAKEUP
-  if (loop->wakeup_handle != R_IO_HANDLE_INVALID && loop->wakeup_handle != loop->evio_wakeup.handle) {
-    r_io_close (loop->wakeup_handle);
-    loop->wakeup_handle = R_IO_HANDLE_INVALID;
-  }
-
-  if (loop->evio_wakeup.handle != R_IO_HANDLE_INVALID) {
-    r_io_close (loop->evio_wakeup.handle);
-    loop->evio_wakeup.handle = R_IO_HANDLE_INVALID;
-  }
-
-  r_ev_io_clear (&loop->evio_wakeup);
-#endif
-
   if (loop->handle != R_IO_HANDLE_INVALID) {
     r_io_close (loop->handle);
     loop->handle = R_IO_HANDLE_INVALID;
@@ -147,17 +137,9 @@ r_ev_loop_free (REvLoop * loop)
   r_free (loop);
 }
 
-#ifdef USE_WAKEUP
-static void r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio);
-#endif
-
 static void
 r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
 {
-#ifdef USE_WAKEUP
-  RIOHandle wakeup_readable;
-#endif
-
   loop->stop_request = FALSE;
   r_cbqueue_init (&loop->dcbs);
   r_cbqueue_init (&loop->bcbs);
@@ -175,32 +157,19 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
   r_mutex_init (&loop->done_mutex);
 
 #ifdef USE_WAKEUP
-#if defined (HAVE_EVENTFD)
-    loop->wakeup_handle = wakeup_readable = eventfd (0, EFD_CLOEXEC | EFD_NONBLOCK);
-#elif defined (HAVE_PIPE2)
-    int pipefd[2];
-    if (pipe2 (pipefd, O_CLOEXEC | O_NONBLOCK) != 0) {
-      R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
-      abort ();
-    }
-    wakeup_readable = pipefd[0];
-    loop->wakeup_handle = pipefd[1];
-#elif defined (HAVE_PIPE)
-    int pipefd[2];
-    if (pipe (pipefd) != 0) {
-      R_LOG_ERROR ("Failed to initialize pipe for loop %p", loop);
-      abort ();
-    }
-    wakeup_readable = pipefd[0];
-    loop->wakeup_handle = pipefd[1];
-#ifdef R_OS_UNIX
-    r_io_unix_set_nonblocking (wakeup_readable, TRUE);
-    r_io_unix_set_cloexec (wakeup_readable, TRUE);
-    r_io_unix_set_cloexec (loop->wakeup_handle, TRUE);
-#endif
-#else
-#error No wakeup mechanism available?
-#endif
+  r_ev_wakeup_init (&loop->evio_wakeup, loop, NULL);
+  if (r_ev_io_start (&loop->evio_wakeup.evio, R_EV_IO_READABLE,
+        r_ev_loop_wakeup_cb, loop, NULL) != NULL) {
+    /* Make the wakeup evio internal
+     *  1. Remove from active evio list.
+     *  2. Don't hold reference to the loop.
+     */
+    r_queue_remove_link (&loop->active, loop->evio_wakeup.evio.alnk);
+    loop->evio_wakeup.evio.alnk = NULL;
+    r_ev_loop_unref (loop);
+  } else {
+    R_LOG_ERROR ("Failed to add wakeup for loop %p", loop);
+  }
 #endif
 
 #if defined (USE_KQUEUE)
@@ -213,21 +182,7 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
     }
   }
 #elif defined (USE_EPOLL)
-  if ((loop->handle = epoll_create1 (0)) != R_IO_HANDLE_INVALID) {
-    struct epoll_event ev;
-
-    r_ev_io_init (&loop->evio_wakeup, NULL, wakeup_readable, NULL);
-    loop->evio_wakeup.events = R_EV_IO_READABLE;
-    r_cbqueue_push (&loop->evio_wakeup.iocbq,
-        (RFunc)r_ev_loop_wakeup_cb, loop, NULL, NULL, NULL);
-
-    ev.data.ptr = &loop->evio_wakeup;
-    ev.events = EPOLLIN | EPOLLET;
-    if (epoll_ctl (loop->handle, EPOLL_CTL_ADD, wakeup_readable, &ev) != 0) {
-      R_LOG_ERROR ("Failed to add wakeup fd %d for loop %p", wakeup_readable, loop);
-      abort ();
-    }
-  }
+ loop->handle = epoll_create1 (0);
 #else
   loop->handle = R_IO_HANDLE_INVALID;
 #endif
@@ -662,17 +617,15 @@ r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio)
   }
 
   if (events & R_EV_IO_READABLE) {
-    int r;
-    ruint64 buf;
-    do {
-      r = r_io_read (evio->handle, &buf, sizeof (ruint64));
-    } while (r >= 0 || errno == EINTR);
+    r_ev_wakeup_read (&loop->evio_wakeup);
 
+#if !defined (R_OS_WIN32)
     if (errno != EAGAIN && errno != EWOULDBLOCK) {
       R_LOG_ERROR ("Read from wakeup eventfd failed, errno: %d for loop %p",
           errno, loop);
       abort ();
     }
+#endif
 
     r_ev_loop_move_done_callbacks (loop);
   }
@@ -690,13 +643,10 @@ r_ev_loop_wakeup (REvLoop * loop)
   res = kevent (loop->handle, &ev, 1, NULL, 0, NULL);
   R_LOG_DEBUG ("loop %p wakeup! res %d", loop, res);
 #elif defined (USE_WAKEUP)
-  ruint64 buf = r_atomic_uint_load (&loop->tqitems);
-  rssize res;
-  R_LOG_DEBUG ("loop %p wakeup!", loop);
-  if ((res = r_io_write (loop->wakeup_handle, &buf, sizeof (ruint64))) != sizeof (ruint64)) {
-    R_LOG_ERROR ("Write failed (res %"RSSIZE_FMT") to event fd %d for loop %p",
-        res, loop->wakeup_handle, loop);
-  }
+  if (r_ev_wakeup_signal (&loop->evio_wakeup))
+    R_LOG_DEBUG ("loop %p wakeup!", loop);
+  else
+    R_LOG_ERROR ("Wakeup signalling failed for loop %p", loop);
 #else
 #endif
 }
