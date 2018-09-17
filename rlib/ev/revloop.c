@@ -738,6 +738,7 @@ r_ev_loop_add_task_full_v (REvLoop * loop, ruint taskgroup,
             r_ev_loop_task_proxy, ctx, r_free, args)) != NULL) {
       r_atomic_uint_fetch_add (&loop->tqitems, 1);
     } else {
+      r_ev_loop_unref (loop);
       r_free (ctx);
     }
   } else {
