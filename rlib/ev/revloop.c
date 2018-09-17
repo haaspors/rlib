@@ -285,6 +285,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
   REvIOEvents pending;
 
   while ((evio = r_queue_pop (&loop->chg)) != NULL) {
+    evio->chglnk = NULL;
     if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID))
       continue;
 
@@ -302,7 +303,6 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
       EV_SET (&events[nev++], evio->handle, EVFILT_READ, EV_DELETE, 0, 0, evio);
 
     evio->events = pending;
-    evio->chglnk = NULL;
 
     if (R_UNLIKELY (nev > (R_EV_LOOP_MAX_EVENTS - 4))) {
       if (kevent (loop->handle, events, nev, NULL, 0, NULL) != 0) {
@@ -388,6 +388,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     REvIOEvents pending = 0;
     int op;
 
+    evio->chglnk = NULL;
     if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID))
       continue;
 
@@ -404,7 +405,6 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
     if (epoll_ctl (loop->handle, op, evio->handle, ev) == 0) {
       evio->events = pending;
-      evio->chglnk = NULL;
     } else {
       R_LOG_ERROR ("epoll_ctl for loop %p failed %d: \"%s\" with operation %d for fd: %d",
           loop, errno, strerror (errno), op, evio->handle);
@@ -413,7 +413,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
         r_ev_io_invoke_iocb (evio, R_EV_IO_ERROR);
       else
         abort ();
-      evio->chglnk = NULL; /*r_queue_push (&evio->loop->chg, evio)*/
+      /*evio->chglnk = r_queue_push (&evio->loop->chg, evio)*/
     }
   }
 
