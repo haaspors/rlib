@@ -158,16 +158,11 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
 
 #ifdef USE_WAKEUP
   r_ev_wakeup_init (&loop->evio_wakeup, loop, NULL);
-  if (r_ev_io_start (&loop->evio_wakeup.evio, R_EV_IO_READABLE,
-        r_ev_loop_wakeup_cb, loop, NULL) != NULL) {
-    /* Make the wakeup evio internal
-     *  1. Remove from active evio list.
-     *  2. Don't hold reference to the loop.
-     */
-    r_queue_remove_link (&loop->active, loop->evio_wakeup.evio.alnk);
-    loop->evio_wakeup.evio.alnk = NULL;
-    r_ev_loop_unref (loop);
-  } else {
+  /* Mark the wakeup source internal */
+  loop->evio_wakeup.evio.flags |= R_EV_IO_INTERNAL;
+  r_ev_loop_unref (loop);
+  if (R_UNLIKELY (r_ev_io_start (&loop->evio_wakeup.evio, R_EV_IO_READABLE,
+        r_ev_loop_wakeup_cb, loop, NULL) == NULL)) {
     R_LOG_ERROR ("Failed to add wakeup for loop %p", loop);
   }
 #endif
@@ -288,6 +283,10 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     evio->chglnk = NULL;
     if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID))
       continue;
+    if (R_UNLIKELY (R_EV_IO_IS_CLOSED (evio))) {
+      evio->handle = R_IO_HANDLE_INVALID;
+      continue;
+    }
 
     pending = evio->events | r_ev_io_get_iocbq_events (evio);
     R_LOG_DEBUG ("loop %p changes evio "R_EV_IO_FORMAT" %4x->%x",
@@ -302,7 +301,10 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     else if (evio->events & R_EV_IO_WRITABLE && !(pending & R_EV_IO_WRITABLE))
       EV_SET (&events[nev++], evio->handle, EVFILT_READ, EV_DELETE, 0, 0, evio);
 
-    evio->events = pending;
+    if ((evio->events = pending) != 0)
+      evio->flags |= R_EV_IO_ADDED;
+    else
+      evio->flags &= ~R_EV_IO_ADDED;
 
     if (R_UNLIKELY (nev > (R_EV_LOOP_MAX_EVENTS - 4))) {
       if (kevent (loop->handle, events, nev, NULL, 0, NULL) != 0) {
@@ -391,8 +393,14 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     evio->chglnk = NULL;
     if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID))
       continue;
+    if (R_UNLIKELY (evio->flags & R_EV_IO_CLOSED)) {
+      evio->handle = R_IO_HANDLE_INVALID;
+      continue;
+    }
 
     pending = evio->events | r_ev_io_get_iocbq_events (evio);
+    if (R_UNLIKELY (evio->events == pending))
+      continue;
     R_LOG_DEBUG ("loop %p changes evio "R_EV_IO_FORMAT" %4x->%x",
         loop, R_EV_IO_ARGS (evio), evio->events, pending);
 
@@ -401,10 +409,24 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     if (pending & R_EV_IO_READABLE) ev->events |= EPOLLIN;
     if (pending & R_EV_IO_WRITABLE) ev->events |= EPOLLOUT;
     if (pending & R_EV_IO_HANGUP)   ev->events |= EPOLLRDHUP;
-    op = (evio->events == 0) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
+
+    if (R_EV_IO_IS_ADDED (evio))
+      op = (pending == 0) ? EPOLL_CTL_DEL : EPOLL_CTL_MOD;
+    else if (pending == 0)
+      continue;
+    else
+      op = EPOLL_CTL_ADD;
 
     if (epoll_ctl (loop->handle, op, evio->handle, ev) == 0) {
       evio->events = pending;
+      switch (op) {
+      case EPOLL_CTL_ADD:
+        evio->flags |= R_EV_IO_ADDED;
+        break;
+      case EPOLL_CTL_DEL:
+        evio->flags &= ~R_EV_IO_ADDED;
+        break;
+      }
     } else {
       R_LOG_ERROR ("epoll_ctl for loop %p failed %d: \"%s\" with operation %d for fd: %d",
           loop, errno, strerror (errno), op, evio->handle);
@@ -788,6 +810,7 @@ r_ev_io_init (REvIO * evio, REvLoop * loop, RIOHandle handle, RDestroyNotify not
   evio->alnk = evio->chglnk = NULL;
   evio->handle = handle;
   evio->events = 0;
+  evio->flags = R_EV_IO_FLAGS_NONE;
   r_cbqueue_init (&evio->iocbq);
   evio->user = NULL;
   evio->usernotify = NULL;
@@ -811,6 +834,7 @@ r_ev_io_new (REvLoop * loop, RIOHandle handle)
   REvIO * ret;
 
   if (R_UNLIKELY (loop == NULL)) return NULL;
+  if (R_UNLIKELY (handle == R_IO_HANDLE_INVALID)) return NULL;
 
   if ((ret = r_mem_new0 (REvIO)) != NULL)
     r_ev_io_init (ret, loop, handle, (RDestroyNotify)r_ev_io_free);
@@ -840,6 +864,7 @@ r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
   rpointer ret;
 
   if (R_UNLIKELY (evio == NULL)) return NULL;
+  if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID)) return NULL;
   if (R_UNLIKELY (events == 0)) return NULL;
   if (R_UNLIKELY (io_cb == NULL)) return NULL;
   if (R_UNLIKELY (evio->loop->stop_request)) return NULL;
@@ -851,7 +876,7 @@ r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
   if (!R_EV_IO_IS_CHANGING (evio) && (evio->events & events) != events)
     evio->chglnk = r_queue_push (&evio->loop->chg, evio);
 
-  if (!R_EV_IO_IS_ACTIVE (evio))
+  if (!R_EV_IO_IS_ACTIVE (evio) && !R_EV_IO_IS_INTERNAL (evio))
     evio->alnk = r_queue_push (&evio->loop->active, evio);
 
   return ret;
@@ -867,7 +892,7 @@ r_ev_io_stop (REvIO * evio, rpointer ctx)
       evio->loop, R_EV_IO_ARGS (evio), evio->events, RPOINTER_TO_UINT (((RCBList *)ctx)->user));
   r_cbqueue_remove_link (&evio->iocbq, ctx);
 
-  if (R_EV_IO_IS_ACTIVE (evio)) {
+  if (R_EV_IO_IS_ACTIVE (evio) || R_EV_IO_IS_INTERNAL (evio)) {
     REvIOEvents events;
 
     if ((events = r_ev_io_get_iocbq_events (evio)) == 0) {
@@ -890,16 +915,20 @@ r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
 
   R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT, evio->loop, R_EV_IO_ARGS (evio));
 
-  if (evio->handle != R_IO_HANDLE_INVALID) {
+  if (evio->handle != R_IO_HANDLE_INVALID && !R_EV_IO_IS_CLOSED (evio)) {
     r_io_close (evio->handle);
-    evio->handle = R_IO_HANDLE_INVALID;
+    evio->flags |= R_EV_IO_CLOSED;
   }
 
-  if (R_EV_IO_IS_ACTIVE (evio))
+  if (R_EV_IO_IS_ACTIVE (evio)) {
     r_queue_remove_link (&evio->loop->active, evio->alnk);
-  if (R_EV_IO_IS_CHANGING (evio))
-    r_queue_remove_link (&evio->loop->chg, evio->chglnk);
-  evio->alnk = evio->chglnk = NULL;
+    evio->alnk = NULL;
+  }
+
+  if (R_EV_IO_IS_ACTIVE (evio) || R_EV_IO_IS_INTERNAL (evio)) {
+    if (!R_EV_IO_IS_CHANGING (evio))
+      evio->chglnk = r_queue_push (&evio->loop->chg, evio);
+  }
 
   r_cbqueue_push (&evio->loop->acbs, (RFunc)close_cb,
       data, datanotify, r_ev_io_ref (evio), r_ev_io_unref);

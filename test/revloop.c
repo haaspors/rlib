@@ -284,6 +284,7 @@ RTEST (revloop, evio_handle, RTEST_FAST)
 
   r_assert_cmpint (pipe (fd), ==, 0);
 
+  r_assert_cmpptr (r_ev_loop_create_ev_io (loop, R_IO_HANDLE_INVALID), ==, NULL);
   r_assert_cmpptr ((ctx.evio = r_ev_loop_create_ev_io (loop, fd[0])), !=, NULL);
   r_assert_cmpptr ((ctx.ctx = r_ev_io_start (ctx.evio, R_EV_IO_READABLE, io_count_cb, &iocount, NULL)), !=, NULL);
   r_assert_cmpint (write (fd[1], "test", 4), ==, 4);
@@ -411,7 +412,7 @@ RTEST (revio, user, RTEST_FAST)
   r_clock_unref (clock);
 
   /* dummy fd/handle 42 */
-  r_assert_cmpptr ((evio = r_ev_loop_create_ev_io (loop, R_IO_HANDLE_INVALID)), !=, NULL);
+  r_assert_cmpptr ((evio = r_ev_loop_create_ev_io (loop, 42)), !=, NULL);
   r_assert_cmpptr (r_ev_io_get_user (evio), ==, NULL);
 
   r_assert_cmpptr ((data = r_malloc (42)), !=, NULL);

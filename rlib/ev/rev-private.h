@@ -41,6 +41,14 @@ R_API_HIDDEN R_LOG_CATEGORY_DEFINE_EXTERN (revlogcat);
 R_API_HIDDEN void r_ev_loop_add_cb_after (REvLoop * loop, RFunc func,
     rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
 
+typedef enum {
+  R_EV_IO_FLAGS_NONE  = 0,
+  R_EV_IO_ADDED       = (1 << 0),
+  R_EV_IO_INTERNAL    = (1 << 1),
+  R_EV_IO_CLOSED      = (1 << 2),
+} REvIOFlag;
+typedef ruint32 REvIOFlags;
+
 struct _REvIO {
   RRef ref;
 
@@ -50,6 +58,7 @@ struct _REvIO {
 
   RIOHandle handle;
   REvIOEvents events;
+  REvIOFlags flags;
   RCBQueue iocbq;
 
   rpointer user;
@@ -59,8 +68,11 @@ struct _REvIO {
 #define R_EV_IO_FORMAT        "%p [%"R_IO_HANDLE_FMT"]"
 #define R_EV_IO_ARGS(evio)    evio, (evio != NULL ? ((REvIO *)evio)->handle : R_IO_HANDLE_INVALID)
 
-#define R_EV_IO_IS_ACTIVE(evio) ((evio->alnk) != NULL)
-#define R_EV_IO_IS_CHANGING(evio) ((evio->chglnk) != NULL)
+#define R_EV_IO_IS_INTERNAL(evio)   (evio->flags & R_EV_IO_INTERNAL)
+#define R_EV_IO_IS_CLOSED(evio)     (evio->flags & R_EV_IO_CLOSED)
+#define R_EV_IO_IS_ADDED(evio)      (evio->flags & R_EV_IO_ADDED)
+#define R_EV_IO_IS_ACTIVE(evio)     ((evio->alnk) != NULL)
+#define R_EV_IO_IS_CHANGING(evio)   ((evio->chglnk) != NULL)
 
 R_API_HIDDEN void r_ev_io_init (REvIO * evio, REvLoop * loop, RIOHandle handle,
     RDestroyNotify notify);
