@@ -40,7 +40,8 @@
 int
 r_poll (RPoll * handles, ruint count, RClockTime timeout)
 {
-  return poll ((struct pollfd *)handles, count, timeout == R_CLOCK_TIME_INFINITE ? -1 : R_TIME_AS_MSECONDS (timeout));
+  return poll ((struct pollfd *)handles, count, timeout == R_CLOCK_TIME_INFINITE ? -1 :
+      (timeout != 0 ? (R_TIME_AS_MSECONDS (timeout) + 1) : 0));
 }
 #elif defined (R_OS_WIN32)
 int
@@ -59,7 +60,7 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   for (i = 0; i < count; i++)
     win32_handles[i] = handles[i].handle;
 
-  for (ret = 0, i = 0, t = (timeout == R_CLOCK_TIME_INFINITE) ? INFINITE : (DWORD)R_TIME_AS_MSECONDS (timeout);
+  for (ret = 0, i = 0, t = (timeout == R_CLOCK_TIME_INFINITE) ? INFINITE : (DWORD)(timeout != 0 ? (R_TIME_AS_MSECONDS (timeout) + 1) : 0);
       i < count && (res = WaitForMultipleObjectsEx(count - i, &win32_handles[i], FALSE, t, TRUE)) < (count - i);
       ret++, i++, t = 0) {
     i += res;
