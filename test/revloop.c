@@ -246,20 +246,29 @@ RTEST (revloop, callback_later_cancel, RTEST_FAST)
 RTEST_END;
 
 #if defined (R_OS_UNIX)
-static void
-io_count_cb (rpointer data, REvIOEvents events, REvIO * evio)
-{
-  rsize * count = data;
-  (void) evio;
-  (void) events;
-
-  (*count)++;
-}
-
 typedef struct {
   REvIO * evio;
   rpointer ctx;
+  int fd[2];
+  rsize iocount;
+  rsize it;
 } RTestEvIOStartCtx;
+
+static void
+io_count_cb (rpointer data, REvIOEvents events, REvIO * evio)
+{
+  RTestEvIOStartCtx * ctx = data;
+
+  ctx->iocount++;
+
+  int r;
+  ruint64 buf;
+  if (events & R_EV_IO_READABLE) {
+    do {
+      r = r_io_read (ctx->fd[0], &buf, sizeof (ruint64));
+    } while (r > 0);
+  }
+}
 
 static rboolean
 idle_stop_evio_cb (rpointer data, REvLoop * loop)
@@ -274,31 +283,29 @@ RTEST (revloop, evio_handle, RTEST_FAST)
 {
   REvLoop * loop;
   RClock * clock;
-  RTestEvIOStartCtx ctx;
-  int fd[2];
-  rsize iocount = 0, it = 0;
+  RTestEvIOStartCtx ctx = { NULL, NULL, { -1, -1 }, 0, 0 };
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
-  r_assert (r_ev_loop_add_prepare (loop, prepare_cb, &it, NULL));
+  r_assert (r_ev_loop_add_prepare (loop, prepare_cb, &ctx.it, NULL));
 
-  r_assert_cmpint (pipe (fd), ==, 0);
+  r_assert_cmpint (pipe (ctx.fd), ==, 0);
 
   r_assert_cmpptr (r_ev_loop_create_ev_io (loop, R_IO_HANDLE_INVALID), ==, NULL);
-  r_assert_cmpptr ((ctx.evio = r_ev_loop_create_ev_io (loop, fd[0])), !=, NULL);
-  r_assert_cmpptr ((ctx.ctx = r_ev_io_start (ctx.evio, R_EV_IO_READABLE, io_count_cb, &iocount, NULL)), !=, NULL);
-  r_assert_cmpint (write (fd[1], "test", 4), ==, 4);
+  r_assert_cmpptr ((ctx.evio = r_ev_loop_create_ev_io (loop, ctx.fd[0])), !=, NULL);
+  r_assert_cmpptr ((ctx.ctx = r_ev_io_start (ctx.evio, R_EV_IO_READABLE, io_count_cb, &ctx, NULL)), !=, NULL);
+  r_assert_cmpint (write (ctx.fd[1], "test", 4), ==, 4);
   r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT), ==, 1);
-  r_assert_cmpuint (iocount, ==, 1);
-  r_assert_cmpuint (it, ==, 1);
+  r_assert_cmpuint (ctx.iocount, ==, 1);
+  r_assert_cmpuint (ctx.it, ==, 1);
 
   r_assert (r_ev_loop_add_idle (loop, idle_stop_evio_cb, &ctx, NULL));
   r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
-  r_assert_cmpuint (iocount, ==, 1);
-  r_assert_cmpuint (it, ==, 2);
+  r_assert_cmpuint (ctx.iocount, ==, 1);
+  r_assert_cmpuint (ctx.it, ==, 2);
 
-  close (fd[0]);
-  close (fd[1]);
+  close (ctx.fd[0]);
+  close (ctx.fd[1]);
   r_ev_io_unref (ctx.evio);
   r_assert_cmpuint (r_ref_refcount (loop), ==, 1);
   r_ev_loop_unref (loop);
