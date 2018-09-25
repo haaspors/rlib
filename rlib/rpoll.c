@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/rpoll.h>
 
+#include <rlib/rmem.h>
 #include <rlib/rtime.h>
 
 #ifdef HAVE_POLL_H
@@ -35,6 +36,8 @@
 #define WIN32_LEAN_AND_MEAN 1
 #include <windows.h>
 #endif
+
+#define R_POLL_SET_MIN_INCREASE     64
 
 #if defined (HAVE_POLL)
 int
@@ -127,4 +130,116 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
 #else
 #error Need either 'poll' or 'select'
 #endif
+
+void
+r_poll_set_init (RPollSet * ps, ruint alloc)
+{
+  ps->handle_user = r_hash_table_new (NULL, NULL);
+  ps->handle_idx = r_hash_table_new (NULL, NULL);
+  ps->count = 0;
+  ps->alloc = MAX (alloc, R_POLL_SET_MIN_INCREASE);
+  ps->handles = r_mem_new0_n (RPoll, ps->alloc);
+}
+
+void
+r_poll_set_clear (RPollSet * ps)
+{
+  r_free (ps->handles);
+  r_hash_table_unref (ps->handle_idx);
+  r_hash_table_unref (ps->handle_user);
+
+  r_memclear (ps, sizeof (RPollSet));
+}
+
+int
+r_poll_set_find (RPollSet * ps, RIOHandle handle)
+{
+  rpointer val;
+
+  if (ps != NULL && r_hash_table_lookup_full (ps->handle_idx,
+        RIO_HANDLE_TO_POINTER (handle), NULL, &val) == R_HASH_TABLE_OK)
+    return RPOINTER_TO_UINT (val);
+
+  return RUINT_MAX;
+}
+
+rpointer
+r_poll_set_get_user (RPollSet * ps, RIOHandle handle)
+{
+  if (R_UNLIKELY (ps == NULL)) return NULL;
+
+  return r_hash_table_lookup (ps->handle_user, RIO_HANDLE_TO_POINTER (handle));
+}
+
+static void
+r_poll_set_update (RPollSet * ps, ruint idx, RIOHandle handle, rushort events, rpointer user)
+{
+  r_hash_table_insert (ps->handle_user, RIO_HANDLE_TO_POINTER (handle), user);
+  r_hash_table_insert (ps->handle_idx, RIO_HANDLE_TO_POINTER (handle),
+      RUINT_TO_POINTER (idx));
+
+  ps->handles[idx].handle = handle;
+  ps->handles[idx].events = events;
+  ps->handles[idx].revents = 0;
+}
+
+int
+r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user)
+{
+  ruint idx;
+
+  if (R_UNLIKELY (ps == NULL)) return -1;
+  if (R_UNLIKELY (handle == R_IO_HANDLE_INVALID)) return -1;
+
+  if (ps->alloc < ps->count) {
+    do {
+      ps->alloc += R_POLL_SET_MIN_INCREASE;
+    } while (ps->alloc < ps->count);
+    ps->handles = r_realloc (ps->handles, sizeof (RPoll) * ps->alloc);
+    if (R_UNLIKELY (ps->handles == NULL)) {
+      /* FIXME: Error out properly */
+      return -1;
+    }
+  }
+
+  idx = ps->count++;
+  r_poll_set_update (ps, idx, handle, events, user);
+  return (int)idx;
+}
+
+static rboolean
+r_poll_set_remove_idx (RPollSet * ps, int idx)
+{
+  rpointer key, user;
+
+  if (R_UNLIKELY (idx < 0)) return FALSE;
+  if (R_UNLIKELY ((ruint)idx >= ps->count)) return FALSE;
+
+  key = RIO_HANDLE_TO_POINTER (ps->handles[idx].handle);
+  if (r_hash_table_remove_full (ps->handle_user, key, NULL, &user) == R_HASH_TABLE_OK) {
+    r_hash_table_remove (ps->handle_idx, key);
+
+    if ((ruint)idx < --ps->count) {
+      RPoll * last = &ps->handles[ps->count];
+      rpointer last_user;
+
+      if (r_hash_table_lookup_full (ps->handle_user, RIO_HANDLE_TO_POINTER (last->handle),
+            NULL, &last_user) == R_HASH_TABLE_OK)
+        r_poll_set_update (ps, (ruint)idx, last->handle, last->events, last_user);
+      else
+        return FALSE;
+    }
+
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+rboolean
+r_poll_set_remove (RPollSet * ps, RIOHandle handle)
+{
+  if (R_UNLIKELY (ps == NULL)) return FALSE;
+  return r_poll_set_remove_idx (ps, r_poll_set_find (ps, handle));
+}
 

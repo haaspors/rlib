@@ -129,12 +129,16 @@ typedef rint64                  RClockTimeDiff;
 /* IO Handle */
 #if defined (R_OS_WIN32)
 typedef rpointer RIOHandle;
-#define R_IO_HANDLE_FMT       "p"
-#define R_IO_HANDLE_INVALID   INVALID_HANDLE_VALUE
+#define R_IO_HANDLE_FMT           "p"
+#define R_IO_HANDLE_INVALID       INVALID_HANDLE_VALUE
+#define RPOINTER_TO_IO_HANDLE(p)  (p)
+#define RIO_HANDLE_TO_POINTER(h)  (h)
 #else
 typedef int RIOHandle;
 #define R_IO_HANDLE_FMT       "i"
 #define R_IO_HANDLE_INVALID   -1
+#define RPOINTER_TO_IO_HANDLE(p)  RPOINTER_TO_INT (p)
+#define RIO_HANDLE_TO_POINTER(h)  RINT_TO_POINTER (h)
 #endif
 
 

@@ -24,6 +24,8 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/data/rhashtable.h>
+
 R_BEGIN_DECLS
 
 typedef struct {
@@ -33,6 +35,23 @@ typedef struct {
 } RPoll;
 
 R_API int r_poll (RPoll * handles, ruint count, RClockTime timeout);
+
+typedef struct {
+  RHashTable * handle_user;
+  RHashTable * handle_idx;
+  ruint count;
+  ruint alloc;
+  RPoll * handles;
+} RPollSet;
+
+R_API void r_poll_set_init (RPollSet * ps, ruint alloc);
+R_API void r_poll_set_clear (RPollSet * ps);
+
+R_API int r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user);
+R_API rboolean r_poll_set_remove (RPollSet * ps, RIOHandle handle);
+
+R_API int r_poll_set_find (RPollSet * ps, RIOHandle handle);
+R_API rpointer r_poll_set_get_user (RPollSet * ps, RIOHandle handle);
 
 R_END_DECLS
 

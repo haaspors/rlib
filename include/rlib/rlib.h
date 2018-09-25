@@ -44,6 +44,7 @@
 #include <rlib/rmemfile.h>
 #include <rlib/rmodule.h>
 #include <rlib/rmsgdigest.h>
+#include <rlib/rpoll.h>
 #include <rlib/rrand.h>
 #include <rlib/rref.h>
 #include <rlib/rsocket.h>
