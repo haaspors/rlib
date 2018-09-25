@@ -31,7 +31,6 @@ RTEST (rresolve, sync_addr_host, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-#if !defined (R_OS_WIN32)
 static void
 resolved_addr_cb (rpointer data, RResolvedAddr * addr, RResolveResult res)
 {
@@ -102,5 +101,4 @@ SKIP_RTEST (revresolve, live_addr, RTEST_FAST | RTEST_SYSTEM)
   r_ev_loop_unref (loop);
 }
 RTEST_END;
-#endif
 

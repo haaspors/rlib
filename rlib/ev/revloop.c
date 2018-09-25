@@ -20,9 +20,11 @@
 #include "../rlib-private.h"
 #include "rev-private.h"
 
+#include <rlib/rassert.h>
 #include <rlib/ratomic.h>
 #include <rlib/rio.h>
 #include <rlib/rmem.h>
+#include <rlib/rpoll.h>
 #include <rlib/rthreads.h>
 
 #ifdef HAVE_UNISTD_H
@@ -50,6 +52,8 @@
 #define USE_EPOLL   1
 #define USE_WAKEUP  1
 #else
+#define USE_RPOLL   1
+#define USE_WAKEUP  1
 #endif
 
 
@@ -101,6 +105,9 @@ struct _REvLoop {
 
   /* For IO events */
   RIOHandle handle;
+#ifdef USE_RPOLL
+  RPollSet pollset;
+#endif
   RQueue active;
   RQueue chg;
 };
@@ -110,6 +117,10 @@ r_ev_loop_free (REvLoop * loop)
 {
   REvLoop * prev = loop;
   r_atomic_ptr_cmp_xchg_strong (&g__r_ev_loop_default, &prev, NULL);
+
+#ifdef USE_RPOLL
+  r_poll_set_clear (&loop->pollset);
+#endif
 
 #ifdef USE_WAKEUP
   r_ev_wakeup_clear (&loop->evio_wakeup);
@@ -178,6 +189,9 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
   }
 #elif defined (USE_EPOLL)
  loop->handle = epoll_create1 (0);
+#elif defined (USE_RPOLL)
+  loop->handle = R_IO_HANDLE_INVALID;
+  r_poll_set_init (&loop->pollset, 0);
 #else
   loop->handle = R_IO_HANDLE_INVALID;
 #endif
@@ -474,9 +488,110 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
   return ret;
 }
+#elif defined (USE_RPOLL)
+static int
+r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
+{
+  REvIO * evio;
+  RClockTime timeout;
+  int ret;
+  ruint i;
+
+  while ((evio = r_queue_pop (&loop->chg)) != NULL) {
+    REvIOEvents pending;
+
+    evio->chglnk = NULL;
+    if (R_UNLIKELY (evio->handle == R_IO_HANDLE_INVALID))
+      continue;
+    if (R_UNLIKELY (R_EV_IO_IS_CLOSED (evio))) {
+      if (R_EV_IO_IS_ADDED (evio)) {
+        R_LOG_DEBUG ("loop %p closed evio "R_EV_IO_FORMAT, loop, R_EV_IO_ARGS (evio));
+        r_poll_set_remove (&loop->pollset, evio->handle);
+        evio->flags &= ~R_EV_IO_ADDED;
+      }
+      evio->handle = R_IO_HANDLE_INVALID;
+      continue;
+    }
+
+    pending = evio->events | r_ev_io_get_iocbq_events (evio);
+    if (R_UNLIKELY (evio->events == pending))
+      continue;
+    R_LOG_DEBUG ("loop %p changes evio "R_EV_IO_FORMAT" %4x->%x",
+        loop, R_EV_IO_ARGS (evio), evio->events, pending);
+
+    if ((evio->events = pending) != 0) {
+      rushort events = 0;
+
+      if (pending & R_EV_IO_ERROR)    events |= R_IO_ERR;
+      if (pending & R_EV_IO_READABLE) events |= R_IO_IN;
+      if (pending & R_EV_IO_WRITABLE) events |= R_IO_OUT;
+      if (pending & R_EV_IO_HANGUP)   events |= R_IO_HUP;
+
+      if (!R_EV_IO_IS_ADDED (evio)) {
+        if (r_poll_set_add (&loop->pollset, evio->handle, events, evio) >= 0) {
+          evio->flags |= R_EV_IO_ADDED;
+        } else {
+          R_LOG_ERROR ("Couldn't add %"R_IO_HANDLE_FMT" evio "R_EV_IO_FORMAT" to pollset",
+              evio->handle, R_EV_IO_ARGS (evio));
+        }
+      } else {
+        int idx;
+        if ((idx = r_poll_set_find (&loop->pollset, evio->handle)) >= 0) {
+          loop->pollset.handles[idx].events = events;
+        } else {
+          R_LOG_ERROR ("Couldn't update events on evio "R_EV_IO_FORMAT,
+              R_EV_IO_ARGS (evio));
+        }
+      }
+    } else if (R_EV_IO_IS_ADDED (evio)) {
+      if (r_poll_set_remove (&loop->pollset, evio->handle)) {
+        evio->flags &= ~R_EV_IO_ADDED;
+      } else {
+        R_LOG_ERROR ("Couldn't remove fd: %"R_IO_HANDLE_FMT" evio "R_EV_IO_FORMAT,
+            evio->handle, R_EV_IO_ARGS (evio));
+      }
+    }
+  }
+
+  if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
+    timeout = deadline - loop->ts;
+  else
+    timeout = R_CLOCK_TIME_NONE;
+
+  R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
+  do {
+    ret = r_poll (loop->pollset.handles, loop->pollset.count, timeout);
+  } while (ret < 0 && errno == EINTR);
+
+  if (ret >= 0) {
+    int processed = 0;
+    R_LOG_DEBUG ("r_poll for loop %p with %d events", loop, ret);
+    for (i = 0; i < loop->pollset.count && processed < ret; i++) {
+      REvIOEvents rev = 0;
+      evio = r_poll_set_get_user (&loop->pollset, loop->pollset.handles[i].handle);
+      r_assert_cmpptr (evio, !=, NULL);
+
+      if (loop->pollset.handles[i].revents & R_IO_ERR)  rev |= R_EV_IO_ERROR;
+      if (loop->pollset.handles[i].revents & R_IO_HUP)  rev |= R_EV_IO_HANGUP;
+      if (loop->pollset.handles[i].revents & R_IO_IN)   rev |= R_EV_IO_READABLE;
+      if (loop->pollset.handles[i].revents & R_IO_OUT)  rev |= R_EV_IO_WRITABLE;
+      loop->pollset.handles[i].revents = 0;
+
+      R_LOG_INFO ("r_poll for loop %p handle %"R_IO_HANDLE_FMT" evio: "R_EV_IO_FORMAT" - %u",
+          loop, loop->pollset.handles[i].handle, R_EV_IO_ARGS (evio), (ruint)rev);
+      if (R_LIKELY (rev != 0)) {
+        processed++;
+        r_ev_io_invoke_iocb (evio, rev);
+      }
+    }
+  } else {
+    R_LOG_ERROR ("r_poll for loop %p failed with error %d", loop, ret);
+  }
+
+  return ret;
+}
 #else
 /* TODO: Implement win32 backend */
-/* TODO: Implement r_poll based backend */
 static int
 r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 {
@@ -670,6 +785,7 @@ r_ev_loop_wakeup (REvLoop * loop)
   else
     R_LOG_ERROR ("Wakeup signalling failed for loop %p", loop);
 #else
+#error No wakeup mechanism
 #endif
 }
 

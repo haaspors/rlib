@@ -1,12 +1,5 @@
 #include <rlib/rev.h>
 
-#if defined (R_OS_WIN32)
-SKIP_RTEST (revtcp, dummy, RTEST_FAST)
-{
-}
-RTEST_END;
-#else
-
 static void
 new_connection_ready (rpointer data, REvTCP * newtcp, REvTCP * listening)
 {
@@ -82,5 +75,4 @@ RTEST (revtcp, listen_connect_accept_send_recv, RTEST_FAST | RTEST_SYSTEM)
   r_ev_loop_unref (loop);
 }
 RTEST_END;
-#endif
 

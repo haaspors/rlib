@@ -16,8 +16,6 @@ RTEST (revloop, default, RTEST_FAST)
 }
 RTEST_END;
 
-/* Enable when epoll and ioctl backends are working!!! */
-#if !defined (R_OS_WIN32)
 static rboolean
 prepare_cb (rpointer data, REvLoop * loop)
 {
@@ -83,7 +81,6 @@ RTEST (revloop, prepare, RTEST_FAST)
   r_ev_loop_unref (loop);
 }
 RTEST_END;
-#endif
 
 static void
 check_for_current (rpointer data, REvLoop * loop)
@@ -134,8 +131,6 @@ RTEST (revloop, callback, RTEST_FAST)
 }
 RTEST_END;
 
-/* Enable when epoll and ioctl backends are working!!! */
-#if !defined (R_OS_WIN32)
 RTEST (revloop, callback_at, RTEST_FAST)
 {
   REvLoop * loop;
@@ -405,7 +400,6 @@ RTEST (revloop, add_task_with_taskgroup, RTEST_FAST)
   r_task_queue_unref (tq);
 }
 RTEST_END;
-#endif
 
 RTEST (revio, user, RTEST_FAST)
 {
