@@ -39,7 +39,19 @@
 
 #define R_POLL_SET_MIN_INCREASE     64
 
-#if defined (HAVE_POLL)
+#if defined (HAVE_PPOLL)
+int
+r_poll (RPoll * handles, ruint count, RClockTime timeout)
+{
+  if (timeout == R_CLOCK_TIME_INFINITE) {
+    return ppoll ((struct pollfd *)handles, count, NULL, NULL);
+  } else {
+    struct timespec ts;
+    R_TIME_TO_TIMESPEC (timeout, ts);
+    return ppoll ((struct pollfd *)handles, count, &ts, NULL);
+  }
+}
+#elif defined (HAVE_POLL)
 int
 r_poll (RPoll * handles, ruint count, RClockTime timeout)
 {

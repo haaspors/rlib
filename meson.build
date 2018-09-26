@@ -316,6 +316,7 @@ check_funcs = [
   [ 'eventfd', 'sys/eventfd.h' ],
   [ 'gettid', 'sys/types.h' ],
   [ 'poll', 'poll.h' ],
+  [ 'ppoll', 'poll.h' ],
   [ 'select', 'sys/select.h' ],
   [ 'sigaction', 'signal.h' ],
   [ 'sigaltstack', 'signal.h' ],
