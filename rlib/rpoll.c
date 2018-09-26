@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/rpoll.h>
 
+#include <rlib/rassert.h>
 #include <rlib/rmem.h>
 #include <rlib/rtime.h>
 
@@ -75,15 +76,18 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   for (i = 0; i < count; i++)
     win32_handles[i] = handles[i].handle;
 
-  for (ret = 0, i = 0, t = (timeout == R_CLOCK_TIME_INFINITE) ? INFINITE : (DWORD)(timeout != 0 ? (R_TIME_AS_MSECONDS (timeout) + 1) : 0);
-      i < count && (res = WaitForMultipleObjectsEx(count - i, &win32_handles[i], FALSE, t, TRUE)) < (count - i);
-      ret++, i++, t = 0) {
-    i += res;
-    handles[i].revents = handles[i].events;
-  }
+  t = (timeout == R_CLOCK_TIME_INFINITE) ? INFINITE : (DWORD)(timeout != 0 ? (R_TIME_AS_MSECONDS (timeout) + 1) : 0);
+  for (ret = 0, i = 0; i < count; ret++, i++, t = 0) {
+    res = WaitForMultipleObjectsEx (count - i, &win32_handles[i], FALSE, t, TRUE);
 
-  if (res == WAIT_FAILED) {
-    switch (GetLastError ()) {
+    if (res < (WAIT_OBJECT_0 + count - i)) {
+      i += res;
+      handles[i].revents = handles[i].events;
+    } else if (res == WAIT_FAILED) {
+      DWORD dw;
+      LPVOID lpMsgBuf;
+
+      switch ((dw = GetLastError ())) {
       case ERROR_INVALID_HANDLE:
         errno = EINVAL;
         break;
@@ -91,7 +95,21 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
       default:
         errno = EIO;
       }
-    return -1;
+
+      FormatMessageA (FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+          NULL, dw, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR) &lpMsgBuf, 0, NULL);
+      R_LOG_CAT_ERROR (R_LOG_CAT_ASSERT, "WaitForMultipleObjectsEx error '%s'", lpMsgBuf);
+      LocalFree (lpMsgBuf);
+      return -1;
+    } else if (res == WAIT_TIMEOUT) {
+      break;
+    } else if (res == WAIT_IO_COMPLETION) {
+      // FIXME: WAIT_IO_COMPLETION
+      r_assert_not_reached ();
+    } else {
+      // FIXME: What to do when we get WAIT_ABANDONED_0
+      r_assert_not_reached ();
+    }
   }
 
   return ret;
