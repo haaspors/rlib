@@ -333,7 +333,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
   if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
     R_TIME_TO_TIMESPEC ((timeout = deadline - loop->ts), spec);
   else
-    timeout = R_CLOCK_TIME_NONE;
+    timeout = R_CLOCK_TIME_INFINITE;
 
   R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
   do {
@@ -456,7 +456,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
   if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
     timeout = deadline - loop->ts;
   else
-    timeout = R_CLOCK_TIME_NONE;
+    timeout = R_CLOCK_TIME_INFINITE;
 
   R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
   do {
@@ -556,7 +556,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
   if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
     timeout = deadline - loop->ts;
   else
-    timeout = R_CLOCK_TIME_NONE;
+    timeout = R_CLOCK_TIME_INFINITE;
 
   R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
   do {
