@@ -119,8 +119,6 @@ r_ev_tcp_new_bind (const RSocketAddress * addr, REvLoop * loop)
 rboolean
 r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotify datanotify)
 {
-  rboolean ret;
-
   R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT,
       evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
   r_ev_tcp_recv_stop (evtcp);
@@ -138,13 +136,9 @@ r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotif
     evtcp->listen_iocb_ctx = NULL;
   }
 
-  if ((ret = r_ev_io_close ((REvIO *)evtcp, close_cb, data, datanotify))) {
-    /* FIXME: This must be done better.. call r_socket_close somehow! */
-    evtcp->socket->flags |= R_SOCKET_FLAG_CLOSED;
-    evtcp->socket->handle = R_SOCKET_HANDLE_INVALID;
-  }
-
-  return ret;
+  /* Mark as closed, but close is actually happening in r_socket_free -> FIXME? */
+  evtcp->evio.flags |= R_EV_IO_CLOSED;
+  return r_ev_io_close ((REvIO *)evtcp, close_cb, data, datanotify);
 }
 
 RSocketAddress *
