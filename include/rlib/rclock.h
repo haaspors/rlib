@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -62,6 +62,7 @@ R_API RClockEntry * r_clock_add_timeout_callback (RClock * clock,
     rpointer user, RDestroyNotify usernotify);
 R_API rboolean r_clock_cancel_entry (RClock * clock, RClockEntry * entry);
 R_API rsize r_clock_timeout_count (const RClock * clock);
+R_API rboolean r_clock_is_synthetic (const RClock * clock);
 
 /* These functions are used by threads/sources that wait for time */
 R_API RClockTime r_clock_first_timeout (RClock * clock);

@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -32,6 +32,7 @@ struct _RClock {
   RRef ref;
   RClockGetTimeFunc get_time;
   RClockWaitFunc wait;
+  rboolean is_synthetic;
 
   RTimeoutCBList timers;
 };
@@ -105,6 +106,12 @@ r_clock_timeout_count (const RClock * clock)
   return r_timeout_cblist_len (&clock->timers);
 }
 
+rboolean
+r_clock_is_synthetic (const RClock * clock)
+{
+  return clock->is_synthetic;
+}
+
 RClockTime
 r_clock_first_timeout (RClock * clock)
 {
@@ -140,6 +147,7 @@ static RClock g__r_sysclock = {
   R_REF_STATIC_INIT (r_clock_clear),
   (RClockGetTimeFunc)r_time_get_ts_monotonic,
   r_system_clock_wait,
+  FALSE,
 
   R_TIMEOUT_CBLIST_INIT,
 };
@@ -201,6 +209,7 @@ r_test_clock_new (rboolean update_on_wait)
     r_ref_init (ret, r_test_clock_free);
     ret->clock.get_time = r_test_clock_get_time;
     ret->clock.wait = r_test_clock_wait;
+    ret->clock.is_synthetic = TRUE;
     ret->update_on_wait = update_on_wait;
     r_timeout_cblist_init (&ret->clock.timers);
     ret->ts = 0;

@@ -5,6 +5,7 @@ RTEST (rsystemclock, system, RTEST_FAST | RTEST_SYSTEM)
   RClock * clock;
 
   r_assert_cmpptr ((clock = r_system_clock_get ()), !=, NULL);
+  r_assert (!r_clock_is_synthetic (clock));
   r_clock_unref (clock);
 
   r_assert_cmpuint (r_clock_get_time (clock), >, 0);
@@ -37,6 +38,7 @@ RTEST (rtestclock, update, RTEST_FAST)
   RClock * clock;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert (r_clock_is_synthetic (clock));
   r_assert_cmpuint (r_clock_get_time (clock), ==, 0);
 
   r_assert (r_test_clock_update_time (clock, 42));
