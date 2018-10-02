@@ -83,6 +83,9 @@ static void r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio
 struct _REvLoop {
   RRef ref;
 
+  rsize iterations;
+  rsize idle_count;
+
   rboolean stop_request;
   RClockTime ts;
   RClock * clock;
@@ -151,6 +154,7 @@ r_ev_loop_free (REvLoop * loop)
 static void
 r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
 {
+  loop->iterations = loop->idle_count = 0;
   loop->stop_request = FALSE;
   r_cbqueue_init (&loop->dcbs);
   r_cbqueue_init (&loop->bcbs);
@@ -638,11 +642,14 @@ r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode)
 
     r_cbqueue_call_pop (&loop->bcbs);
     deadline = r_ev_loop_next_deadline (loop, mode);
-    if ((res = r_ev_loop_io_wait (loop, deadline)) == 0)
+    if ((res = r_ev_loop_io_wait (loop, deadline)) == 0) {
       r_ev_loop_idle (loop);
+      loop->idle_count++;
+    }
     r_cbqueue_call_pop (&loop->acbs);
 
     r_ev_loop_update_timers (loop);
+    loop->iterations++;
 
     ret = r_ev_loop_outstanding_events (loop);
     if (mode != R_EV_LOOP_RUN_LOOP)
@@ -658,6 +665,18 @@ r_ev_loop_stop (REvLoop * loop)
 {
   R_LOG_DEBUG ("EvLoop %p requesting stop", loop);
   loop->stop_request = TRUE;
+}
+
+rsize
+r_ev_loop_get_iterations (const REvLoop * loop)
+{
+  return loop->iterations;
+}
+
+rsize
+r_ev_loop_get_idle_count (const REvLoop * loop)
+{
+  return loop->idle_count;
 }
 
 ruint
