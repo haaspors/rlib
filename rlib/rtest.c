@@ -593,6 +593,8 @@ _r_test_win32_err_handler (int sig)
     return;
 
   if (g__r_test_nofork_ctx->thread == r_thread_current ()) {
+    r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, __FILE__, __LINE__, R_STRFUNC,
+        "Error sig: %d", sig);
     longjmp (g__r_test_nofork_ctx->jb, R_TEST_RUN_STATE_ERROR);
   } else {
     _r_test_nofork_win32_kill_test_thread (R_TEST_RUN_STATE_ERROR);
