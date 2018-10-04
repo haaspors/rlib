@@ -37,6 +37,7 @@
 #define WIN32_LEAN_AND_MEAN 1
 #include <windows.h>
 #endif
+#include <errno.h>
 
 #define R_POLL_SET_MIN_INCREASE     64
 
@@ -44,20 +45,41 @@
 int
 r_poll (RPoll * handles, ruint count, RClockTime timeout)
 {
-  if (timeout == R_CLOCK_TIME_INFINITE) {
-    return ppoll ((struct pollfd *)handles, count, NULL, NULL);
-  } else {
-    struct timespec ts;
+  int ret;
+  struct timespec ts, * pts;
+
+  if (timeout != R_CLOCK_TIME_INFINITE) {
     R_TIME_TO_TIMESPEC (timeout, ts);
-    return ppoll ((struct pollfd *)handles, count, &ts, NULL);
+    pts = &ts;
+  } else {
+    pts = NULL;
   }
+
+  do {
+    ret = ppoll ((struct pollfd *)handles, count, pts, NULL);
+  } while (ret < 0 && errno == EINTR);
+
+  return ret;
 }
 #elif defined (HAVE_POLL)
 int
 r_poll (RPoll * handles, ruint count, RClockTime timeout)
 {
-  return poll ((struct pollfd *)handles, count, timeout == R_CLOCK_TIME_INFINITE ? -1 :
-      (timeout != 0 ? (R_TIME_AS_MSECONDS (timeout) + 1) : 0));
+  int ret, t;
+
+  if (timeout == R_CLOCK_TIME_INFINITE) {
+    t = -1;
+  } else if (timeout != 0) {
+    t = R_TIME_AS_MSECONDS (timeout) + 1;
+  } else {
+    t = 0;
+  }
+
+  do {
+    ret = poll ((struct pollfd *)handles, count, t);
+  } while (ret < 0 && errno == EINTR);
+
+  return ret;
 }
 #elif defined (R_OS_WIN32)
 int
@@ -73,10 +95,17 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
     return -1;
   }
 
+  if (timeout == R_CLOCK_TIME_INFINITE) {
+    t = INFINITE;
+  } else if (timeout != 0) {
+    t = R_TIME_AS_MSECONDS (timeout) + 1;
+  } else {
+    t = 0;
+  }
+
   for (i = 0; i < count; i++)
     win32_handles[i] = handles[i].handle;
 
-  t = (timeout == R_CLOCK_TIME_INFINITE) ? INFINITE : (DWORD)(timeout != 0 ? (R_TIME_AS_MSECONDS (timeout) + 1) : 0);
   for (ret = 0, i = 0; i < count; ret++, i++, t = 0) {
     res = WaitForMultipleObjectsEx (count - i, &win32_handles[i], FALSE, t, TRUE);
 
@@ -115,12 +144,24 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   return ret;
 }
 #elif defined (HAVE_SELECT)
+static inline int
+r_select (int nfds, fd_set * r, fd_set * w, fd_set * e, struct timeval * t)
+{
+  int ret;
+
+  do {
+    ret = select (nfds, r, w, e, t);
+  } while (ret < 0 && errno == EINTR);
+
+  return ret;
+}
+
 int
 r_poll (RPoll * handles, ruint count, RClockTime timeout)
 {
   ruint i;
   fd_set rset, wset, xset;
-  struct timeval tv;
+  struct timeval tv, * ptv;
   int ret, maxfd = 0;
 
   FD_ZERO (&rset);
@@ -140,8 +181,14 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
     }
   }
 
-  R_TIME_TO_TIMEVAL (timeout, tv);
-  if ((ret = select (maxfd + 1, &rset, &wset, &xset, timeout == R_CLOCK_TIME_INFINITE ? NULL : &tv)) > 0) {
+  if (timeout != R_CLOCK_TIME_INFINITE) {
+    R_TIME_TO_TIMEVAL (timeout, tv);
+    ptv = &tv;
+  } else {
+    ptv = NULL;
+  }
+
+  if ((ret = r_select (maxfd + 1, &rset, &wset, &xset, ptv)) > 0) {
     for (i = 0; i < count; i++) {
       handles[i].revents = 0;
       if (handles[i].handle >= 0) {
