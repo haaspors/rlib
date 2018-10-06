@@ -635,9 +635,14 @@ r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode)
     r_assert_cmpuint (deadline, >=, loop->ts);
     R_LOG_TRACE ("loop %p: now %"R_TIME_FORMAT" WAIT until %"R_TIME_FORMAT,
         loop, R_TIME_ARGS (loop->ts), R_TIME_ARGS (deadline));
-    if ((res = r_ev_loop_io_wait (loop, deadline)) == 0) {
-      r_ev_loop_idle (loop);
-      loop->idle_count++;
+    while ((res = r_ev_loop_io_wait (loop, deadline)) == 0) {
+      /* Make sure we actually wait until deadline,
+       * this is needed on some systems because io_wait returns early */
+      if (r_clock_is_synthetic (loop->clock) || deadline <= r_clock_get_time (loop->clock)) {
+        r_ev_loop_idle (loop);
+        loop->idle_count++;
+        break;
+      }
     }
     r_cbqueue_call_pop (&loop->acbs);
 
