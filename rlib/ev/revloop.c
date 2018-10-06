@@ -289,11 +289,10 @@ static int
 r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 {
   REvIO * evio;
-  RClockTime timeout;
   int ret, i;
 
   struct kevent events[R_EV_LOOP_MAX_EVENTS], * ev;
-  struct timespec spec = { 0, 0 };
+  struct timespec spec = { 0, 0 }, * pspec;
   int nev = 0;
   REvIOEvents pending;
 
@@ -334,16 +333,16 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     }
   }
 
-  if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
-    R_TIME_TO_TIMESPEC ((timeout = deadline - loop->ts), spec);
-  else
-    timeout = R_CLOCK_TIME_INFINITE;
+  if (deadline != R_CLOCK_TIME_INFINITE) {
+    R_TIME_TO_TIMESPEC (deadline - loop->ts, spec);
+    pspec = &spec;
+  } else {
+    pspec = NULL;
+  }
 
-  R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
   do {
     R_LOG_TRACE ("executing kevent for loop %p with changelst of %d events", loop, nev);
-    ret = kevent (loop->handle, events, nev, events, R_N_ELEMENTS (events),
-        R_CLOCK_TIME_IS_VALID (deadline) ? &spec : NULL);
+    ret = kevent (loop->handle, events, nev, events, R_N_ELEMENTS (events), pspec);
   } while (ret < 0 && errno == EINTR);
 
   if (ret >= 0) {
@@ -398,8 +397,7 @@ static int
 r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 {
   REvIO * evio;
-  RClockTime timeout;
-  int ret, i;
+  int ret, i, tms;
 
   struct epoll_event events[R_EV_LOOP_MAX_EVENTS], * ev = events;
 
@@ -457,16 +455,12 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     }
   }
 
-  if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
-    timeout = deadline - loop->ts;
+  if (deadline != R_CLOCK_TIME_INFINITE)
+    tms = R_TIME_AS_MSECONDS (deadline - loop->ts) + 1;
   else
-    timeout = R_CLOCK_TIME_INFINITE;
+    tms = -1;
 
-  R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
   do {
-    int tms = -1;
-    if (R_CLOCK_TIME_IS_VALID (timeout))
-      tms = MAX (R_TIME_AS_MSECONDS (timeout), 1);
     R_LOG_TRACE ("executing epoll_wait for loop %p with timeout %d", loop, tms);
     ret = epoll_wait (loop->handle, events, R_N_ELEMENTS (events), tms);
   } while (ret < 0 && errno == EINTR);
@@ -557,16 +551,12 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     }
   }
 
-  if (R_CLOCK_TIME_IS_VALID (deadline) && deadline >= loop->ts)
+  if (deadline != R_CLOCK_TIME_INFINITE)
     timeout = deadline - loop->ts;
   else
     timeout = R_CLOCK_TIME_INFINITE;
 
-  R_LOG_DEBUG ("loop %p WAIT for %"R_TIME_FORMAT, loop, R_TIME_ARGS (timeout));
-  do {
-    ret = r_poll (loop->pollset.handles, loop->pollset.count, timeout);
-  } while (ret < 0 && errno == EINTR);
-
+  ret = r_poll (loop->pollset.handles, loop->pollset.count, timeout);
   if (ret >= 0) {
     int processed = 0;
     R_LOG_DEBUG ("r_poll for loop %p with %d events", loop, ret);
@@ -642,6 +632,9 @@ r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode)
 
     r_cbqueue_call_pop (&loop->bcbs);
     deadline = r_ev_loop_next_deadline (loop, mode);
+    r_assert_cmpuint (deadline, >=, loop->ts);
+    R_LOG_TRACE ("loop %p: now %"R_TIME_FORMAT" WAIT until %"R_TIME_FORMAT,
+        loop, R_TIME_ARGS (loop->ts), R_TIME_ARGS (deadline));
     if ((res = r_ev_loop_io_wait (loop, deadline)) == 0) {
       r_ev_loop_idle (loop);
       loop->idle_count++;
