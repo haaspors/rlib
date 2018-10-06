@@ -38,8 +38,7 @@ build_script:
   - cmd: 7z a rlib.zip _build_ -xr!*@*
 
 test_script:
-  - cmd: meson test -C _build_ --print-errorlogs
-  - cmd: type C:\projects\rlib\_build_\meson-logs\testlog.txt
+  - cmd: meson test -C _build_ --print-errorlogs || type C:\projects\rlib\_build_\meson-logs\testlog.txt
 
 artifacts:
   - path: rlib.zip
