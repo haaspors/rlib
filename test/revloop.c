@@ -161,6 +161,26 @@ RTEST (revloop, callback_at, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (revloop, callback_at_early, RTEST_FAST)
+{
+  REvLoop * loop;
+  rsize size = 0;
+  RClockTime deadline;
+
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+
+  deadline = r_time_get_ts_monotonic () - R_MSECOND / 2;
+  r_assert (r_ev_loop_add_callback_at (loop, NULL, deadline,
+        increment_rsize, &size, NULL));
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+  r_assert_cmpuint (size, ==, 1);
+  r_assert_cmpuint (r_ev_loop_get_idle_count (loop), ==, 1);
+  r_assert_cmpuint (r_ev_loop_get_iterations (loop), ==, 1);
+
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
 RTEST (revloop, callback_later, RTEST_FAST)
 {
   REvLoop * loop;
