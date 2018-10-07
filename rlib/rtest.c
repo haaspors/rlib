@@ -606,14 +606,76 @@ _r_test_win32_exception_filter (PEXCEPTION_POINTERS ep)
   const rchar * errfile = "???";
   const rchar * errfunc = "???";
   ruint errline = 0;
+  int sig;
 
-  if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_STACK_OVERFLOW) {
-    r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
-        "exception code: %u", ep->ExceptionRecord->ExceptionCode);
+  switch (ep->ExceptionRecord->ExceptionCode) {
+    case EXCEPTION_STACK_OVERFLOW:
+      sig = SIGSEGV;
+      break;
+    case EXCEPTION_ACCESS_VIOLATION:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception ACCESS VIOLATION @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGSEGV;
+      break;
+    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception ARRAY BOUNDS EXCEEDED @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGSEGV;
+      break;
+    case EXCEPTION_ILLEGAL_INSTRUCTION:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception ILLEGAL INSTRUCTION @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGILL;
+      break;
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception INT DIVIDE BY ZERO @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGILL;
+      break;
+    case EXCEPTION_FLT_DENORMAL_OPERAND:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception FLOAT DENORMAL OPERAND @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGFPE;
+      break;
+    case EXCEPTION_FLT_DIVIDE_BY_ZERO:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception FLOAT DIVIDE BY ZERO @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGFPE;
+      break;
+    case EXCEPTION_FLT_INEXACT_RESULT:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception FLOAT INEXACT RESULT @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGFPE;
+      break;
+    case EXCEPTION_FLT_INVALID_OPERATION:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception FLOAT INVALID OPERATION @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGFPE;
+      break;
+    case EXCEPTION_FLT_OVERFLOW:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception FLOAT OVERFLOW @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGFPE;
+      break;
+    case EXCEPTION_FLT_STACK_CHECK:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception FLOAT STACK CHECK @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGFPE;
+      break;
+    case EXCEPTION_FLT_UNDERFLOW:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception FLOAT UNDERFLOW @ %p", ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGFPE;
+      break;
+    default:
+      r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
+          "Exception 0x%08x @ %p",
+          ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress);
+      sig = SIGSEGV;
+      break;
   }
 
-  _r_test_win32_error (SIGSEGV);
-
+  _r_test_win32_error (sig);
   return EXCEPTION_CONTINUE_SEARCH;
 }
 
