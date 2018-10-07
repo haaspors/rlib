@@ -587,14 +587,12 @@ _r_test_nofork_timeout_handler (int sig)
 
 #if defined (R_OS_WIN32)
 static void
-_r_test_win32_err_handler (int sig)
+_r_test_win32_error (int sig)
 {
   if (R_UNLIKELY (g__r_test_nofork_ctx == NULL))
     return;
 
   if (g__r_test_nofork_ctx->thread == r_thread_current ()) {
-    r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, __FILE__, __LINE__, R_STRFUNC,
-        "Error sig: %d", sig);
     longjmp (g__r_test_nofork_ctx->jb, R_TEST_RUN_STATE_ERROR);
   } else {
     _r_test_nofork_win32_kill_test_thread (R_TEST_RUN_STATE_ERROR);
@@ -614,9 +612,17 @@ _r_test_win32_exception_filter (PEXCEPTION_POINTERS ep)
         "exception code: %u", ep->ExceptionRecord->ExceptionCode);
   }
 
-  _r_test_win32_err_handler (SIGSEGV);
+  _r_test_win32_error (SIGSEGV);
 
   return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void
+_r_test_win32_abort_handler (int sig)
+{
+  r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, __FILE__, __LINE__, R_STRFUNC,
+      "Signal %d", sig);
+  _r_test_win32_error (sig);
 }
 #elif defined (R_OS_UNIX)
 #ifdef RLIB_HAVE_SIGNALS
@@ -701,7 +707,7 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 #if defined (R_OS_WIN32)
   ctx->ouef = SetUnhandledExceptionFilter (_r_test_win32_exception_filter);
   _set_abort_behavior (0, _CALL_REPORTFAULT | _WRITE_ABORT_MSG);
-  ctx->osigabrt = signal (SIGABRT, _r_test_win32_err_handler);
+  ctx->osigabrt = signal (SIGABRT, _r_test_win32_abort_handler);
 #elif defined (R_OS_UNIX)
 #ifdef HAVE_SIGALTSTACK
   ctx->ss.ss_size = sizeof (_r_test_sigstack);
