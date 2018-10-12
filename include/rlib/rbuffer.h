@@ -28,7 +28,7 @@
 
 #include <stdarg.h>
 
-/**
+/*
  * The implementation of RBuffer is heavily inspired by GStreamer equivalent,
  * namely GstBuffer. RBuffer is an abstraction of memory chunks backed by
  * different RMemAllocator backends. Default is the system memory allocator.
