@@ -28,7 +28,7 @@
 
 #include <stdarg.h>
 
-/**
+/*
  * The implementation of RMem and RMemAllocator is heavily inspired by the
  * GStreamer equivalents.
  */
