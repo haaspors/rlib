@@ -112,7 +112,7 @@ rlib_sources = [
 
 configure_file(input : 'rconfig.h.meson', output : 'rconfig.h',
   configuration : rconf,
-  install_dir : 'include/rlib/types')
+  install_dir : 'include/rlib')
 
 librlib = build_target(rlib_name,
   sources : [ rlib_sources ],
