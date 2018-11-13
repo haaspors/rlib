@@ -87,7 +87,7 @@ r_ev_resolve_free (REvResolve * resolve)
   if (resolve->datanotify != NULL)
     resolve->datanotify (resolve->data);
 
-  r_resolved_addr_free (resolve->resolved);
+  r_resolved_addr_unref (resolve->resolved);
 
   r_free (resolve->host);
   r_free (resolve->service);

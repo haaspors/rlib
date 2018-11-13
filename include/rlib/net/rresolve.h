@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2017-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -23,6 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/rref.h>
 
 #include <rlib/rsocket.h>
 #include <rlib/rsocketaddress.h>
@@ -58,13 +59,18 @@ typedef struct {
 } RResolveHints;
 
 typedef struct _RResolvedAddr RResolvedAddr;
-struct _RResolvedAddr {
-  RResolveHints hints;
-  RSocketAddress * addr;
-  RResolvedAddr * next;
-};
+#define r_resolved_addr_ref r_ref_ref
+#define r_resolved_addr_unref r_ref_unref
 
-R_API void r_resolved_addr_free (RResolvedAddr * addr);
+R_API RResolveAddrFlags r_resolved_addr_get_flags (const RResolvedAddr * addr);
+R_API RSocketFamily r_resolved_addr_get_family (const RResolvedAddr * addr);
+R_API RSocketType r_resolved_addr_get_type (const RResolvedAddr * addr);
+R_API RSocketProtocol r_resolved_addr_get_protocol (const RResolvedAddr * addr);
+R_API const rchar * r_resolved_addr_get_canonical_name (const RResolvedAddr * addr);
+R_API RSocketAddress * r_resolved_addr_get_socket_addr (const RResolvedAddr * addr);
+R_API RResolvedAddr * r_resolved_addr_get_next (RResolvedAddr * addr);
+
+
 R_API RResolvedAddr * r_resolve_sync (const rchar * host, const rchar * service,
     RResolveAddrFlags flags, const RResolveHints * hints, RResolveResult * res);
 
