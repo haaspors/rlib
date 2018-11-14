@@ -21,6 +21,7 @@
 #include <rlib/rlib.h>
 
 #include <rlib/net/rhttpserver.h>
+#include <rlib/net/rresolve.h>
 #include <rlib/net/rsrtp.h>
 #include <rlib/net/rtlsserver.h>
 #include <rlib/net/proto/rhttp.h>
