@@ -1,3 +1,4 @@
+#include <rlib/rnet.h>
 #include <rlib/rev.h>
 
 RTEST (rresolve, sync_addr_loopback, RTEST_FAST | RTEST_SYSTEM)
@@ -48,18 +49,18 @@ resolved_addr_cb (rpointer data, RResolvedAddr * addr, RResolveResult res)
   *paddr = r_resolved_addr_ref (addr);
 }
 
-RTEST (revresolve, addr_host, RTEST_FAST | RTEST_SYSTEM)
+RTEST (rresolve, async_addr_loopback, RTEST_FAST | RTEST_SYSTEM)
 {
   RClock * clock;
   REvLoop * loop;
-  REvResolve * resolve;
+  RResolveAsync * resolve;
   RResolvedAddr * addr = NULL, * tmp;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_clock_unref (clock);
 
-  r_assert_cmpptr ((resolve = r_ev_resolve_addr_new ("127.0.0.1", NULL,
+  r_assert_cmpptr ((resolve = r_resolve_async_ev_loop ("127.0.0.1", NULL,
           R_RESOLVE_ADDR_FLAG_PASSIVE, NULL,
           loop, resolved_addr_cb, &addr, NULL)), !=, NULL);
   r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
@@ -89,16 +90,16 @@ RTEST (revresolve, addr_host, RTEST_FAST | RTEST_SYSTEM)
     r_resolved_addr_unref (tmp);
   } while (addr != NULL);
 
-  r_ev_resolve_unref (resolve);
+  r_resolve_async_unref (resolve);
   r_ev_loop_unref (loop);
 }
 RTEST_END;
 
-SKIP_RTEST (revresolve, live_addr, RTEST_FAST | RTEST_SYSTEM)
+SKIP_RTEST (rresolve, async_live_addr, RTEST_FAST | RTEST_SYSTEM)
 {
   RClock * clock;
   REvLoop * loop;
-  REvResolve * resolve;
+  RResolveAsync * resolve;
   RResolvedAddr * addr = NULL;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
@@ -106,14 +107,14 @@ SKIP_RTEST (revresolve, live_addr, RTEST_FAST | RTEST_SYSTEM)
   r_clock_unref (clock);
 
   r_assert_cmpptr (addr, ==, NULL);
-  r_assert_cmpptr ((resolve = r_ev_resolve_addr_new ("google.com", "http",
+  r_assert_cmpptr ((resolve = r_resolve_async_ev_loop ("google.com", "http",
           R_RESOLVE_ADDR_FLAG_PASSIVE, NULL,
           loop, resolved_addr_cb, &addr, NULL)), !=, NULL);
   r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
   r_assert_cmpptr (addr, !=, NULL);
 
   r_resolved_addr_unref (addr);
-  r_ev_resolve_unref (resolve);
+  r_resolve_async_unref (resolve);
   r_ev_loop_unref (loop);
 }
 RTEST_END;

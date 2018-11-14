@@ -27,6 +27,8 @@
 
 #include <rlib/rsocket.h>
 #include <rlib/rsocketaddress.h>
+#include <rlib/rtaskqueue.h>
+#include <rlib/ev/revloop.h>
 
 R_BEGIN_DECLS
 
@@ -71,13 +73,29 @@ R_API RSocketAddress * r_resolved_addr_get_socket_addr (const RResolvedAddr * ad
 R_API RResolvedAddr * r_resolved_addr_get_next (RResolvedAddr * addr);
 
 
+typedef void (*RResolvedFunc) (rpointer data, RResolvedAddr * addr, RResolveResult res);
+
+typedef struct _RResolveAsync RResolveAsync;
+#define r_resolve_async_ref r_ref_ref
+#define r_resolve_async_unref r_ref_unref
+
+R_API RTask * r_resolve_async_get_task (RResolveAsync * async);
+R_API RResolvedAddr * r_resolve_async_get_addr (RResolveAsync * async);
+R_API RResolveResult r_resolve_async_get_result (const RResolveAsync * async);
+static inline rboolean r_resolve_async_is_done (const RResolveAsync * async)
+{ return r_resolve_async_get_result (async) == R_RESOLVE_OK; }
+R_API RResolvedAddr * r_resolve_async_wait (RResolveAsync * async);
+
+
 R_API RResolvedAddr * r_resolve_sync (const rchar * host, const rchar * service,
-    RResolveAddrFlags flags, const RResolveHints * hints, RResolveResult * res);
+    RResolveAddrFlags flags, const RResolveHints * hints, RResolveResult * res) R_ATTR_MALLOC;
+R_API RResolveAsync * r_resolve_async_task_queue (const rchar * host, const rchar * service,
+    RResolveAddrFlags flags, const RResolveHints * hints, RTaskQueue * queue) R_ATTR_MALLOC;
+R_API RResolveAsync * r_resolve_async_ev_loop (const rchar * host, const rchar * service,
+    RResolveAddrFlags flags, const RResolveHints * hints,
+    REvLoop * loop, RResolvedFunc func, rpointer data, RDestroyNotify datanotify) R_ATTR_MALLOC;
 
 
 R_END_DECLS
 
 #endif /* __R_RESOLVE_H__ */
-
-
-

@@ -21,7 +21,6 @@
 #include <rlib/rlib.h>
 
 #include <rlib/ev/revloop.h>
-#include <rlib/ev/revresolve.h>
 #include <rlib/ev/revtcp.h>
 #include <rlib/ev/revudp.h>
 

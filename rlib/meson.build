@@ -76,7 +76,6 @@ rlib_sources = [
   'data/rstring.c',
   'data/rtimeoutcblist.c',
   'ev/revloop.c',
-  'ev/revresolve.c',
   'ev/revtcp.c',
   'ev/revudp.c',
   'ev/revwakeup.c',

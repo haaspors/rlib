@@ -25,6 +25,7 @@
 
 #include <rlib/rlog.h>
 #include <rlib/rmem.h>
+#include <rlib/rstr.h>
 
 #define R_LOG_CAT_DEFAULT &rlib_logcat
 
@@ -194,3 +195,171 @@ r_resolve_sync (const rchar * host, const rchar * service,
   return ret;
 }
 
+
+struct _RResolveAsync {
+  RRef ref;
+
+  rchar * host;
+  rchar * service;
+  RResolveAddrFlags flags;
+  RResolveHints hints;
+
+  RResolveResult res;
+  RResolvedAddr * addr;
+
+  RTask * task;
+  RResolvedFunc func;
+  rpointer data;
+  RDestroyNotify datanotify;
+};
+
+static void
+r_resolve_async_free (RResolveAsync * async)
+{
+  r_task_unref (async->task);
+
+  if (async->addr != NULL)
+    r_resolve_async_unref (async->addr);
+
+  r_free (async->service);
+  r_free (async->host);
+  r_free (async);
+}
+
+RTask *
+r_resolve_async_get_task (RResolveAsync * async)
+{
+  if (R_UNLIKELY (async == NULL)) return NULL;
+  if (R_UNLIKELY (async->task == NULL)) return NULL;
+
+  return r_task_ref (async->task);
+}
+
+RResolvedAddr *
+r_resolve_async_get_addr (RResolveAsync * async)
+{
+  if (R_UNLIKELY (async == NULL)) return NULL;
+  if (R_UNLIKELY (async->addr == NULL)) return NULL;
+
+  return r_resolved_addr_ref (async->addr);
+}
+
+RResolveResult
+r_resolve_async_get_result (const RResolveAsync * async)
+{
+  if (R_UNLIKELY (async == NULL)) return R_RESOLVE_INVAL;
+  return async->res;
+}
+
+RResolvedAddr *
+r_resolve_async_wait (RResolveAsync * async)
+{
+  if (R_UNLIKELY (async == NULL)) return NULL;
+  if (R_UNLIKELY (async->task == NULL)) return NULL;
+
+  r_task_wait (async->task);
+
+  return r_resolved_addr_ref (async->addr);
+}
+
+
+static void
+r_resolve_perform_async (rpointer data, RTaskQueue * queue, RTask * task)
+{
+  RResolveAsync * async = data;
+
+  (void) queue;
+  (void) task;
+
+  async->addr = r_resolve_sync (async->host, async->service, async->flags,
+      &async->hints, &async->res);
+}
+
+RResolveAsync *
+r_resolve_async_task_queue (const rchar * host, const rchar * service,
+    RResolveAddrFlags flags, const RResolveHints * hints, RTaskQueue * queue)
+{
+  RResolveAsync * ret;
+
+  if (R_UNLIKELY (host == NULL && service == NULL)) return NULL;
+  if (R_UNLIKELY (queue == NULL)) return NULL;
+
+  if ((ret = r_mem_new0 (RResolveAsync)) != NULL) {
+    r_ref_init (ret, r_resolve_async_free);
+
+    ret->host = r_strdup (host);
+    ret->service = r_strdup (service);
+    ret->flags = flags;
+    if (hints != NULL)
+      ret->hints = *hints;
+
+    ret->addr = NULL;
+    ret->res = R_RESOLVE_IN_PROGRESS;
+    if ((ret->task = r_task_queue_add (queue, r_resolve_perform_async,
+            ret, r_ref_unref)) != NULL) {
+      r_resolve_async_ref (ret);
+    } else {
+      r_resolve_async_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+static void
+r_resolved_async_done (rpointer data, REvLoop * loop)
+{
+  RResolveAsync * async = data;
+
+  (void) loop;
+
+  if (async->func != NULL) {
+    async->func (async->data, async->addr, async->res);
+    async->func = NULL;
+  }
+
+  if (async->datanotify != NULL) {
+    async->datanotify (async->data);
+    async->datanotify = NULL;
+  }
+
+  async->data = NULL;
+}
+
+RResolveAsync *
+r_resolve_async_ev_loop (const rchar * host, const rchar * service,
+    RResolveAddrFlags flags, const RResolveHints * hints,
+    REvLoop * loop, RResolvedFunc func, rpointer data, RDestroyNotify datanotify)
+{
+  RResolveAsync * ret;
+
+  if (R_UNLIKELY (host == NULL && service == NULL)) return NULL;
+  if (R_UNLIKELY (loop == NULL)) return NULL;
+
+  if ((ret = r_mem_new0 (RResolveAsync)) != NULL) {
+    r_ref_init (ret, r_resolve_async_free);
+
+    ret->host = r_strdup (host);
+    ret->service = r_strdup (service);
+    ret->flags = flags;
+    if (hints != NULL)
+      ret->hints = *hints;
+
+    ret->addr = NULL;
+    ret->res = R_RESOLVE_IN_PROGRESS;
+
+    ret->func = func;
+    ret->data = data;
+    ret->datanotify = datanotify;
+    if ((ret->task = r_ev_loop_add_task (loop, r_resolve_perform_async,
+            r_resolved_async_done, ret, r_ref_unref)) != NULL) {
+      r_resolve_async_ref (ret);
+    } else {
+      r_resolve_async_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
