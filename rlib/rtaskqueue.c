@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -380,12 +380,12 @@ r_task_queue_current (void)
 static void
 r_task_free (RTask * task)
 {
-  if (R_LIKELY (task != NULL)) {
-    if (task->datanotify != NULL)
-      task->datanotify (task->data);
-    r_slist_destroy_full (task->dep, r_task_unref);
-    r_free (task);
-  }
+  r_assert_cmpuint (task->state, !=, R_TASK_QUEUED);
+  r_assert_cmpuint (task->state, !=, R_TASK_RUNNING);
+  if (task->datanotify != NULL)
+    task->datanotify (task->data);
+  r_slist_destroy_full (task->dep, r_task_unref);
+  r_free (task);
 }
 
 RTask *
