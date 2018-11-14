@@ -123,7 +123,7 @@ r_task_cancel (RTask * task, rboolean wait_if_running)
 
   r_mutex_lock (&(ctx)->mutex);
   if ((ret = (task->state >= R_TASK_QUEUED))) {
-    if (wait_if_running && r_task_queue_current () == NULL &&
+    if (wait_if_running && r_task_queue_current () != task->queue &&
         task->state == R_TASK_RUNNING) {
       r_mutex_unlock (&(ctx)->mutex);
       r_task_wait (task);
