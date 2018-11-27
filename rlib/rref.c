@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2016-2017 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2016-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -45,12 +45,11 @@ r_ref_unref (rpointer ref)
 rpointer
 r_ref_weak_ref (rpointer ref, RFunc notify, rpointer data)
 {
-  RRef * self = ref;
   RCBList * lst;
 
   if ((lst = r_cblist_alloc (notify, data, ref)) != NULL) {
-    lst->next = r_atomic_ptr_load (&self->weaklst);
-    while (!r_atomic_ptr_cmp_xchg_weak (&self->weaklst, &lst->next, lst));
+    while (!r_atomic_ptr_cmp_xchg_weak (&((RRef *)ref)->weaklst, &lst->next, lst))
+      ;
 
     return ref;
   }
