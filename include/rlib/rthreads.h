@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -61,6 +61,7 @@ typedef struct
 
 typedef rpointer RMutex;
 typedef rpointer RRMutex;
+typedef rpointer RRWMutex;
 typedef rpointer RCond;
 
 typedef rpointer (*RThreadFunc) (rpointer data);
@@ -87,6 +88,16 @@ R_API void      r_rmutex_clear      (RRMutex * mutex);
 R_API void      r_rmutex_lock       (RRMutex * mutex);
 R_API rboolean  r_rmutex_trylock    (RRMutex * mutex);
 R_API void      r_rmutex_unlock     (RRMutex * mutex);
+
+/* Read/Write mutex/lock */
+R_API void      r_rwmutex_init      (RRWMutex * mutex);
+R_API void      r_rwmutex_clear     (RRWMutex * mutex);
+R_API void      r_rwmutex_rdlock    (RRWMutex * mutex);
+R_API void      r_rwmutex_wrlock    (RRWMutex * mutex);
+R_API rboolean  r_rwmutex_tryrdlock (RRWMutex * mutex);
+R_API rboolean  r_rwmutex_trywrlock (RRWMutex * mutex);
+R_API void      r_rwmutex_rdunlock  (RRWMutex * mutex);
+R_API void      r_rwmutex_wrunlock  (RRWMutex * mutex);
 
 /* Condition variable */
 R_API void      r_cond_init         (RCond * cond);

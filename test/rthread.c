@@ -177,6 +177,117 @@ RTEST_F (rthread, set_affinity, RTEST_FAST | RTEST_SYSTEM)
 RTEST_END;
 #endif
 
+RTEST_STRESS (rthread, rwmutex_try, RTEST_FAST)
+{
+  RRWMutex mutex;
+  r_rwmutex_init (&mutex);
+
+  r_assert (r_rwmutex_tryrdlock (&mutex));
+  r_assert (r_rwmutex_tryrdlock (&mutex));
+  r_assert (!r_rwmutex_trywrlock (&mutex));
+  r_rwmutex_rdunlock (&mutex);
+  r_rwmutex_rdunlock (&mutex);
+
+  r_assert (r_rwmutex_trywrlock (&mutex));
+  r_assert (!r_rwmutex_tryrdlock (&mutex));
+  r_rwmutex_wrunlock (&mutex);
+
+  r_rwmutex_clear (&mutex);
+}
+RTEST_END;
+
+typedef struct {
+  RRWMutex mutex;
+  rauint readers;
+  rauint writers;
+  rboolean running;
+} RThreadsTestRWMutex;
+
+static rpointer
+rthread_test_rwmutex_reading (rpointer data)
+{
+  RThreadsTestRWMutex * test_ctx = data;
+  ruint count = 0;
+
+  for (; test_ctx->running; count++) {
+    r_thread_yield();
+    r_assert_cmpuint (r_atomic_uint_load (&test_ctx->writers), >=, 0);
+    r_rwmutex_rdlock (&test_ctx->mutex);
+    r_assert_cmpuint (r_atomic_uint_load (&test_ctx->writers), ==, 0);
+    r_thread_yield();
+
+    r_atomic_uint_fetch_add (&test_ctx->readers, 1);
+    r_thread_yield();
+    r_assert_cmpuint (r_atomic_uint_load (&test_ctx->readers), >, 0);
+    r_atomic_uint_fetch_sub (&test_ctx->readers, 1);
+
+    r_thread_yield();
+    r_rwmutex_rdunlock (&test_ctx->mutex);
+  }
+
+  return RUINT_TO_POINTER (count);
+}
+
+static rpointer
+rthread_test_rwmutex_writing (rpointer data)
+{
+  RThreadsTestRWMutex * test_ctx = data;
+  ruint count = 0;
+
+  for (; test_ctx->running; count++) {
+    r_thread_yield();
+    r_rwmutex_wrlock (&test_ctx->mutex);
+    r_assert_cmpuint (r_atomic_uint_load (&test_ctx->readers), ==, 0);
+    r_assert_cmpuint (r_atomic_uint_load (&test_ctx->writers), ==, 0);
+    r_thread_yield();
+
+    r_atomic_uint_fetch_add (&test_ctx->writers, 1);
+    r_thread_yield();
+    r_assert_cmpuint (r_atomic_uint_load (&test_ctx->writers), >, 0);
+    r_atomic_uint_fetch_sub (&test_ctx->writers, 1);
+
+    r_thread_yield();
+    r_assert_cmpuint (r_atomic_uint_load (&test_ctx->readers), ==, 0);
+    r_assert_cmpuint (r_atomic_uint_load (&test_ctx->writers), ==, 0);
+    r_rwmutex_wrunlock (&test_ctx->mutex);
+  }
+
+  return RUINT_TO_POINTER (count);
+}
+
+RTEST_STRESS (rthread, rwmutex_stress, RTEST_FAST)
+{
+  RThreadsTestRWMutex test_ctx;
+  RThread * trd[32];
+  RThread * twr[8];
+  int i;
+
+  r_rwmutex_init (&test_ctx.mutex);
+  r_atomic_uint_store (&test_ctx.readers, 0);
+  r_atomic_uint_store (&test_ctx.writers, 0);
+  test_ctx.running = TRUE;
+
+  for (i = 0; i < R_N_ELEMENTS (trd); i++)
+    trd[i] = r_thread_new ("rwmutex_reader", rthread_test_rwmutex_reading, &test_ctx);
+  for (i = 0; i < R_N_ELEMENTS (twr); i++)
+    twr[i] = r_thread_new ("rwmutex_writer", rthread_test_rwmutex_writing, &test_ctx);
+
+  r_thread_usleep (R_USEC_PER_SEC / 2);
+  test_ctx.running = FALSE;
+
+  for (i = 0; i < R_N_ELEMENTS (twr); i++) {
+    r_assert_cmpuint (RPOINTER_TO_UINT (r_thread_join (twr[i])), >, 0);
+    r_thread_unref (twr[i]);
+  }
+  for (i = 0; i < R_N_ELEMENTS (trd); i++) {
+    r_assert_cmpuint (RPOINTER_TO_UINT (r_thread_join (trd[i])), >, 0);
+    r_thread_unref (trd[i]);
+  }
+
+  r_rwmutex_clear (&test_ctx.mutex);
+}
+RTEST_END;
+
 #else
 RTEST (rthread, dummy, RTEST_FAST)
 {

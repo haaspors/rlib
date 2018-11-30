@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -389,6 +389,108 @@ r_rmutex_unlock (RRMutex * mutex)
   (void) mutex;
 #endif
 }
+
+void
+r_rwmutex_init (RRWMutex * mutex)
+{
+#if defined (R_OS_WIN32)
+  *mutex = r_mem_new (SRWLOCK);
+  InitializeSRWLock ((PSRWLOCK)*mutex);
+#elif defined (HAVE_PTHREAD_H)
+  *mutex = r_mem_new (pthread_rwlock_t);
+  pthread_rwlock_init ((pthread_rwlock_t *)*mutex, NULL);
+#else
+  *mutex = NULL;
+#endif
+}
+
+void
+r_rwmutex_clear (RRWMutex * mutex)
+{
+#if defined (HAVE_PTHREAD_H)
+  pthread_rwlock_destroy ((pthread_rwlock_t *)*mutex);
+#endif
+  r_free (*mutex);
+}
+
+void
+r_rwmutex_rdlock (RRWMutex * mutex)
+{
+#if defined (R_OS_WIN32)
+  AcquireSRWLockShared ((PSRWLOCK)*mutex);
+#elif defined (HAVE_PTHREAD_H)
+  pthread_rwlock_rdlock ((pthread_rwlock_t *)*mutex);
+#else
+  (void) mutex;
+#endif
+}
+
+void
+r_rwmutex_wrlock (RRWMutex * mutex)
+{
+#if defined (R_OS_WIN32)
+  AcquireSRWLockExclusive ((PSRWLOCK)*mutex);
+#elif defined (HAVE_PTHREAD_H)
+  pthread_rwlock_wrlock ((pthread_rwlock_t *)*mutex);
+#else
+  (void) mutex;
+#endif
+}
+
+rboolean
+r_rwmutex_tryrdlock (RRWMutex * mutex)
+{
+  rboolean ret;
+#if defined (R_OS_WIN32)
+  ret = TryAcquireSRWLockShared ((PSRWLOCK)*mutex);
+#elif defined (HAVE_PTHREAD_H)
+  ret = pthread_rwlock_tryrdlock ((pthread_rwlock_t *)*mutex) == 0;
+#else
+  (void) mutex;
+  ret = FALSE;
+#endif
+  return ret;
+}
+
+rboolean
+r_rwmutex_trywrlock (RRWMutex * mutex)
+{
+  rboolean ret;
+#if defined (R_OS_WIN32)
+  ret = TryAcquireSRWLockExclusive ((PSRWLOCK)*mutex);
+#elif defined (HAVE_PTHREAD_H)
+  ret = pthread_rwlock_trywrlock ((pthread_rwlock_t *)*mutex) == 0;
+#else
+  (void) mutex;
+  ret = FALSE;
+#endif
+  return ret;
+}
+
+void
+r_rwmutex_rdunlock (RRWMutex * mutex)
+{
+#if defined (R_OS_WIN32)
+  ReleaseSRWLockShared ((PSRWLOCK)*mutex);
+#elif defined (HAVE_PTHREAD_H)
+  pthread_rwlock_unlock ((pthread_rwlock_t *)*mutex);
+#else
+  (void) mutex;
+#endif
+}
+
+void
+r_rwmutex_wrunlock (RRWMutex * mutex)
+{
+#if defined (R_OS_WIN32)
+  ReleaseSRWLockExclusive ((PSRWLOCK)*mutex);
+#elif defined (HAVE_PTHREAD_H)
+  pthread_rwlock_unlock ((pthread_rwlock_t *)*mutex);
+#else
+  (void) mutex;
+#endif
+}
+
 
 /******************************************************************************/
 /*  RCond - Condition variable primitive                                      */
