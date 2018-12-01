@@ -17,11 +17,11 @@ RTEST (rcbqueue, basics, RTEST_FAST)
   r_assert_cmpuint (r_cbqueue_size (&q), ==, 0);
   r_assert_cmpptr (item->next, ==, NULL);
   r_assert_cmpptr (item->prev, ==, NULL);
-  r_assert_cmpptr (item->cb, ==, NULL);
-  r_assert_cmpptr (item->data, ==, RUINT_TO_POINTER (42));
-  r_assert_cmpptr (item->datanotify, ==, NULL);
-  r_assert_cmpptr (item->user, ==, NULL);
-  r_assert_cmpptr (item->usernotify, ==, NULL);
+  r_assert_cmpptr (item->ctx.cb, ==, NULL);
+  r_assert_cmpptr (item->ctx.data, ==, RUINT_TO_POINTER (42));
+  r_assert_cmpptr (item->ctx.datanotify, ==, NULL);
+  r_assert_cmpptr (item->ctx.user, ==, NULL);
+  r_assert_cmpptr (item->ctx.usernotify, ==, NULL);
   r_cblist_free1 (item);
 
   r_cbqueue_clear (&q);

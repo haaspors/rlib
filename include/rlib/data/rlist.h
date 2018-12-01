@@ -1,5 +1,5 @@
 /* RLIB - Convenience library for useful things
- * Copyright (C) 2015  Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ * Copyright (C) 2015-2018 Haakon Sporsheim <haakon.sporsheim@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -24,6 +24,7 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/rmem.h>
+#include <rlib/data/rcbctx.h>
 
 R_BEGIN_DECLS
 
@@ -628,13 +629,9 @@ static inline rsize r_free_list_foreach_remove (RFreeList ** head,
 /* Callback list (Doubly linked list)                                         */
 /******************************************************************************/
 struct _RCBList {
+  RFuncCallbackCtx ctx;
   RCBList * next;
   RCBList * prev;
-  RFunc cb;
-  rpointer data;
-  RDestroyNotify datanotify;
-  rpointer user;
-  RDestroyNotify usernotify;
 };
 
 static inline RCBList * r_cblist_alloc_full (RFunc cb,
@@ -642,12 +639,8 @@ static inline RCBList * r_cblist_alloc_full (RFunc cb,
 {
   RCBList * ret;
   if ((ret = r_mem_new (RCBList)) != NULL) {
+    r_func_callback_ctx_init (&ret->ctx, cb, data, datanotify, user, usernotify);
     ret->next = ret->prev = NULL;
-    ret->cb = cb;
-    ret->data = data;
-    ret->datanotify = datanotify;
-    ret->user = user;
-    ret->usernotify = usernotify;
   }
   return ret;
 }
@@ -679,10 +672,7 @@ static inline RCBList * r_cblist_append_full (RCBList * entry, RFunc cb,
 static inline void r_cblist_free1 (RCBList * entry)
 {
   if (R_LIKELY (entry != NULL)) {
-    if (entry->datanotify != NULL)
-      entry->datanotify (entry->data);
-    if (entry->usernotify != NULL)
-      entry->usernotify (entry->user);
+    r_func_callback_ctx_clear (&entry->ctx);
     r_free (entry);
   }
 }
@@ -750,11 +740,11 @@ static inline rboolean r_cblist_contains (RCBList * lst, RFunc cb, rpointer data
     RCBList * it;
 
     for (it = lst; it != NULL; it = it->next) {
-      if (it->cb == cb && it->data == data)
+      if (it->ctx.cb == cb && it->ctx.data == data)
         return TRUE;
     }
     for (it = lst->prev; it != NULL; it = it->prev) {
-      if (it->cb == cb && it->data == data)
+      if (it->ctx.cb == cb && it->ctx.data == data)
         return TRUE;
     }
   }
@@ -765,9 +755,9 @@ static inline rsize r_cblist_call (RCBList * head)
 {
   rsize ret = 0;
   for (; head != NULL; head = head->next) {
-    if (R_LIKELY (head->cb != NULL)) {
+    if (R_LIKELY (head->ctx.cb != NULL)) {
+      r_func_callback_ctx_call (&head->ctx);
       ret++;
-      head->cb (head->data, head->user);
     }
   }
   return ret;
@@ -777,13 +767,9 @@ static inline rsize r_cblist_call (RCBList * head)
 /* Callback return list (Doubly linked list)                                  */
 /******************************************************************************/
 struct _RCBRList {
+  RFuncReturnCallbackCtx ctx;
   RCBRList * next;
   RCBRList * prev;
-  RFuncReturn cb;
-  rpointer data;
-  RDestroyNotify datanotify;
-  rpointer user;
-  RDestroyNotify usernotify;
 };
 
 static inline RCBRList * r_cbrlist_alloc_full (RFuncReturn cb,
@@ -791,12 +777,8 @@ static inline RCBRList * r_cbrlist_alloc_full (RFuncReturn cb,
 {
   RCBRList * ret;
   if ((ret = r_mem_new (RCBRList)) != NULL) {
+    r_func_return_callback_ctx_init (&ret->ctx, cb, data, datanotify, user, usernotify);
     ret->next = ret->prev = NULL;
-    ret->cb = cb;
-    ret->data = data;
-    ret->datanotify = datanotify;
-    ret->user = user;
-    ret->usernotify = usernotify;
   }
   return ret;
 }
@@ -805,7 +787,7 @@ static inline RCBRList * r_cbrlist_prepend_full (RCBRList * head, RFuncReturn cb
 {
   RCBRList * ret = r_cbrlist_alloc_full (cb, data, datanotify, user, usernotify);
   if ((ret->next = head) != NULL)
-    ret->next = head;
+    ret->next->prev = ret;
   return ret;
 }
 static inline RCBRList * r_cbrlist_append_full (RCBRList * entry, RFuncReturn cb,
@@ -828,10 +810,7 @@ static inline RCBRList * r_cbrlist_append_full (RCBRList * entry, RFuncReturn cb
 static inline void r_cbrlist_free1 (RCBRList * entry)
 {
   if (R_LIKELY (entry != NULL)) {
-    if (entry->datanotify != NULL)
-      entry->datanotify (entry->data);
-    if (entry->usernotify != NULL)
-      entry->usernotify (entry->user);
+    r_func_return_callback_ctx_clear (&entry->ctx);
     r_free (entry);
   }
 }
@@ -875,11 +854,11 @@ static inline rboolean r_cbrlist_contains (RCBRList * lst, RFuncReturn cb, rpoin
     RCBRList * it;
 
     for (it = lst; it != NULL; it = it->next) {
-      if (it->cb == cb && it->data == data)
+      if (it->ctx.cb == cb && it->ctx.data == data)
         return TRUE;
     }
     for (it = lst->prev; it != NULL; it = it->prev) {
-      if (it->cb == cb && it->data == data)
+      if (it->ctx.cb == cb && it->ctx.data == data)
         return TRUE;
     }
   }
@@ -892,7 +871,7 @@ static inline RCBRList * r_cbrlist_call (RCBRList * head)
 
   for (it = head; it != NULL; it = next) {
     next = it->next;
-    if (it->cb == NULL || !it->cb (it->data, it->user)) {
+    if (it->ctx.cb == NULL || !r_func_return_callback_ctx_call (&it->ctx)) {
       RCBRList * prev = it->prev;
       RCBRList * next = it->next;
 
