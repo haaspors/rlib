@@ -57,7 +57,7 @@ r_ref_weak_ref (rpointer ref, RFunc notify, rpointer data)
   return NULL;
 }
 
-void
+rboolean
 r_ref_weak_unref (rpointer ref, RFunc notify, rpointer data)
 {
   RRef * self = ref;
@@ -71,5 +71,6 @@ r_ref_weak_unref (rpointer ref, RFunc notify, rpointer data)
       break;
     }
   }
+  return lst != NULL;
 }
 

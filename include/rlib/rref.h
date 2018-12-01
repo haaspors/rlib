@@ -45,7 +45,7 @@ R_API rpointer r_ref_ref (rpointer ref);
 R_API void r_ref_unref (rpointer ref);
 
 R_API rpointer r_ref_weak_ref (rpointer ref, RFunc notify, rpointer data);
-R_API void r_ref_weak_unref (rpointer ref, RFunc notify, rpointer data);
+R_API rboolean r_ref_weak_unref (rpointer ref, RFunc notify, rpointer data);
 
 R_END_DECLS
 

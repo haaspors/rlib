@@ -64,7 +64,10 @@ RTEST (rref, weak_unref, RTEST_FAST)
   r_assert_cmpptr (r_ref_weak_ref (ref, r_test_ref_notify_cb, &weaknotified), !=, NULL);
   r_assert_cmpptr (r_atomic_ptr_load (&ref->ref.weaklst), !=, NULL);
 
-  r_ref_weak_unref (ref, r_test_ref_notify_cb, &weaknotified);
+  r_assert (!r_ref_weak_unref (ref, NULL, NULL));
+  r_assert (!r_ref_weak_unref (ref, NULL, &weaknotified));
+  r_assert (!r_ref_weak_unref (ref, r_test_ref_notify_cb, NULL));
+  r_assert (r_ref_weak_unref (ref, r_test_ref_notify_cb, &weaknotified));
   r_assert_cmpptr (r_atomic_ptr_load (&ref->ref.weaklst), ==, NULL);
   r_ref_unref (ref);
   r_assert (!weaknotified);
