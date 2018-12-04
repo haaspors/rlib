@@ -203,7 +203,7 @@ r_tss_ensure_allocated (RTss * tss)
     if (!r_atomic_uint_cmp_xchg_strong (&tss->impl.u32, &old, tls)) {
       TlsFree (tls);
     } else if (tss->notify != NULL) {
-      RSList * dtor = r_slist_alloc (tss);
+      RSList * dtor = r_slist_alloc_copy (tss);
       dtor->next = r_atomic_ptr_exchange (&g__r_tss_win32_dtors, dtor);
     }
   }

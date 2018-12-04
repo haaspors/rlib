@@ -65,7 +65,7 @@ r_ref_weak_unref (rpointer ref, RFunc notify, rpointer data)
 
   /* FIXME: Thread-safe??? */
   for (lst = r_atomic_ptr_load (&self->weaklst); lst != NULL; lst = lst->next) {
-    if (lst->ctx.cb == notify && lst->ctx.data == data) {
+    if (lst->data.cb == notify && lst->data.data == data) {
       r_atomic_ptr_store (&self->weaklst,
           r_cblist_destroy_link (r_atomic_ptr_load (&self->weaklst), lst));
       break;

@@ -79,8 +79,9 @@ static rboolean
 r_hzr_ptr_remove_entry (rpointer data, rpointer user)
 {
   RSList * plist = user;
+  RFreePtrCtx * ctx = data;
   /* Remove from rlist if not found in plist */
-  return !r_slist_contains (plist, data);
+  return !r_slist_contains (plist, ctx->ptr);
 }
 
 static void

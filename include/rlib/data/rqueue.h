@@ -133,7 +133,7 @@ static inline void r_queue_list_clear (RQueueList * q, RDestroyNotify notify)
 }
 static inline RList * r_queue_list_push (RQueueList * q, rpointer item)
 {
-  RList * ret = r_list_alloc (item);
+  RList * ret = r_list_alloc_copy (item);
   if (q->size++ > 0) {
     ret->prev = q->tail;
     q->tail->next = ret;

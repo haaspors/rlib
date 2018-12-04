@@ -84,8 +84,8 @@ R_API_HIDDEN rboolean r_ev_io_validate_taskgroup (REvIO * evio, ruint taskgroup)
     RCBList * it;                                                             \
     REvIOCB iocb;                                                             \
     for (it = evio->iocbq.head; it != NULL; it = it->next) {                  \
-      iocb = (REvIOCB) it->ctx.cb;                                            \
-      iocb (it->ctx.data, events, evio);                                      \
+      iocb = (REvIOCB) it->data.cb;                                           \
+      iocb (it->data.data, events, evio);                                     \
     }                                                                         \
   } R_STMT_END
 

@@ -279,7 +279,7 @@ r_ev_io_get_iocbq_events (REvIO * evio)
   RCBList * it;
 
   for (it = evio->iocbq.head; it != NULL; it = it->next)
-    ret |= RPOINTER_TO_UINT (it->ctx.user);
+    ret |= RPOINTER_TO_UINT (it->data.user);
 
   return ret;
 }
@@ -1022,7 +1022,7 @@ r_ev_io_stop (REvIO * evio, rpointer ctx)
   if (R_UNLIKELY (ctx == NULL)) return FALSE;
 
   R_LOG_TRACE ("loop %p stop evio "R_EV_IO_FORMAT" %4x - %x",
-      evio->loop, R_EV_IO_ARGS (evio), evio->events, RPOINTER_TO_UINT (((RCBList *)ctx)->ctx.user));
+      evio->loop, R_EV_IO_ARGS (evio), evio->events, RPOINTER_TO_UINT (((RCBList *)ctx)->data.user));
   r_cbqueue_remove_link (&evio->iocbq, ctx);
 
   if (R_EV_IO_IS_ACTIVE (evio) || R_EV_IO_IS_INTERNAL (evio)) {

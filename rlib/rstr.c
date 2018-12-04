@@ -1110,10 +1110,10 @@ r_str_list_newv (const rchar * str0, va_list args)
   if (R_UNLIKELY (str0 == NULL))
     return NULL;
 
-  ret = cur = r_slist_alloc (r_strdup (str0));
+  ret = cur = r_slist_alloc_copy (r_strdup (str0));
   for (arg = va_arg (args, const rchar *); arg != NULL;
       arg = va_arg (args, const rchar *), cur = cur->next) {
-    cur->next = r_slist_alloc (r_strdup (arg));
+    cur->next = r_slist_alloc_copy (r_strdup (arg));
   }
 
   return ret;
