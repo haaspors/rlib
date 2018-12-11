@@ -150,11 +150,11 @@ static inline rpointer r_queue_list_pop (RQueueList * q)
   RList * it;
 
   if ((it = q->head) != NULL) {
-    if ((q->head = r_list_next (it)) != NULL)
+    if ((q->head = it->next) != NULL)
       q->head->prev = NULL;
     else
       q->tail = NULL;
-    ret = r_list_data (it);
+    ret = it->data;
     r_list_free1 (it);
 
     q->size--;
@@ -166,12 +166,12 @@ static inline rpointer r_queue_list_pop (RQueueList * q)
 }
 static inline rpointer r_queue_list_peek (const RQueueList * q)
 {
-  return q->head != NULL ? r_list_data (q->head) : NULL;
+  return q->head != NULL ? q->head->data : NULL;
 }
 static inline void r_queue_list_remove_link (RQueueList * q, RList * link)
 {
   if (link == q->tail)
-    q->tail = r_list_prev (q->tail);
+    q->tail = q->tail->prev;
   q->head = r_list_destroy_link (q->head, link);
   q->size--;
 }
@@ -236,7 +236,7 @@ static inline RCBList * r_cbqueue_peek (const RCBQueue * q)
 static inline void r_cbqueue_remove_link (RCBQueue * q, RCBList * link)
 {
   if (link == q->tail)
-    q->tail = r_list_prev (q->tail);
+    q->tail = q->tail->prev;
   q->head = r_cblist_destroy_link (q->head, link);
   q->size--;
 }
