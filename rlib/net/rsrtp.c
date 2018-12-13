@@ -334,8 +334,8 @@ r_srtp_lookup_crypto_ctx (RSRTPCtx * ctx, ruint32 ssrc)
   if ((ret = r_hash_table_lookup (ctx->crypto_ssrc, RUINT_TO_POINTER (ssrc))) != NULL)
     return ret;
 
-  for (it = ctx->crypto_filter; it != NULL; it = r_list_next (it)) {
-    RSRTPCryptoCtx * cctx = r_list_data (it);
+  for (it = ctx->crypto_filter; it != NULL; it = it->next) {
+    RSRTPCryptoCtx * cctx = it->data;
     if ((cctx->filter & ssrc) == ssrc) {
       ret = cctx;
       break;
