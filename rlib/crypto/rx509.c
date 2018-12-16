@@ -652,9 +652,9 @@ r_crypto_x509_write_ext_certificate_policies (const RCryptoX509Cert * cert,
           /* TODO: FIXME */
 #if 0
           RSList * cur;
-          for (cur = cert->policies; cur != NULL; cur = r_slist_next (cur)) {
+          for (cur = cert->policies; cur != NULL; cur = cur->next) {
             if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
-              const rchar * oiddot = r_slist_data (cur);
+              const rchar * oiddot = cur->data;
               r_asn1_bin_encoder_add_oid_rawsz (enc, );
               r_asn1_bin_encoder_end_constructed (enc);
             }
@@ -1032,8 +1032,8 @@ r_crypto_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy)
   const RCryptoX509Cert * x509 = (const RCryptoX509Cert *)cert;
   RSList * it;
 
-  for (it = x509->policies; it != NULL; it = r_slist_next (it)) {
-    if (r_str_equals (policy, r_slist_data (it)))
+  for (it = x509->policies; it != NULL; it = it->next) {
+    if (r_str_equals (policy, it->data))
       return TRUE;
   }
 
