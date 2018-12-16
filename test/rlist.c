@@ -11,14 +11,14 @@ RTEST (rlist, prepend, RTEST_FAST)
   r_assert_cmpptr ((head = r_list_prepend (head, PTR_CAFEBABE)), !=, NULL);
   r_assert_cmpptr ((head = r_list_prepend (head, PTR_DEADBEEF)), !=, NULL);
   r_assert_cmpuint (r_list_len (head), ==, 2);
-  r_assert_cmpptr (r_list_data (r_list_first (head)), ==, PTR_DEADBEEF);
-  r_assert_cmpptr (r_list_data (r_list_last (head)),  ==, PTR_CAFEBABE);
+  r_assert_cmpptr (r_list_first (head)->data, ==, PTR_DEADBEEF);
+  r_assert_cmpptr (r_list_last (head)->data,  ==, PTR_CAFEBABE);
 
   r_assert_cmpptr ((head = r_list_prepend (r_list_last (head), PTR_BAADFOOD)), !=, NULL);
   r_assert_cmpuint (r_list_len (head), ==, 3);
-  r_assert_cmpptr (r_list_data (r_list_first (head)), ==, PTR_BAADFOOD);
-  r_assert_cmpptr (r_list_data (r_list_next (head)),  ==, PTR_DEADBEEF);
-  r_assert_cmpptr (r_list_data (r_list_last (head)),  ==, PTR_CAFEBABE);
+  r_assert_cmpptr (r_list_first (head)->data, ==, PTR_BAADFOOD);
+  r_assert_cmpptr (head->next->data,  ==, PTR_DEADBEEF);
+  r_assert_cmpptr (r_list_last (head)->data,  ==, PTR_CAFEBABE);
 
   r_list_destroy (head);
 }
@@ -40,7 +40,7 @@ RTEST (rlist, contains, RTEST_FAST)
   r_assert (!r_list_contains (head, NULL));
 
   /* slist will not find this element, but list will! */
-  r_assert (r_list_contains (r_list_next (head), PTR_BAADFOOD));
+  r_assert (r_list_contains (head->next, PTR_BAADFOOD));
 
   r_list_destroy (head);
 }
@@ -54,9 +54,9 @@ RTEST (rlist, append, RTEST_FAST)
   r_assert_cmpptr ((head = r_list_append (head, PTR_DEADBEEF)), !=, NULL);
 
   r_assert_cmpuint (r_list_len (head), ==, 2);
-  r_assert_cmpptr (r_list_data (head), ==, PTR_CAFEBABE);
-  r_assert_cmpptr (r_list_data (r_list_next (head)), ==, PTR_DEADBEEF);
-  r_assert_cmpptr (r_list_prev (r_list_next (head)), ==, head);
+  r_assert_cmpptr (head->data, ==, PTR_CAFEBABE);
+  r_assert_cmpptr (head->next->data, ==, PTR_DEADBEEF);
+  r_assert_cmpptr (head->next->prev, ==, head);
 
   r_list_destroy (head);
 }
@@ -87,11 +87,11 @@ RTEST (rlist, insert_before, RTEST_FAST)
 
   r_assert_cmpptr ((head = r_list_insert_before (head, head, PTR_CAFEBABE)), !=, NULL);
   r_assert_cmpptr ((head = r_list_insert_before (head, head, PTR_DEADBEEF)), !=, NULL);
-  r_assert_cmpptr ((head = r_list_insert_before (head, r_list_next (head),
+  r_assert_cmpptr ((head = r_list_insert_before (head, head->next,
           PTR_BAADFOOD)), !=, NULL);
   r_assert_cmpuint (r_list_len (head), ==, 3);
-  r_assert_cmpptr (r_list_data (head), ==, PTR_DEADBEEF);
-  r_assert_cmpptr (r_list_data (r_list_next (head)), ==, PTR_BAADFOOD);
+  r_assert_cmpptr (head->data, ==, PTR_DEADBEEF);
+  r_assert_cmpptr (head->next->data, ==, PTR_BAADFOOD);
 
   r_list_destroy (head);
 }
@@ -106,9 +106,9 @@ RTEST (rlist, insert_after, RTEST_FAST)
   r_assert_cmpptr ((head = r_list_insert_after (head, r_list_last (head),
           PTR_BAADFOOD)), !=, NULL);
   r_assert_cmpuint (r_list_len (head), ==, 3);
-  r_assert_cmpptr (r_list_data (head), ==, PTR_CAFEBABE);
-  r_assert_cmpptr (r_list_data (r_list_next (head)), ==, PTR_DEADBEEF);
-  r_assert_cmpptr (r_list_data (r_list_last (head)), ==, PTR_BAADFOOD);
+  r_assert_cmpptr (head->data, ==, PTR_CAFEBABE);
+  r_assert_cmpptr (head->next->data, ==, PTR_DEADBEEF);
+  r_assert_cmpptr (r_list_last (head)->data, ==, PTR_BAADFOOD);
 
   r_list_destroy (head);
 }
@@ -123,12 +123,12 @@ RTEST (rlist, nth, RTEST_FAST)
   r_assert_cmpptr ((head = r_list_append (head, PTR_BAADFOOD)), !=, NULL);
 
   r_assert_cmpuint (r_list_len (head), ==, 3);
-  r_assert_cmpptr (r_list_data (r_list_first (head)), ==, PTR_CAFEBABE);
-  r_assert_cmpptr (r_list_data (r_list_next (head)),  ==, PTR_DEADBEEF);
-  r_assert_cmpptr (r_list_data (r_list_last (head)),  ==, PTR_BAADFOOD);
+  r_assert_cmpptr (r_list_first (head)->data, ==, PTR_CAFEBABE);
+  r_assert_cmpptr (head->next->data,          ==, PTR_DEADBEEF);
+  r_assert_cmpptr (r_list_last (head)->data,  ==, PTR_BAADFOOD);
 
   r_assert_cmpptr (r_list_nth (head, 0), ==, r_list_first (head));
-  r_assert_cmpptr (r_list_nth (head, 1), ==, r_list_next (head));
+  r_assert_cmpptr (r_list_nth (head, 1), ==, head->next);
   r_assert_cmpptr (r_list_nth (head, 2), ==, r_list_last (head));
   r_assert_cmpptr (r_list_nth (head, 3), ==, NULL);
 

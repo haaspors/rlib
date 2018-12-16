@@ -34,9 +34,6 @@ R_BEGIN_DECLS
 /* Doubly linked list                                                         */
 /******************************************************************************/
 R__LIST_DECL (RList, r_list, rpointer, R_API)
-#define r_list_data(lst)    (lst)->data
-#define r_list_next(lst)    (lst)->next
-#define r_list_prev(lst)    (lst)->prev
 #define r_list_prepend      r_list_prepend_copy
 #define r_list_append       r_list_append_copy
 #define r_list_contains     r_list_contains_full
@@ -45,8 +42,6 @@ R__LIST_DECL (RList, r_list, rpointer, R_API)
 /* Singly linked list                                                         */
 /******************************************************************************/
 R__SLIST_DECL (RSList, r_slist, rpointer, R_API)
-#define r_slist_data(lst)     (lst)->data
-#define r_slist_next(lst)     (lst)->next
 #define r_slist_prepend       r_slist_prepend_copy
 #define r_slist_append        r_slist_append_copy
 #define r_slist_contains      r_slist_contains_full

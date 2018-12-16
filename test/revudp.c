@@ -60,7 +60,7 @@ RTEST (revudp, bind_recv, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpuint (r_list_len (ctx.buffers), ==, 1);
   r_assert_cmpuint (r_list_len (ctx.addrs), ==, 1);
-  r_assert_cmpbufmem (r_list_data (ctx.buffers), 0, -1, ==, sendbuf, 512);
+  r_assert_cmpbufmem (ctx.buffers->data, 0, -1, ==, sendbuf, 512);
 
   r_list_destroy_full (ctx.buffers, r_buffer_unref);
   r_list_destroy_full (ctx.addrs, r_socket_address_unref);
@@ -107,7 +107,7 @@ RTEST (revudp, send_recv, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpuint (r_list_len (ctx.buffers), ==, 1);
   r_assert_cmpuint (r_list_len (ctx.addrs), ==, 1);
-  r_assert_cmpbufmem (r_list_data (ctx.buffers), 0, -1, ==, sendbuf, 512);
+  r_assert_cmpbufmem (ctx.buffers->data, 0, -1, ==, sendbuf, 512);
 
   r_list_destroy_full (ctx.buffers, r_buffer_unref);
   r_list_destroy_full (ctx.addrs, r_socket_address_unref);
@@ -158,7 +158,7 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpuint (r_list_len (ctx.buffers), ==, 1);
   r_assert_cmpuint (r_list_len (ctx.addrs), ==, 1);
-  r_assert_cmpbufmem (r_list_data (ctx.buffers), 0, -1, ==, sendbuf, 512);
+  r_assert_cmpbufmem (ctx.buffers->data, 0, -1, ==, sendbuf, 512);
 
   r_list_destroy_full (ctx.buffers, r_buffer_unref);
   r_list_destroy_full (ctx.addrs, r_socket_address_unref);
