@@ -806,8 +806,8 @@ RTEST (rstr_list, new, RTEST_FAST)
 
   r_assert_cmpptr ((lst = r_str_list_new (foo, bar, NULL)), !=, NULL);
   r_assert_cmpuint (r_slist_len (lst), ==, 2);
-  r_assert_cmpstr (r_slist_data (lst), ==, foo);
-  r_assert_cmpstr (r_slist_data (r_slist_next (lst)), ==, bar);
+  r_assert_cmpstr (lst->data, ==, foo);
+  r_assert_cmpstr (lst->next->data, ==, bar);
   r_slist_destroy_full (lst, r_free);
 }
 RTEST_END;

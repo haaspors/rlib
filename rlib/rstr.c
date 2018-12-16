@@ -1145,9 +1145,9 @@ r_strv_newv (const rchar * str0, va_list args)
   ret = r_mem_new_n (rchar *, r_slist_len (lst) + 1);
   while (lst) {
     cur = lst;
-    lst = r_slist_next (cur);
+    lst = cur->next;
 
-    ret[i++] = r_slist_data (cur);
+    ret[i++] = cur->data;
     r_slist_free1 (cur);
   }
 
