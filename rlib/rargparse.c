@@ -535,8 +535,8 @@ r_arg_parser_find_entry_by_shortarg (const RArgParser * parser,
   RSList * it;
 
   ret = r_arg_option_group_find_entry_by_shortarg (parser->main, shortarg);
-  for (it = parser->groups; it != NULL && ret == NULL; it = r_slist_next (it))
-    ret = r_arg_option_group_find_entry_by_shortarg (r_slist_data (it), shortarg);
+  for (it = parser->groups; it != NULL && ret == NULL; it = it->next)
+    ret = r_arg_option_group_find_entry_by_shortarg (it->data, shortarg);
 
   return ret;
 }
@@ -549,8 +549,8 @@ r_arg_parser_find_entry_by_longarg (const RArgParser * parser,
   RSList * it;
 
   ret = r_arg_option_group_find_entry_by_longarg (parser->main, longarg);
-  for (it = parser->groups; it != NULL && ret == NULL; it = r_slist_next (it))
-    ret = r_arg_option_group_find_entry_by_longarg (r_slist_data (it), longarg);
+  for (it = parser->groups; it != NULL && ret == NULL; it = it->next)
+    ret = r_arg_option_group_find_entry_by_longarg (it->data, longarg);
 
   return ret;
 }
@@ -738,8 +738,8 @@ r_arg_parser_check_required_options (RArgParser * parser, RArgParseCtx * ctx)
   if (!r_arg_option_group_check_required_options (parser->main, ctx->options))
     return FALSE;
 
-  for (it = parser->groups; it != NULL; it = r_slist_next (it)) {
-    if (!r_arg_option_group_check_required_options (r_slist_data (it), ctx->options))
+  for (it = parser->groups; it != NULL; it = it->next) {
+    if (!r_arg_option_group_check_required_options (it->data, ctx->options))
       return FALSE;
   }
 
