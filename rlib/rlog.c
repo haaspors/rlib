@@ -226,8 +226,8 @@ r_log_category_find (const rchar * name)
 {
   RSList * it;
 
-  for (it = g__r_log_cats; it != NULL; it = r_slist_next (it)) {
-    RLogCategory * cat = r_slist_data (it);
+  for (it = g__r_log_cats; it != NULL; it = it->next) {
+    RLogCategory * cat = it->data;
     if (r_str_equals (cat->name, name))
       return cat;
   }
