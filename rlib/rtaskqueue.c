@@ -475,8 +475,8 @@ r_task_queue_ctx_pop_locked (RTQCtx * ctx)
    * deps satisfied ?? */
   if ((t = r_queue_peek (ctx->q)) != NULL) {
     RSList * it;
-    for (it = t->dep; it != NULL; it = r_slist_next (it)) {
-      dep = r_slist_data (it);
+    for (it = t->dep; it != NULL; it = it->next) {
+      dep = it->data;
       if (dep->state < R_TASK_DONE)
         return NULL;
     }
