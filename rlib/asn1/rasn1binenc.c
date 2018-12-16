@@ -235,7 +235,7 @@ r_asn1_bin_encoder_end_constructed (RAsn1BinEncoder * enc)
   if (R_UNLIKELY ((lst = enc->stack) == NULL))
     return R_ASN1_ENCODER_INVALID_ARG;
 
-  enc->stack = r_slist_next (enc->stack);
+  enc->stack = enc->stack->next;
   if (enc->enc == R_ASN1_BER) {
     r_slist_free1_full (lst, r_buffer_unref);
 
@@ -252,7 +252,7 @@ r_asn1_bin_encoder_end_constructed (RAsn1BinEncoder * enc)
 
     r_buffer_set_size (enc->buf, enc->offset);
     buf = enc->buf;
-    enc->buf = r_slist_data (lst);
+    enc->buf = lst->data;
     r_slist_free1 (lst);
 
     size = r_buffer_get_size (enc->buf) - (1 + sizeof (rsize));

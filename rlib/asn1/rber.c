@@ -93,9 +93,9 @@ r_asn1_ber_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
       ret = r_asn1_ber_tlv_init (tlv, R_ASN1_BIN_TLV_NEXT (tlv),
           dec->data + dec->size - R_ASN1_BIN_TLV_NEXT (tlv));
     }
-  } else if (lst != NULL && ((RAsn1BinTLV *)r_list_data (lst))->len > 0 &&
-      R_ASN1_BIN_TLV_NEXT (tlv) >= R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)r_list_data (lst))) {
-    if (R_ASN1_BIN_TLV_NEXT (tlv) == R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)r_list_data (lst)))
+  } else if (lst != NULL && ((RAsn1BinTLV *)lst->data)->len > 0 &&
+      R_ASN1_BIN_TLV_NEXT (tlv) >= R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)lst->data)) {
+    if (R_ASN1_BIN_TLV_NEXT (tlv) == R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)lst->data))
       ret = R_ASN1_DECODER_EOC;
     else
       ret = R_ASN1_DECODER_OVERFLOW;
@@ -170,12 +170,12 @@ r_asn1_ber_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   if (R_UNLIKELY ((lst = dec->stack) == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
 
-  up = r_slist_data (lst);
+  up = lst->data;
   if (up->len > 0) {
-    dec->stack = r_slist_next (dec->stack);
+    dec->stack = dec->stack->next;
     if (R_ASN1_BIN_TLV_NEXT (up) < dec->data + dec->size) {
-      if (dec->stack == NULL || ((RAsn1BinTLV *)r_list_data (dec->stack))->len == 0 ||
-          R_ASN1_BIN_TLV_NEXT (up) < R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)r_list_data (dec->stack))) {
+      if (dec->stack == NULL || ((RAsn1BinTLV *)dec->stack->data)->len == 0 ||
+          R_ASN1_BIN_TLV_NEXT (up) < R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)dec->stack->data)) {
         ret = r_asn1_ber_tlv_init (tlv, R_ASN1_BIN_TLV_NEXT (up),
             dec->data + dec->size - R_ASN1_BIN_TLV_NEXT (up));
       } else {
@@ -193,7 +193,7 @@ r_asn1_ber_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
     } while (ret == R_ASN1_DECODER_OK);
 
     if (ret == R_ASN1_DECODER_EOC) {
-      dec->stack = r_slist_next (dec->stack);
+      dec->stack = dec->stack->next;
       r_slist_free1_full (lst, r_free);
       if (R_ASN1_BIN_TLV_NEXT (tlv) == dec->data + dec->size) {
         r_memset (tlv, 0, sizeof (RAsn1BinTLV));

@@ -93,8 +93,8 @@ r_asn1_der_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
           dec->data + dec->size - R_ASN1_BIN_TLV_NEXT (tlv));
     }
   } else if (lst != NULL &&
-      R_ASN1_BIN_TLV_NEXT (tlv) >= R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)r_list_data (lst))) {
-    if (R_ASN1_BIN_TLV_NEXT (tlv) == R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)r_list_data (lst)))
+      R_ASN1_BIN_TLV_NEXT (tlv) >= R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)lst->data)) {
+    if (R_ASN1_BIN_TLV_NEXT (tlv) == R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)lst->data))
       ret = R_ASN1_DECODER_EOC;
     else
       ret = R_ASN1_DECODER_OVERFLOW;
@@ -166,11 +166,11 @@ r_asn1_der_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   if (R_UNLIKELY ((lst = dec->stack) == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
 
-  up = r_slist_data (lst);
-  dec->stack = r_slist_next (dec->stack);
+  up = lst->data;
+  dec->stack = dec->stack->next;
   if (R_ASN1_BIN_TLV_NEXT (up) < dec->data + dec->size) {
     if (dec->stack == NULL || R_ASN1_BIN_TLV_NEXT (up) <
-        R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)r_list_data (dec->stack))) {
+        R_ASN1_BIN_TLV_NEXT ((RAsn1BinTLV *)dec->stack->data)) {
       ret = r_asn1_der_tlv_init (tlv, R_ASN1_BIN_TLV_NEXT (up),
               dec->data + dec->size - R_ASN1_BIN_TLV_NEXT (up));
     } else {
