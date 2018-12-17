@@ -17,9 +17,25 @@
  */
 
 #include "config.h"
+#include "rlib-private.h"
 #include <rlib/rref.h>
 
+#include <rlib/rthreads.h>
 #include <rlib/data/rlist.h>
+
+static RRWMutex r_ref_weak_mutex = NULL;
+
+void
+r_ref__init (void)
+{
+  r_rwmutex_init (&r_ref_weak_mutex);
+}
+
+void
+r_ref__deinit (void)
+{
+  r_rwmutex_clear (&r_ref_weak_mutex);
+}
 
 rpointer
 r_ref_ref (rpointer ref)
@@ -34,9 +50,12 @@ r_ref_unref (rpointer ref)
 {
   RRef * self = ref;
   if (r_atomic_uint_fetch_sub (&self->refcount, 1) == 1) {
-    RCBList * lst = r_atomic_ptr_exchange (&self->weaklst, NULL);
-    r_cblist_call (lst);
-    r_cblist_destroy (lst);
+    RCBSList * lst = r_atomic_ptr_exchange (&self->weaklst, NULL);
+    /* NOTE: We don't touch the lock as this should be the last reference
+     * holding it. Nevertheless, if you get into issues, you most likely are
+     * doing r_ref_weak_unref() without control over the instance itself. */
+    r_cbslist_call (lst);
+    r_cbslist_destroy (lst);
     if (R_LIKELY (self->notify != NULL))
       self->notify (ref);
   }
@@ -45,11 +64,13 @@ r_ref_unref (rpointer ref)
 rpointer
 r_ref_weak_ref (rpointer ref, RFunc notify, rpointer data)
 {
-  RCBList * lst;
+  RCBSList * lst;
 
-  if ((lst = r_cblist_alloc (notify, data, ref)) != NULL) {
+  if ((lst = r_cbslist_alloc (notify, data, ref)) != NULL) {
+    r_rwmutex_rdlock (&r_ref_weak_mutex);
     while (!r_atomic_ptr_cmp_xchg_weak (&((RRef *)ref)->weaklst, &lst->next, lst))
       ;
+    r_rwmutex_rdunlock (&r_ref_weak_mutex);
 
     return ref;
   }
@@ -61,16 +82,17 @@ rboolean
 r_ref_weak_unref (rpointer ref, RFunc notify, rpointer data)
 {
   RRef * self = ref;
-  RCBList * lst;
+  RCBSList * lst, * head;
 
-  /* FIXME: Thread-safe??? */
-  for (lst = r_atomic_ptr_load (&self->weaklst); lst != NULL; lst = lst->next) {
+  r_rwmutex_wrlock (&r_ref_weak_mutex);
+  head = r_atomic_ptr_load (&self->weaklst);
+  for (lst = head; lst != NULL; lst = lst->next) {
     if (lst->data.cb == notify && lst->data.data == data) {
-      r_atomic_ptr_store (&self->weaklst,
-          r_cblist_destroy_link (r_atomic_ptr_load (&self->weaklst), lst));
+      r_atomic_ptr_store (&self->weaklst, r_cbslist_destroy_link (head, lst));
       break;
     }
   }
+  r_rwmutex_wrunlock (&r_ref_weak_mutex);
   return lst != NULL;
 }
 

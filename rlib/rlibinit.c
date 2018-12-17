@@ -34,6 +34,7 @@ R_INITIALIZER (rlib_init)
   if (rlib_logcat.threshold < R_LOG_LEVEL_WARNING)
     r_log_category_set_threshold (&rlib_logcat, R_LOG_LEVEL_WARNING);
 
+  r_ref__init ();
   r_ev_loop_init ();
   r_http_server_init ();
   r_mem_allocator_init ();
@@ -54,6 +55,7 @@ R_DEINITIALIZER (rlib_deinit)
   r_networking_deinit ();
   r_mem_allocator_deinit ();
   r_ev_loop_deinit ();
+  r_ref__deinit ();
 
   r_log_deinit ();
 }

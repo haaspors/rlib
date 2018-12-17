@@ -139,8 +139,8 @@ RTEST_END;
 RTEST_STRESS (rref, weak_stress, RTEST_FAST)
 {
   RTestRef * ref;
-  RThread * tref[4];
-  RThread * tweak[1]; // TODO: Increase this! Currently weak refs are not thread safe
+  RThread * tref[2];
+  RThread * tweak[6];
   int i;
 
   r_assert_cmpptr ((ref = r_test_ref_new (42)), !=, NULL);
