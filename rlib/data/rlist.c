@@ -233,3 +233,73 @@ r_cbrlist_call (RCBRList * head)
   return head;
 }
 
+/******************************************************************************/
+/* Callback list (Singly linked list)                                         */
+/******************************************************************************/
+static inline rboolean
+r_cbslist_data_equal (rconstpointer a, rconstpointer b)
+{
+  return r_memcmp (a, b, sizeof (RFuncCallbackCtx)) == 0;
+}
+static void
+r_cbslist_clear (RCBSList * lst)
+{
+  r_func_callback_ctx_clear (&lst->data);
+}
+R__SLIST_IMPL (RCBSList, r_cbslist, RFuncCallbackCtx, &,)
+
+RCBSList *
+r_cbslist_alloc_full (RFunc cb, rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify)
+{
+  RCBSList * ret;
+  if ((ret = r_mem_new (RCBSList)) != NULL) {
+    r_func_callback_ctx_init (&ret->data, cb, data, datanotify, user, usernotify);
+    ret->next = NULL;
+  }
+  return ret;
+}
+
+RCBSList *
+r_cbslist_prepend_full (RCBSList * head, RFunc cb,
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify)
+{
+  return r_cbslist_prepend_link (head,
+      r_cbslist_alloc_full (cb, data, datanotify, user, usernotify));
+}
+
+RCBSList *
+r_cbslist_append_full (RCBSList * entry, RFunc cb,
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify)
+{
+  return r_cbslist_append_link (entry,
+      r_cbslist_alloc_full (cb, data, datanotify, user, usernotify));
+}
+
+rboolean
+r_cbslist_contains (RCBSList * head, RFunc cb, rpointer data)
+{
+  if (head != NULL) {
+    RCBSList * it;
+    for (it = head; it != NULL; it = it->next) {
+      if (it->data.cb == cb && it->data.data == data)
+        return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+rsize
+r_cbslist_call (RCBSList * head)
+{
+  rsize ret = 0;
+  for (; head != NULL; head = head->next) {
+    if (R_LIKELY (head->data.cb != NULL)) {
+      r_func_callback_ctx_call (&head->data);
+      ret++;
+    }
+  }
+  return ret;
+}

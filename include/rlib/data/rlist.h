@@ -117,6 +117,29 @@ R_API RCBRList * r_cbrlist_append_full (RCBRList * entry, RFuncReturn cb,
 R_API rboolean r_cbrlist_contains (RCBRList * head, RFuncReturn cb, rpointer data);
 R_API RCBRList * r_cbrlist_call (RCBRList * head) R_ATTR_WARN_UNUSED_RESULT;
 
+/******************************************************************************/
+/* Callback list (Singly linked list)                                         */
+/******************************************************************************/
+R__SLIST_DECL (RCBSList, r_cbslist, RFuncCallbackCtx, R_API)
+
+R_API RCBSList * r_cbslist_alloc_full (RFunc cb,
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify) R_ATTR_MALLOC;
+#define r_cbslist_alloc(cb, data, user)                                       \
+  r_cbslist_alloc_full (cb, data, NULL, user, NULL)
+R_API RCBSList * r_cbslist_prepend_full (RCBSList * head, RFunc cb,
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify) R_ATTR_WARN_UNUSED_RESULT;
+#define r_cbslist_prepend(head, cb, data, user)                               \
+  r_cbslist_prepend_full (head, cb, data, NULL, user, NULL)
+R_API RCBSList * r_cbslist_append_full (RCBSList * entry, RFunc cb,
+    rpointer data, RDestroyNotify datanotify,
+    rpointer user, RDestroyNotify usernotify) R_ATTR_WARN_UNUSED_RESULT;
+#define r_cbslist_append(head, cb, data, user)                                \
+  r_cbslist_append_full (head, cb, data, NULL, user, NULL)
+R_API rboolean r_cbslist_contains (RCBSList * head, RFunc cb, rpointer data);
+R_API rsize r_cbslist_call (RCBSList * head);
+
 
 R_END_DECLS
 
