@@ -684,7 +684,7 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 #ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_UNIX)
 #ifdef HAVE_SIGALTSTACK
-  static ruint8 _r_test_sigstack[SIGSTKSZ];
+  static ROnce _r_test_sigstackonce = R_ONCE_INIT;
 #endif
 #ifdef HAVE_SIGACTION
   rsize i;
@@ -704,8 +704,9 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
   ctx->osigabrt = signal (SIGABRT, _r_test_win32_err_handler);
 #elif defined (R_OS_UNIX)
 #ifdef HAVE_SIGALTSTACK
-  ctx->ss.ss_size = sizeof (_r_test_sigstack);
-  ctx->ss.ss_sp = _r_test_sigstack;
+  ctx->ss.ss_size = SIGSTKSZ;
+  ctx->ss.ss_sp = r_call_once (&_r_test_sigstackonce, (RThreadFunc) r_malloc0,
+      RSIZE_TO_POINTER (SIGSTKSZ));
   ctx->ss.ss_flags = 0;
   sigaltstack (&ctx->ss, &ctx->oss);
 #endif
