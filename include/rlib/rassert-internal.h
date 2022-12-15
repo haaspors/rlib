@@ -27,6 +27,7 @@
 #if defined(__GNUC__)
 #define __R_GCC_DISABLE_WARN_ADDRESS_BEGIN                                    \
   _Pragma ("GCC diagnostic push")                                             \
+  _Pragma ("GCC diagnostic ignored \"-Wformat-overflow\"")                    \
   _Pragma ("GCC diagnostic ignored \"-Waddress\"")
 #define __R_GCC_DISABLE_WARN_ADDRESS_END  _Pragma ("GCC diagnostic pop")
 #else
