@@ -197,13 +197,12 @@ RTEST_BENCH (revudp, multi_loopback_receive, RTEST_FASTSLOW | RTEST_SYSTEM)
   r_assert_cmpptr ((loop = r_ev_loop_new_full (NULL, tq)), !=, NULL);
 
   d = R_N_ELEMENTS (ctx) / tctxcount;
-  if ((R_N_ELEMENTS (ctx) % tctxcount) > 0) d++;
   for (i = 0; i < tctxcount; i++) {
     tctx[i].count = d;
     tctx[i].ctx = &ctx[i * d];
   }
-  if (i * d > R_N_ELEMENTS (ctx))
-    tctx[i - 1].count = i * d - R_N_ELEMENTS (ctx);
+  if (R_N_ELEMENTS (ctx) > i * d)
+    tctx[i - 1].count = R_N_ELEMENTS (ctx) - ((i - 1) * d);
   for (i = 0; i < tctxcount; i++)
     r_print ("\tSend thread %u: %u sockets\n", (ruint)i, (ruint)tctx[i].count);
 
