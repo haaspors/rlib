@@ -70,7 +70,7 @@ See more on that on the meson build system project website!
 
 To configure and build run (`_build_` is output build directory):
 ```
-meson _build_
+meson setup _build_
 ninja -C _build_
 ```
 To run unit tests:
