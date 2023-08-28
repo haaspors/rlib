@@ -156,7 +156,7 @@ RTEST_BENCH (revudp, single_loopback_receive, RTEST_FASTSLOW | RTEST_SYSTEM)
 RTEST_END;
 
 
-#define UDP_MULTI_SOCKETS     16
+#define UDP_MULTI_SOCKETS     24
 static void
 stop_multi (rpointer data, REvLoop * loop)
 {
