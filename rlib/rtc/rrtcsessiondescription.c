@@ -922,7 +922,19 @@ r_rtc_session_description_mline_to_sdp_media (const RRtcSessionDescription * sd,
     if (mline->params != NULL) {
       rsize i, j;
 
-      /* FIXME: Header extensions */
+      for (i = 0; i < r_rtc_rtp_parameters_hdrext_count (mline->params); i++) {
+        RRtcRtpHdrExtParameters * hdrext;
+        rchar * v;
+
+        hdrext = r_rtc_rtp_parameters_get_hdrext (mline->params, i);
+        if (hdrext == NULL || hdrext->uri == NULL) continue;
+        v = r_strprintf ("%"RUINT16_FMT" %s", hdrext->id, hdrext->uri);
+        if (v != NULL) {
+          r_sdp_media_add_attribute (media,
+              R_STR_WITH_SIZE_ARGS ("extmap"), v, -1);
+          r_free (v);
+        }
+      }
 
       switch (mline->dir) {
         case R_RTC_DIR_SEND_RECV:
