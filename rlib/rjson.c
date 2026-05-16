@@ -400,23 +400,70 @@ r_json_value_equal (rconstpointer a, rconstpointer b)
 {
   const RJsonValue * va = a, * vb = b;
 
-  if (va->type == vb->type) {
-    switch (va->type) {
-      case R_JSON_TYPE_OBJECT:
-      case R_JSON_TYPE_ARRAY:
-        /* FIXME: Implement?? */
-        return a == b;
-      case R_JSON_TYPE_NUMBER:
-        return ((const RJsonNumber *)va)->v == ((const RJsonNumber *)vb)->v;
-      case R_JSON_TYPE_STRING:
-        return r_str_equals (((const RJsonString *)va)->v, ((const RJsonString *)vb)->v);
-      case R_JSON_TYPE_TRUE:
-      case R_JSON_TYPE_FALSE:
-      case R_JSON_TYPE_NULL:
-        return TRUE;
-      default:
-        break;
+  if (va->type != vb->type)
+    return FALSE;
+  if (va == vb)
+    return TRUE;
+
+  switch (va->type) {
+    case R_JSON_TYPE_OBJECT: {
+      const RJsonObject * oa = (const RJsonObject *) va;
+      const RJsonObject * ob = (const RJsonObject *) vb;
+      rsize i, j;
+
+      if (oa->array.nsize != ob->array.nsize)
+        return FALSE;
+
+      /* JSON objects are unordered: for each (key, value) in oa, find a
+       * (key, value) in ob with matching key + value.  No duplicates so
+       * O(n^2) is fine for typical sizes. */
+      for (i = 0; i < oa->array.nsize; i++) {
+        const RJsonValue * ka, * v_ai;
+        rboolean matched = FALSE;
+
+        v_ai = r_kv_ptr_array_get_const (&oa->array, i,
+            (rconstpointer *) &ka);
+
+        for (j = 0; j < ob->array.nsize; j++) {
+          const RJsonValue * kb, * v_bj;
+
+          v_bj = r_kv_ptr_array_get_const (&ob->array, j,
+              (rconstpointer *) &kb);
+          if (r_json_value_equal (ka, kb) &&
+              r_json_value_equal (v_ai, v_bj)) {
+            matched = TRUE;
+            break;
+          }
+        }
+        if (!matched)
+          return FALSE;
+      }
+      return TRUE;
     }
+    case R_JSON_TYPE_ARRAY: {
+      const RJsonArray * aa = (const RJsonArray *) va;
+      const RJsonArray * ab = (const RJsonArray *) vb;
+      rsize i;
+
+      if (aa->array.nsize != ab->array.nsize)
+        return FALSE;
+      for (i = 0; i < aa->array.nsize; i++) {
+        if (!r_json_value_equal (r_ptr_array_get_const (&aa->array, i),
+                                 r_ptr_array_get_const (&ab->array, i)))
+          return FALSE;
+      }
+      return TRUE;
+    }
+    case R_JSON_TYPE_NUMBER:
+      return ((const RJsonNumber *)va)->v == ((const RJsonNumber *)vb)->v;
+    case R_JSON_TYPE_STRING:
+      return r_str_equals (((const RJsonString *)va)->v, ((const RJsonString *)vb)->v);
+    case R_JSON_TYPE_TRUE:
+    case R_JSON_TYPE_FALSE:
+    case R_JSON_TYPE_NULL:
+      return TRUE;
+    default:
+      break;
   }
 
   return FALSE;
