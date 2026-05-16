@@ -223,9 +223,40 @@ r_pe_parser_get_section_hdr_by_idx (RPeParser * parser, ruint16 idx)
 RPeSectionHdr *
 r_pe_parser_get_section_hdr_by_data_dir (RPeParser * parser, RPeDataDirEntry entry)
 {
-  /* TODO: Implement */
-  (void) parser;
-  (void) entry;
+  const RPeDataDirectory * dd = NULL;
+  ruint32 nentries = 0;
+  ruint32 rva;
+  ruint16 i;
+
+  if (R_UNLIKELY (parser == NULL || parser->imghdr == NULL)) return NULL;
+  if (R_UNLIKELY ((unsigned int) entry >= R_PE_DATA_DIR_ZERO)) return NULL;
+
+  switch (r_pe_parser_get_pe32_magic (parser)) {
+    case R_PE_PE32_MAGIC: {
+      RPe32ImageHdr * h = (RPe32ImageHdr *) parser->imghdr;
+      dd = h->datadir;
+      nentries = h->winopt.number_rva_and_sizes;
+      break;
+    }
+    case R_PE_PE32PLUS_MAGIC: {
+      RPe32PlusImageHdr * h = (RPe32PlusImageHdr *) parser->imghdr;
+      dd = h->datadir;
+      nentries = h->winopt.number_rva_and_sizes;
+      break;
+    }
+    default:
+      return NULL;
+  }
+
+  if ((unsigned int) entry >= nentries || dd[entry].vmaddr == 0)
+    return NULL;
+
+  rva = dd[entry].vmaddr;
+  for (i = 0; i < parser->imghdr->coff.nsect; i++) {
+    RPeSectionHdr * sec = &parser->sectbl[i];
+    if (rva >= sec->vmaddr && rva < sec->vmaddr + sec->vmsize)
+      return sec;
+  }
 
   return NULL;
 }

@@ -138,3 +138,48 @@ RTEST (rpeparser, get_section_by_name, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rpeparser, get_section_by_data_dir, RTEST_FAST)
+{
+  /* Drive r_pe_parser_get_section_hdr_by_data_dir against the tiny
+   * PE32 image: zero out the datadir to verify "no entry -> NULL",
+   * then point the EXPORT entry at an RVA inside the .text section
+   * (vmaddr=464, vmsize=4) and expect the lookup to return .text. */
+  ruint8 mut[sizeof (pe_32_tiny)];
+  RPeParser * parser;
+  RPe32ImageHdr * hdr;
+  RPeSectionHdr * sec;
+
+  r_memcpy (mut, pe_32_tiny, sizeof (pe_32_tiny));
+  r_assert_cmpptr ((parser =
+        r_pe_parser_new_from_mem (mut, sizeof (mut))), !=, NULL);
+  r_assert_cmpptr ((hdr = r_pe_parser_get_pe32_image_hdr (parser)), !=, NULL);
+
+  /* All datadirs zero -> nothing to map. */
+  r_assert_cmpptr (r_pe_parser_get_section_hdr_by_data_dir (parser,
+        R_PE_DATA_DIR_EXPORT), ==, NULL);
+
+  /* Point EXPORT into the .text section's vmaddr range. */
+  hdr->datadir[R_PE_DATA_DIR_EXPORT].vmaddr = 466;
+  hdr->datadir[R_PE_DATA_DIR_EXPORT].size = 1;
+  r_assert_cmpptr ((sec = r_pe_parser_get_section_hdr_by_data_dir (parser,
+          R_PE_DATA_DIR_EXPORT)), !=, NULL);
+  r_assert_cmpstr (sec->name, ==, ".text");
+
+  /* Other entries still empty. */
+  r_assert_cmpptr (r_pe_parser_get_section_hdr_by_data_dir (parser,
+        R_PE_DATA_DIR_IMPORT), ==, NULL);
+
+  /* RVA outside any section is unmapped. */
+  hdr->datadir[R_PE_DATA_DIR_IMPORT].vmaddr = 0x80000000;
+  hdr->datadir[R_PE_DATA_DIR_IMPORT].size = 1;
+  r_assert_cmpptr (r_pe_parser_get_section_hdr_by_data_dir (parser,
+        R_PE_DATA_DIR_IMPORT), ==, NULL);
+
+  /* Out-of-range index returns NULL rather than reading past the array. */
+  r_assert_cmpptr (r_pe_parser_get_section_hdr_by_data_dir (parser,
+        R_PE_DATA_DIR_ZERO), ==, NULL);
+
+  r_pe_parser_unref (parser);
+}
+RTEST_END;
+
