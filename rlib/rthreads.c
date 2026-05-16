@@ -603,10 +603,11 @@ r_thread_free (RThread * thread)
 #if defined (R_OS_WIN32)
     CloseHandle ((HANDLE)thread->thread);
 #elif defined (HAVE_PTHREAD_H)
-    if (R_UNLIKELY (!thread->joined))
-      pthread_detach (thread->thread);
-    if (!thread->is_root)
+    if (!thread->is_root) {
+      if (R_UNLIKELY (!thread->joined))
+        pthread_detach (thread->thread);
       r_mutex_clear (&thread->join_mutex);
+    }
 #endif
 #endif
     r_free (thread->name);
