@@ -162,7 +162,8 @@ rboolean
 r_rtcp_packet_sr_get_sender_info (const RRTCPPacket * packet,
     RRTCPSenderInfo * srinfo)
 {
-  if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_SR) {
+  if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_SR &&
+      r_rtcp_packet_get_length (packet) >= R_RTCP_MINSIZE + 5 * sizeof (ruint32)) {
     const ruint8 * ptr = packet->data;
 
     srinfo->ssrc    = RUINT32_TO_BE (*(const ruint32 *)&ptr[0 * sizeof (ruint32)]);
@@ -181,18 +182,24 @@ r_rtcp_packet_sr_get_report_block (const RRTCPPacket * packet, ruint8 idx,
     RRTCPReportBlock * rb)
 {
   const ruint8 * ptr;
+  rsize header;
 
   if (idx >= r_rtcp_packet_get_count (packet))
     return FALSE;
 
-  ptr = packet->data + idx * 6 * sizeof (ruint32);
   if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_RR) {
-    ptr += sizeof (ruint32);
+    header = 2 * sizeof (ruint32);
   } else if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_SR) {
-    ptr += 6 * sizeof (ruint32);
+    header = 7 * sizeof (ruint32);
   } else {
     return FALSE;
   }
+
+  if (r_rtcp_packet_get_length (packet) <
+      header + ((rsize)idx + 1) * 6 * sizeof (ruint32))
+    return FALSE;
+
+  ptr = (const ruint8 *)packet + header + (rsize)idx * 6 * sizeof (ruint32);
 
   rb->ssrc          = RUINT32_TO_BE (*(const ruint32 *)&ptr[0 * sizeof (ruint32)]);
   rb->packetslost   = RUINT32_TO_BE (*(const ruint32 *)&ptr[1 * sizeof (ruint32)]);

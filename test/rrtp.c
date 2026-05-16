@@ -215,6 +215,36 @@ RTEST (rrtcp, is_valid_hdr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcp, sr_report_block_count_vs_length_mismatch, RTEST_FAST)
+{
+  /* RTCP SR with len=6 (28 bytes total -- just SR fixed header + sender info)
+   * but advertised count=1.  Accessing the missing report block must not
+   * read past the buffer. */
+  static const ruint8 pkt_sr_lying_count[28] = {
+    0x81, 0xc8, 0x00, 0x06,
+    0xf3, 0xcb, 0x20, 0x01,
+    0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,
+    0, 0, 0, 0,  0, 0, 0, 0
+  };
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * packet;
+  RRTCPReportBlock rb;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_sr_lying_count,
+          sizeof (pkt_sr_lying_count))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+
+  r_assert_cmpptr ((packet = r_rtcp_buffer_get_first_packet (&rtcp)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_count (packet), ==, 1);
+  r_assert_cmpuint (r_rtcp_packet_get_length (packet), ==, 28);
+  r_assert (!r_rtcp_packet_sr_get_report_block (packet, 0, &rb));
+
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtcp, sr_sdes_compound_packet, RTEST_FAST)
 {
   RBuffer * buf;
