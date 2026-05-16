@@ -225,7 +225,7 @@ r_rtc_rtp_listener_update_receiver (RRtcRtpListener * l,
   }
   /* FIXME: update mid against mux table */
   for (i = 0, c = r_ptr_array_size (&params->codecs); i < c; i++) {
-    RRtcRtpCodecParameters * codecp = r_ptr_array_get (&params->encodings, i);
+    RRtcRtpCodecParameters * codecp = r_ptr_array_get (&params->codecs, i);
     r_hash_table_insert (l->recv_ptmap, RSIZE_TO_POINTER (codecp->pt), r);
   }
 

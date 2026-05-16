@@ -397,6 +397,44 @@ RTEST (rrtc, fake_ice_transport, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST_F (rrtc, listener_dispatches_codec_pt_with_no_encoding, RTEST_FAST)
+{
+  /* update_receiver populated recv_ptmap by walking params->codecs but
+   * indexed into params->encodings instead.  With only codecs present
+   * the misindexed read returned NULL and crashed, and with mismatched
+   * sizes it inserted garbage PTs.  Drive the codec-only path: start
+   * a receiver with one codec (PT=PCMA) and no encodings, send an RTP
+   * packet stamped with that PT, expect it in the receiver's queue. */
+  static const ruint8 rtp_pt_pcma[] = {
+    0x80, 0x08,              /* v=2 p=0 x=0 cc=0, m=0 pt=8 (PCMA) */
+    0x00, 0x01,              /* seq */
+    0x00, 0x00, 0x00, 0x00,  /* timestamp */
+    0x11, 0x22, 0x33, 0x44,  /* SSRC (any -- there's no SSRC entry) */
+    0x00                     /* one byte payload */
+  };
+  RBuffer * buf;
+  RRtcRtpParameters * p;
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (p,
+        "PCMA", R_RTP_PT_PCMA, 8000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, p, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->bob.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_pt_pcma, sizeof (rtp_pt_pcma))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 1);
+  r_buffer_unref (buf);
+
+  r_assert_cmpint (r_rtc_rtp_sender_stop (fixture->alice.send), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->bob.recv), ==, R_RTC_OK);
+
+  while ((buf = r_queue_pop (&fixture->bob.rtp)) != NULL)
+    r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST_F (rrtc, receiver_stop_clears_ssrc_demux, RTEST_FAST)
 {
   /* Starting a receiver with an explicit SSRC populates the listener's
