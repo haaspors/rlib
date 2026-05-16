@@ -19,6 +19,60 @@ RTEST (rptrarray, add, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rptrarray, insert, RTEST_FAST)
+{
+  RPtrArray * array;
+
+  r_assert_cmpptr ((array = r_ptr_array_new ()), !=, NULL);
+
+  /* Insert into empty array at idx 0. */
+  r_assert_cmpuint (r_ptr_array_insert (array, 0, RUINT_TO_POINTER (10), NULL), ==, 0);
+  r_assert_cmpuint (r_ptr_array_size (array), ==, 1);
+
+  /* Append by inserting at nsize. */
+  r_assert_cmpuint (r_ptr_array_insert (array, 1, RUINT_TO_POINTER (30), NULL), ==, 1);
+  r_assert_cmpuint (r_ptr_array_size (array), ==, 2);
+
+  /* Insert in the middle: [10, 30] -> [10, 20, 30]. */
+  r_assert_cmpuint (r_ptr_array_insert (array, 1, RUINT_TO_POINTER (20), NULL), ==, 1);
+  r_assert_cmpuint (r_ptr_array_size (array), ==, 3);
+  r_assert_cmpptr (r_ptr_array_get (array, 0), ==, RUINT_TO_POINTER (10));
+  r_assert_cmpptr (r_ptr_array_get (array, 1), ==, RUINT_TO_POINTER (20));
+  r_assert_cmpptr (r_ptr_array_get (array, 2), ==, RUINT_TO_POINTER (30));
+
+  /* Insert at idx 0 of populated array shifts everyone right. */
+  r_assert_cmpuint (r_ptr_array_insert (array, 0, RUINT_TO_POINTER (5), NULL), ==, 0);
+  r_assert_cmpuint (r_ptr_array_size (array), ==, 4);
+  r_assert_cmpptr (r_ptr_array_get (array, 0), ==, RUINT_TO_POINTER (5));
+  r_assert_cmpptr (r_ptr_array_get (array, 1), ==, RUINT_TO_POINTER (10));
+  r_assert_cmpptr (r_ptr_array_get (array, 2), ==, RUINT_TO_POINTER (20));
+  r_assert_cmpptr (r_ptr_array_get (array, 3), ==, RUINT_TO_POINTER (30));
+
+  /* idx > nsize is rejected. */
+  r_assert_cmpuint (r_ptr_array_insert (array, 99, RUINT_TO_POINTER (0), NULL),
+      ==, R_PTR_ARRAY_INVALID_IDX);
+  r_assert_cmpuint (r_ptr_array_size (array), ==, 4);
+
+  r_ptr_array_unref (array);
+}
+RTEST_END;
+
+RTEST (rptrarray, insert_runs_notify_on_clear, RTEST_FAST)
+{
+  /* The destroy notify attached to an inserted element must run when
+   * the array is freed -- catches a regression where insert forgot to
+   * propagate the notify alongside the moved entries. */
+  RPtrArray * array;
+
+  r_assert_cmpptr ((array = r_ptr_array_new ()), !=, NULL);
+  r_ptr_array_add (array, r_malloc (32), r_free);
+  r_ptr_array_insert (array, 0, r_malloc (16), r_free);
+  r_ptr_array_insert (array, 1, r_malloc (8), r_free);
+  /* ASAN would catch leaks if the notifies weren't called. */
+  r_ptr_array_unref (array);
+}
+RTEST_END;
+
 RTEST (rptrarray, grow, RTEST_FAST)
 {
   RPtrArray * array;

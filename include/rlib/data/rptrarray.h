@@ -53,9 +53,8 @@ R_API rsize r_ptr_array_find_range (RPtrArray * array, rpointer data, rsize idx,
 
 R_API rsize r_ptr_array_add (RPtrArray * array,
     rpointer data, RDestroyNotify notify);
-/* FIXME */
-/*R_API rsize r_ptr_array_insert (RPtrArray * array, rsize idx,*/
-    /*rpointer data, RDestroyNotify notify);*/
+R_API rsize r_ptr_array_insert (RPtrArray * array, rsize idx,
+    rpointer data, RDestroyNotify notify);
 R_API rsize r_ptr_array_update_idx (RPtrArray * array, rsize idx,
     rpointer data, RDestroyNotify notify);
 #define r_ptr_array_clear_idx(array, idx) r_ptr_array_update_idx (array, idx, NULL, NULL)

@@ -134,6 +134,22 @@ r_ptr_array_add (RPtrArray * array, rpointer data, RDestroyNotify notify)
 }
 
 rsize
+r_ptr_array_insert (RPtrArray * array, rsize idx, rpointer data,
+    RDestroyNotify notify)
+{
+  if (R_UNLIKELY (idx > array->nsize)) return R_PTR_ARRAY_INVALID_IDX;
+  r_ptr_array_ensure_size (array, array->nsize + 1);
+  if (idx < array->nsize) {
+    r_memmove (&R_PTR_ARRAY_N (array, idx + 1), &R_PTR_ARRAY_N (array, idx),
+        (array->nsize - idx) * sizeof (RPtrNode));
+  }
+  R_PTR_ARRAY_N (array, idx).ptr = data;
+  R_PTR_ARRAY_N (array, idx).notify = notify;
+  array->nsize++;
+  return idx;
+}
+
+rsize
 r_ptr_array_update_idx (RPtrArray * array, rsize idx, rpointer data, RDestroyNotify notify)
 {
   if (R_UNLIKELY (idx >= array->nsize)) return R_PTR_ARRAY_INVALID_IDX;
