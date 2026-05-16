@@ -79,12 +79,12 @@ _check_elf32_header (RElf32EHdr * hdr, rsize size)
   if (R_UNLIKELY (size < sizeof (RElf32EHdr) || size < hdr->ehsize))
     return -1;
 
-  phsize = hdr->phentsize * hdr->phnum;
-  shsize = hdr->shentsize * hdr->shnum;
-  if (size < hdr->ehsize + phsize + shsize)
+  phsize = (rsize)hdr->phentsize * hdr->phnum;
+  shsize = (rsize)hdr->shentsize * hdr->shnum;
+  if (size < hdr->ehsize || size - hdr->ehsize < phsize + shsize)
     return -1;
-  if (size < hdr->phoff + phsize || size < hdr->shoff + shsize)
-    return -1;
+  if (hdr->phoff > size || size - hdr->phoff < phsize) return -1;
+  if (hdr->shoff > size || size - hdr->shoff < shsize) return -1;
 
   return RELF32_IDX;
 }
@@ -97,12 +97,12 @@ _check_elf64_header (RElf64EHdr * hdr, rsize size)
   if (R_UNLIKELY (size < sizeof (RElf64EHdr) || size < hdr->ehsize))
     return -1;
 
-  phsize = hdr->phentsize * hdr->phnum;
-  shsize = hdr->shentsize * hdr->shnum;
-  if (size < hdr->ehsize + phsize + shsize)
+  phsize = (rsize)hdr->phentsize * hdr->phnum;
+  shsize = (rsize)hdr->shentsize * hdr->shnum;
+  if (size < hdr->ehsize || size - hdr->ehsize < phsize + shsize)
     return -1;
-  if (size < hdr->phoff + phsize || size < hdr->shoff + shsize)
-    return -1;
+  if (hdr->phoff > size || size - hdr->phoff < phsize) return -1;
+  if (hdr->shoff > size || size - hdr->shoff < shsize) return -1;
 
   return RELF64_IDX;
 }
@@ -307,7 +307,7 @@ r_elf_parser_get_phdr32 (RElfParser * parser, ruint16 idx)
 
   ptr = parser->mem;
   ptr += ehdr->phoff;
-  ptr += ehdr->phentsize * idx;
+  ptr += (rsize)ehdr->phentsize * idx;
   return (RElf32PHdr *)ptr;
 }
 
@@ -321,7 +321,7 @@ r_elf_parser_get_phdr64 (RElfParser * parser, ruint16 idx)
 
   ptr = parser->mem;
   ptr += ehdr->phoff;
-  ptr += ehdr->phentsize * idx;
+  ptr += (rsize)ehdr->phentsize * idx;
   return (RElf64PHdr *)ptr;
 }
 
@@ -410,7 +410,7 @@ r_elf_parser_get_shdr32 (RElfParser * parser, ruint16 idx)
 
   ptr = parser->mem;
   ptr += ehdr->shoff;
-  ptr += ehdr->shentsize * idx;
+  ptr += (rsize)ehdr->shentsize * idx;
   return (RElf32SHdr *)ptr;
 }
 
@@ -424,7 +424,7 @@ r_elf_parser_get_shdr64 (RElfParser * parser, ruint16 idx)
 
   ptr = parser->mem;
   ptr += ehdr->shoff;
-  ptr += ehdr->shentsize * idx;
+  ptr += (rsize)ehdr->shentsize * idx;
   return (RElf64SHdr *)ptr;
 }
 
