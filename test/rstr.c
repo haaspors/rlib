@@ -1388,3 +1388,24 @@ RTEST (rstr, kv_is_value, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (rstr, str_sizeof_macro, RTEST_FAST)
+{
+  /* R_STR_SIZEOF expands to "sizeof (str) - 1".  Without outer
+   * parentheses, surrounding operators with higher precedence than '-'
+   * (e.g. a cast) bind tighter and silently break the result.  The
+   * macro must yield the correct constant in every context. */
+  rsize n;
+
+  /* Plain use. */
+  r_assert_cmpuint (R_STR_SIZEOF ("hello"), ==, 5);
+
+  /* Inside a cast: the macro must NOT expand to "(int)sizeof(str) - 1". */
+  n = (rsize) (int) R_STR_SIZEOF ("hello");
+  r_assert_cmpuint (n, ==, 5);
+
+  /* In an arithmetic context that exercises operator precedence. */
+  r_assert_cmpuint (10 - R_STR_SIZEOF ("xxx"), ==, 7);
+  r_assert_cmpint ((int) 10 - (int) R_STR_SIZEOF ("xxx"), ==, 7);
+}
+RTEST_END;
