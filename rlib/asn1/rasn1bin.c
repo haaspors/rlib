@@ -85,17 +85,22 @@ r_asn1_bin_tlv_parse_integer_i32 (const RAsn1BinTLV * tlv, rint32 * value)
 
     if (R_UNLIKELY (bits > sizeof (u) * 8))
       return R_ASN1_DECODER_OVERFLOW;
-    if (bits == sizeof (u) * 8 && *ptr & 0x80)
-      return R_ASN1_DECODER_OVERFLOW;
 
     if ((tlv->value[0] & 0x80) == 0) {
+      /* For a positive value the high bit of the first non-zero byte
+       * must be clear, otherwise the magnitude exceeds rint32 range. */
+      if (bits == sizeof (u) * 8 && *ptr & 0x80)
+        return R_ASN1_DECODER_OVERFLOW;
       while (ptr < end)
         u = (u << 8) | *ptr++;
       *value = u;
     } else {
+      /* Two's-complement negative: accumulate ~bytes, then ~u gives
+       * back the bit pattern, and the cast preserves it as a signed
+       * value (avoiding the UB of negating INT32_MIN). */
       while (ptr < end)
         u = (u << 8) | (*ptr++ ^ 0xFF);
-      *value = -(rint32)++u;
+      *value = (rint32)~u;
     }
     return R_ASN1_DECODER_OK;
   } else {
@@ -154,17 +159,22 @@ r_asn1_bin_tlv_parse_integer_i64 (const RAsn1BinTLV * tlv, rint64 * value)
 
     if (R_UNLIKELY (bits > sizeof (u) * 8))
       return R_ASN1_DECODER_OVERFLOW;
-    if (bits == sizeof (u) * 8 && *ptr & 0x80)
-      return R_ASN1_DECODER_OVERFLOW;
 
     if ((tlv->value[0] & 0x80) == 0) {
+      /* For a positive value the high bit of the first non-zero byte
+       * must be clear, otherwise the magnitude exceeds rint64 range. */
+      if (bits == sizeof (u) * 8 && *ptr & 0x80)
+        return R_ASN1_DECODER_OVERFLOW;
       while (ptr < end)
         u = (u << 8) | *ptr++;
       *value = u;
     } else {
+      /* Two's-complement negative: accumulate ~bytes, then ~u gives
+       * back the bit pattern, and the cast preserves it as a signed
+       * value (avoiding the UB of negating INT64_MIN). */
       while (ptr < end)
         u = (u << 8) | (*ptr++ ^ 0xFF);
-      *value = -(rint32)++u;
+      *value = (rint64)~u;
     }
     return R_ASN1_DECODER_OK;
   } else {

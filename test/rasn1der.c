@@ -187,6 +187,57 @@ RTEST (rasn1der, parse_integer_small, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_integer_negative, RTEST_FAST)
+{
+  /* Various negative integers including INT32_MIN / INT64_MIN, plus
+   * a negative i64 whose magnitude exceeds RINT32_MAX (which the
+   * original (rint32) cast in parse_integer_i64 would truncate). */
+  static const struct {
+    rint64 expected;
+    rsize size;
+    ruint8 data[12];
+  } cases[] = {
+    /* -1 */
+    {                       -1, 3,  { 0x02, 0x01, 0xff } },
+    /* -128 */
+    {                     -128, 3,  { 0x02, 0x01, 0x80 } },
+    /* -1000: 0xFC 0x18 */
+    {                    -1000, 4,  { 0x02, 0x02, 0xfc, 0x18 } },
+    /* INT32_MIN = -2^31 = 0x80 00 00 00 */
+    {              -2147483647LL - 1, 6,
+                                    { 0x02, 0x04, 0x80, 0x00, 0x00, 0x00 } },
+    /* -4294967296 = -2^32, encoded as FF 00 00 00 00 (5 bytes) */
+    {              -4294967296LL, 7,
+                                    { 0x02, 0x05, 0xff, 0x00, 0x00, 0x00, 0x00 } },
+  };
+  ruint i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    RAsn1BinDecoder * dec;
+    RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+    rint64 v64 = 0;
+
+    r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+            cases[i].data, cases[i].size)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+
+    r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i64 (&tlv, &v64),
+        ==, R_ASN1_DECODER_OK);
+    r_assert_cmpint (v64, ==, cases[i].expected);
+
+    /* i32 path: only the values that fit. */
+    if (cases[i].expected >= -2147483647LL - 1) {
+      rint32 v32 = 0;
+      r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i32 (&tlv, &v32),
+          ==, R_ASN1_DECODER_OK);
+      r_assert_cmpint (v32, ==, (rint32)cases[i].expected);
+    }
+
+    r_asn1_bin_decoder_unref (dec);
+  }
+}
+RTEST_END;
+
 RTEST (rasn1der, parse_time_out_of_range, RTEST_FAST)
 {
   /* Hour, minute, second, and timezone offset components have spec
