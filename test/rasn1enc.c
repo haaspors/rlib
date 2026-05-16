@@ -160,6 +160,35 @@ RTEST (rasn1enc_der, distinguished_name, RTEST_FAST)
 RTEST_END;
 
 
+RTEST (rasn1enc_der, utc_time_with_seconds, RTEST_FAST)
+{
+  /* UTC_TIME with non-zero seconds writes "YYMMDDhhmmssZ" via
+   * r_sprintf (13 chars + NUL = 14 bytes) but the encoder maps
+   * only 2 + 12 + 1 = 15 bytes total, with 13 reserved for the
+   * string. The NUL byte overflows by one. */
+  RAsn1BinEncoder * enc;
+  ruint8 * out;
+  rsize size;
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  ruint64 t = 1224083021ULL;  /* 2008-10-15 15:03:41 UTC */
+  ruint64 round = 0;
+
+  r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_encoder_add_utc_time (enc, t), ==, R_ASN1_ENCODER_OK);
+  r_assert_cmpptr ((out = r_asn1_bin_encoder_get_data (enc, &size)), !=, NULL);
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, out, size)), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_time (&tlv, &round), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpuint (round, ==, t);
+
+  r_asn1_bin_decoder_unref (dec);
+  r_free (out);
+  r_asn1_bin_encoder_unref (enc);
+}
+RTEST_END;
+
 RTEST (rasn1enc_der, integer_roundtrip_u32, RTEST_FAST)
 {
   /* Roundtrip various unsigned 32-bit values through encoder/decoder. */

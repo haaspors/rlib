@@ -679,13 +679,13 @@ r_asn1_bin_encoder_add_utc_time (RAsn1BinEncoder * enc, ruint64 time)
 
   y = yy % 100;
 
-  if ((ptr = r_asn1_bin_encoder_map (enc, 2 + 12 + 1)) != NULL) {
+  if ((ptr = r_asn1_bin_encoder_map (enc, 2 + 13 + 1)) != NULL) {
     ptr[0] = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_UTC_TIME);
     if (ss == 0) {
-      ptr[1] = r_sprintf ((rchar *)&ptr[2], "%2hhu%2hhu%2hhu%2hhu%2hhuZ",
+      ptr[1] = r_sprintf ((rchar *)&ptr[2], "%02hhu%02hhu%02hhu%02hhu%02hhuZ",
           y, m, d, hh, mm);
     } else {
-      ptr[1] = r_sprintf ((rchar *)&ptr[2], "%2hhu%2hhu%2hhu%2hhu%2hhu%2hhuZ",
+      ptr[1] = r_sprintf ((rchar *)&ptr[2], "%02hhu%02hhu%02hhu%02hhu%02hhu%02hhuZ",
           y, m, d, hh, mm, ss);
     }
 
