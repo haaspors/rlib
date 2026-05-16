@@ -723,6 +723,46 @@ r_elf_parser_symtbl64_sym64_get_data (RElfParser * parser, RElf64SHdr * shdr, RE
   return NULL;
 }
 
+RElf32Sym *
+r_elf_parser_symtbl32_find_sym_by_name (RElfParser * parser,
+    RElf32SHdr * shdr, const rchar * name, rssize size)
+{
+  ruint32 i, c;
+
+  if (R_UNLIKELY (parser == NULL || shdr == NULL || name == NULL)) return NULL;
+
+  c = r_elf_parser_symtbl32_sym_count (parser, shdr);
+  for (i = 0; i < c; i++) {
+    RElf32Sym * sym = r_elf_parser_symtbl32_get_sym (parser, shdr, i);
+    const rchar * sname;
+    if (sym == NULL) continue;
+    sname = r_elf_parser_symtbl32_sym32_get_name (parser, shdr, sym);
+    if (sname != NULL && r_strcmp_size (sname, -1, name, size) == 0)
+      return sym;
+  }
+  return NULL;
+}
+
+RElf64Sym *
+r_elf_parser_symtbl64_find_sym_by_name (RElfParser * parser,
+    RElf64SHdr * shdr, const rchar * name, rssize size)
+{
+  ruint64 i, c;
+
+  if (R_UNLIKELY (parser == NULL || shdr == NULL || name == NULL)) return NULL;
+
+  c = r_elf_parser_symtbl64_sym_count (parser, shdr);
+  for (i = 0; i < c; i++) {
+    RElf64Sym * sym = r_elf_parser_symtbl64_get_sym (parser, shdr, i);
+    const rchar * sname;
+    if (sym == NULL) continue;
+    sname = r_elf_parser_symtbl64_sym64_get_name (parser, shdr, sym);
+    if (sname != NULL && r_strcmp_size (sname, -1, name, size) == 0)
+      return sym;
+  }
+  return NULL;
+}
+
 ruint32
 r_elf_parser_relatbl32_rela_count (RElfParser * parser, RElf32SHdr * shdr)
 {

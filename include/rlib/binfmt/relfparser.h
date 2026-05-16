@@ -28,7 +28,6 @@
 /* FIXME: Add Rel API */
 /* FIXME: Figure out how to read non-native endianess formats */
 /* FIXME: Add high level API: */
-/*    * TODO: Add find symbol by name */
 /*    * TODO: Add find corresponding rel/rela section for text/data section */
 /* FIXME: Go over ELF chapter 2 loading and dynamic linking */
 /*    * TODO: Improve Program header API */
@@ -108,6 +107,10 @@ R_API rchar * r_elf_parser_symtbl32_sym32_get_name (RElfParser * parser, RElf32S
 R_API rchar * r_elf_parser_symtbl64_sym64_get_name (RElfParser * parser, RElf64SHdr * shdr, RElf64Sym * sym);
 R_API rpointer r_elf_parser_symtbl32_sym32_get_data (RElfParser * parser, RElf32SHdr * shdr, RElf32Sym * sym, rsize * size);
 R_API rpointer r_elf_parser_symtbl64_sym64_get_data (RElfParser * parser, RElf64SHdr * shdr, RElf64Sym * sym, rsize * size);
+R_API RElf32Sym * r_elf_parser_symtbl32_find_sym_by_name (RElfParser * parser,
+    RElf32SHdr * shdr, const rchar * name, rssize size);
+R_API RElf64Sym * r_elf_parser_symtbl64_find_sym_by_name (RElfParser * parser,
+    RElf64SHdr * shdr, const rchar * name, rssize size);
 
 /* ELF Section Header - relocation */
 /*R_API ruint32 r_elf_parser_reltbl32_rel_count (RElfParser * parser, RElf32SHdr * shdr);*/

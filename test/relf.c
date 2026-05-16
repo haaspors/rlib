@@ -248,6 +248,46 @@ RTEST (relf, symtbl, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (relf, symtbl_find_by_name, RTEST_FAST)
+{
+  /* Walk the symtab section and resolve a known symbol name to the
+   * exact entry that index lookup returns; verify the index-25 sym
+   * "__rtest_rrand_prng_data" and the global hidden marker symbol
+   * "_r_test_mark_position" round-trip cleanly. */
+  RElfParser * parser;
+  RElf64SHdr * hdr;
+  RElf64Sym * sym;
+
+  r_assert_cmpptr ((parser =
+        r_elf_parser_new_from_mem (elf_o, sizeof (elf_o))), !=, NULL);
+  r_assert_cmpptr ((hdr = r_elf_parser_get_shdr64 (parser, 17)), !=, NULL);
+
+  /* Match via -1 (strlen) and via explicit size. */
+  r_assert_cmpptr ((sym = r_elf_parser_symtbl64_find_sym_by_name (parser, hdr,
+        R_STR_WITH_SIZE_ARGS ("__rtest_rrand_prng_data"))), !=, NULL);
+  r_assert_cmpptr (sym, ==, r_elf_parser_symtbl64_get_sym (parser, hdr, 24));
+
+  r_assert_cmpptr ((sym = r_elf_parser_symtbl64_find_sym_by_name (parser, hdr,
+        "_r_test_mark_position", -1)), !=, NULL);
+  r_assert_cmpstr (r_elf_parser_symtbl64_sym64_get_name (parser, hdr, sym),
+      ==, "_r_test_mark_position");
+
+  /* Unknown name returns NULL. */
+  r_assert_cmpptr (r_elf_parser_symtbl64_find_sym_by_name (parser, hdr,
+        R_STR_WITH_SIZE_ARGS ("definitely_not_here")), ==, NULL);
+
+  /* NULL inputs are rejected. */
+  r_assert_cmpptr (r_elf_parser_symtbl64_find_sym_by_name (NULL, hdr,
+        R_STR_WITH_SIZE_ARGS ("anything")), ==, NULL);
+  r_assert_cmpptr (r_elf_parser_symtbl64_find_sym_by_name (parser, NULL,
+        R_STR_WITH_SIZE_ARGS ("anything")), ==, NULL);
+  r_assert_cmpptr (r_elf_parser_symtbl64_find_sym_by_name (parser, hdr,
+        NULL, 0), ==, NULL);
+
+  r_elf_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (relf, relocation, RTEST_FAST)
 {
   RElfParser * parser;
