@@ -228,11 +228,18 @@ r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * len
 {
   if (R_UNLIKELY (tlv == NULL || varray == NULL || len == NULL || *len < 2))
     return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv->len == 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
 
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
     rsize idx = 0;
     ruint64 cur;
     const ruint8 * ptr, * end = tlv->value + tlv->len;
+
+    /* The last octet of an OID encoding must terminate a subidentifier,
+     * so its continuation bit must be clear. */
+    if (R_UNLIKELY (tlv->value[tlv->len - 1] & 0x80))
+      return R_ASN1_DECODER_PARSE_ERROR;
 
     for (ptr = tlv->value, cur = 0, idx = 0; ptr < end; ptr++) {
       cur = (cur << 7) | (*ptr & 0x7F);
@@ -253,10 +260,6 @@ r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * len
         cur = 0;
       }
     }
-
-    /* last octet should not have 0x80bit/msb set! */
-    if (cur > 0)
-      return R_ASN1_DECODER_EOS;
 
     *len = idx;
     return R_ASN1_DECODER_OK;

@@ -187,6 +187,46 @@ RTEST (rasn1der, parse_integer_small, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_oid_malformed, RTEST_FAST)
+{
+  /* Three malformed OID encodings the parser must reject. */
+  static const ruint8 empty[]      = { 0x06, 0x00 };
+  static const ruint8 trailing_c[] = { 0x06, 0x01, 0x80 };
+  static const ruint8 all_c[]      = { 0x06, 0x03, 0x80, 0x80, 0x80 };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv;
+  ruint32 v[8];
+  rsize n;
+
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+          empty, sizeof (empty))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_OBJECT_IDENTIFIER));
+  n = R_N_ELEMENTS (v);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_oid (&tlv, v, &n), !=, R_ASN1_DECODER_OK);
+  r_asn1_bin_decoder_unref (dec);
+
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+          trailing_c, sizeof (trailing_c))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_OBJECT_IDENTIFIER));
+  n = R_N_ELEMENTS (v);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_oid (&tlv, v, &n), !=, R_ASN1_DECODER_OK);
+  r_asn1_bin_decoder_unref (dec);
+
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+          all_c, sizeof (all_c))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_OBJECT_IDENTIFIER));
+  n = R_N_ELEMENTS (v);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_oid (&tlv, v, &n), !=, R_ASN1_DECODER_OK);
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
 RTEST (rasn1der, parse_empty_integer, RTEST_FAST)
 {
   /* An INTEGER TLV with length 0 is malformed per spec, but the
