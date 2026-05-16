@@ -638,42 +638,101 @@ r_crypto_x509_write_ext_policy_constraints (const RCryptoX509Cert * cert,
   return ret;
 }
 
+/* Encode a dot-notation OID and emit it as a primitive OBJECT IDENTIFIER
+ * TLV. Cannot use r_asn1_bin_encoder_add_oid_rawsz here because the
+ * encoded binary form may legitimately contain 0x00 bytes (arcs of
+ * value zero), which would prematurely terminate r_strlen. */
+static rboolean
+r_x509_write_oid_from_dot (RAsn1BinEncoder * enc, const rchar * dot)
+{
+  ruint32 * arr;
+  ruint8 * buf;
+  rsize len, bufsize = 1, i, j, k;
+  rboolean ret = FALSE;
+
+  if ((arr = r_asn1_oid_from_dot (dot, -1, &len)) == NULL)
+    return FALSE;
+  if (len < 2)
+    goto out_arr;
+
+  for (i = 2; i < len; i++) {
+    ruint32 v = arr[i];
+    bufsize++;
+    while ((v >>= 7) != 0)
+      bufsize++;
+  }
+
+  if ((buf = r_malloc (bufsize)) == NULL)
+    goto out_arr;
+
+  buf[0] = (ruint8)(arr[0] * 40 + arr[1]);
+  j = 1;
+  for (i = 2; i < len; i++) {
+    ruint32 v = arr[i];
+    rsize nbytes = 1;
+    ruint32 tmp = v >> 7;
+    while (tmp != 0) {
+      nbytes++;
+      tmp >>= 7;
+    }
+    for (k = 0; k < nbytes; k++) {
+      ruint8 b = (v >> ((nbytes - 1 - k) * 7)) & 0x7F;
+      if (k + 1 < nbytes)
+        b |= 0x80;
+      buf[j + k] = b;
+    }
+    j += nbytes;
+  }
+
+  ret = r_asn1_bin_encoder_add_raw (enc,
+      R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OBJECT_IDENTIFIER),
+      buf, bufsize) == R_ASN1_ENCODER_OK;
+  r_free (buf);
+
+out_arr:
+  r_free (arr);
+  return ret;
+}
+
 static rboolean
 r_crypto_x509_write_ext_certificate_policies (const RCryptoX509Cert * cert,
     RAsn1BinEncoder * enc)
 {
   const ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
   rboolean ret = FALSE;
+  RSList * cur;
 
   if (cert->policies == NULL)
     return TRUE;
 
-  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
-    if (r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_CERTIFICATE_POLICIES) == R_ASN1_ENCODER_OK) {
-      if (r_asn1_bin_encoder_begin_octet_string (enc, 0) == R_ASN1_ENCODER_OK) {
-        if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
-          /* TODO: FIXME */
-#if 0
-          RSList * cur;
-          for (cur = cert->policies; cur != NULL; cur = cur->next) {
-            if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
-              const rchar * oiddot = cur->data;
-              r_asn1_bin_encoder_add_oid_rawsz (enc, );
-              r_asn1_bin_encoder_end_constructed (enc);
-            }
-          }
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) != R_ASN1_ENCODER_OK)
+    return FALSE;
 
-          ret = TRUE;
-#endif
-          r_asn1_bin_encoder_end_constructed (enc);
-        }
-        r_asn1_bin_encoder_end_octet_string (enc);
+  if (r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_CERTIFICATE_POLICIES) != R_ASN1_ENCODER_OK)
+    goto end_outer;
+
+  if (r_asn1_bin_encoder_begin_octet_string (enc, 0) != R_ASN1_ENCODER_OK)
+    goto end_outer;
+
+  /* The reader iterates per-policy SEQUENCEs at the OCTET_STRING level,
+   * each containing the PolicyInformation SEQUENCE that wraps the
+   * policyIdentifier OID. Match that shape. */
+  ret = TRUE;
+  for (cur = cert->policies; cur != NULL && ret; cur = cur->next) {
+    ret = FALSE;
+    if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+      if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+        ret = r_x509_write_oid_from_dot (enc, (const rchar *)cur->data);
+        r_asn1_bin_encoder_end_constructed (enc);
       }
+      r_asn1_bin_encoder_end_constructed (enc);
     }
-
-    r_asn1_bin_encoder_end_constructed (enc);
   }
 
+  r_asn1_bin_encoder_end_octet_string (enc);
+
+end_outer:
+  r_asn1_bin_encoder_end_constructed (enc);
   return ret;
 }
 

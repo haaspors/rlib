@@ -202,6 +202,27 @@ RTEST (rcryptocert, valid_x509v3, RTEST_FAST)
 
   r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_VERIFY_FAILED);
 
+  /* Round-trip via the encoder: re-export the cert, then parse the
+   * exported bytes back. Verifies the certificatePolicies extension
+   * write path emits a structure the reader can parse. */
+  {
+    RAsn1BinEncoder * enc;
+    ruint8 * round = NULL;
+    rsize roundsize = 0;
+    RCryptoCert * cert2;
+
+    r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+    r_assert_cmpint (r_crypto_cert_export (cert, enc), ==, R_CRYPTO_OK);
+    r_assert_cmpptr ((round = r_asn1_bin_encoder_get_data (enc, &roundsize)),
+        !=, NULL);
+    r_asn1_bin_encoder_unref (enc);
+
+    r_assert_cmpptr ((cert2 = r_crypto_x509_cert_new_take (round, roundsize)),
+        !=, NULL);
+    r_assert (r_crypto_x509_cert_has_policy (cert2, "2.16.840.1.101.3.2.1.48.1"));
+    r_crypto_cert_unref (cert2);
+  }
+
   r_crypto_cert_unref (cert);
 }
 RTEST_END;
