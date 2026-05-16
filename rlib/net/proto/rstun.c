@@ -210,7 +210,7 @@ r_stun_attr_tlv_next (rconstpointer buf, RStunAttrTLV * tlv)
   start = tlv->value + tlv->len;
   if (tlv->len & 0x3) start += (R_STUN_ATTR_TLV_HEADER_SIZE - (tlv->len & 0x3));
 
-  if ((ret = ((rsize)r_stun_msg_len (buf) > RPOINTER_TO_SIZE (start) - RPOINTER_TO_SIZE (ptr)))) {
+  if ((ret = ((rsize)r_stun_msg_len (buf) >= RPOINTER_TO_SIZE (start) - RPOINTER_TO_SIZE (ptr) + R_STUN_ATTR_TLV_HEADER_SIZE))) {
     tlv->start  = start;
     tlv->type   = RUINT16_FROM_BE (*(ruint16 *)tlv->start);
     tlv->len    = RUINT16_FROM_BE (*((ruint16 *)(tlv->start + 2)));

@@ -415,3 +415,28 @@ RTEST (rstun, recreate_binding_success_resp, RTEST_FAST)
 RTEST_END;
 
 
+
+RTEST (rstun, attr_tlv_next_oob_at_end, RTEST_FAST)
+{
+  /* Body length 9 with a length-4 TLV: the next-TLV pointer lands at
+   * body offset 8, just one byte short of the four-byte header.  The
+   * iterator must reject rather than read past the buffer. */
+  static const ruint8 pkt[] = {
+    0x00, 0x01, 0x00, 0x09,             /* msg type=binding, len=9 */
+    0x21, 0x12, 0xa4, 0x42,             /* magic */
+    0x00, 0x01, 0x02, 0x03,             /* transaction id (12 bytes) */
+    0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b,
+    /* body (9 bytes) */
+    0x00, 0x01, 0x00, 0x04,             /* tlv type, len=4 */
+    0x00, 0x00, 0x00, 0x00,             /* value */
+    0x00                                /* trailing byte */
+  };
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+
+  r_assert (r_stun_is_valid_msg (pkt, sizeof (pkt)));
+  r_assert (r_stun_attr_tlv_first (pkt, &tlv));
+  r_assert_cmpuint (tlv.len, ==, 4);
+  r_assert (!r_stun_attr_tlv_next (pkt, &tlv));
+}
+RTEST_END;
