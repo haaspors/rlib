@@ -55,3 +55,29 @@ RTEST (rasn1oid, has_dot_prefix, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1oid, from_dot_single_arc, RTEST_FAST)
+{
+  /* A valid OID has at least two arcs. "123" is a single arc and
+   * must be rejected. */
+  r_assert_cmpptr (r_asn1_oid_from_dot ("123", -1, NULL), ==, NULL);
+  r_assert_cmpptr (r_asn1_oid_from_dot ("12345", -1, NULL), ==, NULL);
+}
+RTEST_END;
+
+RTEST (rasn1oid, from_dot_non_null_terminated, RTEST_FAST)
+{
+  /* Heap-allocated buffer with NO NUL terminator: r_str_to_uint32
+   * inside r_asn1_oid_from_dot must not read past oidsize. */
+  static const rchar src[] = "1.2.840";
+  rchar * buf = r_memdup (src, r_strlen (src));   /* no trailing NUL */
+  rsize len;
+  ruint32 * res;
+
+  r_assert_cmpptr ((res = r_asn1_oid_from_dot (buf, r_strlen (src), &len)),
+      !=, NULL);
+  r_assert_cmpuint (len, ==, 3);
+  r_free (res);
+  r_free (buf);
+}
+RTEST_END;
+

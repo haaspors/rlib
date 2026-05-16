@@ -51,8 +51,9 @@ ruint32 *
 r_asn1_oid_from_dot (const rchar * oid, rssize oidsize, rsize * outlen)
 {
   const rchar * ptr, * end;
-  ruint32 * ret;
-  rsize len;
+  rchar * buf;
+  ruint32 * ret = NULL;
+  rsize len = 0;
 
   if (R_UNLIKELY (oid == NULL || (oidsize >= 0 && oidsize <= 2)))
     return NULL;
@@ -60,28 +61,42 @@ r_asn1_oid_from_dot (const rchar * oid, rssize oidsize, rsize * outlen)
   if (oidsize < 0)
     oidsize = r_strlen (oid);
 
+  /* Parse on a NUL-terminated copy: r_str_to_uint32 scans digits
+   * until it hits a non-digit or NUL and would otherwise read past
+   * oidsize when the caller passes a non-NUL-terminated buffer. */
+  if (R_UNLIKELY ((buf = r_strndup (oid, oidsize)) == NULL))
+    return NULL;
+
   if ((ret = r_mem_new_n (ruint32, (oidsize + 1) / 2)) != NULL) {
-    for (ptr = oid, len = 0; ptr < oid+oidsize && *ptr; ptr = end+1) {
+    for (ptr = buf; ptr < buf+oidsize && *ptr; ptr = end+1) {
       RStrParse res;
       ret[len++] = r_str_to_uint32 (ptr, &end, 10, &res);
 
-      if (res == R_STR_PARSE_OK && end <= oid+oidsize) {
-        while (end < oid+oidsize && r_ascii_isspace (*end))
+      if (res == R_STR_PARSE_OK && end <= buf+oidsize) {
+        while (end < buf+oidsize && r_ascii_isspace (*end))
           end++;
-        if (end == oid+oidsize)
+        if (end == buf+oidsize)
           break;
-        if (*end == '.' && end+1 < oid+oidsize)
+        if (*end == '.' && end+1 < buf+oidsize)
           continue;
       }
 
       r_free (ret);
-      return NULL;
+      ret = NULL;
+      break;
     }
 
-    if (outlen != NULL)
-      *outlen = len;
+    if (ret != NULL) {
+      if (R_UNLIKELY (len < 2)) {
+        r_free (ret);
+        ret = NULL;
+      } else if (outlen != NULL) {
+        *outlen = len;
+      }
+    }
   }
 
+  r_free (buf);
   return ret;
 }
 
