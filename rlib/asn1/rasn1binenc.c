@@ -343,20 +343,20 @@ r_asn1_bin_encoder_add_integer_i32 (RAsn1BinEncoder * enc, rint32 value)
   if (R_UNLIKELY (enc == NULL)) return R_ASN1_ENCODER_INVALID_ARG;
 
   if ((ptr = r_asn1_bin_encoder_map (enc, 2 + sizeof (ruint32))) != NULL) {
-    ruint32 u = -value - 1;
+    ruint32 u = (ruint32) -(value + 1);
 
     ptr[0] = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_INTEGER);
 
-    if (u < 0x000000ff) {
+    if (u < 0x80) {
       u ^= RUINT32_MAX;
       ptr[1] = 1;
       ptr[2] = (ruint8)((u      ) & 0xff);
-    } else if (u < 0x0000ffff) {
+    } else if (u < 0x8000) {
       u ^= RUINT32_MAX;
       ptr[1] = 2;
       ptr[2] = (ruint8)((u >>  8) & 0xff);
       ptr[3] = (ruint8)((u      ) & 0xff);
-    } else if (u < 0x00ffffff) {
+    } else if (u < 0x800000) {
       u ^= RUINT32_MAX;
       ptr[1] = 3;
       ptr[2] = (ruint8)((u >> 16) & 0xff);
@@ -385,34 +385,37 @@ r_asn1_bin_encoder_add_integer_u32 (RAsn1BinEncoder * enc, ruint32 value)
 
   if (R_UNLIKELY (enc == NULL)) return R_ASN1_ENCODER_INVALID_ARG;
 
-  if ((ptr = r_asn1_bin_encoder_map (enc, 2 + sizeof (ruint32))) != NULL) {
+  if ((ptr = r_asn1_bin_encoder_map (enc, 3 + sizeof (ruint32))) != NULL) {
     ptr[0] = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_INTEGER);
 
-    if (value < 0x000000ff) {
+    /* ASN.1 INTEGER is signed in encoding, so when the high bit of
+     * the most significant byte would be set the value must be
+     * widened by a leading 0x00 to keep it positive. */
+    if (value < 0x80) {
       ptr[1] = 1;
-      ptr[2] = (ruint8)((value      ) & 0x7f);
-    } else if (value < 0x0000ffff) {
+      ptr[2] = (ruint8)value;
+    } else if (value < 0x8000) {
       ptr[1] = 2;
-      ptr[2] = (ruint8)((value >>  8) & 0x7f);
-      ptr[3] = (ruint8)((value      ) & 0x7f);
-    } else if (value < 0x00ffffff) {
+      ptr[2] = (ruint8)(value >>  8);
+      ptr[3] = (ruint8)value;
+    } else if (value < 0x800000) {
       ptr[1] = 3;
-      ptr[2] = (ruint8)((value >> 16) & 0x7f);
-      ptr[3] = (ruint8)((value >>  8) & 0x7f);
-      ptr[4] = (ruint8)((value      ) & 0x7f);
-    } else if (value < 0xffffffff) {
+      ptr[2] = (ruint8)(value >> 16);
+      ptr[3] = (ruint8)(value >>  8);
+      ptr[4] = (ruint8)value;
+    } else if (value < 0x80000000) {
       ptr[1] = 4;
-      ptr[2] = (ruint8)((value >> 24) & 0x7f);
-      ptr[3] = (ruint8)((value >> 16) & 0x7f);
-      ptr[4] = (ruint8)((value >>  8) & 0x7f);
-      ptr[5] = (ruint8)((value      ) & 0x7f);
+      ptr[2] = (ruint8)(value >> 24);
+      ptr[3] = (ruint8)(value >> 16);
+      ptr[4] = (ruint8)(value >>  8);
+      ptr[5] = (ruint8)value;
     } else {
       ptr[1] = 5;
       ptr[2] = 0x00;
-      ptr[3] = (ruint8)((value >> 24) & 0x7f);
-      ptr[4] = (ruint8)((value >> 16) & 0x7f);
-      ptr[5] = (ruint8)((value >>  8) & 0x7f);
-      ptr[6] = (ruint8)((value      ) & 0x7f);
+      ptr[3] = (ruint8)(value >> 24);
+      ptr[4] = (ruint8)(value >> 16);
+      ptr[5] = (ruint8)(value >>  8);
+      ptr[6] = (ruint8)value;
     }
 
     r_asn1_bin_encoder_unmap (enc, 2 + ptr[1]);
@@ -433,33 +436,33 @@ r_asn1_bin_encoder_add_integer_i64 (RAsn1BinEncoder * enc, rint64 value)
   if (R_UNLIKELY (enc == NULL)) return R_ASN1_ENCODER_INVALID_ARG;
 
   if ((ptr = r_asn1_bin_encoder_map (enc, 2 + sizeof (ruint64))) != NULL) {
-    ruint64 u = -value - 1;
+    ruint64 u = (ruint64) -(value + 1);
 
     ptr[0] = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_INTEGER);
 
-    if (u < RUINT64_CONSTANT (0x00000000000000ff)) {
+    if (u < RUINT64_CONSTANT (0x80)) {
       u ^= RUINT64_MAX;
       ptr[1] = 1;
       ptr[2] = (ruint8)((u      ) & 0xff);
-    } else if (u < RUINT64_CONSTANT (0x000000000000ffff)) {
+    } else if (u < RUINT64_CONSTANT (0x8000)) {
       u ^= RUINT64_MAX;
       ptr[1] = 2;
       ptr[2] = (ruint8)((u >>  8) & 0xff);
       ptr[3] = (ruint8)((u      ) & 0xff);
-    } else if (u < RUINT64_CONSTANT (0x0000000000ffffff)) {
+    } else if (u < RUINT64_CONSTANT (0x800000)) {
       u ^= RUINT64_MAX;
       ptr[1] = 3;
       ptr[2] = (ruint8)((u >> 16) & 0xff);
       ptr[3] = (ruint8)((u >>  8) & 0xff);
       ptr[4] = (ruint8)((u      ) & 0xff);
-    } else if (u < RUINT64_CONSTANT (0x00000000ffffffff)) {
+    } else if (u < RUINT64_CONSTANT (0x80000000)) {
       u ^= RUINT64_MAX;
       ptr[1] = 4;
       ptr[2] = (ruint8)((u >> 24) & 0xff);
       ptr[3] = (ruint8)((u >> 16) & 0xff);
       ptr[4] = (ruint8)((u >>  8) & 0xff);
       ptr[5] = (ruint8)((u      ) & 0xff);
-    } else if (u < RUINT64_CONSTANT (0x000000ffffffffff)) {
+    } else if (u < RUINT64_CONSTANT (0x8000000000)) {
       u ^= RUINT64_MAX;
       ptr[1] = 5;
       ptr[2] = (ruint8)((u >> 32) & 0xff);
@@ -467,7 +470,7 @@ r_asn1_bin_encoder_add_integer_i64 (RAsn1BinEncoder * enc, rint64 value)
       ptr[4] = (ruint8)((u >> 16) & 0xff);
       ptr[5] = (ruint8)((u >>  8) & 0xff);
       ptr[6] = (ruint8)((u      ) & 0xff);
-    } else if (u < RUINT64_CONSTANT (0x0000ffffffffffff)) {
+    } else if (u < RUINT64_CONSTANT (0x800000000000)) {
       u ^= RUINT64_MAX;
       ptr[1] = 6;
       ptr[2] = (ruint8)((u >> 40) & 0xff);
@@ -476,7 +479,7 @@ r_asn1_bin_encoder_add_integer_i64 (RAsn1BinEncoder * enc, rint64 value)
       ptr[5] = (ruint8)((u >> 16) & 0xff);
       ptr[6] = (ruint8)((u >>  8) & 0xff);
       ptr[7] = (ruint8)((u      ) & 0xff);
-    } else if (u < RUINT64_CONSTANT (0x00ffffffffffffff)) {
+    } else if (u < RUINT64_CONSTANT (0x80000000000000)) {
       u ^= RUINT64_MAX;
       ptr[1] = 7;
       ptr[2] = (ruint8)((u >> 48) & 0xff);
@@ -513,76 +516,75 @@ r_asn1_bin_encoder_add_integer_u64 (RAsn1BinEncoder * enc, ruint64 value)
 
   if (R_UNLIKELY (enc == NULL)) return R_ASN1_ENCODER_INVALID_ARG;
 
-  if ((ptr = r_asn1_bin_encoder_map (enc, 2 + sizeof (ruint64))) != NULL) {
+  if ((ptr = r_asn1_bin_encoder_map (enc, 3 + sizeof (ruint64))) != NULL) {
     ptr[0] = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_INTEGER);
 
-    if (value < RUINT64_CONSTANT (0x00000000000000ff)) {
+    /* ASN.1 INTEGER is signed in encoding, so when the high bit of
+     * the most significant byte would be set the value must be
+     * widened by a leading 0x00 to keep it positive. */
+    if (value < RUINT64_CONSTANT (0x80)) {
       ptr[1] = 1;
-      ptr[2] = (ruint8)((value      ) & 0x7f);
-      r_asn1_bin_encoder_unmap (enc, 3);
-    } else if (value < RUINT64_CONSTANT (0x000000000000ffff)) {
+      ptr[2] = (ruint8)value;
+    } else if (value < RUINT64_CONSTANT (0x8000)) {
       ptr[1] = 2;
-      ptr[2] = (ruint8)((value >>  8) & 0x7f);
-      ptr[3] = (ruint8)((value      ) & 0x7f);
-      r_asn1_bin_encoder_unmap (enc, 4);
-    } else if (value < RUINT64_CONSTANT (0x0000000000ffffff)) {
+      ptr[2] = (ruint8)(value >>  8);
+      ptr[3] = (ruint8)value;
+    } else if (value < RUINT64_CONSTANT (0x800000)) {
       ptr[1] = 3;
-      ptr[2] = (ruint8)((value >> 16) & 0x7f);
-      ptr[3] = (ruint8)((value >>  8) & 0x7f);
-      ptr[4] = (ruint8)((value      ) & 0x7f);
-      r_asn1_bin_encoder_unmap (enc, 5);
-    } else if (value < RUINT64_CONSTANT (0x00000000ffffffff)) {
+      ptr[2] = (ruint8)(value >> 16);
+      ptr[3] = (ruint8)(value >>  8);
+      ptr[4] = (ruint8)value;
+    } else if (value < RUINT64_CONSTANT (0x80000000)) {
       ptr[1] = 4;
-      ptr[2] = (ruint8)((value >> 24) & 0x7f);
-      ptr[3] = (ruint8)((value >> 16) & 0x7f);
-      ptr[4] = (ruint8)((value >>  8) & 0x7f);
-      ptr[5] = (ruint8)((value      ) & 0x7f);
-      r_asn1_bin_encoder_unmap (enc, 6);
-    } else if (value < RUINT64_CONSTANT (0x000000ffffffffff)) {
+      ptr[2] = (ruint8)(value >> 24);
+      ptr[3] = (ruint8)(value >> 16);
+      ptr[4] = (ruint8)(value >>  8);
+      ptr[5] = (ruint8)value;
+    } else if (value < RUINT64_CONSTANT (0x8000000000)) {
       ptr[1] = 5;
-      ptr[2] = (ruint8)((value >> 32) & 0xff);
-      ptr[3] = (ruint8)((value >> 24) & 0xff);
-      ptr[4] = (ruint8)((value >> 16) & 0xff);
-      ptr[5] = (ruint8)((value >>  8) & 0xff);
-      ptr[6] = (ruint8)((value      ) & 0xff);
-    } else if (value < RUINT64_CONSTANT (0x0000ffffffffffff)) {
+      ptr[2] = (ruint8)(value >> 32);
+      ptr[3] = (ruint8)(value >> 24);
+      ptr[4] = (ruint8)(value >> 16);
+      ptr[5] = (ruint8)(value >>  8);
+      ptr[6] = (ruint8)value;
+    } else if (value < RUINT64_CONSTANT (0x800000000000)) {
       ptr[1] = 6;
-      ptr[2] = (ruint8)((value >> 40) & 0xff);
-      ptr[3] = (ruint8)((value >> 32) & 0xff);
-      ptr[4] = (ruint8)((value >> 24) & 0xff);
-      ptr[5] = (ruint8)((value >> 16) & 0xff);
-      ptr[6] = (ruint8)((value >>  8) & 0xff);
-      ptr[7] = (ruint8)((value      ) & 0xff);
-    } else if (value < RUINT64_CONSTANT (0x00ffffffffffffff)) {
+      ptr[2] = (ruint8)(value >> 40);
+      ptr[3] = (ruint8)(value >> 32);
+      ptr[4] = (ruint8)(value >> 24);
+      ptr[5] = (ruint8)(value >> 16);
+      ptr[6] = (ruint8)(value >>  8);
+      ptr[7] = (ruint8)value;
+    } else if (value < RUINT64_CONSTANT (0x80000000000000)) {
       ptr[1] = 7;
-      ptr[2] = (ruint8)((value >> 48) & 0xff);
-      ptr[3] = (ruint8)((value >> 40) & 0xff);
-      ptr[4] = (ruint8)((value >> 32) & 0xff);
-      ptr[5] = (ruint8)((value >> 24) & 0xff);
-      ptr[6] = (ruint8)((value >> 16) & 0xff);
-      ptr[7] = (ruint8)((value >>  8) & 0xff);
-      ptr[8] = (ruint8)((value      ) & 0xff);
-    } else if (value < RUINT64_CONSTANT (0x7fffffffffffffff)) {
+      ptr[2] = (ruint8)(value >> 48);
+      ptr[3] = (ruint8)(value >> 40);
+      ptr[4] = (ruint8)(value >> 32);
+      ptr[5] = (ruint8)(value >> 24);
+      ptr[6] = (ruint8)(value >> 16);
+      ptr[7] = (ruint8)(value >>  8);
+      ptr[8] = (ruint8)value;
+    } else if (value < RUINT64_CONSTANT (0x8000000000000000)) {
       ptr[1] = 8;
-      ptr[2] = (ruint8)((value >> 56) & 0xff);
-      ptr[3] = (ruint8)((value >> 48) & 0xff);
-      ptr[4] = (ruint8)((value >> 40) & 0xff);
-      ptr[5] = (ruint8)((value >> 32) & 0xff);
-      ptr[6] = (ruint8)((value >> 24) & 0xff);
-      ptr[7] = (ruint8)((value >> 16) & 0xff);
-      ptr[8] = (ruint8)((value >>  8) & 0xff);
-      ptr[9] = (ruint8)((value      ) & 0xff);
+      ptr[2] = (ruint8)(value >> 56);
+      ptr[3] = (ruint8)(value >> 48);
+      ptr[4] = (ruint8)(value >> 40);
+      ptr[5] = (ruint8)(value >> 32);
+      ptr[6] = (ruint8)(value >> 24);
+      ptr[7] = (ruint8)(value >> 16);
+      ptr[8] = (ruint8)(value >>  8);
+      ptr[9] = (ruint8)value;
     } else {
       ptr[1] = 9;
       ptr[2] = 0x00;
-      ptr[3] = (ruint8)((value >> 56) & 0xff);
-      ptr[4] = (ruint8)((value >> 48) & 0xff);
-      ptr[5] = (ruint8)((value >> 40) & 0xff);
-      ptr[6] = (ruint8)((value >> 32) & 0xff);
-      ptr[7] = (ruint8)((value >> 24) & 0xff);
-      ptr[8] = (ruint8)((value >> 16) & 0xff);
-      ptr[9] = (ruint8)((value >>  8) & 0xff);
-      ptr[10] = (ruint8)((value     ) & 0xff);
+      ptr[3] = (ruint8)(value >> 56);
+      ptr[4] = (ruint8)(value >> 48);
+      ptr[5] = (ruint8)(value >> 40);
+      ptr[6] = (ruint8)(value >> 32);
+      ptr[7] = (ruint8)(value >> 24);
+      ptr[8] = (ruint8)(value >> 16);
+      ptr[9] = (ruint8)(value >>  8);
+      ptr[10] = (ruint8)value;
     }
 
     r_asn1_bin_encoder_unmap (enc, 2 + ptr[1]);

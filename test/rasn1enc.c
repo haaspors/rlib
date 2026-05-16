@@ -159,3 +159,118 @@ RTEST (rasn1enc_der, distinguished_name, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (rasn1enc_der, integer_roundtrip_u32, RTEST_FAST)
+{
+  /* Roundtrip various unsigned 32-bit values through encoder/decoder. */
+  static const ruint32 cases[] = {
+    0, 1, 127, 128, 255, 256, 0x12FF, 0x80, 0x8000, 0x800000, 0x80000000,
+    0x12345678, 0x12FF, 0xCAFEBABEu, 0xFFFFFFFFu,
+  };
+  ruint i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    RAsn1BinEncoder * enc;
+    RAsn1BinDecoder * dec;
+    RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+    ruint8 * out;
+    rsize size;
+    ruint32 round = 0;
+
+    r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_encoder_add_integer_u32 (enc, cases[i]),
+        ==, R_ASN1_ENCODER_OK);
+    r_assert_cmpptr ((out = r_asn1_bin_encoder_get_data (enc, &size)), !=, NULL);
+
+    r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, out, size)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+    r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
+    r_assert_cmpint (r_asn1_bin_tlv_parse_integer_u32 (&tlv, &round),
+        ==, R_ASN1_DECODER_OK);
+    r_assert_cmpuint (round, ==, cases[i]);
+
+    r_asn1_bin_decoder_unref (dec);
+    r_free (out);
+    r_asn1_bin_encoder_unref (enc);
+  }
+}
+RTEST_END;
+
+RTEST (rasn1enc_der, integer_roundtrip_u64, RTEST_FAST)
+{
+  static const ruint64 cases[] = {
+    0, 1, 127, 128, 255, 256, 0x12FF, 0x8000, 0x800000,
+    RUINT64_CONSTANT (0x80000000),
+    RUINT64_CONSTANT (0x8000000000),
+    RUINT64_CONSTANT (0x800000000000),
+    RUINT64_CONSTANT (0x80000000000000),
+    RUINT64_CONSTANT (0x8000000000000000),
+    RUINT64_CONSTANT (0xFFFFFFFFFFFFFFFF),
+  };
+  ruint i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    RAsn1BinEncoder * enc;
+    RAsn1BinDecoder * dec;
+    RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+    ruint8 * out;
+    rsize size;
+    ruint64 round = 0;
+
+    r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_encoder_add_integer_u64 (enc, cases[i]),
+        ==, R_ASN1_ENCODER_OK);
+    r_assert_cmpptr ((out = r_asn1_bin_encoder_get_data (enc, &size)), !=, NULL);
+
+    r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, out, size)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+    r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
+    r_assert_cmpint (r_asn1_bin_tlv_parse_integer_u64 (&tlv, &round),
+        ==, R_ASN1_DECODER_OK);
+    r_assert_cmpuint (round, ==, cases[i]);
+
+    r_asn1_bin_decoder_unref (dec);
+    r_free (out);
+    r_asn1_bin_encoder_unref (enc);
+  }
+}
+RTEST_END;
+
+RTEST (rasn1enc_der, integer_roundtrip_negative, RTEST_FAST)
+{
+  static const rint64 cases[] = {
+    -1, -127, -128, -129, -255, -256, -32768, -32769,
+    -8388608LL, -8388609LL,
+    -2147483647LL - 1,
+    -2147483648LL - 1LL,
+    -549755813888LL,
+    -140737488355328LL,
+  };
+  ruint i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    RAsn1BinEncoder * enc;
+    RAsn1BinDecoder * dec;
+    RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+    ruint8 * out;
+    rsize size;
+    rint64 round = 0;
+
+    r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_encoder_add_integer_i64 (enc, cases[i]),
+        ==, R_ASN1_ENCODER_OK);
+    r_assert_cmpptr ((out = r_asn1_bin_encoder_get_data (enc, &size)), !=, NULL);
+
+    r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, out, size)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+    r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
+    r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i64 (&tlv, &round),
+        ==, R_ASN1_DECODER_OK);
+    r_assert_cmpint (round, ==, cases[i]);
+
+    r_asn1_bin_decoder_unref (dec);
+    r_free (out);
+    r_asn1_bin_encoder_unref (enc);
+  }
+}
+RTEST_END;
