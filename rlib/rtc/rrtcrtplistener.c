@@ -183,16 +183,21 @@ r_rtc_rtp_listener_add_sender (RRtcRtpListener * l, RRtcRtpSender * s)
 RRtcError
 r_rtc_rtp_listener_remove_receiver (RRtcRtpListener * l, RRtcRtpReceiver * r)
 {
+  /* Drop any ssrc/pt/extension demux mappings that pointed at this
+   * receiver before forgetting it -- otherwise the next packet matching
+   * one of those keys would dispatch to a now-stale pointer. */
+  r_hash_table_remove_all_values (l->recv_ssrcmap, r);
+  r_hash_table_remove_all_values (l->recv_extmap, r);
+  r_hash_table_remove_all_values (l->recv_ptmap, r);
   r_ptr_array_remove_first_fast (l->recv, r);
-  /* FIXME: Remove from recv_* hash tables as well! */
   return R_RTC_OK;
 }
 
 RRtcError
 r_rtc_rtp_listener_remove_sender (RRtcRtpListener * l, RRtcRtpSender * s)
 {
+  r_hash_table_remove_all_values (l->send_ssrcmap, s);
   r_ptr_array_remove_first_fast (l->send, s);
-  /* FIXME: Remove from send_* hash tables as well! */
   return R_RTC_OK;
 }
 

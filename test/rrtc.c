@@ -397,6 +397,57 @@ RTEST (rrtc, fake_ice_transport, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST_F (rrtc, receiver_stop_clears_ssrc_demux, RTEST_FAST)
+{
+  /* Starting a receiver with an explicit SSRC populates the listener's
+   * recv_ssrcmap with that SSRC -> receiver mapping.  Stopping the
+   * receiver used to leave the map populated (FIXME: Remove from recv_*
+   * hash tables as well!), so a subsequent RTP packet with the same
+   * SSRC would still dispatch to the dead receiver.  After stopping,
+   * a packet matching that SSRC must NOT land in the receiver's queue. */
+  static const ruint8 rtp_ssrc_deadbeef[] = {
+    0x80, 0x00,              /* v=2 p=0 x=0 cc=0, m=0 pt=0 */
+    0x00, 0x01,              /* seq = 1 */
+    0x00, 0x00, 0x00, 0x00,  /* timestamp */
+    0xde, 0xad, 0xbe, 0xef,  /* SSRC */
+    0x00                     /* one byte payload */
+  };
+  RBuffer * buf;
+  RRtcRtpParameters * p;
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_encoding_simple (p, 0xdeadbeef,
+        R_RTP_PT_PCMU), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, p, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->bob.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
+  /* Sanity: an RTP packet stamped with the registered SSRC reaches bob.rtp. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_ssrc_deadbeef,
+          sizeof (rtp_ssrc_deadbeef))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 1);
+  r_buffer_unref (buf);
+
+  /* Stop bob's receiver.  This must purge the listener's ssrc map. */
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->bob.recv), ==, R_RTC_OK);
+
+  /* Send another RTP packet with the same SSRC.  Without the fix the
+   * stale ssrc->receiver mapping still dispatches to the (stopped but
+   * test-held) receiver and bumps bob.rtp to 2. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_ssrc_deadbeef,
+          sizeof (rtp_ssrc_deadbeef))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 1);
+  r_buffer_unref (buf);
+
+  r_assert_cmpint (r_rtc_rtp_sender_stop (fixture->alice.send), ==, R_RTC_OK);
+
+  while ((buf = r_queue_pop (&fixture->bob.rtp)) != NULL)
+    r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST_F (rrtc, send_recv, RTEST_FAST)
 {
   RBuffer * buf, * pop;
