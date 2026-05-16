@@ -107,9 +107,34 @@ r_resolve_sync (const rchar * host, const rchar * service,
     if (res != NULL)
       *res = R_RESOLVE_OK;
   } else {
-    /* FIXME: set result based on r! */
-    if (res != NULL)
-      *res = R_RESOLVE_ERROR;
+    if (res != NULL) {
+      RResolveResult mapped;
+      switch (r) {
+#ifdef EAI_BADFLAGS
+        case EAI_BADFLAGS:    mapped = R_RESOLVE_BAD_FLAGS;     break;
+#endif
+#ifdef EAI_NONAME
+        case EAI_NONAME:      mapped = R_RESOLVE_NO_DATA;       break;
+#endif
+#if defined (EAI_NODATA) && (!defined (EAI_NONAME) || EAI_NODATA != EAI_NONAME)
+        case EAI_NODATA:      mapped = R_RESOLVE_NO_DATA;       break;
+#endif
+#ifdef EAI_SERVICE
+        case EAI_SERVICE:     mapped = R_RESOLVE_NO_DATA;       break;
+#endif
+#ifdef EAI_FAMILY
+        case EAI_FAMILY:      mapped = R_RESOLVE_BAD_HINTS;     break;
+#endif
+#ifdef EAI_SOCKTYPE
+        case EAI_SOCKTYPE:    mapped = R_RESOLVE_BAD_HINTS;     break;
+#endif
+#ifdef EAI_MEMORY
+        case EAI_MEMORY:      mapped = R_RESOLVE_OOM;           break;
+#endif
+        default:              mapped = R_RESOLVE_ERROR;         break;
+      }
+      *res = mapped;
+    }
   }
 #endif
 

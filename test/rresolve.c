@@ -1,5 +1,26 @@
 #include <rlib/rev.h>
 
+RTEST (rresolve, sync_error_translation, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* getaddrinfo's EAI_BADFLAGS / EAI_NONAME error codes were collapsed
+   * into the generic R_RESOLVE_ERROR; verify the specific results now
+   * land in the right enum slots. */
+  RResolveResult res;
+
+  /* Bogus flag bit -> EAI_BADFLAGS. */
+  r_assert_cmpptr (r_resolve_sync ("127.0.0.1", NULL,
+        (RResolveAddrFlags) 0x40000000, NULL, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_RESOLVE_BAD_FLAGS);
+
+  /* A name that should never resolve to anything via DNS / NSS;
+   * NUMERICHOST forces resolution to treat the literal as already-numeric,
+   * so a non-IP literal short-circuits with EAI_NONAME. */
+  r_assert_cmpptr (r_resolve_sync ("not-a-numeric-host", NULL,
+        R_RESOLVE_ADDR_FLAG_NUMERICHOST, NULL, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_RESOLVE_NO_DATA);
+}
+RTEST_END;
+
 RTEST (rresolve, sync_addr_host, RTEST_FAST | RTEST_SYSTEM)
 {
   RResolveResult res;
