@@ -529,8 +529,17 @@ r_asn1_bin_tlv_parse_distinguished_name (RAsn1BinDecoder * dec,
 {
   RAsn1DecoderStatus ret;
 
+  if (R_UNLIKELY (tlv == NULL || name == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
+
   if ((ret = r_asn1_bin_decoder_into (dec, tlv)) == R_ASN1_DECODER_OK) {
     RString * strbld = r_string_new_sized (256);
+
+    if (R_UNLIKELY (strbld == NULL)) {
+      r_asn1_bin_decoder_out (dec, tlv);
+      *name = NULL;
+      return R_ASN1_DECODER_OOM;
+    }
 
     while (ret == R_ASN1_DECODER_OK &&
         R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SET) &&
