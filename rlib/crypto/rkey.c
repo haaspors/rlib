@@ -342,6 +342,32 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   return ret;
 }
 
+/* Decode an ECPrivateKey SEQUENCE (RFC 5915) at the current decoder
+ * position.  Caller is responsible for the surrounding into / out, just
+ * like the RSA/DSA equivalents -- this helper does a single into to
+ * step inside the SEQUENCE and returns without a matching out. */
+static RCryptoKey *
+r_ecc_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv,
+    REcNamedCurve curve, rboolean is_ecdh)
+{
+  RCryptoKey * ret = NULL;
+  rint32 ec_ver = 0;
+
+  /* ECPrivateKey SEQUENCE { INTEGER version, OCTET STRING scalar,
+   *   [0] OID curve OPTIONAL, [1] BIT STRING pubkey OPTIONAL } */
+  if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_tlv_parse_integer_i32 (tlv, &ec_ver) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
+      R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING) &&
+      tlv->len > 0) {
+    ret = is_ecdh
+        ? r_ecdh_priv_key_new (curve, NULL, 0, tlv->value, tlv->len)
+        : r_ecdsa_priv_key_new (curve, NULL, 0, tlv->value, tlv->len);
+  }
+
+  return ret;
+}
+
 RCryptoKey *
 r_crypto_key_from_asn1_private_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
@@ -382,35 +408,16 @@ r_crypto_key_from_asn1_private_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         if (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
             R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) &&
             r_ecc_parse_named_curve (&curve, tlv->value, tlv->len)) {
-          /* Step out of AlgorithmIdentifier, then into the privateKey
-           * OCTET STRING -- a wrapper around an ECPrivateKey SEQUENCE
-           * (RFC 5915):
-           *   SEQUENCE { INTEGER version, OCTET STRING scalar,
-           *              [0] OID curve OPTIONAL,
-           *              [1] BIT STRING pubkey OPTIONAL } */
           if (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK &&
-              r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK &&
               r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
-            rint32 ec_ver = 0;
-
-            if (r_asn1_bin_tlv_parse_integer_i32 (tlv, &ec_ver) == R_ASN1_DECODER_OK &&
-                r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
-                R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING) &&
-                tlv->len > 0) {
-              ret = is_ecdh
-                  ? r_ecdh_priv_key_new (curve, NULL, 0, tlv->value, tlv->len)
-                  : r_ecdsa_priv_key_new (curve, NULL, 0, tlv->value, tlv->len);
-            }
+            ret = r_ecc_priv_key_new_from_asn1 (dec, tlv, curve, is_ecdh);
             r_asn1_bin_decoder_out (dec, tlv);
-            r_asn1_bin_decoder_out (dec, tlv);
-            goto done;
           }
         }
       }
     }
     r_asn1_bin_decoder_out (dec, tlv);
   }
-done:
 
   r_asn1_bin_decoder_out (dec, tlv);
   return ret;
