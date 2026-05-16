@@ -268,8 +268,8 @@ r_crypto_x509_cert_v3_parse_extensions (RCryptoX509Cert * cert,
         r_asn1_bin_decoder_next (dec, tlv);
       }
 
-      if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING)) {
-        r_asn1_bin_decoder_into (dec, tlv);
+      if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING) &&
+          r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
         for (i = 0; i < R_N_ELEMENTS (exttbl); i++) {
           if (r_asn1_oid_bin_equals_full (oidp, oidsize,
                 exttbl[i].oid, exttbl[i].oidsize)) {
