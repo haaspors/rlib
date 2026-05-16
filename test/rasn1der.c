@@ -187,6 +187,33 @@ RTEST (rasn1der, parse_integer_small, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_empty_bit_string, RTEST_FAST)
+{
+  /* BIT STRING with zero content bytes. parse_bit_string_bits used
+   * to dereference tlv->value[0] unconditionally and compute
+   * (tlv->len - 1) * 8 - value[0] which wraps when tlv->len == 0. */
+  static const ruint8 encoded[] = { 0x03, 0x00 };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  rsize bits;
+  RBitset * bitset = NULL;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+          encoded, sizeof (encoded))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BIT_STRING));
+  r_assert_cmpuint (tlv.len, ==, 0);
+
+  r_assert_cmpint (r_asn1_bin_tlv_parse_bit_string_bits (&tlv, &bits),
+      !=, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_bit_string (&tlv, &bitset),
+      !=, R_ASN1_DECODER_OK);
+  r_assert_cmpptr (bitset, ==, NULL);
+
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
 RTEST (rasn1der, parse_oid_malformed, RTEST_FAST)
 {
   /* Three malformed OID encodings the parser must reject. */

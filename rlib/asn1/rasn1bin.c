@@ -443,10 +443,14 @@ r_asn1_bin_tlv_parse_bit_string (const RAsn1BinTLV * tlv, RBitset ** bitset)
 {
   if (R_UNLIKELY (tlv == NULL || bitset == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv->len == 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
   if (R_UNLIKELY (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING)))
     return R_ASN1_DECODER_WRONG_TYPE;
-  if (R_UNLIKELY (tlv->len < 2))
-    return R_ASN1_DECODER_OVERFLOW;
+  if (R_UNLIKELY (tlv->value[0] > 7))
+    return R_ASN1_DECODER_PARSE_ERROR;
+  if (R_UNLIKELY (tlv->len == 1 && tlv->value[0] != 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
 
   if ((*bitset = r_bitset_new_from_binary (&tlv->value[1], tlv->len - sizeof (ruint8))) == NULL)
     return R_ASN1_DECODER_OOM;
@@ -462,8 +466,14 @@ r_asn1_bin_tlv_parse_bit_string_bits (const RAsn1BinTLV * tlv, rsize * bits)
 {
   if (R_UNLIKELY (tlv == NULL || bits == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv->len == 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
   if (R_UNLIKELY (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING)))
     return R_ASN1_DECODER_WRONG_TYPE;
+  if (R_UNLIKELY (tlv->value[0] > 7))
+    return R_ASN1_DECODER_PARSE_ERROR;
+  if (R_UNLIKELY (tlv->len == 1 && tlv->value[0] != 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
 
   *bits = (tlv->len - sizeof (ruint8)) * 8 - tlv->value[0];
   return R_ASN1_DECODER_OK;
