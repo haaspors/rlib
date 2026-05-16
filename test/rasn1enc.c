@@ -162,9 +162,22 @@ RTEST_END;
 
 RTEST (rasn1enc_der, distinguished_name_escaped_comma, RTEST_FAST)
 {
-  /* DN value with an escaped comma. The inner loop that scans
-   * backwards for an unescaped comma used to be an infinite spin
-   * because it kept calling r_strnrchr with the same arguments. */
+  /* DN value with an escaped comma: backslash escapes in the input
+   * must be stripped before the value is written as a UTF8String,
+   * so the CN value should be the literal "Foo,Bar" (7 bytes), not
+   * "Foo\,Bar" (8 bytes). RDNs are emitted innermost-first; here that
+   * is O=Acme followed by CN=Foo,Bar. */
+  static const ruint8 expected_der[] = {
+    0x30, 0x21,
+      0x31, 0x0d,
+        0x30, 0x0b,
+          0x06, 0x03, 0x55, 0x04, 0x0a,                /* OID 2.5.4.10 (O) */
+          0x0c, 0x04, 'A', 'c', 'm', 'e',
+      0x31, 0x10,
+        0x30, 0x0e,
+          0x06, 0x03, 0x55, 0x04, 0x03,                /* OID 2.5.4.3 (CN) */
+          0x0c, 0x07, 'F', 'o', 'o', ',', 'B', 'a', 'r'
+  };
   RAsn1BinEncoder * enc;
   ruint8 * out;
   rsize size;
@@ -173,6 +186,8 @@ RTEST (rasn1enc_der, distinguished_name_escaped_comma, RTEST_FAST)
   r_assert_cmpint (r_asn1_bin_encoder_add_distinguished_name (enc,
         "CN=Foo\\,Bar,O=Acme"), ==, R_ASN1_ENCODER_OK);
   r_assert_cmpptr ((out = r_asn1_bin_encoder_get_data (enc, &size)), !=, NULL);
+  r_assert_cmpuint (size, ==, sizeof (expected_der));
+  r_assert_cmpmem (out, ==, expected_der, size);
 
   r_free (out);
   r_asn1_bin_encoder_unref (enc);

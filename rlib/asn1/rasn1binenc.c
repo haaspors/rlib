@@ -771,19 +771,34 @@ r_asn1_bin_encoder_add_type_and_value (RAsn1BinEncoder * enc,
 {
   RAsn1EncoderStatus ret;
   const rchar * oid;
+  rchar * unescaped;
+  rsize i, j;
 
   if ((oid = r_asn1_x500_name_to_oid (t, tsize)) == NULL)
     return R_ASN1_ENCODER_INDEFINITE;
 
+  /* Strip RFC 4514 single-char backslash escapes from the value before
+   * storing it as a UTF8String.  Any '\X' becomes 'X'; lone trailing
+   * '\\' is kept verbatim. */
+  unescaped = r_malloc (vsize);
+  if (unescaped == NULL && vsize > 0)
+    return R_ASN1_ENCODER_OOM;
+  for (i = 0, j = 0; i < vsize; i++) {
+    if (v[i] == '\\' && i + 1 < vsize)
+      unescaped[j++] = v[++i];
+    else
+      unescaped[j++] = v[i];
+  }
+
   if ((ret = r_asn1_bin_encoder_begin_constructed (enc,
           R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE),
           0)) == R_ASN1_ENCODER_OK) {
-    /* FIXME: unescape value string! */
     if ((ret = r_asn1_bin_encoder_add_oid_rawsz (enc, oid)) == R_ASN1_ENCODER_OK)
-      ret = r_asn1_bin_encoder_add_utf8_string (enc, v, vsize);
+      ret = r_asn1_bin_encoder_add_utf8_string (enc, unescaped, j);
     r_asn1_bin_encoder_end_constructed (enc);
   }
 
+  r_free (unescaped);
   return ret;
 }
 
