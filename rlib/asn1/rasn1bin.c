@@ -288,7 +288,8 @@ r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot)
 RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_oid_to_msg_digest_type (const RAsn1BinTLV * tlv, RMsgDigestType * mdtype)
 {
-  if (R_UNLIKELY (mdtype == NULL)) return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv == NULL || mdtype == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
   if (R_UNLIKELY (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)))
     return R_ASN1_DECODER_WRONG_TYPE;
 
@@ -337,7 +338,7 @@ r_asn1_bin_tlv_parse_oid_to_msg_digest_type (const RAsn1BinTLV * tlv, RMsgDigest
   else
     *mdtype = R_MSG_DIGEST_TYPE_NONE;
 
-  return R_ASN1_DECODER_OK;;
+  return R_ASN1_DECODER_OK;
 }
 
 RAsn1DecoderStatus
