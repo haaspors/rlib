@@ -118,9 +118,9 @@ R_API void r_rtp_buffer_set_ssrc (RRTPBuffer * rtp, ruint32 ssrc);
 R_API void r_rtp_buffer_set_pt (RRTPBuffer * rtp, RRTPPayloadType pt);
 R_API void r_rtp_buffer_set_seq (RRTPBuffer * rtp, ruint16 seq);
 R_API void r_rtp_buffer_set_timestamp (RRTPBuffer * rtp, ruint32 ts);
+R_API rboolean r_rtp_buffer_set_csrc (RRTPBuffer * rtp, ruint8 n, ruint32 csrc);
 /* TODO: padding */
 /* TODO: extension */
-/* TODO: csrc */
 
 
 R_API ruint64 r_rtp_estimate_seq_idx (ruint16 seq, ruint64 curidx);

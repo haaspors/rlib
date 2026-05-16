@@ -340,6 +340,17 @@ r_rtp_buffer_set_timestamp (RRTPBuffer * rtp, ruint32 ts)
   hdr->timestamp = RUINT32_TO_BE (ts);
 }
 
+rboolean
+r_rtp_buffer_set_csrc (RRTPBuffer * rtp, ruint8 n, ruint32 csrc)
+{
+  RRTPHdr * hdr;
+  if (R_UNLIKELY (rtp == NULL || rtp->hdr.data == NULL)) return FALSE;
+  hdr = (RRTPHdr *)rtp->hdr.data;
+  if (n >= hdr->cc) return FALSE;
+  hdr->csrclist[n] = RUINT32_TO_BE (csrc);
+  return TRUE;
+}
+
 ruint64
 r_rtp_estimate_seq_idx (ruint16 seq, ruint64 curidx)
 {

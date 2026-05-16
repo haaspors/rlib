@@ -144,6 +144,38 @@ RTEST (rrtp, write_plain_hdr_pcmu_payload, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtp, write_csrc_list, RTEST_FAST)
+{
+  /* r_rtp_buffer_set_csrc writes into the CSRC list allocated by
+   * r_buffer_new_rtp_buffer (..., cc).  After setting two entries
+   * we should read them back via r_rtp_buffer_get_csrc and find a
+   * matching CSRC count. */
+  RBuffer * buf, * payload;
+  RRTPBuffer rtp = R_RTP_BUFFER_INIT;
+  ruint8 zero = 0;
+
+  r_assert_cmpptr ((payload = r_buffer_new_dup (&zero, 1)), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer (payload, 0, 2)), !=, NULL);
+  r_buffer_unref (payload);
+
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_WRITE));
+  r_assert_cmpuint (r_rtp_buffer_get_csrc_count (&rtp), ==, 2);
+  r_assert (r_rtp_buffer_set_csrc (&rtp, 0, 0xdeadbeef));
+  r_assert (r_rtp_buffer_set_csrc (&rtp, 1, 0xcafebabe));
+  /* Out-of-range index is rejected. */
+  r_assert (!r_rtp_buffer_set_csrc (&rtp, 2, 0x12345678));
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
+
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtp_buffer_get_csrc_count (&rtp), ==, 2);
+  r_assert_cmphex (r_rtp_buffer_get_csrc (&rtp, 0), ==, 0xdeadbeef);
+  r_assert_cmphex (r_rtp_buffer_get_csrc (&rtp, 1), ==, 0xcafebabe);
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
+
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtp, read_ext_hdr_opus_payload, RTEST_FAST)
 {
   RBuffer * buf;
