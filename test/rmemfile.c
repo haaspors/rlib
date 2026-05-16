@@ -27,6 +27,10 @@ RTEST (rmemfile, read, RTEST_FAST | RTEST_SYSTEM)
 
   r_free (tmpfile);
   r_mem_file_unref (f);
+
+  /* Public accessors must tolerate NULL (e.g. when r_mem_file_new failed). */
+  r_assert_cmpuint (r_mem_file_get_size (NULL), ==, 0);
+  r_assert_cmpptr (r_mem_file_get_mem (NULL), ==, NULL);
 }
 RTEST_END;
 

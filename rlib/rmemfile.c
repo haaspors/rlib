@@ -141,12 +141,14 @@ r_mem_file_new_from_handle (RIOHandle handle, RMemProt prot, rboolean writeback)
 rsize
 r_mem_file_get_size (RMemFile * file)
 {
+  if (R_UNLIKELY (file == NULL)) return 0;
   return file->size;
 }
 
 rpointer
 r_mem_file_get_mem (RMemFile * file)
 {
+  if (R_UNLIKELY (file == NULL)) return NULL;
   return file->mem;
 }
 
