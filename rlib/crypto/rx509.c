@@ -481,43 +481,43 @@ r_crypto_x509_write_ext_ext_key_usage (const RCryptoX509Cert * cert,
   if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
     if (r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_EXT_KEY_USAGE) == R_ASN1_ENCODER_OK) {
       if (r_asn1_bin_encoder_begin_octet_string (enc, 0) == R_ASN1_ENCODER_OK) {
-        if (cert->extKeyUsage | R_X509_EXT_KEY_USAGE_ANY) {
+        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_ANY) {
           if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_EXT_KEY_USAGE"\x00");
             r_asn1_bin_encoder_end_octet_string (enc);
           }
         }
-        if (cert->extKeyUsage | R_X509_EXT_KEY_USAGE_SERVER_AUTH) {
+        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_SERVER_AUTH) {
           if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_SERVER_AUTH);
             r_asn1_bin_encoder_end_octet_string (enc);
           }
         }
-        if (cert->extKeyUsage | R_X509_EXT_KEY_USAGE_CLIENT_AUTH) {
+        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_CLIENT_AUTH) {
           if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_CLIENT_AUTH);
             r_asn1_bin_encoder_end_octet_string (enc);
           }
         }
-        if (cert->extKeyUsage | R_X509_EXT_KEY_USAGE_CODE_SIGNING) {
+        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_CODE_SIGNING) {
           if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_CODE_SIGNING);
             r_asn1_bin_encoder_end_octet_string (enc);
           }
         }
-        if (cert->extKeyUsage | R_X509_EXT_KEY_USAGE_EMAIL_PROTECTION) {
+        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_EMAIL_PROTECTION) {
           if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_EMAIL_PROTECTION);
             r_asn1_bin_encoder_end_octet_string (enc);
           }
         }
-        if (cert->extKeyUsage | R_X509_EXT_KEY_USAGE_TIME_STAMPING) {
+        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_TIME_STAMPING) {
           if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_TIME_STAMPING);
             r_asn1_bin_encoder_end_octet_string (enc);
           }
         }
-        if (cert->extKeyUsage | R_X509_EXT_KEY_USAGE_OCSP_SIGNING) {
+        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_OCSP_SIGNING) {
           if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_OCSP_SIGNING);
             r_asn1_bin_encoder_end_octet_string (enc);
