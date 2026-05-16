@@ -962,7 +962,10 @@ r_sdp_media_add_connection_addr (RSdpMedia * media,
       addrtype = "IP4";
       addrstr = r_socket_address_ipv4_to_str (addr, FALSE);
       break;
-    /*case R_SOCKET_FAMILY_IPV6: FIXME */
+    case R_SOCKET_FAMILY_IPV6:
+      addrtype = "IP6";
+      addrstr = r_socket_address_ipv6_to_str (addr, FALSE);
+      break;
     default:
       return R_SDP_INVAL;
   }
@@ -1238,7 +1241,10 @@ r_sdp_media_add_ice_candidate (RSdpMedia * media,
       _addr = r_socket_address_ipv4_to_str (addr, FALSE);
       port = r_socket_address_ipv4_get_port (addr);
       break;
-    /*case R_SOCKET_FAMILY_IPV6: FIXME */
+    case R_SOCKET_FAMILY_IPV6:
+      _addr = r_socket_address_ipv6_to_str (addr, FALSE);
+      port = r_socket_address_ipv6_get_port (addr);
+      break;
     default:
       return R_SDP_INVAL;
   }
@@ -1266,7 +1272,10 @@ r_sdp_media_add_ice_candidate (RSdpMedia * media,
         _raddr = r_socket_address_ipv4_to_str (raddr, FALSE);
         rport = r_socket_address_ipv4_get_port (raddr);
         break;
-      /*case R_SOCKET_FAMILY_IPV6: FIXME */
+      case R_SOCKET_FAMILY_IPV6:
+        _raddr = r_socket_address_ipv6_to_str (raddr, FALSE);
+        rport = r_socket_address_ipv6_get_port (raddr);
+        break;
       default:
         r_free (_addr);
         return R_SDP_INVAL;
@@ -1836,7 +1845,9 @@ r_sdp_connection_buf_to_socket_address (const RSdpConnectionBuf * conn, ruint po
       ret = r_socket_address_ipv4_new_from_string (ip, port);
       r_free (ip);
     } else if (r_str_chunk_casecmp (&conn->addrtype, "IP6", 3) == 0) {
-      /* FIXME: IPv6 support */
+      rchar * ip = r_str_chunk_dup (&conn->addr);
+      ret = r_socket_address_ipv6_new_from_string (ip, port);
+      r_free (ip);
     }
   }
 

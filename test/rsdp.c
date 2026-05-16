@@ -907,3 +907,55 @@ RTEST (rsdp, msg_repeat_and_time_zone, RTEST_FAST)
   r_buffer_unref (buf);
 }
 RTEST_END;
+
+RTEST (rsdp, ice_candidate_ipv6_roundtrip, RTEST_FAST)
+{
+  /* Build an SDP media description with an IPv6 ICE candidate via
+   * r_sdp_media_add_ice_candidate (which formerly rejected IPv6), then
+   * re-parse the serialised SDP and verify the candidate's address
+   * resolves back to the same IPv6 RSocketAddress. */
+  static const ruint8 ipbytes[16] = {
+    0x20, 0x01, 0x0d, 0xb8, 0xde, 0xad, 0xbe, 0xef,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+  };
+  RSdpMsg * msg;
+  RSdpMedia * media;
+  RBuffer * buf;
+  RSocketAddress * addr;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  r_assert_cmpptr ((msg = r_sdp_msg_new ()), !=, NULL);
+  r_assert_cmpint (r_sdp_msg_set_originator (msg,
+        "alice", -1, "0", -1, "0", -1, "IN", 2, "IP6", 3,
+        "2001:db8::1", -1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_set_session_name (msg, "ipv6-cand", -1),
+      ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_set_connection_full (msg, "IN", 2, "IP6", 3,
+        "2001:db8::1", -1, 0, 1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_add_time (msg, 0, 0), ==, R_SDP_OK);
+
+  r_assert_cmpptr ((media = r_sdp_media_new_full ("audio", -1, 50000, 1,
+          "UDP/TLS/RTP/SAVPF", -1)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv6_new_from_bytes (ipbytes,
+          50000)), !=, NULL);
+  r_assert_cmpint (r_sdp_media_add_ice_candidate (media,
+        "1", -1, 1, "udp", -1, 2113667327, addr, R_SDP_ICE_TYPE_HOST,
+        NULL, NULL, 0), ==, R_SDP_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpint (r_sdp_msg_add_media (msg, media), ==, R_SDP_OK);
+  r_sdp_media_unref (media);
+
+  r_assert_cmpptr ((buf = r_sdp_msg_to_buffer (msg)), !=, NULL);
+  r_sdp_msg_unref (msg);
+
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+  r_assert (r_str_idx_of_str ((const rchar *) info.data, info.size,
+        R_STR_WITH_SIZE_ARGS ("c=IN IP6 2001:db8::1\r\n")) >= 0);
+  r_assert (r_str_idx_of_str ((const rchar *) info.data, info.size,
+        R_STR_WITH_SIZE_ARGS ("typ host")) >= 0);
+  r_assert (r_str_idx_of_str ((const rchar *) info.data, info.size,
+        R_STR_WITH_SIZE_ARGS ("2001:db8:dead:beef::1")) >= 0);
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+}
+RTEST_END;

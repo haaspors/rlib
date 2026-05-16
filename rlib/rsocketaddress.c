@@ -118,6 +118,25 @@ r_socket_address_ipv6_new_from_bytes (const ruint8 ip[16], ruint16 port)
 }
 
 RSocketAddress *
+r_socket_address_ipv6_new_from_string (const rchar * ip, ruint16 port)
+{
+  ruint8 buf[16];
+
+  if (R_UNLIKELY (ip == NULL)) return NULL;
+
+#if defined (HAVE_INET_PTON)
+  if (inet_pton (R_AF_INET6, ip, buf) < 1)
+    return NULL;
+#elif defined (R_OS_WIN32)
+  if (r_win32_inet_pton (R_AF_INET6, ip, buf) < 1)
+    return NULL;
+#else
+  return NULL;
+#endif
+  return r_socket_address_ipv6_new_from_bytes (buf, port);
+}
+
+RSocketAddress *
 r_socket_address_ipv4_new_uint8 (ruint8 a, ruint8 b, ruint8 c, ruint8 d, ruint16 port)
 {
   RSocketAddress * ret;
@@ -311,13 +330,62 @@ r_socket_address_ipv4_to_str (const RSocketAddress * addr, rboolean port)
     r_strndup (str, sizeof (str)) : NULL;
 }
 
+rboolean
+r_socket_address_ipv6_build_str (const RSocketAddress * addr, rboolean port,
+    rchar * str, rsize size)
+{
+  if (R_UNLIKELY (addr == NULL || str == NULL)) return FALSE;
+  if (r_socket_address_get_family (addr) != R_SOCKET_FAMILY_IPV6) return FALSE;
+
+#if defined (HAVE_INET_PTON) || defined (R_OS_WIN32)
+  {
+#if defined (HAVE_INET_PTON)
+    if (inet_ntop (R_AF_INET6, R_SOCKET_ADDRESS_IPV6_ADDR (addr),
+            port ? str + 1 : str, port ? size - 1 : size) == NULL)
+      return FALSE;
+#else
+    if (r_win32_inet_ntop (R_AF_INET6, R_SOCKET_ADDRESS_IPV6_ADDR (addr),
+            port ? str + 1 : str, port ? size - 1 : size) == NULL)
+      return FALSE;
+#endif
+    if (port) {
+      /* RFC 3986 / 2732: bracket the address and append :port. */
+      rsize ipsize = r_strlen (str + 1);
+      rchar suffix[8];
+      rsize suffix_len = r_sprintf (suffix, "]:%"RUINT16_FMT,
+          r_ntohs (R_SOCKET_ADDRESS_IPV6_PORT (addr)));
+      if (1 + ipsize + suffix_len + 1 > size)
+        return FALSE;
+      str[0] = '[';
+      r_memcpy (&str[1 + ipsize], suffix, suffix_len + 1);
+    }
+    return TRUE;
+  }
+#else
+  (void) port;
+  (void) size;
+  return FALSE;
+#endif
+}
+
+rchar *
+r_socket_address_ipv6_to_str (const RSocketAddress * addr, rboolean port)
+{
+  /* Max IPv6 string: "[ffff:...:ffff]:65535" -> 39 + brackets/port = ~48. */
+  rchar str[64];
+  if (!r_socket_address_ipv6_build_str (addr, port, str, sizeof (str)))
+    return NULL;
+  return r_strdup (str);
+}
+
 rchar *
 r_socket_address_to_str (const RSocketAddress * addr)
 {
   switch (R_SOCKET_ADDRESS_FAMILY (addr)) {
     case R_SOCKET_FAMILY_IPV4:
       return r_socket_address_ipv4_to_str (addr, TRUE);
-    /*FIXME case R_SOCKET_FAMILY_IPV6:*/
+    case R_SOCKET_FAMILY_IPV6:
+      return r_socket_address_ipv6_to_str (addr, TRUE);
     default:
       break;
   }

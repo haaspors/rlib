@@ -71,9 +71,15 @@ R_API ruint32 r_socket_address_ipv4_get_ip (const RSocketAddress * addr);
 R_API rboolean r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port, rchar * str, rsize size);
 R_API rchar * r_socket_address_ipv4_to_str (const RSocketAddress * addr, rboolean port);
 
+R_API RSocketAddress * r_socket_address_ipv6_new_from_string (const rchar * ip,
+    ruint16 port) R_ATTR_MALLOC;
 R_API ruint16 r_socket_address_ipv6_get_port (const RSocketAddress * addr);
 R_API rboolean r_socket_address_ipv6_get_ip_bytes (const RSocketAddress * addr,
     ruint8 ip[16]);
+R_API rboolean r_socket_address_ipv6_build_str (const RSocketAddress * addr,
+    rboolean port, rchar * str, rsize size);
+R_API rchar * r_socket_address_ipv6_to_str (const RSocketAddress * addr,
+    rboolean port);
 
 R_API rchar * r_socket_address_to_str (const RSocketAddress * addr) R_ATTR_MALLOC;
 
