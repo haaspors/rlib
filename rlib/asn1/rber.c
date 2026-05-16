@@ -137,6 +137,8 @@ r_asn1_ber_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
   const ruint8 * ptr;
   rsize size;
+  RAsn1BinTLV inner;
+  RAsn1DecoderStatus ret;
 
   if (R_UNLIKELY (dec == NULL || tlv == NULL || tlv->value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
@@ -149,20 +151,24 @@ r_asn1_ber_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   } else if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING)) {
     ptr = tlv->value;
   } else if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING)) {
-    /* This skips over the octet describing unused bits */
-    if (size-- < 2)
+    /* Skip the octet describing unused bits. */
+    if (size < 1)
       return R_ASN1_DECODER_OVERFLOW;
-
-    ptr = tlv->value;
-    if (*ptr++ > 0) /* unused bits must be 0 */
+    if (tlv->value[0] > 0)
       return R_ASN1_DECODER_NOT_CONSTRUCTED;
+    ptr = tlv->value + 1;
+    size -= 1;
   } else {
     return R_ASN1_DECODER_NOT_CONSTRUCTED;
   }
 
+  if ((ret = r_asn1_ber_tlv_init (&inner, ptr, size)) != R_ASN1_DECODER_OK)
+    return ret;
+
   dec->stack = r_slist_prepend (dec->stack,
       r_memdup (tlv, sizeof (RAsn1BinTLV)));
-  return r_asn1_ber_tlv_init (tlv, ptr, size);
+  *tlv = inner;
+  return R_ASN1_DECODER_OK;
 }
 
 RAsn1DecoderStatus

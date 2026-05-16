@@ -287,6 +287,31 @@ RTEST (rasn1ber, constructed_definite_long_form, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1ber, decoder_into_failure_no_stack_push, RTEST_FAST)
+{
+  /* BIT_STRING with len=2: one unused-bits byte (0x00) and one
+   * content byte (0xFF). decoder_into uses the rest (1 byte) as a
+   * sub-TLV, which can't possibly succeed (tlv_init needs >= 2).
+   * The stack must NOT have been pushed in this failure path - if
+   * it was, decoder_out would find a stale entry and return EOS
+   * instead of the correct INVALID_ARG. */
+  static const ruint8 encoded[] = { 0x03, 0x02, 0x00, 0xFF };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER,
+          encoded, sizeof (encoded))), !=, NULL);
+
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BIT_STRING));
+
+  r_assert_cmpint (r_asn1_bin_decoder_into (dec, &tlv), !=, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_decoder_out (dec, &tlv), ==, R_ASN1_DECODER_INVALID_ARG);
+
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
 RTEST (rasn1ber, empty_constructed_then_sibling, RTEST_FAST)
 {
   /* Empty SEQUENCE (definite length 0) followed by an INTEGER as a
