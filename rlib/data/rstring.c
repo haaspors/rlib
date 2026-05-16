@@ -41,7 +41,8 @@ r_string_new (const rchar * cstr)
     return r_string_new_sized (0);
 
   len = r_strlen (cstr);
-  str = r_string_new_sized (len + 1);
+  if (R_UNLIKELY ((str = r_string_new_sized (len + 1)) == NULL))
+    return NULL;
   r_memcpy (str->cstr, cstr, len + 1);
   str->len = len;
 
@@ -51,10 +52,16 @@ r_string_new (const rchar * cstr)
 RString *
 r_string_new_sized (rsize size)
 {
-  RString * str = r_mem_new (RString);
+  RString * str;
+
+  if (R_UNLIKELY ((str = r_mem_new (RString)) == NULL))
+    return NULL;
   str->len = 0;
   str->size = size | R_STRING_ALLOC_MASK;
-  str->cstr = r_malloc (str->size);
+  if (R_UNLIKELY ((str->cstr = r_malloc (str->size)) == NULL)) {
+    r_free (str);
+    return NULL;
+  }
   str->cstr[0] = 0;
 
   return str;
