@@ -1022,14 +1022,15 @@ r_rsa_pkcs1v1_5_verify_hash (const RCryptoKey * key,
   if ((ret = r_rsa_raw_encrypt_internal ((const RRsaPubKey*)key, sig, buffer, sigsize)) == R_CRYPTO_OK) {
     ruint8 * ptr = buffer;
 
-    if (*ptr++ != 0x00 || *ptr++ != R_RSA_EMSA_PKCS1)
+    if (sigsize < 11 || *ptr++ != 0x00 || *ptr++ != R_RSA_EMSA_PKCS1)
       return R_CRYPTO_VERIFY_FAILED;
 
-    while (ptr < buffer + sigsize && *ptr != 0) ptr++;
-    ptr++;
+    while (ptr < buffer + sigsize && *ptr == 0xff) ptr++;
+    if (ptr - buffer < 10 || ptr >= buffer + sigsize || *ptr++ != 0x00)
+      return R_CRYPTO_VERIFY_FAILED;
 
-    if (ptr - buffer + sigsize != hashsize)
-      return R_CRYPTO_BUFFER_TOO_SMALL;
+    if ((rsize) (buffer + sigsize - ptr) != hashsize)
+      return R_CRYPTO_VERIFY_FAILED;
     ret = (r_memcmp (ptr, hash, hashsize) == 0) ? R_CRYPTO_OK : R_CRYPTO_VERIFY_FAILED;
   }
 
