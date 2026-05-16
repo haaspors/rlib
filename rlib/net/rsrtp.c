@@ -555,8 +555,14 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
       idx = r_rtp_buffer_estimate_seq_idx (&rtp, stream->rtp.index);
       if ((err = r_srtp_stream_replay_check (&stream->rtp, idx, stream->ssrc)) == R_SRTP_ERROR_OK) {
         rsize tagsize = stream->cctx->csinfo->srtp_tagbits / 8;
-        rsize payloadsize = rtp.pay.size - tagsize - stream->rtpmkisize;
+        rsize payloadsize;
         RBuffer * payload;
+
+        if (R_UNLIKELY (rtp.pay.size < tagsize + stream->rtpmkisize)) {
+          err = R_SRTP_ERROR_INVAL;
+          goto beach_map;
+        }
+        payloadsize = rtp.pay.size - tagsize - stream->rtpmkisize;
 
         if (stream->cctx->csinfo->authprefixlen > 0) {
           /* FIXME: Handle keystream prefix */
@@ -766,9 +772,16 @@ r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
     if ((rtcppacket = r_rtcp_buffer_get_first_packet (&rtcp)) != NULL &&
         (stream = r_srtp_get_stream (ctx, r_rtcp_packet_get_ssrc (rtcppacket))) != NULL) {
       rsize tagsize = stream->cctx->csinfo->srtp_tagbits / 8;
-      const ruint8 * authtag = rtcp.info.data + rtcp.info.size - tagsize;
-      const ruint8 * srtpidx = authtag - stream->rtpmkisize - sizeof (ruint32);
+      const ruint8 * authtag;
+      const ruint8 * srtpidx;
       ruint32 idx;
+
+      if (R_UNLIKELY (rtcp.info.size < tagsize + stream->rtpmkisize + sizeof (ruint32))) {
+        err = R_SRTP_ERROR_INVAL;
+        goto beach_map;
+      }
+      authtag = rtcp.info.data + rtcp.info.size - tagsize;
+      srtpidx = authtag - stream->rtpmkisize - sizeof (ruint32);
 
       if (R_UNLIKELY (stream->dir != R_SRTP_DIRECTION_INBOUND)) {
         if (stream->dir == R_SRTP_DIRECTION_UNKNOWN) {
