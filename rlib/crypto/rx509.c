@@ -306,7 +306,7 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
       if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
         rint32 ver;
         if (r_asn1_bin_tlv_parse_integer_i32 (&tlv, &ver) != R_ASN1_DECODER_OK ||
-            ver > R_X509_VERSION_SUPPORTED)
+            ver < R_X509_VERSION_V1 || ver > R_X509_VERSION_SUPPORTED)
           goto beach;
         cert->version = ver;
         r_asn1_bin_decoder_out (dec, &tlv);
