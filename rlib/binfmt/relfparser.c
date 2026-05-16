@@ -289,12 +289,11 @@ r_elf_parser_ehdr64_prg_header_count (RElfParser * parser)
 ruint16
 r_elf_parser_prg_header_count (RElfParser * parser)
 {
-  ruint16 (*ft[])() = {
-    r_elf_parser_ehdr32_prg_header_count,
-    r_elf_parser_ehdr64_prg_header_count,
-  };
-
-  return ft[parser->elfidx] (parser);
+  switch (parser->elfidx) {
+    case RELF32_IDX: return r_elf_parser_ehdr32_prg_header_count (parser);
+    case RELF64_IDX: return r_elf_parser_ehdr64_prg_header_count (parser);
+  }
+  return 0;
 }
 
 RElf32PHdr *
@@ -328,12 +327,11 @@ r_elf_parser_get_phdr64 (RElfParser * parser, ruint16 idx)
 rpointer
 r_elf_parser_get_prg_header_table (RElfParser * parser)
 {
-  RFuncUniversalReturn ft[] = {
-    (RFuncUniversalReturn) r_elf_parser_get_phdr32,
-    (RFuncUniversalReturn) r_elf_parser_get_phdr64,
-  };
-
-  return ft[parser->elfidx] (parser, 0);
+  switch (parser->elfidx) {
+    case RELF32_IDX: return r_elf_parser_get_phdr32 (parser, 0);
+    case RELF64_IDX: return r_elf_parser_get_phdr64 (parser, 0);
+  }
+  return NULL;
 }
 
 ruint32
@@ -381,23 +379,21 @@ r_elf_parser_ehdr64_section_header_count (RElfParser * parser)
 ruint16
 r_elf_parser_section_header_count (RElfParser * parser)
 {
-  ruint16 (*ft[])() = {
-    r_elf_parser_ehdr32_section_header_count,
-    r_elf_parser_ehdr64_section_header_count,
-  };
-
-  return ft[parser->elfidx] (parser);
+  switch (parser->elfidx) {
+    case RELF32_IDX: return r_elf_parser_ehdr32_section_header_count (parser);
+    case RELF64_IDX: return r_elf_parser_ehdr64_section_header_count (parser);
+  }
+  return 0;
 }
 
 rpointer
 r_elf_parser_get_section_header_table (RElfParser * parser)
 {
-  RFuncUniversalReturn ft[] = {
-    (RFuncUniversalReturn) r_elf_parser_get_shdr32,
-    (RFuncUniversalReturn) r_elf_parser_get_shdr64,
-  };
-
-  return ft[parser->elfidx] (parser, 0);
+  switch (parser->elfidx) {
+    case RELF32_IDX: return r_elf_parser_get_shdr32 (parser, 0);
+    case RELF64_IDX: return r_elf_parser_get_shdr64 (parser, 0);
+  }
+  return NULL;
 }
 
 RElf32SHdr *
@@ -530,12 +526,11 @@ rpointer
 r_elf_parser_find_section_data (RElfParser * parser,
     const rchar * name, rssize size, rsize * secsize)
 {
-  RFuncUniversalReturn ft[] = {
-    (RFuncUniversalReturn) r_elf_parser_find_shdr32_data,
-    (RFuncUniversalReturn) r_elf_parser_find_shdr64_data,
-  };
-
-  return ft[parser->elfidx] (parser, name, size, secsize);
+  switch (parser->elfidx) {
+    case RELF32_IDX: return r_elf_parser_find_shdr32_data (parser, name, size, secsize);
+    case RELF64_IDX: return r_elf_parser_find_shdr64_data (parser, name, size, secsize);
+  }
+  return NULL;
 }
 
 static ruint16
@@ -555,12 +550,11 @@ r_elf_parser_ehdr64_strtbl_idx (RElfParser * parser)
 ruint16
 r_elf_parser_strtbl_idx (RElfParser * parser)
 {
-  ruint16 (*ft[])() = {
-    r_elf_parser_ehdr32_strtbl_idx,
-    r_elf_parser_ehdr64_strtbl_idx,
-  };
-
-  return ft[parser->elfidx] (parser);
+  switch (parser->elfidx) {
+    case RELF32_IDX: return r_elf_parser_ehdr32_strtbl_idx (parser);
+    case RELF64_IDX: return r_elf_parser_ehdr64_strtbl_idx (parser);
+  }
+  return 0;
 }
 
 RElf32SHdr *
@@ -580,12 +574,11 @@ r_elf_parser_get_strtbl64 (RElfParser * parser)
 rchar *
 r_elf_parser_strtbl_get_str (RElfParser * parser, ruint32 idx)
 {
-  rchar * (*ft[])() = {
-    r_elf_parser_strtbl32_get_str,
-    r_elf_parser_strtbl64_get_str,
-  };
-
-  return ft[parser->elfidx] (parser, NULL, idx);
+  switch (parser->elfidx) {
+    case RELF32_IDX: return r_elf_parser_strtbl32_get_str (parser, NULL, idx);
+    case RELF64_IDX: return r_elf_parser_strtbl64_get_str (parser, NULL, idx);
+  }
+  return NULL;
 }
 
 rchar *
