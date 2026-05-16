@@ -158,6 +158,7 @@ RTEST (rsys, topology_node_capabilities, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpuint (r_sys_node_count_with_online_cpus (), ==, nodes_with_cpu);
   /* FIXME: Read out available memory */
   /*r_assert_cmpuint (r_sys_node_count_with_memory (), ==, nodes_with_memory);*/
+  (void) nodes_with_memory;
 }
 RTEST_END;
 
