@@ -224,8 +224,18 @@ r_asn1_bin_tlv_parse_integer_mpint (const RAsn1BinTLV * tlv, rmpint * value)
     r_mpint_clear (value);
     r_mpint_init_binary (value, tlv->value, tlv->len);
     if (*tlv->value & 0x80) {
-      /* TODO: if negative?? */
-      return R_ASN1_DECODER_OVERFLOW;
+      /* Two's complement negative: actual value = U - 2^(8 * len). */
+      rmpint pow2, mag;
+      r_mpint_init (&pow2);
+      r_mpint_init (&mag);
+      r_mpint_set_u32 (&pow2, 1);
+      r_mpint_shl (&pow2, &pow2, (ruint32) (8 * tlv->len));
+      r_mpint_sub (&mag, &pow2, value);
+      r_mpint_clear (value);
+      r_mpint_init_copy (value, &mag);
+      value->sign = 1;
+      r_mpint_clear (&pow2);
+      r_mpint_clear (&mag);
     }
     return R_ASN1_DECODER_OK;
   } else {

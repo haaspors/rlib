@@ -238,6 +238,59 @@ RTEST (rasn1der, parse_integer_negative, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_integer_mpint_negative, RTEST_FAST)
+{
+  /* Negative two's-complement INTEGER values must decode into an mpint
+   * with the sign flag set and the correct magnitude (instead of the
+   * old OVERFLOW return). */
+  static const struct {
+    rsize size;
+    ruint8 data[12];
+    const rchar * magnitude;  /* decimal string of |value| */
+  } cases[] = {
+    /* -1 */
+    { 3, { 0x02, 0x01, 0xff }, "1" },
+    /* -128 */
+    { 3, { 0x02, 0x01, 0x80 }, "128" },
+    /* -1000: 0xFC 0x18 */
+    { 4, { 0x02, 0x02, 0xfc, 0x18 }, "1000" },
+    /* INT32_MIN = -2^31 = 0x80 00 00 00 */
+    { 6, { 0x02, 0x04, 0x80, 0x00, 0x00, 0x00 }, "2147483648" },
+    /* -2^40 = 0xFF 00 00 00 00 00 (high bit set, six bytes) */
+    { 8, { 0x02, 0x06, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00 },
+      "1099511627776" },
+  };
+  ruint i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    RAsn1BinDecoder * dec;
+    RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+    rmpint v, expected;
+    rchar * actual_str;
+
+    r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+            cases[i].data, cases[i].size)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+
+    r_mpint_init (&v);
+    r_assert_cmpint (r_asn1_bin_tlv_parse_integer_mpint (&tlv, &v),
+        ==, R_ASN1_DECODER_OK);
+    r_assert_cmpuint (v.sign, ==, 1);
+
+    r_mpint_init_str (&expected, cases[i].magnitude, NULL, 10);
+    /* expected.sign is 0 (positive); compare absolute magnitudes via ucmp. */
+    r_assert_cmpint (r_mpint_ucmp (&v, &expected), ==, 0);
+
+    actual_str = r_mpint_to_str (&v);
+    r_free (actual_str);
+
+    r_mpint_clear (&v);
+    r_mpint_clear (&expected);
+    r_asn1_bin_decoder_unref (dec);
+  }
+}
+RTEST_END;
+
 RTEST (rasn1der, parse_time_out_of_range, RTEST_FAST)
 {
   /* Hour, minute, second, and timezone offset components have spec
