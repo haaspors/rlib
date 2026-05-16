@@ -1142,7 +1142,7 @@ r_sdp_media_add_ice_candidate_raw (RSdpMedia * media,
   if (fsize < 0) fsize = r_strlen (foundation);
   if (transize < 0) transize = r_strlen (transport);
   if (asize < 0) asize = r_strlen (addr);
-  if (rasize < 0) rasize = r_strlen (addr);
+  if (rasize < 0) rasize = r_strlen (raddr);
   if (esize < 0) esize = r_strlen (extension);
   if (R_UNLIKELY (foundation == NULL || fsize == 0)) return R_SDP_INVAL;
   if (R_UNLIKELY (transport == NULL || transize == 0)) return R_SDP_INVAL;
