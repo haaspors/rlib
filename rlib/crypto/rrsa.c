@@ -653,13 +653,51 @@ r_rsa_raw_decrypt_internal (const RRsaPrivKey * key,
 
   r_mpint_init_size (&m, r_mpint_digits_used (&key->pub.n));
 
-  /* FIXME: implement... faster mode when we have q, p, dQ, dP and qInv */
-  ret = r_mpint_expmod (&m, &c, &key->d, &key->pub.n) &&
-    r_mpint_to_binary_with_size (&m, out, k);
+  if (!r_mpint_iszero (&key->p) && !r_mpint_iszero (&key->q) &&
+      !r_mpint_iszero (&key->dp) && !r_mpint_iszero (&key->dq) &&
+      !r_mpint_iszero (&key->qp)) {
+    /* CRT path: ~4x faster than computing c^d mod n directly.
+     *   m1 = c^dp mod p
+     *   m2 = c^dq mod q
+     *   h  = (m1 - m2) * qInv mod p
+     *   m  = m2 + h * q
+     * r_mpint_mod treats inputs as unsigned, so reduce m2 mod p first
+     * to keep (m1 - m2_p) in (-p, p) and add p once if it lands negative. */
+    rmpint m1, m2, m2_p, h;
+    rboolean ok;
+
+    r_mpint_init (&m1);
+    r_mpint_init (&m2);
+    r_mpint_init (&m2_p);
+    r_mpint_init (&h);
+
+    ok = r_mpint_expmod (&m1, &c, &key->dp, &key->p)
+      && r_mpint_expmod (&m2, &c, &key->dq, &key->q)
+      && r_mpint_mod (&m2_p, &m2, &key->p)
+      && r_mpint_sub (&h, &m1, &m2_p);
+    if (ok && r_mpint_isneg (&h))
+      ok = r_mpint_add (&h, &h, &key->p);
+    ok = ok
+      && r_mpint_mul (&h, &h, &key->qp)
+      && r_mpint_mod (&h, &h, &key->p)
+      && r_mpint_mul (&m, &h, &key->q)
+      && r_mpint_add (&m, &m, &m2)
+      && r_mpint_to_binary_with_size (&m, out, k);
+
+    r_mpint_clear (&m1);
+    r_mpint_clear (&m2);
+    r_mpint_clear (&m2_p);
+    r_mpint_clear (&h);
+    ret = ok ? R_CRYPTO_OK : R_CRYPTO_DECRYPT_FAILED;
+  } else {
+    ret = (r_mpint_expmod (&m, &c, &key->d, &key->pub.n)
+        && r_mpint_to_binary_with_size (&m, out, k))
+      ? R_CRYPTO_OK : R_CRYPTO_DECRYPT_FAILED;
+  }
 
   r_mpint_clear (&m);
   r_mpint_clear (&c);
-  return ret ? R_CRYPTO_OK : R_CRYPTO_DECRYPT_FAILED;
+  return ret;
 }
 
 RCryptoResult
