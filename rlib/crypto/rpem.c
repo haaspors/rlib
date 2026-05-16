@@ -364,11 +364,18 @@ rchar *
 r_pem_write_public_key_dup (const RCryptoKey * key, rsize linesize, rsize * out)
 {
   rchar * ret;
-  rsize size;
+  rsize asn1_size, b64_size, size;
 
   if (R_UNLIKELY (key == NULL)) return NULL;
 
-  size = 4096; /* FIXME: Calculate max size! */
+  /* Upper bound on the SubjectPublicKeyInfo size: covers RSA (modulus +
+   * exponent), DSA (p, q, g, y), and EC (uncompressed point) with room
+   * for AlgorithmIdentifier, OIDs, and DER overhead. */
+  asn1_size = (rsize) (r_crypto_key_get_bitsize (key) / 8) * 4 + 512;
+  b64_size = ((asn1_size + 2) / 3) * 4;
+  if (linesize > 0)
+    b64_size += b64_size / ((linesize + 3) & ~(rsize)3) + 1;
+  size = sizeof (R_PEM_BEGIN_PUBKEY) - 1 + b64_size + 1 + sizeof (R_PEM_END_PUBKEY);
 
   if ((ret = r_malloc (size)) != NULL) {
     if (R_UNLIKELY (!r_pem_write_public_key (key, ret, size, linesize, out))) {
@@ -436,18 +443,27 @@ r_pem_write_public_key (const RCryptoKey * key,
 rchar *
 r_pem_write_cert_dup (const RCryptoCert * cert, rsize linesize, rsize * out)
 {
-  rchar * ret;
-  rsize size;
+  RBuffer * buf;
+  rchar * ret = NULL;
 
   if (R_UNLIKELY (cert == NULL)) return NULL;
 
-  size = 4096; /* FIXME: Calculate max size! */
+  if ((buf = r_crypto_cert_get_data_buffer ((RCryptoCert *) cert)) != NULL) {
+    rsize bin_size = r_buffer_get_size (buf);
+    rsize b64_size = ((bin_size + 2) / 3) * 4;
+    rsize size;
 
-  if ((ret = r_malloc (size)) != NULL) {
-    if (R_UNLIKELY (!r_pem_write_cert (cert, ret, size, linesize, out))) {
-      r_free (ret);
-      ret = NULL;
+    if (linesize > 0)
+      b64_size += b64_size / ((linesize + 3) & ~(rsize)3) + 1;
+    size = sizeof (R_PEM_BEGIN_CERT) - 1 + b64_size + 1 + sizeof (R_PEM_END_CERT);
+
+    if ((ret = r_malloc (size)) != NULL) {
+      if (R_UNLIKELY (!r_pem_write_cert (cert, ret, size, linesize, out))) {
+        r_free (ret);
+        ret = NULL;
+      }
     }
+    r_buffer_unref (buf);
   }
 
   return ret;

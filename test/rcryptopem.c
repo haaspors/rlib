@@ -569,3 +569,39 @@ RTEST (rcryptopem, write_cert_tight_buffer, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (rcryptopem, write_oversized_pub_key_dup, RTEST_FAST)
+{
+  /* PEM output for a ~32 Kbit RSA modulus exceeds the legacy 4096-byte
+   * scratch buffer.  r_pem_write_public_key_dup must size its buffer
+   * to fit any key, not refuse with NULL. */
+  RCryptoKey * key;
+  rmpint n, e;
+  rchar * pem;
+  rsize size;
+  rchar * big_n;
+  rsize bn_hex_size = 8192;  /* 32768 bits */
+  rsize i;
+
+  big_n = r_malloc (bn_hex_size + 1);
+  /* Leading nibble 7 keeps the high bit (sign) clear in DER. */
+  big_n[0] = '7';
+  for (i = 1; i < bn_hex_size; i++)
+    big_n[i] = 'f';
+  big_n[bn_hex_size] = '\0';
+
+  r_mpint_init_str (&n, big_n, NULL, 16);
+  r_mpint_init_str (&e, "0x10001", NULL, 16);
+  r_free (big_n);
+
+  r_assert_cmpptr ((key = r_rsa_pub_key_new (&n, &e)), !=, NULL);
+  r_mpint_clear (&n);
+  r_mpint_clear (&e);
+
+  r_assert_cmpptr ((pem = r_pem_write_public_key_dup (key, 76, &size)),
+      !=, NULL);
+  r_assert_cmpuint (size, >, 4096);
+  r_free (pem);
+  r_crypto_key_unref (key);
+}
+RTEST_END;
