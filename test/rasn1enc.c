@@ -160,6 +160,25 @@ RTEST (rasn1enc_der, distinguished_name, RTEST_FAST)
 RTEST_END;
 
 
+RTEST (rasn1enc_der, distinguished_name_escaped_comma, RTEST_FAST)
+{
+  /* DN value with an escaped comma. The inner loop that scans
+   * backwards for an unescaped comma used to be an infinite spin
+   * because it kept calling r_strnrchr with the same arguments. */
+  RAsn1BinEncoder * enc;
+  ruint8 * out;
+  rsize size;
+
+  r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_encoder_add_distinguished_name (enc,
+        "CN=Foo\\,Bar,O=Acme"), ==, R_ASN1_ENCODER_OK);
+  r_assert_cmpptr ((out = r_asn1_bin_encoder_get_data (enc, &size)), !=, NULL);
+
+  r_free (out);
+  r_asn1_bin_encoder_unref (enc);
+}
+RTEST_END;
+
 RTEST (rasn1enc_der, utc_time_with_seconds, RTEST_FAST)
 {
   /* UTC_TIME with non-zero seconds writes "YYMMDDhhmmssZ" via

@@ -776,8 +776,9 @@ r_asn1_bin_encoder_add_distinguished_name (RAsn1BinEncoder * enc, const rchar * 
     const rchar * t, * v;
     rsize size = r_strlen (dn);
     do {
-      while ((t = r_strnrchr (dn, (int)',', size)) != NULL && t[-1] == '\\')
-        ;
+      rsize search = size;
+      while ((t = r_strnrchr (dn, (int)',', search)) != NULL && t[-1] == '\\')
+        search = RPOINTER_TO_SIZE (t - 1 - dn);
       if (t != NULL)
         t++;
       else
