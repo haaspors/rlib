@@ -149,11 +149,14 @@ r_crypto_x509_key_usage (RCryptoX509Cert * cert,
   (void) critical;
 
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING)) {
-    if (tlv->len == 2) {
-      cert->keyUsage = (tlv->value[1] >> tlv->value[0]);
+    /* First content byte is the unused-bits count and must be 0..7;
+     * shifting by an out-of-range value is undefined behaviour. */
+    if (tlv->len == 2 && tlv->value[0] <= 7) {
+      cert->keyUsage = (ruint16)tlv->value[1] >> tlv->value[0];
       return TRUE;
-    } else if (tlv->len == 3) {
-      cert->keyUsage = (RUINT16_FROM_BE (*(const ruint16 *)&tlv->value[1]) >> tlv->value[0]);
+    } else if (tlv->len == 3 && tlv->value[0] <= 7) {
+      ruint16 raw = ((ruint16)tlv->value[1] << 8) | (ruint16)tlv->value[2];
+      cert->keyUsage = raw >> tlv->value[0];
       return TRUE;
     }
   }
