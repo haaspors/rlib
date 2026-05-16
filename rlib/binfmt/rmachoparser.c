@@ -298,6 +298,8 @@ r_macho_parser_get_loadcmd (RMachoParser * parser, ruint16 idx)
   RMachoLoadCmd * lc = parser->lc;
 
   while (idx-- > 0) {
+    if (lc->cmdsize < sizeof (RMachoLoadCmd))
+      return NULL;
     lc = (RMachoLoadCmd *)((ruint8 *)lc + lc->cmdsize);
     if ((ruint8 *)lc - ((ruint8 *)parser->lc) + sizeof (RMachoLoadCmd) > hdr->sizeofcmds)
       return NULL;
@@ -314,13 +316,17 @@ r_macho_parser_find_segment32 (RMachoParser * parser, const rchar * name, rssize
   if ((hdr = r_macho_parser_get_hdr32 (parser)) != NULL) {
     RMachoLoadCmd * lc;
     ruint16 i;
-    for (i = hdr->ncmds, lc = parser->lc; i > 0;
-        i--, lc = (RMachoLoadCmd *)(RPOINTER_TO_SIZE (lc) + lc->cmdsize)) {
+    for (i = hdr->ncmds, lc = parser->lc; i > 0; i--) {
+      if (lc->cmdsize < sizeof (RMachoLoadCmd))
+        break;
+      if ((ruint8 *)lc - ((ruint8 *)parser->lc) + lc->cmdsize > hdr->sizeofcmds)
+        break;
       if (lc->cmd == R_MACHO_LC_SEGMENT) {
         RMachoSegment32Cmd * seg = (RMachoSegment32Cmd *)lc;
         if (r_strcmp_size (seg->segname, -1, name, size) == 0)
           return seg;
       }
+      lc = (RMachoLoadCmd *)(RPOINTER_TO_SIZE (lc) + lc->cmdsize);
     }
   }
 
@@ -335,13 +341,17 @@ r_macho_parser_find_segment64 (RMachoParser * parser, const rchar * name, rssize
   if ((hdr = r_macho_parser_get_hdr64 (parser)) != NULL) {
     RMachoLoadCmd * lc;
     ruint16 i;
-    for (i = hdr->ncmds, lc = parser->lc; i > 0;
-        i--, lc = (RMachoLoadCmd *)(RPOINTER_TO_SIZE (lc) + lc->cmdsize)) {
+    for (i = hdr->ncmds, lc = parser->lc; i > 0; i--) {
+      if (lc->cmdsize < sizeof (RMachoLoadCmd))
+        break;
+      if ((ruint8 *)lc - ((ruint8 *)parser->lc) + lc->cmdsize > hdr->sizeofcmds)
+        break;
       if (lc->cmd == R_MACHO_LC_SEGMENT_64) {
         RMachoSegment64Cmd * seg = (RMachoSegment64Cmd *)lc;
         if (r_strcmp_size (seg->segname, -1, name, size) == 0)
           return seg;
       }
+      lc = (RMachoLoadCmd *)(RPOINTER_TO_SIZE (lc) + lc->cmdsize);
     }
   }
 
