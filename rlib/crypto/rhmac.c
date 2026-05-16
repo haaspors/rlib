@@ -48,7 +48,7 @@ r_hmac_new (RMsgDigestType type, rconstpointer key, rsize keysize)
 
     if (keysize > hmac->blocksize) {
       r_msg_digest_update (hmac->inner, key, keysize);
-      r_msg_digest_get_data (hmac->inner, (ruint8 *)hmac->keyblock, keysize, NULL);
+      r_msg_digest_get_data (hmac->inner, (ruint8 *)hmac->keyblock, hmac->blocksize, NULL);
     } else {
       r_memcpy (hmac->keyblock, key, keysize);
     }
