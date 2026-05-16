@@ -66,7 +66,8 @@ r_crypto_x509_authority_key_id (RCryptoX509Cert * cert,
 
   (void) critical; /* Warning if critical is TRUE! */
 
-  r_asn1_bin_decoder_into (dec, tlv);
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return FALSE;
   if (R_ASN1_BIN_TLV_IS_ID (tlv, R_ASN1_ID_CONTEXT | 0)) {
     cert->authorityKeyID.value = r_memdup (tlv->value, tlv->len);
     cert->authorityKeyID.size = tlv->len;
@@ -106,7 +107,8 @@ r_crypto_x509_basic_constraints (RCryptoX509Cert * cert,
 {
   (void) critical;
 
-  r_asn1_bin_decoder_into (dec, tlv);
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return FALSE;
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BOOLEAN)) {
     r_asn1_bin_tlv_parse_boolean (tlv, &cert->ca);
     r_asn1_bin_decoder_next (dec, tlv);
@@ -127,7 +129,8 @@ r_crypto_x509_policy_constraints (RCryptoX509Cert * cert,
 {
   (void) critical;
 
-  r_asn1_bin_decoder_into (dec, tlv);
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return FALSE;
   if (R_ASN1_BIN_TLV_IS_ID (tlv, R_ASN1_ID_CONTEXT | 0)) {
     r_asn1_bin_tlv_parse_integer_i32 (tlv, &cert->requireExplicitPolicy);
     r_asn1_bin_decoder_next (dec, tlv);
