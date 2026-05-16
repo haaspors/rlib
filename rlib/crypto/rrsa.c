@@ -735,13 +735,16 @@ r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
   if ((ret = r_rsa_raw_decrypt_internal ((const RRsaPrivKey*)key, data, buffer, size)) == R_CRYPTO_OK) {
     ruint8 * ptr;
 
-    if (buffer[0] != 0x00 || buffer[1] != R_RSA_EME_PKCS1)
+    if (size < 11 || buffer[0] != 0x00 || buffer[1] != R_RSA_EME_PKCS1)
       return R_CRYPTO_INVALID_PADDING;
 
     ptr = buffer + 2;
     while (ptr < buffer + size && *ptr != 0) ptr++;
 
+    if (ptr - buffer < 10 || ptr >= buffer + size)
+      return R_CRYPTO_INVALID_PADDING;
     ptr++;
+
     if (*outsize < size - (ptr - buffer))
       return R_CRYPTO_BUFFER_TOO_SMALL;
 
@@ -911,11 +914,12 @@ r_rsa_pkcs1v1_5_verify_msg (const RCryptoKey * key,
     ruint8 * ptr = buffer;
     RAsn1BinDecoder * dec;
 
-    if (*ptr++ != 0x00 || *ptr++ != R_RSA_EMSA_PKCS1)
+    if (sigsize < 11 || *ptr++ != 0x00 || *ptr++ != R_RSA_EMSA_PKCS1)
       return R_CRYPTO_VERIFY_FAILED;
 
-    while (ptr < buffer + sigsize && *ptr != 0) ptr++;
-    ptr++;
+    while (ptr < buffer + sigsize && *ptr == 0xff) ptr++;
+    if (ptr - buffer < 10 || ptr >= buffer + sigsize || *ptr++ != 0x00)
+      return R_CRYPTO_VERIFY_FAILED;
 
     if ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, ptr, buffer + sigsize - ptr)) != NULL) {
       RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
@@ -972,11 +976,12 @@ r_rsa_pkcs1v1_5_verify_msg_with_hash (const RCryptoKey * key,
     ruint8 * ptr = buffer;
     RAsn1BinDecoder * dec;
 
-    if (*ptr++ != 0x00 || *ptr++ != R_RSA_EMSA_PKCS1)
+    if (sigsize < 11 || *ptr++ != 0x00 || *ptr++ != R_RSA_EMSA_PKCS1)
       return R_CRYPTO_VERIFY_FAILED;
 
-    while (ptr < buffer + sigsize && *ptr != 0) ptr++;
-    ptr++;
+    while (ptr < buffer + sigsize && *ptr == 0xff) ptr++;
+    if (ptr - buffer < 10 || ptr >= buffer + sigsize || *ptr++ != 0x00)
+      return R_CRYPTO_VERIFY_FAILED;
 
     if ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, ptr, buffer + sigsize - ptr)) != NULL) {
       RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;

@@ -308,6 +308,62 @@ RTEST (rrsa, sign_verify_hash_roundtrip, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrsa, verify_msg_malformed_no_zero_separator, RTEST_FAST)
+{
+  /* Construct a signature whose decrypted EM is 00 01 ff..ff with no zero
+   * separator byte; the verifier must reject rather than read past the
+   * buffer searching for a separator. */
+  rmpint n, e, d;
+  RCryptoKey * priv, * pub;
+  ruint8 em[128];
+  ruint8 sig[128];
+  ruint8 hash[20];
+  rsize size = sizeof (sig);
+  rsize i;
+
+  r_memset (em, 0xff, sizeof (em));
+  em[0] = 0x00;
+  em[1] = 0x01;
+
+  for (i = 0; i < sizeof (hash); i++)
+    hash[i] = (ruint8) i;
+
+  r_mpint_init_str (&n,
+      "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"
+      "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"
+      "358143b44a35449eb264113121a455bd7fde3fac919e94b56fb9bb4f651cdb23ead439"
+      "d6cd523eb08191e75b35fd13a7419b3090f24787bd4f4e1967", NULL, 16);
+  r_mpint_init_str (&d,
+      "0x1628e4a39ebea86c8df0cd11572691017cfefb14ea1c12e1dedc7856032dad0f9612"
+      "00a38684f0a36dca30102e2464989d19a805933794c7d329ebc890089d3c4c6f602766"
+      "e5d62add74e82e490bbf92f6a482153853031be2844a700557b97673e727cd1316d3e6"
+      "fa7fc991d4227366ec552cbe90d367ef2e2e79fe66d26311", NULL, 16);
+  r_mpint_init_str (&e, "65537", NULL, 10);
+
+  r_assert_cmpptr ((priv = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
+  r_assert_cmpptr ((pub = r_rsa_pub_key_new (&n, &e)), !=, NULL);
+
+  /* sig = em^d mod n  -- this is the bare RSA private-key op */
+  r_assert_cmpuint (r_rsa_raw_decrypt (priv, em, sizeof (em),
+        sig, &size), ==, R_CRYPTO_OK);
+  r_assert_cmpuint (size, ==, sizeof (sig));
+
+  /* Both verify paths must safely reject without OOB. */
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_verify_msg_with_hash (pub,
+        R_MSG_DIGEST_TYPE_SHA1, hash, sizeof (hash),
+        sig, sizeof (sig)), ==, R_CRYPTO_VERIFY_FAILED);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_verify_msg (pub,
+        "msg", 3, sig, sizeof (sig)), ==, R_CRYPTO_VERIFY_FAILED);
+
+  r_mpint_clear (&n);
+  r_mpint_clear (&d);
+  r_mpint_clear (&e);
+
+  r_crypto_key_unref (priv);
+  r_crypto_key_unref (pub);
+}
+RTEST_END;
+
 RTEST (rrsa, gen_key, RTEST_SLOW)
 {
   RCryptoKey * key;
