@@ -39,7 +39,7 @@ R_BEGIN_DECLS
 #define RTEST_TYPE_TIMEOUT(type)    (((type) & R_TEST_TYPE_MASK) * RTEST_TIMEOUT)
 
 typedef struct _RTest RTest;
-typedef void (*RTestFunc) (); /* YES - non-void argument list */
+typedef void (*RTestFunc) (rsize __i, rpointer fixture);
 typedef void (*RTestFixtureFunc) (rpointer fixture);
 typedef rboolean (*RTestFilterFunc) (const RTest * test, rsize __i, rpointer data);
 

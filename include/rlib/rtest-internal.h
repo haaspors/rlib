@@ -37,15 +37,17 @@
   R_ATTR_UNUSED R_ATTR_DATA_SECTION (RTEST_SECTION)                           \
   const RTest _RTEST_DATA_NAME (suite, test) = { _RTEST_MAGIC, skip,          \
     #suite, #test, (type), (timeout),                                         \
-    _RTEST_FUNC_NAME(suite, test), start, end,                                \
+    (RTestFunc)_RTEST_FUNC_NAME(suite, test), start, end,                     \
     fdata, (RTestFixtureFunc)setup, (RTestFixtureFunc)teardown };             \
   R_API_EXPORT R_ATTR_WEAK                                                    \
   const RTest * R_PASTE (_RTEST_SYM_, __COUNTER__) = &_RTEST_DATA_NAME (suite, test)
 
 #define RTEST_DEFINE_TEST(suite, test, skip, type, timeout, start, end)       \
-  static void _RTEST_FUNC_NAME (suite, test) (R_ATTR_UNUSED rsize __i);       \
+  static void _RTEST_FUNC_NAME (suite, test) (R_ATTR_UNUSED rsize __i,        \
+      R_ATTR_UNUSED rpointer __fdata);                                        \
   __RTEST (suite, test, skip, type, timeout, start, end, NULL, NULL, NULL);   \
-  static void _RTEST_FUNC_NAME (suite, test) (R_ATTR_UNUSED rsize __i) {      \
+  static void _RTEST_FUNC_NAME (suite, test) (R_ATTR_UNUSED rsize __i,        \
+      R_ATTR_UNUSED rpointer __fdata) {                                       \
     _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE);
 
 #define RTEST_DEFINE_TEST_WITH_FIXTURE(suite, test, skip, type, timeout, start, end)\
