@@ -95,3 +95,73 @@ RTEST (runicode, utf8_to_utf16, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (runicode, utf16_to_utf8_bom, RTEST_FAST)
+{
+  runichar2 utf16[8], * utf16end;
+  rchar * utf8;
+  rsize u8len;
+  RUnicodeResult res;
+
+  /* Leading native-order BOM (0xFEFF) must be silently stripped. */
+  utf16[0] = 0xFEFF;
+  utf16[1] = 0x61; utf16[2] = 0x62; utf16[3] = 0x63; utf16[4] = 0;
+  r_assert_cmpptr (
+      (utf8 = r_utf16_to_utf8_dup (utf16, 4, &res, &u8len, &utf16end)),
+      !=, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpstr (utf8, ==, "abc");
+  r_assert_cmpuint (u8len, ==, 3);
+  r_free (utf8);
+
+  /* Byte-swapped BOM (0xFFFE) means the caller's data is in the wrong
+   * endianness for our typed ruint16 input -- refuse. */
+  utf16[0] = 0xFFFE;
+  utf16[1] = 0x61; utf16[2] = 0;
+  r_assert_cmpptr (
+      r_utf16_to_utf8_dup (utf16, 2, &res, &u8len, &utf16end), ==, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_INVAL);
+
+  /* A non-BOM 0xFEFF deeper in the stream is a zero-width no-break space
+   * code point and must be passed through, not stripped. */
+  utf16[0] = 0x61; utf16[1] = 0xFEFF; utf16[2] = 0x62; utf16[3] = 0;
+  r_assert_cmpptr (
+      (utf8 = r_utf16_to_utf8_dup (utf16, 3, &res, &u8len, &utf16end)),
+      !=, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpmem (utf8, ==, "a\xEF\xBB\xBF" "b", 5);
+  r_free (utf8);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_to_utf16_bom, RTEST_FAST)
+{
+  runichar2 * ptr;
+  rchar * utf8end;
+  rsize u16len;
+  RUnicodeResult res;
+  const rchar * utf8;
+
+  /* Leading UTF-8 BOM (0xEF 0xBB 0xBF) must be silently stripped. */
+  utf8 = "\xEF\xBB\xBF" "abc";
+  r_assert_cmpptr ((ptr = r_utf8_to_utf16_dup (utf8, -1, &res, &u16len, &utf8end)),
+      !=, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (u16len, ==, 3);
+  r_assert_cmphex (ptr[0], ==, 'a');
+  r_assert_cmphex (ptr[1], ==, 'b');
+  r_assert_cmphex (ptr[2], ==, 'c');
+  r_free (ptr);
+
+  /* A non-leading 0xEF 0xBB 0xBF sequence is a normal U+FEFF code point. */
+  utf8 = "a\xEF\xBB\xBF" "b";
+  r_assert_cmpptr ((ptr = r_utf8_to_utf16_dup (utf8, -1, &res, &u16len, &utf8end)),
+      !=, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (u16len, ==, 3);
+  r_assert_cmphex (ptr[0], ==, 'a');
+  r_assert_cmphex (ptr[1], ==, 0xFEFF);
+  r_assert_cmphex (ptr[2], ==, 'b');
+  r_free (ptr);
+}
+RTEST_END;

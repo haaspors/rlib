@@ -23,7 +23,15 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-/* FIXME: Implement BOM validation ByteOrderMark */
+/* Optional Byte Order Marks (Unicode TR #38).  rlib's UTF-16 API takes
+ * a typed runichar2 (native ruint16) array, so the byte order is fixed by
+ * the type and the BOM exists only to convey "this is text" / strip
+ * convention.  We silently consume a leading native-order BOM (U+FEFF)
+ * and refuse the byte-swapped form (0xFFFE) since it signals input the
+ * caller fed us in the wrong endianness.  For UTF-8 the BOM is the
+ * three-byte sequence EF BB BF -- also silently stripped if leading. */
+#define R_UTF16_BOM       0xFEFFu
+#define R_UTF16_BOM_SWAP  0xFFFEu
 
 static inline rssize
 r_unichar_to_utf8 (runichar c, rchar * str, rsize size)
@@ -151,6 +159,15 @@ r_utf8_to_utf16 (runichar2 * dst, rsize dstsize, const rchar * src, rssize srcsi
   if (srcsize < 0)
     srcsize = r_strlen (src);
 
+  /* Strip a leading UTF-8 BOM (EF BB BF). */
+  if (srcsize >= 3 &&
+      (ruint8) src[0] == 0xef &&
+      (ruint8) src[1] == 0xbb &&
+      (ruint8) src[2] == 0xbf) {
+    src += 3;
+    srcsize -= 3;
+  }
+
   for (i = 0, dstptr = dst, dstend = dst + dstsize - 1;
       i < srcsize && src[i] != 0;
       i += r) {
@@ -205,6 +222,15 @@ r_utf16_to_utf8 (rchar * dst, rsize dstsize, const runichar2 * src, rsize srcsiz
   if (R_UNLIKELY (dstsize == 1)) {
     dst[0] = 0;
     return R_UNICODE_OVERFLOW;
+  }
+
+  if (srcsize > 0) {
+    if (src[0] == R_UTF16_BOM_SWAP)
+      return R_UNICODE_INVAL;
+    if (src[0] == R_UTF16_BOM) {
+      src++;
+      srcsize--;
+    }
   }
 
   for (i = 0, dstptr = dst, dstend = dst + dstsize - 1;
