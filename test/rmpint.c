@@ -274,7 +274,7 @@ RTEST_END;
 
 RTEST (rmpint, cmp, RTEST_FAST)
 {
-  rmpint a, b;
+  rmpint a = R_MPINT_INIT, b = R_MPINT_INIT;
 
   r_assert_cmpint (r_mpint_cmp (NULL, NULL), ==, 0);
   r_assert_cmpint (r_mpint_cmp (NULL, &b), <, 0);
@@ -408,7 +408,7 @@ RTEST_END;
 
 RTEST (rmpint, sub, RTEST_FAST)
 {
-  rmpint a, b, diff;
+  rmpint a = R_MPINT_INIT, b = R_MPINT_INIT, diff = R_MPINT_INIT;
 
   r_assert (!r_mpint_sub (NULL, &a, &b));
   r_assert (!r_mpint_sub (&diff, NULL, &b));
@@ -449,7 +449,7 @@ RTEST_END;
 
 RTEST (rmpint, mul, RTEST_FAST)
 {
-  rmpint a, b, product;
+  rmpint a = R_MPINT_INIT, b = R_MPINT_INIT, product = R_MPINT_INIT;
 
   r_assert (!r_mpint_mul (NULL, &a, &b));
   r_assert (!r_mpint_mul (&product, NULL, &b));
@@ -506,7 +506,7 @@ RTEST_END;
 
 RTEST (rmpint, div, RTEST_FAST)
 {
-  rmpint n, d, q, r, cmp;
+  rmpint n = R_MPINT_INIT, d = R_MPINT_INIT, q = R_MPINT_INIT, r = R_MPINT_INIT, cmp;
 
   r_assert (!r_mpint_div (NULL, NULL, &n, &d));
   r_assert (!r_mpint_div (&q, NULL, NULL, &d));
@@ -572,7 +572,7 @@ RTEST_END;
 
 RTEST (rmpint, shl, RTEST_FAST)
 {
-  rmpint a, res;
+  rmpint a = R_MPINT_INIT, res;
 
   r_assert (!r_mpint_shl (NULL, &a, 4));
   r_assert (!r_mpint_shl (&a, NULL, 4));
@@ -607,7 +607,7 @@ RTEST_END;
 
 RTEST (rmpint, shr, RTEST_FAST)
 {
-  rmpint a, res;
+  rmpint a = R_MPINT_INIT, res;
 
   r_assert (!r_mpint_shr (NULL, &a, 4));
   r_assert (!r_mpint_shr (&a, NULL, 4));
@@ -642,7 +642,7 @@ RTEST_END;
 
 RTEST (rmpint, gcd, RTEST_FAST)
 {
-  rmpint a, b, res;
+  rmpint a = R_MPINT_INIT, b = R_MPINT_INIT, res;
 
   r_assert (!r_mpint_gcd (NULL, &a, &b));
   r_assert (!r_mpint_gcd (&res, NULL, &b));
@@ -672,7 +672,7 @@ RTEST_END;
 
 RTEST (rmpint, lcm, RTEST_FAST)
 {
-  rmpint a, b, res;
+  rmpint a = R_MPINT_INIT, b = R_MPINT_INIT, res;
 
   r_assert (!r_mpint_lcm (NULL, &a, &b));
   r_assert (!r_mpint_lcm (&res, NULL, &b));
@@ -694,7 +694,7 @@ RTEST_END;
 
 RTEST (rmpint, exp, RTEST_FAST)
 {
-  rmpint b, res;
+  rmpint b = R_MPINT_INIT, res;
   ruint16 e = 42;
 
   r_assert (!r_mpint_exp (NULL, &b, e));
@@ -810,7 +810,7 @@ RTEST_END;
 
 RTEST (rmpint, expmod, RTEST_FAST)
 {
-  rmpint b, e, m, res;
+  rmpint b = R_MPINT_INIT, e = R_MPINT_INIT, m = R_MPINT_INIT, res;
 
   r_assert (!r_mpint_expmod (NULL, &b, &e, &m));
   r_assert (!r_mpint_expmod (&res, NULL, &e, &m));

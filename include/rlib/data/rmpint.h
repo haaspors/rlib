@@ -39,6 +39,7 @@ typedef struct {
   rmpint_digit *  data;
 } rmpint;
 
+#define R_MPINT_INIT            { 0, 0, 0, NULL }
 #define r_mpint_init(mpi)       r_mpint_init_size (mpi, RMPINT_DEF_DIGITS)
 R_API void r_mpint_init_size (rmpint * mpi, ruint16 digits);
 R_API void r_mpint_init_binary (rmpint * mpi, rconstpointer data, rsize size);
