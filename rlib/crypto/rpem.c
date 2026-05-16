@@ -19,6 +19,8 @@
 #include "config.h"
 #include <rlib/crypto/rpem.h>
 
+#include <rlib/crypto/raes.h>
+#include <rlib/crypto/rcipher.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/rrsa.h>
 #include <rlib/crypto/rx509.h>
@@ -26,6 +28,7 @@
 #include <rlib/charset/rascii.h>
 
 #include <rlib/rmem.h>
+#include <rlib/rmsgdigest.h>
 #include <rlib/rstr.h>
 #include <rlib/rbase64.h>
 
@@ -58,6 +61,13 @@ struct _RPemParser {
   rsize offset;
 };
 
+typedef enum {
+  R_PEM_LEGACY_CIPHER_NONE = 0,
+  R_PEM_LEGACY_CIPHER_AES_128_CBC,
+  R_PEM_LEGACY_CIPHER_AES_192_CBC,
+  R_PEM_LEGACY_CIPHER_AES_256_CBC
+} RPemLegacyCipher;
+
 struct _RPemBlock {
   RRef ref;
 
@@ -65,6 +75,13 @@ struct _RPemBlock {
   const rchar * begline, * blob, * base64, * endline, * eob;
   RPemType type;
   rchar * label;
+
+  /* RFC 1421-style legacy headers ("Proc-Type: 4,ENCRYPTED" +
+   * "DEK-Info: <cipher>,<hex-iv>") parsed from between the BEGIN line
+   * and the base64 blob. */
+  RPemLegacyCipher legacy_cipher;
+  ruint8 iv[16];
+  rsize iv_size;
 };
 
 
@@ -169,6 +186,100 @@ r_pem_block_free (RPemBlock * block)
   r_free (block);
 }
 
+static RPemLegacyCipher
+r_pem_legacy_cipher_from_str (const rchar * s, rsize size)
+{
+  if (size == 11 && r_memcmp (s, "AES-128-CBC", 11) == 0)
+    return R_PEM_LEGACY_CIPHER_AES_128_CBC;
+  if (size == 11 && r_memcmp (s, "AES-192-CBC", 11) == 0)
+    return R_PEM_LEGACY_CIPHER_AES_192_CBC;
+  if (size == 11 && r_memcmp (s, "AES-256-CBC", 11) == 0)
+    return R_PEM_LEGACY_CIPHER_AES_256_CBC;
+  return R_PEM_LEGACY_CIPHER_NONE;
+}
+
+static rsize
+r_pem_legacy_cipher_keysize (RPemLegacyCipher c)
+{
+  switch (c) {
+    case R_PEM_LEGACY_CIPHER_AES_128_CBC: return 16;
+    case R_PEM_LEGACY_CIPHER_AES_192_CBC: return 24;
+    case R_PEM_LEGACY_CIPHER_AES_256_CBC: return 32;
+    default: return 0;
+  }
+}
+
+/* Parse the optional "Proc-Type: 4,ENCRYPTED" + "DEK-Info: <cipher>,<hex IV>"
+ * headers immediately following the BEGIN line.  Advances `*blob` past the
+ * headers (including the blank separator line) on success. */
+static void
+r_pem_parse_legacy_headers (RPemBlock * block, const rchar ** blob,
+    const rchar * end)
+{
+  const rchar * p = *blob, * eol;
+  rboolean is_encrypted = FALSE;
+
+  block->legacy_cipher = R_PEM_LEGACY_CIPHER_NONE;
+  block->iv_size = 0;
+
+  /* "Proc-Type: 4,ENCRYPTED" */
+  if (end - p < 22 || r_memcmp (p, "Proc-Type:", 10) != 0)
+    return;
+  p += 10;
+  while (p < end && (*p == ' ' || *p == '\t')) p++;
+  if (end - p < 11 || r_memcmp (p, "4,ENCRYPTED", 11) != 0)
+    return;
+  p += 11;
+  if (p >= end || *p != '\n')
+    return;
+  p++;
+  is_encrypted = TRUE;
+
+  /* "DEK-Info: AES-NNN-CBC,<hex IV>" */
+  if (end - p < 10 || r_memcmp (p, "DEK-Info:", 9) != 0)
+    return;
+  p += 9;
+  while (p < end && (*p == ' ' || *p == '\t')) p++;
+  if ((eol = r_strnchr (p, '\n', end - p)) == NULL)
+    return;
+  {
+    const rchar * comma;
+    RPemLegacyCipher cipher;
+    rsize hex_size, raw_size, i;
+
+    if ((comma = r_strnchr (p, ',', eol - p)) == NULL)
+      return;
+    if ((cipher = r_pem_legacy_cipher_from_str (p, comma - p)) ==
+        R_PEM_LEGACY_CIPHER_NONE)
+      return;
+    hex_size = (rsize) (eol - (comma + 1));
+    if ((hex_size & 1) != 0 || hex_size / 2 > sizeof (block->iv))
+      return;
+    raw_size = hex_size / 2;
+    for (i = 0; i < raw_size; i++) {
+      rint8 hi = r_ascii_xdigit_value (comma[1 + i * 2]);
+      rint8 lo = r_ascii_xdigit_value (comma[1 + i * 2 + 1]);
+      if (hi < 0 || lo < 0) return;
+      block->iv[i] = (ruint8) ((hi << 4) | lo);
+    }
+    block->iv_size = raw_size;
+    block->legacy_cipher = cipher;
+  }
+  p = eol + 1;
+
+  /* Blank separator line. */
+  if (p >= end || *p != '\n') {
+    if (is_encrypted) {
+      block->legacy_cipher = R_PEM_LEGACY_CIPHER_NONE;
+      block->iv_size = 0;
+    }
+    return;
+  }
+  p++;
+
+  *blob = p;
+}
+
 RPemBlock *
 r_pem_parser_next_block (RPemParser * parser)
 {
@@ -211,8 +322,8 @@ r_pem_parser_next_block (RPemParser * parser)
       ret->blob = begend + sizeof (R_PEM_BEGIN_END) - 1;
       while (r_ascii_isspace (*ret->blob)) ret->blob++;
 
-      /* FIXME: Check if non standard encryption params is used!!! */
       ret->base64 = ret->blob;
+      r_pem_parse_legacy_headers (ret, &ret->base64, ret->endline);
     } else {
       r_free (label);
     }
@@ -238,8 +349,9 @@ r_pem_block_get_type (RPemBlock * block)
 rboolean
 r_pem_block_is_encrypted (RPemBlock * block)
 {
-  /* FIXME: Check if non standard encryption params is used!!! */
-  return block->type == R_PEM_TYPE_ENCRYPTED_PRIVATE_KEY;
+  if (R_UNLIKELY (block == NULL)) return FALSE;
+  return block->type == R_PEM_TYPE_ENCRYPTED_PRIVATE_KEY ||
+      block->legacy_cipher != R_PEM_LEGACY_CIPHER_NONE;
 }
 
 rboolean
@@ -293,6 +405,94 @@ r_pem_block_get_asn1_decoder (RPemBlock * block)
   return ret;
 }
 
+/* OpenSSL's EVP_BytesToKey with count=1 and MD5 -- the KDF used by
+ * "Proc-Type/DEK-Info" encrypted PEM keys.  Salt is the first 8 bytes
+ * of the IV from the DEK-Info header. */
+static rboolean
+r_pem_legacy_bytes_to_key (const ruint8 * passphrase, rsize ppsize,
+    const ruint8 * salt, ruint8 * key, rsize keysize)
+{
+  RMsgDigest * md;
+  ruint8 d[16];           /* MD5 produces 16 bytes per round */
+  rsize off = 0, used;
+
+  if (R_UNLIKELY (passphrase == NULL || salt == NULL || key == NULL))
+    return FALSE;
+
+  while (off < keysize) {
+    if ((md = r_md5_new ()) == NULL)
+      return FALSE;
+    if (off > 0 && !r_msg_digest_update (md, d, sizeof (d))) {
+      r_msg_digest_free (md);
+      return FALSE;
+    }
+    if (!r_msg_digest_update (md, passphrase, ppsize) ||
+        !r_msg_digest_update (md, salt, 8) ||
+        !r_msg_digest_get_data (md, d, sizeof (d), NULL)) {
+      r_msg_digest_free (md);
+      return FALSE;
+    }
+    r_msg_digest_free (md);
+    used = MIN (sizeof (d), keysize - off);
+    r_memcpy (key + off, d, used);
+    off += used;
+  }
+  r_memclear (d, sizeof (d));
+  return TRUE;
+}
+
+static ruint8 *
+r_pem_decrypt_legacy (RPemBlock * block, const ruint8 * passphrase, rsize ppsize,
+    ruint8 * cipherbuf, rsize cipherbufsize, rsize * out_size)
+{
+  ruint8 key[32];
+  ruint8 iv[16];
+  RCryptoCipher * cipher;
+  ruint8 pad;
+  rsize keysize;
+
+  if (block->legacy_cipher == R_PEM_LEGACY_CIPHER_NONE)
+    return NULL;
+  if (block->iv_size != 16)            /* AES block size; salt = iv[0..7] */
+    return NULL;
+  if (cipherbufsize == 0 || (cipherbufsize & 0xf) != 0)
+    return NULL;                       /* must be a multiple of 16 */
+
+  keysize = r_pem_legacy_cipher_keysize (block->legacy_cipher);
+  if (!r_pem_legacy_bytes_to_key (passphrase, ppsize, block->iv, key, keysize))
+    return NULL;
+
+  r_memcpy (iv, block->iv, sizeof (iv));
+  cipher = r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CBC,
+      (ruint) keysize * 8, key);
+  r_memclear (key, sizeof (key));
+  if (cipher == NULL)
+    return NULL;
+
+  if (r_crypto_cipher_decrypt (cipher, cipherbuf, cipherbufsize,
+        cipherbuf, iv, sizeof (iv)) != R_CRYPTO_CIPHER_OK) {
+    r_crypto_cipher_unref (cipher);
+    return NULL;
+  }
+  r_crypto_cipher_unref (cipher);
+
+  /* PKCS#5/PKCS#7 padding: last byte is the pad length (1..16). */
+  pad = cipherbuf[cipherbufsize - 1];
+  if (pad == 0 || pad > 16 || pad > cipherbufsize)
+    return NULL;
+  /* Verify all padding bytes equal pad (constant-time isn't critical here:
+   * a wrong passphrase yields random plaintext, the ASN.1 parser fails too). */
+  {
+    rsize i;
+    for (i = cipherbufsize - pad; i < cipherbufsize; i++) {
+      if (cipherbuf[i] != pad)
+        return NULL;
+    }
+  }
+  *out_size = cipherbufsize - pad;
+  return cipherbuf;
+}
+
 RCryptoKey *
 r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
 {
@@ -305,36 +505,50 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
   if (R_UNLIKELY (!r_pem_block_is_key (block)))
     return NULL;
 
-  /* TODO: If encrypted key, use passphrase */
-  (void) passphrase;
-  (void) ppsize;
+  if (block->legacy_cipher != R_PEM_LEGACY_CIPHER_NONE) {
+    ruint8 * decoded;
+    rsize decoded_size, plain_size;
 
-  if ((dec = r_pem_block_get_asn1_decoder (block)) != NULL) {
-    if (r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK) {
-      r_asn1_bin_decoder_unref (dec);
+    if (passphrase == NULL)
+      return NULL;
+    if ((decoded = r_pem_block_decode_base64 (block, &decoded_size)) == NULL)
+      return NULL;
+    if (r_pem_decrypt_legacy (block, (const ruint8 *) passphrase, ppsize,
+            decoded, decoded_size, &plain_size) == NULL) {
+      r_free (decoded);
       return NULL;
     }
-    switch (r_pem_block_get_type (block)) {
-      case R_PEM_TYPE_PUBLIC_KEY:
-        ret = r_crypto_key_from_asn1_public_key (dec, &tlv);
-        break;
-      case R_PEM_TYPE_RSA_PRIVATE_KEY:
-        ret = r_rsa_priv_key_new_from_asn1 (dec, &tlv);
-        break;
-      case R_PEM_TYPE_DSA_PRIVATE_KEY:
-        ret = r_dsa_priv_key_new_from_asn1 (dec, &tlv);
-        break;
-      case R_PEM_TYPE_PRIVATE_KEY:
-        ret = r_crypto_key_from_asn1_private_key (dec, &tlv);
-        break;
-      /* TODO: ecnrypted PRIVATE keys */
-      default:
-        ret = NULL;
+    if ((dec = r_asn1_bin_decoder_new_with_data (R_ASN1_BER, decoded,
+            plain_size)) == NULL) {
+      r_free (decoded);
+      return NULL;
     }
-    r_asn1_bin_decoder_unref (dec);
-  } else {
-    ret = NULL;
+  } else if ((dec = r_pem_block_get_asn1_decoder (block)) == NULL) {
+    return NULL;
   }
+
+  if (r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK) {
+    r_asn1_bin_decoder_unref (dec);
+    return NULL;
+  }
+  switch (r_pem_block_get_type (block)) {
+    case R_PEM_TYPE_PUBLIC_KEY:
+      ret = r_crypto_key_from_asn1_public_key (dec, &tlv);
+      break;
+    case R_PEM_TYPE_RSA_PRIVATE_KEY:
+      ret = r_rsa_priv_key_new_from_asn1 (dec, &tlv);
+      break;
+    case R_PEM_TYPE_DSA_PRIVATE_KEY:
+      ret = r_dsa_priv_key_new_from_asn1 (dec, &tlv);
+      break;
+    case R_PEM_TYPE_PRIVATE_KEY:
+      ret = r_crypto_key_from_asn1_private_key (dec, &tlv);
+      break;
+    /* TODO: PKCS#8 EncryptedPrivateKeyInfo */
+    default:
+      ret = NULL;
+  }
+  r_asn1_bin_decoder_unref (dec);
 
   return ret;
 }

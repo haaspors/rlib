@@ -605,3 +605,131 @@ RTEST (rcryptopem, write_oversized_pub_key_dup, RTEST_FAST)
   r_crypto_key_unref (key);
 }
 RTEST_END;
+
+/* Generated with:
+ *   openssl genrsa 1024 | openssl rsa -aes128 -passout pass:test123 -traditional
+ * and the same key encrypted with -aes256.  pem_legacy_unenc is the same
+ * private key in clear PKCS#1 form for direct round-trip comparison. */
+static const rchar pem_legacy_unenc[] =
+  "-----BEGIN RSA PRIVATE KEY-----\n"
+  "MIICXAIBAAKBgQDGVQV6eG2r8ZQ3y8+KkYqweaKw4GiX7Ce/w1+XR+rSpeSFuo2I\n"
+  "I4645ISjZ0rf6YCkEKb5u7RZo/UGQh8aRmBUtV2vU4O6S6sO1yoA1rTmtXVNtcz+\n"
+  "sAdz0UNZ0ocSHf01OUDBAX5i8v7NfDuyP2OU6Nr1iUTwqmFpIc6r/jf90wIDAQAB\n"
+  "AoGANWkWFZoy5rgjEzeWx5lUQRwwnPOCF0+okLLbnlDmwx2bwguwK7ZvrAkWUy7w\n"
+  "8gXe98/oN569/dnylWHfIGNNc2iLcZGhVHODjWNQPFCuUgG+IRqk4b73MWoCsemA\n"
+  "gGoKRHs/TyMgwieDNZZLeG1Vx9KaFufpVIenQnpBN77qYuECQQD4E9to23EZe33g\n"
+  "Bw58xiacayMPyrICP8sIlXg1V68Z9YOQ8ct1YzKtarRq+QGhDdZPpL6UowgVrijA\n"
+  "eEuMfOxxAkEAzKp5M2qQz1G2bxWbfwNLSZ1/L/PRW+Karpj3U0Lh//G5yY6dyQdt\n"
+  "thqD1PoCUFpIRmsI5uhAcDVf5GyVgHsAgwJBAIUF8NMrSFxHsdmdLxGNF0ssz+I5\n"
+  "6HX4SyDRNWI1IHmlAuWIIndRt+zxmMj7uPnpd4/BYUhGm6E0gDmkx64PlqECQApT\n"
+  "By4q0AdFTfiolGGB3whlo4bdu8/wzHDGUqOmmhP5M7ARO7BqaYRoLgJOYlN/WmoC\n"
+  "+D39tVJzvtSdDaWfjtUCQAwNOpsXWARsfWotrxtkH3HoFiYBINEfCo7gw4KvDEPY\n"
+  "QuMnseY1HLsFVtDaDr2MbZORjmF9XengxVPXzDPc+v0=\n"
+  "-----END RSA PRIVATE KEY-----\n";
+
+static const rchar pem_legacy_enc_aes128[] =
+  "-----BEGIN RSA PRIVATE KEY-----\n"
+  "Proc-Type: 4,ENCRYPTED\n"
+  "DEK-Info: AES-128-CBC,0C5C4D4C3B5ACD3CCFCD1D8F481723CF\n"
+  "\n"
+  "F7p4G2R0sXHjnZ1gjlS5+pdvYamM8bfA5POaMMoRSFXlq2cUJaahpfKaXRMWtEX/\n"
+  "zRJVsnMV26C+Z0BJid09xIiVMzDyl9I07gWxm+LvCkTt2JcmQuEM1xEoDypGrn2S\n"
+  "cKc3lKkgiLmQikdkDr+WBwfVuHY+Ry78NjEzDkA1GZXKZy4v+aXir8Hz61zU3kTc\n"
+  "Zq+pFUIm9TjX3/fesQiPuiU9+ZOeqX9OvhntB2fNDsP53u8sQhnjVyhCOPFYrR/K\n"
+  "ucIc2eKzVULBjFofw3PLl3k3qD+ExZFPAXHqpBsZFqExSIdjDH/2jR0+756uu7Jo\n"
+  "VosQ1aC8FFS/4vD9VIRVpGQd+XvRnB8g1XB27KqODOlz4KiflJvoeDy6KLsDpy2x\n"
+  "Q+L3ukdQWNHpet3WiqucoWlLaBjjBTtmbG3krOxsdM6qMGEDzQUQrszQXGHIhUpW\n"
+  "AEjcYgves2APSOyihiaoS0SHPd/Ob96NuN7IVloiktPknV7RsTsIM1SV4CKSWTFP\n"
+  "W6qNzzfpuY2lpgOuVr9Y1xG5mu8QPRUNqme8GKjPCBUWTeta/dF6RYnnj4rvPr+p\n"
+  "ndnOnqC3o8QrUtDMf35X9ZJ7/avUFSKvO/A9SlAY4AOhuMu3HSnS/XzQzNGoybQB\n"
+  "0VQxnsVaTzNSfA3Q7vTnDWd3oveNnq7esS63NP5tgK/BKTxIhlHYPIfQsA+OL5Ir\n"
+  "CuDFDpukwlwnJUvKi4y8LSGdB2WUkdO6Qyc6r4KBhyQ3+oIdZaNGvcp/KF7U3/55\n"
+  "zvZycLPtSYEa3AfrwrJPbcdqfqQxpvZrQMb3DW09+y3Jd/vFQr5hrgNcGIEyOcmH\n"
+  "-----END RSA PRIVATE KEY-----\n";
+
+static const rchar pem_legacy_enc_aes256[] =
+  "-----BEGIN RSA PRIVATE KEY-----\n"
+  "Proc-Type: 4,ENCRYPTED\n"
+  "DEK-Info: AES-256-CBC,06907D8AA80018D282C36B6ED265D0D3\n"
+  "\n"
+  "dZBUPOVnMBDmT+ljiThPL+FS3YzQPWrmqvRQkXDIfaOx3kcYUKi4/So4Cghx9l5R\n"
+  "bKLsJHxVKPXMdGgyRGvxIvvsiZsvhlbH/3APoIlfuRKz+/R4x6GycyWcAnig6AjF\n"
+  "wdADWj43X2WoEmGhAArjNrTiyhJ6OV9+wK1QGwxRqj0z2oLbCKeEQqLHLu7nGEfr\n"
+  "o+y7tL5qdDn0mQDvfdn7JyGfba5eUjBb7/7kxeQxbCFMXeL1YTeN7phB+iB73b7u\n"
+  "27OU6sIGx3k+AnO+sj4qhKWrHvMrLnkrCihNOQdQPd/AREXdGKQcmaNk7RhYKm+d\n"
+  "C93Z5QS0q/urFkuTqm8w2QsUi34+ootR0VnoSHVrYveX9XUbvrKCpoCla7W3plv6\n"
+  "6j7TSaGlMs+vpF688SjwR1WIL35Sybyo+5D0iQJzexHiybQtqXV4eqLCAztGBv+i\n"
+  "XNW4Ck8FFhSLDZoFx2FbgsNwJE3hb0DLfx6u6i39NcpUdfXpJzlAU7IF4GHnaEJD\n"
+  "Tjc6qpIE0UwjptuzjWrRrF27Q503wKXLwMUNZCz5+Sk+0HBpT7ViqbvWmLomqvIu\n"
+  "M0NGCIb2lX2tpUpVo9zwLGCMmTmbAlzTsN19mH0Sb+CK0VaXdDSNibt3h6ow+1Wk\n"
+  "si4y3+oM8aZLlVPTrBPiU+86dL8wF0StH+8ScwHLEIGu0jaKk+I6pSWIJFmYz9yY\n"
+  "vV8LwjVqNuej2d8SEDuiP7MShyc/+HIGXTACSLXiyz7gF1SdjL97uJZ8sM3WD8ux\n"
+  "5XrWKW1gIxSmrqYgXFCs1IoczC/NcCfBNK4tZliVYPDPXVVgWDj76T+YQCseLLA/\n"
+  "-----END RSA PRIVATE KEY-----\n";
+
+static void
+verify_legacy_pem (const rchar * pem, rsize size, const rchar * pass)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key, * expected;
+  rmpint n, e;
+
+  /* Decode the unencrypted reference key. */
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_legacy_unenc, sizeof (pem_legacy_unenc))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert (!r_pem_block_is_encrypted (block));
+  r_assert_cmpptr ((expected = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+
+  /* Wrong passphrase must fail; correct passphrase must produce the same key. */
+  r_assert_cmpptr ((parser = r_pem_parser_new (pem, size)), !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert (r_pem_block_is_encrypted (block));
+  r_assert_cmpptr (r_pem_block_get_key (block, NULL, 0), ==, NULL);
+  r_assert_cmpptr (r_pem_block_get_key (block, "wrongpass", 9), ==, NULL);
+
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, pass, r_strlen (pass))),
+      !=, NULL);
+
+  /* Compare modulus + exponent of decrypted key vs reference key. */
+  r_mpint_init (&n);
+  r_mpint_init (&e);
+  r_assert (r_rsa_pub_key_get_n (key, &n));
+  r_assert (r_rsa_pub_key_get_e (key, &e));
+  {
+    rmpint en, ee;
+    r_mpint_init (&en);
+    r_mpint_init (&ee);
+    r_assert (r_rsa_pub_key_get_n (expected, &en));
+    r_assert (r_rsa_pub_key_get_e (expected, &ee));
+    r_assert_cmpint (r_mpint_cmp (&n, &en), ==, 0);
+    r_assert_cmpint (r_mpint_cmp (&e, &ee), ==, 0);
+    r_mpint_clear (&en);
+    r_mpint_clear (&ee);
+  }
+  r_mpint_clear (&n);
+  r_mpint_clear (&e);
+
+  r_crypto_key_unref (key);
+  r_crypto_key_unref (expected);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+}
+
+RTEST (rcryptopem, legacy_encrypted_rsa_aes128, RTEST_FAST)
+{
+  verify_legacy_pem (pem_legacy_enc_aes128, sizeof (pem_legacy_enc_aes128),
+      "test123");
+}
+RTEST_END;
+
+RTEST (rcryptopem, legacy_encrypted_rsa_aes256, RTEST_FAST)
+{
+  verify_legacy_pem (pem_legacy_enc_aes256, sizeof (pem_legacy_enc_aes256),
+      "test123");
+}
+RTEST_END;
