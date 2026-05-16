@@ -14,6 +14,22 @@ RTEST (rbuffer, new_empty, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbuffer, mem_is_writable_indices, RTEST_FAST)
+{
+  /* r_buffer_mem_is_writable used an inverted bound check, returning FALSE
+   * for every valid index and falling off the end for indices past
+   * mem_count.  Spot-check the inclusive bound. */
+  RBuffer * buf;
+
+  r_assert_cmpptr ((buf = r_buffer_new_take (r_malloc (32), 32)), !=, NULL);
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 1);
+  r_assert (r_buffer_mem_is_writable (buf, 0));
+  r_assert (!r_buffer_mem_is_writable (buf, 1));
+  r_assert (!r_buffer_mem_is_writable (buf, 999));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rbuffer, new_wrapped, RTEST_FAST)
 {
   RBuffer * buf;

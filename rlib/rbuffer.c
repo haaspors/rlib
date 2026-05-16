@@ -205,7 +205,7 @@ rboolean
 r_buffer_mem_is_writable (const RBuffer * buffer, ruint idx)
 {
   if (R_UNLIKELY (buffer == NULL)) return FALSE;
-  if (R_UNLIKELY (buffer->mem_count >= idx)) return FALSE;
+  if (R_UNLIKELY (idx >= buffer->mem_count)) return FALSE;
 
   return r_mem_is_writable (buffer->mem[idx]);
 }
