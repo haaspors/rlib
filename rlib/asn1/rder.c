@@ -31,7 +31,7 @@ r_asn1_der_parse_length (const ruint8 * ptr, rsize * lensize, rsize * ret)
       /* definite long form */
       rsize i;
 
-      if ((*ptr & 0x7f) > *lensize)
+      if ((*ptr & 0x7f) >= *lensize)
         return R_ASN1_DECODER_OVERFLOW;
 
       *lensize = *ptr++ & 0x7f;

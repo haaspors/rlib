@@ -287,3 +287,34 @@ RTEST (rasn1ber, constructed_definite_long_form, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1ber, length_long_form_truncated, RTEST_FAST)
+{
+  /* Long-form length declares N value-bytes follow, but the buffer
+   * has fewer than N trailing bytes. The decoder must reject without
+   * reading past the end of the input. */
+  static const ruint8 trunc_1[] = { 0x04, 0x81 };
+  static const ruint8 trunc_2[] = { 0x04, 0x82, 0x00 };
+  static const ruint8 trunc_4[] = { 0x04, 0x84, 0x00, 0x00, 0x00 };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv;
+
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER,
+          trunc_1, sizeof (trunc_1))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OVERFLOW);
+  r_asn1_bin_decoder_unref (dec);
+
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER,
+          trunc_2, sizeof (trunc_2))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OVERFLOW);
+  r_asn1_bin_decoder_unref (dec);
+
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER,
+          trunc_4, sizeof (trunc_4))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OVERFLOW);
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
