@@ -287,6 +287,35 @@ RTEST (rasn1ber, constructed_definite_long_form, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1ber, empty_constructed_then_sibling, RTEST_FAST)
+{
+  /* Empty SEQUENCE (definite length 0) followed by an INTEGER as a
+   * sibling. The decoder must NOT treat the zero-length SEQUENCE as
+   * indefinite-length and absorb the sibling as its content. */
+  static const ruint8 ber_encoded[] = {
+    0x30, 0x00,             /* empty SEQUENCE */
+    0x02, 0x01, 0x2a        /* INTEGER 42 */
+  };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  rint32 v_int = 0;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER,
+          ber_encoded, sizeof (ber_encoded))), !=, NULL);
+
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_IS_ID (&tlv, R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE));
+  r_assert_cmpuint (tlv.len, ==, 0);
+
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i32 (&tlv, &v_int), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (v_int, ==, 42);
+
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
 RTEST (rasn1ber, length_long_form_truncated, RTEST_FAST)
 {
   /* Long-form length declares N value-bytes follow, but the buffer

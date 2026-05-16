@@ -21,6 +21,13 @@
 
 #include <rlib/rmem.h>
 
+/* BER stores tlv->len = 0 for both an indefinite-length encoding and
+ * a definite zero-length encoding. They differ by the actual last
+ * byte of the length-encoding: 0x80 for indefinite, anything else
+ * (typically 0x00) for definite zero. */
+#define R_ASN1_BER_TLV_IS_INDEFINITE(tlv) \
+    ((tlv)->value[-1] == R_ASN1_BIN_LENGTH_INDEFINITE)
+
 static RAsn1DecoderStatus
 r_asn1_ber_parse_length (const ruint8 * ptr, rsize * lensize, rsize * ret)
 {
@@ -99,7 +106,7 @@ r_asn1_ber_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
       ret = R_ASN1_DECODER_EOC;
     else
       ret = R_ASN1_DECODER_OVERFLOW;
-  } else if (tlv->len == 0) {
+  } else if (tlv->len == 0 && R_ASN1_BER_TLV_IS_INDEFINITE (tlv)) {
     if ((ret = r_asn1_ber_decoder_into (dec, tlv)) == R_ASN1_DECODER_OK)
       ret = r_asn1_ber_decoder_out (dec, tlv);
   } else {
@@ -134,7 +141,7 @@ r_asn1_ber_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   if (R_UNLIKELY (dec == NULL || tlv == NULL || tlv->value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
 
-  if ((size = tlv->len) == 0)
+  if ((size = tlv->len) == 0 && R_ASN1_BER_TLV_IS_INDEFINITE (tlv))
     size = (rsize)(dec->data + dec->size - tlv->value);
 
   if (*tlv->start & R_ASN1_ID_CONSTRUCTED) {
