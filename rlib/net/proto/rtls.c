@@ -230,6 +230,8 @@ r_tls_parser_decrypt (RTLSParser * parser,
     return R_TLS_ERROR_OK;
 
   ivsize = cipher->info->ivsize;
+  if (R_UNLIKELY (parser->fragment.size < ivsize))
+    return R_TLS_ERROR_CORRUPT_RECORD;
   contentsize = parser->fragment.size - ivsize;
   if ((buf = r_buffer_new_alloc (NULL, contentsize, NULL)) == NULL)
     return R_TLS_ERROR_OOM;
@@ -250,15 +252,19 @@ r_tls_parser_decrypt (RTLSParser * parser,
 
   if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_CBC) {
     ruint8 padding;
+    rsize macsize = (mac != NULL) ? r_hmac_size (mac) : 0;
 
-    if (mac != NULL)
-      contentsize -= r_hmac_size (mac);
+    if (info.size < macsize + 1) {
+      r_buffer_unmap (buf, &info);
+      r_buffer_unref (buf);
+      return R_TLS_ERROR_CORRUPT_RECORD;
+    }
+    contentsize -= macsize;
     if ((padding = 1 + info.data[info.size - 1]) < contentsize) {
       contentsize -= padding;
 
       if (mac != NULL) {
         ruint8 scratch[sizeof (ruint64) + sizeof (ruint8) + sizeof (ruint16) + sizeof (ruint16)];
-        rsize macsize = r_hmac_size (mac);
         ruint8 * macbuf = r_alloca (macsize);
 
         r_hmac_reset (mac);

@@ -1000,3 +1000,27 @@ RTEST (rtls, dtls_encrypt, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, parser_decrypt_fragment_shorter_than_iv, RTEST_FAST)
+{
+  /* fragment.size (8) < ivsize (16): a naive subtraction wraps rsize and
+   * leads to huge contentsize / OOB reads downstream. */
+  static const ruint8 aes_key[16] = { 0 };
+  /* TLS 1.0 record header: app_data, version, length=8, then 8 bytes payload. */
+  static const ruint8 short_record[5 + 8] = {
+    0x17, 0x03, 0x01, 0x00, 0x08,
+    0, 0, 0, 0, 0, 0, 0, 0
+  };
+  RCryptoCipher * cipher;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_128_cbc_new (aes_key)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init (&parser, short_record, sizeof (short_record)),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, NULL),
+      ==, R_TLS_ERROR_CORRUPT_RECORD);
+
+  r_tls_parser_clear (&parser);
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
