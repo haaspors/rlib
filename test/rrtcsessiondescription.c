@@ -809,6 +809,35 @@ RTEST (rrtcsessiondescription, webrtc_with_BUNDLE_to_sdp, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcsessiondescription, set_originator_and_connection_ipv6, RTEST_FAST)
+{
+  /* IPv6 RSocketAddresses must be accepted by the originator and
+   * connection setters and rendered as "IN IP6 <literal>" in the
+   * o= / c= lines.  Previously the v6 case was commented out as
+   * FIXME and the setters returned R_RTC_INVAL for v6. */
+  RRtcSessionDescription * sd;
+  RSocketAddress * addr;
+  ruint8 ip6[16] = { 0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+
+  r_assert_cmpptr ((sd = r_rtc_session_description_new (R_RTC_SIGNAL_OFFER)), !=, NULL);
+
+  r_assert_cmpptr ((addr = r_socket_address_ipv6_new_from_bytes (ip6, 0)), !=, NULL);
+  r_assert_cmpint (r_rtc_session_description_set_originator_addr (sd,
+        R_STR_WITH_SIZE_ARGS ("jdoe"), R_STR_WITH_SIZE_ARGS ("123"), 1, addr),
+      ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_set_connection_addr (sd, addr),
+      ==, R_RTC_OK);
+  r_socket_address_unref (addr);
+
+  r_assert_cmpstr (sd->orig_addrtype, ==, "IP6");
+  r_assert_cmpstr (sd->orig_addr, ==, "fe80::1");
+  r_assert_cmpstr (sd->conn_addrtype, ==, "IP6");
+  r_assert_cmpstr (sd->conn_addr, ==, "fe80::1");
+
+  r_rtc_session_description_unref (sd);
+}
+RTEST_END;
+
 RTEST (rrtcsessiondescription, new_from_sdp_to_sdp_symetric, RTEST_FAST)
 {
   RRtcSessionDescription * sd;

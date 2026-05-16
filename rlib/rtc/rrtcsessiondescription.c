@@ -752,10 +752,10 @@ r_rtc_session_description_set_originator_addr (RRtcSessionDescription * sd,
       addrtype = "IP4";
       addrstr = r_socket_address_ipv4_to_str (addr, FALSE);
       break;
-      /* FIXME: IPV6 */
-    /*case R_SOCKET_FAMILY_IPV6:*/
-      /*addrtype = "IP6";*/
-      /*break;*/
+    case R_SOCKET_FAMILY_IPV6:
+      addrtype = "IP6";
+      addrstr = r_socket_address_ipv6_to_str (addr, FALSE);
+      break;
     default:
       return R_RTC_INVAL;
   }
@@ -804,10 +804,10 @@ r_rtc_session_description_set_connection_addr (RRtcSessionDescription * sd,
       addrtype = "IP4";
       addrstr = r_socket_address_ipv4_to_str (addr, FALSE);
       break;
-      /* FIXME: IPV6 */
-    /*case R_SOCKET_FAMILY_IPV6:*/
-      /*addrtype = "IP6";*/
-      /*break;*/
+    case R_SOCKET_FAMILY_IPV6:
+      addrtype = "IP6";
+      addrstr = r_socket_address_ipv6_to_str (addr, FALSE);
+      break;
     default:
       return R_RTC_INVAL;
   }
