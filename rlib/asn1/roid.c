@@ -32,8 +32,9 @@ r_asn1_oid_to_dot (const ruint32 * oid, rsize oidlen)
   if (R_UNLIKELY (oid == NULL || oidlen == 0))
     return NULL;
 
-  /* FIXME: Is this enough mem??? */
-  if ((ret = r_malloc (oidlen * 8)) != NULL) {
+  /* Each ruint32 component renders to at most 10 decimal digits; allow a
+   * '.' separator between components and the NUL terminator. */
+  if ((ret = r_malloc (oidlen * 11 + 1)) != NULL) {
     rchar * ptr;
     rsize i;
 

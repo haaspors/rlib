@@ -15,6 +15,22 @@ RTEST (rasn1oid, to_dot, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1oid, to_dot_max_components, RTEST_FAST)
+{
+  /* Each ruint32 can render to 10 decimal digits + '.' separator (11 chars).
+   * A bounded-too-small destination would overflow when every component is
+   * near UINT32_MAX. */
+  static const ruint32 big[] = {
+    4294967295u, 4294967294u, 4294967293u, 4294967292u, 4294967291u
+  };
+  rchar * dot;
+
+  r_assert_cmpstr ((dot = r_asn1_oid_to_dot (big, R_N_ELEMENTS (big))), ==,
+      "4294967295.4294967294.4294967293.4294967292.4294967291");
+  r_free (dot);
+}
+RTEST_END;
+
 RTEST (rasn1oid, from_dot, RTEST_FAST)
 {
   ruint32 * res;
