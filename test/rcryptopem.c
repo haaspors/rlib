@@ -535,3 +535,37 @@ RTEST (rcryptopem, rsa_x509_cert, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rcryptopem, write_cert_tight_buffer, RTEST_FAST)
+{
+  /* r_pem_write_cert used to compute its size check with sizeof(END)-1
+   * but the END copy went through r_stpncpy with sizeof(END), so the
+   * trailing NUL plus the conditional newline could overflow a tight
+   * caller-supplied buffer by up to two bytes. Probe with a buffer
+   * sized to the strlen of the documented output - the function must
+   * refuse to write rather than overflow. */
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoCert * cert;
+  rchar * buf;
+  rsize tight, written = 0xdeadbeef;
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_rsa_x509, sizeof (pem_rsa_x509))), !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert_cmpptr ((cert = r_pem_block_get_cert (block)), !=, NULL);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+
+  /* Tight = the strlen of the canonical PEM. The buggy implementation
+   * accepted this size and then wrote the trailing NUL one byte past
+   * the end. */
+  tight = sizeof (pem_rsa_x509) - 1;
+  buf = r_malloc (tight);
+  r_assert (!r_pem_write_cert (cert, buf, tight, 64, &written));
+  r_assert_cmpuint (written, ==, 0xdeadbeef);
+  r_free (buf);
+
+  r_crypto_cert_unref (cert);
+}
+RTEST_END;
+

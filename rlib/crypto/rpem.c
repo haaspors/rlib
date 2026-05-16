@@ -403,7 +403,10 @@ r_pem_write_public_key (const RCryptoKey * key,
       rsize b64size;
 
       if ((b64 = r_base64_encode_dup_full (asn1buf, asn1bufsize, linesize, &b64size)) != NULL) {
-        if (size >= sizeof (R_PEM_BEGIN_PUBKEY) - 1 + b64size + sizeof (R_PEM_END_PUBKEY) - 1) {
+        /* Reserve room for: BEGIN + b64 + optional newline + END +
+         * trailing NUL. The END copy uses sizeof (not sizeof - 1)
+         * so callers can treat the output as a C string. */
+        if (size >= sizeof (R_PEM_BEGIN_PUBKEY) - 1 + b64size + 1 + sizeof (R_PEM_END_PUBKEY)) {
           p = r_stpncpy (p, R_PEM_BEGIN_PUBKEY, sizeof (R_PEM_BEGIN_PUBKEY) - 1);
           p = r_stpncpy (p, b64, b64size);
           if (p[-1] != '\n')
@@ -462,7 +465,7 @@ r_pem_write_cert (const RCryptoCert * cert, rpointer data, rsize size,
       rsize b64size;
 
       if ((b64 = r_base64_encode_dup_full (info.data, info.size, linesize, &b64size)) != NULL) {
-        if (size >= sizeof (R_PEM_BEGIN_CERT) - 1 + b64size + sizeof (R_PEM_END_CERT) - 1) {
+        if (size >= sizeof (R_PEM_BEGIN_CERT) - 1 + b64size + 1 + sizeof (R_PEM_END_CERT)) {
           rchar * p = data;
 
           p = r_stpncpy (p, R_PEM_BEGIN_CERT, sizeof (R_PEM_BEGIN_CERT) - 1);
