@@ -233,21 +233,21 @@ rchar *
 r_strchr (const rchar * str, int c)
 {
   if (R_UNLIKELY (str == NULL)) return NULL;
-  return strchr (str, c);
+  return (rchar *) strchr (str, c);
 }
 
 rchar *
 r_strnchr (const rchar * str, int c, rsize size)
 {
   if (R_UNLIKELY (str == NULL)) return NULL;
-  return memchr (str, c, size);
+  return (rchar *) memchr (str, c, size);
 }
 
 rchar *
 r_strrchr (const rchar * str, int c)
 {
   if (R_UNLIKELY (str == NULL)) return NULL;
-  return strrchr (str, c);
+  return (rchar *) strrchr (str, c);
 }
 
 rchar *
@@ -274,7 +274,7 @@ r_strstr (const rchar * str, const rchar * sub)
 {
   if (R_UNLIKELY (str == NULL)) return NULL;
   if (R_UNLIKELY (sub == NULL)) return NULL;
-  return strstr (str, sub);
+  return (rchar *) strstr (str, sub);
 }
 
 rchar *
@@ -315,7 +315,7 @@ r_strpbrk (const rchar * str, const rchar * set)
 {
   if (R_UNLIKELY (str == NULL)) return NULL;
   if (R_UNLIKELY (set == NULL)) return NULL;
-  return strpbrk (str, set);
+  return (rchar *) strpbrk (str, set);
 }
 
 rchar *
