@@ -26,7 +26,8 @@ static void
 r_asn1_bin_encoder_free (RAsn1BinEncoder * enc)
 {
   r_slist_destroy_full (enc->stack, r_buffer_unref);
-  r_buffer_unref (enc->buf);
+  if (enc->buf != NULL)
+    r_buffer_unref (enc->buf);
   r_free (enc);
 }
 
@@ -40,9 +41,12 @@ r_asn1_bin_encoder_new (RAsn1EncodingRules enc)
   if ((ret = r_mem_new (RAsn1BinEncoder)) != NULL) {
     r_ref_init (ret, r_asn1_bin_encoder_free);
     ret->enc = enc;
-    ret->buf = r_buffer_new ();
     ret->stack = NULL;
     ret->offset = 0;
+    if (R_UNLIKELY ((ret->buf = r_buffer_new ()) == NULL)) {
+      r_asn1_bin_encoder_unref (ret);
+      return NULL;
+    }
   }
 
   return ret;
@@ -177,13 +181,9 @@ r_asn1_bin_encoder_begin_constructed (RAsn1BinEncoder * enc, ruint8 id, rsize si
   } else /*if (enc->enc == R_ASN1_DER)*/ {
     RBuffer * buf;
 
-    if ((ptr = r_asn1_bin_encoder_map (enc, 2 + sizeof (rsize))) == NULL)
-      return R_ASN1_ENCODER_OOM;
-
-    ptr[0] = id;
-    r_memclear (&ptr[1], 1 + sizeof (rsize));
-    r_asn1_bin_encoder_unmap (enc, 2 + sizeof (rsize));
-
+    /* Allocate the child buffer first - if this fails we don't want
+     * to have already advanced enc->offset past a placeholder we
+     * can no longer finalize. */
     if ((buf = r_buffer_new ()) == NULL)
       return R_ASN1_ENCODER_OOM;
     if (sizehint > 0) {
@@ -193,6 +193,15 @@ r_asn1_bin_encoder_begin_constructed (RAsn1BinEncoder * enc, ruint8 id, rsize si
         r_mem_unref (mem);
       }
     }
+
+    if ((ptr = r_asn1_bin_encoder_map (enc, 2 + sizeof (rsize))) == NULL) {
+      r_buffer_unref (buf);
+      return R_ASN1_ENCODER_OOM;
+    }
+
+    ptr[0] = id;
+    r_memclear (&ptr[1], 1 + sizeof (rsize));
+    r_asn1_bin_encoder_unmap (enc, 2 + sizeof (rsize));
 
     r_buffer_set_size (enc->buf, enc->offset);
     enc->stack = r_slist_prepend (enc->stack, enc->buf);
