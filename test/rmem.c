@@ -1,5 +1,31 @@
 #include <rlib/rlib.h>
 
+RTEST (rmem, set_vtable_validation, RTEST_FAST)
+{
+  /* r_mem_set_vtable must reject a NULL vtable or one with any NULL
+   * callback -- installing it would crash the very next allocation. */
+  RMemVTable bad = { NULL, NULL, NULL, NULL };
+  rboolean was_default;
+
+  was_default = r_mem_using_system_default ();
+  r_assert (was_default);
+
+  r_mem_set_vtable (NULL);
+  r_assert (r_mem_using_system_default ());
+
+  r_mem_set_vtable (&bad);
+  r_assert (r_mem_using_system_default ());
+
+  /* Single NULL callback: still rejected wholesale (no partial swap). */
+  bad.malloc = malloc;
+  bad.calloc = calloc;
+  bad.realloc = NULL;
+  bad.free = free;
+  r_mem_set_vtable (&bad);
+  r_assert (r_mem_using_system_default ());
+}
+RTEST_END;
+
 RTEST (rmem, cmp, RTEST_FAST)
 {
   ruint8 foo[]    = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };

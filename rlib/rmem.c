@@ -72,7 +72,14 @@ r_realloc (rpointer ptr, rsize size)
 void
 r_mem_set_vtable (RMemVTable * vtable)
 {
-  /* TODO: Sanity check incoming vtable? */
+  /* Reject vtables that would set any callback to NULL: every allocation
+   * helper in rlib invokes through r_memvtable, so a missing slot would
+   * crash on the next allocation rather than at the (recoverable) install
+   * call.  A NULL vtable argument leaves the current vtable untouched. */
+  if (R_UNLIKELY (vtable == NULL)) return;
+  if (R_UNLIKELY (vtable->malloc == NULL || vtable->calloc == NULL ||
+        vtable->realloc == NULL || vtable->free == NULL))
+    return;
   r_memvtable = *vtable;
 }
 
