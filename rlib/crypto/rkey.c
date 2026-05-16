@@ -292,12 +292,12 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
       } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_X9_62_OID_EC_PUB_KEY)) {
         REcNamedCurve curve;
 
-        r_asn1_bin_decoder_next (dec, tlv);
-
-        if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) &&
+        if (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
+            R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) &&
             r_ecc_parse_named_curve (&curve, tlv->value, tlv->len)) {
           r_asn1_bin_decoder_out (dec, tlv);
-          if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING))
+          if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING) &&
+              tlv->len >= 2 && tlv->value[0] == 0)
             ret = r_ecdsa_pub_key_new (curve, tlv->value + 1, tlv->len - 1);
         } else {
           r_asn1_bin_decoder_out (dec, tlv);
@@ -305,12 +305,12 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
       } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_CERTICOM_OID_ECDH_PUB_KEY)) {
         REcNamedCurve curve;
 
-        r_asn1_bin_decoder_next (dec, tlv);
-
-        if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) &&
+        if (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
+            R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) &&
             r_ecc_parse_named_curve (&curve, tlv->value, tlv->len)) {
           r_asn1_bin_decoder_out (dec, tlv);
-          if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING))
+          if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING) &&
+              tlv->len >= 2 && tlv->value[0] == 0)
             ret = r_ecdh_pub_key_new (curve, tlv->value + 1, tlv->len - 1);
         } else {
           r_asn1_bin_decoder_out (dec, tlv);
