@@ -21,6 +21,7 @@
 
 #include <rlib/crypto/rrsa.h>
 
+#include <rlib/asn1/rasn1.h>
 #include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>
 
@@ -817,8 +818,10 @@ r_rsa_pkcs1v1_5_sign_msg_hash (const RCryptoKey * key, RPrng * prng,
     RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rpointer sig, rsize * sigsize)
 {
-  rsize k, oidsize;
-  ruint8 * ptr, oidbuf[16];
+  RAsn1BinEncoder * enc;
+  rsize k, oidsize, di_size;
+  ruint8 * ptr, * di, oidbuf[16];
+  RCryptoResult ret;
 
   (void) prng;
 
@@ -832,35 +835,58 @@ r_rsa_pkcs1v1_5_sign_msg_hash (const RCryptoKey * key, RPrng * prng,
     return R_CRYPTO_BUFFER_TOO_SMALL;
   if ((oidsize = r_rsa_oid_from_msg_digest (mdtype, oidbuf)) == 0)
     return R_CRYPTO_HASH_FAILED;
-  if (R_UNLIKELY (hashsize + oidsize + 10 + 3 > k))
+
+  /* Build the DER-encoded DigestInfo via the encoder so that we don't
+   * silently break when hashsize+oidsize requires long-form lengths.
+   *   DigestInfo ::= SEQUENCE { algorithm AlgorithmIdentifier, digest OCTET STRING }
+   *   AlgorithmIdentifier ::= SEQUENCE { algorithm OID, parameters NULL } */
+  if ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)) == NULL)
+    return R_CRYPTO_SIGN_FAILED;
+
+  if (r_asn1_bin_encoder_begin_constructed (enc,
+          R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE),
+          0) != R_ASN1_ENCODER_OK ||
+      r_asn1_bin_encoder_begin_constructed (enc,
+          R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE),
+          0) != R_ASN1_ENCODER_OK ||
+      r_asn1_bin_encoder_add_raw (enc,
+          R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OBJECT_IDENTIFIER),
+          oidbuf, oidsize) != R_ASN1_ENCODER_OK ||
+      r_asn1_bin_encoder_add_null (enc) != R_ASN1_ENCODER_OK ||
+      r_asn1_bin_encoder_end_constructed (enc) != R_ASN1_ENCODER_OK ||
+      r_asn1_bin_encoder_add_raw (enc,
+          R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OCTET_STRING),
+          hash, hashsize) != R_ASN1_ENCODER_OK ||
+      r_asn1_bin_encoder_end_constructed (enc) != R_ASN1_ENCODER_OK) {
+    r_asn1_bin_encoder_unref (enc);
+    return R_CRYPTO_SIGN_FAILED;
+  }
+
+  di = r_asn1_bin_encoder_get_data (enc, &di_size);
+  r_asn1_bin_encoder_unref (enc);
+  if (di == NULL)
+    return R_CRYPTO_SIGN_FAILED;
+
+  if (R_UNLIKELY (di_size + 11 > k)) {
+    r_free (di);
     return R_CRYPTO_BUFFER_TOO_SMALL;
+  }
 
   *sigsize = k;
   ptr = sig;
   *ptr++ = 0x00;
   *ptr++ = R_RSA_EMSA_PKCS1;
-  r_memset (ptr, 0xff, k - 3 - oidsize - 10 - hashsize);
-  ptr += k - 3 - oidsize - 10 - hashsize;
+  r_memset (ptr, 0xff, k - 3 - di_size);
+  ptr += k - 3 - di_size;
   *ptr++ = 0x00;
-
-  /* FIXME: Use RAsn1BinEncoder DER stuff */
-  *ptr++ = R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE;
-  *ptr++ = (ruint8) (0x08 + oidsize + hashsize);
-  *ptr++ = R_ASN1_ID_CONSTRUCTED | R_ASN1_ID_SEQUENCE;
-  *ptr++ = (ruint8) (0x04 + oidsize);
-  *ptr++ = R_ASN1_ID_OBJECT_IDENTIFIER;
-  *ptr++ = oidsize & 0xFF;
-  r_memcpy (ptr, oidbuf, oidsize);
-  ptr += oidsize;
-  *ptr++ = R_ASN1_ID_NULL;
-  *ptr++ = 0x00;
-  *ptr++ = R_ASN1_ID_OCTET_STRING;
-  *ptr++ = hashsize;
-  r_memcpy (ptr, hash, hashsize);
+  r_memcpy (ptr, di, di_size);
+  r_free (di);
 
   if (r_rsa_raw_decrypt_internal ((const RRsaPrivKey *)key, sig, sig, k) != R_CRYPTO_OK)
-    return R_CRYPTO_SIGN_FAILED;
-  return R_CRYPTO_OK;
+    ret = R_CRYPTO_SIGN_FAILED;
+  else
+    ret = R_CRYPTO_OK;
+  return ret;
 }
 
 RCryptoResult
