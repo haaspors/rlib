@@ -856,3 +856,54 @@ RTEST (rsdp, add_ice_candidate_raw_null_extension, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (rsdp, msg_repeat_and_time_zone, RTEST_FAST)
+{
+  /* SDP from RFC 4566 section 5.10 (Time Zones) plus the corresponding
+   * repeat lines.  Serialize and verify the r= and z= lines come out
+   * with the expected values rather than the old "??" placeholders. */
+  RSdpMsg * msg;
+  RBuffer * buf;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  r_assert_cmpptr ((msg = r_sdp_msg_new ()), !=, NULL);
+
+  r_assert_cmpint (r_sdp_msg_set_originator (msg,
+        "alice", -1, "0", -1, "0", -1, "IN", 2, "IP4", 3, "1.2.3.4", -1),
+      ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_set_session_name (msg, "tz test", -1), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_add_time (msg,
+        RUINT64_CONSTANT (2873397496), RUINT64_CONSTANT (2873404696)),
+      ==, R_SDP_OK);
+  /* RFC 4566: r=604800 3600 0 90000 means weekly for an hour, twice each
+   * week, starting at 0 and 25h offsets. */
+  r_assert_cmpint (r_sdp_msg_add_time_repeat (msg, 0,
+        "604800 3600 0 90000", -1), ==, R_SDP_OK);
+  /* RFC 4566: two zone adjustments. */
+  r_assert_cmpint (r_sdp_msg_add_time_zone (msg,
+        RUINT64_CONSTANT (2882844526), -3600), ==, R_SDP_OK);
+  r_assert_cmpint (r_sdp_msg_add_time_zone (msg,
+        RUINT64_CONSTANT (2898848070), 0), ==, R_SDP_OK);
+
+  /* Out-of-range timeidx must be rejected. */
+  r_assert_cmpint (r_sdp_msg_add_time_repeat (msg, 99, "x", -1),
+      ==, R_SDP_INVAL);
+
+  r_assert_cmpptr ((buf = r_sdp_msg_to_buffer (msg)), !=, NULL);
+  r_sdp_msg_unref (msg);
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+
+  /* Spot-check the emitted lines. */
+  r_assert (r_str_idx_of_str ((const rchar *) info.data, info.size,
+        R_STR_WITH_SIZE_ARGS ("r=604800 3600 0 90000\r\n")) >= 0);
+  r_assert (r_str_idx_of_str ((const rchar *) info.data, info.size,
+        R_STR_WITH_SIZE_ARGS ("z=2882844526 -3600\r\n")) >= 0);
+  r_assert (r_str_idx_of_str ((const rchar *) info.data, info.size,
+        R_STR_WITH_SIZE_ARGS ("z=2898848070 0\r\n")) >= 0);
+  r_assert (r_str_idx_of_str ((const rchar *) info.data, info.size,
+        R_STR_WITH_SIZE_ARGS ("??")) < 0);
+
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+}
+RTEST_END;

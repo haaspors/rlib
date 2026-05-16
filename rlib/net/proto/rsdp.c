@@ -35,8 +35,13 @@ typedef struct {
 
 typedef struct {
   ruint64 start, stop;
-  RPtrArray * repeat;
+  RPtrArray * repeat;  /* Owned rchar* strings (post "r=" content). */
 } RSdpTime;
+
+typedef struct {
+  ruint64 time;
+  rint64 offset;
+} RSdpZone;
 
 typedef struct {
   RStrKV kv;
@@ -192,13 +197,19 @@ r_sdp_msg_new_from_sdp_buffer (const RSdpBuf * buf)
           r_sdp_buf_bandwidth_kbps (buf, i));
     }
     for (i = 0; i < buf->tcount; i++) {
+      rsize j;
       r_sdp_msg_add_time (ret,
           r_str_to_uint (buf->time[i].start.str, NULL, 10, NULL),
           r_str_to_uint (buf->time[i].stop.str, NULL, 10, NULL));
-      /* FIXME: Repeat lines */
+      for (j = 0; j < buf->time[i].rcount; j++) {
+        r_sdp_msg_add_time_repeat (ret, i,
+            buf->time[i].repeat[j].str, (rssize) buf->time[i].repeat[j].size);
+      }
     }
     for (i = 0; i < buf->zcount; i++) {
-      /* FIXME: r_sdp_msg_add_time_zone (ret, ); */
+      r_sdp_msg_add_time_zone (ret,
+          r_sdp_buf_zone_time_uint (buf, i),
+          (rint64) r_str_to_int64 (buf->zone[i].val.str, NULL, 10, NULL));
     }
     r_sdp_msg_set_key (ret,
         buf->key.key.str, buf->key.key.size,
@@ -304,9 +315,7 @@ _r_sdp_msg_add_k_line (rpointer data, rpointer user)
 static void
 _r_sdp_msg_add_r_line (rpointer data, rpointer user)
 {
-  /* TODO */
-  (void) data;
-  r_string_append (user, "r=??\r\n");
+  r_string_append_printf (user, "r=%s\r\n", (const rchar *) data);
 }
 
 static void
@@ -321,9 +330,9 @@ _r_sdp_msg_add_t_line (rpointer data, rpointer user)
 static void
 _r_sdp_msg_add_z_line (rpointer data, rpointer user)
 {
-  /* TODO */
-  (void) data;
-  r_string_append (user, "z=??\r\n");
+  const RSdpZone * z = data;
+  r_string_append_printf (user, "z=%"RUINT64_FMT" %"RINT64_FMT"\r\n",
+      z->time, z->offset);
 }
 
 static void
@@ -664,6 +673,43 @@ r_sdp_msg_add_time (RSdpMsg * msg, ruint64 start, ruint64 stop)
   }
   r_ptr_array_add (msg->time, t, r_sdp_time_free);
 
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_add_time_repeat (RSdpMsg * msg, rsize timeidx,
+    const rchar * repeat, rssize size)
+{
+  RSdpTime * t;
+  rchar * dup;
+
+  if (R_UNLIKELY (msg == NULL || repeat == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (timeidx >= r_ptr_array_size (msg->time))) return R_SDP_INVAL;
+
+  if (size < 0)
+    dup = r_strdup (repeat);
+  else
+    dup = r_strndup (repeat, (rsize) size);
+  if (R_UNLIKELY (dup == NULL))
+    return R_SDP_OOM;
+
+  t = r_ptr_array_get (msg->time, timeidx);
+  r_ptr_array_add (t->repeat, dup, r_free);
+  return R_SDP_OK;
+}
+
+RSdpResult
+r_sdp_msg_add_time_zone (RSdpMsg * msg, ruint64 time, rint64 offset)
+{
+  RSdpZone * z;
+
+  if (R_UNLIKELY (msg == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY ((z = r_mem_new (RSdpZone)) == NULL))
+    return R_SDP_OOM;
+
+  z->time = time;
+  z->offset = offset;
+  r_ptr_array_add (msg->zone, z, r_free);
   return R_SDP_OK;
 }
 

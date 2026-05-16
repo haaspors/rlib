@@ -109,8 +109,10 @@ R_API RSdpResult r_sdp_msg_set_connection_full (RSdpMsg * msg,
 R_API RSdpResult r_sdp_msg_add_bandwidth (RSdpMsg * msg,
     const rchar * type, rssize tsize, ruint kbps);
 R_API RSdpResult r_sdp_msg_add_time (RSdpMsg * msg, ruint64 start, ruint64 stop);
-/* FIXME R_API RSdpResult r_sdp_msg_add_repeat (RSdpMsg * msg, rsize timeidx, ); */
-/* FIXME R_API RSdpResult r_sdp_msg_add_time_zone (RSdpMsg * msg, ruint64 time, ruint64 offset); */
+R_API RSdpResult r_sdp_msg_add_time_repeat (RSdpMsg * msg, rsize timeidx,
+    const rchar * repeat, rssize size);
+R_API RSdpResult r_sdp_msg_add_time_zone (RSdpMsg * msg, ruint64 time,
+    rint64 offset);
 R_API RSdpResult r_sdp_msg_set_key (RSdpMsg * msg,
     const rchar * method, rssize msize, const rchar * data, rssize size);
 R_API RSdpResult r_sdp_msg_add_attribute (RSdpMsg * msg,
