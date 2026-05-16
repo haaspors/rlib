@@ -959,3 +959,77 @@ RTEST (rsdp, ice_candidate_ipv6_roundtrip, RTEST_FAST)
   r_buffer_unref (buf);
 }
 RTEST_END;
+
+RTEST (rsdp, bandwidth_modifier_parsing, RTEST_FAST)
+{
+  /* Verify the bandwidth modifier identifier is recognised for the
+   * RFC 4566 / 3556 / 3890 set and that an "X-..." extension lands
+   * in the dedicated X-prefixed bucket. */
+  static const rchar sdp[] =
+    "v=0\r\n"
+    "o=- 0 0 IN IP4 1.2.3.4\r\n"
+    "s=bw\r\n"
+    "c=IN IP4 1.2.3.4\r\n"
+    "b=CT:128\r\n"
+    "b=AS:96\r\n"
+    "b=TIAS:80000\r\n"
+    "b=RR:2000\r\n"
+    "b=RS:8000\r\n"
+    "b=tias:1234\r\n"
+    "b=X-vendor:42\r\n"
+    "b=ZZ:1\r\n"
+    "t=0 0\r\n";
+  RBuffer * buf;
+  RSdpBuf parsed;
+
+  /* Direct helper checks (no SDP needed). */
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("CT",   -1), ==, R_SDP_BW_MODIFIER_CT);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("AS",   -1), ==, R_SDP_BW_MODIFIER_AS);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("TIAS", -1), ==, R_SDP_BW_MODIFIER_TIAS);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("RR",   -1), ==, R_SDP_BW_MODIFIER_RR);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("RS",   -1), ==, R_SDP_BW_MODIFIER_RS);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("ct",   -1), ==, R_SDP_BW_MODIFIER_CT);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("X-foo",-1), ==, R_SDP_BW_MODIFIER_X_PREFIXED);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("x-foo",-1), ==, R_SDP_BW_MODIFIER_X_PREFIXED);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("X-",   -1), ==, R_SDP_BW_MODIFIER_UNKNOWN);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("ZZ",   -1), ==, R_SDP_BW_MODIFIER_UNKNOWN);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str (NULL,    0), ==, R_SDP_BW_MODIFIER_UNKNOWN);
+  r_assert_cmpint (r_sdp_bandwidth_modifier_from_str ("CT",    0), ==, R_SDP_BW_MODIFIER_UNKNOWN);
+
+  /* Via the buf accessor on a parsed SDP. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&parsed, buf), ==, R_SDP_OK);
+  r_assert_cmpuint (r_sdp_buf_bandwidth_count (&parsed), ==, 8);
+  r_assert_cmpint (r_sdp_buf_bandwidth_modifier (&parsed, 0), ==, R_SDP_BW_MODIFIER_CT);
+  r_assert_cmpint (r_sdp_buf_bandwidth_modifier (&parsed, 1), ==, R_SDP_BW_MODIFIER_AS);
+  r_assert_cmpint (r_sdp_buf_bandwidth_modifier (&parsed, 2), ==, R_SDP_BW_MODIFIER_TIAS);
+  r_assert_cmpint (r_sdp_buf_bandwidth_modifier (&parsed, 3), ==, R_SDP_BW_MODIFIER_RR);
+  r_assert_cmpint (r_sdp_buf_bandwidth_modifier (&parsed, 4), ==, R_SDP_BW_MODIFIER_RS);
+  r_assert_cmpint (r_sdp_buf_bandwidth_modifier (&parsed, 5), ==, R_SDP_BW_MODIFIER_TIAS);
+  r_assert_cmpint (r_sdp_buf_bandwidth_modifier (&parsed, 6), ==, R_SDP_BW_MODIFIER_X_PREFIXED);
+  r_assert_cmpint (r_sdp_buf_bandwidth_modifier (&parsed, 7), ==, R_SDP_BW_MODIFIER_UNKNOWN);
+
+  /* Modifier-aware extraction: kbps modifiers scale by 1000, bps
+   * modifiers pass through, and UNKNOWN reports zero since the raw
+   * unit cannot be interpreted. */
+  r_assert_cmpuint (r_sdp_bandwidth_to_bps (R_SDP_BW_MODIFIER_CT, 128),    ==, RUINT64_CONSTANT (128000));
+  r_assert_cmpuint (r_sdp_bandwidth_to_bps (R_SDP_BW_MODIFIER_AS, 96),     ==, RUINT64_CONSTANT (96000));
+  r_assert_cmpuint (r_sdp_bandwidth_to_bps (R_SDP_BW_MODIFIER_X_PREFIXED, 42), ==, RUINT64_CONSTANT (42000));
+  r_assert_cmpuint (r_sdp_bandwidth_to_bps (R_SDP_BW_MODIFIER_TIAS, 80000), ==, RUINT64_CONSTANT (80000));
+  r_assert_cmpuint (r_sdp_bandwidth_to_bps (R_SDP_BW_MODIFIER_RR, 2000),   ==, RUINT64_CONSTANT (2000));
+  r_assert_cmpuint (r_sdp_bandwidth_to_bps (R_SDP_BW_MODIFIER_RS, 8000),   ==, RUINT64_CONSTANT (8000));
+  r_assert_cmpuint (r_sdp_bandwidth_to_bps (R_SDP_BW_MODIFIER_UNKNOWN, 99), ==, RUINT64_CONSTANT (0));
+
+  r_assert_cmpuint (r_sdp_buf_bandwidth_bps (&parsed, 0), ==, RUINT64_CONSTANT (128000)); /* CT 128 kbps */
+  r_assert_cmpuint (r_sdp_buf_bandwidth_bps (&parsed, 1), ==, RUINT64_CONSTANT (96000));  /* AS 96 kbps */
+  r_assert_cmpuint (r_sdp_buf_bandwidth_bps (&parsed, 2), ==, RUINT64_CONSTANT (80000));  /* TIAS 80000 bps */
+  r_assert_cmpuint (r_sdp_buf_bandwidth_bps (&parsed, 3), ==, RUINT64_CONSTANT (2000));   /* RR 2000 bps */
+  r_assert_cmpuint (r_sdp_buf_bandwidth_bps (&parsed, 4), ==, RUINT64_CONSTANT (8000));   /* RS 8000 bps */
+  r_assert_cmpuint (r_sdp_buf_bandwidth_bps (&parsed, 5), ==, RUINT64_CONSTANT (1234));   /* lowercase tias */
+  r_assert_cmpuint (r_sdp_buf_bandwidth_bps (&parsed, 6), ==, RUINT64_CONSTANT (42000));  /* X-vendor (kbps) */
+  r_assert_cmpuint (r_sdp_buf_bandwidth_bps (&parsed, 7), ==, RUINT64_CONSTANT (0));      /* ZZ unknown */
+
+  r_sdp_buffer_unmap (&parsed, buf);
+  r_buffer_unref (buf);
+}
+RTEST_END;

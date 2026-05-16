@@ -68,6 +68,19 @@ typedef enum {
   R_SDP_ICE_TYPE_RELAY        = 3,
 } RSdpICEType;
 
+/* Bandwidth ("b=") modifier per RFC 4566 §5.8 and successors.  Values
+ * defined in kbps: CT (RFC 4566), AS (RFC 4566), X-prefixed extensions.
+ * Values defined in bps: TIAS (RFC 3890), RR / RS (RFC 3556). */
+typedef enum {
+  R_SDP_BW_MODIFIER_UNKNOWN     = 0,
+  R_SDP_BW_MODIFIER_CT          = 1,  /* Conference total, kbps */
+  R_SDP_BW_MODIFIER_AS          = 2,  /* Application specific, kbps */
+  R_SDP_BW_MODIFIER_TIAS        = 3,  /* Transport-independent app spec, bps */
+  R_SDP_BW_MODIFIER_RR          = 4,  /* RTCP receiver bandwidth, bps */
+  R_SDP_BW_MODIFIER_RS          = 5,  /* RTCP sender bandwidth, bps */
+  R_SDP_BW_MODIFIER_X_PREFIXED  = 6,  /* "X-..." vendor extension, kbps */
+} RSdpBandwidthModifier;
+
 
 typedef struct _RSdpBuf RSdpBuf; /* Fwd decl because of RSdpMsg API */
 
@@ -223,6 +236,21 @@ typedef struct {
 #define r_sdp_time_buf_repeat_count(time)           (time)->rcount
 #define r_sdp_time_buf_repeat(time, idx)            r_str_chunk_dup (&(time)->repeat[idx])
 
+/* Recognise the bandwidth modifier name in an SDP "b=<modifier>:<value>"
+ * line and return the matching RSdpBandwidthModifier enum value.  Names
+ * are case-insensitive per RFC 4566 §5.8.  Anything beginning with
+ * "X-" / "x-" is classified as R_SDP_BW_MODIFIER_X_PREFIXED; anything
+ * else unknown becomes R_SDP_BW_MODIFIER_UNKNOWN. */
+R_API RSdpBandwidthModifier r_sdp_bandwidth_modifier_from_str (
+    const rchar * type, rssize tsize);
+
+/* Convert the raw decimal integer attached to a "b=" line into bits per
+ * second, using the modifier's declared unit semantics: CT, AS and X-*
+ * are kbps and multiplied by 1000; TIAS, RR and RS are bps and returned
+ * as-is; UNKNOWN returns 0 because the unit is not interpretable. */
+R_API ruint64 r_sdp_bandwidth_to_bps (RSdpBandwidthModifier modifier,
+    ruint value);
+
 R_API RSdpResult r_sdp_attrib_check (const RStrKV * attrib, rsize acount,
     const rchar * field, rssize fsize);
 R_API const RStrChunk * r_sdp_attrib_find (const RStrKV * attrib, rsize acount,
@@ -264,8 +292,12 @@ R_API rssize r_sdp_media_buf_find_fmt (const RSdpMediaBuf * media, const rchar *
 #define r_sdp_media_buf_conn_to_socket_address(media, idx) r_sdp_connection_buf_to_socket_address (&(media)->conn[idx], (media)->port)
 #define r_sdp_media_buf_bandwidth_count(media)      (media)->bcount
 #define r_sdp_media_buf_bandwidth_type(media, idx)  r_str_kv_dup_key (&(media)->bw[idx])
+#define r_sdp_media_buf_bandwidth_modifier(media, idx) \
+  r_sdp_bandwidth_modifier_from_str ((media)->bw[idx].key.str, (rssize) (media)->bw[idx].key.size)
 #define r_sdp_media_buf_bandwidth_kbps(media, idx)  r_str_to_uint ((media)->bw[idx].val.str, NULL, 10, NULL)
-/* FIXME: bw based CT, AS, TIAS */
+#define r_sdp_media_buf_bandwidth_bps(media, idx) \
+  r_sdp_bandwidth_to_bps (r_sdp_media_buf_bandwidth_modifier (media, idx), \
+      r_sdp_media_buf_bandwidth_kbps (media, idx))
 #define r_sdp_media_buf_key_method(media)           r_str_kv_dup_key (&(media)->key)
 #define r_sdp_media_buf_key_data(media)             r_str_kv_dup_value (&(media)->key)
 #define r_sdp_media_buf_attrib_count(media)         (media)->acount
@@ -370,8 +402,12 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_conn_to_socket_address(buf, port) r_sdp_connection_buf_to_socket_address (&(buf)->conn, port)
 
 #define r_sdp_buf_bandwidth_type(buf, idx)          r_str_kv_dup_key (&(buf)->bw[idx])
+#define r_sdp_buf_bandwidth_modifier(buf, idx) \
+  r_sdp_bandwidth_modifier_from_str ((buf)->bw[idx].key.str, (rssize) (buf)->bw[idx].key.size)
 #define r_sdp_buf_bandwidth_kbps(buf, idx)          r_str_to_uint ((buf)->bw[idx].val.str, NULL, 10, NULL)
-/* FIXME: bw based CT, AS, TIAS */
+#define r_sdp_buf_bandwidth_bps(buf, idx) \
+  r_sdp_bandwidth_to_bps (r_sdp_buf_bandwidth_modifier (buf, idx), \
+      r_sdp_buf_bandwidth_kbps (buf, idx))
 
 #define r_sdp_buf_time_start(buf, idx)              r_sdp_time_buf_start (&(buf)->time[idx])
 #define r_sdp_buf_time_stop(buf, idx)               r_sdp_time_buf_stop (&(buf)->time[idx])
@@ -408,8 +444,11 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_media_conn_to_socket_address(buf, idx, cidx) r_sdp_media_buf_conn_to_socket_address (&(buf)->media[idx], cidx)
 #define r_sdp_buf_media_bandwidth_count(buf, idx)       r_sdp_media_buf_bandwidth_count (&(buf)->media[idx])
 #define r_sdp_buf_media_bandwidth_type(buf, idx, bidx)  r_sdp_media_buf_bandwidth_type (&(buf)->media[idx], bidx)
+#define r_sdp_buf_media_bandwidth_modifier(buf, idx, bidx) \
+  r_sdp_media_buf_bandwidth_modifier (&(buf)->media[idx], bidx)
 #define r_sdp_buf_media_bandwidth_kbps(buf, idx, bidx)  r_sdp_media_buf_bandwidth_kbps (&(buf)->media[idx], bidx)
-/* FIXME: bw based CT, AS, TIAS */
+#define r_sdp_buf_media_bandwidth_bps(buf, idx, bidx) \
+  r_sdp_media_buf_bandwidth_bps (&(buf)->media[idx], bidx)
 #define r_sdp_buf_media_key_method(buf, idx)            r_sdp_media_buf_key_method (&(buf)->media[idx])
 #define r_sdp_buf_media_key_data(buf, idx)              r_sdp_media_buf_key_data (&(buf)->media[idx])
 #define r_sdp_buf_media_attrib_count(buf, idx)          r_sdp_media_buf_attrib_count (&(buf)->media[idx])

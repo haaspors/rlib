@@ -1854,6 +1854,62 @@ r_sdp_connection_buf_to_socket_address (const RSdpConnectionBuf * conn, ruint po
   return ret;
 }
 
+RSdpBandwidthModifier
+r_sdp_bandwidth_modifier_from_str (const rchar * type, rssize tsize)
+{
+  rsize len;
+
+  if (R_UNLIKELY (type == NULL)) return R_SDP_BW_MODIFIER_UNKNOWN;
+  len = (tsize < 0) ? r_strlen (type) : (rsize) tsize;
+  if (len == 0) return R_SDP_BW_MODIFIER_UNKNOWN;
+
+  /* RFC 4566 modifier names are case-insensitive ASCII. */
+  switch (len) {
+    case 2:
+      if ((type[0] == 'C' || type[0] == 'c') &&
+          (type[1] == 'T' || type[1] == 't')) return R_SDP_BW_MODIFIER_CT;
+      if ((type[0] == 'A' || type[0] == 'a') &&
+          (type[1] == 'S' || type[1] == 's')) return R_SDP_BW_MODIFIER_AS;
+      if ((type[0] == 'R' || type[0] == 'r') &&
+          (type[1] == 'R' || type[1] == 'r')) return R_SDP_BW_MODIFIER_RR;
+      if ((type[0] == 'R' || type[0] == 'r') &&
+          (type[1] == 'S' || type[1] == 's')) return R_SDP_BW_MODIFIER_RS;
+      break;
+    case 4:
+      if ((type[0] == 'T' || type[0] == 't') &&
+          (type[1] == 'I' || type[1] == 'i') &&
+          (type[2] == 'A' || type[2] == 'a') &&
+          (type[3] == 'S' || type[3] == 's'))
+        return R_SDP_BW_MODIFIER_TIAS;
+      break;
+    default:
+      break;
+  }
+
+  if (len > 2 && (type[0] == 'X' || type[0] == 'x') && type[1] == '-')
+    return R_SDP_BW_MODIFIER_X_PREFIXED;
+
+  return R_SDP_BW_MODIFIER_UNKNOWN;
+}
+
+ruint64
+r_sdp_bandwidth_to_bps (RSdpBandwidthModifier modifier, ruint value)
+{
+  switch (modifier) {
+    case R_SDP_BW_MODIFIER_CT:
+    case R_SDP_BW_MODIFIER_AS:
+    case R_SDP_BW_MODIFIER_X_PREFIXED:
+      return (ruint64) value * 1000;
+    case R_SDP_BW_MODIFIER_TIAS:
+    case R_SDP_BW_MODIFIER_RR:
+    case R_SDP_BW_MODIFIER_RS:
+      return value;
+    case R_SDP_BW_MODIFIER_UNKNOWN:
+    default:
+      return 0;
+  }
+}
+
 RSdpResult
 r_sdp_attrib_check (const RStrKV * attrib, rsize acount, const rchar * field, rssize fsize)
 {
