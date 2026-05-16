@@ -288,13 +288,14 @@ r_stun_attr_tlv_parse_address (rconstpointer buf, const RStunAttrTLV * tlv)
         ret = r_socket_address_ipv4_new_uint32 (ip, port);
       }
       break;
-      /* FIXME */
-    /*case 2: [> IPv6 <]*/
-      /*{*/
-        /*ruint16 port = RUINT16_FROM_BE (*(ruint16 *)(&tlv->value[2]));*/
-        /*ret = r_socket_address_ipv6_new (&tlv->value[4], port);*/
-      /*}*/
-      /*break;*/
+    case 2: /* IPv6 */
+      {
+        ruint16 port;
+        if (tlv->len < 4 + 16) return NULL;
+        port = RUINT16_FROM_BE (*(ruint16 *) &tlv->value[2]);
+        ret = r_socket_address_ipv6_new_from_bytes (&tlv->value[4], port);
+      }
+      break;
     default:
       ret = NULL;
   }

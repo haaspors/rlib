@@ -441,6 +441,60 @@ RTEST (rstun, attr_tlv_next_oob_at_end, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstun, mapped_address_ipv6_parse, RTEST_FAST)
+{
+  /* Hand-craft a STUN binding response with a MAPPED-ADDRESS (non-XOR)
+   * attribute carrying an IPv6 address.  r_stun_attr_tlv_parse_address
+   * previously had the IPv6 branch commented out and returned NULL. */
+  static const ruint8 expected_ip[16] = {
+    0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe
+  };
+  ruint8 buf[1024];
+  ruint8 tid[R_STUN_TRANSACTION_ID_SIZE] = {
+    0xff, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb
+  };
+  ruint8 attr_val[4 + 16];
+  RStunMsgCtx ctx;
+  RStunAttrTLV attr = R_STUN_ATTR_TLV_INIT;
+  RStunAttrTLV parsed = R_STUN_ATTR_TLV_INIT;
+  RSocketAddress * addr;
+  ruint8 recovered[16];
+  rsize size;
+
+  /* Build attribute body: reserved=0, family=2, port=0x4242, addr=expected_ip. */
+  attr_val[0] = 0;
+  attr_val[1] = 2;
+  attr_val[2] = 0x42;
+  attr_val[3] = 0x42;
+  r_memcpy (&attr_val[4], expected_ip, sizeof (expected_ip));
+
+  attr.start = NULL;
+  attr.type  = R_STUN_ATTR_TYPE_MAPPED_ADDRESS;
+  attr.len   = sizeof (attr_val);
+  attr.value = attr_val;
+
+  r_memclear (buf, sizeof (buf));
+  r_assert (r_stun_msg_begin (&ctx, buf, sizeof (buf),
+        R_STUN_CLASS_SUCCESS_RESPONSE, R_STUN_METHOD_BINDING, tid));
+  r_assert (r_stun_msg_add_attribute (&ctx, &attr));
+  size = r_stun_msg_end (&ctx, FALSE);
+
+  r_assert (r_stun_is_valid_msg (buf, size));
+  r_assert (r_stun_attr_tlv_first (buf, &parsed));
+  r_assert_cmphex (parsed.type, ==, R_STUN_ATTR_TYPE_MAPPED_ADDRESS);
+
+  r_assert_cmpptr ((addr = r_stun_attr_tlv_parse_address (buf, &parsed)),
+      !=, NULL);
+  r_assert_cmpuint (r_socket_address_get_family (addr), ==, R_SOCKET_FAMILY_IPV6);
+  r_assert_cmphex (r_socket_address_ipv6_get_port (addr), ==, 0x4242);
+  r_assert (r_socket_address_ipv6_get_ip_bytes (addr, recovered));
+  r_assert_cmpmem (recovered, ==, expected_ip, 16);
+
+  r_socket_address_unref (addr);
+}
+RTEST_END;
+
 RTEST (rstun, xor_address_ipv6_roundtrip, RTEST_FAST)
 {
   /* Build a STUN success response with an XOR-MAPPED-ADDRESS carrying an
