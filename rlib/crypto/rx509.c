@@ -148,23 +148,35 @@ static rboolean
 r_crypto_x509_key_usage (RCryptoX509Cert * cert,
     RAsn1BinDecoder * dec, RAsn1BinTLV * tlv, rboolean critical)
 {
+  rsize content_bytes, bits, n;
+  RX509KeyUsage usage = 0;
+
   (void) dec;
   (void) critical;
 
-  if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING)) {
-    /* First content byte is the unused-bits count and must be 0..7;
-     * shifting by an out-of-range value is undefined behaviour. */
-    if (tlv->len == 2 && tlv->value[0] <= 7) {
-      cert->keyUsage = (ruint16)tlv->value[1] >> tlv->value[0];
-      return TRUE;
-    } else if (tlv->len == 3 && tlv->value[0] <= 7) {
-      ruint16 raw = ((ruint16)tlv->value[1] << 8) | (ruint16)tlv->value[2];
-      cert->keyUsage = raw >> tlv->value[0];
-      return TRUE;
-    }
-  }
+  if (R_UNLIKELY (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING)))
+    return FALSE;
+  /* Need at least the unused-bits byte + one content byte, and the
+   * unused-bits value must be 0..7 per the BIT STRING spec. */
+  if (R_UNLIKELY (tlv->len < 2 || tlv->value[0] > 7))
+    return FALSE;
 
-  return FALSE;
+  content_bytes = tlv->len - 1;
+  bits = content_bytes * 8 - tlv->value[0];
+  /* KeyUsage has nine named bits (0..8); reject obviously oversized
+   * encodings before they could shift past the int width. */
+  if (R_UNLIKELY (bits > sizeof (RX509KeyUsage) * 8))
+    return FALSE;
+
+  /* RFC 5280 / X.690: BIT STRING bit N is the (N % 8)th bit from
+   * the MSB of content byte (N / 8). Map each set BIT STRING bit N
+   * to bit N of the RX509KeyUsage flag set. */
+  for (n = 0; n < bits; n++) {
+    if (tlv->value[1 + (n / 8)] & ((ruint8)0x80 >> (n % 8)))
+      usage |= (RX509KeyUsage)1 << n;
+  }
+  cert->keyUsage = usage;
+  return TRUE;
 }
 
 static rboolean
@@ -441,26 +453,39 @@ r_crypto_x509_write_ext_key_usage (const RCryptoX509Cert * cert,
 {
   const ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
   rboolean ret = FALSE;
+  RX509KeyUsage usage = cert->keyUsage;
+  ruint8 bsbuf[3] = { 0, };
+  ruint used_bits = 0, n, nbytes;
 
-  if (cert->keyUsage == R_X509_KEY_USAGE_NONE)
+  if (usage == R_X509_KEY_USAGE_NONE)
     return TRUE;
+
+  /* RFC 5280 / X.690 minimal DER: bit N of KeyUsage lives at the
+   * (N % 8)th position from the MSB of content byte (N / 8). Find
+   * the highest set bit to size the encoding, then place each set
+   * bit at its MSB-relative position. */
+  for (n = 0; n < sizeof (RX509KeyUsage) * 8; n++) {
+    if (usage & ((RX509KeyUsage)1 << n))
+      used_bits = n + 1;
+  }
+  nbytes = (used_bits + 7) / 8;
+  for (n = 0; n < used_bits; n++) {
+    if (usage & ((RX509KeyUsage)1 << n))
+      bsbuf[1 + (n / 8)] |= (ruint8)0x80 >> (n % 8);
+  }
+  bsbuf[0] = (ruint8)(nbytes * 8 - used_bits);
 
   /* Mark critical */
   if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
     if (r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_KEY_USAGE) == R_ASN1_ENCODER_OK &&
         r_asn1_bin_encoder_add_boolean (enc, TRUE) == R_ASN1_ENCODER_OK) {
       if (r_asn1_bin_encoder_begin_octet_string (enc, 0) == R_ASN1_ENCODER_OK) {
-
-        if ((cert->keyUsage & 0xff) == cert->keyUsage) {
-          ruint8 v8 = (cert->keyUsage & 0xff);
-          ret = r_asn1_bin_encoder_add_bit_string_raw (enc,
-              &v8, sizeof (ruint8)) == R_ASN1_ENCODER_OK;
-        } else if ((cert->keyUsage & 0xffff) == cert->keyUsage) {
-          ruint16 v16 = RUINT16_TO_BE (cert->keyUsage & 0xffff);
-          ret = r_asn1_bin_encoder_add_bit_string_raw (enc,
-              (const ruint8 *)&v16, sizeof (ruint16)) == R_ASN1_ENCODER_OK;
-        }
-
+        /* add_bit_string_raw always emits unused-bits = 0 and the
+         * raw bytes after, so use add_raw with an unused-bits byte
+         * we control. */
+        ret = r_asn1_bin_encoder_add_raw (enc,
+            R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_BIT_STRING),
+            bsbuf, 1 + nbytes) == R_ASN1_ENCODER_OK;
         r_asn1_bin_encoder_end_octet_string (enc);
       }
     }

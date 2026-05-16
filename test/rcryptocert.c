@@ -65,8 +65,11 @@ RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
   r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 1024);
   r_crypto_key_unref (pk);
 
+  /* BIT STRING bytes 0x03 0x02 0x01 0x06: unused=1, content=0x06.
+   * Per RFC 5280 / X.690 that's bits 5 and 6 (counted from the MSB)
+   * = keyCertSign | cRLSign, the usual CA-cert combination. */
   r_assert_cmphex (r_crypto_x509_cert_key_usage (cert), ==,
-      R_X509_KEY_USAGE_DIGITAL_SIGNATURE | R_X509_KEY_USAGE_NON_REPUDIATION);
+      R_X509_KEY_USAGE_KEY_CERT_SIGN | R_X509_KEY_USAGE_CRL_SIGN);
   r_assert_cmphex (r_crypto_x509_cert_ext_key_usage (cert), ==,
       R_X509_EXT_KEY_USAGE_NONE);
   r_assert_cmpptr (r_crypto_x509_cert_issuer_unique_id (cert, NULL), ==, NULL);
