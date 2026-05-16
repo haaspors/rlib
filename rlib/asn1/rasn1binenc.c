@@ -633,11 +633,12 @@ r_asn1_bin_encoder_add_oid_rawsz (RAsn1BinEncoder * enc, const rchar * rawsz)
   if (R_UNLIKELY (enc == NULL)) return R_ASN1_ENCODER_INVALID_ARG;
   if (R_UNLIKELY ((len = r_strlen (rawsz)) == 0)) return R_ASN1_ENCODER_INVALID_ARG;
 
-  if ((ptr = r_asn1_bin_encoder_map (enc, 2 + len)) != NULL) {
+  if ((ptr = r_asn1_bin_encoder_map (enc, 2 + sizeof (rsize) + len)) != NULL) {
+    rsize off = 1;
     ptr[0] = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OBJECT_IDENTIFIER);
-    ptr[1] = len;
-    r_memcpy (&ptr[2], rawsz, len);
-    r_asn1_bin_encoder_unmap (enc, 2 + len);
+    off += r_asn1_bin_write_definite_len (&ptr[off], len);
+    r_memcpy (&ptr[off], rawsz, len);
+    r_asn1_bin_encoder_unmap (enc, off + len);
     return R_ASN1_ENCODER_OK;
   }
 
