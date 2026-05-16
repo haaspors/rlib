@@ -194,9 +194,25 @@ r_log_category_initial_level (rpointer str, rpointer data)
   if ((n = r_log_level_parse_from_str (dbg, &lvl)) < 0 || lvl < cat->threshold)
     return;
 
-  /* FIXME: Add glob matching */
-  if (n == 0 || (n == 1 && dbg[0] == '*') || r_strncmp (dbg, cat->name, n) == 0)
+  if (n == 0) {
     cat->threshold = MIN (lvl, R_LOG_LEVEL_MAX);
+  } else {
+    /* dbg[0..n] isn't NUL-terminated; copy onto a small stack scratch so
+     * r_str_match_simple_pattern (which expects a NUL-terminated pattern)
+     * can handle it.  Falls back to a heap copy for huge patterns. */
+    rchar stack_pat[64];
+    rchar * pat = stack_pat;
+    if (n + 1 > sizeof (stack_pat))
+      pat = r_malloc (n + 1);
+    if (pat != NULL) {
+      r_memcpy (pat, dbg, n);
+      pat[n] = 0;
+      if (r_str_match_simple_pattern (cat->name, -1, pat))
+        cat->threshold = MIN (lvl, R_LOG_LEVEL_MAX);
+      if (pat != stack_pat)
+        r_free (pat);
+    }
+  }
 }
 
 rboolean
