@@ -86,52 +86,27 @@ r_asn1_bin_encoder_get_buffer (RAsn1BinEncoder * enc, RBuffer ** buf)
 static rsize
 r_asn1_bin_write_definite_len (ruint8 * ptr, rsize len)
 {
+  rsize n, i;
+
   /* short form */
   if (len < 0x80) {
-    ptr[0] = (ruint8)(len & 0x7f);
+    ptr[0] = (ruint8)len;
     return 1;
   }
 
-  /* long form */
-  if (len <= RUINT8_MAX) {
-    ptr[0] = 0x81;
-    ptr[1] = (len      ) & 0xff;
-    return 2;
+  /* Long form, minimal encoding: emit exactly as many value bytes
+   * as needed to represent len. (BER allows non-minimal encodings,
+   * but DER requires the shortest form, so always emit minimal.) */
+  for (n = 1; n < sizeof (rsize); n++) {
+    if ((len >> (n * 8)) == 0)
+      break;
   }
-#if RLIB_SIZEOF_SIZE_T >= 2
-  else if (len <= RUINT16_MAX) {
-    ptr[0] = 0x82;
-    ptr[1] = (len >>  8) & 0xff;
-    ptr[2] = (len      ) & 0xff;
-    return 3;
-  }
-#endif
-#if RLIB_SIZEOF_SIZE_T >= 4
-  else if (len <= RUINT32_MAX) {
-    ptr[0] = 0x84;
-    ptr[1] = (len >> 24) & 0xff;
-    ptr[2] = (len >> 16) & 0xff;
-    ptr[3] = (len >>  8) & 0xff;
-    ptr[4] = (len      ) & 0xff;
-    return 5;
-  }
-#endif
-#if RLIB_SIZEOF_SIZE_T >= 8
-  else if (len <= RUINT64_MAX) {
-    ptr[0] = 0x88;
-    ptr[1] = (len >> 56) & 0xff;
-    ptr[2] = (len >> 48) & 0xff;
-    ptr[3] = (len >> 40) & 0xff;
-    ptr[4] = (len >> 32) & 0xff;
-    ptr[5] = (len >> 24) & 0xff;
-    ptr[6] = (len >> 16) & 0xff;
-    ptr[7] = (len >>  8) & 0xff;
-    ptr[8] = (len      ) & 0xff;
-    return 9;
-  }
-#endif
 
-  return 0;
+  ptr[0] = 0x80 | (ruint8)n;
+  for (i = 0; i < n; i++)
+    ptr[1 + i] = (ruint8)(len >> ((n - 1 - i) * 8));
+
+  return 1 + n;
 }
 
 static ruint8 *
