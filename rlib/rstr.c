@@ -1267,21 +1267,19 @@ r_strsplit (const rchar * str, const rchar * delim, rsize max)
 int
 r_str_chunk_cmp (const RStrChunk * buf, const rchar * str, rssize size)
 {
-  int ret;
   if (size < 0) size = (rssize)r_strlen (str);
-  if ((ret = (int)(size - buf->size)) == 0)
-    ret = r_memcmp (buf->str, str, size);
-  return ret;
+  if ((rsize)size != buf->size)
+    return ((rsize)size < buf->size) ? -1 : 1;
+  return r_memcmp (buf->str, str, size);
 }
 
 int
 r_str_chunk_casecmp (const RStrChunk * buf, const rchar * str, rssize size)
 {
-  int ret;
   if (size < 0) size = (rssize)r_strlen (str);
-  if ((ret = (int)(size - buf->size)) == 0)
-    ret = r_strncasecmp (buf->str, str, size);
-  return ret;
+  if ((rsize)size != buf->size)
+    return ((rsize)size < buf->size) ? -1 : 1;
+  return r_strncasecmp (buf->str, str, size);
 }
 
 rboolean
