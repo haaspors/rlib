@@ -187,6 +187,42 @@ RTEST (rasn1der, parse_integer_small, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_empty_integer, RTEST_FAST)
+{
+  /* An INTEGER TLV with length 0 is malformed per spec, but the
+   * decoder currently accepts it. Parse functions must not read
+   * tlv->value[0] when tlv->len is 0. */
+  static const ruint8 encoded[] = { 0x02, 0x00 };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  rint32 i32;
+  ruint32 u32;
+  rint64 i64;
+  ruint64 u64;
+  ruint bits;
+  rboolean unsign;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+          encoded, sizeof (encoded))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER));
+  r_assert_cmpuint (tlv.len, ==, 0);
+
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_bits (&tlv, &bits, &unsign),
+      !=, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i32 (&tlv, &i32),
+      !=, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_u32 (&tlv, &u32),
+      !=, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_i64 (&tlv, &i64),
+      !=, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_integer_u64 (&tlv, &u64),
+      !=, R_ASN1_DECODER_OK);
+
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
 RTEST (rasn1der, length_long_form_truncated, RTEST_FAST)
 {
   /* Long-form length declares N value-bytes follow, but the buffer

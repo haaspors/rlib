@@ -48,6 +48,8 @@ r_asn1_bin_tlv_parse_integer_bits (const RAsn1BinTLV * tlv,
 {
   if (R_UNLIKELY (tlv == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv->len == 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
   if (R_UNLIKELY (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER)))
     return R_ASN1_DECODER_WRONG_TYPE;
 
@@ -68,6 +70,8 @@ r_asn1_bin_tlv_parse_integer_i32 (const RAsn1BinTLV * tlv, rint32 * value)
 {
   if (R_UNLIKELY (tlv == NULL || value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv->len == 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER) ||
       R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_ENUMERATED)) {
     ruint32 u = 0;
@@ -104,6 +108,8 @@ r_asn1_bin_tlv_parse_integer_u32 (const RAsn1BinTLV * tlv, ruint32 * value)
 {
   if (R_UNLIKELY (tlv == NULL || value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv->len == 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER) ||
       R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_ENUMERATED)) {
     ruint32 u = 0;
@@ -134,6 +140,8 @@ r_asn1_bin_tlv_parse_integer_i64 (const RAsn1BinTLV * tlv, rint64 * value)
 {
   if (R_UNLIKELY (tlv == NULL || value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv->len == 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER)) {
     ruint64 u = 0;
     const ruint8 * ptr = tlv->value;
@@ -169,6 +177,8 @@ r_asn1_bin_tlv_parse_integer_u64 (const RAsn1BinTLV * tlv, ruint64 * value)
 {
   if (R_UNLIKELY (tlv == NULL || value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv->len == 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER)) {
     ruint64 u = 0;
     const ruint8 * ptr = tlv->value;
@@ -198,6 +208,8 @@ r_asn1_bin_tlv_parse_integer_mpint (const RAsn1BinTLV * tlv, rmpint * value)
 {
   if (R_UNLIKELY (tlv == NULL || value == NULL))
     return R_ASN1_DECODER_INVALID_ARG;
+  if (R_UNLIKELY (tlv->len == 0))
+    return R_ASN1_DECODER_PARSE_ERROR;
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER)) {
     r_mpint_clear (value);
     r_mpint_init_binary (value, tlv->value, tlv->len);
