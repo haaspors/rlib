@@ -226,7 +226,7 @@ r_crypto_key_import_ssh_public_key (const rchar * data, rsize size)
         rsize binsize = size - (algsize + sizeof (ruint32));
         if (algsize == 7 && r_memcmp (algptr, "ssh-rsa", 7) == 0) {
           ret = r_crypto_key_decode_bin_rsa_pub (bindata, binsize);
-        } else if (algsize == 7 && r_memcmp (algptr, "ssh-dsa", 7) == 0) {
+        } else if (algsize == 7 && r_memcmp (algptr, "ssh-dss", 7) == 0) {
           ret = r_crypto_key_decode_bin_dsa_pub (bindata, binsize);
         }
       }
