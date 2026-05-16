@@ -168,6 +168,10 @@ RTEST (relf, strtbl, RTEST_FAST)
   r_assert_cmpptr (r_elf_parser_shdr64_get_data (parser, hdr, &size), ==, elf_o + hdr->offset);
   r_assert_cmpuint (size, ==, hdr->size);
 
+  /* Index past the end of the strtab must not return an OOB pointer. */
+  r_assert_cmpptr (r_elf_parser_strtbl64_get_str (parser, hdr, hdr->size), ==, NULL);
+  r_assert_cmpptr (r_elf_parser_strtbl64_get_str (parser, hdr, RUINT64_MAX), ==, NULL);
+
   r_elf_parser_unref (parser);
 }
 RTEST_END;

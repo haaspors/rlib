@@ -591,8 +591,7 @@ r_elf_parser_strtbl_get_str (RElfParser * parser, ruint32 idx)
 rchar *
 r_elf_parser_strtbl32_get_str (RElfParser * parser, RElf32SHdr * shdr, ruint32 idx)
 {
-  rchar * ret;
-
+  if (R_UNLIKELY (parser == NULL)) return NULL;
   if (shdr == NULL) {
     if ((shdr = r_elf_parser_get_strtbl32 (parser)) == NULL)
       return NULL;
@@ -600,16 +599,18 @@ r_elf_parser_strtbl32_get_str (RElfParser * parser, RElf32SHdr * shdr, ruint32 i
   if (shdr->type != R_ELF_STYPE_STRTAB)
     return NULL;
 
-  ret = parser->mem;
-  ret += shdr->offset + idx;
-  return ret;
+  if (R_UNLIKELY (shdr->offset > parser->size ||
+        shdr->size > parser->size - shdr->offset ||
+        idx >= shdr->size))
+    return NULL;
+
+  return (rchar *)parser->mem + shdr->offset + idx;
 }
 
 rchar *
 r_elf_parser_strtbl64_get_str (RElfParser * parser, RElf64SHdr * shdr, ruint64 idx)
 {
-  rchar * ret;
-
+  if (R_UNLIKELY (parser == NULL)) return NULL;
   if (shdr == NULL) {
     if ((shdr = r_elf_parser_get_strtbl64 (parser)) == NULL)
       return NULL;
@@ -617,9 +618,12 @@ r_elf_parser_strtbl64_get_str (RElfParser * parser, RElf64SHdr * shdr, ruint64 i
   if (shdr->type != R_ELF_STYPE_STRTAB)
     return NULL;
 
-  ret = parser->mem;
-  ret += shdr->offset + idx;
-  return ret;
+  if (R_UNLIKELY (shdr->offset > parser->size ||
+        shdr->size > parser->size - shdr->offset ||
+        idx >= shdr->size))
+    return NULL;
+
+  return (rchar *)parser->mem + shdr->offset + idx;
 }
 
 ruint32
