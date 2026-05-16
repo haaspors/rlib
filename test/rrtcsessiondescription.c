@@ -809,6 +809,54 @@ RTEST (rrtcsessiondescription, webrtc_with_BUNDLE_to_sdp, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcsessiondescription, simple_to_sdp_ipv6, RTEST_FAST)
+{
+  /* Driving to_sdp with an IPv6 transport address must emit a v6
+   * c= connection line carrying the [literal]'s port via the v6
+   * port getter rather than the v4-cast lookup that used to be
+   * hard-coded here. */
+  RRtcSessionDescription * sd;
+  RRtcMediaLineInfo * mline;
+  RRtcTransportInfo * trans;
+  RSocketAddress * addr;
+  RRtcError err;
+  RBuffer * buf;
+  ruint8 ip6[16] = { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+
+  r_assert_cmpptr ((sd = r_rtc_session_description_new (R_RTC_SIGNAL_OFFER)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv6_new_from_bytes (ip6, 45342)), !=, NULL);
+  r_assert_cmpint (r_rtc_session_description_set_originator_addr (sd,
+        R_STR_WITH_SIZE_ARGS ("jdoe"), R_STR_WITH_SIZE_ARGS ("123456789"), 2,
+        addr), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_set_session_name (sd,
+        R_STR_WITH_SIZE_ARGS ("-")), ==, R_RTC_OK);
+  r_assert_cmpptr ((trans = r_rtc_transport_info_new_full (R_STR_WITH_SIZE_ARGS ("audio"), addr, FALSE)), !=, NULL);
+  r_socket_address_unref (addr);
+  r_assert_cmpint (r_rtc_session_description_take_transport (sd, trans), ==, R_RTC_OK);
+  r_assert_cmpptr ((mline = r_rtc_media_line_info_new (NULL, 0,
+          R_RTC_DIR_NONE, R_RTC_MEDIA_AUDIO, R_RTC_PROTO_RTP,
+          R_RTC_PROTO_FLAGS_AVPF)), !=, NULL);
+  r_assert_cmpptr ((mline->trans = r_strdup (trans->id)), !=, NULL);
+  r_assert_cmpptr ((mline->params = r_rtc_rtp_parameters_new (mline->mid, -1)), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (mline->params, "PCMU", 0, 8000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_take_media_line (sd, mline), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((buf = r_rtc_session_description_to_sdp (sd, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_RTC_OK);
+  r_assert_cmpbufsstr (buf, 0, -1, ==,
+      "v=0\r\n"
+      "o=jdoe 123456789 2 IN IP6 2001:db8::1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "m=audio 45342 RTP/AVPF 0\r\n"
+      "c=IN IP6 2001:db8::1\r\n"
+      "a=rtpmap:0 PCMU/8000\r\n");
+  r_buffer_unref (buf);
+
+  r_rtc_session_description_unref (sd);
+}
+RTEST_END;
+
 RTEST (rrtcsessiondescription, set_originator_and_connection_ipv6, RTEST_FAST)
 {
   /* IPv6 RSocketAddresses must be accepted by the originator and

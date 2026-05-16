@@ -855,9 +855,15 @@ r_rtc_session_description_mline_to_sdp_media (const RRtcSessionDescription * sd,
             mline->trans)) == NULL))
     return NULL;
 
-  /* FIXME: Support IPv6! and non-unicast? */
+  /* FIXME: non-unicast? */
   portcount = 1;
-  port = trans->addr != NULL ? r_socket_address_ipv4_get_port (trans->addr) : 9;
+  if (trans->addr == NULL) {
+    port = 9;
+  } else if (r_socket_address_get_family (trans->addr) == R_SOCKET_FAMILY_IPV6) {
+    port = r_socket_address_ipv6_get_port (trans->addr);
+  } else {
+    port = r_socket_address_ipv4_get_port (trans->addr);
+  }
 
   if ((media = r_sdp_media_new_full (r_rtc_media_type_to_string (mline->type), -1,
           port, portcount,
