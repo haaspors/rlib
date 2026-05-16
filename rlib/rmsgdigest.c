@@ -121,8 +121,12 @@ r_msg_digest_new (RMsgDigestType type)
       return r_msg_digest_new_md5 ();
     case R_MSG_DIGEST_TYPE_SHA1:
       return r_msg_digest_new_sha1 ();
+    case R_MSG_DIGEST_TYPE_SHA224:
+      return r_msg_digest_new_sha224 ();
     case R_MSG_DIGEST_TYPE_SHA256:
       return r_msg_digest_new_sha256 ();
+    case R_MSG_DIGEST_TYPE_SHA384:
+      return r_msg_digest_new_sha384 ();
     case R_MSG_DIGEST_TYPE_SHA512:
       return r_msg_digest_new_sha512 ();
     default:

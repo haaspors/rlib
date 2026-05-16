@@ -77,6 +77,22 @@ RTEST (rmsgdigest, sha1, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rmsgdigest, new_dispatch, R_TEST_TYPE_FAST)
+{
+  /* r_msg_digest_new must dispatch to every implemented digest, not
+   * just MD5/SHA1/SHA256/SHA512. */
+  RMsgDigest * md;
+
+  r_assert_cmpptr ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_SHA224)), !=, NULL);
+  r_assert_cmpuint (r_msg_digest_size (md), ==, 224 / 8);
+  r_msg_digest_free (md);
+
+  r_assert_cmpptr ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_SHA384)), !=, NULL);
+  r_assert_cmpuint (r_msg_digest_size (md), ==, 384 / 8);
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
 RTEST (rmsgdigest, sha224, R_TEST_TYPE_FAST)
 {
   RMsgDigest * md = r_msg_digest_new_sha224 ();
