@@ -193,8 +193,19 @@ r_rtc_rtp_hdrext_parameters_dup (const RRtcRtpHdrExtParameters * p)
   RRtcRtpHdrExtParameters * ret;
 
   if ((ret = r_rtc_rtp_hdrext_parameters_new (p->uri, -1, p->id)) != NULL) {
+    rsize i;
+
     ret->prefencrypt = p->prefencrypt;
-    /* TODO: Coypy params */
+    /* `params` is a generic RPtrArray of caller-supplied pointers with
+     * no per-entry type or destroy-notify info, so we can only do a
+     * shallow copy: the dup's slots reference the original entries.
+     * No destroy notify is recorded on the dup, so r_ptr_array_clear
+     * on either array leaves the underlying entries alone -- callers
+     * remain responsible for the actual pointer lifetimes. */
+    for (i = 0; i < r_ptr_array_size ((RPtrArray *) &p->params); i++) {
+      r_ptr_array_add (&ret->params,
+          r_ptr_array_get ((RPtrArray *) &p->params, i), NULL);
+    }
   }
 
   return ret;

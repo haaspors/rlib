@@ -113,6 +113,37 @@ RTEST (rrtcrtpparameters, hdrext, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcrtpparameters, hdrext_dup, RTEST_FAST)
+{
+  /* r_rtc_rtp_hdrext_parameters_dup used to copy uri / id / prefencrypt
+   * but silently drop the params array.  Verify all scalar fields and
+   * each existing params entry survives the dup (shallow pointer copy
+   * since the entry type is opaque). */
+  RRtcRtpHdrExtParameters orig;
+  RRtcRtpHdrExtParameters * copy;
+  rchar slotA = 'A', slotB = 'B';
+
+  r_rtc_rtp_hdrext_parameters_init (&orig);
+  orig.uri = r_strdup ("urn:ietf:params:rtp-hdrext:foobar");
+  orig.id  = 42;
+  orig.prefencrypt = TRUE;
+  r_ptr_array_add (&orig.params, &slotA, NULL);
+  r_ptr_array_add (&orig.params, &slotB, NULL);
+
+  r_assert_cmpptr ((copy = r_rtc_rtp_hdrext_parameters_dup (&orig)), !=, NULL);
+  r_assert_cmpstr (copy->uri, ==, "urn:ietf:params:rtp-hdrext:foobar");
+  r_assert_cmpptr (copy->uri, !=, orig.uri);  /* uri is duped, not aliased */
+  r_assert_cmpuint (copy->id, ==, 42);
+  r_assert (copy->prefencrypt);
+  r_assert_cmpuint (r_ptr_array_size (&copy->params), ==, 2);
+  r_assert_cmpptr (r_ptr_array_get (&copy->params, 0), ==, &slotA);
+  r_assert_cmpptr (r_ptr_array_get (&copy->params, 1), ==, &slotB);
+
+  r_rtc_rtp_hdrext_parameters_clear (copy); r_free (copy);
+  r_rtc_rtp_hdrext_parameters_clear (&orig);
+}
+RTEST_END;
+
 RTEST (rrtcrtpcodecparameters, codecs_by_name, RTEST_FAST)
 {
   RRtcRtpCodecParameters * codec;
