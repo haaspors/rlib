@@ -72,7 +72,10 @@ r_rtc_ice_candidate_new (const rchar * foundation, rssize fsize,
   RRtcIceCandidate * ret;
   RSocketAddress * addr;
 
-  if ((addr = r_socket_address_ipv4_new_from_string (ip, port)) != NULL) {
+  if ((addr = r_socket_address_ipv4_new_from_string (ip, port)) == NULL)
+    addr = r_socket_address_ipv6_new_from_string (ip, port);
+
+  if (addr != NULL) {
     ret = r_rtc_ice_candidate_new_full (foundation, fsize,
         pri, component, proto, addr, type);
     r_socket_address_unref (addr);
@@ -148,8 +151,10 @@ r_rtc_ice_candidate_new_from_sdp_attrib_value (const rchar * value, rssize size)
         if (r_str_kv_parse_multiple (&kv, rnext, RPOINTER_TO_SIZE (end - rnext),
             R_STR_WITH_SIZE_ARGS (" "), R_STR_WITH_SIZE_ARGS (" "), &rnext) == R_STR_PARSE_OK &&
             r_str_chunk_casecmp (&kv.key, R_STR_WITH_SIZE_ARGS ("rport")) == 0) {
-          ret->raddr = r_socket_address_ipv4_new_from_string (ip,
-              r_str_to_uint16 (kv.val.str, NULL, 10, NULL));
+          ruint16 rport = r_str_to_uint16 (kv.val.str, NULL, 10, NULL);
+          if ((ret->raddr = r_socket_address_ipv4_new_from_string (ip,
+                  rport)) == NULL)
+            ret->raddr = r_socket_address_ipv6_new_from_string (ip, rport);
           next = rnext;
         }
         r_free (ip);
@@ -298,7 +303,10 @@ r_rtc_ice_candidate_to_string (const RRtcIceCandidate * candidate)
       addr = r_socket_address_ipv4_to_str (candidate->addr, FALSE);
       port = r_socket_address_ipv4_get_port (candidate->addr);
       break;
-    /*case R_SOCKET_FAMILY_IPV6: FIXME */
+    case R_SOCKET_FAMILY_IPV6:
+      addr = r_socket_address_ipv6_to_str (candidate->addr, FALSE);
+      port = r_socket_address_ipv6_get_port (candidate->addr);
+      break;
     default:
       r_string_free (str);
       return NULL;
@@ -319,7 +327,12 @@ r_rtc_ice_candidate_to_string (const RRtcIceCandidate * candidate)
         r_string_append_printf (str, " raddr %s rport %"RUINT16_FMT, addr, port);
         r_free (addr);
         break;
-      /*case R_SOCKET_FAMILY_IPV6: FIXME */
+      case R_SOCKET_FAMILY_IPV6:
+        addr = r_socket_address_ipv6_to_str (candidate->raddr, FALSE);
+        port = r_socket_address_ipv6_get_port (candidate->raddr);
+        r_string_append_printf (str, " raddr %s rport %"RUINT16_FMT, addr, port);
+        r_free (addr);
+        break;
       default:
         break;
     }
