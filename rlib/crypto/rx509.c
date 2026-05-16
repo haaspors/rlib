@@ -985,13 +985,16 @@ r_crypto_x509_cert_new_from_buffer (RBuffer * buf)
           r_crypto_cert_unref (ret);
           ret = NULL;
         }
+        r_asn1_bin_decoder_unref (dec);
+      } else {
+        r_crypto_cert_unref (ret);
+        ret = NULL;
       }
-      r_asn1_bin_decoder_unref (dec);
+      r_buffer_unmap (buf, &info);
+    } else {
+      r_crypto_cert_unref (ret);
+      ret = NULL;
     }
-    r_buffer_unmap (buf, &info);
-  } else {
-    r_crypto_cert_unref (ret);
-    ret = NULL;
   }
 
   return (RCryptoCert *)ret;
