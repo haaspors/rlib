@@ -310,7 +310,10 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
   (void) ppsize;
 
   if ((dec = r_pem_block_get_asn1_decoder (block)) != NULL) {
-    r_asn1_bin_decoder_next (dec, &tlv);
+    if (r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK) {
+      r_asn1_bin_decoder_unref (dec);
+      return NULL;
+    }
     switch (r_pem_block_get_type (block)) {
       case R_PEM_TYPE_PUBLIC_KEY:
         ret = r_crypto_key_from_asn1_public_key (dec, &tlv);
