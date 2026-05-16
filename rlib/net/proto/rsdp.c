@@ -194,7 +194,7 @@ r_sdp_msg_new_from_sdp_buffer (const RSdpBuf * buf)
     }
     for (i = 0; i < buf->bcount; i++) {
       r_sdp_msg_add_bandwidth (ret, buf->bw[i].key.str, buf->bw[i].key.size,
-          r_sdp_buf_bandwidth_kbps (buf, i));
+          r_sdp_buf_bandwidth_raw (buf, i));
     }
     for (i = 0; i < buf->tcount; i++) {
       rsize j;
@@ -244,7 +244,7 @@ r_sdp_msg_new_from_sdp_buffer (const RSdpBuf * buf)
       for (i = 0; i < buf->media[j].bcount; i++) {
         r_sdp_media_add_bandwidth (media,
             buf->media[j].bw[i].key.str, buf->media[j].bw[i].key.size,
-            r_sdp_buf_media_bandwidth_kbps (buf, j, i));
+            r_sdp_buf_media_bandwidth_raw (buf, j, i));
       }
       r_sdp_media_set_key (media,
           buf->media[j].key.key.str, buf->media[j].key.key.size,

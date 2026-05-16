@@ -294,10 +294,10 @@ R_API rssize r_sdp_media_buf_find_fmt (const RSdpMediaBuf * media, const rchar *
 #define r_sdp_media_buf_bandwidth_type(media, idx)  r_str_kv_dup_key (&(media)->bw[idx])
 #define r_sdp_media_buf_bandwidth_modifier(media, idx) \
   r_sdp_bandwidth_modifier_from_str ((media)->bw[idx].key.str, (rssize) (media)->bw[idx].key.size)
-#define r_sdp_media_buf_bandwidth_kbps(media, idx)  r_str_to_uint ((media)->bw[idx].val.str, NULL, 10, NULL)
+#define r_sdp_media_buf_bandwidth_raw(media, idx)  r_str_to_uint ((media)->bw[idx].val.str, NULL, 10, NULL)
 #define r_sdp_media_buf_bandwidth_bps(media, idx) \
   r_sdp_bandwidth_to_bps (r_sdp_media_buf_bandwidth_modifier (media, idx), \
-      r_sdp_media_buf_bandwidth_kbps (media, idx))
+      r_sdp_media_buf_bandwidth_raw (media, idx))
 #define r_sdp_media_buf_key_method(media)           r_str_kv_dup_key (&(media)->key)
 #define r_sdp_media_buf_key_data(media)             r_str_kv_dup_value (&(media)->key)
 #define r_sdp_media_buf_attrib_count(media)         (media)->acount
@@ -404,10 +404,10 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_bandwidth_type(buf, idx)          r_str_kv_dup_key (&(buf)->bw[idx])
 #define r_sdp_buf_bandwidth_modifier(buf, idx) \
   r_sdp_bandwidth_modifier_from_str ((buf)->bw[idx].key.str, (rssize) (buf)->bw[idx].key.size)
-#define r_sdp_buf_bandwidth_kbps(buf, idx)          r_str_to_uint ((buf)->bw[idx].val.str, NULL, 10, NULL)
+#define r_sdp_buf_bandwidth_raw(buf, idx)           r_str_to_uint ((buf)->bw[idx].val.str, NULL, 10, NULL)
 #define r_sdp_buf_bandwidth_bps(buf, idx) \
   r_sdp_bandwidth_to_bps (r_sdp_buf_bandwidth_modifier (buf, idx), \
-      r_sdp_buf_bandwidth_kbps (buf, idx))
+      r_sdp_buf_bandwidth_raw (buf, idx))
 
 #define r_sdp_buf_time_start(buf, idx)              r_sdp_time_buf_start (&(buf)->time[idx])
 #define r_sdp_buf_time_stop(buf, idx)               r_sdp_time_buf_stop (&(buf)->time[idx])
@@ -446,7 +446,7 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 #define r_sdp_buf_media_bandwidth_type(buf, idx, bidx)  r_sdp_media_buf_bandwidth_type (&(buf)->media[idx], bidx)
 #define r_sdp_buf_media_bandwidth_modifier(buf, idx, bidx) \
   r_sdp_media_buf_bandwidth_modifier (&(buf)->media[idx], bidx)
-#define r_sdp_buf_media_bandwidth_kbps(buf, idx, bidx)  r_sdp_media_buf_bandwidth_kbps (&(buf)->media[idx], bidx)
+#define r_sdp_buf_media_bandwidth_raw(buf, idx, bidx)   r_sdp_media_buf_bandwidth_raw (&(buf)->media[idx], bidx)
 #define r_sdp_buf_media_bandwidth_bps(buf, idx, bidx) \
   r_sdp_media_buf_bandwidth_bps (&(buf)->media[idx], bidx)
 #define r_sdp_buf_media_key_method(buf, idx)            r_sdp_media_buf_key_method (&(buf)->media[idx])
