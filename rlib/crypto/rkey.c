@@ -140,16 +140,24 @@ static rboolean
 r_crypto_key_decode_bin_lv (const ruint8 ** v, rsize * l,
     const ruint8 ** data, rsize * size)
 {
+  ruint32 len;
+
   if (*size <= sizeof (ruint32))
     return FALSE;
 
-  *l = RUINT32_FROM_BE (*(ruint32 *)*data);
-  if (*l + sizeof (ruint32) > *size)
+  /* Read big-endian length byte-by-byte: *data may be unaligned
+   * after a previous LV consumed an odd number of value bytes. */
+  len = ((ruint32)(*data)[0] << 24) | ((ruint32)(*data)[1] << 16) |
+        ((ruint32)(*data)[2] <<  8) | (ruint32)(*data)[3];
+  /* Compare in the form that doesn't overflow on 32-bit rsize: a
+   * malicious len near RUINT32_MAX would make 'len + 4' wrap. */
+  if (len > *size - sizeof (ruint32))
     return FALSE;
 
+  *l = len;
   *v = *data + sizeof (ruint32);
-  *data += *l + sizeof (ruint32);
-  *size -= *l + sizeof (ruint32);
+  *data += sizeof (ruint32) + len;
+  *size -= sizeof (ruint32) + len;
   return TRUE;
 }
 
@@ -203,10 +211,17 @@ r_crypto_key_import_ssh_public_key (const rchar * data, rsize size)
     size -= (++next - data);
     if ((keydata = r_base64_decode_dup (next, size, &size)) != NULL &&
         size > sizeof (ruint32)) {
-      rsize algsize = RUINT32_FROM_BE (*(ruint32 *)keydata);
+      /* Read length big-endian byte-by-byte (no alignment assumption
+       * on the malloc return, even though malloc typically aligns). */
+      rsize algsize = ((ruint32)keydata[0] << 24) |
+                      ((ruint32)keydata[1] << 16) |
+                      ((ruint32)keydata[2] <<  8) |
+                      (ruint32)keydata[3];
       ruint8 * algptr = keydata + sizeof (ruint32);
 
-      if (algsize + sizeof (ruint32) < size) {
+      /* Overflow-safe: algsize <= UINT32_MAX, size > 4, so the
+       * subtraction is well-defined. */
+      if (algsize < size - sizeof (ruint32)) {
         ruint8 * bindata = algptr + algsize;
         rsize binsize = size - (algsize + sizeof (ruint32));
         if (algsize == 7 && r_memcmp (algptr, "ssh-rsa", 7) == 0) {
