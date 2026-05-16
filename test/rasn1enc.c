@@ -322,3 +322,64 @@ RTEST (rasn1enc_der, integer_roundtrip_negative, RTEST_FAST)
   }
 }
 RTEST_END;
+
+RTEST (rasn1enc_der, integer_roundtrip_negative_mpint, RTEST_FAST)
+{
+  /* Encode negative mpints; verify the bytes match the expected DER and
+   * round-trip back through the mpint decoder. */
+  static const struct {
+    const rchar * magnitude;  /* decimal string of |value| */
+    rsize expected_size;      /* total DER bytes including tag+len */
+    ruint8 expected[12];
+  } cases[] = {
+    /* -1 */
+    { "1", 3, { 0x02, 0x01, 0xff } },
+    /* -127: 0x81 */
+    { "127", 3, { 0x02, 0x01, 0x81 } },
+    /* -128: 0x80 (magnitude is exact power of 2) */
+    { "128", 3, { 0x02, 0x01, 0x80 } },
+    /* -129: 0xFF 0x7F (extra byte needed) */
+    { "129", 4, { 0x02, 0x02, 0xff, 0x7f } },
+    /* -256: 0xFF 0x00 */
+    { "256", 4, { 0x02, 0x02, 0xff, 0x00 } },
+    /* -32768: 0x80 0x00 (exact power of 2) */
+    { "32768", 4, { 0x02, 0x02, 0x80, 0x00 } },
+    /* -2^40 = 0xFF 00 00 00 00 00 (six bytes) */
+    { "1099511627776", 8, { 0x02, 0x06, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00 } },
+  };
+  ruint i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    RAsn1BinEncoder * enc;
+    RAsn1BinDecoder * dec;
+    RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+    rmpint v, round;
+    ruint8 * out;
+    rsize size;
+
+    r_mpint_init_str (&v, cases[i].magnitude, NULL, 10);
+    v.sign = 1;  /* make it negative */
+
+    r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_encoder_add_integer_mpint (enc, &v),
+        ==, R_ASN1_ENCODER_OK);
+    r_assert_cmpptr ((out = r_asn1_bin_encoder_get_data (enc, &size)), !=, NULL);
+    r_assert_cmpuint (size, ==, cases[i].expected_size);
+    r_assert_cmpmem (out, ==, cases[i].expected, size);
+
+    r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, out, size)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+    r_mpint_init (&round);
+    r_assert_cmpint (r_asn1_bin_tlv_parse_integer_mpint (&tlv, &round),
+        ==, R_ASN1_DECODER_OK);
+    r_assert_cmpuint (round.sign, ==, 1);
+    r_assert_cmpint (r_mpint_ucmp (&round, &v), ==, 0);
+
+    r_asn1_bin_decoder_unref (dec);
+    r_free (out);
+    r_asn1_bin_encoder_unref (enc);
+    r_mpint_clear (&v);
+    r_mpint_clear (&round);
+  }
+}
+RTEST_END;

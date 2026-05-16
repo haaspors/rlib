@@ -586,10 +586,52 @@ r_asn1_bin_encoder_add_integer_mpint (RAsn1BinEncoder * enc, const rmpint * valu
 
   if (R_UNLIKELY (enc == NULL)) return R_ASN1_ENCODER_INVALID_ARG;
   if (R_UNLIKELY (value == NULL)) return R_ASN1_ENCODER_INVALID_ARG;
-  /* FIXME: Support negative mpints */
-  if (R_UNLIKELY (r_mpint_isneg (value))) return R_ASN1_ENCODER_INVALID_ARG;
 
   len = r_mpint_bytes_used (value);
+
+  if (r_mpint_isneg (value)) {
+    /* Two's complement of -|value| over (len + 1) bytes is always wide
+     * enough to keep the sign bit set, then strip the redundant leading
+     * 0xFF (if any) to land on the minimal DER encoding. */
+    rsize n = (len > 0) ? len + 1 : 1;
+    ruint8 * tmpbuf;
+    rmpint absval, pow2, encoded;
+    RAsn1EncoderStatus status = R_ASN1_ENCODER_OOM;
+
+    r_mpint_init_copy (&absval, value);
+    absval.sign = 0;
+    r_mpint_init (&pow2);
+    r_mpint_init (&encoded);
+    r_mpint_set_u32 (&pow2, 1);
+    r_mpint_shl (&pow2, &pow2, (ruint32) (8 * n));
+    r_mpint_sub (&encoded, &pow2, &absval);
+
+    tmpbuf = r_alloca (n);
+    r_mpint_to_binary_with_size (&encoded, tmpbuf, n);
+    {
+      rsize emit = n;
+      ruint8 * payload = tmpbuf;
+
+      if (emit >= 2 && payload[0] == 0xff && (payload[1] & 0x80) != 0) {
+        emit--;
+        payload++;
+      }
+
+      if ((ptr = r_asn1_bin_encoder_map (enc, 2 + sizeof (rsize) + emit)) != NULL) {
+        rsize act = 1;
+        ptr[0] = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_INTEGER);
+        act += r_asn1_bin_write_definite_len (&ptr[act], emit);
+        r_memcpy (&ptr[act], payload, emit);
+        r_asn1_bin_encoder_unmap (enc, act + emit);
+        status = R_ASN1_ENCODER_OK;
+      }
+    }
+
+    r_mpint_clear (&absval);
+    r_mpint_clear (&pow2);
+    r_mpint_clear (&encoded);
+    return status;
+  }
 
   if ((ptr = r_asn1_bin_encoder_map (enc, 2 + sizeof (rsize) + 1 + len)) != NULL) {
     rsize act = 1;
