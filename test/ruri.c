@@ -124,3 +124,68 @@ RTEST (ruri, new_http, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (ruri, escape_unescape, RTEST_FAST)
+{
+  /* r_uri_escape_str / r_uri_unescape_str used to be stub no-ops that
+   * just duped the input.  Verify they now percent-encode/decode per
+   * RFC 3986. */
+  rchar * out;
+  rsize sz;
+
+  /* Unreserved chars are preserved as-is. */
+  r_assert_cmpptr ((out = r_uri_escape_str ("abc-._~XYZ09", -1, &sz)),
+      !=, NULL);
+  r_assert_cmpstr (out, ==, "abc-._~XYZ09");
+  r_assert_cmpuint (sz, ==, 12);
+  r_free (out);
+
+  /* Reserved gen-delims/sub-delims survive (so URI structure stays
+   * intact when the whole URI is fed through escape_str). */
+  r_assert_cmpptr ((out = r_uri_escape_str ("http://a:b@c/d?e#f", -1, &sz)),
+      !=, NULL);
+  r_assert_cmpstr (out, ==, "http://a:b@c/d?e#f");
+  r_free (out);
+
+  /* Space and quote get percent-encoded. */
+  r_assert_cmpptr ((out = r_uri_escape_str ("foo bar\"baz", -1, &sz)),
+      !=, NULL);
+  r_assert_cmpstr (out, ==, "foo%20bar%22baz");
+  r_free (out);
+
+  /* Non-ASCII byte (e.g. UTF-8 'ø' = 0xC3 0xB8). */
+  r_assert_cmpptr ((out = r_uri_escape_str ("\xC3\xB8", -1, &sz)),
+      !=, NULL);
+  r_assert_cmpstr (out, ==, "%C3%B8");
+  r_free (out);
+
+  /* Already-encoded triplets pass through unchanged. */
+  r_assert_cmpptr ((out = r_uri_escape_str ("a%20b", -1, &sz)),
+      !=, NULL);
+  r_assert_cmpstr (out, ==, "a%20b");
+  r_free (out);
+
+  /* unescape: decode triplets back. */
+  r_assert_cmpptr ((out = r_uri_unescape_str ("foo%20bar", -1, &sz)),
+      !=, NULL);
+  r_assert_cmpstr (out, ==, "foo bar");
+  r_assert_cmpuint (sz, ==, 7);
+  r_free (out);
+
+  /* Stray %-not-followed-by-hex stays literal. */
+  r_assert_cmpptr ((out = r_uri_unescape_str ("100%done", -1, &sz)),
+      !=, NULL);
+  r_assert_cmpstr (out, ==, "100%done");
+  r_free (out);
+
+  /* Round-trip a string with reserved and unsafe chars. */
+  r_assert_cmpptr ((out = r_uri_escape_str ("hello world!", -1, &sz)),
+      !=, NULL);
+  {
+    rchar * back = r_uri_unescape_str (out, (rssize) sz, NULL);
+    r_assert_cmpstr (back, ==, "hello world!");
+    r_free (back);
+  }
+  r_free (out);
+}
+RTEST_END;

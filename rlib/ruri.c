@@ -25,30 +25,86 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
+/* Per RFC 3986: ALPHA / DIGIT / "-" / "." / "_" / "~" are unreserved
+ * and never escaped; gen-delims (":/?#[]@") and sub-delims
+ * ("!$&'()*+,;=") are reserved -- preserved verbatim so the URI's
+ * syntactic structure survives a round trip.  Percent ('%') is also
+ * preserved so already-encoded triplets are not re-encoded.  Anything
+ * else (whitespace, controls, non-ASCII) becomes a "%HH" triplet. */
+static rboolean
+r_uri_char_needs_escape (ruint8 c)
+{
+  if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+    return FALSE;
+  switch (c) {
+    case '-': case '.': case '_': case '~':
+    case ':': case '/': case '?': case '#': case '[': case ']': case '@':
+    case '!': case '$': case '&': case '\'': case '(': case ')': case '*':
+    case '+': case ',': case ';': case '=':
+    case '%':
+      return FALSE;
+    default:
+      return TRUE;
+  }
+}
+
 rchar *
 r_uri_escape_str (const rchar * str, rssize size, rsize * out)
 {
+  static const rchar hex[] = "0123456789ABCDEF";
+  rchar * ret;
+  rsize i, j, asize;
+
   if (R_UNLIKELY (str == NULL)) return NULL;
   if (size < 0) size = r_strlen (str);
 
-  /* TODO: implement */
+  asize = (rsize) size;
+  if (R_UNLIKELY ((ret = r_malloc (asize * 3 + 1)) == NULL)) return NULL;
 
+  for (i = 0, j = 0; i < asize; i++) {
+    ruint8 c = (ruint8) str[i];
+    if (r_uri_char_needs_escape (c)) {
+      ret[j++] = '%';
+      ret[j++] = hex[(c >> 4) & 0xf];
+      ret[j++] = hex[c & 0xf];
+    } else {
+      ret[j++] = (rchar) c;
+    }
+  }
+  ret[j] = 0;
   if (out != NULL)
-    *out = size;
-  return r_strndup (str, size);
+    *out = j;
+  return ret;
 }
 
 rchar *
 r_uri_unescape_str (const rchar * str, rssize size, rsize * out)
 {
+  rchar * ret;
+  rsize i, j, asize;
+
   if (R_UNLIKELY (str == NULL)) return NULL;
   if (size < 0) size = r_strlen (str);
 
-  /* TODO: implement */
+  asize = (rsize) size;
+  if (R_UNLIKELY ((ret = r_malloc (asize + 1)) == NULL)) return NULL;
 
+  for (i = 0, j = 0; i < asize; ) {
+    if (str[i] == '%' && i + 2 < asize) {
+      rint8 hi = r_ascii_xdigit_value ((ruint8) str[i + 1]);
+      rint8 lo = r_ascii_xdigit_value ((ruint8) str[i + 2]);
+      if (hi >= 0 && lo >= 0) {
+        ret[j++] = (rchar) ((hi << 4) | lo);
+        i += 3;
+        continue;
+      }
+    }
+    ret[j++] = str[i++];
+  }
+  ret[j] = 0;
   if (out != NULL)
-    *out = size;
-  return r_strndup (str, size);
+    *out = j;
+  return ret;
 }
 
 typedef struct {
