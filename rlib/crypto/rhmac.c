@@ -34,14 +34,17 @@ r_hmac_new (RMsgDigestType type, rconstpointer key, rsize keysize)
 {
   RHmac * hmac;
 
-  if ((hmac = r_mem_new (RHmac)) != NULL) {
+  if ((hmac = r_mem_new0 (RHmac)) != NULL) {
     hmac->inner = r_msg_digest_new (type);
     hmac->outer = r_msg_digest_new (type);
+    if (hmac->inner == NULL || hmac->outer == NULL) {
+      r_hmac_free (hmac);
+      return NULL;
+    }
+
     hmac->blocksize = r_msg_digest_blocksize (hmac->inner);
     hmac->keyblock = r_malloc0 (hmac->blocksize);
-
-    if (hmac->inner == NULL || hmac->outer == NULL ||
-        hmac->blocksize == 0 || hmac->keyblock == NULL) {
+    if (hmac->blocksize == 0 || hmac->keyblock == NULL) {
       r_hmac_free (hmac);
       return NULL;
     }
@@ -73,6 +76,7 @@ r_hmac_free (RHmac * hmac)
 rsize
 r_hmac_size (const RHmac * hmac)
 {
+  if (R_UNLIKELY (hmac == NULL)) return 0;
   return r_msg_digest_size (hmac->inner);
 }
 

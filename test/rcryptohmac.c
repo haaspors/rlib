@@ -56,3 +56,14 @@ RTEST (rcryptomac, hmac_sha1, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rcryptomac, hmac_unsupported_type, R_TEST_TYPE_FAST)
+{
+  /* r_msg_digest_new returns NULL for these types; r_hmac_new must not crash. */
+  r_assert_cmpptr (r_hmac_new (R_MSG_DIGEST_TYPE_MD2, "k", 1), ==, NULL);
+  r_assert_cmpptr (r_hmac_new (R_MSG_DIGEST_TYPE_MD4, "k", 1), ==, NULL);
+  r_assert_cmpptr (r_hmac_new (R_MSG_DIGEST_TYPE_SHA224, "k", 1), ==, NULL);
+  r_assert_cmpptr (r_hmac_new (R_MSG_DIGEST_TYPE_SHA384, "k", 1), ==, NULL);
+  r_assert_cmpptr (r_hmac_new (R_MSG_DIGEST_TYPE_NONE, "k", 1), ==, NULL);
+}
+RTEST_END;
+
