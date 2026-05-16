@@ -28,6 +28,20 @@ RTEST (rpe, image_size, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rpeparser, oversize_lfanew, RTEST_FAST)
+{
+  /* DOS header with valid magic but lfanew pointing far past the buffer
+   * must be rejected without dereferencing the bogus pointer. */
+  ruint8 evil[sizeof (RPeDosHdr)] = { 0 };
+  RPeDosHdr * dos = (RPeDosHdr *)evil;
+
+  dos->magic = R_PE_DOS_MAGIC;
+  dos->lfanew = 0xFFFFFFFF;
+
+  r_assert_cmpptr (r_pe_parser_new_from_mem (evil, sizeof (evil)), ==, NULL);
+}
+RTEST_END;
+
 RTEST (rpeparser, pe32_from_mem, RTEST_FAST)
 {
   RPeParser * parser;

@@ -91,21 +91,37 @@ r_pe_parser_free (RPeParser * parser)
 RPeParser *
 r_pe_parser_new_from_mem (rpointer mem, rsize size)
 {
-  RPeParser * ret;
+  RPeParser * ret = NULL;
   RPeImageHdr * hdr;
+  const RPeDosHdr * dos;
+  rsize sectbl_off, rawdata_off;
+
+  if (R_UNLIKELY (mem == NULL || size < sizeof (RPeDosHdr)))
+    return NULL;
+
+  /* Pre-validate dos->lfanew before r_pe_image_from_dos_header dereferences it. */
+  dos = mem;
+  if (dos->magic != R_PE_DOS_MAGIC ||
+      dos->lfanew > size ||
+      size - dos->lfanew < sizeof (RPeImageHdr))
+    return NULL;
 
   if ((hdr = r_pe_image_from_dos_header (mem)) != NULL) {
+    sectbl_off = (rsize)dos->lfanew + sizeof (RPeImageHdr) + hdr->coff.size_opthdr;
+    if (sectbl_off > size ||
+        (size - sectbl_off) / sizeof (RPeSectionHdr) < hdr->coff.nsect)
+      return NULL;
+    rawdata_off = sectbl_off + (rsize)hdr->coff.nsect * sizeof (RPeSectionHdr);
+
     if (R_LIKELY (ret = r_mem_new (RPeParser))) {
       r_ref_init (ret, r_pe_parser_free);
       ret->file = NULL;
       ret->mem = mem;
       ret->size = size;
       ret->imghdr = hdr;
-      ret->sectbl = (RPeSectionHdr *)((ruint8 *)(hdr + 1) + hdr->coff.size_opthdr);
-      ret->rawdata = ret->sectbl + hdr->coff.nsect;
+      ret->sectbl = (RPeSectionHdr *)((ruint8 *)mem + sectbl_off);
+      ret->rawdata = (ruint8 *)mem + rawdata_off;
     }
-  } else {
-    ret = NULL;
   }
 
   return ret;
