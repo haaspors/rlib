@@ -372,11 +372,45 @@ r_crypto_key_from_asn1_private_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
           ret = r_dsa_priv_key_new_from_asn1 (dec, tlv);
           r_asn1_bin_decoder_out (dec, tlv);
         }
+      } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_X9_62_OID_EC_PUB_KEY) ||
+          r_asn1_oid_bin_equals (tlv->value, tlv->len, R_CERTICOM_OID_ECDH_PUB_KEY)) {
+        rboolean is_ecdh = r_asn1_oid_bin_equals (tlv->value, tlv->len,
+            R_CERTICOM_OID_ECDH_PUB_KEY);
+        REcNamedCurve curve;
+
+        /* parameters: named curve OID (sibling of algorithm OID). */
+        if (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
+            R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) &&
+            r_ecc_parse_named_curve (&curve, tlv->value, tlv->len)) {
+          /* Step out of AlgorithmIdentifier, then into the privateKey
+           * OCTET STRING -- a wrapper around an ECPrivateKey SEQUENCE
+           * (RFC 5915):
+           *   SEQUENCE { INTEGER version, OCTET STRING scalar,
+           *              [0] OID curve OPTIONAL,
+           *              [1] BIT STRING pubkey OPTIONAL } */
+          if (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK &&
+              r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK &&
+              r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+            rint32 ec_ver = 0;
+
+            if (r_asn1_bin_tlv_parse_integer_i32 (tlv, &ec_ver) == R_ASN1_DECODER_OK &&
+                r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
+                R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING) &&
+                tlv->len > 0) {
+              ret = is_ecdh
+                  ? r_ecdh_priv_key_new (curve, NULL, 0, tlv->value, tlv->len)
+                  : r_ecdsa_priv_key_new (curve, NULL, 0, tlv->value, tlv->len);
+            }
+            r_asn1_bin_decoder_out (dec, tlv);
+            r_asn1_bin_decoder_out (dec, tlv);
+            goto done;
+          }
+        }
       }
-      /* FIXME - Add ECC algo and others! */
     }
     r_asn1_bin_decoder_out (dec, tlv);
   }
+done:
 
   r_asn1_bin_decoder_out (dec, tlv);
   return ret;

@@ -32,6 +32,13 @@ typedef struct {
   ruint8 * ecp;
 } REccPubKey;
 
+typedef struct {
+  REccPubKey pub;
+
+  rsize scalarsize;
+  ruint8 * scalar;
+} REccPrivKey;
+
 static void
 r_ecc_pub_key_free (rpointer data)
 {
@@ -119,6 +126,89 @@ r_ecc_key_get_curve (const RCryptoKey * key)
     return R_EC_NAMED_CURVE_NONE;
 
   return ((const REccPubKey *)key)->namedcurve;
+}
+
+static void
+r_ecc_priv_key_free (rpointer data)
+{
+  REccPrivKey * key;
+
+  if ((key = data) != NULL) {
+    if (key->scalar != NULL) {
+      r_memclear (key->scalar, key->scalarsize);
+      r_free (key->scalar);
+    }
+    r_free (key->pub.ecp);
+    r_crypto_key_destroy ((RCryptoKey *)key);
+    r_free (key);
+  }
+}
+
+static RCryptoKey *
+r_ecc_priv_key_new_full (REcNamedCurve curve, RCryptoAlgorithm algo,
+    const rchar * algo_str, rconstpointer ecp, rsize ecpsize,
+    rconstpointer scalar, rsize scalarsize)
+{
+  REccPrivKey * ret;
+  static const RCryptoAlgoInfo ecdsa_priv_key_info = {
+    R_CRYPTO_ALGO_ECDSA, R_ECDSA_STR, NULL, NULL, NULL, NULL, NULL
+  };
+  static const RCryptoAlgoInfo ecdh_priv_key_info = {
+    R_CRYPTO_ALGO_ECDH, R_ECDH_STR, NULL, NULL, NULL, NULL, NULL
+  };
+
+  if (scalar == NULL || scalarsize == 0) return NULL;
+
+  if ((ret = r_mem_new (REccPrivKey)) != NULL) {
+    ret->pub.namedcurve = curve;
+    ret->pub.ecpsize = ecpsize;
+    ret->pub.ecp = (ecp != NULL && ecpsize > 0) ? r_memdup (ecp, ecpsize) : NULL;
+    ret->scalarsize = scalarsize;
+    ret->scalar = r_memdup (scalar, scalarsize);
+
+    r_ref_init (&ret->pub.key, r_ecc_priv_key_free);
+    ret->pub.key.type = R_CRYPTO_PRIVATE_KEY;
+    ret->pub.key.algo = (algo == R_CRYPTO_ALGO_ECDSA)
+        ? &ecdsa_priv_key_info : &ecdh_priv_key_info;
+    ret->pub.key.bits = (ruint) (scalarsize * 8);
+    (void) algo_str;
+  }
+
+  return (RCryptoKey *) ret;
+}
+
+RCryptoKey *
+r_ecdsa_priv_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize,
+    rconstpointer scalar, rsize scalarsize)
+{
+  return r_ecc_priv_key_new_full (curve, R_CRYPTO_ALGO_ECDSA, R_ECDSA_STR,
+      ecp, ecpsize, scalar, scalarsize);
+}
+
+RCryptoKey *
+r_ecdh_priv_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize,
+    rconstpointer scalar, rsize scalarsize)
+{
+  return r_ecc_priv_key_new_full (curve, R_CRYPTO_ALGO_ECDH, R_ECDH_STR,
+      ecp, ecpsize, scalar, scalarsize);
+}
+
+rboolean
+r_ecc_priv_key_get_scalar (const RCryptoKey * key,
+    const ruint8 ** scalar, rsize * scalarsize)
+{
+  const REccPrivKey * priv;
+
+  if (R_UNLIKELY (key == NULL)) return FALSE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return FALSE;
+  if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_ECDSA &&
+        key->algo->algo != R_CRYPTO_ALGO_ECDH))
+    return FALSE;
+
+  priv = (const REccPrivKey *) key;
+  if (scalar != NULL) *scalar = priv->scalar;
+  if (scalarsize != NULL) *scalarsize = priv->scalarsize;
+  return TRUE;
 }
 
 rboolean

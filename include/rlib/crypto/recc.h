@@ -78,7 +78,15 @@ R_API RCryptoKey * r_ecdsa_pub_key_new (REcNamedCurve curve,
     rconstpointer ecp, rsize ecpsize) R_ATTR_MALLOC;
 R_API RCryptoKey * r_ecdh_pub_key_new (REcNamedCurve curve,
     rconstpointer ecp, rsize ecpsize) R_ATTR_MALLOC;
+R_API RCryptoKey * r_ecdsa_priv_key_new (REcNamedCurve curve,
+    rconstpointer ecp, rsize ecpsize,
+    rconstpointer scalar, rsize scalarsize) R_ATTR_MALLOC;
+R_API RCryptoKey * r_ecdh_priv_key_new (REcNamedCurve curve,
+    rconstpointer ecp, rsize ecpsize,
+    rconstpointer scalar, rsize scalarsize) R_ATTR_MALLOC;
 R_API REcNamedCurve r_ecc_key_get_curve (const RCryptoKey * key);
+R_API rboolean r_ecc_priv_key_get_scalar (const RCryptoKey * key,
+    const ruint8 ** scalar, rsize * scalarsize);
 
 R_END_DECLS
 

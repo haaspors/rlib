@@ -733,3 +733,48 @@ RTEST (rcryptopem, legacy_encrypted_rsa_aes256, RTEST_FAST)
       "test123");
 }
 RTEST_END;
+
+/* PKCS#8 EC private key (P-256), generated with:
+ *   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+ *     | openssl pkcs8 -topk8 -nocrypt
+ * The private scalar (32 bytes) sits inside the OCTET STRING that wraps
+ * the inner ECPrivateKey. */
+static const rchar pem_ec_p256_pkcs8[] =
+  "-----BEGIN PRIVATE KEY-----\n"
+  "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgkrW+cPvQewP+Uc8n\n"
+  "E0gKjCC8vQ5s8wzAZZucsoER8yShRANCAAQOqBZfSIoQYPr4uX9Y4gY3JmxmZGya\n"
+  "6JgmCzqvDbfOffP/3sj3F0/hk1OE18EWbsHBQePKozLCnHh/fM0PYZZZ\n"
+  "-----END PRIVATE KEY-----\n";
+
+RTEST (rcryptopem, ec_p256_pkcs8_private_key, RTEST_FAST)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  const ruint8 * scalar = NULL;
+  rsize scalarsize = 0;
+  static const ruint8 expected_scalar[] = {
+    0x92, 0xb5, 0xbe, 0x70, 0xfb, 0xd0, 0x7b, 0x03, 0xfe, 0x51, 0xcf, 0x27,
+    0x13, 0x48, 0x0a, 0x8c, 0x20, 0xbc, 0xbd, 0x0e, 0x6c, 0xf3, 0x0c, 0xc0,
+    0x65, 0x9b, 0x9c, 0xb2, 0x81, 0x11, 0xf3, 0x24
+  };
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_ec_p256_pkcs8, sizeof (pem_ec_p256_pkcs8))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_crypto_key_get_type (key), ==, R_CRYPTO_PRIVATE_KEY);
+  r_assert_cmpint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_ECDSA);
+  r_assert_cmpint (r_ecc_key_get_curve (key), ==, R_EC_NAMED_CURVE_SECP256R1);
+
+  r_assert (r_ecc_priv_key_get_scalar (key, &scalar, &scalarsize));
+  r_assert_cmpuint (scalarsize, ==, sizeof (expected_scalar));
+  r_assert_cmpmem (scalar, ==, expected_scalar, scalarsize);
+
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+}
+RTEST_END;
