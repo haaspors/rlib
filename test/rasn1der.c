@@ -187,6 +187,69 @@ RTEST (rasn1der, parse_integer_small, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_time_out_of_range, RTEST_FAST)
+{
+  /* Hour, minute, second, and timezone offset components have spec
+   * ranges that the parser must reject when violated. *time must not
+   * be written on the error path. */
+  static const struct {
+    rsize size;
+    ruint8 data[20];
+  } cases[] = {
+    /* UTC-TIME hh=25 (>= 24): 250101253000Z */
+    { 15, { 0x17, 0x0d, '2','5','0','1','0','1','2','5','3','0','0','0','Z' } },
+    /* UTC-TIME mm=60 (>= 60): 100101086000Z */
+    { 15, { 0x17, 0x0d, '1','0','0','1','0','1','0','8','6','0','0','0','Z' } },
+    /* UTC-TIME ss=60 (>= 60): 100101083060Z */
+    { 15, { 0x17, 0x0d, '1','0','0','1','0','1','0','8','3','0','6','0','Z' } },
+    /* UTC-TIME offset hd=25 (>= 24): 100101083000+2500 */
+    { 19, { 0x17, 0x11, '1','0','0','1','0','1','0','8','3','0','0','0',
+            '+','2','5','0','0' } },
+    /* UTC-TIME offset md=60 (>= 60): 100101083000+0260 */
+    { 19, { 0x17, 0x11, '1','0','0','1','0','1','0','8','3','0','0','0',
+            '+','0','2','6','0' } },
+  };
+  ruint i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    RAsn1BinDecoder * dec;
+    RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+    ruint64 res = 0xdeadbeef;
+
+    r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+            cases[i].data, cases[i].size)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+    r_assert_cmpint (r_asn1_bin_tlv_parse_time (&tlv, &res), !=, R_ASN1_DECODER_OK);
+    r_assert_cmpuint (res, ==, 0xdeadbeef);
+    r_asn1_bin_decoder_unref (dec);
+  }
+}
+RTEST_END;
+
+RTEST (rasn1der, parse_time_heap_buffer, RTEST_FAST)
+{
+  /* Decode UTC_TIME from a heap buffer so the encoded byte after the
+   * last digit is NOT zero-initialized. r_strscanf uses vsscanf which
+   * expects a NUL-terminated string; this probes whether the time
+   * parser reads past tlv->value + tlv->len. */
+  static const ruint8 encoded[] = { 0x17, 0x0A,
+      '9', '6', '0', '4', '2', '2', '1', '0', '0', '0' };
+  ruint8 * buf = r_memdup (encoded, sizeof (encoded));
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  ruint64 t = 0;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+          buf, sizeof (encoded))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_UTC_TIME));
+  r_assert_cmpint (r_asn1_bin_tlv_parse_time (&tlv, &t), ==, R_ASN1_DECODER_OK);
+
+  r_asn1_bin_decoder_unref (dec);
+  r_free (buf);
+}
+RTEST_END;
+
 RTEST (rasn1der, parse_empty_bit_string, RTEST_FAST)
 {
   /* BIT STRING with zero content bytes. parse_bit_string_bits used

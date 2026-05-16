@@ -418,20 +418,27 @@ r_asn1_bin_tlv_parse_time (const RAsn1BinTLV * tlv, ruint64 * time)
   }
 
 done:
-  *time = r_time_create_unix_time (y, m, d, hh, mm, ss);
+  if (R_UNLIKELY (hh >= 24 || mm >= 60 || ss >= 60))
+    return R_ASN1_DECODER_PARSE_ERROR;
 
   if (ptr == end - 5) {
     ruint8 hd, md;
+
     if (r_strscanf (&ptr[1], "%2hhu%2hhu", &hd, &md) != 2)
       return R_ASN1_DECODER_OVERFLOW;
+    if (R_UNLIKELY (hd >= 24 || md >= 60))
+      return R_ASN1_DECODER_PARSE_ERROR;
+    if (R_UNLIKELY (*ptr != '+' && *ptr != '-'))
+      return R_ASN1_DECODER_WRONG_TYPE;
 
+    *time = r_time_create_unix_time (y, m, d, hh, mm, ss);
     if (*ptr == '+')
       *time -= hd * 3600 + md * 60;
-    else if (*ptr == '-')
-      *time += hd * 3600 + md * 60;
     else
-      return R_ASN1_DECODER_WRONG_TYPE;
-  } else if (ptr != end) {
+      *time += hd * 3600 + md * 60;
+  } else if (ptr == end) {
+    *time = r_time_create_unix_time (y, m, d, hh, mm, ss);
+  } else {
     return R_ASN1_DECODER_OVERFLOW;
   }
 
