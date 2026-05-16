@@ -110,10 +110,24 @@ r_stun_msg_add_xor_address (RStunMsgCtx * ctx, RStunAttrType type,
       break;
     case R_SOCKET_FAMILY_IPV6:
       val[1] = 2;
-      /**(ruint16 *)&val[2] = RUINT16_TO_BE (r_socket_address_ipv6_get_port (addr)) ^ *(ruint16 *)&ctx->buf[R_STUN_MAGIC_COOKIE_OFFSET];*/
-      /**(ruint32 *)&val[4] = RUINT32_TO_BE (r_socket_address_ipv6_get_ip (addr)   ^ R_STUN_MAGIC_COOKIE);*/
+      {
+        ruint16 port_be = RUINT16_TO_BE (r_socket_address_ipv6_get_port (addr));
+        ruint8 ip[16];
+        rsize i;
+        const ruint8 * cookie = (const ruint8 *) &ctx->buf[R_STUN_MAGIC_COOKIE_OFFSET];
+
+        /* X-Port = port XOR most-significant 16 bits of the magic cookie. */
+        port_be ^= *(const ruint16 *) cookie;
+        r_memcpy (val + 2, &port_be, sizeof (ruint16));
+
+        /* X-Address = address XOR (magic cookie || transaction id). */
+        if (!r_socket_address_ipv6_get_ip_bytes (addr, ip))
+          return FALSE;
+        for (i = 0; i < 16; i++)
+          val[4 + i] = ip[i] ^ cookie[i];
+      }
       tlv.len += 4 + (128 / 8);
-      return FALSE; /* FIXME: Add support for ipv6 */
+      break;
     default:
       return FALSE;
   }
@@ -236,15 +250,20 @@ r_stun_attr_tlv_parse_xor_address (rconstpointer buf, const RStunAttrTLV * tlv)
         ret = r_socket_address_ipv4_new_uint32 (ip, port);
       }
       break;
-      /* FIXME */
-    /*case 2: [> IPv6 <]*/
-      /*{*/
-        /*ruint32 magic = r_stun_msg_magic_cookie (buf);*/
-        /*ruint16 port = RUINT16_FROM_BE (*(ruint16 *)(&tlv->value[2]) ^ (ruint16)(magic & 0xffff));*/
-        /*ruint8 * ip   = &tlv->value[4];*/
-        /*ret = r_socket_address_ipv6_new (ip, port);*/
-      /*}*/
-      /*break;*/
+    case 2: /* IPv6 */
+      {
+        const ruint8 * cookie = (const ruint8 *) buf + R_STUN_MAGIC_COOKIE_OFFSET;
+        ruint16 port_be;
+        ruint8 ip[16];
+        rsize i;
+
+        if (tlv->len < 4 + 16) return NULL;
+        port_be = *(const ruint16 *) &tlv->value[2] ^ *(const ruint16 *) cookie;
+        for (i = 0; i < 16; i++)
+          ip[i] = tlv->value[4 + i] ^ cookie[i];
+        ret = r_socket_address_ipv6_new_from_bytes (ip, RUINT16_FROM_BE (port_be));
+      }
+      break;
     default:
       ret = NULL;
   }

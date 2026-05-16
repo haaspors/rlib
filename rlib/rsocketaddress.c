@@ -99,6 +99,25 @@ r_socket_address_ipv4_new_uint32 (ruint32 addr, ruint16 port)
 }
 
 RSocketAddress *
+r_socket_address_ipv6_new_from_bytes (const ruint8 ip[16], ruint16 port)
+{
+  RSocketAddress * ret;
+
+  if (R_UNLIKELY (ip == NULL)) return NULL;
+
+  if ((ret = r_mem_new0 (RSocketAddress)) != NULL) {
+    r_ref_init (ret, r_free);
+
+    ret->addrlen = R_SOCKET_ADDRESS_IPV6_SIZE;
+    R_SOCKET_ADDRESS_FAMILY (ret) = R_SOCKET_FAMILY_IPV6;
+    R_SOCKET_ADDRESS_IPV6_PORT (ret) = r_htons (port);
+    r_memcpy (R_SOCKET_ADDRESS_IPV6_ADDR (ret), ip, 16);
+  }
+
+  return ret;
+}
+
+RSocketAddress *
 r_socket_address_ipv4_new_uint8 (ruint8 a, ruint8 b, ruint8 c, ruint8 d, ruint16 port)
 {
   RSocketAddress * ret;
@@ -213,6 +232,25 @@ r_socket_address_ipv4_get_ip (const RSocketAddress * addr)
   if (R_UNLIKELY (addr == NULL)) return RUINT32_MAX; /* INADDR_NONE */
 
   return r_ntohl (R_SOCKET_ADDRESS_IPV4_ADDR (addr));
+}
+
+ruint16
+r_socket_address_ipv6_get_port (const RSocketAddress * addr)
+{
+  if (R_UNLIKELY (addr == NULL)) return RUINT16_MAX;
+  if (r_socket_address_get_family (addr) != R_SOCKET_FAMILY_IPV6)
+    return RUINT16_MAX;
+  return r_ntohs (R_SOCKET_ADDRESS_IPV6_PORT (addr));
+}
+
+rboolean
+r_socket_address_ipv6_get_ip_bytes (const RSocketAddress * addr, ruint8 ip[16])
+{
+  if (R_UNLIKELY (addr == NULL || ip == NULL)) return FALSE;
+  if (r_socket_address_get_family (addr) != R_SOCKET_FAMILY_IPV6)
+    return FALSE;
+  r_memcpy (ip, R_SOCKET_ADDRESS_IPV6_ADDR (addr), 16);
+  return TRUE;
 }
 
 rboolean

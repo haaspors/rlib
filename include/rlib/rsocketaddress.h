@@ -57,6 +57,8 @@ R_API RSocketAddress * r_socket_address_copy (const RSocketAddress * addr);
 R_API RSocketAddress * r_socket_address_ipv4_new_uint32 (ruint32 addr, ruint16 port) R_ATTR_MALLOC;
 R_API RSocketAddress * r_socket_address_ipv4_new_uint8 (ruint8 a, ruint8 b, ruint8 c, ruint8 d, ruint16 port) R_ATTR_MALLOC;
 R_API RSocketAddress * r_socket_address_ipv4_new_from_string (const rchar * ip, ruint16 port) R_ATTR_MALLOC;
+R_API RSocketAddress * r_socket_address_ipv6_new_from_bytes (const ruint8 ip[16],
+    ruint16 port) R_ATTR_MALLOC;
 #define r_socket_address_ref    r_ref_ref
 #define r_socket_address_unref  r_ref_unref
 
@@ -68,6 +70,10 @@ R_API ruint16 r_socket_address_ipv4_get_port (const RSocketAddress * addr);
 R_API ruint32 r_socket_address_ipv4_get_ip (const RSocketAddress * addr);
 R_API rboolean r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port, rchar * str, rsize size);
 R_API rchar * r_socket_address_ipv4_to_str (const RSocketAddress * addr, rboolean port);
+
+R_API ruint16 r_socket_address_ipv6_get_port (const RSocketAddress * addr);
+R_API rboolean r_socket_address_ipv6_get_ip_bytes (const RSocketAddress * addr,
+    ruint8 ip[16]);
 
 R_API rchar * r_socket_address_to_str (const RSocketAddress * addr) R_ATTR_MALLOC;
 

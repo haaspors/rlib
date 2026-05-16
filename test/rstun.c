@@ -440,3 +440,52 @@ RTEST (rstun, attr_tlv_next_oob_at_end, RTEST_FAST)
   r_assert (!r_stun_attr_tlv_next (pkt, &tlv));
 }
 RTEST_END;
+
+RTEST (rstun, xor_address_ipv6_roundtrip, RTEST_FAST)
+{
+  /* Build a STUN success response with an XOR-MAPPED-ADDRESS carrying an
+   * IPv6 address, parse it back, and verify the recovered address and
+   * port match the originals. */
+  static const ruint8 expected_ip[16] = {
+    0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+  };
+  static const ruint8 tid[R_STUN_TRANSACTION_ID_SIZE] = {
+    0xff, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb
+  };
+  ruint8 buf[1024];
+  RStunMsgCtx ctx;
+  RSocketAddress * addr;
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  ruint8 recovered_ip[16];
+  rsize size;
+
+  r_memclear (buf, sizeof (buf));
+  r_assert (r_stun_msg_begin (&ctx, buf, sizeof (buf),
+        R_STUN_CLASS_SUCCESS_RESPONSE, R_STUN_METHOD_BINDING, tid));
+
+  r_assert_cmpptr ((addr = r_socket_address_ipv6_new_from_bytes (expected_ip,
+          0x4242)), !=, NULL);
+  r_assert (r_stun_msg_add_xor_address (&ctx,
+        R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS, addr));
+  r_socket_address_unref (addr);
+
+  size = r_stun_msg_end (&ctx, FALSE);
+  r_assert_cmpuint (size, ==, R_STUN_HEADER_SIZE +
+      R_STUN_ATTR_TLV_HEADER_SIZE + 4 + 16);
+  r_assert (r_stun_is_valid_msg (buf, size));
+
+  r_assert (r_stun_attr_tlv_first (buf, &tlv));
+  r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS);
+  r_assert_cmpuint (tlv.len, ==, 4 + 16);
+
+  r_assert_cmpptr ((addr = r_stun_attr_tlv_parse_xor_address (buf, &tlv)),
+      !=, NULL);
+  r_assert_cmpuint (r_socket_address_get_family (addr), ==, R_SOCKET_FAMILY_IPV6);
+  r_assert_cmphex (r_socket_address_ipv6_get_port (addr), ==, 0x4242);
+  r_assert (r_socket_address_ipv6_get_ip_bytes (addr, recovered_ip));
+  r_assert_cmpmem (recovered_ip, ==, expected_ip, 16);
+
+  r_socket_address_unref (addr);
+}
+RTEST_END;
