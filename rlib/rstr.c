@@ -1728,7 +1728,7 @@ r_str_hex_to_binary (const rchar * hex, ruint8 * bin, rsize size)
     hex += 2;
 
   for (ret = 0; *hex != 0 && !r_ascii_isspace (*hex); ret++, hex += 2) {
-    if (ret > size) return 0;
+    if (ret >= size) return 0;
     if (!r_ascii_isxdigit (hex[0])) return 0;
     if (hex[1] == 0 || !r_ascii_isxdigit (hex[1])) return 0;
 

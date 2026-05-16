@@ -1058,6 +1058,12 @@ RTEST (rstr, hex_mem, RTEST_FAST)
   r_assert_cmpuint (size, ==, 5);
   r_assert_cmpmem (bin, ==, expected_wierd, size);
   r_free (bin);
+
+  /* hex input longer than destination size must not write past the buffer. */
+  {
+    ruint8 small = 0;
+    r_assert_cmpuint (r_str_hex_to_binary ("abcd", &small, 1), ==, 0);
+  }
 }
 RTEST_END;
 
