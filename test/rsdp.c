@@ -819,3 +819,40 @@ RTEST (rsdp, ssrc_group_FID_semantics, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsdp, add_ice_candidate_raw_null_extension, RTEST_FAST)
+{
+  RSdpMedia * m;
+  rchar * value;
+  static const rchar expected[] = "1 1 udp 1 127.0.0.1 56144 typ host";
+
+  /* Baseline: NULL extension with esize == 0 produces no extension trailer. */
+  r_assert_cmpptr ((m = r_sdp_media_new_full (R_STR_WITH_SIZE_ARGS ("audio"),
+          9, 1, R_STR_WITH_SIZE_ARGS ("UDP"))), !=, NULL);
+  r_assert_cmpint (r_sdp_media_add_ice_candidate_raw (m,
+        R_STR_WITH_SIZE_ARGS ("1"), 1, R_STR_WITH_SIZE_ARGS ("udp"),
+        RUINT64_CONSTANT (1), R_STR_WITH_SIZE_ARGS ("127.0.0.1"), 56144,
+        R_STR_WITH_SIZE_ARGS ("host"),
+        NULL, 0, 0,
+        NULL, 0), ==, R_SDP_OK);
+  r_assert_cmpstr ((value = r_sdp_media_get_attribute (m,
+          R_STR_WITH_SIZE_ARGS ("candidate"))), ==, expected);
+  r_free (value);
+  r_sdp_media_unref (m);
+
+  /* Regression: NULL extension paired with esize > 0 must be treated as
+   * "no extension" rather than dereferencing the NULL pointer via %.*s. */
+  r_assert_cmpptr ((m = r_sdp_media_new_full (R_STR_WITH_SIZE_ARGS ("audio"),
+          9, 1, R_STR_WITH_SIZE_ARGS ("UDP"))), !=, NULL);
+  r_assert_cmpint (r_sdp_media_add_ice_candidate_raw (m,
+        R_STR_WITH_SIZE_ARGS ("1"), 1, R_STR_WITH_SIZE_ARGS ("udp"),
+        RUINT64_CONSTANT (1), R_STR_WITH_SIZE_ARGS ("127.0.0.1"), 56144,
+        R_STR_WITH_SIZE_ARGS ("host"),
+        NULL, 0, 0,
+        NULL, 5), ==, R_SDP_OK);
+  r_assert_cmpstr ((value = r_sdp_media_get_attribute (m,
+          R_STR_WITH_SIZE_ARGS ("candidate"))), ==, expected);
+  r_free (value);
+  r_sdp_media_unref (m);
+}
+RTEST_END;
+

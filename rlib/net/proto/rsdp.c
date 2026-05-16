@@ -1160,7 +1160,7 @@ r_sdp_media_add_ice_candidate_raw (RSdpMedia * media,
     r_string_append_printf (str, " raddr %.*s", (int)rasize, raddr);
   if (rport > 0)
     r_string_append_printf (str, " %"RUINT16_FMT, rport);
-  if (extension != NULL || esize > 0)
+  if (extension != NULL && esize > 0)
     r_string_append_printf (str, " %.*s", (int)esize, extension);
 
   if ((val = r_string_free_keep (str)) != NULL) {
