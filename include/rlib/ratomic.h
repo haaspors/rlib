@@ -58,6 +58,10 @@ typedef ruint               rauint;
 typedef rpointer            raptr;
 #endif
 
+/* rboolean is just int (see rtypes.h), so raboolean shares the same
+ * storage as raint and reuses the int atomic accessors. */
+typedef raint               raboolean;
+
 R_API int       r_atomic_int_load             (raint * a);
 R_API void      r_atomic_int_store            (raint * a, int val);
 R_API int       r_atomic_int_exchange         (raint * a, int val);
@@ -68,6 +72,17 @@ R_API int       r_atomic_int_fetch_sub        (raint * a, int val);
 R_API int       r_atomic_int_fetch_and        (raint * a, int val);
 R_API int       r_atomic_int_fetch_or         (raint * a, int val);
 R_API int       r_atomic_int_fetch_xor        (raint * a, int val);
+
+/* raboolean is a thin alias over raint; the bool accessors funnel
+ * through r_atomic_int_* with explicit rboolean casts so callers get
+ * the right type without spelling out "(rboolean) (TRUE != 0)" each
+ * time.  _set / _unset are sugar over _store for the common TRUE /
+ * FALSE assignments. */
+#define r_atomic_bool_load(a)                   ((rboolean) r_atomic_int_load (a))
+#define r_atomic_bool_store(a, v)               r_atomic_int_store (a, (int) (v))
+#define r_atomic_bool_exchange(a, v)            ((rboolean) r_atomic_int_exchange (a, (int) (v)))
+#define r_atomic_bool_set(a)                    r_atomic_bool_store (a, TRUE)
+#define r_atomic_bool_unset(a)                  r_atomic_bool_store (a, FALSE)
 
 R_API ruint     r_atomic_uint_load            (rauint * a);
 R_API void      r_atomic_uint_store           (rauint * a, ruint val);

@@ -200,7 +200,7 @@ typedef struct {
   RRWMutex mutex;
   rauint readers;
   rauint writers;
-  rboolean running;
+  raboolean running;
 } RThreadsTestRWMutex;
 
 static rpointer
@@ -209,7 +209,7 @@ rthread_test_rwmutex_reading (rpointer data)
   RThreadsTestRWMutex * test_ctx = data;
   ruint count = 0;
 
-  for (; test_ctx->running; count++) {
+  for (; r_atomic_bool_load (&test_ctx->running); count++) {
     r_thread_yield();
     r_assert_cmpuint (r_atomic_uint_load (&test_ctx->writers), >=, 0);
     r_rwmutex_rdlock (&test_ctx->mutex);
@@ -234,7 +234,7 @@ rthread_test_rwmutex_writing (rpointer data)
   RThreadsTestRWMutex * test_ctx = data;
   ruint count = 0;
 
-  for (; test_ctx->running; count++) {
+  for (; r_atomic_bool_load (&test_ctx->running); count++) {
     r_thread_yield();
     r_rwmutex_wrlock (&test_ctx->mutex);
     r_assert_cmpuint (r_atomic_uint_load (&test_ctx->readers), ==, 0);
@@ -265,7 +265,7 @@ RTEST_STRESS (rthread, rwmutex_stress, RTEST_FAST)
   r_rwmutex_init (&test_ctx.mutex);
   r_atomic_uint_store (&test_ctx.readers, 0);
   r_atomic_uint_store (&test_ctx.writers, 0);
-  test_ctx.running = TRUE;
+  r_atomic_bool_set (&test_ctx.running);
 
   for (i = 0; i < R_N_ELEMENTS (trd); i++)
     trd[i] = r_thread_new ("rwmutex_reader", rthread_test_rwmutex_reading, &test_ctx);
@@ -273,7 +273,7 @@ RTEST_STRESS (rthread, rwmutex_stress, RTEST_FAST)
     twr[i] = r_thread_new ("rwmutex_writer", rthread_test_rwmutex_writing, &test_ctx);
 
   r_thread_usleep (R_USEC_PER_SEC / 2);
-  test_ctx.running = FALSE;
+  r_atomic_bool_unset (&test_ctx.running);
 
   for (i = 0; i < R_N_ELEMENTS (twr); i++) {
     r_assert_cmpuint (RPOINTER_TO_UINT (r_thread_join (twr[i])), >, 0);
