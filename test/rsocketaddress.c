@@ -114,7 +114,20 @@ RTEST (rsocketaddress, to_str, RTEST_FAST)
   r_socket_address_unref (addr);
 
   /* ipv6 */
-  /* FIXME */
+  {
+    /* 2001:db8::1 in network byte order. */
+    ruint8 ip6[16] = {
+      0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    };
+    r_assert_cmpptr ((addr = r_socket_address_ipv6_new_from_bytes (ip6, 4242)), !=, NULL);
+    r_assert_cmpstr ((tmp = r_socket_address_to_str (addr)), ==, "[2001:db8::1]:4242"); r_free (tmp);
+    r_socket_address_unref (addr);
+
+    /* Loopback ::1, port zero. */
+    r_assert_cmpptr ((addr = r_socket_address_ipv6_new_from_string ("::1", 0)), !=, NULL);
+    r_assert_cmpstr ((tmp = r_socket_address_to_str (addr)), ==, "[::1]:0"); r_free (tmp);
+    r_socket_address_unref (addr);
+  }
 }
 RTEST_END;
 
