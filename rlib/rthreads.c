@@ -42,7 +42,6 @@
 #ifdef HAVE_SYS_PRCTL_H
 #include <sys/prctl.h>
 #endif
-#include <string.h>
 #include <time.h>
 
 #if defined (R_OS_WIN32)
@@ -718,21 +717,23 @@ r_thread_new_full (const rchar * name,
         cpuset = NULL;
       } else {
         rchar * str = r_bitset_to_human_readable (cpuset);
+        rchar errbuf[64];
         R_LOG_ERROR ("pthread_attr_setaffinity_np error %u - %s for cpuset: [%s]",
-            err, strerror (err), str);
+            err, r_strerror (err, errbuf, sizeof (errbuf)), str);
         r_free (str);
       }
     }
 #endif
     if ((err = pthread_create (&ret->thread, &attr, r_thread_trampoline, ret)) != 0) {
       rchar * str;
+      rchar errbuf[64];
 
       if (cpuset != NULL)
         str = r_bitset_to_human_readable (cpuset);
       else
         str = r_strdup ("all");
       R_LOG_ERROR ("Error when creating new thread %u - %s with cpuset: [%s]",
-          err, strerror (err), str);
+          err, r_strerror (err, errbuf, sizeof (errbuf)), str);
       r_free (str);
       r_thread_unref (ret);
       ret = NULL;
