@@ -23,6 +23,8 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
+#include <rlib/net/proto/rrtp.h>
+
 static void
 r_rtc_rtp_sender_free (RRtcRtpSender * s)
 {
@@ -119,9 +121,23 @@ r_rtc_rtp_sender_stop (RRtcRtpSender * s)
 RRtcError
 r_rtc_rtp_sender_send (RRtcRtpSender * s, RBuffer * packet)
 {
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RRtcCryptoTransport * tx;
+
   if (R_UNLIKELY (packet == NULL)) return R_RTC_INVAL;
 
-  /* FIXME: rtcp? */
-  return r_rtc_crypto_transport_send (s->rtp, packet);
+  /* Route RTCP packets through s->rtcp instead of s->rtp.  With
+   * rtcp-mux the two point at the same transport so this is a no-op;
+   * without rtcp-mux they're separate (own UDP socket, own DTLS) and
+   * pushing RTCP through the RTP transport would send it to the wrong
+   * peer endpoint. */
+  tx = s->rtp;
+  if (r_buffer_map (packet, &info, R_MEM_MAP_READ)) {
+    if (r_rtcp_is_valid_hdr (info.data, info.size))
+      tx = s->rtcp;
+    r_buffer_unmap (packet, &info);
+  }
+
+  return r_rtc_crypto_transport_send (tx, packet);
 }
 
