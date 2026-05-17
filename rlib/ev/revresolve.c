@@ -116,9 +116,9 @@ r_ev_resolve_addr_new (const rchar * host, const rchar * service,
     ret->func = func;
     ret->data = data;
     ret->datanotify = datanotify;
+    ret->result = R_RESOLVE_IN_PROGRESS;
     if ((ret->task = r_ev_loop_add_task (loop, r_ev_resolve_addr,
             r_ev_resolve_done, ret, r_ev_resolve_unref)) != NULL) {
-      ret->result = R_RESOLVE_IN_PROGRESS;
       r_ev_resolve_ref (ret);
     } else {
       r_ev_resolve_unref (ret);
