@@ -302,8 +302,8 @@ r_tls_server_write_hs_ext_renegotiation (const RTLSServer * server, ruint8 * ptr
   if (!server->support_renego)
     return 0;
 
-  *(ruint16 *)&ptr[0] = RUINT16_TO_BE ((ruint16)R_TLS_EXT_TYPE_RENEGOTIATION_INFO);
-  *(ruint16 *)&ptr[2] = RUINT16_TO_BE (1);
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_RENEGOTIATION_INFO);
+  r_store_be16 (&ptr[2], 1);
   ptr[4] = 0;
   return 5;
 }
@@ -315,8 +315,8 @@ r_tls_server_write_hs_ext_session_ticket (const RTLSServer * server, ruint8 * pt
     return 0;
 
   /* NewSessionTicket will come! */
-  *(ruint16 *)&ptr[0] = RUINT16_TO_BE ((ruint16)R_TLS_EXT_TYPE_SESSION_TICKET);
-  *(ruint16 *)&ptr[2] = RUINT16_TO_BE (0);
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_SESSION_TICKET);
+  r_store_be16 (&ptr[2], 0);
 
   return 4;
 }
@@ -327,10 +327,10 @@ r_tls_server_write_hs_ext_use_srtp (const RTLSServer * server, ruint8 * ptr)
   if (server->dtls_srtp_profile == R_SRTP_CS_NONE)
     return 0;
 
-  *(ruint16 *)&ptr[0] = RUINT16_TO_BE ((ruint16)R_TLS_EXT_TYPE_USE_SRTP);
-  *(ruint16 *)&ptr[2] = RUINT16_TO_BE (5 + server->srtp_mki_size);
-  *(ruint16 *)&ptr[4] = RUINT16_TO_BE (1 * sizeof (ruint16));
-  *(ruint16 *)&ptr[6] = RUINT16_TO_BE ((ruint16)server->dtls_srtp_profile);
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_USE_SRTP);
+  r_store_be16 (&ptr[2], 5 + server->srtp_mki_size);
+  r_store_be16 (&ptr[4], 1 * sizeof (ruint16));
+  r_store_be16 (&ptr[6], (ruint16)server->dtls_srtp_profile);
   if ((ptr[8] = server->srtp_mki_size) > 0)
     r_memcpy (&ptr[9], server->srtp_mki, server->srtp_mki_size);
 
@@ -401,7 +401,7 @@ r_tls_server_write_hello (RTLSServer * server)
 #endif
 
     if (extsize > 0) {
-      *(ruint16 *)ptr = RUINT16_TO_BE (extsize);
+      r_store_be16 (ptr, extsize);
       ptr += extsize + 2;
     }
 
@@ -743,7 +743,6 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   };
   RTLSCipherSuite * incoming;
   RTLSCipherSuite cs;
-  const ruint16 * ptr;
   rsize psize;
 
   /* Version check! */
@@ -764,8 +763,8 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
 
   count = server->hello.cslen / sizeof (ruint16);
   incoming = r_mem_newa_n (RTLSCipherSuite, count);
-  for (ptr = (const ruint16 *)server->hello.cs, i = 0; i < count; ptr++, i++)
-    incoming[i] = (RTLSCipherSuite)RUINT16_FROM_BE (*ptr);
+  for (i = 0; i < count; i++)
+    incoming[i] = (RTLSCipherSuite) r_load_be16 (server->hello.cs + i * sizeof (ruint16));
 
   /* Compression */
   server->comp = R_TLS_COMPRESSION_NULL;
