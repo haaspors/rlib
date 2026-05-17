@@ -200,6 +200,80 @@ R_BEGIN_DECLS
 #define r_htonl(val)          (RUINT32_TO_BE    (val))
 #define r_htons(val)          (RUINT16_TO_BE    (val))
 
+/* Alignment-safe load/store helpers for reading multi-byte integers
+ * out of arbitrary byte pointers (network buffers, packed structs).
+ * Casting a ruint8 * to ruint{16,32,64} * and dereferencing is UB
+ * when the pointer doesn't meet the wider type's alignment, even on
+ * architectures where it happens to work; modern compilers fold the
+ * memcpy below into the same single load/store on x86/x86-64 and
+ * emit safe unaligned access on ARM. */
+static inline ruint16 r_load_be16 (const void * p)
+{
+  ruint16 v;
+  __builtin_memcpy (&v, p, sizeof (v));
+  return RUINT16_FROM_BE (v);
+}
+static inline ruint32 r_load_be32 (const void * p)
+{
+  ruint32 v;
+  __builtin_memcpy (&v, p, sizeof (v));
+  return RUINT32_FROM_BE (v);
+}
+static inline ruint64 r_load_be64 (const void * p)
+{
+  ruint64 v;
+  __builtin_memcpy (&v, p, sizeof (v));
+  return RUINT64_FROM_BE (v);
+}
+static inline ruint16 r_load_le16 (const void * p)
+{
+  ruint16 v;
+  __builtin_memcpy (&v, p, sizeof (v));
+  return RUINT16_FROM_LE (v);
+}
+static inline ruint32 r_load_le32 (const void * p)
+{
+  ruint32 v;
+  __builtin_memcpy (&v, p, sizeof (v));
+  return RUINT32_FROM_LE (v);
+}
+static inline ruint64 r_load_le64 (const void * p)
+{
+  ruint64 v;
+  __builtin_memcpy (&v, p, sizeof (v));
+  return RUINT64_FROM_LE (v);
+}
+static inline void r_store_be16 (void * p, ruint16 v)
+{
+  ruint16 be = RUINT16_TO_BE (v);
+  __builtin_memcpy (p, &be, sizeof (be));
+}
+static inline void r_store_be32 (void * p, ruint32 v)
+{
+  ruint32 be = RUINT32_TO_BE (v);
+  __builtin_memcpy (p, &be, sizeof (be));
+}
+static inline void r_store_be64 (void * p, ruint64 v)
+{
+  ruint64 be = RUINT64_TO_BE (v);
+  __builtin_memcpy (p, &be, sizeof (be));
+}
+static inline void r_store_le16 (void * p, ruint16 v)
+{
+  ruint16 le = RUINT16_TO_LE (v);
+  __builtin_memcpy (p, &le, sizeof (le));
+}
+static inline void r_store_le32 (void * p, ruint32 v)
+{
+  ruint32 le = RUINT32_TO_LE (v);
+  __builtin_memcpy (p, &le, sizeof (le));
+}
+static inline void r_store_le64 (void * p, ruint64 v)
+{
+  ruint64 le = RUINT64_TO_LE (v);
+  __builtin_memcpy (p, &le, sizeof (le));
+}
+
 R_END_DECLS
 
 #endif /* __R_ENDIANNESS_H__ */
