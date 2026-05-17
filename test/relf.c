@@ -248,6 +248,38 @@ RTEST (relf, symtbl, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (relf, find_shdr_by_type, RTEST_FAST)
+{
+  /* The test ELF has a SYMTAB at idx 17, a RELA at idx 11, and a
+   * STRTAB at idx 18 (linked from symtab).  find_shdr64_by_type
+   * should return the first section of each type. */
+  RElfParser * parser;
+  RElf64SHdr * shdr;
+
+  r_assert_cmpptr ((parser =
+        r_elf_parser_new_from_mem (elf_o, sizeof (elf_o))), !=, NULL);
+
+  r_assert_cmpptr ((shdr = r_elf_parser_find_shdr64_by_type (parser,
+        R_ELF_STYPE_SYMTAB)), !=, NULL);
+  r_assert_cmpstr (r_elf_parser_shdr64_get_name (parser, shdr), ==, ".symtab");
+  r_assert_cmpptr (shdr, ==, r_elf_parser_get_shdr64 (parser, 17));
+
+  r_assert_cmpptr ((shdr = r_elf_parser_find_shdr64_by_type (parser,
+        R_ELF_STYPE_RELA)), !=, NULL);
+  r_assert_cmpuint (shdr->type, ==, R_ELF_STYPE_RELA);
+
+  /* No section of this type -> NULL. */
+  r_assert_cmpptr (r_elf_parser_find_shdr64_by_type (parser,
+        R_ELF_STYPE_DYNAMIC), ==, NULL);
+
+  /* 32-bit lookup on a 64-bit ELF returns NULL too. */
+  r_assert_cmpptr (r_elf_parser_find_shdr32_by_type (parser,
+        R_ELF_STYPE_SYMTAB), ==, NULL);
+
+  r_elf_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (relf, symtbl_find_by_name, RTEST_FAST)
 {
   /* Walk the symtab section and resolve a known symbol name to the

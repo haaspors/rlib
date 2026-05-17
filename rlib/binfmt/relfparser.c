@@ -466,6 +466,44 @@ r_elf_parser_find_shdr64 (RElfParser * parser, const rchar * name, rssize size)
   return NULL;
 }
 
+RElf32SHdr *
+r_elf_parser_find_shdr32_by_type (RElfParser * parser, ruint32 type)
+{
+  RElf32EHdr * ehdr;
+
+  if ((ehdr = r_elf_parser_get_ehdr32 (parser)) != NULL) {
+    ruint16 i;
+    ruint8 * ptr = parser->mem;
+    ptr += ehdr->shoff;
+
+    for (i = 0; i < ehdr->shnum; i++) {
+      RElf32SHdr * shdr = (RElf32SHdr *)(ptr + ehdr->shentsize * i);
+      if (shdr->type == type) return shdr;
+    }
+  }
+
+  return NULL;
+}
+
+RElf64SHdr *
+r_elf_parser_find_shdr64_by_type (RElfParser * parser, ruint32 type)
+{
+  RElf64EHdr * ehdr;
+
+  if ((ehdr = r_elf_parser_get_ehdr64 (parser)) != NULL) {
+    ruint16 i;
+    ruint8 * ptr = parser->mem;
+    ptr += ehdr->shoff;
+
+    for (i = 0; i < ehdr->shnum; i++) {
+      RElf64SHdr * shdr = (RElf64SHdr *)(ptr + ehdr->shentsize * i);
+      if (shdr->type == type) return shdr;
+    }
+  }
+
+  return NULL;
+}
+
 rchar *
 r_elf_parser_shdr32_get_name (RElfParser * parser, RElf32SHdr * shdr)
 {
