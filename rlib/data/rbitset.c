@@ -338,12 +338,20 @@ r_bitset_shr (RBitset * bitset, ruint count)
 
     d = R_BITSET_BIT_IDX (count);
     count = R_BITSET_BIT_POS (count);
-    for (i = 0; i < bitset->words - d - 1; i++) {
-      bitset->data[i] = (bitset->data[i + d] >> count) |
-        (bitset->data[i + d + 1] << (R_BSWORD_BITS - count));
+    if (count == 0) {
+      /* Word-aligned shift: just copy whole words.  Avoids the
+       * `word << (R_BSWORD_BITS - 0)` UB the merged path would hit. */
+      for (i = 0; i + d < bitset->words; i++)
+        bitset->data[i] = bitset->data[i + d];
+    } else {
+      for (i = 0; i < bitset->words - d - 1; i++) {
+        bitset->data[i] = (bitset->data[i + d] >> count) |
+          (bitset->data[i + d + 1] << (R_BSWORD_BITS - count));
+      }
+      bitset->data[i] = bitset->data[i + d] >> count;
+      i++;
     }
-    bitset->data[i] = bitset->data[i + d] >> count;
-    for (i++; i < bitset->words; i++)
+    for (; i < bitset->words; i++)
       bitset->data[i] = 0;
 
     return TRUE;
@@ -363,11 +371,17 @@ r_bitset_shl (RBitset * bitset, ruint count)
 
     d = R_BITSET_BIT_IDX (count);
     count = R_BITSET_BIT_POS (count);
-    for (i = bitset->words - d; i > 1; i--) {
-      bitset->data[i - 1 + d] = bitset->data[i - 1] << count |
-        bitset->data[i - 2] >> (R_BSWORD_BITS - count);
+    if (count == 0) {
+      /* Word-aligned shift: just copy whole words. */
+      for (i = bitset->words - d; i > 0; i--)
+        bitset->data[i - 1 + d] = bitset->data[i - 1];
+    } else {
+      for (i = bitset->words - d; i > 1; i--) {
+        bitset->data[i - 1 + d] = bitset->data[i - 1] << count |
+          bitset->data[i - 2] >> (R_BSWORD_BITS - count);
+      }
+      bitset->data[d] = bitset->data[0] << count;
     }
-    bitset->data[d] = bitset->data[0] << count;
     for (j = 0; j < d; j++)
       bitset->data[j] = 0;
     R_BITSET_CLAMP (bitset);

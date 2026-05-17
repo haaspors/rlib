@@ -428,6 +428,58 @@ RTEST (rbitset, shr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rbitset, shr_shl_word_boundary, RTEST_FAST)
+{
+  /* Shifting by a multiple of the word size used to leave the inner
+   * loop body computing `word >> (R_BSWORD_BITS - 0)`, i.e. a shift
+   * by the full word width, which is undefined behaviour.  Drive the
+   * path with a 256-bit bitset (4 words on a 64-bit rbsword) and a
+   * shift of 64 / 128 to make sure the bits land in the right places
+   * without tripping UBSAN. */
+  RBitset * a;
+
+  /* shl: bit 0 set, shift left by 64 -> bit 64 set, nothing else. */
+  r_assert (r_bitset_init_stack (a, 256));
+  r_assert (r_bitset_set_all (a, FALSE));
+  r_assert (r_bitset_set_bit (a, 0, TRUE));
+  r_assert (r_bitset_shl (a, 64));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 1);
+  r_assert (r_bitset_is_bit_set (a, 64));
+
+  /* shl by 128 -> bit 192. */
+  r_assert (r_bitset_set_all (a, FALSE));
+  r_assert (r_bitset_set_bit (a, 64, TRUE));
+  r_assert (r_bitset_shl (a, 128));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 1);
+  r_assert (r_bitset_is_bit_set (a, 192));
+
+  /* shr: bit 192 set, shift right by 64 -> bit 128 set. */
+  r_assert (r_bitset_set_all (a, FALSE));
+  r_assert (r_bitset_set_bit (a, 192, TRUE));
+  r_assert (r_bitset_shr (a, 64));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 1);
+  r_assert (r_bitset_is_bit_set (a, 128));
+
+  /* shr by 128 -> bit 64. */
+  r_assert (r_bitset_set_all (a, FALSE));
+  r_assert (r_bitset_set_bit (a, 192, TRUE));
+  r_assert (r_bitset_shr (a, 128));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 1);
+  r_assert (r_bitset_is_bit_set (a, 64));
+
+  /* Two bits in adjacent words after a word-boundary shr: both must
+   * be present so a regression where we accidentally OR in garbage
+   * from `word >> 64` is caught. */
+  r_assert (r_bitset_set_all (a, FALSE));
+  r_assert (r_bitset_set_bit (a, 130, TRUE));
+  r_assert (r_bitset_set_bit (a, 200, TRUE));
+  r_assert (r_bitset_shr (a, 64));
+  r_assert_cmpuint (r_bitset_popcount (a), ==, 2);
+  r_assert (r_bitset_is_bit_set (a, 66));
+  r_assert (r_bitset_is_bit_set (a, 136));
+}
+RTEST_END;
+
 RTEST (rbitset, get_at, RTEST_FAST)
 {
   RBitset * a;
