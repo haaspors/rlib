@@ -37,12 +37,16 @@ RTEST (rresolve, sync_addr_host, RTEST_FAST | RTEST_SYSTEM)
         r_assert_cmpuint (r_socket_address_ipv4_get_port (addr->addr), ==, 0);
         r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr->addr), ==, R_SOCKET_ADDRESS_IPV4_LOOPBACK);
         break;
-      case R_SOCKET_FAMILY_IPV6:
-#if 0
+      case R_SOCKET_FAMILY_IPV6: {
+        static const ruint8 ip6_loopback[16] = {
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+        };
+        ruint8 ip[16];
         r_assert_cmpuint (r_socket_address_ipv6_get_port (addr->addr), ==, 0);
-        r_assert_cmpuint (r_socket_address_ipv6_get_ip (addr->addr), ==, R_SOCKET_ADDRESS_IPV6_LOOPBACK);
-#endif
+        r_assert (r_socket_address_ipv6_get_ip_bytes (addr->addr, ip));
+        r_assert_cmpmem (ip, ==, ip6_loopback, 16);
         break;
+      }
       default:
         r_assert_not_reached ();
     }
@@ -84,12 +88,16 @@ RTEST (revresolve, addr_host, RTEST_FAST | RTEST_SYSTEM)
         r_assert_cmpuint (r_socket_address_ipv4_get_port (addr->addr), ==, 0);
         r_assert_cmpuint (r_socket_address_ipv4_get_ip (addr->addr), ==, R_SOCKET_ADDRESS_IPV4_LOOPBACK);
         break;
-      case R_SOCKET_FAMILY_IPV6:
-#if 0
+      case R_SOCKET_FAMILY_IPV6: {
+        static const ruint8 ip6_loopback[16] = {
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+        };
+        ruint8 ip[16];
         r_assert_cmpuint (r_socket_address_ipv6_get_port (addr->addr), ==, 0);
-        r_assert_cmpuint (r_socket_address_ipv6_get_ip (addr->addr), ==, R_SOCKET_ADDRESS_IPV6_LOOPBACK);
-#endif
+        r_assert (r_socket_address_ipv6_get_ip_bytes (addr->addr, ip));
+        r_assert_cmpmem (ip, ==, ip6_loopback, 16);
         break;
+      }
       default:
         r_assert_not_reached ();
     }
