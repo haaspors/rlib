@@ -332,7 +332,7 @@ r_md5_update_block (RMd5 * md5, const ruint8 * data)
   rsize i;
 
   for (i = 0; i < R_MD5_BLOCK_SIZE / sizeof (ruint32); i++)
-    x[i] = RUINT32_FROM_LE (((ruint32 *)data)[i]);
+    x[i] = r_load_le32 (data + i * sizeof (ruint32));
 
   a = md5->data[0];
   b = md5->data[1];
@@ -497,8 +497,7 @@ r_md5_final (RMsgDigest * md)
     ptr = r_alloca0 (R_MD5_BLOCK_SIZE);
   }
 
-  *(ruint64 *)(&ptr[R_MD5_BLOCK_SIZE - sizeof (ruint64)]) =
-    RUINT64_TO_LE (md5->len << 3);
+  r_store_le64 (&ptr[R_MD5_BLOCK_SIZE - sizeof (ruint64)], md5->len << 3);
   r_md5_update_block (md5, ptr);
   return TRUE;
 }
@@ -513,7 +512,7 @@ r_md5_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
     return FALSE;
 
   for (i = 0; i < R_MD5_SIZE / sizeof (ruint32); i++)
-    ((ruint32 *)data)[i] = RUINT32_TO_LE (md5->data[i]);
+    r_store_le32 (data + i * sizeof (ruint32), md5->data[i]);
   if (out != NULL)
     *out = R_MD5_SIZE;
 
@@ -565,7 +564,7 @@ r_sha1_update_block (RSha1 * sha1, const ruint8 * data)
   rsize i;
 
   for (i = 0; i < R_SHA1_BLOCK_SIZE / sizeof (ruint32); i++)
-    x[i] = RUINT32_FROM_BE (((ruint32 *)data)[i]);
+    x[i] = r_load_be32 (data + i * sizeof (ruint32));
 
   a = sha1->data[0];
   b = sha1->data[1];
@@ -746,8 +745,7 @@ r_sha1_final (RMsgDigest * md)
     ptr = r_alloca0 (R_SHA1_BLOCK_SIZE);
   }
 
-  *(ruint64 *)(&ptr[R_SHA1_BLOCK_SIZE - sizeof (ruint64)]) =
-    RUINT64_TO_BE (sha1->len << 3);
+  r_store_be64 (&ptr[R_SHA1_BLOCK_SIZE - sizeof (ruint64)], sha1->len << 3);
   r_sha1_update_block (sha1, ptr);
   return TRUE;
 }
@@ -763,7 +761,7 @@ r_sha1_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 
   sha1 = (const RSha1 *)(md + 1);
   for (i = 0; i < R_SHA1_SIZE / sizeof (ruint32); i++)
-    ((ruint32 *)data)[i] = RUINT32_TO_BE (sha1->data[i]);
+    r_store_be32 (data + i * sizeof (ruint32), sha1->data[i]);
   if (out != NULL)
     *out = R_SHA1_SIZE;
 
@@ -822,7 +820,7 @@ r_sha224_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 
   sha224 = (const RSha256 *)(md + 1);
   for (i = 0; i < R_SHA224_SIZE / sizeof (ruint32); i++)
-    ((ruint32 *)data)[i] = RUINT32_TO_BE (sha224->data[i]);
+    r_store_be32 (data + i * sizeof (ruint32), sha224->data[i]);
   if (out != NULL)
     *out = R_SHA224_SIZE;
 
@@ -878,7 +876,7 @@ r_sha256_update_block (RSha256 * sha256, const ruint8 * data)
   rsize i;
 
   for (i = 0; i < R_SHA256_BLOCK_SIZE / sizeof (ruint32); i++)
-    x[i] = RUINT32_FROM_BE (((ruint32 *)data)[i]);
+    x[i] = r_load_be32 (data + i * sizeof (ruint32));
 
   a = sha256->data[0];
   b = sha256->data[1];
@@ -1002,8 +1000,7 @@ r_sha256_final (RMsgDigest * md)
     ptr = r_alloca0 (R_SHA256_BLOCK_SIZE);
   }
 
-  *(ruint64 *)(&ptr[R_SHA256_BLOCK_SIZE - sizeof (ruint64)]) =
-    RUINT64_TO_BE (sha256->len << 3);
+  r_store_be64 (&ptr[R_SHA256_BLOCK_SIZE - sizeof (ruint64)], sha256->len << 3);
   r_sha256_update_block (sha256, ptr);
   return TRUE;
 }
@@ -1058,7 +1055,7 @@ r_sha256_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 
   sha256 = (const RSha256 *)(md + 1);
   for (i = 0; i < R_SHA256_SIZE / sizeof (ruint32); i++)
-    ((ruint32 *)data)[i] = RUINT32_TO_BE (sha256->data[i]);
+    r_store_be32 (data + i * sizeof (ruint32), sha256->data[i]);
   if (out != NULL)
     *out = R_SHA256_SIZE;
 
@@ -1117,7 +1114,7 @@ r_sha384_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 
   sha384 = (const RSha512 *)(md + 1);
   for (i = 0; i < R_SHA384_SIZE / sizeof (ruint64); i++)
-    ((ruint64 *)data)[i] = RUINT64_TO_BE (sha384->data[i]);
+    r_store_be64 (data + i * sizeof (ruint64), sha384->data[i]);
   if (out != NULL)
     *out = R_SHA384_SIZE;
 
@@ -1172,7 +1169,7 @@ r_sha512_update_block (RSha512 * sha512, const ruint8 * data)
   rsize i;
 
   for (i = 0; i < R_SHA512_BLOCK_SIZE / sizeof (ruint64); i++)
-    x[i] = RUINT64_FROM_BE (((ruint64 *)data)[i]);
+    x[i] = r_load_be64 (data + i * sizeof (ruint64));
 
   a = sha512->data[0];
   b = sha512->data[1];
@@ -1312,10 +1309,10 @@ r_sha512_final (RMsgDigest * md)
     ptr = r_alloca0 (R_SHA512_BLOCK_SIZE);
   }
 
-  *(ruint64 *)(&ptr[R_SHA512_BLOCK_SIZE - 1*sizeof (ruint64)]) =
-    RUINT64_TO_BE (sha512->len[0] << 3);
-  *(ruint64 *)(&ptr[R_SHA512_BLOCK_SIZE - 2*sizeof (ruint64)]) =
-    RUINT64_TO_BE ((sha512->len[1] << 3) | (sha512->len[0] >> 61));
+  r_store_be64 (&ptr[R_SHA512_BLOCK_SIZE - 1 * sizeof (ruint64)],
+      sha512->len[0] << 3);
+  r_store_be64 (&ptr[R_SHA512_BLOCK_SIZE - 2 * sizeof (ruint64)],
+      (sha512->len[1] << 3) | (sha512->len[0] >> 61));
   r_sha512_update_block (sha512, ptr);
   return TRUE;
 }
@@ -1373,7 +1370,7 @@ r_sha512_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 
   sha512 = (const RSha512 *)(md + 1);
   for (i = 0; i < R_SHA512_SIZE / sizeof (ruint64); i++)
-    ((ruint64 *)data)[i] = RUINT64_TO_BE (sha512->data[i]);
+    r_store_be64 (data + i * sizeof (ruint64), sha512->data[i]);
   if (out != NULL)
     *out = R_SHA512_SIZE;
 
