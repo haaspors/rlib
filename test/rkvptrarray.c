@@ -33,6 +33,38 @@ RTEST (rkvptrarray, add, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rkvptrarray, update_idx, RTEST_FAST)
+{
+  RKVPtrArray * array;
+  rpointer key;
+
+  r_assert_cmpptr ((array = r_kv_ptr_array_new ()), !=, NULL);
+
+  r_kv_ptr_array_add (array,
+      RUINT_TO_POINTER (1), NULL, RUINT_TO_POINTER (10), NULL);
+  r_kv_ptr_array_add (array,
+      r_malloc (4), r_free, r_malloc (8), r_free);
+
+  /* Replace the heap-allocated entry: old key/val must be freed. */
+  r_assert_cmpuint (r_kv_ptr_array_update_idx (array, 1,
+        RUINT_TO_POINTER (2), NULL, r_malloc (16), r_free), ==, 1);
+  r_assert_cmpptr (r_kv_ptr_array_get (array, 1, &key), !=, NULL);
+  r_assert_cmpptr (key, ==, RUINT_TO_POINTER (2));
+
+  /* Replace the first entry to validate notify-less updates work too. */
+  r_assert_cmpuint (r_kv_ptr_array_update_idx (array, 0,
+        RUINT_TO_POINTER (3), NULL, RUINT_TO_POINTER (30), NULL), ==, 0);
+  r_assert_cmpptr (r_kv_ptr_array_get_key (array, 0), ==, RUINT_TO_POINTER (3));
+  r_assert_cmpptr (r_kv_ptr_array_get_val (array, 0), ==, RUINT_TO_POINTER (30));
+
+  /* Out-of-range index is rejected. */
+  r_assert_cmpuint (r_kv_ptr_array_update_idx (array, 99,
+        NULL, NULL, NULL, NULL), ==, R_KV_PTR_ARRAY_INVALID_IDX);
+
+  r_kv_ptr_array_unref (array);
+}
+RTEST_END;
+
 RTEST (rkvptrarray, grow, RTEST_FAST)
 {
   RKVPtrArray * array;

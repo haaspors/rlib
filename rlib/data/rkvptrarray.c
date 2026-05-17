@@ -172,6 +172,22 @@ r_kv_ptr_array_add (RKVPtrArray * array,
 }
 
 rsize
+r_kv_ptr_array_update_idx (RKVPtrArray * array, rsize idx,
+    rpointer key, RDestroyNotify keynotify,
+    rpointer val, RDestroyNotify valnotify)
+{
+  if (R_UNLIKELY (idx >= array->nsize)) return R_KV_PTR_ARRAY_INVALID_IDX;
+
+  r_kv_ptr_array_notify_idx (array, idx);
+
+  R_KV_PTR_ARRAY_N (array, idx).key = key;
+  R_KV_PTR_ARRAY_N (array, idx).val = val;
+  R_KV_PTR_ARRAY_N (array, idx).keynotify = keynotify;
+  R_KV_PTR_ARRAY_N (array, idx).valnotify = valnotify;
+  return idx;
+}
+
+rsize
 r_kv_ptr_array_remove_range (RKVPtrArray * array, rsize idx, rssize size)
 {
   rsize end;

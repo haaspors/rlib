@@ -56,8 +56,8 @@ R_API rsize r_kv_ptr_array_find_range (RKVPtrArray * array, rconstpointer key, r
 
 R_API rsize r_kv_ptr_array_add (RKVPtrArray * array,
     rpointer key, RDestroyNotify keynotify, rpointer val, RDestroyNotify valnotify);
-/*R_API rsize r_kv_ptr_array_update_idx (RKVPtrArray * array, rsize idx,*/
-    /*rpointer key, RDestroyNotify keynotify, rpointer val, RDestroyNotify valnotify);*/
+R_API rsize r_kv_ptr_array_update_idx (RKVPtrArray * array, rsize idx,
+    rpointer key, RDestroyNotify keynotify, rpointer val, RDestroyNotify valnotify);
 R_API rsize r_kv_ptr_array_remove_range (RKVPtrArray * array, rsize idx, rssize size);
 #define r_kv_ptr_array_remove_idx(array, idx) r_kv_ptr_array_remove_range (array, idx, 1)
 #define r_kv_ptr_array_remove_all(array) r_kv_ptr_array_remove_range (array, 0, -1)
