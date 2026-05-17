@@ -24,6 +24,7 @@
 
 #include <rlib/os/rsys.h>
 
+#include <rlib/ratomic.h>
 #include <rlib/rassert.h>
 #include <rlib/rlog.h>
 #include <rlib/rthreadpool.h>
@@ -44,7 +45,7 @@ typedef enum {
 
 struct _RTask {
   RRef ref;
-  RTaskState state;
+  rauint state;
 
   RTaskQueue * queue;
   ruint group;
@@ -103,7 +104,7 @@ rboolean
 r_task_add_dep_v (RTask * task, RTask * dep, va_list args)
 {
   for (; dep != NULL; dep = va_arg (args, RTask *)) {
-    if (R_UNLIKELY (dep->state < R_TASK_QUEUED))
+    if (R_UNLIKELY (r_atomic_uint_load (&dep->state) < R_TASK_QUEUED))
       return FALSE;
     task->dep = r_slist_prepend (task->dep, r_task_ref (dep));
   }
@@ -122,16 +123,16 @@ r_task_cancel (RTask * task, rboolean wait_if_running)
   ctx = &task->queue->ctx[task->group];
 
   r_mutex_lock (&(ctx)->mutex);
-  if ((ret = (task->state >= R_TASK_QUEUED))) {
+  if ((ret = (r_atomic_uint_load (&task->state) >= R_TASK_QUEUED))) {
     if (wait_if_running && r_task_queue_current () == NULL &&
-        task->state == R_TASK_RUNNING) {
+        r_atomic_uint_load (&task->state) == R_TASK_RUNNING) {
       r_mutex_unlock (&(ctx)->mutex);
       r_task_wait (task);
       r_mutex_lock (&(ctx)->mutex);
     }
-    if (task->state < R_TASK_DONE) {
+    if (r_atomic_uint_load (&task->state) < R_TASK_DONE) {
       r_mutex_lock (&task->queue->wait_mutex);
-      task->state = R_TASK_CANCELED;
+      r_atomic_uint_store (&task->state, R_TASK_CANCELED);
       r_cond_broadcast (&task->queue->wait_cond);
       r_mutex_unlock (&task->queue->wait_mutex);
     }
@@ -152,7 +153,7 @@ r_task_wait (RTask * task)
   }
 
   r_mutex_lock (&task->queue->wait_mutex);
-  while (task->state < R_TASK_DONE)
+  while (r_atomic_uint_load (&task->state) < R_TASK_DONE)
     r_cond_wait (&task->queue->wait_cond, &task->queue->wait_mutex);
   r_mutex_unlock (&task->queue->wait_mutex);
 
@@ -426,7 +427,7 @@ r_task_queue_add_task_with_group (RTaskQueue * queue,
   else
     R_LOG_WARNING ("TQ: %p [%u] - push task %p (no threads)", queue, group, task);
   task->group = group;
-  task->state = R_TASK_QUEUED;
+  r_atomic_uint_store (&task->state, R_TASK_QUEUED);
   r_queue_push (ctx->q, r_task_ref (task));
   r_cond_signal (&ctx->cond);
   r_mutex_unlock (&ctx->mutex);
@@ -477,7 +478,7 @@ r_task_queue_ctx_pop_locked (RTQCtx * ctx)
     RSList * it;
     for (it = t->dep; it != NULL; it = it->next) {
       dep = it->data;
-      if (dep->state < R_TASK_DONE)
+      if (r_atomic_uint_load (&dep->state) < R_TASK_DONE)
         return NULL;
     }
 
@@ -508,8 +509,8 @@ r_task_queue_loop (rpointer common, rpointer spec)
     if (R_LIKELY ((task = r_task_queue_ctx_pop_locked (ctx)) != NULL)) {
       RSList * dep = task->dep;
       task->dep = NULL;
-      if (task->state == R_TASK_QUEUED) {
-        task->state = R_TASK_RUNNING;
+      if (r_atomic_uint_load (&task->state) == R_TASK_QUEUED) {
+        r_atomic_uint_store (&task->state, R_TASK_RUNNING);
         r_mutex_unlock (&(ctx)->mutex);
         {
           r_slist_destroy_full (dep, r_task_unref);
@@ -518,12 +519,12 @@ r_task_queue_loop (rpointer common, rpointer spec)
         }
         r_mutex_lock (&(ctx)->mutex);
         r_mutex_lock (&queue->wait_mutex);
-        task->state = R_TASK_DONE;
+        r_atomic_uint_store (&task->state, R_TASK_DONE);
         r_cond_broadcast (&queue->wait_cond);
         r_mutex_unlock (&queue->wait_mutex);
       } else {
         R_LOG_DEBUG ("TQ: %p [%p] - process task %p - not queued 0x%.2x",
-            queue, ctx, task, task->state);
+            queue, ctx, task, r_atomic_uint_load (&task->state));
         if (dep != NULL) {
           r_mutex_unlock (&(ctx)->mutex);
           r_slist_destroy_full (dep, r_task_unref);
