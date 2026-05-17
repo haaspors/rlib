@@ -507,3 +507,22 @@ r_fs_mkdir_full (const rchar * path, int mode)
   return ret ? r_fs_mkdir (path, mode) : FALSE;
 }
 
+rboolean
+r_fs_path_is_absolute (const rchar * path)
+{
+  if (path == NULL || path[0] == 0) return FALSE;
+
+#ifdef R_OS_WIN32
+  /* UNC: \\server\share or //server/share. */
+  if (R_IS_DIR_SEP (path[0]) && R_IS_DIR_SEP (path[1])) return TRUE;
+  /* Drive letter: C:\ or C:/. */
+  if (((path[0] >= 'A' && path[0] <= 'Z') ||
+       (path[0] >= 'a' && path[0] <= 'z')) &&
+      path[1] == ':' && R_IS_DIR_SEP (path[2]))
+    return TRUE;
+  return FALSE;
+#else
+  return R_IS_DIR_SEP (path[0]);
+#endif
+}
+

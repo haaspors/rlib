@@ -59,9 +59,31 @@ RTEST (rfs, get_tmp_dir, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpptr ((tmpdir = r_fs_get_tmp_dir ()), !=, NULL);
   r_assert_cmpptr (tmpdir, ==, r_fs_get_tmp_dir ());
-#ifdef R_OS_UNIX
-  /* FIXME: Change to is absolute path */
-  r_assert_cmpint (*tmpdir, ==, R_DIR_SEP);
+  r_assert (r_fs_path_is_absolute (tmpdir));
+}
+RTEST_END;
+
+RTEST (rfs, path_is_absolute, RTEST_FAST)
+{
+  r_assert (!r_fs_path_is_absolute (NULL));
+  r_assert (!r_fs_path_is_absolute (""));
+  r_assert (!r_fs_path_is_absolute ("foo"));
+  r_assert (!r_fs_path_is_absolute ("foo/bar"));
+  r_assert (!r_fs_path_is_absolute ("./foo"));
+  r_assert (!r_fs_path_is_absolute ("../foo"));
+
+#ifdef R_OS_WIN32
+  r_assert (r_fs_path_is_absolute ("C:\\foo"));
+  r_assert (r_fs_path_is_absolute ("c:\\foo"));
+  r_assert (r_fs_path_is_absolute ("C:/foo"));
+  r_assert (r_fs_path_is_absolute ("\\\\server\\share"));
+  r_assert (r_fs_path_is_absolute ("//server/share"));
+  r_assert (!r_fs_path_is_absolute ("C:"));
+  r_assert (!r_fs_path_is_absolute ("C:foo"));
+#else
+  r_assert (r_fs_path_is_absolute ("/"));
+  r_assert (r_fs_path_is_absolute ("/foo"));
+  r_assert (r_fs_path_is_absolute ("/foo/bar"));
 #endif
 }
 RTEST_END;
