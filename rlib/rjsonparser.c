@@ -502,7 +502,7 @@ r_json_scan_ctx_parse_object_field (const RJsonScanCtx * ctx,
     } else if (ret == R_JSON_END) {
       ret = R_JSON_EMPTY;
       if (endptr != NULL)
-        *endptr = value->data.str + 1;
+        *endptr = (rchar *) r_json_parser_get_end (ctx->parser);
     }
   } else if (*ctx->data.str == '}') {
     ret = R_JSON_END;
@@ -597,7 +597,7 @@ r_json_scan_ctx_parse_array_value (const RJsonScanCtx * ctx,
     } else if (ret == R_JSON_END) {
       ret = R_JSON_EMPTY;
       if (endptr != NULL)
-        *endptr = value->data.str + 1;
+        *endptr = (rchar *) r_json_parser_get_end (ctx->parser);
     }
   } else if (*ctx->data.str == ']') {
     ret = R_JSON_END;
@@ -773,7 +773,10 @@ r_json_scan_ctx_parse_string (const RJsonScanCtx * ctx, RStrChunk * str, rchar *
   if ((cur = r_str_idx_of_c (str->str + idx, str->size - idx, '"')) >= 0) {
     do {
       idx += cur;
-      if (str->str[idx - 1] != '\\') {
+      /* idx == 0 means the closing quote is at offset 0 -- an empty
+       * string ("").  There's no preceding character to inspect, so
+       * the quote can't be escaped. */
+      if (idx == 0 || str->str[idx - 1] != '\\') {
         str->size = idx;
         if (endptr != NULL)
           *endptr = r_str_chunk_end (str) + 1;
