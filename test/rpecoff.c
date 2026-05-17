@@ -28,6 +28,18 @@ RTEST (rpe, image_size, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rpe, image_calc_size, RTEST_FAST)
+{
+  /* calc_size walks the section table rather than reading size_image
+   * out of the optional header, so it reflects the actual on-disk
+   * extent.  For the tiny PE32 with one .text section at file offset
+   * 464 of length 4 the disk image ends at 468 == sizeof (pe_32_tiny). */
+  r_assert_cmphex (r_pe_image_calc_size (NULL), ==, 0);
+  r_assert_cmphex (r_pe_image_calc_size (bad_pe), ==, 0);
+  r_assert_cmphex (r_pe_image_calc_size (pe_32_tiny), ==, sizeof (pe_32_tiny));
+}
+RTEST_END;
+
 RTEST (rpeparser, oversize_lfanew, RTEST_FAST)
 {
   /* DOS header with valid magic but lfanew pointing far past the buffer

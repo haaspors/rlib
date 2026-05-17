@@ -63,12 +63,52 @@ r_pe_image_size (rconstpointer mem)
   return 0;
 }
 
-#if 0
 rsize
 r_pe_image_calc_size (rconstpointer mem)
 {
+  const RPeDosHdr * dos = mem;
+  const RPeImageHdr * hdr;
+  const RPeSectionHdr * sectbl;
+  const RPeOptHdr * opt;
+  rsize size, sectbl_off;
+  ruint16 i;
+
+  if (R_UNLIKELY (mem == NULL)) return 0;
+  if (dos->magic != R_PE_DOS_MAGIC) return 0;
+
+  if ((hdr = r_pe_image_from_dos_header (mem)) == NULL) return 0;
+
+  /* End of section table is the floor: header + opt + section table. */
+  sectbl_off = (rsize) dos->lfanew + sizeof (RPeImageHdr) + hdr->coff.size_opthdr;
+  size = sectbl_off + (rsize) hdr->coff.nsect * sizeof (RPeSectionHdr);
+
+  sectbl = (const RPeSectionHdr *) ((const ruint8 *) mem + sectbl_off);
+  for (i = 0; i < hdr->coff.nsect; i++) {
+    rsize end = (rsize) sectbl[i].ptr_raw_data + sectbl[i].size_raw_data;
+    if (end > size) size = end;
+  }
+
+  /* The certificate table (DataDirectory[CERT]) lives outside the
+   * sections, at a raw file offset stored in .vmaddr.  Include it. */
+  opt = (const RPeOptHdr *) (hdr + 1);
+  if (opt->magic == R_PE_PE32_MAGIC) {
+    const RPe32ImageHdr * h = (const RPe32ImageHdr *) hdr;
+    if (h->winopt.number_rva_and_sizes > R_PE_DATA_DIR_CERT) {
+      rsize cend = (rsize) h->datadir[R_PE_DATA_DIR_CERT].vmaddr +
+                   h->datadir[R_PE_DATA_DIR_CERT].size;
+      if (cend > size) size = cend;
+    }
+  } else if (opt->magic == R_PE_PE32PLUS_MAGIC) {
+    const RPe32PlusImageHdr * h = (const RPe32PlusImageHdr *) hdr;
+    if (h->winopt.number_rva_and_sizes > R_PE_DATA_DIR_CERT) {
+      rsize cend = (rsize) h->datadir[R_PE_DATA_DIR_CERT].vmaddr +
+                   h->datadir[R_PE_DATA_DIR_CERT].size;
+      if (cend > size) size = cend;
+    }
+  }
+
+  return size;
 }
-#endif
 
 const rchar *
 r_pe_machine_str (ruint16 machine)
