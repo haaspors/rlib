@@ -35,6 +35,7 @@ R_BEGIN_DECLS
 typedef struct {
   RRtcEventCb       ready; /* Handshake done, ready for data */
   RRtcEventCb       close;
+  RRtcBufferCb      rtcp;  /* Optional: incoming RTCP about our sent stream */
 } RRtcRtpSenderCallbacks;
 
 typedef struct _RRtcRtpSender RRtcRtpSender;

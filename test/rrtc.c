@@ -58,6 +58,7 @@ typedef struct {
 
   RQueue rtp;
   RQueue rtcp;
+  RQueue send_rtcp; /* RTCP delivered to our sender side */
 } TestRtcCtx;
 
 RTEST_FIXTURE_STRUCT (rrtc)
@@ -126,6 +127,16 @@ test_rtc_send_close (rpointer data, rpointer ctx)
 }
 
 static void
+test_rtc_send_rtcp (rpointer data, RBuffer * buf, rpointer ctx)
+{
+  TestRtcCtx * rtc;
+  if (R_UNLIKELY ((rtc = data) == NULL)) return;
+
+  r_assert_cmpptr (rtc->send, ==, ctx);
+  r_queue_push (&rtc->send_rtcp, r_buffer_ref (buf));
+}
+
+static void
 test_rtc_ctx_init (TestRtcCtx * ctx, RPrng * prng, RRtcIceTransport * ice)
 {
   RRtcCryptoTransport * crypto;
@@ -138,6 +149,7 @@ test_rtc_ctx_init (TestRtcCtx * ctx, RPrng * prng, RRtcIceTransport * ice)
   const RRtcRtpSenderCallbacks send_cbs = {
     test_rtc_send_ready,
     test_rtc_send_close,
+    test_rtc_send_rtcp,
   };
 
   r_assert_cmpptr ((ctx->session = r_rtc_session_new (prng)), !=, NULL);
@@ -152,6 +164,7 @@ test_rtc_ctx_init (TestRtcCtx * ctx, RPrng * prng, RRtcIceTransport * ice)
 
   r_queue_init (&ctx->rtp);
   r_queue_init (&ctx->rtcp);
+  r_queue_init (&ctx->send_rtcp);
 }
 
 static void
@@ -163,6 +176,7 @@ test_rtc_ctx_clear (TestRtcCtx * ctx)
 
   r_queue_clear (&ctx->rtp, r_buffer_unref);
   r_queue_clear (&ctx->rtcp, r_buffer_unref);
+  r_queue_clear (&ctx->send_rtcp, r_buffer_unref);
 }
 
 RTEST_FIXTURE_SETUP (rrtc)
@@ -483,6 +497,41 @@ RTEST_F (rrtc, receiver_stop_clears_ssrc_demux, RTEST_FAST)
 
   while ((buf = r_queue_pop (&fixture->bob.rtp)) != NULL)
     r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST_F (rrtc, sender_receives_rtcp, RTEST_FAST)
+{
+  /* RTCP arriving on the listener used to dispatch only to receivers,
+   * losing any feedback (RR / NACK / PLI) about our outbound streams.
+   * With the sender-side rtcp callback wired up, an RTCP packet sent
+   * from bob to alice should also land on alice's sender queue. */
+  static const ruint8 rtcp_rr[] = {
+    /* RFC 3550 RR header: V=2 P=0 RC=0; PT=201 (RR); length=1 (2x4 bytes after hdr) */
+    0x80, 0xc9, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00  /* sender SSRC = 0 */
+  };
+  RBuffer * buf, * pop;
+  RRtcRtpParameters * p;
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, p, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->bob.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
+  /* Send an RTCP RR from bob's sender; it lands on alice's listener. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtcp_rr, sizeof (rtcp_rr))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->bob.send, buf), ==, R_RTC_OK);
+
+  /* Alice's sender's rtcp callback must receive it. */
+  r_assert_cmpuint (r_queue_size (&fixture->alice.send_rtcp), ==, 1);
+  r_assert_cmpptr ((pop = r_queue_pop (&fixture->alice.send_rtcp)), !=, NULL);
+  r_buffer_unref (pop);
+
+  r_assert_cmpint (r_rtc_rtp_sender_stop (fixture->alice.send), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->bob.recv), ==, R_RTC_OK);
+
+  r_buffer_unref (buf);
 }
 RTEST_END;
 

@@ -115,7 +115,14 @@ r_rtc_rtp_listener_handle_rtcp (RRtcRtpListener * l,
     r->cbs.rtcp (r->data, buf, r);
   }
 
-  /* FIXME send receiver reports to senders? */
+  /* Also fan out to senders -- receiver reports / NACK / PLI for our
+   * outbound streams ride on incoming RTCP and senders need a way to
+   * see them.  The rtcp callback is optional. */
+  for (i = 0, c = r_ptr_array_size (l->send); i < c; i++) {
+    RRtcRtpSender * s = r_ptr_array_get (l->send, i);
+    if (s->cbs.rtcp != NULL)
+      s->cbs.rtcp (s->data, buf, s);
+  }
 
   return R_RTC_OK;
 }
