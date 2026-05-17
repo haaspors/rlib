@@ -401,7 +401,6 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
   struct epoll_event events[R_EV_LOOP_MAX_EVENTS], * ev = events;
 
-  /* FIXME: clear->pop! which makes us able to move stuff back on the queue */
   while ((evio = r_queue_pop (&loop->chg)) != NULL) {
     REvIOEvents pending = 0;
     int op;
