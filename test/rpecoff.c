@@ -137,9 +137,15 @@ RTEST (rpeparser, get_section_by_name, RTEST_FAST)
   RPeParser * parser;
   RPeSectionHdr * sec;
 
+  /* NULL inputs should not crash. */
+  r_assert_cmpptr (r_pe_parser_get_section_hdr_by_name (NULL,
+        R_STR_WITH_SIZE_ARGS (".text")), ==, NULL);
+
   r_assert_cmpptr ((parser =
         r_pe_parser_new_from_mem (pe_32_tiny, sizeof (pe_32_tiny))), !=, NULL);
 
+  r_assert_cmpptr (r_pe_parser_get_section_hdr_by_name (parser,
+        NULL, 0), ==, NULL);
   r_assert_cmpptr (r_pe_parser_get_section_hdr_by_name (parser,
         R_STR_WITH_SIZE_ARGS (".foobar")), ==, NULL);
   r_assert_cmpptr ((sec = r_pe_parser_get_section_hdr_by_name (parser,

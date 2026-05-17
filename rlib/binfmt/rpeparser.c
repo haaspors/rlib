@@ -266,6 +266,9 @@ r_pe_parser_get_section_hdr_by_name (RPeParser * parser, const rchar * name, rss
 {
   ruint16 i;
 
+  if (R_UNLIKELY (parser == NULL || parser->imghdr == NULL)) return NULL;
+  if (R_UNLIKELY (name == NULL)) return NULL;
+
   for (i = 0; i < parser->imghdr->coff.nsect; i++) {
     RPeSectionHdr * sec = &parser->sectbl[i];
     if (r_strcmp_size (sec->name, -1, name, nsize) == 0)
