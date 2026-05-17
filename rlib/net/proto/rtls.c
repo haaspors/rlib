@@ -62,7 +62,7 @@ r_tls_parse_data_shallow (rconstpointer buf, rsize size)
       goto beach;
     }
 
-    ver = (RTLSVersion)RUINT16_FROM_BE (*(const ruint16 *)&data[1]);
+    ver = (RTLSVersion)r_load_be16 (&data[1]);
     switch (ver) {
       case R_TLS_VERSION_SSL_1_0:
       case R_TLS_VERSION_SSL_2_0:
@@ -124,7 +124,7 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
     goto beach;
   }
 
-  parser->version = (RTLSVersion)RUINT16_FROM_BE (*(const ruint16 *)&info.data[1]);
+  parser->version = (RTLSVersion)r_load_be16 (&info.data[1]);
 
   if (!r_tls_parser_is_dtls (parser)) {
     if (R_UNLIKELY (parser->version < R_TLS_VERSION_TLS_1_0 ||
@@ -136,7 +136,7 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
     parser->epoch = 0;
     parser->seqno = 0;
     parser->offset = 5;
-    fraglen = RUINT16_FROM_BE (*(const ruint16 *)&info.data[3]);
+    fraglen = r_load_be16 (&info.data[3]);
   } else {
     RMemMapInfo dtlsext = R_MEM_MAP_INFO_INIT;
 
@@ -151,10 +151,10 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
       goto beach;
     }
 
-    parser->epoch = RUINT16_FROM_BE (*(const ruint16 *)&info.data[3]);
+    parser->epoch = r_load_be16 (&info.data[3]);
     parser->seqno = _r_parse_u48 (&dtlsext.data[0]);
     parser->offset = 13;
-    fraglen = RUINT16_FROM_BE (*(const ruint16 *)&dtlsext.data[6]);
+    fraglen = r_load_be16 (&dtlsext.data[6]);
     r_buffer_unmap (buf, &dtlsext);
   }
 
@@ -506,7 +506,7 @@ r_tls_parser_parse_handshake_full (const RTLSParser * parser,
   if (r_tls_parser_is_dtls (parser)) {
     if (R_UNLIKELY (parser->fragment.size < 12)) return R_TLS_ERROR_BUF_TOO_SMALL;
     if (msgseq != NULL)
-      *msgseq = RUINT16_FROM_BE (*(const ruint16 *)&parser->fragment.data[4]);
+      *msgseq = r_load_be16 (&parser->fragment.data[4]);
     if (fragoff != NULL)
       *fragoff = _r_parse_u24 (&parser->fragment.data[6]);
     if (fraglen != NULL)
@@ -543,7 +543,7 @@ r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg)
         type != R_TLS_HANDSHAKE_TYPE_SERVER_HELLO))
     return R_TLS_ERROR_WRONG_TYPE;
 
-  msg->version = (RTLSVersion)RUINT16_FROM_BE (*(const ruint16 *)ptr);
+  msg->version = (RTLSVersion)r_load_be16 (ptr);
   ptr += sizeof (ruint16);
 
   /* Random */
@@ -568,7 +568,7 @@ r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg)
       msg->cookie = NULL;
     }
     /* Cipher suites */
-    msg->cslen = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+    msg->cslen = r_load_be16 (ptr);
     if (ptr + msg->cslen + 1 > end) return R_TLS_ERROR_CORRUPT_RECORD;
     msg->cs = &ptr[sizeof (ruint16)];
     ptr += msg->cslen + sizeof (ruint16);
@@ -596,7 +596,7 @@ r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg)
     msg->extlen = 0;
     msg->ext = NULL;
   } else {
-    msg->extlen = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+    msg->extlen = r_load_be16 (ptr);
     ptr += sizeof (ruint16);
     if (ptr + msg->extlen > end) return R_TLS_ERROR_CORRUPT_RECORD;
     msg->ext = ptr;
@@ -661,14 +661,14 @@ r_tls_parser_parse_certificate_request (const RTLSParser * parser,
 
   if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint16)) > RPOINTER_TO_SIZE (end)))
     return R_TLS_ERROR_CORRUPT_RECORD;
-  len = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+  len = r_load_be16 (ptr);
   req->signschemecount = len / sizeof (ruint16);
   req->signscheme = ptr + sizeof (ruint16);
   ptr += sizeof (ruint16) + len;
 
   if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint16)) > RPOINTER_TO_SIZE (end)))
     return R_TLS_ERROR_CORRUPT_RECORD;
-  len = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+  len = r_load_be16 (ptr);
   req->cacount = len / sizeof (ruint16);
   req->ca = ptr + sizeof (ruint16);
   ptr += sizeof (ruint16) + len;
@@ -697,10 +697,10 @@ r_tls_parser_parse_new_session_ticket (const RTLSParser * parser,
     return R_TLS_ERROR_CORRUPT_RECORD;
 
   if (lifetime != NULL)
-    *lifetime = RUINT32_FROM_BE (*(const ruint32 *)ptr);
+    *lifetime = r_load_be32 (ptr);
   ptr += sizeof (ruint32);
   if (ticketsize != NULL)
-    *ticketsize = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+    *ticketsize = r_load_be16 (ptr);
   if (ticket != NULL)
     *ticket = ptr + sizeof (ruint16);
 
@@ -725,10 +725,10 @@ r_tls_parser_parse_certificate_verify (const RTLSParser * parser,
     return R_TLS_ERROR_CORRUPT_RECORD;
 
   if (sigscheme != NULL)
-    *sigscheme = (RTLSSignatureScheme)RUINT16_FROM_BE (*(const ruint16 *)ptr);
+    *sigscheme = (RTLSSignatureScheme)r_load_be16 (ptr);
   ptr += sizeof (ruint16);
   if (sigsize != NULL)
-    *sigsize = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+    *sigsize = r_load_be16 (ptr);
   if (sig != NULL)
     *sig = ptr + sizeof (ruint16);
 
@@ -751,7 +751,7 @@ r_tls_parser_parse_client_key_exchange_rsa (const RTLSParser * parser,
 
   s = RPOINTER_TO_SIZE (end - ptr);
   if ((s & 0b11) == 0b10 && RSIZE_POPCOUNT (s) == 2) {
-    ruint16 v16 = RUINT16_FROM_BE (*(const ruint16 *)ptr);
+    ruint16 v16 = r_load_be16 (ptr);
     if (R_UNLIKELY ((rsize)v16 > s))
       return R_TLS_ERROR_CORRUPT_RECORD;
 
@@ -825,8 +825,8 @@ r_tls_hello_msg_extension_first (const RTLSHelloMsg * msg, RTLSHelloExt * ext)
   if (R_UNLIKELY (msg->extlen < R_TLS_HELLO_EXT_HDR_SIZE)) return R_TLS_ERROR_EOB;
 
   ext->start = msg->ext;
-  ext->type = RUINT16_FROM_BE (*(const ruint16 *)&ext->start[0]);
-  ext->len = RUINT16_FROM_BE (*(const ruint16 *)&ext->start[2]);
+  ext->type = r_load_be16 (&ext->start[0]);
+  ext->len = r_load_be16 (&ext->start[2]);
   ext->data = ext->start + R_TLS_HELLO_EXT_HDR_SIZE;
 
   return R_TLS_ERROR_OK;
@@ -842,8 +842,8 @@ r_tls_hello_msg_extension_next (const RTLSHelloMsg * msg, RTLSHelloExt * ext)
     return R_TLS_ERROR_EOB;
 
   ext->start = ext->data + ext->len;
-  ext->type = RUINT16_FROM_BE (*(const ruint16 *)&ext->start[0]);
-  ext->len = RUINT16_FROM_BE (*(const ruint16 *)&ext->start[2]);
+  ext->type = r_load_be16 (&ext->start[0]);
+  ext->len = r_load_be16 (&ext->start[2]);
   ext->data = ext->start + R_TLS_HELLO_EXT_HDR_SIZE;
 
   return R_TLS_ERROR_OK;

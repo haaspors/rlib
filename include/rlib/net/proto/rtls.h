@@ -407,7 +407,7 @@ R_API RTLSError r_tls_parser_parse_alert (const RTLSParser * parser,
 #define r_tls_hello_msg_cipher_suite_count(msg) ((msg)->cslen / sizeof (ruint16))
 #define r_tls_hello_msg_compression_count(msg)  ((msg)->complen / sizeof (ruint8))
 static inline RTLSCipherSuite r_tls_hello_msg_cipher_suite (const RTLSHelloMsg * msg, int n)
-{ return (RTLSCipherSuite)RUINT16_FROM_BE (((const ruint16 *)msg->cs)[n]); }
+{ return (RTLSCipherSuite) r_load_be16 (msg->cs + n * sizeof (ruint16)); }
 static inline RTLSCompresssionMethod r_tls_hello_msg_compression_method (const RTLSHelloMsg * msg, int n)
 { return (RTLSCompresssionMethod)msg->compression[n]; }
 R_API rboolean r_tls_hello_msg_has_cipher_suite (const RTLSHelloMsg * msg, RTLSCipherSuite cs);
@@ -416,9 +416,9 @@ R_API RTLSError r_tls_hello_msg_extension_next (const RTLSHelloMsg * msg, RTLSHe
 
 /* signature_algorithms extension */
 static inline ruint16 r_tls_hello_ext_sign_scheme_count (const RTLSHelloExt * ext)
-{ return RUINT16_FROM_BE (*(const ruint16 *)ext->data) / sizeof (ruint16); }
+{ return r_load_be16 (ext->data) / sizeof (ruint16); }
 static inline RTLSSignatureScheme r_tls_hello_ext_sign_scheme (const RTLSHelloExt * ext, int n)
-{ return (RTLSSignatureScheme)RUINT16_FROM_BE (((const ruint16 *)ext->data)[n+1]); }
+{ return (RTLSSignatureScheme) r_load_be16 (ext->data + (n + 1) * sizeof (ruint16)); }
 
 /* ec_point_format extension */
 static inline ruint16 r_tls_hello_ext_ec_point_format_count (const RTLSHelloExt * ext)
@@ -428,19 +428,19 @@ static inline RTLSEcPointFormat r_tls_hello_ext_ec_point_format (const RTLSHello
 
 /* supported_groups/elliptic_curves extension */
 static inline ruint16 r_tls_hello_ext_supported_groups_count (const RTLSHelloExt * ext)
-{ return RUINT16_FROM_BE (*(const ruint16 *)ext->data) / sizeof (ruint16); }
+{ return r_load_be16 (ext->data) / sizeof (ruint16); }
 static inline RTLSSupportedGroup r_tls_hello_ext_supported_group (const RTLSHelloExt * ext, int n)
-{ return (RTLSSupportedGroup)RUINT16_FROM_BE (((const ruint16 *)ext->data)[n+1]); }
+{ return (RTLSSupportedGroup) r_load_be16 (ext->data + (n + 1) * sizeof (ruint16)); }
 
 /* use_srtp extension */
 static inline ruint16 r_tls_hello_ext_use_srtp_profile_count (const RTLSHelloExt * ext)
-{ return RUINT16_FROM_BE (*(const ruint16 *)ext->data) / sizeof (ruint16); }
+{ return r_load_be16 (ext->data) / sizeof (ruint16); }
 static inline RSRTPCipherSuite r_tls_hello_ext_use_srtp_profile(const RTLSHelloExt * ext, int n)
-{ return (RSRTPCipherSuite)RUINT16_FROM_BE (((const ruint16 *)ext->data)[n+1]); }
+{ return (RSRTPCipherSuite) r_load_be16 (ext->data + (n + 1) * sizeof (ruint16)); }
 static inline ruint8 r_tls_hello_ext_use_srtp_mki_size (const RTLSHelloExt * ext)
-{ return ext->data[sizeof (ruint16) + RUINT16_FROM_BE (*(const ruint16 *)ext->data)]; }
+{ return ext->data[sizeof (ruint16) + r_load_be16 (ext->data)]; }
 static inline const ruint8 * r_tls_hello_ext_use_srtp_mki (const RTLSHelloExt * ext)
-{ return &ext->data[sizeof (ruint16) + RUINT16_FROM_BE (*(const ruint16 *)ext->data) + sizeof (ruint8)]; }
+{ return &ext->data[sizeof (ruint16) + r_load_be16 (ext->data) + sizeof (ruint8)]; }
 
 
 /* Certificate */
@@ -450,7 +450,7 @@ R_API RCryptoCert * r_tls_certificate_get_cert (const RTLSCertificate * cert);
 static inline RTLSClientCertificateType r_tls_cert_req_cert_type (const RTLSCertReq * req, int n)
 { return (RTLSClientCertificateType)req->certtype[n]; }
 static inline RTLSSignatureScheme r_tls_cert_req_sign_scheme (const RTLSCertReq * req, int n)
-{ return (RTLSSignatureScheme)RUINT16_FROM_BE (((const ruint16 *)req->signscheme)[n]); }
+{ return (RTLSSignatureScheme) r_load_be16 (req->signscheme + n * sizeof (ruint16)); }
 
 typedef RTLSError (*RTLSPrfFunc) (ruint8 * dst, rsize dsize,
     const ruint8 * secret, rsize secsize, ...);
