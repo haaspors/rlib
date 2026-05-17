@@ -97,6 +97,7 @@ r_clock_add_timeout_callback (RClock * clock,
 rboolean
 r_clock_cancel_entry (RClock * clock, RClockEntry * entry)
 {
+  if (R_UNLIKELY (clock == NULL || entry == NULL)) return FALSE;
   return r_timeout_cblist_cancel (&clock->timers, &entry->tocb);
 }
 
