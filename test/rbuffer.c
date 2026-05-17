@@ -578,8 +578,6 @@ RTEST (rbuffer, resize, RTEST_FAST)
 
   r_assert (r_buffer_resize (buf, 768, 1024));
   r_assert_cmpuint (r_buffer_mem_count (buf), ==, 4);
-#if 0
-#else
   r_assert_cmpptr ((mem = r_buffer_mem_peek (buf, 0)), !=, NULL);
   r_assert_cmpuint (mem->offset, ==, 512);
   r_assert_cmpuint (mem->size, ==, 0);
@@ -596,7 +594,6 @@ RTEST (rbuffer, resize, RTEST_FAST)
   r_assert_cmpuint (mem->offset, ==, 0);
   r_assert_cmpuint (mem->size, ==, 256);
   r_mem_unref (mem);
-#endif
 
   r_buffer_unref (buf);
 }
