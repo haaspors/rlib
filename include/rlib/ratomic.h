@@ -24,7 +24,12 @@
 
 #include <rlib/rtypes.h>
 
-#if __has_extension(c_atomic)
+/* Pick an atomics backend.  USE_CLANG_ATOMICS uses __c11_atomic_*
+ * built-ins which only Clang provides -- GCC's __has_extension reports
+ * c_atomic = 1 (it supports C11 atomics via __atomic_*) but does not
+ * expose the __c11_atomic_* spellings, so __clang__ has to gate this
+ * arm explicitly. */
+#if defined(__clang__) && __has_extension(c_atomic)
 #define USE_CLANG_ATOMICS         1
 #elif R_GNUC_PREREQ(4, 9) && !defined(__STDC_NO_ATOMICS__)
 #define USE_GNUC_ATOMICS          1
