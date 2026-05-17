@@ -141,7 +141,15 @@ R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_time (const RAsn1BinTLV * tlv, rui
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_bit_string (const RAsn1BinTLV * tlv, RBitset ** bitset);
 R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_bit_string_bits (const RAsn1BinTLV * tlv, rsize * bits);
 #define r_asn1_bin_tlv_bit_string_value(tlv) (&(tlv)->value[1])
-/* TODO: Add parsing of strings, time and ... */
+
+/* Copy the contents of any ASN.1 string-typed TLV (UTF8String,
+ * NumericString, PrintableString, T61String, IA5String, VisibleString,
+ * GeneralString, GraphicString, BMPString, UniversalString) into a
+ * freshly allocated NUL-terminated buffer.  Bytes are passed through
+ * verbatim -- no character-set validation, so callers that need to
+ * enforce e.g. PrintableString must do so themselves. */
+R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_string (const RAsn1BinTLV * tlv,
+    rchar ** str);
 
 
 typedef enum {

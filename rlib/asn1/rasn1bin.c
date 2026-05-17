@@ -289,6 +289,33 @@ r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * len
 }
 
 RAsn1DecoderStatus
+r_asn1_bin_tlv_parse_string (const RAsn1BinTLV * tlv, rchar ** str)
+{
+  if (R_UNLIKELY (tlv == NULL || str == NULL))
+    return R_ASN1_DECODER_INVALID_ARG;
+
+  switch (R_ASN1_BIN_TLV_ID_TAG (tlv)) {
+    case R_ASN1_ID_UTF8_STRING:
+    case R_ASN1_ID_NUMERIC_STRING:
+    case R_ASN1_ID_PRINTABLE_STRING:
+    case R_ASN1_ID_T61_STRING:
+    case R_ASN1_ID_VIDEOTEX_STRING:
+    case R_ASN1_ID_IA5_STRING:
+    case R_ASN1_ID_GRAPHIC_STRING:
+    case R_ASN1_ID_VISIBLE_STRING:
+    case R_ASN1_ID_GENERAL_STRING:
+    case R_ASN1_ID_UNIVERSAL_STRING:
+    case R_ASN1_ID_BMP_STRING:
+      break;
+    default:
+      return R_ASN1_DECODER_WRONG_TYPE;
+  }
+
+  *str = r_strdup_size ((const rchar *) tlv->value, (rssize) tlv->len);
+  return (*str != NULL) ? R_ASN1_DECODER_OK : R_ASN1_DECODER_OOM;
+}
+
+RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_oid_to_dot (const RAsn1BinTLV * tlv, rchar ** dot)
 {
   RAsn1DecoderStatus ret;

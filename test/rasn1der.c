@@ -548,3 +548,66 @@ RTEST (rasn1der, parse_integer_unsigned_64_full, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_string, RTEST_FAST)
+{
+  /* "hello" encoded as a UTF8String, a PrintableString and an IA5String,
+   * each driving r_asn1_bin_tlv_parse_string.  Non-string TLVs should
+   * be rejected, and NULL inputs return INVALID_ARG without crashing. */
+  static const ruint8 utf8_hello[]     = { 0x0c, 0x05, 'h', 'e', 'l', 'l', 'o' };
+  static const ruint8 print_hello[]    = { 0x13, 0x05, 'h', 'e', 'l', 'l', 'o' };
+  static const ruint8 ia5_hello[]      = { 0x16, 0x05, 'h', 'e', 'l', 'l', 'o' };
+  static const ruint8 bool_true[]      = { 0x01, 0x01, 0xff };
+  static const ruint8 utf8_empty[]     = { 0x0c, 0x00 };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv;
+  rchar * str;
+
+  /* UTF8String. */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, utf8_hello, sizeof (utf8_hello))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str, ==, "hello");
+  r_free (str);
+  r_asn1_bin_decoder_unref (dec);
+
+  /* PrintableString. */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, print_hello, sizeof (print_hello))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str, ==, "hello");
+  r_free (str);
+  r_asn1_bin_decoder_unref (dec);
+
+  /* IA5String. */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, ia5_hello, sizeof (ia5_hello))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str, ==, "hello");
+  r_free (str);
+  r_asn1_bin_decoder_unref (dec);
+
+  /* Empty UTF8String -> empty C string. */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, utf8_empty, sizeof (utf8_empty))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str, ==, "");
+  r_free (str);
+  r_asn1_bin_decoder_unref (dec);
+
+  /* BOOLEAN -> WRONG_TYPE. */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, bool_true, sizeof (bool_true))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_WRONG_TYPE);
+  r_asn1_bin_decoder_unref (dec);
+
+  /* NULL inputs. */
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (NULL, &str), ==, R_ASN1_DECODER_INVALID_ARG);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, NULL), ==, R_ASN1_DECODER_INVALID_ARG);
+}
+RTEST_END;
+
