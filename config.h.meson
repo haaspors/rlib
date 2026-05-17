@@ -57,6 +57,7 @@
 #mesondefine HAVE_STRNCASECMP
 #mesondefine HAVE_STRNSTR
 #mesondefine HAVE_MEMRCHR
+#mesondefine HAVE_STRERROR_R
 #mesondefine HAVE__STRICMP
 #mesondefine HAVE__STRNICMP
 #mesondefine HAVE_PRINTF

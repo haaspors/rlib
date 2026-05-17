@@ -41,6 +41,12 @@ typedef enum {
 
 R_API rsize r_strlen (const rchar * str);
 
+/* Thread-safe wrapper around the C runtime's strerror.  Writes the
+ * error description for errnum into buf (size bytes, NUL-terminated)
+ * and returns either buf or, on GNU libc, a static pointer with the
+ * same contents.  Always returns a usable string. */
+R_API const rchar * r_strerror (int errnum, rchar * buf, rsize size);
+
 /* Compare strings */
 R_API int r_strcmp (const rchar * a, const rchar * b);
 R_API int r_strcasecmp (const rchar * a, const rchar * b);

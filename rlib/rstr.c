@@ -116,6 +116,37 @@ r_strlen (const rchar * str)
   return strlen (str);
 }
 
+const rchar *
+r_strerror (int errnum, rchar * buf, rsize size)
+{
+  /* strerror_r has two incompatible flavours.  Glibc compiled with
+   * _GNU_SOURCE returns char* (may be the supplied buffer or a static
+   * string).  Everyone else (musl, *BSD, macOS, Solaris, glibc with
+   * the XSI feature-test combo) returns int and always writes into
+   * the caller's buffer.  Windows CRT exposes the C11-Annex-K
+   * strerror_s with the same int-returning contract.  Dispatch
+   * explicitly on the libc rather than on feature-test macros so we
+   * don't get a silent type mismatch on a libc that ignores
+   * _GNU_SOURCE (musl, macOS). */
+  if (R_UNLIKELY (buf == NULL || size == 0)) return "";
+
+#if defined (R_OS_WIN32)
+  if (strerror_s (buf, size, errnum) != 0)
+    r_snprintf (buf, size, "Unknown error %d", errnum);
+  return buf;
+#elif defined (__GLIBC__) && defined (_GNU_SOURCE)
+  return strerror_r (errnum, buf, size);
+#elif defined (HAVE_STRERROR_R)
+  if (strerror_r (errnum, buf, size) != 0)
+    r_snprintf (buf, size, "Unknown error %d", errnum);
+  return buf;
+#else
+  /* Last resort: not thread-safe but always available. */
+  r_snprintf (buf, size, "%s", strerror (errnum));
+  return buf;
+#endif
+}
+
 int
 r_strcmp (const rchar * a, const rchar * b)
 {

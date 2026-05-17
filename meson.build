@@ -286,6 +286,7 @@ check_funcs = [
   [ 'strncasecmp', 'string.h' ],
   [ 'strnstr', 'string.h' ],
   [ 'memrchr', 'string.h' ],
+  [ 'strerror_r', 'string.h' ],
   # stdio
   [ 'printf', 'stdio.h' ],
   [ 'fprintf', 'stdio.h' ],

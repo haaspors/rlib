@@ -1,5 +1,7 @@
 #include <rlib/rlib.h>
 
+#include <errno.h>
+
 static const rchar foobar[] = "foobar";
 static const rchar FOOBAR[] = "FOOBAR";
 static const rchar foo[] = "foo";
@@ -14,6 +16,28 @@ RTEST (rstr, len, RTEST_FAST)
   r_assert_cmpuint (r_strlen (""), ==, 0);
   r_assert_cmpuint (r_strlen (foo), ==, 3);
   r_assert_cmpuint (r_strlen (foobar), ==, 6);
+}
+RTEST_END;
+
+RTEST (rstr, strerror, RTEST_FAST)
+{
+  /* The wrapper must always return a usable string and never crash on
+   * pathological buffer arguments.  We don't pin the wording of any
+   * libc message -- just that we get something non-empty back. */
+  rchar buf[64];
+  const rchar * msg;
+
+  msg = r_strerror (EINVAL, buf, sizeof (buf));
+  r_assert_cmpptr (msg, !=, NULL);
+  r_assert_cmpuint (r_strlen (msg), >, 0);
+
+  /* Unknown errno code still yields a string, never NULL. */
+  msg = r_strerror (-12345, buf, sizeof (buf));
+  r_assert_cmpptr (msg, !=, NULL);
+
+  /* Degenerate calls return an empty (but valid) string. */
+  r_assert_cmpstr (r_strerror (EINVAL, NULL, 16), ==, "");
+  r_assert_cmpstr (r_strerror (EINVAL, buf, 0), ==, "");
 }
 RTEST_END;
 

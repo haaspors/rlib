@@ -40,9 +40,7 @@
 #include <sys/time.h>
 #endif
 
-/* TODO: Add strerror to rstr? */
 #include <errno.h>
-#include <string.h>
 
 
 /* Setup MACROS to select evloop backend! */
@@ -325,8 +323,9 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
     if (R_UNLIKELY (nev > (R_EV_LOOP_MAX_EVENTS - 4))) {
       if (kevent (loop->handle, events, nev, NULL, 0, NULL) != 0) {
+        rchar errbuf[64];
         R_LOG_ERROR ("kevent for loop %p failed %d: \"%s\" with %d changes",
-            loop, errno, strerror (errno), nev);
+            loop, errno, r_strerror (errno, errbuf, sizeof (errbuf)), nev);
         abort ();
       }
       nev = 0;
@@ -443,8 +442,9 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
         break;
       }
     } else {
+      rchar errbuf[64];
       R_LOG_ERROR ("epoll_ctl for loop %p failed %d: \"%s\" with operation %d for fd: %d",
-          loop, errno, strerror (errno), op, evio->handle);
+          loop, errno, r_strerror (errno, errbuf, sizeof (errbuf)), op, evio->handle);
 
       if (errno == EPERM)
         r_ev_io_invoke_iocb (evio, R_EV_IO_ERROR);
