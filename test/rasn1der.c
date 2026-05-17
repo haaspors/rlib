@@ -611,3 +611,76 @@ RTEST (rasn1der, parse_string, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_string_bmp_universal, RTEST_FAST)
+{
+  /* BMPString is UTF-16BE.  "hello" + U+00E5 ('å'): ASCII chars expand
+   * to one UTF-8 byte each; å (0xE5) expands to two UTF-8 bytes 0xC3
+   * 0xA5.  UniversalString is UTF-32BE -- four bytes per codepoint.
+   * U+1F600 (grinning face) lets us exercise the 4-byte UTF-8 branch. */
+  static const ruint8 bmp_hello_aa[] = {
+    0x1e, 0x0c,
+    0x00, 'h', 0x00, 'e', 0x00, 'l', 0x00, 'l', 0x00, 'o',
+    0x00, 0xe5
+  };
+  static const ruint8 uni_grin[] = {
+    0x1c, 0x04,
+    0x00, 0x01, 0xf6, 0x00
+  };
+  static const ruint8 bmp_empty[] = { 0x1e, 0x00 };
+  static const ruint8 bmp_odd_len[] = {
+    0x1e, 0x03, 0x00, 'h', 0x00
+  };
+  static const ruint8 uni_surrogate[] = {
+    0x1c, 0x04, 0x00, 0x00, 0xd8, 0x00
+  };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv;
+  rchar * str;
+
+  /* BMPString -> UTF-8 "helloå". */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, bmp_hello_aa, sizeof (bmp_hello_aa))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str, ==, "hello\xc3\xa5");
+  r_free (str);
+  r_asn1_bin_decoder_unref (dec);
+
+  /* Empty BMPString -> "". */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, bmp_empty, sizeof (bmp_empty))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str, ==, "");
+  r_free (str);
+  r_asn1_bin_decoder_unref (dec);
+
+  /* Odd byte length isn't a valid BMPString -> OOM (NULL str). */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, bmp_odd_len, sizeof (bmp_odd_len))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  str = NULL;
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_OOM);
+  r_assert_cmpptr (str, ==, NULL);
+  r_asn1_bin_decoder_unref (dec);
+
+  /* UniversalString containing U+1F600 -> UTF-8 F0 9F 98 80. */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, uni_grin, sizeof (uni_grin))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpstr (str, ==, "\xf0\x9f\x98\x80");
+  r_free (str);
+  r_asn1_bin_decoder_unref (dec);
+
+  /* Surrogate codepoint (U+D800) is not a valid Unicode scalar. */
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, uni_surrogate, sizeof (uni_surrogate))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  str = NULL;
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, R_ASN1_DECODER_OOM);
+  r_assert_cmpptr (str, ==, NULL);
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+

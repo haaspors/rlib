@@ -20,9 +20,80 @@
 #include "rasn1-private.h"
 
 #include <rlib/asn1/roid.h>
+#include <rlib/charset/runicode.h>
+#include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/data/rstring.h>
 #include <rlib/rtime.h>
+
+/* BMPString is UCS-2 / UTF-16BE.  Byte-swap the input into host order
+ * once, then let the existing UTF-16 -> UTF-8 path do surrogate
+ * handling and validation. */
+static rchar *
+r_asn1_bmp_string_to_utf8 (const ruint8 * src, rsize len)
+{
+  runichar2 * tmp;
+  rchar * ret;
+  rsize n, i;
+
+  if (R_UNLIKELY ((len & 1u) != 0)) return NULL;
+  n = len / 2;
+  if (n == 0) return r_strdup ("");
+
+  if ((tmp = r_mem_new_n (runichar2, n)) == NULL) return NULL;
+  for (i = 0; i < n; i++)
+    tmp[i] = ((runichar2) src[2 * i] << 8) | (runichar2) src[2 * i + 1];
+
+  ret = r_utf16_to_utf8_dup (tmp, n, NULL, NULL, NULL);
+  r_free (tmp);
+  return ret;
+}
+
+/* UniversalString is UCS-4 / UTF-32BE.  Encode each codepoint as UTF-8
+ * directly; reject lengths that aren't a multiple of 4, codepoints in
+ * the surrogate range D800..DFFF, and anything past U+10FFFF. */
+static rchar *
+r_asn1_universal_string_to_utf8 (const ruint8 * src, rsize len)
+{
+  rchar * dst, * out;
+  rsize n, i;
+
+  if (R_UNLIKELY ((len & 3u) != 0)) return NULL;
+  n = len / 4;
+  if (n == 0) return r_strdup ("");
+
+  /* Max 4 UTF-8 bytes per codepoint (since U+10FFFF is the limit). */
+  if ((dst = r_mem_new_n (rchar, n * 4 + 1)) == NULL) return NULL;
+
+  out = dst;
+  for (i = 0; i < n; i++) {
+    ruint32 cp = ((ruint32) src[4 * i]     << 24) |
+                 ((ruint32) src[4 * i + 1] << 16) |
+                 ((ruint32) src[4 * i + 2] <<  8) |
+                 ((ruint32) src[4 * i + 3]);
+    if ((cp >= 0xd800 && cp <= 0xdfff) || cp > 0x10ffff) {
+      r_free (dst);
+      return NULL;
+    }
+    if (cp < 0x80) {
+      *out++ = (rchar) cp;
+    } else if (cp < 0x800) {
+      *out++ = (rchar) (0xc0 |  (cp >>  6));
+      *out++ = (rchar) (0x80 |  (cp        & 0x3f));
+    } else if (cp < 0x10000) {
+      *out++ = (rchar) (0xe0 |  (cp >> 12));
+      *out++ = (rchar) (0x80 | ((cp >>  6) & 0x3f));
+      *out++ = (rchar) (0x80 |  (cp        & 0x3f));
+    } else {
+      *out++ = (rchar) (0xf0 |  (cp >> 18));
+      *out++ = (rchar) (0x80 | ((cp >> 12) & 0x3f));
+      *out++ = (rchar) (0x80 | ((cp >>  6) & 0x3f));
+      *out++ = (rchar) (0x80 |  (cp        & 0x3f));
+    }
+  }
+  *out = 0;
+  return dst;
+}
 
 RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_boolean (const RAsn1BinTLV * tlv, rboolean * value)
@@ -295,6 +366,10 @@ r_asn1_bin_tlv_parse_string (const RAsn1BinTLV * tlv, rchar ** str)
     return R_ASN1_DECODER_INVALID_ARG;
 
   switch (R_ASN1_BIN_TLV_ID_TAG (tlv)) {
+    /* Byte-encoded string types pass through verbatim.  Callers that
+     * care about the restricted character sets (e.g. PrintableString,
+     * NumericString) have to validate themselves -- see the TODO
+     * below. */
     case R_ASN1_ID_UTF8_STRING:
     case R_ASN1_ID_NUMERIC_STRING:
     case R_ASN1_ID_PRINTABLE_STRING:
@@ -304,14 +379,22 @@ r_asn1_bin_tlv_parse_string (const RAsn1BinTLV * tlv, rchar ** str)
     case R_ASN1_ID_GRAPHIC_STRING:
     case R_ASN1_ID_VISIBLE_STRING:
     case R_ASN1_ID_GENERAL_STRING:
-    case R_ASN1_ID_UNIVERSAL_STRING:
+      *str = r_strdup_size ((const rchar *) tlv->value, (rssize) tlv->len);
+      break;
     case R_ASN1_ID_BMP_STRING:
+      *str = r_asn1_bmp_string_to_utf8 (tlv->value, tlv->len);
+      break;
+    case R_ASN1_ID_UNIVERSAL_STRING:
+      *str = r_asn1_universal_string_to_utf8 (tlv->value, tlv->len);
       break;
     default:
       return R_ASN1_DECODER_WRONG_TYPE;
   }
 
-  *str = r_strdup_size ((const rchar *) tlv->value, (rssize) tlv->len);
+  /* TODO: restricted character-set validation for PrintableString /
+   *       NumericString / IA5String; zero-copy variant returning an
+   *       RStrChunk into the TLV. */
+
   return (*str != NULL) ? R_ASN1_DECODER_OK : R_ASN1_DECODER_OOM;
 }
 
