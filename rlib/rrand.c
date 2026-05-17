@@ -119,8 +119,10 @@ r_prng_fill (RPrng * prng, ruint8 * buf, rsize size)
   if (R_UNLIKELY (buf == NULL)) return FALSE;
   if (R_UNLIKELY (size == 0)) return FALSE;
 
-  for (; size >= inc; buf += inc, size -= inc)
-    *((ruint64*)buf) = r_prng_get_u64 (prng);
+  for (; size >= inc; buf += inc, size -= inc) {
+    ruint64 v = r_prng_get_u64 (prng);
+    r_memcpy (buf, &v, sizeof (v));
+  }
   if (size > 0) {
     ruint64 v = r_prng_get_u64 (prng);
     r_memcpy (buf, &v, size);
