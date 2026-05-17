@@ -663,7 +663,9 @@ r_str_to_int_parse (const rchar * str, const rchar ** endptr, ruint base,
   }
 
   if (start != ptr)
-    *val = !neg ? (rint64)v : -(rint64)v;
+    /* Negate as unsigned (wraps mod 2^64) before reinterpreting as
+     * signed; negating a signed (rint64)INT64_MIN would overflow. */
+    *val = !neg ? (rint64)v : (rint64)(0 - v);
   else
     ret = R_STR_PARSE_INVAL;
 
