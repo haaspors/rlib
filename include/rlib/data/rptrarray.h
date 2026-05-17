@@ -94,8 +94,7 @@ R_API rsize r_ptr_array_remove_range_clear_full (RPtrArray * array,
 R_API rsize r_ptr_array_foreach_range (RPtrArray * array, rsize idx, rssize size,
     RFunc func, rpointer user);
 
-/* FIXME: Sorting? */
-/*R_API void r_ptr_array_sort (RPtrArray * array, RCmpFunc cmp);*/
+R_API void r_ptr_array_sort (RPtrArray * array, RCmpFunc cmp);
 
 struct _RPtrArray {
   RRef ref;

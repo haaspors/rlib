@@ -133,6 +133,27 @@ r_ptr_array_add (RPtrArray * array, rpointer data, RDestroyNotify notify)
   return array->nsize++;
 }
 
+void
+r_ptr_array_sort (RPtrArray * array, RCmpFunc cmp)
+{
+  rsize i, j;
+  RPtrNode tmp;
+
+  if (R_UNLIKELY (array == NULL || cmp == NULL)) return;
+
+  /* Insertion sort over the (ptr, notify) pairs.  Pairs move as a unit
+   * so the destroy notify attached to each entry stays with its ptr. */
+  for (i = 1; i < array->nsize; i++) {
+    tmp = R_PTR_ARRAY_N (array, i);
+    j = i;
+    while (j > 0 && cmp (R_PTR_ARRAY_N (array, j - 1).ptr, tmp.ptr) > 0) {
+      R_PTR_ARRAY_N (array, j) = R_PTR_ARRAY_N (array, j - 1);
+      j--;
+    }
+    R_PTR_ARRAY_N (array, j) = tmp;
+  }
+}
+
 rsize
 r_ptr_array_insert (RPtrArray * array, rsize idx, rpointer data,
     RDestroyNotify notify)

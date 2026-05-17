@@ -57,6 +57,72 @@ RTEST (rptrarray, insert, RTEST_FAST)
 }
 RTEST_END;
 
+static int
+cmp_ruint (rconstpointer a, rconstpointer b)
+{
+  return (int) (RPOINTER_TO_UINT (a) - RPOINTER_TO_UINT (b));
+}
+
+static int
+cmp_ruint_rev (rconstpointer a, rconstpointer b)
+{
+  return (int) (RPOINTER_TO_UINT (b) - RPOINTER_TO_UINT (a));
+}
+
+RTEST (rptrarray, sort, RTEST_FAST)
+{
+  RPtrArray * array;
+
+  r_assert_cmpptr ((array = r_ptr_array_new ()), !=, NULL);
+  r_ptr_array_add (array, RUINT_TO_POINTER (5),  NULL);
+  r_ptr_array_add (array, RUINT_TO_POINTER (1),  NULL);
+  r_ptr_array_add (array, RUINT_TO_POINTER (3),  NULL);
+  r_ptr_array_add (array, RUINT_TO_POINTER (4),  NULL);
+  r_ptr_array_add (array, RUINT_TO_POINTER (2),  NULL);
+
+  r_ptr_array_sort (array, cmp_ruint);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_ptr_array_get (array, 0)), ==, 1);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_ptr_array_get (array, 1)), ==, 2);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_ptr_array_get (array, 2)), ==, 3);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_ptr_array_get (array, 3)), ==, 4);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_ptr_array_get (array, 4)), ==, 5);
+
+  r_ptr_array_sort (array, cmp_ruint_rev);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_ptr_array_get (array, 0)), ==, 5);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_ptr_array_get (array, 4)), ==, 1);
+
+  /* Empty / single-element / NULL args are no-ops, not crashes. */
+  r_ptr_array_sort (NULL, cmp_ruint);
+  r_ptr_array_sort (array, NULL);
+
+  r_ptr_array_unref (array);
+}
+RTEST_END;
+
+RTEST (rptrarray, sort_keeps_notify_paired, RTEST_FAST)
+{
+  /* The destroy notifies attached to each entry must follow the entry
+   * around as the sort swaps them; otherwise ASAN would catch a double
+   * free / leak when the array is unref'd. */
+  RPtrArray * array;
+  rpointer p1 = r_malloc (16);
+  rpointer p2 = r_malloc (16);
+  rpointer p3 = r_malloc (16);
+
+  r_assert_cmpptr ((array = r_ptr_array_new ()), !=, NULL);
+  r_ptr_array_add (array, p3, r_free);
+  r_ptr_array_add (array, p1, r_free);
+  r_ptr_array_add (array, p2, r_free);
+
+  r_ptr_array_sort (array, cmp_ruint);
+
+  /* Even if the addresses sort in some implementation-dependent order,
+   * each entry still owns the matching r_free notify.  Unref triggers
+   * three frees, no leaks, no double frees. */
+  r_ptr_array_unref (array);
+}
+RTEST_END;
+
 RTEST (rptrarray, insert_runs_notify_on_clear, RTEST_FAST)
 {
   /* The destroy notify attached to an inserted element must run when
