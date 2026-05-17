@@ -32,7 +32,7 @@ static RTss         g__r_hzrptr_tss = R_TSS_INIT (r_hzr_ptr_rec_free);
 
 struct _RHzrPtrRec {
   rpointer ptr;
-  raint active;
+  raboolean active;
 
   RFreeList * rlist;
   ruint rcount;
@@ -125,13 +125,13 @@ r_hzr_ptr_rec_new (void)
   rpointer old;
 
   for (rec = r_atomic_ptr_load (&g__r_hzrptr); rec != NULL; rec = rec->next) {
-    int oa = FALSE;
+    rboolean oa = FALSE;
     if (r_atomic_int_cmp_xchg_strong (&rec->active, &oa, TRUE))
       goto done;
   }
 
   rec = r_mem_new0 (RHzrPtrRec);
-  rec->active = TRUE;
+  r_atomic_bool_set (&rec->active);
 
   old = r_atomic_ptr_load (&g__r_hzrptr);
   while (!r_atomic_ptr_cmp_xchg_weak (&g__r_hzrptr, &old, rec));
@@ -145,7 +145,7 @@ r_hzr_ptr_rec_free (RHzrPtrRec * rec)
 {
   if (rec != NULL) {
     r_assert_cmpptr (rec->ptr, ==, NULL);
-    r_atomic_int_store (&rec->active, FALSE);
+    r_atomic_bool_unset (&rec->active);
   }
 }
 
