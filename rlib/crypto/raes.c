@@ -355,10 +355,10 @@ r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
   aes = (const RAesCipher *)cipher;
   rk = aes->erk;
 
-  input[0] = RUINT32_FROM_LE (*((ruint32 *)&plaintxt[0x0])) ^ *rk++;
-  input[1] = RUINT32_FROM_LE (*((ruint32 *)&plaintxt[0x4])) ^ *rk++;
-  input[2] = RUINT32_FROM_LE (*((ruint32 *)&plaintxt[0x8])) ^ *rk++;
-  input[3] = RUINT32_FROM_LE (*((ruint32 *)&plaintxt[0xc])) ^ *rk++;
+  input[0] = r_load_le32 (&plaintxt[0x0]) ^ *rk++;
+  input[1] = r_load_le32 (&plaintxt[0x4]) ^ *rk++;
+  input[2] = r_load_le32 (&plaintxt[0x8]) ^ *rk++;
+  input[3] = r_load_le32 (&plaintxt[0xc]) ^ *rk++;
 
   for (i = aes->rounds / 2; i > 1; i--) {
     R_AES_FORWARD (tmp, input);
@@ -388,10 +388,10 @@ r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
           ((ruint32) r_aes_fsbox[(tmp[1] >> 16) & 0xff] << 16) ^
           ((ruint32) r_aes_fsbox[(tmp[2] >> 24) & 0xff] << 24);
 
-  *((ruint32 *)&ciphertxt[0x0]) = RUINT32_TO_LE (input[0]);
-  *((ruint32 *)&ciphertxt[0x4]) = RUINT32_TO_LE (input[1]);
-  *((ruint32 *)&ciphertxt[0x8]) = RUINT32_TO_LE (input[2]);
-  *((ruint32 *)&ciphertxt[0xc]) = RUINT32_TO_LE (input[3]);
+  r_store_le32 (&ciphertxt[0x0], input[0]);
+  r_store_le32 (&ciphertxt[0x4], input[1]);
+  r_store_le32 (&ciphertxt[0x8], input[2]);
+  r_store_le32 (&ciphertxt[0xc], input[3]);
 
   return TRUE;
 }
@@ -410,10 +410,10 @@ r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
   aes = (const RAesCipher *)cipher;
   rk = aes->drk;
 
-  input[0] = RUINT32_FROM_LE (*((ruint32 *)&ciphertxt[0x0])) ^ *rk++;
-  input[1] = RUINT32_FROM_LE (*((ruint32 *)&ciphertxt[0x4])) ^ *rk++;
-  input[2] = RUINT32_FROM_LE (*((ruint32 *)&ciphertxt[0x8])) ^ *rk++;
-  input[3] = RUINT32_FROM_LE (*((ruint32 *)&ciphertxt[0xc])) ^ *rk++;
+  input[0] = r_load_le32 (&ciphertxt[0x0]) ^ *rk++;
+  input[1] = r_load_le32 (&ciphertxt[0x4]) ^ *rk++;
+  input[2] = r_load_le32 (&ciphertxt[0x8]) ^ *rk++;
+  input[3] = r_load_le32 (&ciphertxt[0xc]) ^ *rk++;
 
   for (i = aes->rounds / 2; i > 1; i--) {
     R_AES_REVERSE (tmp, input);
@@ -443,10 +443,10 @@ r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
           ((ruint32) r_aes_rsbox[(tmp[1] >> 16) & 0xff] << 16) ^
           ((ruint32) r_aes_rsbox[(tmp[0] >> 24) & 0xff] << 24);
 
-  *((ruint32 *)&plaintxt[0x0]) = RUINT32_TO_LE (input[0]);
-  *((ruint32 *)&plaintxt[0x4]) = RUINT32_TO_LE (input[1]);
-  *((ruint32 *)&plaintxt[0x8]) = RUINT32_TO_LE (input[2]);
-  *((ruint32 *)&plaintxt[0xc]) = RUINT32_TO_LE (input[3]);
+  r_store_le32 (&plaintxt[0x0], input[0]);
+  r_store_le32 (&plaintxt[0x4], input[1]);
+  r_store_le32 (&plaintxt[0x8], input[2]);
+  r_store_le32 (&plaintxt[0xc], input[3]);
 
   return TRUE;
 }
