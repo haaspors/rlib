@@ -240,6 +240,12 @@ r_thread_pool_start_thread_on_each_cpu (RThreadPool * pool,
   return TRUE;
 }
 
+static void
+r_thread_pool_join_thread (rpointer thread)
+{
+  r_thread_join (thread);
+}
+
 void
 r_thread_pool_join (RThreadPool * pool)
 {
@@ -249,7 +255,7 @@ r_thread_pool_join (RThreadPool * pool)
   copy = r_slist_merge (r_slist_copy (pool->active), r_slist_copy (pool->done));
   r_mutex_unlock (&pool->mutex);
 
-  r_slist_destroy_full (copy, (RDestroyNotify)r_thread_join);
+  r_slist_destroy_full (copy, r_thread_pool_join_thread);
 }
 
 ruint

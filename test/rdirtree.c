@@ -1,5 +1,11 @@
 #include <rlib/rlib.h>
 
+static void
+rdirtree_test_func (rpointer data, rpointer user)
+{
+  (void) data;
+  (void) user;
+}
 
 RTEST (rdirtree, set, RTEST_FAST)
 {
@@ -12,9 +18,9 @@ RTEST (rdirtree, set, RTEST_FAST)
   r_assert_cmpptr ((node = r_dir_tree_set (tree, "/foo/bar", -1, r_malloc0 (42), r_free)), !=, NULL);
   r_assert_cmpptr (r_dir_tree_node_func (node), ==, NULL);
 
-  r_assert_cmpptr ((node = r_dir_tree_set_full (tree, "/foo/func/bar", -1, r_malloc0 (42), r_free, (RFunc)r_free)), !=, NULL);
+  r_assert_cmpptr ((node = r_dir_tree_set_full (tree, "/foo/func/bar", -1, r_malloc0 (42), r_free, rdirtree_test_func)), !=, NULL);
   r_assert_cmpuint (r_dir_tree_node_count (tree), ==, 1 + 2 + 2);
-  r_assert_cmpptr (r_dir_tree_node_func (node), ==, r_free);
+  r_assert_cmpptr (r_dir_tree_node_func (node), ==, rdirtree_test_func);
 
   r_dir_tree_unref (tree);
 }

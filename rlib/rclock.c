@@ -134,6 +134,13 @@ r_clock_process_entries (RClock * clock, RClockTime * tsout)
 
 /* System clock */
 static RClockTime
+r_system_clock_get_time (const RClock * clock)
+{
+  (void) clock;
+  return r_time_get_ts_monotonic ();
+}
+
+static RClockTime
 r_system_clock_wait (RClock * clock, RClockTime ts)
 {
   RClockTime now;
@@ -146,7 +153,7 @@ r_system_clock_wait (RClock * clock, RClockTime ts)
 
 static RClock g__r_sysclock = {
   R_REF_STATIC_INIT (r_clock_clear),
-  (RClockGetTimeFunc)r_time_get_ts_monotonic,
+  r_system_clock_get_time,
   r_system_clock_wait,
   FALSE,
 

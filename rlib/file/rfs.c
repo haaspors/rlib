@@ -179,20 +179,21 @@ r_fs_path_new_tmpname_full (const rchar * dir,
   return file;
 }
 
-static const rchar *
-r_fs_find_tmp_dir (void)
+static rpointer
+r_fs_find_tmp_dir (rpointer data)
 {
+  (void) data;
 #ifdef RLIB_HAVE_FILES
-  const rchar * ret;
-
-  if ((ret = getenv ("TEMP")) != NULL)        return ret;
-  if ((ret = getenv ("TMP")) != NULL)         return ret;
-  if ((ret = getenv ("TMPDIR")) != NULL)      return ret;
+  {
+    rchar * ret;
+    if ((ret = getenv ("TEMP")) != NULL)        return ret;
+    if ((ret = getenv ("TMP")) != NULL)         return ret;
+    if ((ret = getenv ("TMPDIR")) != NULL)      return ret;
 #ifdef R_OS_WIN32
-  if ((ret = getenv ("USERPROFILE")) != NULL) return ret;
+    if ((ret = getenv ("USERPROFILE")) != NULL) return ret;
 #endif
-
-  return "/tmp";
+  }
+  return (rpointer) "/tmp";
 #else
   return NULL;
 #endif
@@ -202,7 +203,7 @@ const rchar *
 r_fs_get_tmp_dir (void)
 {
   static ROnce tmpdironce = R_ONCE_INIT;
-  return r_call_once (&tmpdironce, (RThreadFunc)r_fs_find_tmp_dir, NULL);
+  return r_call_once (&tmpdironce, r_fs_find_tmp_dir, NULL);
 }
 
 rchar *

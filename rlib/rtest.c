@@ -678,6 +678,17 @@ _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
 #endif
 #endif
 
+#ifdef RLIB_HAVE_SIGNALS
+#if defined (R_OS_UNIX) && defined (HAVE_SIGALTSTACK)
+static rpointer
+_r_test_alloc_sigstack (rpointer data)
+{
+  (void) data;
+  return r_malloc0 (SIGSTKSZ);
+}
+#endif
+#endif
+
 static void
 r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 {
@@ -705,8 +716,8 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 #elif defined (R_OS_UNIX)
 #ifdef HAVE_SIGALTSTACK
   ctx->ss.ss_size = SIGSTKSZ;
-  ctx->ss.ss_sp = r_call_once (&_r_test_sigstackonce, (RThreadFunc) r_malloc0,
-      RSIZE_TO_POINTER (SIGSTKSZ));
+  ctx->ss.ss_sp = r_call_once (&_r_test_sigstackonce, _r_test_alloc_sigstack,
+      NULL);
   ctx->ss.ss_flags = 0;
   sigaltstack (&ctx->ss, &ctx->oss);
 #endif
