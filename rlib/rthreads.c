@@ -31,7 +31,8 @@
 
 #ifdef HAVE_PTHREAD_H
 #include <pthread.h>
-#define R_PTHREAD_KEY(tss)          (pthread_key_t)((tss)->impl.ui)
+#define R_PTHREAD_KEY(tss) \
+  ((pthread_key_t)(ruintptr)r_atomic_ptr_load (&(tss)->impl.aptr))
 #endif
 #ifdef HAVE_MACH_THREAD_POLICY_H
 #include <mach/mach.h>
@@ -193,7 +194,7 @@ static void
 r_tss_ensure_allocated (RTss * tss)
 {
 #if defined (R_OS_WIN32)
-  if (R_UNLIKELY (tss->impl.u32 == 0)) {
+  if (R_UNLIKELY (r_atomic_uint_load (&tss->impl.u32) == 0)) {
     ruint old = 0, tls;
 
     if ((tls = TlsAlloc ()) == TLS_OUT_OF_INDEXES)
@@ -207,7 +208,7 @@ r_tss_ensure_allocated (RTss * tss)
     }
   }
 #elif defined (HAVE_PTHREAD_H)
-  if (R_UNLIKELY (tss->impl.ptr == NULL)) {
+  if (R_UNLIKELY (r_atomic_ptr_load (&tss->impl.aptr) == NULL)) {
     pthread_key_t key;
     rpointer old = NULL;
     if (pthread_key_create (&key, tss->notify) != 0)
