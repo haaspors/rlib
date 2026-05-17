@@ -220,12 +220,11 @@ r_rtc_crypto_transport_new_dtls (RRtcIceTransport * ice, RPrng * prng,
 
   if (R_UNLIKELY (ice == NULL)) return NULL;
   if (R_UNLIKELY (prng == NULL)) return NULL;
+  if (R_UNLIKELY (cert == NULL)) return NULL;
+  if (R_UNLIKELY (privkey == NULL)) return NULL;
 
   /* FIXME: support other roles */
   r_assert_cmpint (role, ==, R_RTC_CRYPTO_ROLE_SERVER);
-  /* FIXME: support raw transport? */
-  r_assert_cmpptr (cert, !=, NULL);
-  r_assert_cmpptr (privkey, !=, NULL);
 
   if ((ret = r_mem_new0 (RRtcDtlsTransport)) != NULL) {
     r_ref_init (ret, r_rtc_dtls_transport_free);

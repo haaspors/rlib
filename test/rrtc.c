@@ -269,10 +269,12 @@ RTEST (rrtc, create_dtls_transport_server, RTEST_FAST)
 
   r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
         NULL, R_RTC_CRYPTO_ROLE_SERVER, NULL, NULL), ==, NULL);
-#if 0
   r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
         ice, R_RTC_CRYPTO_ROLE_SERVER, NULL, NULL), ==, NULL);
-#endif
+  r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_SERVER, cert, NULL), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_SERVER, NULL, pk), ==, NULL);
   r_assert_cmpptr ((crypto = r_rtc_session_create_dtls_transport (session,
         ice, R_RTC_CRYPTO_ROLE_SERVER, cert, pk)), !=, NULL);
 
