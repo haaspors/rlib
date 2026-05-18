@@ -49,6 +49,70 @@ typedef enum {
 } REvIOFlag;
 typedef ruint32 REvIOFlags;
 
+typedef struct _REvIOCBNode REvIOCBNode;
+struct _REvIOCBNode {
+  REvIOCBNode * next;
+  REvIOCBNode * prev;
+  REvIOCB cb;
+  rpointer data;
+  RDestroyNotify datanotify;
+  REvIOEvents events;
+};
+
+typedef struct {
+  REvIOCBNode * head;
+  REvIOCBNode * tail;
+  rsize size;
+} REvIOCBQueue;
+
+static inline REvIOCBNode * r_ev_iocb_queue_push (REvIOCBQueue * q,
+    REvIOCB cb, rpointer data, RDestroyNotify datanotify, REvIOEvents events)
+{
+  REvIOCBNode * n = r_mem_new (REvIOCBNode);
+  n->cb = cb;
+  n->data = data;
+  n->datanotify = datanotify;
+  n->events = events;
+  n->next = NULL;
+  n->prev = q->tail;
+  if (q->tail != NULL)
+    q->tail->next = n;
+  else
+    q->head = n;
+  q->tail = n;
+  q->size++;
+  return n;
+}
+
+static inline void r_ev_iocb_queue_remove (REvIOCBQueue * q, REvIOCBNode * n)
+{
+  if (n->prev != NULL)
+    n->prev->next = n->next;
+  else
+    q->head = n->next;
+  if (n->next != NULL)
+    n->next->prev = n->prev;
+  else
+    q->tail = n->prev;
+  q->size--;
+  if (n->datanotify != NULL)
+    n->datanotify (n->data);
+  r_free (n);
+}
+
+static inline void r_ev_iocb_queue_clear (REvIOCBQueue * q)
+{
+  REvIOCBNode * n;
+  while ((n = q->head) != NULL) {
+    q->head = n->next;
+    if (n->datanotify != NULL)
+      n->datanotify (n->data);
+    r_free (n);
+  }
+  q->tail = NULL;
+  q->size = 0;
+}
+
 struct _REvIO {
   RRef ref;
 
@@ -59,7 +123,7 @@ struct _REvIO {
   RIOHandle handle;
   REvIOEvents events;
   REvIOFlags flags;
-  RCBQueue iocbq;
+  REvIOCBQueue iocbq;
 
   rpointer user;
   RDestroyNotify usernotify;
@@ -81,12 +145,9 @@ R_API_HIDDEN rboolean r_ev_io_validate_taskgroup (REvIO * evio, ruint taskgroup)
 
 #define r_ev_io_invoke_iocb(evio, events)                                     \
   R_STMT_START {                                                              \
-    RCBList * it;                                                             \
-    REvIOCB iocb;                                                             \
-    for (it = evio->iocbq.head; it != NULL; it = it->next) {                  \
-      iocb = (REvIOCB) it->data.cb;                                           \
-      iocb (it->data.data, events, evio);                                     \
-    }                                                                         \
+    REvIOCBNode * it;                                                         \
+    for (it = evio->iocbq.head; it != NULL; it = it->next)                    \
+      it->cb (it->data, events, evio);                                        \
   } R_STMT_END
 
 

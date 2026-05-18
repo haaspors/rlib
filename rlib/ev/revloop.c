@@ -274,10 +274,10 @@ static inline REvIOEvents
 r_ev_io_get_iocbq_events (REvIO * evio)
 {
   REvIOEvents ret = 0;
-  RCBList * it;
+  REvIOCBNode * it;
 
   for (it = evio->iocbq.head; it != NULL; it = it->next)
-    ret |= RPOINTER_TO_UINT (it->data.user);
+    ret |= it->events;
 
   return ret;
 }
@@ -918,7 +918,7 @@ r_ev_io_clear (REvIO * evio)
     r_queue_remove_link (&evio->loop->chg, evio->chglnk);
   evio->alnk = evio->chglnk = NULL;
 
-  r_cbqueue_clear (&evio->iocbq);
+  r_ev_iocb_queue_clear (&evio->iocbq);
 
   if (evio->loop != NULL)
     r_ev_loop_unref (evio->loop);
@@ -943,7 +943,8 @@ r_ev_io_init (REvIO * evio, REvLoop * loop, RIOHandle handle, RDestroyNotify not
   evio->handle = handle;
   evio->events = 0;
   evio->flags = R_EV_IO_FLAGS_NONE;
-  r_cbqueue_init (&evio->iocbq);
+  evio->iocbq.head = evio->iocbq.tail = NULL;
+  evio->iocbq.size = 0;
   evio->user = NULL;
   evio->usernotify = NULL;
 
@@ -1003,8 +1004,7 @@ r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
 
   R_LOG_TRACE ("loop %p start evio "R_EV_IO_FORMAT" %4x + %x",
       evio->loop, R_EV_IO_ARGS (evio), evio->events, events);
-  ret = r_cbqueue_push (&evio->iocbq, (RFunc)io_cb, data, datanotify,
-      RUINT_TO_POINTER (events), NULL);
+  ret = r_ev_iocb_queue_push (&evio->iocbq, io_cb, data, datanotify, events);
   if (!R_EV_IO_IS_CHANGING (evio) && (evio->events & events) != events)
     evio->chglnk = r_queue_push (&evio->loop->chg, evio);
 
@@ -1021,8 +1021,8 @@ r_ev_io_stop (REvIO * evio, rpointer ctx)
   if (R_UNLIKELY (ctx == NULL)) return FALSE;
 
   R_LOG_TRACE ("loop %p stop evio "R_EV_IO_FORMAT" %4x - %x",
-      evio->loop, R_EV_IO_ARGS (evio), evio->events, RPOINTER_TO_UINT (((RCBList *)ctx)->data.user));
-  r_cbqueue_remove_link (&evio->iocbq, ctx);
+      evio->loop, R_EV_IO_ARGS (evio), evio->events, ((REvIOCBNode *)ctx)->events);
+  r_ev_iocb_queue_remove (&evio->iocbq, ctx);
 
   if (R_EV_IO_IS_ACTIVE (evio) || R_EV_IO_IS_INTERNAL (evio)) {
     REvIOEvents events;
