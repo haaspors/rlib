@@ -299,10 +299,11 @@ RTEST (rrtc, create_rtp_sender, RTEST_FAST)
 
   RRtcRtpSender * sender;
 
-  const RRtcRtpSenderCallbacks cbs_null = { NULL, NULL };
+  const RRtcRtpSenderCallbacks cbs_null = { NULL, NULL, NULL };
   const RRtcRtpSenderCallbacks cbs = {
     test_rtc_send_ready,
     test_rtc_send_close,
+    NULL,
   };
 
   r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);

@@ -56,6 +56,7 @@ dump_pe32p_image (RPe32PlusImageHdr * img)
 static void
 dump_section (RPeParser * parser, RPeSectionHdr * sec)
 {
+  (void) parser;
   r_print ("\tSection:   '%s'\n", sec->name);
   r_print ("\t\tvmsize:   0x%.8x\n", sec->vmsize);
   r_print ("\t\tvmaddr:   0x%.8x\n", sec->vmaddr);

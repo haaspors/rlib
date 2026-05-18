@@ -215,7 +215,8 @@ r_utf16_to_utf8 (rchar * dst, rsize dstsize, const runichar2 * src, rsize srcsiz
 {
   RUnicodeResult ret = R_UNICODE_OK;
   rchar * dstptr, * dstend;
-  rssize i, r;
+  rsize i;
+  rssize r;
 
   if (R_UNLIKELY (dst == NULL || dstsize == 0 || src == NULL))
     return R_UNICODE_INVAL;

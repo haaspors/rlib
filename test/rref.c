@@ -118,7 +118,7 @@ RTEST_STRESS (rref, ref_unref_stress, RTEST_FAST)
 {
   RTestRef * ref;
   RThread * t[4];
-  int i;
+  rsize i;
 
   r_assert_cmpptr ((ref = r_test_ref_new (42)), !=, NULL);
 
@@ -141,7 +141,7 @@ RTEST_STRESS (rref, weak_stress, RTEST_FAST)
   RTestRef * ref;
   RThread * tref[2];
   RThread * tweak[6];
-  int i;
+  rsize i;
 
   r_assert_cmpptr ((ref = r_test_ref_new (42)), !=, NULL);
 

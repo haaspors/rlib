@@ -120,6 +120,8 @@ r_json_parser_object_field_cb (const RJsonParser * parser,
   RJsonItResult ret;
   RJsonResult r;
 
+  (void) parser;
+
   if ((k = r_json_string_new (key->str, key->size, &r)) != NULL) {
     if ((v = r_json_scan_ctx_to_value (value, &r, endptr)) != NULL) {
       if (endptr != NULL)
@@ -169,6 +171,7 @@ r_json_parser_value_cb (const RJsonParser * parser, const RStrChunk * key,
   RJsonResult r;
   RJsonItResult ret;
 
+  (void) parser;
   (void) key;
 
   if ((v = r_json_scan_ctx_to_value (value, &r, endptr)) != NULL) {

@@ -285,6 +285,8 @@ io_count_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
   RTestEvIOStartCtx * ctx = data;
 
+  (void) evio;
+
   ctx->iocount++;
 
   int r;

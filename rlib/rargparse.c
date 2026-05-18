@@ -643,6 +643,8 @@ r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
   RArgParseResult ret = R_ARG_PARSE_ERROR;
   const rchar * str;
 
+  (void) parser;
+
   if (entry->type == R_ARG_OPTION_TYPE_NONE) {
     str = *arg;
     ret = r_arg_option_parse_none (arg, NULL,

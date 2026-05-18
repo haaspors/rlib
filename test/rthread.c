@@ -260,7 +260,7 @@ RTEST_STRESS (rthread, rwmutex_stress, RTEST_FAST)
   RThreadsTestRWMutex test_ctx;
   RThread * trd[32];
   RThread * twr[8];
-  int i;
+  rsize i;
 
   r_rwmutex_init (&test_ctx.mutex);
   r_atomic_uint_store (&test_ctx.readers, 0);

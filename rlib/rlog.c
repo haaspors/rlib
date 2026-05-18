@@ -202,7 +202,7 @@ r_log_category_initial_level (rpointer str, rpointer data)
      * can handle it.  Falls back to a heap copy for huge patterns. */
     rchar stack_pat[64];
     rchar * pat = stack_pat;
-    if (n + 1 > sizeof (stack_pat))
+    if ((rsize) n + 1 > sizeof (stack_pat))
       pat = r_malloc (n + 1);
     if (pat != NULL) {
       r_memcpy (pat, dbg, n);
