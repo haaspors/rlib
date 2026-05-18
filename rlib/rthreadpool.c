@@ -240,22 +240,22 @@ r_thread_pool_start_thread_on_each_cpu (RThreadPool * pool,
   return TRUE;
 }
 
-static void
-r_thread_pool_join_thread (rpointer thread)
-{
-  r_thread_join (thread);
-}
-
 void
 r_thread_pool_join (RThreadPool * pool)
 {
-  RSList * copy;
+  RSList * copy = NULL, * it;
 
   r_mutex_lock (&pool->mutex);
-  copy = r_slist_merge (r_slist_copy (pool->active), r_slist_copy (pool->done));
+  /* Take a fresh ref per thread on the copy so the destroy_full path
+   * can use r_thread_join_unref -- pool->active / pool->done retain
+   * their own refs which r_thread_pool_free unrefs later. */
+  for (it = pool->active; it != NULL; it = it->next)
+    copy = r_slist_prepend (copy, r_thread_ref (it->data));
+  for (it = pool->done; it != NULL; it = it->next)
+    copy = r_slist_prepend (copy, r_thread_ref (it->data));
   r_mutex_unlock (&pool->mutex);
 
-  r_slist_destroy_full (copy, r_thread_pool_join_thread);
+  r_slist_destroy_full (copy, r_thread_join_unref);
 }
 
 ruint

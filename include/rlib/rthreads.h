@@ -114,6 +114,14 @@ R_API RThread * r_thread_new_full   (const rchar * name,
 #define r_thread_ref        r_ref_ref
 #define r_thread_unref      r_ref_unref
 R_API rpointer  r_thread_join       (RThread * thread);
+/* RDestroyNotify-compatible "join then unref" helper for slist /
+ * ptr-array destroy paths that should wait for the thread first.
+ * Discards the thread's return value. */
+static inline void r_thread_join_unref (rpointer thread)
+{
+  r_thread_join (thread);
+  r_thread_unref (thread);
+}
 R_API int       r_thread_kill       (RThread * thread, int sig);
 R_API const rchar * r_thread_get_name (const RThread * thread);
 R_API ruint     r_thread_get_id     (const RThread * thread);
