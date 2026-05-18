@@ -1,9 +1,10 @@
 #include <rlib/rnet.h>
 
 static void
-r_test_http_server_stop (RHttpServer * server)
+r_test_http_server_stop (rpointer data, REvLoop * loop)
 {
-  r_http_server_stop (server, NULL, NULL, NULL);
+  (void) loop;
+  r_http_server_stop (data, NULL, NULL, NULL);
 }
 
 RTEST (rhttpserver, listen, RTEST_FAST)
@@ -23,7 +24,7 @@ RTEST (rhttpserver, listen, RTEST_FAST)
   r_assert (r_http_server_listen (srv, addr));
   r_socket_address_unref (addr);
 
-  r_ev_loop_add_callback (loop, FALSE, (REvFunc)r_test_http_server_stop,
+  r_ev_loop_add_callback (loop, FALSE, r_test_http_server_stop,
       r_http_server_ref (srv), r_http_server_unref);
   r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
 

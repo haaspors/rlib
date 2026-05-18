@@ -185,6 +185,8 @@ r_ev_tcp_accept (REvTCP * evtcp, RSocketStatus * res)
   return ret;
 }
 
+static void r_ev_tcp_io_stop_after (rpointer data, rpointer ctx);
+
 static void
 r_ev_tcp_connected_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
@@ -192,7 +194,7 @@ r_ev_tcp_connected_cb (rpointer data, REvIOEvents events, REvIO * evio)
 
   if (events & (R_EV_IO_WRITABLE | R_EV_IO_ERROR)) {
     /* Make sure stop is called as part of after callbacks */
-    r_ev_loop_add_cb_after (evio->loop, (RFunc)r_ev_io_stop,
+    r_ev_loop_add_cb_after (evio->loop, r_ev_tcp_io_stop_after,
         evio, NULL, evtcp->connect_iocb_ctx, NULL);
     evtcp->connect_iocb_ctx = NULL;
 
@@ -310,7 +312,7 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
               evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
 
           /* Almost like r_ev_tcp_recv_stop */
-          r_ev_loop_add_cb_after (evtcp->evio.loop, (RFunc)r_ev_io_stop,
+          r_ev_loop_add_cb_after (evtcp->evio.loop, r_ev_tcp_io_stop_after,
               r_ev_tcp_ref (evtcp), r_ev_tcp_unref,
               evtcp->recv_iocb_ctx, NULL);
           evtcp->recv_iocb_ctx = NULL;
@@ -342,6 +344,14 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
 }
 
 static void r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio);
+
+static void r_ev_tcp_send_iocb_ev (rpointer data, REvLoop * loop);
+
+static void
+r_ev_tcp_io_stop_after (rpointer data, rpointer ctx)
+{
+  r_ev_io_stop (data, ctx);
+}
 
 static void
 r_ev_tcp_send_iocb (REvTCP * evtcp)
@@ -383,6 +393,13 @@ r_ev_tcp_error_iocb (REvTCP * evtcp)
 }
 
 static void
+r_ev_tcp_send_iocb_ev (rpointer data, REvLoop * loop)
+{
+  (void) loop;
+  r_ev_tcp_send_iocb (data);
+}
+
+static void
 r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
 {
   (void) data;
@@ -390,6 +407,14 @@ r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
   if (events & R_EV_IO_READABLE) r_ev_tcp_recv_iocb ((REvTCP *)evio);
   if (events & R_EV_IO_WRITABLE) r_ev_tcp_send_iocb ((REvTCP *)evio);
   if (events & R_EV_IO_ERROR) r_ev_tcp_error_iocb ((REvTCP *)evio);
+}
+
+static void
+r_ev_tcp_recv_iocb_task (rpointer data, RTaskQueue * queue, RTask * task)
+{
+  (void) queue;
+  (void) task;
+  r_ev_tcp_recv_iocb (data);
 }
 
 static void
@@ -401,7 +426,7 @@ r_ev_tcp_task_recv_iocb (REvTCP * evtcp)
     return;
 
   if ((task = r_ev_loop_add_task_full (evtcp->evio.loop,
-          evtcp->taskgroup, (RTaskFunc) r_ev_tcp_recv_iocb, NULL,
+          evtcp->taskgroup, r_ev_tcp_recv_iocb_task, NULL,
           r_ev_tcp_ref (evtcp), r_ev_tcp_unref, evtcp->recv_task, NULL)) != NULL) {
     if (evtcp->recv_task != NULL)
       r_task_unref (evtcp->recv_task);
@@ -503,7 +528,7 @@ r_ev_tcp_send (REvTCP * evtcp, RBuffer * buf,
         evtcp->evio.loop, R_EV_IO_ARGS (evtcp), buf);
     if (r_queue_size (&evtcp->qsend) == 1) {
       ret = r_ev_loop_add_callback (evtcp->evio.loop, TRUE,
-          (REvFunc)r_ev_tcp_send_iocb, r_ev_tcp_ref (evtcp), r_ev_tcp_unref);
+          r_ev_tcp_send_iocb_ev, r_ev_tcp_ref (evtcp), r_ev_tcp_unref);
     }
   }
 

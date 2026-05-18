@@ -178,6 +178,21 @@ r_ev_udp_error_iocb (REvUDP * evudp)
 }
 
 static void
+r_ev_udp_recv_iocb_task (rpointer data, RTaskQueue * queue, RTask * task)
+{
+  (void) queue;
+  (void) task;
+  r_ev_udp_recv_iocb (data);
+}
+
+static void
+r_ev_udp_send_iocb_ev (rpointer data, REvLoop * loop)
+{
+  (void) loop;
+  r_ev_udp_send_iocb (data);
+}
+
+static void
 r_ev_udp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
 {
   (void) data;
@@ -196,7 +211,7 @@ r_ev_udp_task_recv_iocb (REvUDP * evudp)
     return;
 
   if ((task = r_ev_loop_add_task_full (evudp->evio.loop,
-          evudp->taskgroup, (RTaskFunc) r_ev_udp_recv_iocb, NULL,
+          evudp->taskgroup, r_ev_udp_recv_iocb_task, NULL,
           r_ev_udp_ref (evudp), r_ev_udp_unref, evudp->recv_task, NULL)) != NULL) {
     if (evudp->recv_task != NULL)
       r_task_unref (evudp->recv_task);
@@ -297,7 +312,7 @@ r_ev_udp_send (REvUDP * evudp, RBuffer * buf,
 
     if (r_queue_size (&evudp->qsend) == 1) {
       ret = r_ev_loop_add_callback (evudp->evio.loop, TRUE,
-          (REvFunc)r_ev_udp_send_iocb, r_ev_udp_ref (evudp), r_ev_udp_unref);
+          r_ev_udp_send_iocb_ev, r_ev_udp_ref (evudp), r_ev_udp_unref);
     }
   }
 
