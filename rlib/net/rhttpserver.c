@@ -296,11 +296,28 @@ r_http_server_new (REvLoop * loop)
   return ret;
 }
 
+typedef struct {
+  RHttpRequestHandler handler;
+  rpointer data;
+  RDestroyNotify notify;
+} RHttpServerHandlerEntry;
+
+static void
+r_http_server_handler_entry_free (rpointer p)
+{
+  RHttpServerHandlerEntry * e = p;
+  if (e->notify != NULL)
+    e->notify (e->data);
+  r_free (e);
+}
+
 rboolean
 r_http_server_set_handler (RHttpServer * server,
   const rchar * pattern, rssize size, RHttpRequestHandler handler,
   rpointer data, RDestroyNotify notify)
 {
+  RHttpServerHandlerEntry * entry;
+
   if (R_UNLIKELY (handler == NULL)) return FALSE;
 
   if (size < 0) {
@@ -309,8 +326,19 @@ r_http_server_set_handler (RHttpServer * server,
     R_LOG_INFO ("%p: Handler %p for %.*s", server, handler, (int)size, pattern);
   }
 
-  return r_dir_tree_set_full (server->dt, pattern, size,
-      data, notify, (RFunc)handler) != NULL;
+  if ((entry = r_mem_new (RHttpServerHandlerEntry)) == NULL)
+    return FALSE;
+  entry->handler = handler;
+  entry->data = data;
+  entry->notify = notify;
+
+  if (r_dir_tree_set (server->dt, pattern, size,
+        entry, r_http_server_handler_entry_free) == NULL) {
+    r_http_server_handler_entry_free (entry);
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 typedef struct {
@@ -388,10 +416,16 @@ r_http_server_process_request (RHttpServer * server,
     ctx->notify = notify;
 
     if ((path = r_uri_get_path_ptr (uri, &size)) != NULL &&
-        (node = r_dir_tree_get_or_any_parent (server->dt, path, (rssize)size)) != NULL &&
-        (ctx->handler = (RHttpRequestHandler) r_dir_tree_node_func (node))) {
-      R_LOG_TRACE ("%p: Request %p for '%.*s'", server, req, (int)size, path);
-      ctx->handlerdata = r_dir_tree_node_get (node);
+        (node = r_dir_tree_get_or_any_parent (server->dt, path, (rssize)size)) != NULL) {
+      RHttpServerHandlerEntry * entry = r_dir_tree_node_get (node);
+      if (entry != NULL) {
+        R_LOG_TRACE ("%p: Request %p for '%.*s'", server, req, (int)size, path);
+        ctx->handler = entry->handler;
+        ctx->handlerdata = entry->data;
+      } else {
+        R_LOG_DEBUG ("%p: Request %p for '%.*s' node without entry -> not found",
+            server, req, (int)size, path);
+      }
     } else {
       R_LOG_DEBUG ("%p: Request %p for '%.*s' no handler -> not found",
           server, req, (int)size, path);
