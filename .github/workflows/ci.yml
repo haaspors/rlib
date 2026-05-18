@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux / ${{ matrix.compiler }} / ${{ matrix.buildtype }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        buildtype: [debugoptimized, release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build
+      - name: Configure
+        env:
+          CC: ${{ matrix.compiler }}
+        run: meson setup build --buildtype=${{ matrix.buildtype }}
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        run: meson test -C build --print-errorlogs
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlog-linux-${{ matrix.compiler }}-${{ matrix.buildtype }}
+          path: build/meson-logs/
+
+  macos:
+    name: macOS / clang / ${{ matrix.buildtype }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildtype: [debugoptimized, release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install meson ninja
+      - name: Configure
+        run: meson setup build --buildtype=${{ matrix.buildtype }}
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        run: meson test -C build --print-errorlogs
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlog-macos-${{ matrix.buildtype }}
+          path: build/meson-logs/
+
+  windows:
+    name: Windows / MSVC / ${{ matrix.buildtype }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildtype: [debugoptimized, release]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install meson + ninja
+        run: pip install meson ninja
+      - name: Configure
+        run: meson setup build --buildtype=${{ matrix.buildtype }}
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        # MSVC debug-optimised codegen plus CreateThread-emulated forks make
+        # the ~840-test 'rlib test' target materially slower than other
+        # platforms; multiplier of 6 keeps us under the 180s mark.
+        run: meson test -C build --print-errorlogs --timeout-multiplier 6
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlog-windows-${{ matrix.buildtype }}
+          path: build/meson-logs/
+
+  sanitizers:
+    name: Sanitizers / ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ASan+UBSan
+            sanitize: address,undefined
+            extra_args: -Dc_args=-fno-sanitize=function
+          - name: TSan
+            sanitize: thread
+            extra_args: ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build clang
+      - name: Configure
+        env:
+          CC: clang
+        run: meson setup build -Db_sanitize=${{ matrix.sanitize }} -Db_lundef=false ${{ matrix.extra_args }}
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        run: meson test -C build --print-errorlogs
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlog-sanitizers-${{ matrix.name }}
+          path: build/meson-logs/
