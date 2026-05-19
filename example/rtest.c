@@ -111,6 +111,10 @@ RTEST_END;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Winfinite-recursion"
 #endif
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable:4717)
+#endif
 R_ATTR_NORETURN static void
 _recurse_forever (int v)
 {
@@ -120,6 +124,9 @@ _recurse_forever (int v)
   v = dummy[64] / 2;
   _recurse_forever (v+1);
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 #if defined(__clang__) && (__clang_major__ > 3 || (__clang_major__ == 3 && __clang_minor__ > 6))
 #pragma clang diagnostic pop
 #endif
