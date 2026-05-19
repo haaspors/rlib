@@ -427,7 +427,7 @@ r_arg_command_append_help (rpointer key, rpointer val, rpointer user)
   rchar * cmd = key;
   RArgParser * parser = val;
   RString * str = user;
-  int spacing = 32;
+  rssize spacing = 32;
 
   spacing -= r_string_append_printf (str, "  %s", cmd);
   if (parser->summary != NULL) {
