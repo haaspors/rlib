@@ -226,7 +226,7 @@ r_sys_cpu_allowed_count (void)
 
   if (r_bitset_init_stack (cpuset, r_sys_cpuset_max ()) &&
       r_sys_cpuset_allowed (cpuset))
-    ret = r_bitset_popcount (cpuset);
+    ret = (ruint)r_bitset_popcount (cpuset);
   else
     ret = 0;
 
@@ -616,7 +616,7 @@ r_sys_node_discover (rsize idx, RSysTopology * topo)
     r_ref_init (ret, r_sys_node_free);
     ret->idx = idx;
     ret->cpuset = r_sys_cpuset_new ();
-    r_sys_cpuset_for_node (ret->cpuset, idx);
+    r_sys_cpuset_for_node (ret->cpuset, (ruint)idx);
     ret->cpus = r_mem_new_n (RSysCpu *, r_bitset_popcount (ret->cpuset));
     r_bitset_foreach (ret->cpuset, TRUE, r_sys_topology_prepend_cpu, ret);
 
