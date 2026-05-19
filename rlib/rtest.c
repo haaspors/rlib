@@ -86,7 +86,12 @@ static const int g__r_test_sigs[] = {
 #ifdef SIGSTKFLT
   SIGSTKFLT,
 #endif
-  SIGFPE, SIGSEGV, SIGBUS, SIGSYS
+  SIGFPE, SIGSEGV, SIGBUS, SIGSYS,
+  /* SIGTERM / SIGINT are caught so that when meson (or a user)
+   * terminates a running test, the handler can print the current
+   * /<suite>/<name> before _exit-ing. SIGKILL of course can't be
+   * caught; we get the diagnostic line within meson's grace period. */
+  SIGTERM, SIGINT
 #ifdef SIGXCPU
   , SIGXCPU
 #endif
@@ -118,6 +123,12 @@ typedef struct {
   RSigAlrmTimer * timer;
 
   jmp_buf jb;
+
+  /* The test currently in flight (for diagnostic signal handlers).
+   * Set by r_test_run_nofork before test->func runs. */
+  const RTest * test;
+  rsize __i;
+  RClockTime start_ts;
 
   /* <private> */
 #ifdef RLIB_HAVE_SIGNALS
@@ -629,6 +640,30 @@ _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
   if (R_UNLIKELY (g__r_test_nofork_ctx == NULL))
     return;
 
+  /* SIGTERM / SIGINT typically arrive from outside the runner: meson hit
+   * its own timeout, the user pressed Ctrl-C, etc. We can't longjmp out
+   * (the test framework would treat it as a normal failure and keep
+   * going), and we don't want to be hostile to the signal source. Just
+   * print which test we were in so the diagnostic is in the captured
+   * log, then _exit. */
+  if (sig == SIGTERM || sig == SIGINT) {
+    const RTest * test = g__r_test_nofork_ctx->test;
+    if (test != NULL) {
+      RClockTime elapsed = r_time_get_ts_monotonic () -
+          g__r_test_nofork_ctx->start_ts;
+      r_fprintf (stderr,
+          "\n*** rtest: signal %d received while in "
+          "/%s/%s/%"RSIZE_FMT" (after %"R_TIME_FORMAT")\n",
+          sig, test->suite, test->name, g__r_test_nofork_ctx->__i,
+          R_TIME_ARGS (elapsed));
+    } else {
+      r_fprintf (stderr,
+          "\n*** rtest: signal %d received (no test active)\n", sig);
+    }
+    fflush (stderr);
+    _exit (128 + sig);
+  }
+
   if (R_UNLIKELY (sig == SIGALRM)) {
     _r_test_nofork_timeout_handler (sig);
     return;
@@ -706,6 +741,9 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 
   if (g__r_test_nofork_ctx != NULL) abort (); /* Can't use r_assert* here */
 
+  ctx->test = NULL;
+  ctx->__i = 0;
+  ctx->start_ts = 0;
   ctx->thread = r_thread_ref (r_thread_current ());
 
 #ifdef RLIB_HAVE_SIGNALS
@@ -810,6 +848,9 @@ r_test_run_nofork (const RTest * test, rsize __i, rboolean notimeout,
   lastpos->assert = FALSE;
 
   r_test_run_nofork_setup (&ctx, notimeout ? R_CLOCK_TIME_NONE : test->timeout);
+  ctx.test = test;
+  ctx.__i = __i;
+  ctx.start_ts = r_time_get_ts_monotonic ();
   R_LOG_DEBUG ("About to run: /%s/%s/%"RSIZE_FMT, test->suite, test->name, __i);
   if ((jmpres = setjmp (ctx.jb)) == 0) {
     _r_test_mark_position (test->name, __i, test->suite, FALSE);
