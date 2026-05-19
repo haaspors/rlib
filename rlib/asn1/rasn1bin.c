@@ -128,7 +128,7 @@ r_asn1_bin_tlv_parse_integer_bits (const RAsn1BinTLV * tlv,
     *unsign = (tlv->value[0] & 0x80) == 0;
 
   if (bits != NULL) {
-    *bits = tlv->len * 8;
+    *bits = (ruint)(tlv->len * 8);
     if (tlv->value[0] == 0)
       *bits -= 8;
   }
@@ -148,7 +148,7 @@ r_asn1_bin_tlv_parse_integer_i32 (const RAsn1BinTLV * tlv, rint32 * value)
     ruint32 u = 0;
     const ruint8 * ptr = tlv->value;
     const ruint8 * end = tlv->value + tlv->len;
-    ruint bits = tlv->len * 8;
+    rsize bits = tlv->len * 8;
     if (tlv->value[0] == 0) {
       bits -= 8;
       ptr++;
@@ -191,7 +191,7 @@ r_asn1_bin_tlv_parse_integer_u32 (const RAsn1BinTLV * tlv, ruint32 * value)
     ruint32 u = 0;
     const ruint8 * ptr = tlv->value;
     const ruint8 * end = tlv->value + tlv->len;
-    ruint bits = tlv->len * 8;
+    rsize bits = tlv->len * 8;
     if (tlv->value[0] == 0) {
       bits -= 8;
       ptr++;
@@ -222,7 +222,7 @@ r_asn1_bin_tlv_parse_integer_i64 (const RAsn1BinTLV * tlv, rint64 * value)
     ruint64 u = 0;
     const ruint8 * ptr = tlv->value;
     const ruint8 * end = tlv->value + tlv->len;
-    ruint bits = tlv->len * 8;
+    rsize bits = tlv->len * 8;
     if (tlv->value[0] == 0) {
       bits -= 8;
       ptr++;
@@ -264,7 +264,7 @@ r_asn1_bin_tlv_parse_integer_u64 (const RAsn1BinTLV * tlv, ruint64 * value)
     ruint64 u = 0;
     const ruint8 * ptr = tlv->value;
     const ruint8 * end = tlv->value + tlv->len;
-    ruint bits = tlv->len * 8;
+    rsize bits = tlv->len * 8;
     if (tlv->value[0] == 0) {
       bits -= 8;
       ptr++;
@@ -341,8 +341,8 @@ r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * len
       if (!(*ptr & 0x80)) {
         if (idx == 0) {
           ruint32 v;
-          varray[idx++] = v = MIN (cur / 40, 2);
-          varray[idx++] = cur - (v * 40);
+          varray[idx++] = v = (ruint32)MIN (cur / 40, 2);
+          varray[idx++] = (ruint32)(cur - (v * 40));
         } else {
           if (idx >= *len)
             return R_ASN1_DECODER_OVERFLOW;
