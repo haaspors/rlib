@@ -128,6 +128,10 @@ r_proc_get_exe_name (void)
 int
 r_proc_get_id (void)
 {
+#ifdef _MSC_VER
+  return _getpid ();
+#else
   return getpid ();
+#endif
 }
 
