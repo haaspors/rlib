@@ -284,7 +284,7 @@ static inline rboolean _r_atomic_ptr_cmp_xchg_weak_impl (raptr * a, rpointer * o
   *o = prev;
   return FALSE;
 }
-#define r_atomic_ptr_cmp_xchg_weak(a, o, v)     _r_atomic_ptr_cmp_xchg_weak_impl ((a), (o), (v))
+#define r_atomic_ptr_cmp_xchg_weak(a, o, v)     _r_atomic_ptr_cmp_xchg_weak_impl ((a), (o), (rpointer)(v))
 #define r_atomic_ptr_cmp_xchg_strong(a, o, v)   r_atomic_ptr_cmp_xchg_weak (a, o, v)
 #if RLIB_SIZEOF_VOID_P == 4
 #define r_atomic_ptr_fetch_add(a, v)            (rpointer)_InterlockedExchangeAdd ((long volatile *)a, (long)v)
