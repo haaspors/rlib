@@ -161,6 +161,12 @@ R_LOG_CATEGORY_DEFINE_STATIC (rtest_logcat, "test", "Test logger",
     R_CLR_BG_MAGENTA | R_CLR_FMT_BOLD);
 #define R_LOG_CAT_DEFAULT &rtest_logcat
 
+/* Tracker for the in-progress report so async-ish handlers (timer,
+ * SIGTERM) can dump what's been run, what's in flight, and recent
+ * history. Set by r_test_run_tests_full while a suite is running. */
+static RTestReport *  g__r_test_current_report = NULL;
+static rsize          g__r_test_current_run_idx = 0;
+
 static const rchar *
 r_test_get_run_str (RTestRunState state, const rchar ** runresclr, FILE * f)
 {
@@ -192,6 +198,58 @@ r_test_init (void)
   r_log_category_register (&rtest_logcat);
   if (r_log_category_get_threshold (R_LOG_CAT_DEFAULT) < R_LOG_LEVEL_ERROR)
     r_log_category_set_threshold (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR);
+}
+
+#define R_TEST_DUMP_RECENT 10
+
+/* Print the in-progress report to f: counts, the test currently running
+ * (if any), and the last few completed runs for context. Cheap enough to
+ * call from a timer / signal handler (modulo r_fprintf not being strictly
+ * async-signal-safe -- matches the existing handlers' best-effort style). */
+static void
+_r_test_dump_progress (FILE * f)
+{
+  const RTestReport * rep = g__r_test_current_report;
+  const RTestRun * run;
+  rsize cur, i, start;
+
+  if (rep == NULL)
+    return;
+
+  cur = g__r_test_current_run_idx;
+
+  r_fprintf (f,
+      "\nrtest progress snapshot:\n"
+      "  ran %"RSIZE_FMT"/%"RSIZE_FMT
+      " (success: %"RSIZE_FMT", fail: %"RSIZE_FMT
+      ", error: %"RSIZE_FMT", skip: %"RSIZE_FMT")\n",
+      rep->success + rep->fail + rep->error + rep->skip, rep->total,
+      rep->success, rep->fail, rep->error, rep->skip);
+
+  if (cur < rep->total) {
+    run = &rep->runs[cur];
+    if (run->state == R_TEST_RUN_STATE_RUNNING && run->test != NULL) {
+      RClockTime elapsed = r_time_get_ts_monotonic () - run->start;
+      r_fprintf (f, "  currently running: /%s/%s/%"RSIZE_FMT
+          " (in flight for %"R_TIME_FORMAT")\n",
+          run->test->suite, run->test->name, run->__i,
+          R_TIME_ARGS (elapsed));
+    }
+  }
+
+  start = (cur > R_TEST_DUMP_RECENT) ? (cur - R_TEST_DUMP_RECENT) : 0;
+  if (cur > start)
+    r_fprintf (f, "  last %"RSIZE_FMT" completed:\n", cur - start);
+  for (i = start; i < cur; i++) {
+    const rchar * runres, * runresclr;
+    run = &rep->runs[i];
+    if (run->test == NULL) continue;
+    runres = r_test_get_run_str (run->state, &runresclr, f);
+    r_fprintf (f, "    %-9s [%"R_TIME_FORMAT"] /%s/%s/%"RSIZE_FMT"\n",
+        runres, R_TIME_ARGS (run->end - run->start),
+        run->test->suite, run->test->name, run->__i);
+  }
+  fflush (f);
 }
 
 rboolean
@@ -429,6 +487,7 @@ _r_test_fork_timeout_handler (int sig)
   if (g__r_test_fork_ctx->thread == r_thread_current ()) {
     R_LOG_WARNING ("SIGALRM: killing forked process %u", g__r_test_fork_ctx->pid);
     g__r_test_fork_ctx->state = R_TEST_RUN_STATE_TIMEOUT;
+    _r_test_dump_progress (stderr);
     kill (g__r_test_fork_ctx->pid, SIGKILL);
   } else {
     R_LOG_INFO ("SIGALRM: fwd signal to thread %p", g__r_test_fork_ctx->thread);
@@ -583,6 +642,7 @@ _r_test_nofork_timeout_handler (int sig)
     return;
 
   r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_WARNING, "???", 0, "???", "test timeout");
+  _r_test_dump_progress (stderr);
   if (g__r_test_nofork_ctx->thread == r_thread_current ()) {
     longjmp (g__r_test_nofork_ctx->jb, R_TEST_RUN_STATE_TIMEOUT);
   } else {
@@ -660,6 +720,7 @@ _r_test_nofork_signalhandler (int sig, siginfo_t * si, rpointer uctx)
       r_fprintf (stderr,
           "\n*** rtest: signal %d received (no test active)\n", sig);
     }
+    _r_test_dump_progress (stderr);
     fflush (stderr);
     _exit (128 + sig);
   }
@@ -904,6 +965,7 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
 
     ret->total = count * 2;
     ret->start = r_time_get_ts_monotonic ();
+    g__r_test_current_report = ret;
     for (i = 0; i < count; i++) {
       rsize it_start, it_end, it;
 
@@ -931,6 +993,7 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
           ret->run++;
           ret->runs[cur].state = R_TEST_RUN_STATE_RUNNING;
           ret->runs[cur].start = r_time_get_ts_monotonic ();
+          g__r_test_current_run_idx = cur;
           ret->runs[cur].lastpos.ts = ret->runs[cur].start;
           ret->runs[cur].lastpos.file = __FILE__;
           ret->runs[cur].lastpos.line = __LINE__;
@@ -989,6 +1052,7 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
     }
     ret->end = r_time_get_ts_monotonic ();
     ret->total = cur;
+    g__r_test_current_report = NULL;
   } else {
     ret = NULL;
   }
