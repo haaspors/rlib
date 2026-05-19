@@ -232,8 +232,26 @@ __extension__ ({                                              \
 #define r_atomic_int_load(a)                    (MemoryBarrier(), *a)
 #define r_atomic_int_store(a, v)                _InterlockedExchange ((long volatile *)a, (long)v)
 #define r_atomic_int_exchange(a, v)             _InterlockedExchange ((long volatile *)a, (long)v)
-#define r_atomic_int_cmp_xchg_weak(a, o, v)     (_InterlockedCompareExchange ((long volatile *)a, (long)v, *((long*)o)) == *((long*)o))
-#define r_atomic_int_cmp_xchg_strong(a, o, v)   (_InterlockedCompareExchange ((long volatile *)a, (long)v, *((long*)o)) == *((long*)o))
+/* C11 semantics: cmp_xchg writes the observed value back into *o on
+ * failure so the caller can retry against the up-to-date value. The
+ * MSVC intrinsics only return the prior value; emulate the write-back
+ * in tiny inline helpers (otherwise lock-free retry loops -- e.g.
+ * r_ref_weak_ref -- spin forever once *a diverges from the initial
+ * *o on the first attempt).
+ *
+ * The implementations live behind _impl-suffixed names and the public
+ * names are #define'd onto them, matching the macro-style indirection
+ * the rest of this header uses. That keeps ratomic.c's out-of-line
+ * fallbacks (which use the (parens-around-name) macro-suppression
+ * trick) free of name collisions on MSVC. */
+static inline rboolean _r_atomic_int_cmp_xchg_weak_impl (raint * a, int * o, int v) {
+  long prev = _InterlockedCompareExchange ((long volatile *)a, (long)v, (long)*o);
+  if (prev == (long)*o) return TRUE;
+  *o = (int)prev;
+  return FALSE;
+}
+#define r_atomic_int_cmp_xchg_weak(a, o, v)     _r_atomic_int_cmp_xchg_weak_impl ((a), (o), (v))
+#define r_atomic_int_cmp_xchg_strong(a, o, v)   r_atomic_int_cmp_xchg_weak (a, o, v)
 #define r_atomic_int_fetch_add(a, v)            _InterlockedExchangeAdd ((long volatile *)a, (long)v)
 #define r_atomic_int_fetch_sub(a, v)            _InterlockedExchangeAdd ((long volatile *)a, -((long)v))
 #define r_atomic_int_fetch_and(a, v)            _InterlockedAnd ((long volatile *)a, (long)v)
@@ -243,8 +261,14 @@ __extension__ ({                                              \
 #define r_atomic_uint_load(a)                   (MemoryBarrier(), *a)
 #define r_atomic_uint_store(a, v)               _InterlockedExchange ((long volatile *)a, (long)v)
 #define r_atomic_uint_exchange(a, v)            _InterlockedExchange ((long volatile *)a, (long)v)
-#define r_atomic_uint_cmp_xchg_weak(a, o, v)    (_InterlockedCompareExchange ((long volatile *)a, (long)v, *((long*)o)) == *((long*)o))
-#define r_atomic_uint_cmp_xchg_strong(a, o, v)  (_InterlockedCompareExchange ((long volatile *)a, (long)v, *((long*)o)) == *((long*)o))
+static inline rboolean _r_atomic_uint_cmp_xchg_weak_impl (rauint * a, ruint * o, ruint v) {
+  long prev = _InterlockedCompareExchange ((long volatile *)a, (long)v, (long)*o);
+  if ((ruint)prev == *o) return TRUE;
+  *o = (ruint)prev;
+  return FALSE;
+}
+#define r_atomic_uint_cmp_xchg_weak(a, o, v)    _r_atomic_uint_cmp_xchg_weak_impl ((a), (o), (v))
+#define r_atomic_uint_cmp_xchg_strong(a, o, v)  r_atomic_uint_cmp_xchg_weak (a, o, v)
 #define r_atomic_uint_fetch_add(a, v)           _InterlockedExchangeAdd ((long volatile *)a, (long)v)
 #define r_atomic_uint_fetch_sub(a, v)           _InterlockedExchangeAdd ((long volatile *)a, -((long)v))
 #define r_atomic_uint_fetch_and(a, v)           _InterlockedAnd ((long volatile *)a, (long)v)
@@ -254,8 +278,14 @@ __extension__ ({                                              \
 #define r_atomic_ptr_load(a)                    (rpointer)(MemoryBarrier(), *a)
 #define r_atomic_ptr_store(a, v)                _InterlockedExchangePointer ((rpointer volatile)a, (rpointer)v)
 #define r_atomic_ptr_exchange(a, v)             (rpointer)_InterlockedExchangePointer ((rpointer volatile)a, (rpointer)v)
-#define r_atomic_ptr_cmp_xchg_weak(a, o, v)     (_InterlockedCompareExchangePointer ((rpointer volatile)a, (rpointer)v, *(o)) == *(o))
-#define r_atomic_ptr_cmp_xchg_strong(a, o, v)   (_InterlockedCompareExchangePointer ((rpointer volatile)a, (rpointer)v, *(o)) == *(o))
+static inline rboolean _r_atomic_ptr_cmp_xchg_weak_impl (raptr * a, rpointer * o, rpointer v) {
+  rpointer prev = _InterlockedCompareExchangePointer ((rpointer volatile)a, v, *o);
+  if (prev == *o) return TRUE;
+  *o = prev;
+  return FALSE;
+}
+#define r_atomic_ptr_cmp_xchg_weak(a, o, v)     _r_atomic_ptr_cmp_xchg_weak_impl ((a), (o), (v))
+#define r_atomic_ptr_cmp_xchg_strong(a, o, v)   r_atomic_ptr_cmp_xchg_weak (a, o, v)
 #if RLIB_SIZEOF_VOID_P == 4
 #define r_atomic_ptr_fetch_add(a, v)            (rpointer)_InterlockedExchangeAdd ((long volatile *)a, (long)v)
 #define r_atomic_ptr_fetch_sub(a, v)            (rpointer)_InterlockedExchangeAdd ((long volatile *)a, -((long)v))
