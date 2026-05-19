@@ -53,9 +53,9 @@ r_mpint_montgomery_reduce (rmpint * a, const rmpint * m, rmpint_digit mp)
     mu = r_mpint_get_digit (&c, x) * mp;
     cptr = c.data + x;
     for (y = 0; y < r_mpint_digits_used (m); y++) {
-      rmpint_word t;
-      cptr[0] = t  = ((rmpint_word)cptr[0] + (rmpint_word)carry) +
+      rmpint_word t = ((rmpint_word)cptr[0] + (rmpint_word)carry) +
         (((rmpint_word)mu) * ((rmpint_word)r_mpint_get_digit (m, y)));
+      cptr[0] = (rmpint_digit)t;
       carry = (t >> (sizeof (rmpint_digit) * 8));
       ++cptr;
     }
