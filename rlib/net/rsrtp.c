@@ -388,7 +388,7 @@ static RSRTPError
 r_srtp_stream_rtp_replay_add (RSRTPState * s, ruint64 idx)
 {
   if (idx > s->index) {
-    r_bitset_shl (s->window, idx - s->index);
+    r_bitset_shl (s->window, (ruint)(idx - s->index));
     r_bitset_set_bit (s->window, 0, TRUE);
     s->index = idx;
   } else {
