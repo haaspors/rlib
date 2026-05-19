@@ -86,7 +86,11 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
   if (secsize != NULL)
     *secsize = 0;
 
-  if ((pep = r_pe_parser_new_from_mem (mod, 42)) != NULL) {
+  /* The OS-loaded module has already been validated by the PE loader, so
+   * we don't have (or need) an upper bound on the readable size; pass
+   * RSIZE_MAX to effectively disable the parser's size-bounds checks
+   * while still validating the DOS / PE magics on the content itself. */
+  if ((pep = r_pe_parser_new_from_mem (mod, RSIZE_MAX)) != NULL) {
     RPeSectionHdr * sec;
 
     if ((sec = r_pe_parser_get_section_hdr_by_name (pep, name, nsize)) != NULL) {
