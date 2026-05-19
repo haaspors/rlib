@@ -22,6 +22,7 @@
 
 #include <rlib/os/rproc.h>
 #include <rlib/os/rsignal.h>
+#include <rlib/rio.h>
 
 #include <rlib/ratomic.h>
 #include <rlib/rassert.h>
@@ -46,6 +47,9 @@
 #endif
 #ifdef HAVE_SYS_WAIT_H
 #include <sys/wait.h>
+#endif
+#ifdef HAVE_FCNTL_H
+#include <fcntl.h>
 #endif
 
 #ifdef _r_test_mark_position
@@ -262,6 +266,87 @@ _r_test_info_handler (int sig)
 {
   (void) sig;
   _r_test_dump_progress (stderr);
+}
+#endif
+
+/* Press-Enter-for-progress trigger -- works the same on every supported
+ * platform but is implemented two different ways to stay fork-safe:
+ *
+ *   POSIX: stdin is put in O_ASYNC mode and SIGIO is hooked. The kernel
+ *   delivers SIGIO to our PID (set via F_SETOWN) when input is ready;
+ *   the handler drains stdin and dumps progress. Survives the fork()
+ *   per test cleanly -- no extra thread, no inherited locks. F_SETOWN
+ *   is set to the runner's PID so children spawned by r_test_run_fork
+ *   don't also receive SIGIO when the user types.
+ *
+ *   Windows: spawn a reader thread that read()s stdin via r_io_read.
+ *   Windows has no SIGIO, but it also has no real fork() (the fork
+ *   runner uses CreateThread), so a background reader in the parent
+ *   doesn't poison test threads' heap. */
+
+#if defined (R_OS_UNIX)
+static int g__r_test_stdin_orig_flags = -1;
+static struct sigaction g__r_test_sigio_old_sa;
+
+static void
+_r_test_sigio_handler (int sig)
+{
+  ruint8 buf[64];
+  (void) sig;
+  /* Drain whatever's queued on stdin (read returns immediately because
+   * O_NONBLOCK is set); EAGAIN simply means we're done. */
+  while (read (STDIN_FILENO, buf, sizeof (buf)) > 0)
+    ;
+  _r_test_dump_progress (stderr);
+}
+
+static void
+_r_test_sigio_enable (void)
+{
+  struct sigaction sa;
+  int flags;
+
+  if (!r_isatty (STDIN_FILENO))
+    return;
+  if ((flags = fcntl (STDIN_FILENO, F_GETFL)) < 0)
+    return;
+  if (fcntl (STDIN_FILENO, F_SETFL, flags | O_ASYNC | O_NONBLOCK) < 0)
+    return;
+  if (fcntl (STDIN_FILENO, F_SETOWN, getpid ()) < 0) {
+    fcntl (STDIN_FILENO, F_SETFL, flags);
+    return;
+  }
+  g__r_test_stdin_orig_flags = flags;
+
+  sa.sa_handler = _r_test_sigio_handler;
+  sigemptyset (&sa.sa_mask);
+  sa.sa_flags = SA_RESTART;
+  sigaction (SIGIO, &sa, &g__r_test_sigio_old_sa);
+}
+
+static void
+_r_test_sigio_disable (void)
+{
+  if (g__r_test_stdin_orig_flags < 0)
+    return;
+  sigaction (SIGIO, &g__r_test_sigio_old_sa, NULL);
+  fcntl (STDIN_FILENO, F_SETFL, g__r_test_stdin_orig_flags);
+  g__r_test_stdin_orig_flags = -1;
+}
+#endif /* R_OS_UNIX */
+
+#if defined (R_OS_WIN32) && defined (RLIB_HAVE_THREADS)
+static rpointer
+_r_test_stdin_reader_thread (rpointer data)
+{
+  ruint8 buf[64];
+  RIOHandle stdin_h = GetStdHandle (STD_INPUT_HANDLE);
+  (void) data;
+  while (r_io_read (stdin_h, buf, sizeof (buf)) > 0) {
+    if (g__r_test_current_report == NULL) break;
+    _r_test_dump_progress (stderr);
+  }
+  return NULL;
 }
 #endif
 
@@ -998,6 +1083,19 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
     sigaction (SIGINFO, &sa_info, &osa_info);
 #endif
 #endif
+
+    /* Press-Enter-for-progress. POSIX uses SIGIO (fork-safe); Windows
+     * spawns a reader thread (no fork involved on Windows). */
+#if defined (R_OS_UNIX)
+    _r_test_sigio_enable ();
+#elif defined (RLIB_HAVE_THREADS)
+    if (r_isatty (r_fileno (stdin))) {
+      RThread * tinput = r_thread_new ("rtest-stdin",
+          _r_test_stdin_reader_thread, NULL);
+      if (tinput != NULL)
+        r_thread_unref (tinput);
+    }
+#endif
     for (i = 0; i < count; i++) {
       rsize it_start, it_end, it;
 
@@ -1091,6 +1189,9 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
 #ifdef SIGINFO
     sigaction (SIGINFO, &osa_info, NULL);
 #endif
+#endif
+#if defined (R_OS_UNIX)
+    _r_test_sigio_disable ();
 #endif
   } else {
     ret = NULL;
