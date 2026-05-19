@@ -26,6 +26,20 @@
 #define _RTEST_MAGIC                          0x42424242
 #define _RTEST_SYM_                           _r_test_sym
 #define _RTEST_DATA_NAME(suite, test)         __rtest_##suite##_##test##_data
+
+/* MSVC silently routes `const`-qualified variables tagged with
+ * __declspec(allocate(SEC)) to .rdata instead of SEC, regardless of
+ * the section's read/write attributes. The PE ends up with no .rtest
+ * section at all, r_module_find_section returns NULL, and the runner
+ * falls back to the unreliable _r_test_sym0..9 magic walker. Drop the
+ * const on MSVC -- the data is still never written, and the public
+ * _r_test_sym pointers remain `const RTest *` so consumers see no
+ * difference. */
+#ifdef _MSC_VER
+#define _RTEST_DATA_QUAL
+#else
+#define _RTEST_DATA_QUAL  const
+#endif
 #define _RTEST_FUNC_NAME(suite, test)         __rtest_##suite##_##test##_func
 #define _RTEST_FIXTURE_DATA_NAME(suite)       __rtest_##suite##_data
 #define _RTEST_FIXTURE_SETUP_NAME(suite)      __rtest_##suite##_setup
@@ -35,8 +49,8 @@
 
 #define __RTEST(suite, test, skip, type, timeout, start, end, setup, teardown, fdata)\
   R_ATTR_UNUSED R_ATTR_DATA_SECTION (RTEST_SECTION)                           \
-  const RTest _RTEST_DATA_NAME (suite, test) = { _RTEST_MAGIC, skip,          \
-    #suite, #test, (type), (timeout),                                         \
+  _RTEST_DATA_QUAL RTest _RTEST_DATA_NAME (suite, test) = { _RTEST_MAGIC,     \
+    skip, #suite, #test, (type), (timeout),                                   \
     (RTestFunc)_RTEST_FUNC_NAME(suite, test), start, end,                     \
     fdata, (RTestFixtureFunc)setup, (RTestFixtureFunc)teardown };             \
   R_API_EXPORT R_ATTR_WEAK                                                    \
