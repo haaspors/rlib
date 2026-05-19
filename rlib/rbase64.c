@@ -94,6 +94,7 @@ r_base64_decode (ruint8 * dst, rsize dsize, const rchar * data, rssize size)
   ruint8 * ptr = dst;
   int i;
 
+  if (R_UNLIKELY (data == NULL)) return 0;
   if (size < 0) size = r_strlen (data);
   srcend = src + size;
 
