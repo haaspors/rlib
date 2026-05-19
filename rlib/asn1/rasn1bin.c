@@ -501,6 +501,7 @@ r_asn1_bin_tlv_parse_time (const RAsn1BinTLV * tlv, ruint64 * time)
     switch (res) {
       case 5:
         ss = 0;
+        R_ATTR_FALLTHROUGH;
       case 6:
         y = (ruint16)yy + ((yy < 70) ? 2000 : 1900);
         break;

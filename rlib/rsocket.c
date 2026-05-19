@@ -421,6 +421,7 @@ r_socket_connect (RSocket * socket, const RSocketAddress * address)
       break;
     case R_SOCKET_OK:
       socket->flags |= R_SOCKET_FLAG_CONNECTED;
+      R_ATTR_FALLTHROUGH;
     default:
       socket->flags &= ~R_SOCKET_FLAG_CONNECTING;
       break;
