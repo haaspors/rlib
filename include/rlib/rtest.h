@@ -217,7 +217,7 @@ int main (int argc, rchar ** argv) {                                            
       report_flags |= R_TEST_REPORT_FLAG_VERBOSE;                               \
     if (r_arg_parse_ctx_get_option_bool (ctx, "print"))                         \
       run_flags |= R_TEST_RUN_FLAG_PRINT;                                       \
-    if (r_arg_parse_ctx_get_option_bool (ctx, "igskip"))                        \
+    if (r_arg_parse_ctx_get_option_bool (ctx, "ignore-skip"))                   \
       run_flags |= R_TEST_RUN_FLAG_IGNORE_SKIP;                                 \
                                                                                 \
     if ((output = r_arg_parse_ctx_get_option_string (ctx, "output")) != NULL && \
