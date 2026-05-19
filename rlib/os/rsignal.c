@@ -86,7 +86,7 @@ r_sig_alrm_timer_new_oneshot (RClockTime timeout, RSignalFunc func)
   ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = func;
   if (!CreateTimerQueueTimer (&ret->timer, NULL, _r_sig_alrm_win32_cb, ret,
-        R_TIME_AS_MSECONDS (timeout), 0,
+        (DWORD)R_TIME_AS_MSECONDS (timeout), 0,
         WT_EXECUTEONLYONCE | WT_EXECUTEINTIMERTHREAD)) {
     r_free (ret);
     ret = NULL;
@@ -142,7 +142,7 @@ r_sig_alrm_timer_new_interval (RClockTime interval, RSignalFunc func)
   ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = func;
   if (!CreateTimerQueueTimer (&ret->timer, NULL, _r_sig_alrm_win32_cb, ret,
-        R_TIME_AS_MSECONDS (interval), R_TIME_AS_MSECONDS (interval),
+        (DWORD)R_TIME_AS_MSECONDS (interval), (DWORD)R_TIME_AS_MSECONDS (interval),
         WT_EXECUTEINTIMERTHREAD)) {
     r_free (ret);
     ret = NULL;
@@ -197,7 +197,7 @@ r_sig_alrm_timer_new_interval_delayed (RClockTime timeout,
   ret = r_mem_new0 (RSigAlrmTimer);
   ret->ofunc = func;
   if (!CreateTimerQueueTimer (&ret->timer, NULL, _r_sig_alrm_win32_cb, ret,
-        R_TIME_AS_MSECONDS (timeout), R_TIME_AS_MSECONDS (interval),
+        (DWORD)R_TIME_AS_MSECONDS (timeout), (DWORD)R_TIME_AS_MSECONDS (interval),
         WT_EXECUTEINTIMERTHREAD)) {
     r_free (ret);
     ret = NULL;
