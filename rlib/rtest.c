@@ -1066,10 +1066,10 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
 #endif
 
     ret = r_malloc0 (sizeof (RTestReport) + (sizeof (RTestRun) * count * 2));
+    g__r_test_current_report = ret;
 
     ret->total = count * 2;
     ret->start = r_time_get_ts_monotonic ();
-    g__r_test_current_report = ret;
 
 #if defined (R_OS_UNIX) && defined (HAVE_SIGACTION)
     /* Informational dump-on-signal: SIGUSR1 (Linux convention) and
@@ -1113,6 +1113,7 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
         ret->total = (cur * 2) + it_end - it_start;
         ret = r_realloc (ret,
             sizeof (RTestReport) + (sizeof (RTestRun) * ret->total));
+        g__r_test_current_report = ret;
       }
 
       for (it = it_start; it < it_end; it++, cur++) {
