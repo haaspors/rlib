@@ -410,7 +410,7 @@ r_mem_mergev (const RMemAllocationParams * params, RMem * a, va_list args)
   for (i = 1; i < count; i++)
     mems[i] = va_arg (args, RMem *);
 
-  return a->allocator->merge (params, mems, count);
+  return a->allocator->merge (params, mems, (ruint)count);
 }
 
 RMem *
@@ -458,7 +458,7 @@ r_mem_takev (const RMemAllocationParams * params, RMem * a, va_list args)
   for (i = 1; i < count; i++)
     mems[i] = va_arg (args, RMem *);
 
-  if ((ret = a->allocator->merge (params, mems, count)) != NULL) {
+  if ((ret = a->allocator->merge (params, mems, (ruint)count)) != NULL) {
     for (i = 0; i < count; i++)
       r_mem_unref (mems[i]);
   }
