@@ -448,7 +448,7 @@ RTEST (revio, user, RTEST_FAST)
   r_clock_unref (clock);
 
   /* dummy fd/handle 42 */
-  r_assert_cmpptr ((evio = r_ev_loop_create_ev_io (loop, 42)), !=, NULL);
+  r_assert_cmpptr ((evio = r_ev_loop_create_ev_io (loop, (RIOHandle)(ruintptr)42)), !=, NULL);
   r_assert_cmpptr (r_ev_io_get_user (evio), ==, NULL);
 
   r_assert_cmpptr ((data = r_malloc (42)), !=, NULL);
