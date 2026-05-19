@@ -19,6 +19,7 @@
 #include "config.h"
 #include <rlib/file/rfs.h>
 
+#include <rlib/renv.h>
 #include <rlib/rstr.h>
 #include <rlib/rrand.h>
 #include <rlib/rthreads.h>
@@ -185,12 +186,12 @@ r_fs_find_tmp_dir (rpointer data)
   (void) data;
 #ifdef RLIB_HAVE_FILES
   {
-    rchar * ret;
-    if ((ret = getenv ("TEMP")) != NULL)        return ret;
-    if ((ret = getenv ("TMP")) != NULL)         return ret;
-    if ((ret = getenv ("TMPDIR")) != NULL)      return ret;
+    const rchar * ret;
+    if ((ret = r_getenv ("TEMP")) != NULL)        return (rpointer)ret;
+    if ((ret = r_getenv ("TMP")) != NULL)         return (rpointer)ret;
+    if ((ret = r_getenv ("TMPDIR")) != NULL)      return (rpointer)ret;
 #ifdef R_OS_WIN32
-    if ((ret = getenv ("USERPROFILE")) != NULL) return ret;
+    if ((ret = r_getenv ("USERPROFILE")) != NULL) return (rpointer)ret;
 #endif
   }
   return (rpointer) "/tmp";
