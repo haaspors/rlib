@@ -193,6 +193,12 @@
 #define R_ATTR_ALIGN(a)
 #endif
 
+#if defined(__clang__) || R_GNUC_PREREQ(7, 0)
+#define R_ATTR_FALLTHROUGH            __attribute__((fallthrough))
+#else
+#define R_ATTR_FALLTHROUGH            ((void)0)
+#endif
+
 #if defined(__GNUC__)
 #define R_ATTR_NULL_TERMINATED        __attribute__((__sentinel__))
 #define R_ATTR_UNUSED                 __attribute__((__unused__))
