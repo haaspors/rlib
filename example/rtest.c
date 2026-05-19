@@ -62,10 +62,14 @@ do_something_bad (rpointer data)
       r_assert_not_reached ();
       break;
     case SIGSEGV:
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
       *(int *)data = 42;
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
       break;
   }
   return NULL;
