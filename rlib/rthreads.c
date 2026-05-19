@@ -625,7 +625,8 @@ r_thread_trampoline (rpointer data)
 {
   RThread * thread = data;
 
-  r_tss_set (&g__r_thread_self, r_thread_ref (thread));
+  /* Parent pre-bumped our ref before the OS thread call; TSS destructor unrefs at exit. */
+  r_tss_set (&g__r_thread_self, thread);
   if (thread->name != NULL) {
 #if defined (R_OS_WIN32)
     THREADNAME_INFO info = { 0x1000, thread->name, -1, 0 };
@@ -696,9 +697,15 @@ r_thread_new_full (const rchar * name,
     ret->is_rthread = TRUE;
     ret->is_root = FALSE;
 #ifdef RLIB_HAVE_THREADS
+    /* Hand-off ref for the about-to-start trampoline. Without this, a
+     * caller that detaches by unref'ing immediately can race the OS
+     * thread scheduler and free the RThread before the trampoline
+     * runs, corrupting the heap. */
+    r_thread_ref (ret);
 #if defined (R_OS_WIN32)
     if ((ret->thread = (HANDLE)_beginthreadex (NULL, 0, r_thread_trampoline, ret,
         0, &ret->thread_id)) == NULL) {
+      r_thread_unref (ret);
       r_thread_unref (ret);
       ret = NULL;
     }
@@ -736,6 +743,7 @@ r_thread_new_full (const rchar * name,
       R_LOG_ERROR ("Error when creating new thread %u - %s with cpuset: [%s]",
           err, r_strerror (err, errbuf, sizeof (errbuf)), str);
       r_free (str);
+      r_thread_unref (ret);
       r_thread_unref (ret);
       ret = NULL;
     }
