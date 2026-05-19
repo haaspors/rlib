@@ -32,7 +32,7 @@ r_socket_free (RSocket * socket)
 }
 
 static RSocket *
-r_socket_new_with_handle (RSocketHandle handle)
+r_socket_new_with_handle (RIOHandle handle)
 {
   RSocket * ret;
 
@@ -52,7 +52,7 @@ RSocket *
 r_socket_new (RSocketFamily family, RSocketType type, RSocketProtocol proto)
 {
   RSocket * ret;
-  RSocketHandle handle;
+  RIOHandle handle;
 
   if ((handle = r_io_socket (family, type, proto)) == R_IO_HANDLE_INVALID)
     return NULL;
@@ -103,7 +103,7 @@ r_socket_get_local_address (RSocket * socket)
   struct sockaddr_storage ss;
   socklen_t len = sizeof (struct sockaddr_storage);
 
-  if (getsockname (socket->handle, (struct sockaddr *)&ss, &len) == 0)
+  if (getsockname (R_IO_HANDLE_TO_SOCKET_HANDLE (socket->handle), (struct sockaddr *)&ss, &len) == 0)
     ret = r_socket_address_new_from_native (&ss, len);
 #endif
 
@@ -121,7 +121,7 @@ r_socket_get_remote_address (RSocket * socket)
   struct sockaddr_storage ss;
   socklen_t len = sizeof (struct sockaddr_storage);
 
-  if (getpeername (socket->handle, (struct sockaddr *)&ss, &len) == 0) {
+  if (getpeername (R_IO_HANDLE_TO_SOCKET_HANDLE (socket->handle), (struct sockaddr *)&ss, &len) == 0) {
     ret = r_socket_address_new_from_native (&ss, len);
   }
 #endif
@@ -239,7 +239,7 @@ r_socket_set_blocking (RSocket * socket, rboolean blocking)
   rboolean ret;
 #if defined (HAVE_WINSOCK2)
   rulong val = !blocking;
-  ret = (ioctlsocket (socket->handle, FIONBIO, &val) != SOCKET_ERROR);
+  ret = (ioctlsocket (R_IO_HANDLE_TO_SOCKET_HANDLE (socket->handle), FIONBIO, &val) != SOCKET_ERROR);
 #elif defined (R_OS_UNIX)
   ret = r_io_unix_set_nonblocking (socket->handle, !blocking);
 #else
@@ -379,7 +379,7 @@ r_socket_listen_full (RSocket * socket, ruint8 backlog)
 RSocket *
 r_socket_accept (RSocket * socket, RSocketStatus * res)
 {
-  RSocketHandle handle;
+  RIOHandle handle;
   RSocket * ret;
 
   if (R_UNLIKELY (socket == NULL)) {
