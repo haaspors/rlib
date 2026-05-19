@@ -29,6 +29,12 @@ R_LOG_CATEGORY_DEFINE (rlib_logcat, "rlib", "Internal RLib logger",
 
 R_INITIALIZER (rlib_init)
 {
+  /* r_log_init captures g__r_log_ts_start via r_time_get_ts_monotonic;
+   * on Apple Silicon (and any platform whose monotonic source needs a
+   * runtime-detected scaling factor) that has to happen after r_time_init
+   * has populated the factors, otherwise the start anchor is in raw
+   * timer ticks and every subsequent log timestamp is wildly inflated. */
+  r_time_init ();
   r_log_init ();
   r_log_category_register (&rlib_logcat);
   if (rlib_logcat.threshold < R_LOG_LEVEL_WARNING)
@@ -43,7 +49,6 @@ R_INITIALIZER (rlib_init)
   r_rtc_init ();
   r_srtp_init ();
   r_task_queue_init ();
-  r_time_init ();
   r_thread_init ();
   r_test_init ();
   r_tls_server_init ();
