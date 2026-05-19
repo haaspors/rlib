@@ -252,6 +252,19 @@ _r_test_dump_progress (FILE * f)
   fflush (f);
 }
 
+#if defined (R_OS_UNIX) && defined (HAVE_SIGACTION)
+/* Informational signal -- dump progress and keep running. Hook for
+ * pkill -USR1 (Linux) / Ctrl-T (BSD / macOS SIGINFO) on a hung-looking
+ * test suite. Installed for the duration of r_test_run_tests_full only;
+ * outside that window the default action applies. */
+static void
+_r_test_info_handler (int sig)
+{
+  (void) sig;
+  _r_test_dump_progress (stderr);
+}
+#endif
+
 rboolean
 _r_test_mark_position (const rchar * file, ruint line, const rchar * func,
     rboolean assert)
@@ -960,12 +973,31 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
 
   if (filter != NULL) {
     rsize i, cur = 0;
+#if defined (R_OS_UNIX) && defined (HAVE_SIGACTION)
+    struct sigaction sa_info, osa_usr1;
+#ifdef SIGINFO
+    struct sigaction osa_info;
+#endif
+#endif
 
     ret = r_malloc0 (sizeof (RTestReport) + (sizeof (RTestRun) * count * 2));
 
     ret->total = count * 2;
     ret->start = r_time_get_ts_monotonic ();
     g__r_test_current_report = ret;
+
+#if defined (R_OS_UNIX) && defined (HAVE_SIGACTION)
+    /* Informational dump-on-signal: SIGUSR1 (Linux convention) and
+     * SIGINFO (BSD / macOS, Ctrl-T). Handler returns; the suite keeps
+     * running. Distinct from the SIGTERM/SIGINT path which exits. */
+    sa_info.sa_handler = _r_test_info_handler;
+    sigemptyset (&sa_info.sa_mask);
+    sa_info.sa_flags = SA_RESTART;
+    sigaction (SIGUSR1, &sa_info, &osa_usr1);
+#ifdef SIGINFO
+    sigaction (SIGINFO, &sa_info, &osa_info);
+#endif
+#endif
     for (i = 0; i < count; i++) {
       rsize it_start, it_end, it;
 
@@ -1053,6 +1085,13 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
     ret->end = r_time_get_ts_monotonic ();
     ret->total = cur;
     g__r_test_current_report = NULL;
+
+#if defined (R_OS_UNIX) && defined (HAVE_SIGACTION)
+    sigaction (SIGUSR1, &osa_usr1, NULL);
+#ifdef SIGINFO
+    sigaction (SIGINFO, &osa_info, NULL);
+#endif
+#endif
   } else {
     ret = NULL;
   }
