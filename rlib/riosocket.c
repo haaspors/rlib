@@ -376,7 +376,7 @@ r_io_socket_receive (RIOHandle handle, rpointer buffer, rsize size, rsize * rece
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   do {
-    res = recv (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, size, 0);
+    res = recv (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, (int)size, 0);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
   if (res >= 0) {
@@ -408,7 +408,7 @@ r_io_socket_receive_from (RIOHandle handle, RSocketAddress * address, rpointer b
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   do {
-    res = recvfrom (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, size, 0,
+    res = recvfrom (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, (int)size, 0,
         (struct sockaddr *)&address->addr, &address->addrlen);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
@@ -445,9 +445,9 @@ r_io_socket_receive_message (RIOHandle handle, RSocketAddress * address, RBuffer
   bufs = r_alloca (mem_count * sizeof (WSABUF));
 
   for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buffer, i);
+    RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     if (r_mem_map (mem, &info[i], R_MEM_MAP_WRITE)) {
-      bufs[i].len = info[i].size;
+      bufs[i].len = (ULONG)info[i].size;
       bufs[i].buf = info[i].data;
     } else {
       /* WARNING */
@@ -459,16 +459,16 @@ r_io_socket_receive_message (RIOHandle handle, RSocketAddress * address, RBuffer
 
   winrecv = winflags = 0;
   if (address != NULL) {
-    res = WSARecvFrom (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, mem_count, &winrecv, &winflags,
+    res = WSARecvFrom (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, (DWORD)mem_count, &winrecv, &winflags,
         (struct sockaddr *)&address->addr, &address->addrlen, NULL, NULL);
   } else {
-    res = WSARecvFrom (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, mem_count, &winrecv, &winflags,
+    res = WSARecvFrom (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, (DWORD)mem_count, &winrecv, &winflags,
         NULL, 0, NULL, NULL);
   }
   b = res != SOCKET_ERROR ? (rsize)winrecv : 0;
 
   for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buffer, i);
+    RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     r_mem_unmap (mem, &info[i]);
 
     if (b >= mem->size) {
@@ -505,7 +505,7 @@ r_io_socket_receive_message (RIOHandle handle, RSocketAddress * address, RBuffer
   msg.msg_flags = 0;
 
   for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buffer, i);
+    RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     if (r_mem_map (mem, &info[i], R_MEM_MAP_WRITE)) {
       msg.msg_iov[i].iov_base = info[i].data;
       msg.msg_iov[i].iov_len = info[i].size;
@@ -532,7 +532,7 @@ r_io_socket_receive_message (RIOHandle handle, RSocketAddress * address, RBuffer
   b = res > 0 ? (rsize)res : 0;
 
   for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buffer, i);
+    RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     r_mem_unmap (mem, &info[i]);
 
     if (b >= mem->size) {
@@ -573,7 +573,7 @@ r_io_socket_send (RIOHandle handle, rconstpointer buffer, rsize size, rsize * se
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   do {
-    res = send (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, size, 0);
+    res = send (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, (int)size, 0);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
   if (res >= 0) {
@@ -605,7 +605,7 @@ r_io_socket_send_to (RIOHandle handle, const RSocketAddress * address, rconstpoi
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   do {
-    res = sendto (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, size, 0,
+    res = sendto (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, (int)size, 0,
         (const struct sockaddr *)&address->addr, address->addrlen);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
@@ -643,9 +643,9 @@ r_io_socket_send_message (RIOHandle handle, const RSocketAddress * address,
   bufs = r_alloca (mem_count * sizeof (WSABUF));
 
   for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buffer, i);
+    RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     if (r_mem_map (mem, &info[i], R_MEM_MAP_READ)) {
-      bufs[i].len = info[i].size;
+      bufs[i].len = (ULONG)info[i].size;
       bufs[i].buf = info[i].data;
     } else {
       /* WARNING */
@@ -657,15 +657,15 @@ r_io_socket_send_message (RIOHandle handle, const RSocketAddress * address,
 
   winsent = 0;
   if (address != NULL) {
-    res = WSASendTo (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, mem_count, &winsent, 0,
+    res = WSASendTo (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, (DWORD)mem_count, &winsent, 0,
         (const struct sockaddr *)&address->addr, (int)address->addrlen,
         NULL, NULL);
   } else {
-    res = WSASendTo (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, mem_count, &winsent, 0, NULL, 0, NULL, NULL);
+    res = WSASendTo (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, (DWORD)mem_count, &winsent, 0, NULL, 0, NULL, NULL);
   }
 
   for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buffer, i);
+    RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     r_mem_unmap (mem, &info[i]);
     r_mem_unref (mem);
   }
@@ -696,7 +696,7 @@ r_io_socket_send_message (RIOHandle handle, const RSocketAddress * address,
   msg.msg_flags = 0;
 
   for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buffer, i);
+    RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     if (r_mem_map (mem, &info[i], R_MEM_MAP_READ)) {
       msg.msg_iov[i].iov_base = info[i].data;
       msg.msg_iov[i].iov_len = info[i].size;
@@ -720,7 +720,7 @@ r_io_socket_send_message (RIOHandle handle, const RSocketAddress * address,
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
   for (i = 0; i < mem_count; i++) {
-    RMem * mem = r_buffer_mem_peek (buffer, i);
+    RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     r_mem_unmap (mem, &info[i]);
     r_mem_unref (mem);
   }
