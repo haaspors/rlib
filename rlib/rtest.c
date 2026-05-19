@@ -1012,7 +1012,7 @@ r_test_run_nofork (const RTest * test, rsize __i, rboolean notimeout,
   ctx.start_ts = r_time_get_ts_monotonic ();
   R_LOG_DEBUG ("About to run: /%s/%s/%"RSIZE_FMT, test->suite, test->name, __i);
   if ((jmpres = setjmp (ctx.jb)) == 0) {
-    _r_test_mark_position (test->name, __i, test->suite, FALSE);
+    _r_test_mark_position (test->name, (ruint)__i, test->suite, FALSE);
     if (test->setup != NULL)    test->setup (test->fdata);
     test->func (__i, test->fdata);
     if (test->teardown != NULL) test->teardown (test->fdata);
