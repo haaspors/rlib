@@ -231,7 +231,7 @@ int main (int argc, rchar ** argv) {                                            
         (report = r_test_run_tests (tests, count, run_flags, f,                 \
             R_TEST_ALL_MASK, filter)) != NULL) {                                \
       r_test_report_print (report, report_flags, f);                            \
-      ret = report->fail + report->error;                                       \
+      ret = (int) (report->fail + report->error);                              \
       r_test_report_free (report);                                              \
     }                                                                           \
     if (f != stdout)                                                            \
