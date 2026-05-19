@@ -89,7 +89,7 @@ r_ptr_array_ensure_size (RPtrArray * array, rsize size)
 
   if (size > array->nalloc) {
     if (RSIZE_POPCOUNT (size) != 1)
-      size = 1 << ((sizeof (rsize) * 8) - RSIZE_CLZ (size));
+      size = (rsize)1 << ((sizeof (rsize) * 8) - RSIZE_CLZ (size));
 
     array->mem = r_realloc (array->mem, size * sizeof (RPtrNode));
     array->nalloc = size;
