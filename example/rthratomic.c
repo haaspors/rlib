@@ -39,7 +39,7 @@ main (int argc, char ** argv)
 
   for (i = 0; i < THRS; i++) {
     thrs[i] = r_thread_new (NULL,
-        getenv("NOATOMICS") ? thr_add : thr_add_atomic,
+        r_getenv ("NOATOMICS") ? thr_add : thr_add_atomic,
         (rpointer)&counter);
   }
 
