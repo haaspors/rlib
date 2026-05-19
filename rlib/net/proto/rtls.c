@@ -336,7 +336,7 @@ _r_tls_encrypt_buffer (const ruint8 * buf, rsize bufsize, rsize hdrsize,
 
   ivsize = cipher->info->ivsize;
   size = ivsize + (bufsize - hdrsize) + macsize;
-  padding = ivsize - (size % ivsize);
+  padding = (ruint8)(ivsize - (size % ivsize));
   size += padding;
 
   if ((ret = r_buffer_new_alloc (NULL, hdrsize + size, NULL)) != NULL) {
@@ -400,7 +400,7 @@ r_dtls_encrypt_buffer (RBuffer * buf, const RCryptoCipher * cipher,
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
     rsize macsize = r_hmac_size (hmac);
     ruint8 * macbuf = r_alloca (macsize);
-    ruint16 fraglen = RUINT16_TO_BE (info.size - R_DTLS_RECORD_HDR_SIZE);
+    ruint16 fraglen = RUINT16_TO_BE ((ruint16)(info.size - R_DTLS_RECORD_HDR_SIZE));
     ruint16 hdrsize = R_DTLS_RECORD_HDR_SIZE;
 
     r_hmac_reset (hmac);
