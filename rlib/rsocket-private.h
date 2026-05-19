@@ -113,7 +113,7 @@ typedef int socklen_t;
 struct _RSocket {
   RRef ref;
 
-  RSocketHandle   handle;
+  RIOHandle       handle;
   RSocketFamily   family;
   RSocketType     type;
   RSocketProtocol proto;
