@@ -48,7 +48,7 @@ r_queue_ring_new (rsize size)
   if ((ret = r_mem_new (RQueueRing)) != NULL) {
     r_ref_init (ret, r_queue_ring_free);
 
-    ret->sizep1 = size + 1;
+    ret->sizep1 = (ruint)(size + 1);
     ret->head = ret->tail = 0;
 
     if (R_UNLIKELY ((ret->buffer = r_mem_new_n (rpointer, ret->sizep1)) == NULL)) {
