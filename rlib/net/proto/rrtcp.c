@@ -377,7 +377,7 @@ r_rtcp_packet_app_get_data (const RRTCPPacket * packet, ruint16 * size)
 
   if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_APP) {
     if (size != NULL)
-      *size = r_rtcp_packet_get_length (packet) - 3 * sizeof (ruint32);
+      *size = (ruint16)(r_rtcp_packet_get_length (packet) - 3 * sizeof (ruint32));
     return &ptr[8];
   }
 
