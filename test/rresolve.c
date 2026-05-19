@@ -7,7 +7,7 @@ RTEST (rresolve, sync_error_translation, RTEST_FAST | RTEST_SYSTEM)
    * land in the right enum slots. */
   RResolveResult res;
 
-  /* Bogus flag bit -> EAI_BADFLAGS. */
+  /* Bogus flag bit -> R_RESOLVE_BAD_FLAGS. */
   r_assert_cmpptr (r_resolve_sync ("127.0.0.1", NULL,
         (RResolveAddrFlags) 0x40000000, NULL, &res), ==, NULL);
   r_assert_cmpint (res, ==, R_RESOLVE_BAD_FLAGS);

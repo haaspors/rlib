@@ -54,9 +54,22 @@ r_resolve_sync (const rchar * host, const rchar * service,
   if (res != NULL)
     *res = R_RESOLVE_NOT_SUPPORTED;
 #else
+  static const RResolveAddrFlags known_flags =
+      R_RESOLVE_ADDR_FLAG_PASSIVE | R_RESOLVE_ADDR_FLAG_CANONNAME |
+      R_RESOLVE_ADDR_FLAG_NUMERICHOST | R_RESOLVE_ADDR_FLAG_V4MAPPED |
+      R_RESOLVE_ADDR_FLAG_ALL | R_RESOLVE_ADDR_FLAG_ADDRCONFIG;
   struct addrinfo aihints;
   struct addrinfo * aires;
   int r;
+
+  /* glibc's getaddrinfo rejects unknown ai_flags bits with EAI_BADFLAGS,
+   * but macOS/BSD libc and Winsock silently mask them. Validate up front
+   * against the public flag set so the API returns a consistent result. */
+  if (R_UNLIKELY ((flags & ~known_flags) != 0)) {
+    if (res != NULL)
+      *res = R_RESOLVE_BAD_FLAGS;
+    return NULL;
+  }
 
   r_memclear (&aihints, sizeof (aihints));
   aihints.ai_flags = (int)flags;
