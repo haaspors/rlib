@@ -372,7 +372,7 @@ r_arg_parser_get_epilog (RArgParser * parser)
 static void
 r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
 {
-  int spacing = 32;
+  rssize spacing = 32;
 
   if (opt->flags & R_ARG_OPTION_FLAG_HIDDEN)
     return;

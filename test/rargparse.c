@@ -309,7 +309,7 @@ RTEST (rargparse, parse_help, RTEST_FAST)
   int argc;
 
   strv = argv = r_strv_new ("rlibtest", "--help", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
           R_ARG_PARSE_FLAG_DONT_EXIT | R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
@@ -317,7 +317,7 @@ RTEST (rargparse, parse_help, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-h", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
           R_ARG_PARSE_FLAG_DONT_EXIT | R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
@@ -325,7 +325,7 @@ RTEST (rargparse, parse_help, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-?", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
           R_ARG_PARSE_FLAG_DONT_EXIT | R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
@@ -345,7 +345,7 @@ RTEST (rargparse, parse_version, RTEST_FAST)
   int argc;
 
   strv = argv = r_strv_new ("rlibtest", "--version", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
           R_ARG_PARSE_FLAG_DONT_EXIT | R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
@@ -389,7 +389,7 @@ RTEST (rargparse, parse_partial, RTEST_FAST)
   r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
 
   strv = argv = r_strv_new ("rlibtest", "-f", "command", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 1);
@@ -414,7 +414,7 @@ RTEST (rargparse, parse_stop_after_dash_dash, RTEST_FAST)
 
   r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
   strv = argv = r_strv_new ("rlibtest", "--", "-b", "command", "-f", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpstr (*argv, ==, "-b");
@@ -440,7 +440,7 @@ RTEST (rargparse, parse_int, RTEST_FAST)
   r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "42", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -449,7 +449,7 @@ RTEST (rargparse, parse_int, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f", "22", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -458,7 +458,7 @@ RTEST (rargparse, parse_int, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f=-11", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -467,7 +467,7 @@ RTEST (rargparse, parse_int, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f0x42", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -477,14 +477,14 @@ RTEST (rargparse, parse_int, RTEST_FAST)
 
   /* Overflow */
   strv = argv = r_strv_new ("rlibtest", "-f0x1ffffffff", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f", "NaInt", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
@@ -492,7 +492,7 @@ RTEST (rargparse, parse_int, RTEST_FAST)
 
   /* Missing integer argument, but = sign */
   strv = argv = r_strv_new ("rlibtest", "-f=", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_ERROR);
@@ -500,7 +500,7 @@ RTEST (rargparse, parse_int, RTEST_FAST)
 
   /* Missing integer argument */
   strv = argv = r_strv_new ("rlibtest", "-f", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_ERROR);
@@ -524,7 +524,7 @@ RTEST (rargparse, parse_int64, RTEST_FAST)
   r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "42", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -533,7 +533,7 @@ RTEST (rargparse, parse_int64, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f", "22", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -542,7 +542,7 @@ RTEST (rargparse, parse_int64, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f=-11", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -551,7 +551,7 @@ RTEST (rargparse, parse_int64, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f0xEEFFFFFFfffffff", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -561,14 +561,14 @@ RTEST (rargparse, parse_int64, RTEST_FAST)
 
   /* Overflow */
   strv = argv = r_strv_new ("rlibtest", "-f0x1FFFFFFFFffffffff", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f", "NaInt", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
@@ -576,7 +576,7 @@ RTEST (rargparse, parse_int64, RTEST_FAST)
 
   /* Missing integer argument, but = sign */
   strv = argv = r_strv_new ("rlibtest", "-f=", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_ERROR);
@@ -584,7 +584,7 @@ RTEST (rargparse, parse_int64, RTEST_FAST)
 
   /* Missing integer argument */
   strv = argv = r_strv_new ("rlibtest", "-f", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_ERROR);
@@ -607,7 +607,7 @@ RTEST (rargparse, parse_double, RTEST_FAST)
   r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "42", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -616,7 +616,7 @@ RTEST (rargparse, parse_double, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "--foo=0.2", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -625,7 +625,7 @@ RTEST (rargparse, parse_double, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f", "-0.2", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -651,7 +651,7 @@ RTEST (rargparse, parse_string, RTEST_FAST)
   r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "42", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -661,7 +661,7 @@ RTEST (rargparse, parse_string, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "--foo=badgers rock", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -671,7 +671,7 @@ RTEST (rargparse, parse_string, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-fbadgers loves unicorns", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -681,7 +681,7 @@ RTEST (rargparse, parse_string, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-f", "badgers", "loves", "unicorns", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 2);
@@ -692,7 +692,7 @@ RTEST (rargparse, parse_string, RTEST_FAST)
 
   /* Missing string argument */
   strv = argv = r_strv_new ("rlibtest", "-f", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_ERROR);
@@ -716,7 +716,7 @@ RTEST (rargparse, parse_required, RTEST_FAST)
   r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "42", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -725,14 +725,14 @@ RTEST (rargparse, parse_required, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_MISSING_OPTION);
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "0", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -758,7 +758,7 @@ RTEST (rargparse, parse_unknown_option, RTEST_FAST)
   r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "--bar", "0", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_UNKNOWN_OPTION);
@@ -766,7 +766,7 @@ RTEST (rargparse, parse_unknown_option, RTEST_FAST)
   r_assert_cmpint (argc, ==, 1);
 
   strv = argv = r_strv_new ("rlibtest", "-bf", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_UNKNOWN_OPTION);
@@ -774,7 +774,7 @@ RTEST (rargparse, parse_unknown_option, RTEST_FAST)
   r_assert_cmpint (argc, ==, 0);
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "--bar", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_ALLOW_UNKNOWN,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -783,7 +783,7 @@ RTEST (rargparse, parse_unknown_option, RTEST_FAST)
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "-bf", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_ALLOW_UNKNOWN,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
   r_assert_cmpint (argc, ==, 0);
@@ -810,7 +810,7 @@ RTEST (rargparse, get_value, RTEST_FAST)
   r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "42", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, NULL)), !=, NULL);
 
@@ -904,14 +904,14 @@ RTEST (rargparse, add_command_and_parse, RTEST_FAST)
   r_arg_parser_unref (cmd);
 
   strv = argv = r_strv_new ("rlibtest", "--foo", "--bar", "0", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), ==, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_UNKNOWN_OPTION);
   r_strv_free (strv);
 
   strv = argv = r_strv_new ("rlibtest", "foo", "0", NULL);
-  argc = r_strv_len (argv);
+  argc = (int) r_strv_len (argv);
   r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
           &argc, (const rchar ***)&argv, &res)), !=, NULL);
   r_assert_cmpint (res, ==, R_ARG_PARSE_OK);
