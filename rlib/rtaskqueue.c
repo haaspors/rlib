@@ -203,7 +203,7 @@ r_task_queue_alloc (rsize ctxcount)
     r_mutex_init (&ret->wait_mutex);
     r_cond_init (&ret->wait_cond);
 
-    ret->ctxcount = ctxcount;
+    ret->ctxcount = (ruint)ctxcount;
     ret->ctx = r_mem_new_n (RTQCtx, ctxcount);
 
     for (i = 0; i < ctxcount; i++) {
@@ -325,7 +325,7 @@ r_task_queue_new_pin_on_each_cpu (const RBitset * cpuset, ruint groups)
     r_bitset_and (cpuset_allowed, cpuset_allowed, cpuset);
   if (R_UNLIKELY (r_bitset_popcount (cpuset_allowed) == 0)) return NULL;
   if (groups > r_bitset_popcount (cpuset_allowed))
-    groups = r_bitset_popcount (cpuset_allowed);
+    groups = (ruint)r_bitset_popcount (cpuset_allowed);
 
   if ((ret = r_task_queue_alloc (groups)) != NULL) {
     rsize i;
