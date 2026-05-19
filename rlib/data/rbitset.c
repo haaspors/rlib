@@ -178,7 +178,7 @@ r_bitset_set_n_bits_at (RBitset * bitset, rsize n, rsize bit, rboolean set)
 rboolean
 r_bitset_set_u8_at (RBitset * bitset, ruint8 u8, rsize bit)
 {
-  ruint d;
+  rsize d;
   rbsword w = (rbsword)u8;
 
   if (R_UNLIKELY (bitset == NULL)) return FALSE;
@@ -197,7 +197,7 @@ r_bitset_set_u8_at (RBitset * bitset, ruint8 u8, rsize bit)
 rboolean
 r_bitset_set_u16_at (RBitset * bitset, ruint16 u16, rsize bit)
 {
-  ruint d;
+  rsize d;
   rbsword w = (rbsword)u16;
 
   if (R_UNLIKELY (bitset == NULL)) return FALSE;
@@ -216,7 +216,7 @@ r_bitset_set_u16_at (RBitset * bitset, ruint16 u16, rsize bit)
 rboolean
 r_bitset_set_u32_at (RBitset * bitset, ruint32 u32, rsize bit)
 {
-  ruint d;
+  rsize d;
   rbsword w = (rbsword)u32;
 
   if (R_UNLIKELY (bitset == NULL)) return FALSE;
@@ -235,7 +235,7 @@ r_bitset_set_u32_at (RBitset * bitset, ruint32 u32, rsize bit)
 rboolean
 r_bitset_set_u64_at (RBitset * bitset, ruint64 u64, rsize bit)
 {
-  ruint d;
+  rsize d;
   rbsword w = (rbsword)u64;
 
   if (R_UNLIKELY (bitset == NULL)) return FALSE;
@@ -334,7 +334,7 @@ r_bitset_shr (RBitset * bitset, ruint count)
 
   if (count < bitset->bits) {
     rsize i;
-    ruint d;
+    rsize d;
 
     d = R_BITSET_BIT_IDX (count);
     count = R_BITSET_BIT_POS (count);
@@ -404,7 +404,7 @@ r_bitset_get_u8_at  (const RBitset * bitset, rsize bit)
   i = R_BITSET_BIT_IDX (bit);
   p = R_BITSET_BIT_POS (bit);
 
-  ret = bitset->data[i] >> p;
+  ret = (ruint8)(bitset->data[i] >> p);
   if (p + 8 > R_BSWORD_BITS && i + 1 < bitset->words) {
     ret |= (bitset->data[i + 1] << (R_BSWORD_BITS - p)) & RUINT8_MAX;
   }
@@ -424,7 +424,7 @@ r_bitset_get_u16_at (const RBitset * bitset, rsize bit)
   i = R_BITSET_BIT_IDX (bit);
   p = R_BITSET_BIT_POS (bit);
 
-  ret = bitset->data[i] >> p;
+  ret = (ruint16)(bitset->data[i] >> p);
   if (p + 16 > R_BSWORD_BITS && i+1 < bitset->words) {
     ret |= (bitset->data[i + 1] << (R_BSWORD_BITS - p)) & RUINT16_MAX;
   }
@@ -444,7 +444,7 @@ r_bitset_get_u32_at (const RBitset * bitset, rsize bit)
   i = R_BITSET_BIT_IDX (bit);
   p = R_BITSET_BIT_POS (bit);
 
-  ret = bitset->data[i] >> p;
+  ret = (ruint32)(bitset->data[i] >> p);
   if (p + 32 > R_BSWORD_BITS && i+1 < bitset->words) {
     ret |= (bitset->data[i + 1] << (R_BSWORD_BITS - p)) & RUINT32_MAX;
   }
