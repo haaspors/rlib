@@ -76,7 +76,7 @@ r_io_socket (RSocketFamily family, RSocketType type, RSocketProtocol proto)
 {
   RIOHandle ret;
 #ifdef HAVE_WINSOCK2
-  ret = R_SOCKET_HANDLE_TO_IO_HANDLE (WSASocket (family, type, proto, NULL, 0, 0));
+  ret = R_SOCKET_HANDLE_TO_IO_HANDLE (WSASocketW (family, type, proto, NULL, 0, 0));
 #elif defined (HAVE_POSIX_SOCKETS)
 #ifdef SOCK_CLOEXEC
   if ((ret = socket (family, type | SOCK_CLOEXEC, proto)) != R_IO_HANDLE_INVALID ||
@@ -134,6 +134,7 @@ r_io_set_socket_option (RIOHandle handle, int level, int optname, int value)
 
 #ifdef HAVE_WINSOCK2
   res = setsockopt (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), level, optname, (rconstpointer)&value, sizeof (int));
+  return (res == 0) ? R_SOCKET_OK : r_socket_errno_to_socket_status ();
 #elif defined (HAVE_POSIX_SOCKETS)
   res = setsockopt (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), level, optname, &value, sizeof (int));
 
@@ -572,7 +573,7 @@ r_io_socket_send (RIOHandle handle, rconstpointer buffer, rsize size, rsize * se
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   do {
-    res = send (handle, buffer, size, 0);
+    res = send (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, size, 0);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
   if (res >= 0) {
