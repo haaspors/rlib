@@ -509,7 +509,12 @@ r_strcpy (rchar * dst, const rchar * src)
 {
   if (R_UNLIKELY (dst == NULL)) return NULL;
   if (R_UNLIKELY (src == NULL)) return dst;
+#ifdef _MSC_VER
+  strcpy_s (dst, (size_t)-1, src);
+  return dst;
+#else
   return strcpy (dst, src);
+#endif
 }
 
 rchar *
@@ -520,6 +525,7 @@ r_strncpy (rchar * dst, const rchar * src, rsize len)
     memset (dst, 0, len);
     return dst;
   }
+  /* Stick with deprecated strncpy on MSVC; strncpy_s diverges from POSIX by always NUL-terminating. */
   return strncpy (dst, src, len);
 }
 
@@ -528,7 +534,12 @@ r_strcat (rchar * dst, const rchar * src)
 {
   if (R_UNLIKELY (dst == NULL)) return NULL;
   if (R_UNLIKELY (src == NULL)) return dst;
+#ifdef _MSC_VER
+  strcat_s (dst, (size_t)-1, src);
+  return dst;
+#else
   return strcat (dst, src);
+#endif
 }
 
 rchar *
@@ -539,7 +550,12 @@ r_strncat (rchar * dst, const rchar * src, rsize len)
     memset (dst, 0, len);
     return dst;
   }
+#ifdef _MSC_VER
+  strncat_s (dst, (size_t)-1, src, len);
+  return dst;
+#else
   return strncat (dst, src, len);
+#endif
 }
 
 rchar *
@@ -1066,7 +1082,7 @@ r_vasprintf (rchar ** str, const rchar * fmt, va_list args)
   if (R_LIKELY (ret >= 0)) {
     *str = r_malloc (ret + 1);
     if (R_LIKELY (*str != NULL)) {
-      ret = vsprintf (*str, fmt, args);
+      ret = r_vsprintf (*str, fmt, args);
       if (R_UNLIKELY (ret < 0)) {
         r_free (*str);
         *str = NULL;
