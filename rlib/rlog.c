@@ -80,7 +80,7 @@ r_log_set_initial_default_level (rpointer str, rpointer data)
 
   (void) data;
 
-  if ((n = r_log_level_parse_from_str (dbg, &lvl)) < 0 || lvl < g__r_log_level_default)
+  if ((n = r_log_level_parse_from_str (dbg, &lvl)) < 0 || (ruint)lvl < g__r_log_level_default)
     return;
 
   if (n == 0 || (n == 1 && dbg[0] == '*'))
@@ -164,7 +164,7 @@ static void
 r_log_update_level_min (RLogLevel lvl)
 {
   ruint old = _r_log_level_min;
-  while (old < lvl) {
+  while (old < (ruint)lvl) {
     if (r_atomic_uint_cmp_xchg_weak (&_r_log_level_min, &old, (ruint)lvl))
       break;
   }
