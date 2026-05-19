@@ -408,10 +408,10 @@ r_tls_server_write_hello (RTLSServer * server)
     size = RPOINTER_TO_SIZE (ptr) - RPOINTER_TO_SIZE (info.data);
     if (ret == R_TLS_ERROR_OK) {
       if (r_tls_version_is_dtls (server->version)) {
-        ret = r_dtls_update_handshake_len (info.data, info.size, size - hssize,
-            0, size - hssize);
+        ret = r_dtls_update_handshake_len (info.data, info.size, (ruint16)(size - hssize),
+            0, (ruint32)(size - hssize));
       } else {
-        ret = r_tls_update_handshake_len (info.data, info.size, size - hssize);
+        ret = r_tls_update_handshake_len (info.data, info.size, (ruint16)(size - hssize));
       }
 
       if (ret == R_TLS_ERROR_OK) {
@@ -502,19 +502,19 @@ r_tls_server_write_certificate (RTLSServer * server)
 
     if (r_tls_version_is_dtls (server->version)) {
       ret = r_dtls_write_handshake (info.data, info.size, &size,
-          server->version, R_TLS_HANDSHAKE_TYPE_CERTIFICATE, hssize,
+          server->version, R_TLS_HANDSHAKE_TYPE_CERTIFICATE, (ruint16)hssize,
           server->server.epoch, server->server.seqno, server->server.msgseq,
-          0, hssize);
+          0, (ruint32)hssize);
       hdrsize = R_DTLS_RECORD_HDR_SIZE;
     } else {
       ret = r_tls_write_handshake (info.data, info.size, &size,
-          server->version, R_TLS_HANDSHAKE_TYPE_CERTIFICATE, hssize);
+          server->version, R_TLS_HANDSHAKE_TYPE_CERTIFICATE, (ruint16)hssize);
       hdrsize = R_TLS_RECORD_HDR_SIZE;
     }
 
     if (ret == R_TLS_ERROR_OK) {
-      _r_write_u24 (&info.data[size], 24 / 8 + certsize); size += 24 / 8;
-      _r_write_u24 (&info.data[size],          certsize); size += 24 / 8;
+      _r_write_u24 (&info.data[size], (ruint32)(24 / 8 + certsize)); size += 24 / 8;
+      _r_write_u24 (&info.data[size],          (ruint32)certsize); size += 24 / 8;
 
       r_msg_digest_update (server->hshash, info.data + hdrsize, size - hdrsize);
 
@@ -616,12 +616,12 @@ r_tls_server_write_new_session_ticket (RTLSServer * server)
     ntsize = sizeof (ruint32) + sizeof (ruint16) + server->ticketsize;
     if (r_tls_version_is_dtls (server->version)) {
       ret = r_dtls_write_handshake (info.data, info.size, &hssize,
-          server->version, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, ntsize,
+          server->version, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, (ruint16)ntsize,
           server->server.epoch, server->server.seqno, server->server.msgseq,
-          0, ntsize);
+          0, (ruint32)ntsize);
     } else {
       ret = r_tls_write_handshake (info.data, info.size, &hssize,
-          server->version, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, ntsize);
+          server->version, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, (ruint16)ntsize);
     }
 
     if (ret == R_TLS_ERROR_OK) {
@@ -667,12 +667,12 @@ r_tls_server_write_finished (RTLSServer * server)
         r_msg_digest_get_data (server->hshash, hash, hashsize, NULL)) {
       if (r_tls_version_is_dtls (server->version)) {
         ret = r_dtls_write_handshake (info.data, info.size, &size,
-            server->version, R_TLS_HANDSHAKE_TYPE_FINISHED, verifysize,
+            server->version, R_TLS_HANDSHAKE_TYPE_FINISHED, (ruint16)verifysize,
             server->server.epoch, server->server.seqno, server->server.msgseq,
-            0, verifysize);
+            0, (ruint32)verifysize);
       } else {
         ret = r_tls_write_handshake (info.data, info.size, &size,
-            server->version, R_TLS_HANDSHAKE_TYPE_FINISHED, verifysize);
+            server->version, R_TLS_HANDSHAKE_TYPE_FINISHED, (ruint16)verifysize);
       }
       if (ret == R_TLS_ERROR_OK &&
           (ret = server->prf (info.data + size, verifysize,
@@ -779,7 +779,7 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
         preferred, &psize);
   }
 
-  if ((cs = r_tls_cipher_suite_filter (incoming, count, preferred, psize)) == R_TLS_CS_NONE ||
+  if ((cs = r_tls_cipher_suite_filter (incoming, count, preferred, (ruint)psize)) == R_TLS_CS_NONE ||
       (server->csinfo = r_tls_cipher_suite_get_info (cs)) == NULL) {
     R_LOG_WARNING ("No common cipher suites (in: %u, preferred: %u)",
         (ruint)count, (ruint)R_N_ELEMENTS (preferred));
