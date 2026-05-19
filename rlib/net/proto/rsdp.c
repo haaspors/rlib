@@ -612,12 +612,13 @@ r_sdp_attrib_new (const rchar * key, rssize ksize,
     vsize = (rssize)r_strlen (value);
 
   if  ((ret = r_malloc (sizeof (RSdpAttrib) + ksize + 1 + vsize + 1)) != NULL) {
+    rsize bufsize = (rsize)ksize + (rsize)vsize + 2;
     if (vsize > 0) {
-      r_sprintf (ret->data, "%.*s:%.*s", (int)ksize, key, (int)vsize, value);
+      r_snprintf (ret->data, bufsize, "%.*s:%.*s", (int)ksize, key, (int)vsize, value);
       ret->kv.val.str = ret->data + ksize + 1;
       ret->kv.val.size = vsize;
     } else {
-      r_sprintf (ret->data, "%.*s", (int)ksize, key);
+      r_snprintf (ret->data, bufsize, "%.*s", (int)ksize, key);
       r_memclear (&ret->kv.val, sizeof (RStrChunk));
     }
     ret->kv.key.str = ret->data;
