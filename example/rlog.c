@@ -17,10 +17,10 @@ main (int argc, char ** argv)
   R_LOG_TRACE ("Info from binary %s with %d arguments", argv[0], argc - 1);
   {
     ruint64 uptime = r_time_get_uptime ();
-    ruint days = uptime / (60 * 60 * 24);
-    ruint hours = (uptime / (60 * 60)) % 24;
-    ruint mins = (uptime / 60) % 60;
-    ruint seconds = uptime % 60;
+    ruint days = (ruint)(uptime / (60 * 60 * 24));
+    ruint hours = (ruint)((uptime / (60 * 60)) % 24);
+    ruint mins = (ruint)((uptime / 60) % 60);
+    ruint seconds = (ruint)(uptime % 60);
     R_LOG_TRACE ("boot time: %"RUINT64_FMT" - %u days, %u hours, %u mins, %us",
         uptime, days, hours, mins, seconds);
   }
