@@ -682,8 +682,8 @@ r_thread_new_full (const rchar * name,
   if (cpuset != NULL && r_bitset_popcount (cpuset) == 0) return NULL;
 
   if ((ret = r_mem_new (RThread)) != NULL) {
-    int err;
 #if defined (HAVE_PTHREAD_H)
+    int err;
     pthread_attr_t attr;
 #endif
 
