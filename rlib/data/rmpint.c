@@ -577,7 +577,7 @@ r_mpint_set_binary (rmpint * mpi, rconstpointer data, rsize size)
 
   if (size == 0) return;
 
-  digits = (size + sizeof (rmpint_digit) - 1) / sizeof (rmpint_digit);
+  digits = (ruint16)((size + sizeof (rmpint_digit) - 1) / sizeof (rmpint_digit));
   r_mpint_ensure_digits (mpi, MAX (digits, RMPINT_DEF_DIGITS));
   mpi->dig_used = digits;
   mpi->data[digits - 1] = 0;
@@ -783,7 +783,7 @@ r_mpint_add_unsigned (rmpint * dst, const rmpint * a, const rmpint * b)
     dst->data[i] = (rmpint_digit)w;
     w >>= sizeof (rmpint_digit) * 8;
   }
-  if (w > 0) dst->data[i++] = w;
+  if (w > 0) dst->data[i++] = (rmpint_digit)w;
   dst->dig_used = i;
   r_memset (&dst->data[dst->dig_used], 0,
       (dst->dig_alloc - dst->dig_used) * sizeof (rmpint_digit));
@@ -803,13 +803,13 @@ r_mpint_sub_unsigned (rmpint * dst, const rmpint * a, const rmpint * b)
   for (i = 0, w = 0; i < b->dig_used; i++) {
     w = ((rmpint_word)r_mpint_get_digit (a, i)) -
         ((rmpint_word)r_mpint_get_digit (b, i)) - w;
-    dst->data[i] = w;
+    dst->data[i] = (rmpint_digit)w;
     w = (w >> (sizeof (rmpint_digit) * 8)) & 1;
   }
 
   for (; i < a->dig_used; i++) {
     w = ((rmpint_word)r_mpint_get_digit (a, i)) - w;
-    dst->data[i] = w;
+    dst->data[i] = (rmpint_digit)w;
     w = (w >> (sizeof (rmpint_digit) * 8)) & 1;
   }
 
@@ -910,7 +910,7 @@ r_mpint_sub_u32 (rmpint * dst, const rmpint * a, ruint32 b)
 rboolean
 r_mpint_shl (rmpint * dst, const rmpint * a, ruint32 bits)
 {
-  ruint16 i, d = bits / (sizeof (rmpint_digit) * 8);
+  ruint16 i, d = (ruint16)(bits / (sizeof (rmpint_digit) * 8));
   bits = bits % (sizeof (rmpint_digit) * 8);
 
   if (bits == 0)
@@ -943,7 +943,7 @@ r_mpint_shl (rmpint * dst, const rmpint * a, ruint32 bits)
 rboolean
 r_mpint_shr (rmpint * dst, const rmpint * a, ruint32 bits)
 {
-  ruint16 i, d = bits / (sizeof (rmpint_digit) * 8);
+  ruint16 i, d = (ruint16)(bits / (sizeof (rmpint_digit) * 8));
   bits = bits % (sizeof (rmpint_digit) * 8);
 
   if (bits == 0)
@@ -1062,7 +1062,7 @@ r_mpint_mul (rmpint * dst, const rmpint * a, const rmpint * b)
       acc = w;
     }
 
-    out->data[ix] = acc;
+    out->data[ix] = (rmpint_digit)acc;
     acc = c << (sizeof (rmpint_digit) * 8) | acc >> sizeof (rmpint_digit) * 8;
   }
 
@@ -1105,7 +1105,7 @@ r_mpint_mul_u32 (rmpint * dst, const rmpint * a, ruint32 b)
     dst->data[i] = (rmpint_digit)w;
     w >>= sizeof (rmpint_digit) * 8;
   }
-  if (w > 0) dst->data[i++] = w;
+  if (w > 0) dst->data[i++] = (rmpint_digit)w;
   r_memset (&dst->data[i], 0, (dst->dig_alloc - i) * sizeof (rmpint_digit));
   dst->dig_used = i;
   dst->sign = a->sign;
