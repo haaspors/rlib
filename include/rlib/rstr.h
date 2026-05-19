@@ -247,8 +247,25 @@ R_API RStrMatchResultType r_str_match_pattern (const rchar * str, rssize size,
     const rchar * pattern, RStrMatchResult ** result);
 
 /* Formatting strings */
+#ifdef _MSC_VER
+/* MSVC deprecates plain sprintf / vsprintf (C4996). Route through
+ * the secure *_s variants using SIZE_MAX as the buffer size, which
+ * skips the runtime bounds check and preserves the unbounded
+ * semantics callers expect (they've already sized the buffer). */
+static inline int r_sprintf (rchar * buf, const rchar * fmt, ...)
+{
+  va_list ap;
+  int ret;
+  va_start (ap, fmt);
+  ret = vsprintf_s (buf, (size_t)-1, fmt, ap);
+  va_end (ap);
+  return ret;
+}
+#define r_vsprintf(buf, fmt, ap)  vsprintf_s ((buf), (size_t)-1, (fmt), (ap))
+#else
 #define r_sprintf       sprintf
 #define r_vsprintf      vsprintf
+#endif
 #define r_snprintf      snprintf
 #define r_vsnprintf     vsnprintf
 R_API int     r_asprintf (rchar ** str, const rchar * fmt, ...) R_ATTR_PRINTF (2, 3);
