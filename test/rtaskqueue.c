@@ -24,7 +24,7 @@ RTEST (rtaskqueue, new, RTEST_FAST)
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, 1);
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
+  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, (rpointer)&counter, NULL)), !=, NULL);
   r_assert (r_task_wait (t));
   r_assert_cmpuint (r_atomic_uint_load (&counter), ==, 1);
 
@@ -88,9 +88,9 @@ RTEST (rtaskqueue, chain, RTEST_FAST)
   r_atomic_uint_store (&counter, 0);
   r_assert_cmpptr ((tq = r_task_queue_new (1, 1)), !=, NULL);
 
-  r_assert_cmpptr ((t[0] = r_task_queue_add (tq, chain_adder, &counter, NULL)), !=, NULL);
-  r_assert_cmpptr ((t[1] = r_task_queue_add (tq, chain_adder, &counter, NULL)), !=, NULL);
-  r_assert_cmpptr ((t[2] = r_task_queue_add (tq, chain_adder, &counter, NULL)), !=, NULL);
+  r_assert_cmpptr ((t[0] = r_task_queue_add (tq, chain_adder, (rpointer)&counter, NULL)), !=, NULL);
+  r_assert_cmpptr ((t[1] = r_task_queue_add (tq, chain_adder, (rpointer)&counter, NULL)), !=, NULL);
+  r_assert_cmpptr ((t[2] = r_task_queue_add (tq, chain_adder, (rpointer)&counter, NULL)), !=, NULL);
 
   /* We can't use r_task_wait, as new tasks are added, and we should wait for them. */
   while (r_atomic_uint_load (&counter) < 9)
@@ -117,7 +117,7 @@ chain_ctx (rpointer data, RTaskQueue * tq, RTask * task)
   ruint old, new;
 
   r_thread_yield ();
-  task = r_task_queue_add (tq, simple_adder, ctx->counter, NULL);
+  task = r_task_queue_add (tq, simple_adder, (rpointer)ctx->counter, NULL);
 
   r_thread_yield ();
   old = r_atomic_uint_load (&ctx->it);
@@ -232,7 +232,7 @@ RTEST (rtaskqueue, cancel_task, RTEST_FAST)
 
   r_atomic_uint_store (&counter, 0);
   r_assert_cmpptr ((tq = r_task_queue_new (1, 1)), !=, NULL);
-  r_assert_cmpptr ((t = r_task_queue_allocate (tq, simple_adder, &counter, NULL)), !=, NULL);
+  r_assert_cmpptr ((t = r_task_queue_allocate (tq, simple_adder, (rpointer)&counter, NULL)), !=, NULL);
 
   r_assert (!r_task_cancel (t, TRUE));
   r_assert (r_task_queue_add_task (tq, t));
@@ -241,7 +241,7 @@ RTEST (rtaskqueue, cancel_task, RTEST_FAST)
   r_task_unref (t);
 
   r_atomic_uint_store (&counter, 0);
-  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
+  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, (rpointer)&counter, NULL)), !=, NULL);
   r_assert (r_task_cancel (t, TRUE));
   r_assert_cmpuint (r_atomic_uint_load (&counter), <=, 1);
   r_task_unref (t);
@@ -284,7 +284,7 @@ RTEST (rtaskqueue, group_numa_node, RTEST_FAST)
   r_assert_cmpuint (r_task_queue_group_count (tq), ==, r_sys_node_count_with_allowed_cpus ());
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_node_count_with_allowed_cpus () * 2);
 
-  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
+  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, (rpointer)&counter, NULL)), !=, NULL);
   r_assert (r_task_wait (t));
   r_assert_cmpuint (r_atomic_uint_load (&counter), ==, 1);
 
@@ -304,7 +304,7 @@ RTEST (rtaskqueue, pin_on_cpu_group_numa_node, RTEST_FAST)
   r_assert_cmpuint (r_task_queue_group_count (tq), ==, r_sys_node_count_with_allowed_cpus ());
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_sys_cpu_allowed_count ());
 
-  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
+  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, (rpointer)&counter, NULL)), !=, NULL);
   r_assert (r_task_wait (t));
   r_assert_cmpuint (r_atomic_uint_load (&counter), ==, 1);
 
@@ -330,7 +330,7 @@ RTEST (rtaskqueue, pin_on_each_cpu, RTEST_FAST)
   r_assert_cmpuint (r_task_queue_group_count (tq), <=, 2);
   r_assert_cmpuint (r_task_queue_thread_count (tq), ==, r_bitset_popcount (cpuset));
 
-  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, &counter, NULL)), !=, NULL);
+  r_assert_cmpptr ((t = r_task_queue_add (tq, simple_adder, (rpointer)&counter, NULL)), !=, NULL);
   r_assert (r_task_wait (t));
   r_assert_cmpuint (r_atomic_uint_load (&counter), ==, 1);
 
