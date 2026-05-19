@@ -127,7 +127,7 @@ r_clock_process_entries (RClock * clock, RClockTime * tsout)
   if (tsout != NULL)
     *tsout = ts;
 
-  return r_timeout_cblist_update (&clock->timers, ts);
+  return (ruint) r_timeout_cblist_update (&clock->timers, ts);
 }
 
 
@@ -146,7 +146,7 @@ r_system_clock_wait (RClock * clock, RClockTime ts)
   RClockTime now;
 
   while ((now = r_clock_get_time (clock)) < ts)
-    r_thread_usleep (R_TIME_AS_USECONDS (ts - now));
+    r_thread_usleep ((rulong) R_TIME_AS_USECONDS (ts - now));
 
   return now;
 }
