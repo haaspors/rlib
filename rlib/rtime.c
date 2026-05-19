@@ -68,8 +68,8 @@ r_time_init (void)
 
   if (QueryPerformanceFrequency (&frequency)) {
     ruint64 d = r_uint64_gcd (R_SECOND, frequency.QuadPart);
-    g__r_time_ts_monotonic_num = R_SECOND / d;
-    g__r_time_ts_monotonic_denom = frequency.QuadPart / d;
+    g__r_time_ts_monotonic_num = (ruint)(R_SECOND / d);
+    g__r_time_ts_monotonic_denom = (ruint)(frequency.QuadPart / d);
   }
 #elif defined(HAVE_MACH_MACH_TIME_H)
   /* mach_timebase_info gives nanoseconds-per-tick as numer/denom. On Intel
@@ -145,13 +145,12 @@ r_time_get_ts_raw (void)
 ruint64
 r_time_get_uptime (void)
 {
-  FILE * f;
-  ruint64 ret = 0;
-
 #if defined(R_OS_WIN32)
   /* Thiw will have to do for now, but it might be wrong... */
   return GetTickCount64 () / R_MSEC_PER_SEC;
 #else
+  ruint64 ret = 0;
+  FILE * f;
 #if defined(HAVE_SYS_SYSINFO_H)
   struct sysinfo sinfo;
   if (R_LIKELY (sysinfo (&sinfo) == 0))
@@ -278,11 +277,11 @@ r_time_parse_unix_time (ruint64 time,
   }
 
   if (year != NULL)
-    *year = c;
+    *year = (ruint16)c;
   if (month != NULL)
-    *month = e;
+    *month = (ruint8)e;
   if (day != NULL)
-    *day = f;
+    *day = (ruint8)f;
 
   return TRUE;
 }
