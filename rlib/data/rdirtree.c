@@ -236,6 +236,11 @@ r_dir_tree_remove_node_full (RDirTree * tree, RDirTreeNode * node)
     tree->nodes--;
     r_dir_tree_node_free (node);
   } else {
+    if (tree->root.notify != NULL)
+      tree->root.notify (tree->root.data);
+    tree->root.data = NULL;
+    tree->root.notify = NULL;
+    tree->root.func = NULL;
     tree->root.chcount = 0;
   }
 }
