@@ -69,10 +69,18 @@ R_BEGIN_DECLS
 typedef SOCKET RSocketHandle;
 #define R_SOCKET_ERRNO            (WSAGetLastError ())
 typedef int socklen_t;
+/* RIOHandle is void *; SOCKET is UINT_PTR -- distinct types even though
+ * they're the same width on Win64. Round-trip via ruintptr to keep MSVC
+ * (and any strict compiler) from complaining about levels of indirection. */
+#define R_IO_HANDLE_TO_SOCKET_HANDLE(h)  ((RSocketHandle)(ruintptr)(h))
+#define R_SOCKET_HANDLE_TO_IO_HANDLE(s)  ((RIOHandle)(ruintptr)(s))
 #else
 #define R_SOCKET_HANDLE_INVALID   -1
 typedef int RSocketHandle;
 #define R_SOCKET_ERRNO            errno
+/* On POSIX both are int; the macros are pass-throughs. */
+#define R_IO_HANDLE_TO_SOCKET_HANDLE(h)  (h)
+#define R_SOCKET_HANDLE_TO_IO_HANDLE(s)  (s)
 
 #if defined (HAVE_MOCK_SOCKETS)
 struct in_addr {

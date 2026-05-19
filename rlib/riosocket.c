@@ -76,7 +76,7 @@ r_io_socket (RSocketFamily family, RSocketType type, RSocketProtocol proto)
 {
   RIOHandle ret;
 #ifdef HAVE_WINSOCK2
-  ret = WSASocket (family, type, proto, NULL, 0, 0);
+  ret = R_SOCKET_HANDLE_TO_IO_HANDLE (WSASocket (family, type, proto, NULL, 0, 0));
 #elif defined (HAVE_POSIX_SOCKETS)
 #ifdef SOCK_CLOEXEC
   if ((ret = socket (family, type | SOCK_CLOEXEC, proto)) != R_IO_HANDLE_INVALID ||
@@ -107,7 +107,7 @@ r_io_get_socket_option (RIOHandle handle, int level, int optname, int * value)
   *value = 0;
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
-  if (getsockopt (handle, level, optname, (rpointer)value, &size) == 0) {
+  if (getsockopt (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), level, optname, (rpointer)value, &size) == 0) {
 #if R_BYTE_ORDER == R_BIG_ENDIAN
     if (size != sizeof (int))
       *value >>= (8 * (sizeof (int) - size));
@@ -133,9 +133,9 @@ r_io_set_socket_option (RIOHandle handle, int level, int optname, int value)
   if (R_UNLIKELY (handle == R_IO_HANDLE_INVALID)) return R_SOCKET_INVAL;
 
 #ifdef HAVE_WINSOCK2
-  res = setsockopt (handle, level, optname, (rconstpointer)&value, sizeof (int));
+  res = setsockopt (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), level, optname, (rconstpointer)&value, sizeof (int));
 #elif defined (HAVE_POSIX_SOCKETS)
-  res = setsockopt (handle, level, optname, &value, sizeof (int));
+  res = setsockopt (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), level, optname, &value, sizeof (int));
 
 #ifndef R_OS_LINUX
   /* Try to set value less than sizeof (int) */
@@ -143,7 +143,7 @@ r_io_set_socket_option (RIOHandle handle, int level, int optname, int value)
 #if R_BYTE_ORDER == R_BIG_ENDIAN
     value = value << (8 * (sizeof (int) - 1));
 #endif
-    res = setsockopt (handle, level, optname, &value, 1);
+    res = setsockopt (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), level, optname, &value, 1);
   }
 #endif
 
@@ -229,7 +229,7 @@ r_io_socket_close (RIOHandle handle)
   int res;
   do {
 #if defined (HAVE_WINSOCK2)
-    res = closesocket (handle);
+    res = closesocket (R_IO_HANDLE_TO_SOCKET_HANDLE (handle));
 #elif defined (HAVE_POSIX_SOCKETS)
     res = close (handle);
 #else
@@ -247,7 +247,7 @@ r_io_socket_bind (RIOHandle handle, const RSocketAddress * address)
   if (R_UNLIKELY (address == NULL)) return R_SOCKET_INVAL;
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
-  if (bind (handle, (const struct sockaddr *)&address->addr, address->addrlen) == 0)
+  if (bind (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), (const struct sockaddr *)&address->addr, address->addrlen) == 0)
     return R_SOCKET_OK;
 
   return r_socket_errno_to_socket_status ();
@@ -262,7 +262,7 @@ r_io_socket_listen_full (RIOHandle handle, ruint8 backlog)
   if (R_UNLIKELY (handle == R_IO_HANDLE_INVALID)) return R_SOCKET_INVAL;
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
-  if (listen (handle, MIN (backlog, 128)) == 0)
+  if (listen (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), MIN (backlog, 128)) == 0)
     return R_SOCKET_OK;
 
   return r_socket_errno_to_socket_status ();
@@ -286,12 +286,13 @@ r_io_socket_accept (RIOHandle handle, RSocketStatus * res)
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   /* FIXME: Use accept4 ?? */
   do {
-    ret = accept (handle, NULL, 0);
+    ret = R_SOCKET_HANDLE_TO_IO_HANDLE (accept (
+        R_IO_HANDLE_TO_SOCKET_HANDLE (handle), NULL, 0));
   } while (ret == R_IO_HANDLE_INVALID && R_SOCKET_ERRNO == EINTR);
 
-  if (ret != R_SOCKET_HANDLE_INVALID) {
+  if (ret != R_IO_HANDLE_INVALID) {
 #ifdef HAVE_WINSOCK2
-    WSAEventSelect (ret, NULL, 0);
+    WSAEventSelect (R_IO_HANDLE_TO_SOCKET_HANDLE (ret), NULL, 0);
 #endif
 #ifdef R_OS_UNIX
     r_io_unix_set_cloexec (ret, TRUE);
@@ -321,7 +322,7 @@ r_io_socket_connect (RIOHandle handle, const RSocketAddress * address)
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   do {
-    if ((res = connect (handle, (struct sockaddr *)&address->addr, address->addrlen)) == 0)
+    if ((res = connect (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), (struct sockaddr *)&address->addr, address->addrlen)) == 0)
       return R_SOCKET_OK;
   } while (res != 0 && R_SOCKET_ERRNO == EINTR);
 
@@ -351,7 +352,7 @@ r_io_socket_shutdown (RIOHandle handle, rboolean rx, rboolean tx)
   else          how = SHUT_WR;
 #endif
 
-  if (shutdown (handle, how) == 0)
+  if (shutdown (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), how) == 0)
     return R_SOCKET_OK;
 
   return r_socket_errno_to_socket_status ();
@@ -374,7 +375,7 @@ r_io_socket_receive (RIOHandle handle, rpointer buffer, rsize size, rsize * rece
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   do {
-    res = recv (handle, buffer, size, 0);
+    res = recv (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, size, 0);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
   if (res >= 0) {
@@ -406,7 +407,7 @@ r_io_socket_receive_from (RIOHandle handle, RSocketAddress * address, rpointer b
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   do {
-    res = recvfrom (handle, buffer, size, 0,
+    res = recvfrom (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, size, 0,
         (struct sockaddr *)&address->addr, &address->addrlen);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
@@ -457,10 +458,10 @@ r_io_socket_receive_message (RIOHandle handle, RSocketAddress * address, RBuffer
 
   winrecv = winflags = 0;
   if (address != NULL) {
-    res = WSARecvFrom (handle, bufs, mem_count, &winrecv, &winflags,
+    res = WSARecvFrom (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, mem_count, &winrecv, &winflags,
         (struct sockaddr *)&address->addr, &address->addrlen, NULL, NULL);
   } else {
-    res = WSARecvFrom (handle, bufs, mem_count, &winrecv, &winflags,
+    res = WSARecvFrom (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, mem_count, &winrecv, &winflags,
         NULL, 0, NULL, NULL);
   }
   b = res != SOCKET_ERROR ? (rsize)winrecv : 0;
@@ -523,7 +524,7 @@ r_io_socket_receive_message (RIOHandle handle, RSocketAddress * address, RBuffer
     msg.msg_namelen = 0;
   }
   do {
-    res = recvmsg (handle, &msg, 0);
+    res = recvmsg (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), &msg, 0);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
   if (address != NULL)
     address->addrlen = msg.msg_namelen;
@@ -603,7 +604,7 @@ r_io_socket_send_to (RIOHandle handle, const RSocketAddress * address, rconstpoi
 
 #if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
   do {
-    res = sendto (handle, buffer, size, 0,
+    res = sendto (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), buffer, size, 0,
         (const struct sockaddr *)&address->addr, address->addrlen);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
@@ -655,11 +656,11 @@ r_io_socket_send_message (RIOHandle handle, const RSocketAddress * address,
 
   winsent = 0;
   if (address != NULL) {
-    res = WSASendTo (handle, bufs, mem_count, &winsent, 0,
+    res = WSASendTo (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, mem_count, &winsent, 0,
         (const struct sockaddr *)&address->addr, (int)address->addrlen,
         NULL, NULL);
   } else {
-    res = WSASendTo (handle, bufs, mem_count, &winsent, 0, NULL, 0, NULL, NULL);
+    res = WSASendTo (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), bufs, mem_count, &winsent, 0, NULL, 0, NULL, NULL);
   }
 
   for (i = 0; i < mem_count; i++) {
@@ -714,7 +715,7 @@ r_io_socket_send_message (RIOHandle handle, const RSocketAddress * address,
     msg.msg_namelen = 0;
   }
   do {
-    res = sendmsg (handle, &msg, 0);
+    res = sendmsg (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), &msg, 0);
   } while (res < 0 && R_SOCKET_ERRNO == EINTR);
 
   for (i = 0; i < mem_count; i++) {
