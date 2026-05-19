@@ -75,7 +75,7 @@ r_ecdsa_pub_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize)
       ret->namedcurve = curve;
       ret->ecpsize = ecpsize;
       ret->ecp = r_memdup (ecp, ecpsize);
-      r_ecdsa_pub_key_init (&ret->key, ecpsize * 8);
+      r_ecdsa_pub_key_init (&ret->key, (ruint)(ecpsize * 8));
     }
   } else {
     ret = NULL;
@@ -108,7 +108,7 @@ r_ecdh_pub_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize)
       ret->namedcurve = curve;
       ret->ecpsize = ecpsize;
       ret->ecp = r_memdup (ecp, ecpsize);
-      r_ecdh_pub_key_init (&ret->key, ecpsize * 8);
+      r_ecdh_pub_key_init (&ret->key, (ruint)(ecpsize * 8));
     }
   } else {
     ret = NULL;

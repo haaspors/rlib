@@ -332,7 +332,7 @@ r_cipher_aes_new_from_hex (RCryptoCipherMode mode, const rchar * hexkey)
   rsize size;
 
   if ((key = r_str_hex_mem (hexkey, &size)) != NULL) {
-    ret = r_cipher_aes_new (mode, size * 8, key);
+    ret = r_cipher_aes_new (mode, (ruint)(size * 8), key);
     r_free (key);
   } else {
     ret = NULL;

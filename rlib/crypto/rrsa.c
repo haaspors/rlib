@@ -405,7 +405,7 @@ r_rsa_priv_key_new_gen (rsize bits, ruint64 e, RPrng * prng)
   if ((ret = r_mem_new0 (RRsaPrivKey)) != NULL) {
     rboolean pq_gcd = FALSE;
 
-    r_rsa_priv_key_init (&ret->pub.key, bits);
+    r_rsa_priv_key_init (&ret->pub.key, (ruint)bits);
 
     r_mpint_init (&ret->pub.e);
     r_mpint_set_u64 (&ret->pub.e, e);
