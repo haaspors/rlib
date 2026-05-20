@@ -18,8 +18,14 @@ RTEST (raes, new_args, RTEST_FAST)
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CTR, 129, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CTR, 255, key), ==, NULL);
 
-  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CFB, 128, key), ==, NULL);
-  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 128, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CFB, 0, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CFB, 129, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CFB, 255, key), ==, NULL);
+
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 0, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 129, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 255, key), ==, NULL);
+
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 128, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CCM, 128, key), ==, NULL);
 }
@@ -287,6 +293,94 @@ RTEST_LOOP (raes, ctr, RTEST_FAST, 0, R_N_ELEMENTS (CTR_test_data))
 
   r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
   r_assert_cmpint (r_cipher_aes_ctr_decrypt (cipher, out, plainsize, ciphertxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, plaintxt, plainsize);
+
+  r_crypto_cipher_unref (cipher);
+  r_free (plaintxt);
+  r_free (ciphertxt);
+  r_free (out);
+}
+RTEST_END;
+
+
+RCryptoCipherTestData CFB_test_data[] = {
+  /* NIST SP 800-38A, F.3.13 / F.3.15 / F.3.17 -- CFB128 (full-block feedback) */
+  { 128, "2b7e151628aed2a6abf7158809cf4f3c", "000102030405060708090a0b0c0d0e0f",
+    "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710",
+    "3b3fd92eb72dad20333449f8e83cfb4ac8a64537a0b3a93fcde3cdad9f1ce58b26751f67a3cbb140b1808cf187a4f4dfc04b05357c5d1c0eeac4c66f9ff7f2e6" },
+  { 192, "8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b", "000102030405060708090a0b0c0d0e0f",
+    "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710",
+    "cdc80d6fddf18cab34c25909c99a417467ce7f7f81173621961a2b70171d3d7a2e1e8a1dd59b88b1c8e60fed1efac4c9c05f9f9ca9834fa042ae8fba584b09ff" },
+  { 256, "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4", "000102030405060708090a0b0c0d0e0f",
+    "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710",
+    "dc7e84bfda79164b7ecd8486985d386039ffed143b28b1c832113c6331e5407bdf10132415e54b92a13ed0a8267ae2f975a385741ab9cef82031623d55b1e471" },
+};
+
+RTEST_LOOP (raes, cfb, RTEST_FAST, 0, R_N_ELEMENTS (CFB_test_data))
+{
+  RCryptoCipherTestData * data = &CFB_test_data[__i];
+  RCryptoCipher * cipher;
+  ruint8 * plaintxt, * ciphertxt, * out, iv[R_AES_BLOCK_BYTES];
+  rsize plainsize, ciphersize;
+
+  r_assert_cmpptr ((plaintxt = r_str_hex_mem (data->plaintxt, &plainsize)), !=, NULL);
+  r_assert_cmpptr ((ciphertxt = r_str_hex_mem (data->ciphertxt, &ciphersize)), !=, NULL);
+  r_assert_cmpuint (plainsize, ==, ciphersize);
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_CFB, data->key)), !=, NULL);
+  r_assert_cmpuint (cipher->info->keybits, ==, data->keybits);
+
+  out = r_malloc (ciphersize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
+  r_assert_cmpint (r_cipher_aes_cfb_encrypt (cipher, out, ciphersize, plaintxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, ciphertxt, ciphersize);
+
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
+  r_assert_cmpint (r_cipher_aes_cfb_decrypt (cipher, out, plainsize, ciphertxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, plaintxt, plainsize);
+
+  r_crypto_cipher_unref (cipher);
+  r_free (plaintxt);
+  r_free (ciphertxt);
+  r_free (out);
+}
+RTEST_END;
+
+
+RCryptoCipherTestData OFB_test_data[] = {
+  /* NIST SP 800-38A, F.4.1 / F.4.3 / F.4.5 -- OFB */
+  { 128, "2b7e151628aed2a6abf7158809cf4f3c", "000102030405060708090a0b0c0d0e0f",
+    "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710",
+    "3b3fd92eb72dad20333449f8e83cfb4a7789508d16918f03f53c52dac54ed8259740051e9c5fecf64344f7a82260edcc304c6528f659c77866a510d9c1d6ae5e" },
+  { 192, "8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b", "000102030405060708090a0b0c0d0e0f",
+    "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710",
+    "cdc80d6fddf18cab34c25909c99a4174fcc28b8d4c63837c09e81700c11004018d9a9aeac0f6596f559c6d4daf59a5f26d9f200857ca6c3e9cac524bd9acc92a" },
+  { 256, "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4", "000102030405060708090a0b0c0d0e0f",
+    "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710",
+    "dc7e84bfda79164b7ecd8486985d38604febdc6740d20b3ac88f6ad82a4fb08d71ab47a086e86eedf39d1c5bba97c4080126141d67f37be8538f5a8be740e484" },
+};
+
+RTEST_LOOP (raes, ofb, RTEST_FAST, 0, R_N_ELEMENTS (OFB_test_data))
+{
+  RCryptoCipherTestData * data = &OFB_test_data[__i];
+  RCryptoCipher * cipher;
+  ruint8 * plaintxt, * ciphertxt, * out, iv[R_AES_BLOCK_BYTES];
+  rsize plainsize, ciphersize;
+
+  r_assert_cmpptr ((plaintxt = r_str_hex_mem (data->plaintxt, &plainsize)), !=, NULL);
+  r_assert_cmpptr ((ciphertxt = r_str_hex_mem (data->ciphertxt, &ciphersize)), !=, NULL);
+  r_assert_cmpuint (plainsize, ==, ciphersize);
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_OFB, data->key)), !=, NULL);
+  r_assert_cmpuint (cipher->info->keybits, ==, data->keybits);
+
+  out = r_malloc (ciphersize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
+  r_assert_cmpint (r_cipher_aes_ofb_encrypt (cipher, out, ciphersize, plaintxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, ciphertxt, ciphersize);
+
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
+  r_assert_cmpint (r_cipher_aes_ofb_decrypt (cipher, out, plainsize, ciphertxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
   r_assert_cmpmem (out, ==, plaintxt, plainsize);
 
   r_crypto_cipher_unref (cipher);
