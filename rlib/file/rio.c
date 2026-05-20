@@ -219,7 +219,9 @@ r_io_filesize (RIOHandle handle)
   ruint64 ret = 0;
 
 #if defined (R_OS_WIN32)
-  GetFileSizeEx (handle, &ret);
+  LARGE_INTEGER sz;
+  if (GetFileSizeEx (handle, &sz))
+    ret = (ruint64)sz.QuadPart;
 #elif defined (HAVE_FSTAT)
   struct stat st;
   if (fstat (handle, &st) == 0)
