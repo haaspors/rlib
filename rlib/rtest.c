@@ -39,6 +39,11 @@
 #include <signal.h>
 #endif
 
+#if defined (R_OS_WIN32)
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
+#endif
+
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -755,15 +760,66 @@ _r_test_nofork_timeout_handler (int sig)
 }
 
 #if defined (R_OS_WIN32)
+#define R_TEST_WIN32_STACK_FRAMES 32
+#define R_TEST_WIN32_SYM_MAX_NAME 256
+
+/* dbghelp's whole symbol API is documented as single-threaded; the abort
+ * handler may fire from worker threads or from SetUnhandledExceptionFilter,
+ * so serialize. Best-effort: this runs after the test has already aborted. */
+static RMutex g__r_test_win32_sym_mutex;
+
+static rpointer
+_r_test_win32_sym_init (rpointer data)
+{
+  (void) data;
+  r_mutex_init (&g__r_test_win32_sym_mutex);
+  SymSetOptions (SymGetOptions () | SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS);
+  SymInitialize (GetCurrentProcess (), NULL, TRUE);
+  return NULL;
+}
+
+static void
+_r_test_win32_log_stack (void)
+{
+  static ROnce sym_once = R_ONCE_INIT;
+  rpointer frames[R_TEST_WIN32_STACK_FRAMES];
+  ULONG64 buf[(sizeof (SYMBOL_INFO) + R_TEST_WIN32_SYM_MAX_NAME
+      + sizeof (ULONG64) - 1) / sizeof (ULONG64)];
+  SYMBOL_INFO * sym = (SYMBOL_INFO *) buf;
+  HANDLE proc;
+  USHORT i, n;
+
+  r_call_once (&sym_once, _r_test_win32_sym_init, NULL);
+
+  proc = GetCurrentProcess ();
+  sym->SizeOfStruct = sizeof (SYMBOL_INFO);
+  sym->MaxNameLen = R_TEST_WIN32_SYM_MAX_NAME;
+
+  n = CaptureStackBackTrace (1, R_TEST_WIN32_STACK_FRAMES, frames, NULL);
+
+  r_mutex_lock (&g__r_test_win32_sym_mutex);
+  for (i = 0; i < n; i++) {
+    DWORD64 displ = 0;
+    if (SymFromAddr (proc, (DWORD64)(ruintptr)frames[i], &displ, sym)) {
+      R_LOG_ERROR ("  #%u %p %s+0x%"RINT64_MODIFIER"x",
+          i, frames[i], sym->Name, (ruint64) displ);
+    } else {
+      R_LOG_ERROR ("  #%u %p ???", i, frames[i]);
+    }
+  }
+  r_mutex_unlock (&g__r_test_win32_sym_mutex);
+}
+
 static void
 _r_test_win32_err_handler (int sig)
 {
   if (R_UNLIKELY (g__r_test_nofork_ctx == NULL))
     return;
 
+  R_LOG_ERROR ("Error sig: %d", sig);
+  _r_test_win32_log_stack ();
+
   if (g__r_test_nofork_ctx->thread == r_thread_current ()) {
-    r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, __FILE__, __LINE__, R_STRFUNC,
-        "Error sig: %d", sig);
     longjmp (g__r_test_nofork_ctx->jb, R_TEST_RUN_STATE_ERROR);
   } else {
     _r_test_nofork_win32_kill_test_thread (R_TEST_RUN_STATE_ERROR);
