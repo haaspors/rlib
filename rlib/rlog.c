@@ -21,6 +21,7 @@
 #include <rlib/rlog.h>
 
 #include <rlib/data/rlist.h>
+#include <rlib/file/rfile.h>
 #include <rlib/os/rproc.h>
 
 #include <rlib/renv.h>
@@ -97,7 +98,7 @@ r_log_init (void)
     if (r_str_equals (env, "-"))
       file = stdout;
     else
-      g__r_log_file = file = fopen (env, "w");
+      g__r_log_file = file = r_fopen (env, "w");
   }
   r_log_override_default_handler (r_log_default_handler, file, NULL);
 

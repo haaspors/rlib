@@ -56,6 +56,18 @@ r_file_new_from_file (FILE * file)
   return ret;
 }
 
+FILE *
+r_fopen (const rchar * path, const rchar * mode)
+{
+  FILE * ret;
+#ifdef _MSC_VER
+  if (fopen_s (&ret, path, mode) != 0) ret = NULL;
+#else
+  ret = fopen (path, mode);
+#endif
+  return ret;
+}
+
 RFile *
 r_file_open (const rchar * file, const rchar * mode)
 {
@@ -65,7 +77,7 @@ r_file_open (const rchar * file, const rchar * mode)
     return NULL;
 
   do {
-    f = fopen (file, mode);
+    f = r_fopen (file, mode);
   } while (R_UNLIKELY (f == NULL && errno == EINTR));
 
   return r_file_new_from_file (f);

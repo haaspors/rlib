@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include <rlib/rtime.h>
+#include <rlib/file/rfile.h>
 #include <rlib/rmath.h>
 #include <rlib/rmodule.h>
 #include <stdlib.h>
@@ -163,7 +164,7 @@ r_time_get_uptime (void)
 #endif
 
   /* Fallback is reading out proc uptime */
-  if ((f = fopen ("/proc/uptime", "r")) != NULL) {
+  if ((f = r_fopen ("/proc/uptime", "r")) != NULL) {
     rfloat u, i;
     if (fscanf (f, "%f %f", &u, &i) == 2)
       ret = (ruint64)u;
