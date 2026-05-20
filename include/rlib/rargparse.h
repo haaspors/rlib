@@ -55,6 +55,13 @@ typedef struct {
   RArgOptionFlags flags;
   const rchar *   desc;
   const rchar *   eqname;
+  /* Default value returned by the getters when the option is absent
+   * from the command line. The string is parsed by the same per-type
+   * parser used for the on-cmdline value; NULL means "no default" and
+   * the getter returns the zero/empty value for the type, as before.
+   * Not meaningful for BOOL (presence is the value); ignored with a
+   * warning if combined with REQUIRED. */
+  const rchar *   defval;
 } RArgOptionEntry;
 
 typedef enum {

@@ -8,9 +8,9 @@ main (int argc, char ** argv)
   RArgParseResult res;
   int ret = 0;
   const RArgOptionEntry entries[] = {
-    { "foo",    'f', R_ARG_OPTION_TYPE_NONE,   R_ARG_OPTION_FLAG_NONE, "Do Foo", NULL },
-    { "input",  'i', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Input string", NULL },
-    { "ret",    'r', R_ARG_OPTION_TYPE_INT,    R_ARG_OPTION_FLAG_NONE, "Return value program will return", NULL },
+    { "foo",    'f', R_ARG_OPTION_TYPE_NONE,   R_ARG_OPTION_FLAG_NONE, "Do Foo", NULL, NULL },
+    { "input",  'i', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Input string", NULL, NULL },
+    { "ret",    'r', R_ARG_OPTION_TYPE_INT,    R_ARG_OPTION_FLAG_NONE, "Return value program will return", NULL, "0" },
   };
 
   r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries));
