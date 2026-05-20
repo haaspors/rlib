@@ -42,7 +42,6 @@ r_module_init (void)
 #ifdef RLIB_HAVE_MODULES
 
 #if defined (R_OS_WIN32)
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 RMODULE
