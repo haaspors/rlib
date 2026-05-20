@@ -137,7 +137,7 @@ r_file_read (RFile * file, rpointer data, rsize size, rsize * actual)
 RIOError
 r_file_read_line (RFile * file, rchar * data, rsize maxsize)
 {
-  return fgets (data, maxsize, file->file) ? R_FILE_ERROR_OK : R_FILE_ERROR_ERROR;
+  return fgets (data, (int)maxsize, file->file) ? R_FILE_ERROR_OK : R_FILE_ERROR_ERROR;
 }
 
 RIOError
@@ -194,13 +194,21 @@ r_file_scanf (RFile * file, const rchar * fmt, rsize * actual, ...)
 roffset
 r_file_seek (RFile * file, roffset offset, RSeekMode mode)
 {
-  return (roffset)fseek (file->file, offset, r_file_seek_mode_to_whence (mode));
+#if defined (R_OS_WIN32)
+  return (roffset)_fseeki64 (file->file, offset, r_file_seek_mode_to_whence (mode));
+#else
+  return (roffset)fseeko (file->file, offset, r_file_seek_mode_to_whence (mode));
+#endif
 }
 
 roffset
 r_file_tell (RFile * file)
 {
-  return (roffset)ftell (file->file);
+#if defined (R_OS_WIN32)
+  return (roffset)_ftelli64 (file->file);
+#else
+  return (roffset)ftello (file->file);
+#endif
 }
 
 rboolean
