@@ -100,6 +100,32 @@ const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ctr = { "AES-256-CTR",
   r_cipher_aes_ctr_encrypt, r_cipher_aes_ctr_decrypt
 };
 
+const RCryptoCipherInfo g__r_crypto_cipher_aes_128_cfb = { "AES-128-CFB",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CFB, 128, 16, 16,
+  r_cipher_aes_cfb_encrypt, r_cipher_aes_cfb_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_192_cfb = { "AES-192-CFB",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CFB, 192, 16, 16,
+  r_cipher_aes_cfb_encrypt, r_cipher_aes_cfb_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_256_cfb = { "AES-256-CFB",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CFB, 256, 16, 16,
+  r_cipher_aes_cfb_encrypt, r_cipher_aes_cfb_decrypt
+};
+
+const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ofb = { "AES-128-OFB",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_OFB, 128, 16, 16,
+  r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_192_ofb = { "AES-192-OFB",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_OFB, 192, 16, 16,
+  r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ofb = { "AES-256-OFB",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_OFB, 256, 16, 16,
+  r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt
+};
+
 static void
 r_cipher_aes_free (RAesCipher * cipher)
 {
@@ -278,6 +304,42 @@ r_cipher_aes_256_ctr_new (const ruint8 * key)
 }
 
 RCryptoCipher *
+r_cipher_aes_128_cfb_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_128_cfb, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_192_cfb_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_192_cfb, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_256_cfb_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_256_cfb, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_128_ofb_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_128_ofb, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_192_ofb_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_192_ofb, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_256_ofb_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_256_ofb, key);
+}
+
+RCryptoCipher *
 r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
 {
   switch (bits) {
@@ -289,6 +351,10 @@ r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
           return r_cipher_aes_128_cbc_new (key);
         case R_CRYPTO_CIPHER_MODE_CTR:
           return r_cipher_aes_128_ctr_new (key);
+        case R_CRYPTO_CIPHER_MODE_CFB:
+          return r_cipher_aes_128_cfb_new (key);
+        case R_CRYPTO_CIPHER_MODE_OFB:
+          return r_cipher_aes_128_ofb_new (key);
         default:
           break;
       }
@@ -301,6 +367,10 @@ r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
           return r_cipher_aes_192_cbc_new (key);
         case R_CRYPTO_CIPHER_MODE_CTR:
           return r_cipher_aes_192_ctr_new (key);
+        case R_CRYPTO_CIPHER_MODE_CFB:
+          return r_cipher_aes_192_cfb_new (key);
+        case R_CRYPTO_CIPHER_MODE_OFB:
+          return r_cipher_aes_192_ofb_new (key);
         default:
           break;
       }
@@ -313,6 +383,10 @@ r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
           return r_cipher_aes_256_cbc_new (key);
         case R_CRYPTO_CIPHER_MODE_CTR:
           return r_cipher_aes_256_ctr_new (key);
+        case R_CRYPTO_CIPHER_MODE_CFB:
+          return r_cipher_aes_256_cfb_new (key);
+        case R_CRYPTO_CIPHER_MODE_OFB:
+          return r_cipher_aes_256_ofb_new (key);
         default:
           break;
       }
@@ -575,6 +649,111 @@ r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
       if (++iv[i - 1] != 0)
         break;
     }
+  }
+
+  return R_CRYPTO_CIPHER_OK;
+}
+
+RCryptoCipherResult
+r_cipher_aes_cfb_encrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize)
+{
+  const ruint8 * ptr;
+  int i;
+  rsize bsize = size;
+  ruint8 scratch[R_AES_BLOCK_BYTES];
+
+  if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (data == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (dst == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (ivsize != R_AES_BLOCK_BYTES)) return R_CRYPTO_CIPHER_INVAL;
+
+  size %= R_AES_BLOCK_BYTES;
+  bsize -= size;
+
+  for (ptr = data; ptr < ((ruint8 *)data) + bsize; ptr += R_AES_BLOCK_BYTES, dst += R_AES_BLOCK_BYTES) {
+    r_cipher_aes_ecb_encrypt_block (cipher, scratch, iv);
+    for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+      dst[i] = scratch[i] ^ ptr[i];
+    /* CFB feedback: encrypt() input for the next block is the just-produced
+     * ciphertext, not the plaintext. */
+    r_memcpy (iv, dst, R_AES_BLOCK_BYTES);
+  }
+
+  if (size > 0) {
+    r_cipher_aes_ecb_encrypt_block (cipher, scratch, iv);
+    for (i = 0; i < (int)size; i++)
+      dst[i] = scratch[i] ^ ptr[i];
+  }
+
+  return R_CRYPTO_CIPHER_OK;
+}
+
+RCryptoCipherResult
+r_cipher_aes_cfb_decrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize)
+{
+  const ruint8 * ptr;
+  int i;
+  rsize bsize = size;
+  ruint8 scratch[R_AES_BLOCK_BYTES];
+  ruint8 ctsave[R_AES_BLOCK_BYTES];
+
+  if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (data == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (dst == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (ivsize != R_AES_BLOCK_BYTES)) return R_CRYPTO_CIPHER_INVAL;
+
+  size %= R_AES_BLOCK_BYTES;
+  bsize -= size;
+
+  for (ptr = data; ptr < ((ruint8 *)data) + bsize; ptr += R_AES_BLOCK_BYTES, dst += R_AES_BLOCK_BYTES) {
+    /* Save the consumed ciphertext before XOR in case dst == ptr (in-place). */
+    r_memcpy (ctsave, ptr, R_AES_BLOCK_BYTES);
+    r_cipher_aes_ecb_encrypt_block (cipher, scratch, iv);
+    for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+      dst[i] = scratch[i] ^ ptr[i];
+    /* CFB-decrypt feedback uses the consumed ciphertext. */
+    r_memcpy (iv, ctsave, R_AES_BLOCK_BYTES);
+  }
+
+  if (size > 0) {
+    r_cipher_aes_ecb_encrypt_block (cipher, scratch, iv);
+    for (i = 0; i < (int)size; i++)
+      dst[i] = scratch[i] ^ ptr[i];
+  }
+
+  return R_CRYPTO_CIPHER_OK;
+}
+
+RCryptoCipherResult
+r_cipher_aes_ofb_encrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize)
+{
+  const ruint8 * ptr;
+  int i;
+  rsize bsize = size;
+
+  if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (data == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (dst == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (ivsize != R_AES_BLOCK_BYTES)) return R_CRYPTO_CIPHER_INVAL;
+
+  size %= R_AES_BLOCK_BYTES;
+  bsize -= size;
+
+  for (ptr = data; ptr < ((ruint8 *)data) + bsize; ptr += R_AES_BLOCK_BYTES, dst += R_AES_BLOCK_BYTES) {
+    /* OFB keystream: y_i = AES-encrypt(y_{i-1}), starting from IV.
+     * Encrypt in-place into iv so it carries forward. */
+    r_cipher_aes_ecb_encrypt_block (cipher, iv, iv);
+    for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+      dst[i] = iv[i] ^ ptr[i];
+  }
+
+  if (size > 0) {
+    r_cipher_aes_ecb_encrypt_block (cipher, iv, iv);
+    for (i = 0; i < (int)size; i++)
+      dst[i] = iv[i] ^ ptr[i];
   }
 
   return R_CRYPTO_CIPHER_OK;
