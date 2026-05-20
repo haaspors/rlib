@@ -5,6 +5,7 @@ project('rlib', 'c',
     'buildtype=debugoptimized',
     'default_library=both',
     'warning_level=2',
+    'werror=true',
   ])
 
 rlib_name = meson.project_name()
