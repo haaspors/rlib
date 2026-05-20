@@ -222,7 +222,7 @@ int main (int argc, rchar ** argv) {                                            
                                                                                 \
     if ((output = r_arg_parse_ctx_get_option_string (ctx, "output")) != NULL && \
         !r_str_equals (output, "-")) {                                          \
-      f = fopen (output, "w");                                                  \
+      f = r_fopen (output, "w");                                                \
       r_free (output);                                                          \
     }                                                                           \
                                                                                 \

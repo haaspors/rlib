@@ -25,8 +25,12 @@
 #include <rlib/file/rfiletypes.h>
 #include <rlib/rref.h>
 #include <stdarg.h>
+#include <stdio.h>
 
 R_BEGIN_DECLS
+
+/* Thin wrapper over fopen that picks fopen_s on MSVC */
+R_API FILE * r_fopen (const rchar * path, const rchar * mode);
 
 /* Convenience API for whole file */
 R_API rboolean r_file_read_all (const rchar * filename, ruint8 ** data, rsize * size);
