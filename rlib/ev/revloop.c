@@ -597,7 +597,7 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 }
 #endif
 
-static ruint
+static rsize
 r_ev_loop_outstanding_events (REvLoop * loop)
 {
   return r_cbrlist_len (loop->idle) +
@@ -622,7 +622,7 @@ r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode)
   }
 
   r_tss_set (&g__r_ev_loop_tss, loop);
-  ret = r_ev_loop_outstanding_events (loop);
+  ret = (ruint) r_ev_loop_outstanding_events (loop);
   while (!loop->stop_request && ret != 0 && res >= 0) {
     r_ev_loop_prepare (loop);
     r_ev_loop_update_timers (loop);
@@ -648,7 +648,7 @@ r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode)
     r_ev_loop_update_timers (loop);
     loop->iterations++;
 
-    ret = r_ev_loop_outstanding_events (loop);
+    ret = (ruint) r_ev_loop_outstanding_events (loop);
     if (mode != R_EV_LOOP_RUN_LOOP)
       break;
   }
