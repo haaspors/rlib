@@ -473,7 +473,7 @@ r_fs_mkdir (const rchar * path, int mode)
   (void) mode;
 
   if ((upath = r_utf8_to_utf16_dup (path, -1, NULL, NULL, NULL)) != NULL) {
-    ret = _wmkdir (upath) == 0;
+    ret = CreateDirectoryW (upath, NULL) != 0;
     r_free (upath);
   } else {
     ret = FALSE;
