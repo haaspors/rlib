@@ -39,9 +39,9 @@ R_BEGIN_DECLS
 #define RUINT32_BSWAP(val) ((ruint32) __builtin_bswap32 ((rint32) (val)))
 #define RUINT64_BSWAP(val) ((ruint64) __builtin_bswap64 ((rint64) (val)))
 #elif defined(_MSC_VER)
-#define RUINT16_BSWAP(val) (_byteswap_ushort (val))
-#define RUINT32_BSWAP(val) (_byteswap_ulong (val))
-#define RUINT64_BSWAP(val) (_byteswap_uint64 (val))
+#define RUINT16_BSWAP(val) (_byteswap_ushort ((unsigned short)(val)))
+#define RUINT32_BSWAP(val) (_byteswap_ulong ((unsigned long)(val)))
+#define RUINT64_BSWAP(val) (_byteswap_uint64 ((unsigned __int64)(val)))
 #else
 #define RUINT16_BSWAP(val) ((ruint16) (((ruint16)(val) >> 8) | ((ruint16)(val) << 8)))
 #define RUINT32_BSWAP(val) ((ruint32) (                                   \
