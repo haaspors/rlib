@@ -183,6 +183,16 @@ r_arg_option_entry_ctx_init (RArgOptionEntry * entry, const RArgOptionEntry * op
         "ignoring incompatible inverse flag for --%s", opt->longarg);
     entry->flags &= ~R_ARG_OPTION_FLAG_INVERSE;
   }
+  if (opt->defval != NULL && opt->type == R_ARG_OPTION_TYPE_NONE) {
+    R_LOG_CAT_WARNING (&rlib_logcat,
+        "ignoring default value for boolean --%s", opt->longarg);
+    entry->defval = NULL;
+  }
+  if (opt->defval != NULL && (opt->flags & R_ARG_OPTION_FLAG_REQUIRED)) {
+    R_LOG_CAT_WARNING (&rlib_logcat,
+        "clearing required flag for --%s because a default is set", opt->longarg);
+    entry->flags &= ~R_ARG_OPTION_FLAG_REQUIRED;
+  }
 
   return TRUE;
 }
@@ -290,16 +300,16 @@ r_arg_option_group_add_entry (RArgOptionGroup * group,
     RArgOptionType type, RArgOptionFlags flags,
     const rchar * desc, const rchar * eqname)
 {
-  const RArgOptionEntry entry = { longarg, shortarg, type, flags, desc, eqname };
+  const RArgOptionEntry entry = { longarg, shortarg, type, flags, desc, eqname, NULL };
   return r_arg_option_group_add_entries (group, &entry, 1);
 }
 
 static const RArgOptionEntry r_arg_version_args[] = {
-  { "version",  0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Show application version number and exit", NULL },
+  { "version",  0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Show application version number and exit", NULL, NULL },
 };
 static const RArgOptionEntry r_arg_help_args[] = {
-  { "help",   'h', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Show this help message and exit", NULL },
-  { "",       '?', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_HIDDEN, NULL, NULL },
+  { "help",   'h', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Show this help message and exit", NULL, NULL },
+  { "",       '?', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_HIDDEN, NULL, NULL, NULL },
 };
 
 static void
@@ -405,6 +415,8 @@ r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
     spacing -= r_string_append (str, " ");
 
   r_string_append (str, opt->desc);
+  if (opt->defval != NULL)
+    r_string_append_printf (str, " [default: %s]", opt->defval);
   r_string_append (str, "\n");
 }
 
@@ -961,7 +973,11 @@ r_arg_parse_ctx_get_option_entry_value (RArgParseCtx * ctx, const RArgOptionEntr
 {
   const rchar * arg;
 
-  if ((arg = r_dictionary_lookup (ctx->options, entry->longarg)) != NULL) {
+  arg = r_dictionary_lookup (ctx->options, entry->longarg);
+  if (arg == NULL)
+    arg = entry->defval;
+
+  if (arg != NULL) {
     switch (entry->type) {
       case R_ARG_OPTION_TYPE_BOOL:
         r_arg_option_parse_none (&arg, val,

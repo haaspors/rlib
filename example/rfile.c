@@ -8,7 +8,7 @@ main (int argc, char ** argv)
   RArgParseCtx * ctx;
   RArgParseResult res;
   const RArgOptionEntry entries[] = {
-    { "hr", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Human readable format", NULL },
+    { "hr", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Human readable format", NULL, NULL },
   };
 
   r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries));

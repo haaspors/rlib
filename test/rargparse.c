@@ -82,8 +82,8 @@ RTEST (rargparse, group, RTEST_FAST)
 {
   RArgOptionGroup * group;
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL },
-    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL, NULL },
+    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL, NULL },
   };
 
   r_assert_cmpptr ((group = r_arg_option_group_new (NULL, NULL, NULL, NULL, NULL)), ==, NULL);
@@ -97,26 +97,26 @@ RTEST (rargparse, args_error, RTEST_FAST)
 {
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   static RArgOptionEntry missing_long[] = {
-    { "", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
+    { "", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
   };
   static RArgOptionEntry bad_type[] = {
-    { "foo", 0, R_ARG_OPTION_TYPE_COUNT, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
+    { "foo", 0, R_ARG_OPTION_TYPE_COUNT, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
   };
   static RArgOptionEntry duplicate_longarg[] = {
-    { "foo", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
-    { "foo", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Opps duplicate", NULL },
+    { "foo", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
+    { "foo", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Opps duplicate", NULL, NULL },
   };
   static RArgOptionEntry duplicate_shortarg[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
-    { "bar", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Opps duplicate", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
+    { "bar", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Opps duplicate", NULL, NULL },
   };
   static RArgOptionEntry invalid_shortname[] = {
     { "foo", '-', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE,
-      "shortarg/name can't use '-', ignored", NULL },
+      "shortarg/name can't use '-', ignored", NULL, NULL },
   };
   static RArgOptionEntry inverse_string[] = {
     { "bar", 0, R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_INVERSE,
-      "There is no such thing as inverse string, but it will be ignored", NULL },
+      "There is no such thing as inverse string, but it will be ignored", NULL, NULL },
   };
   rboolean res;
 
@@ -143,7 +143,7 @@ RTEST (rargparse, no_val_works, RTEST_FAST)
 {
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   static RArgOptionEntry missing_val[] = {
-    { "foo", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
+    { "foo", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
   };
   r_assert (r_arg_parser_add_option_entries (parser, missing_val, 1));
   r_arg_parser_unref (parser);
@@ -153,9 +153,9 @@ RTEST_END;
 RTEST (rargparse, help_args, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL },
-    { "hidden", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_HIDDEN, "Not shown", NULL },
-    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL, NULL },
+    { "hidden", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_HIDDEN, "Not shown", NULL, NULL },
+    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL, NULL },
   };
   const rchar * args_help =
     "  -f, --foo                     Do foo\n"
@@ -178,16 +178,16 @@ RTEST_END;
 RTEST (rargparse, help_argname, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do foo", "foo" },
-    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL },
-    { "num", 'n', R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_NONE, "Integer", "NUM" },
-    { "val", 0, R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_NONE, "Value", NULL },
-    { "num64", 0, R_ARG_OPTION_TYPE_INT64, R_ARG_OPTION_FLAG_NONE, "Integer 64bit", "NUM" },
-    { "double", 'd', R_ARG_OPTION_TYPE_DOUBLE, R_ARG_OPTION_FLAG_NONE, "Double", "NUM" },
-    { "output", 'o', R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_NONE, "Output file", "FILE" },
-    { "input", 'i', R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_NONE, "Input file", NULL },
-    { "outstr", 'u', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Output string", "STR" },
-    { "instr", 's', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Input string", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do foo", "foo", NULL },
+    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL, NULL },
+    { "num", 'n', R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_NONE, "Integer", "NUM", NULL },
+    { "val", 0, R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_NONE, "Value", NULL, NULL },
+    { "num64", 0, R_ARG_OPTION_TYPE_INT64, R_ARG_OPTION_FLAG_NONE, "Integer 64bit", "NUM", NULL },
+    { "double", 'd', R_ARG_OPTION_TYPE_DOUBLE, R_ARG_OPTION_FLAG_NONE, "Double", "NUM", NULL },
+    { "output", 'o', R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_NONE, "Output file", "FILE", NULL },
+    { "input", 'i', R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_NONE, "Input file", NULL, NULL },
+    { "outstr", 'u', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Output string", "STR", NULL },
+    { "instr", 's', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Input string", NULL, NULL },
   };
   const rchar * args_help =
     "  -f, --foo                     Do foo\n"
@@ -218,8 +218,8 @@ RTEST_END;
 RTEST (rargparse, parse_shortargs, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL },
-    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL, NULL },
+    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -247,8 +247,8 @@ RTEST_END;
 RTEST (rargparse, parse_shortargs_chain, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL },
-    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL, NULL },
+    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -275,8 +275,8 @@ RTEST_END;
 RTEST (rargparse, parse_longargs, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL },
-    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL, NULL },
+    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -378,8 +378,8 @@ RTEST_END;
 RTEST (rargparse, parse_partial, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL },
-    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL, NULL },
+    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -404,8 +404,8 @@ RTEST_END;
 RTEST (rargparse, parse_stop_after_dash_dash, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL },
-    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL, NULL },
+    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_INVERSE, "Do bar", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -429,7 +429,7 @@ RTEST_END;
 RTEST (rargparse, parse_int, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -513,7 +513,7 @@ RTEST_END;
 RTEST (rargparse, parse_int64, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_INT64, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_INT64, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -597,7 +597,7 @@ RTEST_END;
 RTEST (rargparse, parse_double, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_DOUBLE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_DOUBLE, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -640,7 +640,7 @@ RTEST_END;
 RTEST (rargparse, parse_string, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -705,7 +705,7 @@ RTEST_END;
 RTEST (rargparse, parse_required, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_REQUIRED, "Do foo", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_REQUIRED, "Do foo", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -748,7 +748,7 @@ RTEST (rargparse, parse_unknown_option, RTEST_FAST)
 {
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE,    "Do foo", NULL, NULL },
   };
   rchar ** strv, ** argv;
   RArgParseCtx * ctx;
@@ -798,8 +798,8 @@ RTEST_END;
 RTEST (rargparse, get_value, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
-    { "foo", 'f', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL },
-    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do bar", NULL },
+    { "foo", 'f', R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "Do foo", NULL, NULL },
+    { "bar", 'b', R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Do bar", NULL, NULL },
   };
   RArgParser * parser = r_arg_parser_new (NULL, NULL);
   RArgParseCtx * ctx;
@@ -926,6 +926,218 @@ RTEST (rargparse, add_command_and_parse, RTEST_FAST)
   r_arg_parse_ctx_unref (ctx);
   r_arg_parser_unref (parser);
   r_strv_free (strv);
+}
+RTEST_END;
+
+
+RTEST (rargparse, default_value_used_when_absent, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "num",  0, R_ARG_OPTION_TYPE_INT,    R_ARG_OPTION_FLAG_NONE, "Integer",   NULL, "42" },
+    { "big",  0, R_ARG_OPTION_TYPE_INT64,  R_ARG_OPTION_FLAG_NONE, "Integer64", NULL, "1234567890123" },
+    { "d",    0, R_ARG_OPTION_TYPE_DOUBLE, R_ARG_OPTION_FLAG_NONE, "Double",    NULL, "3.14" },
+    { "s",    0, R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "String",    NULL, "hello" },
+    { "f",    0, R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_NONE, "Filename",NULL, "/tmp/x" },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", NULL);
+  rchar ** argv = strv;
+  int argc = 1;
+  rchar * tmp;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+
+  /* Nothing was actually provided on the command line. */
+  r_assert (!r_arg_parse_ctx_has_option (ctx, "num"));
+  r_assert (!r_arg_parse_ctx_has_option (ctx, "big"));
+  r_assert (!r_arg_parse_ctx_has_option (ctx, "d"));
+  r_assert (!r_arg_parse_ctx_has_option (ctx, "s"));
+  r_assert (!r_arg_parse_ctx_has_option (ctx, "f"));
+  r_assert_cmpint (r_arg_parse_ctx_option_count (ctx), ==, 0);
+
+  /* But the getters return the per-entry defval. */
+  r_assert_cmpint (r_arg_parse_ctx_get_option_int (ctx, "num"), ==, 42);
+  r_assert_cmpint (r_arg_parse_ctx_get_option_int64 (ctx, "big"), ==, RINT64_CONSTANT (1234567890123));
+  r_assert_cmpdouble (r_arg_parse_ctx_get_option_double (ctx, "d"), ==, 3.14);
+  r_assert_cmpstr ((tmp = r_arg_parse_ctx_get_option_string (ctx, "s")), ==, "hello");
+  r_free (tmp);
+  r_assert_cmpstr ((tmp = r_arg_parse_ctx_get_option_filename (ctx, "f")), ==, "/tmp/x");
+  r_free (tmp);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, default_value_overridden_when_present, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "num", 'n', R_ARG_OPTION_TYPE_INT,    R_ARG_OPTION_FLAG_NONE, "Integer", NULL, "42" },
+    { "s",    0,  R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "String",  NULL, "hello" },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", "-n", "7", "--s", "world", NULL);
+  rchar ** argv = strv;
+  int argc = (int) r_strv_len (strv);
+  rchar * tmp;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+
+  r_assert (r_arg_parse_ctx_has_option (ctx, "num"));
+  r_assert (r_arg_parse_ctx_has_option (ctx, "s"));
+  /* User value wins over defval. */
+  r_assert_cmpint (r_arg_parse_ctx_get_option_int (ctx, "num"), ==, 7);
+  r_assert_cmpstr ((tmp = r_arg_parse_ctx_get_option_string (ctx, "s")), ==, "world");
+  r_free (tmp);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, no_default_returns_zero, RTEST_FAST)
+{
+  /* Pre-defval behaviour: missing options return the type's zero value.
+   * Verify defval = NULL preserves it. */
+  static RArgOptionEntry entries[] = {
+    { "num", 0, R_ARG_OPTION_TYPE_INT,    R_ARG_OPTION_FLAG_NONE, "Integer", NULL, NULL },
+    { "s",   0, R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "String",  NULL, NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", NULL);
+  rchar ** argv = strv;
+  int argc = 1;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+
+  r_assert_cmpint (r_arg_parse_ctx_get_option_int (ctx, "num"), ==, 0);
+  r_assert_cmpptr (r_arg_parse_ctx_get_option_string (ctx, "s"), ==, NULL);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, default_value_ignored_for_bool, RTEST_FAST)
+{
+  /* BOOL ("NONE") options have no string value -- defval is meaningless and
+   * the entry init should warn and drop it. */
+  static RArgOptionEntry entries[] = {
+    { "foo", 0, R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "Bool", NULL, "true" },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", NULL);
+  rchar ** argv = strv;
+  int argc = 1;
+  rboolean res;
+
+  r_assert_logs_level (
+      res = r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)),
+      R_LOG_LEVEL_WARNING);
+  r_assert (res);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+
+  /* defval dropped: --foo absent -> FALSE, same as if no default had been set. */
+  r_assert (!r_arg_parse_ctx_get_option_bool (ctx, "foo"));
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, default_value_clears_required, RTEST_FAST)
+{
+  /* REQUIRED + defval is incoherent -- the defval makes the option not
+   * actually required. Entry init warns and clears REQUIRED so the
+   * required-options check at parse time passes even though the option
+   * wasn't on the command line. */
+  static RArgOptionEntry entries[] = {
+    { "num", 0, R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_REQUIRED, "Integer", NULL, "42" },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", NULL);
+  rchar ** argv = strv;
+  int argc = 1;
+  rboolean res;
+
+  r_assert_logs_level (
+      res = r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)),
+      R_LOG_LEVEL_WARNING);
+  r_assert (res);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+  r_assert_cmpint (r_arg_parse_ctx_get_option_int (ctx, "num"), ==, 42);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, default_value_in_help, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "num", 'n', R_ARG_OPTION_TYPE_INT,    R_ARG_OPTION_FLAG_NONE, "Integer", "NUM",  "42" },
+    { "s",   0,   R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "String",  NULL,   "hi" },
+    { "plain", 0, R_ARG_OPTION_TYPE_INT,    R_ARG_OPTION_FLAG_NONE, "No default", NULL, NULL },
+  };
+  const rchar * args_help =
+    "  -n, --num=NUM                 Integer [default: 42]\n"
+    "  --s=STRING                    String [default: hi]\n"
+    "  --plain=VALUE                 No default\n";
+  rchar * expected, * help, * exe;
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+
+  r_assert_cmpptr ((exe = r_proc_get_exe_name ()), !=, NULL);
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  expected = r_strprintf (rargparse_help_tmpl, exe, "", rargparse_helpopt, args_help);
+  r_assert_cmpstr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_NONE, NULL)), ==, expected);
+  r_free (expected);
+  r_free (help);
+  r_free (exe);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, required_without_default_still_required, RTEST_FAST)
+{
+  /* Sanity-check: defval=NULL + REQUIRED still rejects parses that miss
+   * the option, so we haven't accidentally weakened the required check. */
+  static RArgOptionEntry entries[] = {
+    { "num", 0, R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_REQUIRED, "Integer", NULL, NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", NULL);
+  rchar ** argv = strv;
+  int argc = 1;
+  RArgParseResult res;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
+          R_ARG_PARSE_FLAG_DONT_EXIT | R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT,
+          &argc, (const rchar ***)&argv, &res)), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_MISSING_OPTION);
+
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
 }
 RTEST_END;
 

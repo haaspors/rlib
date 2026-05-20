@@ -192,15 +192,15 @@ int main (int argc, rchar ** argv) {                                            
                                                                                 \
   const RArgOptionEntry entries[] = {                                           \
     { "verbose",     'v', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
-      "Print verbose info", NULL },                                             \
+      "Print verbose info", NULL, NULL },                                       \
     { "print",       'p', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
-      "Print all tests which ran", NULL },                                      \
+      "Print all tests which ran", NULL, NULL },                                \
     { "ignore-skip", 'i', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
-      "Run tests that default would be skipped", NULL },                        \
+      "Run tests that default would be skipped", NULL, NULL },                  \
     { "filter",      'f', R_ARG_OPTION_TYPE_STRING,   R_ARG_OPTION_FLAG_NONE,   \
-      "Filter on test path - default is * (\"/<suite>/<name>\")", NULL },       \
+      "Filter on test path - default is * (\"/<suite>/<name>\")", NULL, NULL }, \
     { "output",      'o', R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_NONE,   \
-      "File to print results to, use - for stdout [default]", NULL },           \
+      "File to print results to, use - for stdout [default]", NULL, NULL },     \
   };                                                                            \
   r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries));    \
                                                                                 \
