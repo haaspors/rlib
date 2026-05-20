@@ -96,7 +96,7 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   if (timeout == R_CLOCK_TIME_INFINITE) {
     t = INFINITE;
   } else if (timeout != 0) {
-    t = R_TIME_AS_MSECONDS (timeout) + 1;
+    t = (DWORD)(R_TIME_AS_MSECONDS (timeout) + 1);
   } else {
     t = 0;
   }
