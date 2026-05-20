@@ -22,6 +22,7 @@
 
 #include <rlib/file/rfs.h>
 #include <rlib/rmem.h>
+#include <rlib/rtty.h>
 
 #include <stdio.h>
 #include <errno.h>
@@ -92,7 +93,7 @@ r_file_new_tmp_full (const rchar * dir, const rchar * pre, const rchar * mode,
 int
 r_file_get_fd (RFile * file)
 {
-  return fileno (file->file);
+  return r_fileno (file->file);
 }
 
 static RIOError
