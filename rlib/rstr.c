@@ -526,7 +526,14 @@ r_strncpy (rchar * dst, const rchar * src, rsize len)
     return dst;
   }
   /* Stick with deprecated strncpy on MSVC; strncpy_s diverges from POSIX by always NUL-terminating. */
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
   return strncpy (dst, src, len);
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 }
 
 rchar *
