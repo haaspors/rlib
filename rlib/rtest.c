@@ -652,7 +652,7 @@ r_test_run_fork (const RTest * test, rsize __i, rboolean notimeout,
     RTestRunForkCtx ctx;
     int status;
 
-    close(fdp[1]);
+    r_io_close (fdp[1]);
     *pidout = (int)pid;
     r_test_run_fork_setup (&ctx, pid, notimeout ? R_CLOCK_TIME_NONE : test->timeout);
     wpid = waitpid (pid, &status, 0);
@@ -660,35 +660,35 @@ r_test_run_fork (const RTest * test, rsize __i, rboolean notimeout,
 
     if (wpid == pid) {
       if (WIFEXITED (status) && (*exitcode = WEXITSTATUS (status)) == 0) {
-        if (read (fdp[0], &ret, sizeof (RTestRunState)) != sizeof (RTestRunState)) {
+        if (r_io_read (fdp[0], &ret, sizeof (RTestRunState)) != sizeof (RTestRunState)) {
           R_LOG_WARNING ("Failed to read from pipe to forked child");
           ret = R_TEST_RUN_STATE_ERROR;
         }
-        read (fdp[0], lastpos, sizeof (RTestLastPos));
-        read (fdp[0], failpos, sizeof (RTestLastPos));
+        r_io_read (fdp[0], lastpos, sizeof (RTestLastPos));
+        r_io_read (fdp[0], failpos, sizeof (RTestLastPos));
       }
     }
-    close(fdp[0]);
+    r_io_close (fdp[0]);
 
     if (ctx.state != R_TEST_RUN_STATE_NONE)
       ret = ctx.state;
   } else if (pid == 0) {
-    close(fdp[0]);
+    r_io_close (fdp[0]);
     ret = r_test_run_nofork (test, __i, notimeout, lastpos, failpos, NULL, NULL);
 
-    if (write (fdp[1], &ret, sizeof (RTestRunState)) != sizeof (RTestRunState))
+    if (r_io_write (fdp[1], &ret, sizeof (RTestRunState)) != sizeof (RTestRunState))
       R_LOG_ERROR ("Failed to write to pipe to parent (forker)");
-    if (write (fdp[1], lastpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
+    if (r_io_write (fdp[1], lastpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
       R_LOG_ERROR ("Failed to write to pipe to parent (forker)");
-    if (write (fdp[1], failpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
+    if (r_io_write (fdp[1], failpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
       R_LOG_ERROR ("Failed to write to pipe to parent (forker)");
-    close (fdp[1]);
+    r_io_close (fdp[1]);
     exit (0);
   } else {
     R_LOG_ERROR ("Failed to fork test /%s/%s/%"RSIZE_FMT,
         test->suite, test->name, __i);
-    close(fdp[0]);
-    close(fdp[1]);
+    r_io_close (fdp[0]);
+    r_io_close (fdp[1]);
   }
 
   return ret;
