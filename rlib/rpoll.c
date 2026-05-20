@@ -33,10 +33,6 @@
 #include <unistd.h>
 #endif
 #ifdef R_OS_WIN32
-#ifndef STRICT
-#define STRICT
-#endif
-#define WIN32_LEAN_AND_MEAN 1
 #include <windows.h>
 #endif
 #include <errno.h>

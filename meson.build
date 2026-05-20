@@ -21,6 +21,11 @@ install_subdir('include', install_dir : '')
 
 if host_machine.system() != 'windows'
   add_global_arguments('-D_GNU_SOURCE=1', language : 'c')
+else
+  add_global_arguments(
+    '-DWIN32_LEAN_AND_MEAN=1',
+    '-DSTRICT=1',
+    language : 'c')
 endif
 
 

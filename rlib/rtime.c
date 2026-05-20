@@ -42,7 +42,6 @@
 
 
 #if defined (R_OS_WIN32)
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 typedef void (WINAPI * r_win32_get_system_time) (LPFILETIME ft);
 static r_win32_get_system_time  g__r_timer_win32GetSystemTime = GetSystemTimeAsFileTime;
