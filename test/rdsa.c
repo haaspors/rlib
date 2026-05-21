@@ -1,31 +1,22 @@
 #include <rlib/rcrypto.h>
 
-/* Marshalling-only tests for r_dsa_*_export; arbitrary self-consistent
- * INTEGERs are good enough — round-trip checks don't care whether the
- * parameters form a valid DSA group. */
+/* FIPS 186-2 Appendix 5 sample DSA-1024 / SHA-1 parameters: p is a
+ * 1024-bit prime, q is a 160-bit prime dividing p-1, g has order q
+ * in (Z/pZ)*. (x, y) is a valid keypair: y = g^x mod p. */
 static const rchar dsa_p_str[] =
-    "0xE0A67598CD1B763B"
-    "C98C8ABB333E5DDA0CD3AA0E5E1FB5BA8A7B4EABC10BA338"
-    "FAE06DD4B90FDA70D7CF0CB0C638BE3341BEC0AF8A7330A3"
-    "307DED2299A0EE606DF035177A239C34A912C202AA5F83B9"
-    "C4A7CF0235B5316BFC6EFB9A248411258B30B839AF172440"
-    "F32563056CB67A861158DDD90E6A894C72A5BBEF9E286C6B";
-static const rchar dsa_q_str[] = "0xE950511EAB424B9A19A2AEB4E159B7844C589C4F";
+    "0x8df2a494492276aa3d25759bb06869cbeac0d83afb8d0cf7"
+    "cbb8324f0d7882e5d0762fc5b7210eafc2e9adac32ab7aac"
+    "49693dfbf83724c2ec0736ee31c80291";
+static const rchar dsa_q_str[] = "0xc773218c737ec8ee993b4f2ded30f48edace915f";
 static const rchar dsa_g_str[] =
-    "0xD29D5121B0423C27"
-    "69AB21843E5A3240FF19CACC792264E3BB6BE4F78EDD1B15"
-    "C4DFF7F1D905431F0AB16790E1F773B5CE01C804E509066A"
-    "9919F5195F4ABC58189FD9FF987389CB5BEDF21B4DAB4F8B"
-    "76A055FFE2770988FE2EC2DE11AD92219F0B351869AC24DA"
-    "3D7BA87011A701CE8EE7BFE49486ED4527B7186CA4610A75";
+    "0x626d027839ea0a13413163a55b4cb500299d5522956cefcb"
+    "3bff10f399ce2c2e71cb9de5fa24babf58e5b79521925c9c"
+    "c42e9f6f464b088cc572af53e6d78802";
 static const rchar dsa_y_str[] =
-    "0x25282217F5730501"
-    "DD8DBA3EDFCF349AAFFEC20921128D70FAC44110332201BB"
-    "A3F10986140CBB97C726938060473C8EC97B4731DB004293"
-    "B5E730363609DF9780F8D883D8C4D41DED6A2F1E1BBBDC97"
-    "9E1B9D6D3C940301F4E978D65B19041FCF1E8B518F5C0576"
-    "C770FE5A7A485D8329EE2914A2DE1B5C1379045729E5E5B6";
-static const rchar dsa_x_str[] = "0xBC372967702082E1AA4FCE892209F71AE4AD25A6";
+    "0x19131871d75b1612a819f29d78d1b0d7346f7aa77bb62a85"
+    "9bfd6c5675da9d212d3a36ef1672ef660b8c7c255cc0ec74"
+    "858fba33f44c06699630a76b030ee333";
+static const rchar dsa_x_str[] = "0x2070b3223dba372fde1c0ffc7b2e3b498b260614";
 
 static void
 init_dsa_mpints (rmpint * p, rmpint * q, rmpint * g, rmpint * y, rmpint * x)
@@ -313,5 +304,125 @@ RTEST (rdsa, getter_guards, RTEST_FAST)
   r_mpint_clear (&n);
   r_mpint_clear (&e);
   r_mpint_clear (&got);
+}
+RTEST_END;
+
+/* The 160-bit q in our test parameters matches SHA-1's output size, so
+ * a 20-byte hash maps directly to z without truncation. */
+static const ruint8 dsa_hash_a[20] = {
+  0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a, 0xba, 0x3e,
+  0x25, 0x71, 0x78, 0x50, 0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d
+};
+static const ruint8 dsa_hash_b[20] = {
+  0x84, 0x98, 0x3e, 0x44, 0x1c, 0x3b, 0xd2, 0x6e, 0xba, 0xae,
+  0x4a, 0xa1, 0xf9, 0x51, 0x29, 0xe5, 0xe5, 0x46, 0x70, 0xf1
+};
+
+RTEST (rdsa, sign_verify_roundtrip, RTEST_FAST)
+{
+  rmpint p, q, g, y, x;
+  RCryptoKey * priv, * pub;
+  RPrng * prng;
+  ruint8 sig[64];
+  rsize sigsize = sizeof (sig);
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_assert_cmpptr ((priv = r_dsa_priv_key_new (&p, &q, &g, &y, &x)), !=, NULL);
+  r_assert_cmpptr ((pub  = r_dsa_pub_key_new_full (&p, &q, &g, &y)), !=, NULL);
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+
+  r_assert_cmpint (r_crypto_key_sign (priv, prng, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig, &sigsize), ==, R_CRYPTO_OK);
+  r_assert_cmpuint (sigsize, >, 0);
+  r_assert_cmpint (r_crypto_key_verify (pub, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig, sigsize), ==, R_CRYPTO_OK);
+
+  /* Verifying with the priv key (which exposes the public half) also
+   * works — algo info has verify on both pub and priv. */
+  r_assert_cmpint (r_crypto_key_verify (priv, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig, sigsize), ==, R_CRYPTO_OK);
+
+  r_crypto_key_unref (priv);
+  r_crypto_key_unref (pub);
+  r_prng_unref (prng);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+}
+RTEST_END;
+
+RTEST (rdsa, verify_rejects_tampered_hash, RTEST_FAST)
+{
+  /* Signature is for hash_a; verifying against hash_b must fail. */
+  rmpint p, q, g, y, x;
+  RCryptoKey * priv, * pub;
+  RPrng * prng;
+  ruint8 sig[64];
+  rsize sigsize = sizeof (sig);
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_assert_cmpptr ((priv = r_dsa_priv_key_new (&p, &q, &g, &y, &x)), !=, NULL);
+  r_assert_cmpptr ((pub  = r_dsa_pub_key_new_full (&p, &q, &g, &y)), !=, NULL);
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+
+  r_assert_cmpint (r_crypto_key_sign (priv, prng, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig, &sigsize), ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_crypto_key_verify (pub, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_b, sizeof (dsa_hash_b), sig, sigsize), ==, R_CRYPTO_VERIFY_FAILED);
+
+  r_crypto_key_unref (priv);
+  r_crypto_key_unref (pub);
+  r_prng_unref (prng);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+}
+RTEST_END;
+
+RTEST (rdsa, verify_rejects_malformed_signature, RTEST_FAST)
+{
+  /* Garbage bytes that aren't a valid Dss-Sig-Value SEQUENCE must
+   * surface as VERIFY_FAILED rather than crashing the ASN.1 decoder. */
+  rmpint p, q, g, y, x;
+  RCryptoKey * pub;
+  static const ruint8 junk[] = { 0xde, 0xad, 0xbe, 0xef };
+  /* A well-formed SEQUENCE whose r is 0 — must be rejected by the
+   * 0 < r < q check before any modexp work. */
+  static const ruint8 r_zero[] = { 0x30, 0x06, 0x02, 0x01, 0x00, 0x02, 0x01, 0x01 };
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_assert_cmpptr ((pub = r_dsa_pub_key_new_full (&p, &q, &g, &y)), !=, NULL);
+
+  r_assert_cmpint (r_crypto_key_verify (pub, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), junk, sizeof (junk)),
+      ==, R_CRYPTO_VERIFY_FAILED);
+  r_assert_cmpint (r_crypto_key_verify (pub, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), r_zero, sizeof (r_zero)),
+      ==, R_CRYPTO_VERIFY_FAILED);
+
+  r_crypto_key_unref (pub);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+}
+RTEST_END;
+
+RTEST (rdsa, sign_fresh_k_each_call, RTEST_FAST)
+{
+  /* Signing the same hash twice must yield different (r, s) pairs —
+   * deterministic outputs would mean a constant k, which leaks x. */
+  rmpint p, q, g, y, x;
+  RCryptoKey * priv;
+  RPrng * prng;
+  ruint8 sig1[64], sig2[64];
+  rsize sig1size = sizeof (sig1), sig2size = sizeof (sig2);
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_assert_cmpptr ((priv = r_dsa_priv_key_new (&p, &q, &g, &y, &x)), !=, NULL);
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+
+  r_assert_cmpint (r_crypto_key_sign (priv, prng, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig1, &sig1size), ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_crypto_key_sign (priv, prng, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig2, &sig2size), ==, R_CRYPTO_OK);
+  r_assert (sig1size != sig2size || r_memcmp (sig1, sig2, sig1size) != 0);
+
+  r_crypto_key_unref (priv);
+  r_prng_unref (prng);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
 }
 RTEST_END;
