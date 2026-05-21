@@ -44,6 +44,13 @@ R_API RCryptoKey * r_dsa_priv_key_new_binary (rconstpointer p, rsize psize,
     rconstpointer y, rsize ysize, rconstpointer x, rsize xsize) R_ATTR_MALLOC;
 R_API RCryptoKey * r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv) R_ATTR_MALLOC;
 
+/* Generate a fresh DSA keypair following FIPS 186-4 §A.1.1.2 (probable
+ * primes p and q), §A.2.1 (generator g), and §B.1.2 (private value x,
+ * public value y). The (L, N) pair must be one of the FIPS-approved
+ * size combinations: (1024, 160), (2048, 224), (2048, 256), (3072, 256). */
+R_API RCryptoKey * r_dsa_priv_key_new_gen (rsize L, rsize N,
+    RPrng * prng) R_ATTR_MALLOC;
+
 R_API rboolean r_dsa_pub_key_get_p (const RCryptoKey * key, rmpint * p);
 R_API rboolean r_dsa_pub_key_get_q (const RCryptoKey * key, rmpint * q);
 R_API rboolean r_dsa_pub_key_get_g (const RCryptoKey * key, rmpint * g);
