@@ -21,9 +21,12 @@
 
 #include <rlib/crypto/raes.h>
 #include <rlib/crypto/rcipher.h>
+#include <rlib/crypto/rdh.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/rrsa.h>
 #include <rlib/crypto/rx509.h>
+
+#include <rlib/asn1/roid.h>
 
 #include <rlib/charset/rascii.h>
 
@@ -50,6 +53,113 @@
 #define R_PEM_END_PUBKEY      R_PEM_END_START   R_PEM_PUBKEY R_PEM_END_END   "\n"
 #define R_PEM_BEGIN_CERT      R_PEM_BEGIN_START R_PEM_CERTIFICATE R_PEM_BEGIN_END "\n"
 #define R_PEM_END_CERT        R_PEM_END_START   R_PEM_CERTIFICATE R_PEM_END_END   "\n"
+
+/* Pick the PEM block label that matches what r_crypto_key_to_asn1 emits
+ * for this key. RSA / DSA private exports are already in the
+ * "<algo>PrivateKey" raw SEQUENCE shape the matching BEGIN labels expect;
+ * DH gets wrapped in PKCS#8 below and lands under the generic label. */
+static const rchar *
+r_pem_priv_key_label (const RCryptoKey * key)
+{
+  switch (r_crypto_key_get_algo (key)) {
+    case R_CRYPTO_ALGO_RSA: return R_PEM_RSAPRIVKEY;
+    case R_CRYPTO_ALGO_DSA: return R_PEM_DSAPRIVKEY;
+    case R_CRYPTO_ALGO_DH:  return R_PEM_PRIVKEY;
+    default:                return NULL;
+  }
+}
+
+/* Build PKCS#8 PrivateKeyInfo for a DH key:
+ *   SEQUENCE {
+ *     INTEGER version,
+ *     AlgorithmIdentifier { dhKeyAgreement, DHParameter { p, g } },
+ *     OCTET STRING containing DHPrivateKey
+ *   }
+ * The inner DHPrivateKey SEQUENCE { ver, p, g, x } comes from the
+ * existing r_dh_priv_key_export (via r_crypto_key_to_asn1) so the
+ * matching r_dh_priv_key_new_from_asn1 reader path already handles it
+ * once r_crypto_key_from_asn1_private_key dispatches on the OID. */
+static ruint8 *
+r_pem_encode_dh_priv_pkcs8 (const RCryptoKey * key, rsize * outsize)
+{
+  ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  ruint8 octet_id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OCTET_STRING);
+  RAsn1BinEncoder * inner_enc = NULL, * outer_enc = NULL;
+  ruint8 * inner_buf = NULL, * outer_buf = NULL;
+  rsize inner_size;
+  rmpint p, g;
+  rboolean params_ok = FALSE;
+
+  if ((inner_enc = r_asn1_bin_encoder_new (R_ASN1_DER)) == NULL)
+    return NULL;
+  if (r_crypto_key_to_asn1 (key, inner_enc) != R_CRYPTO_OK)
+    goto out;
+  if ((inner_buf = r_asn1_bin_encoder_get_data (inner_enc, &inner_size)) == NULL)
+    goto out;
+
+  r_mpint_init (&p);
+  r_mpint_init (&g);
+  if (!r_dh_pub_key_get_p (key, &p) || !r_dh_pub_key_get_g (key, &g))
+    goto cleanup_mpints;
+  params_ok = TRUE;
+
+  if ((outer_enc = r_asn1_bin_encoder_new (R_ASN1_DER)) == NULL)
+    goto cleanup_mpints;
+
+  if (r_asn1_bin_encoder_begin_constructed (outer_enc, id, 0) != R_ASN1_ENCODER_OK ||
+      r_asn1_bin_encoder_add_integer_i32 (outer_enc, 0) != R_ASN1_ENCODER_OK)
+    goto cleanup_outer;
+  if (r_asn1_bin_encoder_begin_constructed (outer_enc, id, 0) != R_ASN1_ENCODER_OK)
+    goto cleanup_outer;
+  r_asn1_bin_encoder_add_oid_rawsz (outer_enc, R_RSA_OID_DH_KEY_AGREEMENT);
+  if (r_asn1_bin_encoder_begin_constructed (outer_enc, id, 0) == R_ASN1_ENCODER_OK) {
+    r_asn1_bin_encoder_add_integer_mpint (outer_enc, &p);
+    r_asn1_bin_encoder_add_integer_mpint (outer_enc, &g);
+    r_asn1_bin_encoder_end_constructed (outer_enc);
+  }
+  r_asn1_bin_encoder_end_constructed (outer_enc);
+  r_asn1_bin_encoder_add_raw (outer_enc, octet_id, inner_buf, inner_size);
+  r_asn1_bin_encoder_end_constructed (outer_enc);
+
+  outer_buf = r_asn1_bin_encoder_get_data (outer_enc, outsize);
+
+cleanup_outer:
+  if (outer_enc != NULL)
+    r_asn1_bin_encoder_unref (outer_enc);
+cleanup_mpints:
+  if (params_ok) {
+    r_mpint_clear (&p);
+    r_mpint_clear (&g);
+  }
+out:
+  r_free (inner_buf);
+  if (inner_enc != NULL)
+    r_asn1_bin_encoder_unref (inner_enc);
+  return outer_buf;
+}
+
+/* Marshal the private key to its over-the-wire DER form, applying the
+ * PKCS#8 wrap only where the algo doesn't have a self-contained raw
+ * private-key block (DH). */
+static ruint8 *
+r_pem_encode_priv_key (const RCryptoKey * key, rsize * outsize)
+{
+  RAsn1BinEncoder * enc;
+  ruint8 * buf;
+
+  if (r_crypto_key_get_algo (key) == R_CRYPTO_ALGO_DH)
+    return r_pem_encode_dh_priv_pkcs8 (key, outsize);
+
+  if ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)) == NULL)
+    return NULL;
+  if (r_crypto_key_to_asn1 (key, enc) != R_CRYPTO_OK) {
+    r_asn1_bin_encoder_unref (enc);
+    return NULL;
+  }
+  buf = r_asn1_bin_encoder_get_data (enc, outsize);
+  r_asn1_bin_encoder_unref (enc);
+  return buf;
+}
 
 struct _RPemParser {
   RRef ref;
@@ -756,6 +866,91 @@ r_pem_parse_cert_from_data (const rchar * data, rssize size)
     r_pem_parser_unref (parser);
   }
 
+  return ret;
+}
+
+rchar *
+r_pem_write_private_key_dup (const RCryptoKey * key, rsize linesize, rsize * out)
+{
+  rchar * ret;
+  rsize asn1_size, b64_size, size;
+  const rchar * label;
+
+  if (R_UNLIKELY (key == NULL)) return NULL;
+  if ((label = r_pem_priv_key_label (key)) == NULL) return NULL;
+
+  /* Generous upper bound on the worst-case private-key serialisation:
+   * RSA's PKCS#1 RSAPrivateKey carries ~6 modulus-sized integers; the
+   * DH PKCS#8 wrap repeats (p, g) in the algorithm identifier. 12x of
+   * the key bit length plus a kilobyte of OID / tag / length overhead
+   * comfortably covers any of the supported algorithms. */
+  asn1_size = (rsize) (r_crypto_key_get_bitsize (key) / 8) * 12 + 1024;
+  b64_size = ((asn1_size + 2) / 3) * 4;
+  if (linesize > 0)
+    b64_size += b64_size / ((linesize + 3) & ~(rsize)3) + 1;
+  size = r_strlen (R_PEM_BEGIN_START) + r_strlen (label) +
+      r_strlen (R_PEM_BEGIN_END) + 1 + b64_size + 1 +
+      r_strlen (R_PEM_END_START) + r_strlen (label) +
+      r_strlen (R_PEM_END_END) + 1 + 1;
+
+  if ((ret = r_malloc (size)) != NULL) {
+    if (R_UNLIKELY (!r_pem_write_private_key (key, ret, size, linesize, out))) {
+      r_free (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+rboolean
+r_pem_write_private_key (const RCryptoKey * key,
+    rpointer data, rsize size, rsize linesize, rsize * out)
+{
+  rchar * p;
+  rboolean ret = FALSE;
+  const rchar * label;
+  ruint8 * asn1buf;
+  rsize asn1bufsize;
+  rchar * b64;
+  rsize b64size, label_len, framing_len;
+
+  if (R_UNLIKELY (key == NULL || data == NULL)) return FALSE;
+  if ((label = r_pem_priv_key_label (key)) == NULL) return FALSE;
+  if ((asn1buf = r_pem_encode_priv_key (key, &asn1bufsize)) == NULL)
+    return FALSE;
+
+  if ((b64 = r_base64_encode_dup_full (asn1buf, asn1bufsize, linesize, &b64size)) == NULL) {
+    r_free (asn1buf);
+    return FALSE;
+  }
+
+  label_len = r_strlen (label);
+  framing_len = r_strlen (R_PEM_BEGIN_START) + label_len +
+      r_strlen (R_PEM_BEGIN_END) + 1 + b64size + 1 +
+      r_strlen (R_PEM_END_START) + label_len +
+      r_strlen (R_PEM_END_END) + 1 + 1;
+
+  if (size >= framing_len) {
+    p = data;
+    p = r_stpncpy (p, R_PEM_BEGIN_START, r_strlen (R_PEM_BEGIN_START));
+    p = r_stpncpy (p, label, label_len);
+    p = r_stpncpy (p, R_PEM_BEGIN_END "\n", r_strlen (R_PEM_BEGIN_END) + 1);
+    p = r_stpncpy (p, b64, b64size);
+    if (p[-1] != '\n')
+      *p++ = '\n';
+    p = r_stpncpy (p, R_PEM_END_START, r_strlen (R_PEM_END_START));
+    p = r_stpncpy (p, label, label_len);
+    /* Include the trailing NUL so callers can treat the buffer as a
+     * C string. */
+    p = r_stpncpy (p, R_PEM_END_END "\n", r_strlen (R_PEM_END_END) + 2);
+    ret = TRUE;
+    if (out != NULL)
+      *out = RPOINTER_TO_SIZE (p) - RPOINTER_TO_SIZE (data);
+  }
+
+  r_free (b64);
+  r_free (asn1buf);
   return ret;
 }
 
