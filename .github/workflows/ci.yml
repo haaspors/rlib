@@ -113,7 +113,13 @@ jobs:
       - name: Build
         run: meson compile -C build
       - name: Test
-        run: meson test -C build --print-errorlogs
+        # The 'rlib test' target runs every unit test inside a single
+        # meson test entry, so meson's per-test cap (default 30s)
+        # applies to the whole suite. TSan / ASan slowdown plus a slow
+        # CI runner brushes that limit even though each unit test fits
+        # its own RTEST budget; bump the multiplier to keep us under
+        # the 120s mark.
+        run: meson test -C build --print-errorlogs --timeout-multiplier 4
       - name: Upload test logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
