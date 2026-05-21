@@ -19,6 +19,7 @@
 #include "config.h"
 #include "rcrypto-private.h"
 
+#include <rlib/crypto/rdh.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/recc.h>
 #include <rlib/crypto/rrsa.h>
@@ -270,6 +271,34 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         }
         r_mpint_clear (&e);
         r_mpint_clear (&n);
+      } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_DH_KEY_AGREEMENT)) {
+        rmpint p, g, y;
+        r_mpint_init (&p);
+        r_mpint_init (&g);
+        r_mpint_init (&y);
+
+        r_asn1_bin_decoder_next (dec, tlv);
+        if (R_ASN1_BIN_TLV_ID_PC (tlv) == R_ASN1_ID_CONSTRUCTED &&
+            r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+          if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_INTEGER) {
+            r_asn1_bin_tlv_parse_integer_mpint (tlv, &p);
+            r_asn1_bin_decoder_next (dec, tlv);
+          }
+          if (R_ASN1_BIN_TLV_ID_TAG (tlv) == R_ASN1_ID_INTEGER) {
+            r_asn1_bin_tlv_parse_integer_mpint (tlv, &g);
+            r_asn1_bin_decoder_next (dec, tlv);
+          }
+          r_asn1_bin_decoder_out (dec, tlv);
+        }
+        r_asn1_bin_decoder_out (dec, tlv);
+        if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+          if (r_asn1_bin_tlv_parse_integer_mpint (tlv, &y) == R_ASN1_DECODER_OK)
+            ret = r_dh_pub_key_new (&p, &g, &y);
+          r_asn1_bin_decoder_out (dec, tlv);
+        }
+        r_mpint_clear (&p);
+        r_mpint_clear (&g);
+        r_mpint_clear (&y);
       } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_X9CM_OID_DSA)) {
         rmpint p, q, g, y;
         r_mpint_init (&p);
@@ -390,6 +419,12 @@ r_crypto_key_from_asn1_private_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         if (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK &&
             r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
           ret = r_rsa_priv_key_new_from_asn1 (dec, tlv);
+          r_asn1_bin_decoder_out (dec, tlv);
+        }
+      } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_DH_KEY_AGREEMENT)) {
+        if (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK &&
+            r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+          ret = r_dh_priv_key_new_from_asn1 (dec, tlv);
           r_asn1_bin_decoder_out (dec, tlv);
         }
       } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_X9CM_OID_DSA)) {

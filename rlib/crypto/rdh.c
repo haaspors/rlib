@@ -21,6 +21,7 @@
 
 #include <rlib/crypto/rdh.h>
 
+#include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>
 
 typedef struct {
@@ -34,6 +35,7 @@ typedef struct {
 typedef struct {
   RDhPubKey pub;
 
+  rint32 ver;
   rmpint x;
 } RDhPrivKey;
 
@@ -51,12 +53,68 @@ r_dh_pub_key_free (rpointer data)
   }
 }
 
+static RCryptoResult
+r_dh_pub_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  RCryptoResult ret = R_CRYPTO_ERROR;
+  const RDhPubKey * pk = (const RDhPubKey *)key;
+  ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+
+  /* SubjectPublicKeyInfo ::= SEQUENCE {
+   *   AlgorithmIdentifier { dhKeyAgreement, DHParameter { p, g } },
+   *   BIT STRING (INTEGER y)  -- DHPublicKey, RFC 3279 / PKCS#3 */
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) != R_ASN1_ENCODER_OK)
+    return ret;
+
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+    r_asn1_bin_encoder_add_oid_rawsz (enc, R_RSA_OID_DH_KEY_AGREEMENT);
+    if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+      r_asn1_bin_encoder_add_integer_mpint (enc, &pk->p);
+      r_asn1_bin_encoder_add_integer_mpint (enc, &pk->g);
+      r_asn1_bin_encoder_end_constructed (enc);
+    }
+    r_asn1_bin_encoder_end_constructed (enc);
+  }
+
+  if (r_asn1_bin_encoder_begin_bit_string (enc, 0) == R_ASN1_ENCODER_OK) {
+    if (r_asn1_bin_encoder_add_integer_mpint (enc, &pk->y) == R_ASN1_ENCODER_OK)
+      ret = R_CRYPTO_OK;
+    r_asn1_bin_encoder_end_bit_string (enc);
+  }
+
+  r_asn1_bin_encoder_end_constructed (enc);
+  return ret;
+}
+
+static RCryptoResult
+r_dh_priv_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  /* Self-describing payload mirroring how rlib treats DSA: a single
+   * SEQUENCE { ver, p, g, x } so the importer doesn't have to thread
+   * (p, g) down from a wrapping AlgorithmIdentifier. */
+  ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+    const RDhPrivKey * pk = (const RDhPrivKey *)key;
+    if (r_asn1_bin_encoder_add_integer_i32 (enc, pk->ver) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->pub.p) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->pub.g) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->x) == R_ASN1_ENCODER_OK) {
+      r_asn1_bin_encoder_end_constructed (enc);
+      return R_CRYPTO_OK;
+    }
+    r_asn1_bin_encoder_end_constructed (enc);
+  }
+
+  return R_CRYPTO_ERROR;
+}
+
 static void
 r_dh_pub_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo dh_pub_key_info = {
     R_CRYPTO_ALGO_DH, R_DH_STR,
-    NULL, NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, r_dh_pub_key_export
   };
 
   r_ref_init (key, r_dh_pub_key_free);
@@ -81,7 +139,7 @@ r_dh_priv_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo dh_priv_key_info = {
     R_CRYPTO_ALGO_DH, R_DH_STR,
-    NULL, NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, r_dh_priv_key_export
   };
 
   r_ref_init (key, r_dh_priv_key_free);
@@ -139,6 +197,7 @@ r_dh_priv_key_new (const rmpint * p, const rmpint * g,
     return NULL;
 
   if ((ret = r_mem_new (RDhPrivKey)) != NULL) {
+    ret->ver = 0;
     r_mpint_init_copy (&ret->pub.p, p);
     r_mpint_init_copy (&ret->pub.g, g);
     r_mpint_init_copy (&ret->pub.y, y);
@@ -162,6 +221,7 @@ r_dh_priv_key_new_binary (rconstpointer p, rsize psize,
     return NULL;
 
   if ((ret = r_mem_new (RDhPrivKey)) != NULL) {
+    ret->ver = 0;
     r_mpint_init_binary (&ret->pub.p, p, psize);
     r_mpint_init_binary (&ret->pub.g, g, gsize);
     r_mpint_init_binary (&ret->pub.y, y, ysize);
@@ -195,6 +255,7 @@ r_dh_priv_key_new_gen (const rmpint * p, const rmpint * g, RPrng * prng)
   if ((ret = r_mem_new (RDhPrivKey)) == NULL)
     goto out;
 
+  ret->ver = 0;
   r_mpint_init_copy (&ret->pub.p, p);
   r_mpint_init_copy (&ret->pub.g, g);
   r_mpint_init (&ret->pub.y);
@@ -334,4 +395,44 @@ r_dh_compute_shared (const RCryptoKey * priv, const RCryptoKey * peer_pub,
   r_mpint_clear (&shared);
 
   return ret;
+}
+
+RCryptoKey *
+r_dh_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
+{
+  RDhPrivKey * ret;
+
+  if (R_UNLIKELY (dec == NULL || tlv == NULL))
+    return NULL;
+  if ((ret = r_mem_new (RDhPrivKey)) == NULL)
+    return NULL;
+
+  r_mpint_init (&ret->pub.p);
+  r_mpint_init (&ret->pub.g);
+  r_mpint_init (&ret->pub.y);
+  r_mpint_init (&ret->x);
+
+  /* DHPrivateKey ::= SEQUENCE { ver INTEGER, p INTEGER, g INTEGER, x INTEGER }
+   * Caller positioned the decoder at the wrapping SEQUENCE. */
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK ||
+      r_asn1_bin_tlv_parse_integer_i32 (tlv, &ret->ver) != R_ASN1_DECODER_OK ||
+      r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+      r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->pub.p) != R_ASN1_DECODER_OK ||
+      r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+      r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->pub.g) != R_ASN1_DECODER_OK ||
+      r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+      r_asn1_bin_tlv_parse_integer_mpint (tlv, &ret->x) != R_ASN1_DECODER_OK) {
+    r_dh_priv_key_free (ret);
+    return NULL;
+  }
+
+  /* Recover y from (g, x, p) so the caller has a complete key without
+   * having to compute it themselves. */
+  if (!r_mpint_expmod (&ret->pub.y, &ret->pub.g, &ret->x, &ret->pub.p)) {
+    r_dh_priv_key_free (ret);
+    return NULL;
+  }
+
+  r_dh_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.p));
+  return (RCryptoKey *)ret;
 }

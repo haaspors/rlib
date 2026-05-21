@@ -23,6 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
+#include <rlib/asn1/rasn1.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/data/rmpint.h>
 #include <rlib/rrand.h>
@@ -43,6 +44,8 @@ R_API RCryptoKey * r_dh_priv_key_new_binary (rconstpointer p, rsize psize,
     rconstpointer g, rsize gsize,
     rconstpointer y, rsize ysize,
     rconstpointer x, rsize xsize) R_ATTR_MALLOC;
+R_API RCryptoKey * r_dh_priv_key_new_from_asn1 (RAsn1BinDecoder * dec,
+    RAsn1BinTLV * tlv) R_ATTR_MALLOC;
 
 /* Pick a random x in [2, p-2] and derive y = g^x mod p. Caller owns the
  * returned key. */
