@@ -1,5 +1,7 @@
 #include <rlib/rcrypto.h>
 
+#include "wycheproof_dsa.h"
+
 /* FIPS 186-2 Appendix 5 sample DSA-1024 / SHA-1 parameters: p is a
  * 1024-bit prime, q is a 160-bit prime dividing p-1, g has order q
  * in (Z/pZ)*. (x, y) is a valid keypair: y = g^x mod p. */
@@ -424,5 +426,66 @@ RTEST (rdsa, sign_fresh_k_each_call, RTEST_FAST)
   r_crypto_key_unref (priv);
   r_prng_unref (prng);
   clear_dsa_mpints (&p, &q, &g, &y, &x);
+}
+RTEST_END;
+
+/* Hash msg with mdtype, build the corresponding RCryptoKey from a
+ * Wycheproof DsaKey row, then call r_crypto_key_verify. Factored out
+ * so the per-vector loop body stays focused on the assertion logic. */
+static RCryptoResult
+wp_dsa_verify_one (const WycheproofDsaKey * k, RMsgDigestType mdtype,
+    const ruint8 * msg, rsize msg_len, const ruint8 * sig, rsize sig_len)
+{
+  RMsgDigest * md;
+  RCryptoKey * pub;
+  ruint8 * hash;
+  rsize hash_len;
+  RCryptoResult ret;
+
+  if ((md = r_msg_digest_new (mdtype)) == NULL)
+    return R_CRYPTO_ERROR;
+  hash_len = r_msg_digest_size (md);
+  hash = r_alloca (hash_len);
+  if (!r_msg_digest_update (md, msg, msg_len) ||
+      !r_msg_digest_get_data (md, hash, hash_len, NULL)) {
+    r_msg_digest_free (md);
+    return R_CRYPTO_HASH_FAILED;
+  }
+  r_msg_digest_free (md);
+
+  if ((pub = r_dsa_pub_key_new_binary (k->p, k->p_len, k->q, k->q_len,
+          k->g, k->g_len, k->y, k->y_len)) == NULL)
+    return R_CRYPTO_ERROR;
+  ret = r_crypto_key_verify (pub, mdtype, hash, hash_len, sig, sig_len);
+  r_crypto_key_unref (pub);
+  return ret;
+}
+
+/* Walk every Wycheproof DSA-2048/256 + SHA-256 verify vector. "valid"
+ * entries must verify; "invalid" entries must produce a non-OK result;
+ * "acceptable" entries are allowed either outcome (those flag spec-
+ * legal-but-discouraged signature encodings). Vectors cover the bait
+ * historically used to break DSA verifiers: leading-zero / padding /
+ * length-prefix games on r and s, signatures with r or s out of range,
+ * BER-vs-DER quirks, edge cases for the modexp identities, etc. */
+RTEST_LOOP (rdsa, wycheproof_2048_256_sha256_verify, RTEST_SLOW,
+    0, R_N_ELEMENTS (wp_dsa_2048_256_sha256_tests))
+{
+  const WycheproofDsaTest * t = &wp_dsa_2048_256_sha256_tests[__i];
+  const WycheproofDsaKey * k = &wp_dsa_2048_256_sha256_keys[t->key_idx];
+  RCryptoResult res = wp_dsa_verify_one (k, R_MSG_DIGEST_TYPE_SHA256,
+      t->msg, t->msg_len, t->sig, t->sig_len);
+
+  switch (t->expected) {
+    case WYCHEPROOF_VALID:
+      r_assert_cmpint (res, ==, R_CRYPTO_OK);
+      break;
+    case WYCHEPROOF_INVALID:
+      r_assert_cmpint (res, !=, R_CRYPTO_OK);
+      break;
+    case WYCHEPROOF_ACCEPTABLE:
+      /* Either outcome is spec-conformant. */
+      break;
+  }
 }
 RTEST_END;
