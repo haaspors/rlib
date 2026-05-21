@@ -1002,6 +1002,14 @@ r_mpint_shr_digit (rmpint * dst, const rmpint * a, ruint16 d)
   if (R_UNLIKELY (dst == NULL || a == NULL))
     return FALSE;
 
+  /* Shifting away every digit (or more) yields zero. Without this guard
+   * `a->dig_used - d` underflows the unsigned counter and the memcpy
+   * below reads far past the source allocation. */
+  if (d >= a->dig_used) {
+    r_mpint_zero (dst);
+    return TRUE;
+  }
+
   r_mpint_ensure_digits (dst, a->dig_used - d);
   dst->dig_used = a->dig_used - d;
 
