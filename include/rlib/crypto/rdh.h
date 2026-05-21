@@ -32,6 +32,29 @@ R_BEGIN_DECLS
 
 #define R_DH_STR     "DH"
 
+/* Standard named DH groups. All use g = 2. The R_DH_GROUP_MODP_* values
+ * come from RFC 3526 (general-purpose DH used by IKE/SSH); the
+ * R_DH_GROUP_FFDHE_* values come from RFC 7919 (designed for TLS). */
+typedef enum {
+  R_DH_GROUP_UNKNOWN = -1,
+  R_DH_GROUP_MODP_2048 = 0,   /* RFC 3526 group 14 */
+  R_DH_GROUP_MODP_3072,       /* RFC 3526 group 15 */
+  R_DH_GROUP_MODP_4096,       /* RFC 3526 group 16 */
+  R_DH_GROUP_MODP_6144,       /* RFC 3526 group 17 */
+  R_DH_GROUP_MODP_8192,       /* RFC 3526 group 18 */
+  R_DH_GROUP_FFDHE_2048,      /* RFC 7919 */
+  R_DH_GROUP_FFDHE_3072,
+  R_DH_GROUP_FFDHE_4096,
+  R_DH_GROUP_FFDHE_6144,
+  R_DH_GROUP_FFDHE_8192,
+  R_DH_GROUP_COUNT
+} RDhNamedGroup;
+
+/* Initialise (p, g) with the parameters of the named group. The caller
+ * is responsible for clearing both mpints. */
+R_API rboolean r_dh_named_group_get_params (RDhNamedGroup group,
+    rmpint * p, rmpint * g);
+
 R_API RCryptoKey * r_dh_pub_key_new (const rmpint * p, const rmpint * g,
     const rmpint * y) R_ATTR_MALLOC;
 R_API RCryptoKey * r_dh_pub_key_new_binary (rconstpointer p, rsize psize,
@@ -50,6 +73,8 @@ R_API RCryptoKey * r_dh_priv_key_new_from_asn1 (RAsn1BinDecoder * dec,
 /* Pick a random x in [2, p-2] and derive y = g^x mod p. Caller owns the
  * returned key. */
 R_API RCryptoKey * r_dh_priv_key_new_gen (const rmpint * p, const rmpint * g,
+    RPrng * prng) R_ATTR_MALLOC;
+R_API RCryptoKey * r_dh_priv_key_new_gen_named (RDhNamedGroup group,
     RPrng * prng) R_ATTR_MALLOC;
 
 R_API rboolean r_dh_pub_key_get_p (const RCryptoKey * key, rmpint * p);

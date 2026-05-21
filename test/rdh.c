@@ -1,21 +1,5 @@
 #include <rlib/rcrypto.h>
 
-/* RFC 3526 group 14, MODP-2048: p is a Sophie-Germain-style safe prime
- * and g = 2. Used for the round-trip and known-answer tests below. */
-static const rchar rfc3526_group14_p[] =
-    "0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1"
-    "29024E088A67CC74020BBEA63B139B22514A08798E3404DD"
-    "EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245"
-    "E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED"
-    "EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3D"
-    "C2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F"
-    "83655D23DCA3AD961C62F356208552BB9ED529077096966D"
-    "670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B"
-    "E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9"
-    "DE2BCBF6955817183995497CEA956AE515D2261898FA0510"
-    "15728E5A8AACAA68FFFFFFFFFFFFFFFF";
-static const rchar rfc3526_group14_g[] = "0x02";
-
 RTEST (rdh, key_new_and_getters, RTEST_FAST)
 {
   rmpint p, g, y, x, tmp;
@@ -71,8 +55,7 @@ RTEST (rdh, gen_and_exchange_roundtrip, RTEST_SLOW)
   rsize a_size = sizeof (a_shared), b_size = sizeof (b_shared);
   rmpint tmp;
 
-  r_mpint_init_str (&p, rfc3526_group14_p, NULL, 16);
-  r_mpint_init_str (&g, rfc3526_group14_g, NULL, 16);
+  r_assert (r_dh_named_group_get_params (R_DH_GROUP_MODP_2048, &p, &g));
   r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
 
   r_assert_cmpptr ((a_priv = r_dh_priv_key_new_gen (&p, &g, prng)), !=, NULL);
@@ -113,8 +96,7 @@ RTEST (rdh, compute_shared_known_answer, RTEST_SLOW)
   ruint8 a_shared[256], b_shared[256];
   rsize a_size = sizeof (a_shared), b_size = sizeof (b_shared);
 
-  r_mpint_init_str (&p, rfc3526_group14_p, NULL, 16);
-  r_mpint_init_str (&g, rfc3526_group14_g, NULL, 16);
+  r_assert (r_dh_named_group_get_params (R_DH_GROUP_MODP_2048, &p, &g));
   r_mpint_init_str (&x_a,
       "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       NULL, 16);
@@ -237,6 +219,91 @@ RTEST (rdh, compute_shared_rejects_mismatched_group, RTEST_FAST)
   r_mpint_clear (&g);
   r_mpint_clear (&x);
   r_mpint_clear (&y);
+}
+RTEST_END;
+
+RTEST (rdh, named_group_get_params, RTEST_FAST)
+{
+  rmpint p, g;
+  RDhNamedGroup grp;
+  /* Per-group reference bit lengths from RFC 3526 and RFC 7919. */
+  static const struct {
+    RDhNamedGroup grp;
+    ruint expected_bits;
+  } cases[] = {
+    { R_DH_GROUP_MODP_2048,  2048 },
+    { R_DH_GROUP_MODP_3072,  3072 },
+    { R_DH_GROUP_MODP_4096,  4096 },
+    { R_DH_GROUP_MODP_6144,  6144 },
+    { R_DH_GROUP_MODP_8192,  8192 },
+    { R_DH_GROUP_FFDHE_2048, 2048 },
+    { R_DH_GROUP_FFDHE_3072, 3072 },
+    { R_DH_GROUP_FFDHE_4096, 4096 },
+    { R_DH_GROUP_FFDHE_6144, 6144 },
+    { R_DH_GROUP_FFDHE_8192, 8192 },
+  };
+  rsize i;
+
+  /* Invalid sentinel / out-of-range values are refused. */
+  r_assert (!r_dh_named_group_get_params (R_DH_GROUP_UNKNOWN, &p, &g));
+  r_assert (!r_dh_named_group_get_params (R_DH_GROUP_COUNT, &p, &g));
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    grp = cases[i].grp;
+    r_assert (r_dh_named_group_get_params (grp, &p, &g));
+    r_assert_cmpuint (r_mpint_bits_used (&p), ==, cases[i].expected_bits);
+    r_assert_cmpint (r_mpint_cmp_i32 (&g, 2), ==, 0);
+    r_mpint_clear (&p);
+    r_mpint_clear (&g);
+  }
+}
+RTEST_END;
+
+RTEST (rdh, gen_named_roundtrip, RTEST_SLOW)
+{
+  /* The convenience generator + exchange must agree both ways, exercising
+   * a different group (ffdhe2048) than the MODP-based roundtrip above. */
+  RCryptoKey * a_priv, * b_priv, * a_pub, * b_pub;
+  RPrng * prng;
+  rmpint y;
+  ruint8 a_shared[256], b_shared[256];
+  rsize a_size = sizeof (a_shared), b_size = sizeof (b_shared);
+
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+  r_assert_cmpptr ((a_priv = r_dh_priv_key_new_gen_named (R_DH_GROUP_FFDHE_2048, prng)),
+      !=, NULL);
+  r_assert_cmpptr ((b_priv = r_dh_priv_key_new_gen_named (R_DH_GROUP_FFDHE_2048, prng)),
+      !=, NULL);
+
+  /* Public-only view for the peer; reuse the priv key's (p, g). */
+  {
+    rmpint p, g;
+    r_mpint_init (&p);
+    r_mpint_init (&g);
+    r_mpint_init (&y);
+    r_assert (r_dh_pub_key_get_p (a_priv, &p));
+    r_assert (r_dh_pub_key_get_g (a_priv, &g));
+    r_assert (r_dh_pub_key_get_y (a_priv, &y));
+    r_assert_cmpptr ((a_pub = r_dh_pub_key_new (&p, &g, &y)), !=, NULL);
+    r_assert (r_dh_pub_key_get_y (b_priv, &y));
+    r_assert_cmpptr ((b_pub = r_dh_pub_key_new (&p, &g, &y)), !=, NULL);
+    r_mpint_clear (&p);
+    r_mpint_clear (&g);
+    r_mpint_clear (&y);
+  }
+
+  r_assert_cmpint (r_dh_compute_shared (a_priv, b_pub, a_shared, &a_size),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_dh_compute_shared (b_priv, a_pub, b_shared, &b_size),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpuint (a_size, ==, 256);
+  r_assert_cmpmem (a_shared, ==, b_shared, 256);
+
+  r_crypto_key_unref (a_priv);
+  r_crypto_key_unref (b_priv);
+  r_crypto_key_unref (a_pub);
+  r_crypto_key_unref (b_pub);
+  r_prng_unref (prng);
 }
 RTEST_END;
 

@@ -24,6 +24,27 @@
 #include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>
 
+#include "rdh-groups.inc"
+
+typedef struct {
+  const ruint8 * p;
+  rsize p_len;
+  ruint8 g;
+} RDhGroupParams;
+
+static const RDhGroupParams g__dh_groups[R_DH_GROUP_COUNT] = {
+  { rfc3526_group14_p, sizeof (rfc3526_group14_p), 2 },
+  { rfc3526_group15_p, sizeof (rfc3526_group15_p), 2 },
+  { rfc3526_group16_p, sizeof (rfc3526_group16_p), 2 },
+  { rfc3526_group17_p, sizeof (rfc3526_group17_p), 2 },
+  { rfc3526_group18_p, sizeof (rfc3526_group18_p), 2 },
+  { rfc7919_ffdhe2048_p, sizeof (rfc7919_ffdhe2048_p), 2 },
+  { rfc7919_ffdhe3072_p, sizeof (rfc7919_ffdhe3072_p), 2 },
+  { rfc7919_ffdhe4096_p, sizeof (rfc7919_ffdhe4096_p), 2 },
+  { rfc7919_ffdhe6144_p, sizeof (rfc7919_ffdhe6144_p), 2 },
+  { rfc7919_ffdhe8192_p, sizeof (rfc7919_ffdhe8192_p), 2 },
+};
+
 typedef struct {
   RCryptoKey key;
 
@@ -435,4 +456,35 @@ r_dh_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 
   r_dh_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.p));
   return (RCryptoKey *)ret;
+}
+
+rboolean
+r_dh_named_group_get_params (RDhNamedGroup group, rmpint * p, rmpint * g)
+{
+  const RDhGroupParams * gp;
+
+  if (R_UNLIKELY (group < 0 || group >= R_DH_GROUP_COUNT))
+    return FALSE;
+  if (R_UNLIKELY (p == NULL || g == NULL))
+    return FALSE;
+
+  gp = &g__dh_groups[group];
+  r_mpint_init_binary (p, gp->p, gp->p_len);
+  r_mpint_init (g);
+  r_mpint_set_u32 (g, gp->g);
+  return TRUE;
+}
+
+RCryptoKey *
+r_dh_priv_key_new_gen_named (RDhNamedGroup group, RPrng * prng)
+{
+  rmpint p, g;
+  RCryptoKey * ret;
+
+  if (!r_dh_named_group_get_params (group, &p, &g))
+    return NULL;
+  ret = r_dh_priv_key_new_gen (&p, &g, prng);
+  r_mpint_clear (&p);
+  r_mpint_clear (&g);
+  return ret;
 }
