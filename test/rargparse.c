@@ -1116,6 +1116,260 @@ RTEST (rargparse, default_value_in_help, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rargparse, positional_bind, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "outfile", 0, R_ARG_OPTION_TYPE_FILENAME,
+      R_ARG_OPTION_FLAG_POSITIONAL, "Output file", "OUTFILE", NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", "/tmp/out.txt", NULL);
+  rchar ** argv = strv;
+  int argc = (int) r_strv_len (strv);
+  rchar * tmp;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+  r_assert_cmpint (argc, ==, 0);
+  r_assert (r_arg_parse_ctx_has_option (ctx, "outfile"));
+  r_assert_cmpstr ((tmp = r_arg_parse_ctx_get_option_filename (ctx, "outfile")), ==, "/tmp/out.txt");
+  r_free (tmp);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, positional_multiple_in_order, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "src",  0, R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_POSITIONAL, "Source", "SRC", NULL },
+    { "dst",  0, R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_POSITIONAL, "Destination", "DST", NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", "a.txt", "b.txt", NULL);
+  rchar ** argv = strv;
+  int argc = (int) r_strv_len (strv);
+  rchar * tmp;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+  r_assert_cmpstr ((tmp = r_arg_parse_ctx_get_option_string (ctx, "src")), ==, "a.txt");
+  r_free (tmp);
+  r_assert_cmpstr ((tmp = r_arg_parse_ctx_get_option_string (ctx, "dst")), ==, "b.txt");
+  r_free (tmp);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, positional_options_then_positional, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "verbose", 'v', R_ARG_OPTION_TYPE_NONE,     R_ARG_OPTION_FLAG_NONE, "Verbose", NULL, NULL },
+    { "n",        0,  R_ARG_OPTION_TYPE_INT,      R_ARG_OPTION_FLAG_NONE, "Count",   NULL, NULL },
+    { "outfile",  0,  R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_POSITIONAL, "Output", "OUT", NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", "-v", "--n", "3", "out.txt", NULL);
+  rchar ** argv = strv;
+  int argc = (int) r_strv_len (strv);
+  rchar * tmp;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+  r_assert (r_arg_parse_ctx_get_option_bool (ctx, "verbose"));
+  r_assert_cmpint (r_arg_parse_ctx_get_option_int (ctx, "n"), ==, 3);
+  r_assert_cmpstr ((tmp = r_arg_parse_ctx_get_option_filename (ctx, "outfile")), ==, "out.txt");
+  r_free (tmp);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, positional_missing_required, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "outfile", 0, R_ARG_OPTION_TYPE_FILENAME,
+      R_ARG_OPTION_FLAG_POSITIONAL, "Output", "OUT", NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", NULL);
+  rchar ** argv = strv;
+  int argc = 1;
+  RArgParseResult res;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
+          R_ARG_PARSE_FLAG_DONT_EXIT | R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT,
+          &argc, (const rchar ***)&argv, &res)), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_MISSING_OPTION);
+
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, positional_default_used_when_absent, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "outfile", 0, R_ARG_OPTION_TYPE_FILENAME,
+      R_ARG_OPTION_FLAG_POSITIONAL, "Output", "OUT", "/tmp/default" },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", NULL);
+  rchar ** argv = strv;
+  int argc = 1;
+  rchar * tmp;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+  r_assert (!r_arg_parse_ctx_has_option (ctx, "outfile"));
+  r_assert_cmpstr ((tmp = r_arg_parse_ctx_get_option_filename (ctx, "outfile")), ==, "/tmp/default");
+  r_free (tmp);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, positional_double_dash_terminator, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "verbose", 'v', R_ARG_OPTION_TYPE_NONE,   R_ARG_OPTION_FLAG_NONE, "Verbose", NULL, NULL },
+    { "name",     0,  R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_POSITIONAL, "Name", "NAME", NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv = r_strv_new ("rlibtest", "-v", "--", "--something-that-looks-like-an-option", NULL);
+  rchar ** argv = strv;
+  int argc = (int) r_strv_len (strv);
+  rchar * tmp;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+  r_assert (r_arg_parse_ctx_get_option_bool (ctx, "verbose"));
+  r_assert_cmpstr ((tmp = r_arg_parse_ctx_get_option_string (ctx, "name")),
+      ==, "--something-that-looks-like-an-option");
+  r_free (tmp);
+
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, positional_type_checked, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "count", 0, R_ARG_OPTION_TYPE_INT,
+      R_ARG_OPTION_FLAG_POSITIONAL, "Count", "N", NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv;
+  rchar ** argv;
+  int argc;
+  RArgParseResult res;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+
+  strv = argv = r_strv_new ("rlibtest", "42", NULL);
+  argc = (int) r_strv_len (strv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_OK);
+  r_assert_cmpint (r_arg_parse_ctx_get_option_int (ctx, "count"), ==, 42);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  strv = argv = r_strv_new ("rlibtest", "not-a-number", NULL);
+  argc = (int) r_strv_len (strv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
+          R_ARG_PARSE_FLAG_DONT_EXIT | R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT,
+          &argc, (const rchar ***)&argv, &res)), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
+  r_strv_free (strv);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, positional_type_none_rejected, RTEST_FAST)
+{
+  static RArgOptionEntry bad[] = {
+    { "outfile", 0, R_ARG_OPTION_TYPE_NONE,
+      R_ARG_OPTION_FLAG_POSITIONAL, "Output", NULL, NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  r_assert (!r_arg_parser_add_option_entries (parser, bad, R_N_ELEMENTS (bad)));
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, positional_shortarg_warned, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "outfile", 'o', R_ARG_OPTION_TYPE_FILENAME,
+      R_ARG_OPTION_FLAG_POSITIONAL, "Output", "OUT", NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  rboolean res;
+  r_assert_logs_level (
+      res = r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)),
+      R_LOG_LEVEL_WARNING);
+  r_assert (res);
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, positional_in_help, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "src", 0, R_ARG_OPTION_TYPE_STRING,
+      R_ARG_OPTION_FLAG_POSITIONAL, "Source file", "SRC", NULL },
+    { "dst", 0, R_ARG_OPTION_TYPE_STRING,
+      R_ARG_OPTION_FLAG_POSITIONAL, "Destination", "DST", "/tmp/d" },
+  };
+  static const rchar * help_tmpl =
+    "Usage:\n"
+    "  %s [options] SRC [DST]\n"
+    "\nOptions:\n"
+    "%s"
+    "\nArguments:\n"
+    "  SRC                           Source file\n"
+    "  DST                           Destination [default: /tmp/d]\n";
+  rchar * expected, * help, * exe;
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+
+  r_assert_cmpptr ((exe = r_proc_get_exe_name ()), !=, NULL);
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+  expected = r_strprintf (help_tmpl, exe, rargparse_helpopt);
+  r_assert_cmpstr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_NONE, NULL)), ==, expected);
+  r_free (expected);
+  r_free (help);
+  r_free (exe);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (rargparse, required_without_default_still_required, RTEST_FAST)
 {
   /* Sanity-check: defval=NULL + REQUIRED still rejects parses that miss

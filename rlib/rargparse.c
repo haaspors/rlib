@@ -169,6 +169,9 @@ r_arg_option_entry_ctx_init (RArgOptionEntry * entry, const RArgOptionEntry * op
     return FALSE;
   if (opt->type >= R_ARG_OPTION_TYPE_COUNT)
     return FALSE;
+  if ((opt->flags & R_ARG_OPTION_FLAG_POSITIONAL) &&
+      opt->type == R_ARG_OPTION_TYPE_NONE)
+    return FALSE;
 
   r_memcpy (entry, opt, sizeof (RArgOptionEntry));
 
@@ -176,6 +179,11 @@ r_arg_option_entry_ctx_init (RArgOptionEntry * entry, const RArgOptionEntry * op
   if (opt->shortarg == '-' || (opt->shortarg != 0 && !r_ascii_isprint (opt->shortarg))) {
     R_LOG_CAT_WARNING (&rlib_logcat,
         "ignoring incompatible short opt name for --%s", opt->longarg);
+    entry->shortarg = 0;
+  }
+  if ((opt->flags & R_ARG_OPTION_FLAG_POSITIONAL) && opt->shortarg != 0) {
+    R_LOG_CAT_WARNING (&rlib_logcat,
+        "ignoring short opt name on positional %s", opt->longarg);
     entry->shortarg = 0;
   }
   if (opt->type != R_ARG_OPTION_TYPE_NONE && (opt->flags & R_ARG_OPTION_FLAG_INVERSE)) {
@@ -193,6 +201,8 @@ r_arg_option_entry_ctx_init (RArgOptionEntry * entry, const RArgOptionEntry * op
         "clearing required flag for --%s because a default is set", opt->longarg);
     entry->flags &= ~R_ARG_OPTION_FLAG_REQUIRED;
   }
+  if ((opt->flags & R_ARG_OPTION_FLAG_POSITIONAL) && opt->defval == NULL)
+    entry->flags |= R_ARG_OPTION_FLAG_REQUIRED;
 
   return TRUE;
 }
@@ -379,12 +389,51 @@ r_arg_parser_get_epilog (RArgParser * parser)
   return parser->epilog;
 }
 
+static rchar *
+r_arg_positional_usage_name (const RArgOptionEntry * opt)
+{
+  rchar * ret;
+  rsize i;
+
+  if (opt->eqname != NULL && *opt->eqname != 0)
+    return r_strdup (opt->eqname);
+
+  ret = r_strdup (opt->longarg);
+  for (i = 0; ret[i] != 0; i++)
+    ret[i] = r_ascii_upper (ret[i]);
+  return ret;
+}
+
+static void
+r_arg_positional_entry_append_help (const RArgOptionEntry * opt, RString * str)
+{
+  rssize spacing = 32;
+  rchar * name;
+
+  if (opt->flags & R_ARG_OPTION_FLAG_HIDDEN)
+    return;
+
+  name = r_arg_positional_usage_name (opt);
+  spacing -= r_string_append_printf (str, "  %s", name);
+  r_free (name);
+
+  while (spacing > 0)
+    spacing -= r_string_append (str, " ");
+
+  r_string_append (str, opt->desc);
+  if (opt->defval != NULL)
+    r_string_append_printf (str, " [default: %s]", opt->defval);
+  r_string_append (str, "\n");
+}
+
 static void
 r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
 {
   rssize spacing = 32;
 
   if (opt->flags & R_ARG_OPTION_FLAG_HIDDEN)
+    return;
+  if (opt->flags & R_ARG_OPTION_FLAG_POSITIONAL)
     return;
 
   spacing -= r_string_append (str, "  ");
@@ -464,6 +513,21 @@ r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
   str = r_string_new_sized (1024);
   r_string_append_printf (str, "Usage:\n  %s %s",
       appname != NULL ? appname : parser->appname, parser->options);
+  for (i = 0; i < parser->main->count; i++) {
+    const RArgOptionEntry * opt = &parser->main->entries[i];
+    rchar * name;
+
+    if (!(opt->flags & R_ARG_OPTION_FLAG_POSITIONAL))
+      continue;
+    if (opt->flags & R_ARG_OPTION_FLAG_HIDDEN)
+      continue;
+    name = r_arg_positional_usage_name (opt);
+    if (opt->defval != NULL)
+      r_string_append_printf (str, " [%s]", name);
+    else
+      r_string_append_printf (str, " %s", name);
+    r_free (name);
+  }
   if (r_kv_ptr_array_size (&parser->commands) > 0)
     r_string_append (str, " <command>");
   r_string_append (str, "\n");
@@ -480,6 +544,22 @@ r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
     r_arg_option_entry_append_help (&parser->main->entries[i], str);
 
   r_slist_foreach (parser->groups, (RFunc)r_arg_option_group_append_help, str);
+
+  {
+    rboolean any = FALSE;
+    for (i = 0; i < parser->main->count; i++) {
+      const RArgOptionEntry * opt = &parser->main->entries[i];
+      if (!(opt->flags & R_ARG_OPTION_FLAG_POSITIONAL))
+        continue;
+      if (opt->flags & R_ARG_OPTION_FLAG_HIDDEN)
+        continue;
+      if (!any) {
+        r_string_append (str, "\nArguments:\n");
+        any = TRUE;
+      }
+      r_arg_positional_entry_append_help (opt, str);
+    }
+  }
 
   if (r_kv_ptr_array_size (&parser->commands) > 0) {
     r_string_append (str, "\nCommands:\n");
@@ -803,12 +883,54 @@ r_arg_parser_parse_options (RArgParser * parser, RArgParseCtx * ctx,
     }
   }
 
-  if (ret == R_ARG_PARSE_OK) {
-    if (!r_arg_parser_check_required_options (parser, ctx))
-      ret = R_ARG_PARSE_MISSING_OPTION;
+  return ret;
+}
+
+static RArgParseResult
+r_arg_parser_parse_positionals (RArgParser * parser, RArgParseCtx * ctx,
+    int * argc, const rchar *** argv)
+{
+  rsize i;
+
+  for (i = 0; i < parser->main->count && *argc > 0; i++) {
+    RArgOptionEntry * entry = &parser->main->entries[i];
+    const rchar * str;
+    const rchar * end;
+    RArgParseResult parsed = R_ARG_PARSE_ERROR;
+
+    if (!(entry->flags & R_ARG_OPTION_FLAG_POSITIONAL))
+      continue;
+    if (r_dictionary_contains (ctx->options, entry->longarg))
+      continue;
+
+    str = (*argv)[0];
+    end = str;
+    switch (entry->type) {
+      case R_ARG_OPTION_TYPE_INT:
+        parsed = r_arg_option_parser_int (&end, NULL);
+        break;
+      case R_ARG_OPTION_TYPE_INT64:
+        parsed = r_arg_option_parser_int64 (&end, NULL);
+        break;
+      case R_ARG_OPTION_TYPE_DOUBLE:
+        parsed = r_arg_option_parser_double (&end, NULL);
+        break;
+      case R_ARG_OPTION_TYPE_STRING:
+      case R_ARG_OPTION_TYPE_FILENAME:
+        parsed = r_arg_option_parser_string (&end, NULL);
+        break;
+      default:
+        return R_ARG_PARSE_ERROR;
+    }
+    if (parsed != R_ARG_PARSE_OK)
+      return R_ARG_PARSE_VALUE_ERROR;
+
+    r_dictionary_insert (ctx->options, entry->longarg, (rpointer) str);
+    (*argv)++;
+    (*argc)--;
   }
 
-  return ret;
+  return R_ARG_PARSE_OK;
 }
 
 static RArgParser *
@@ -880,8 +1002,12 @@ r_arg_parser_parse_internal (RArgParser * parser, RArgParseFlags flags,
   RArgParseResult curres;
 
   if ((ret = r_arg_parse_ctx_new (parser, flags, appname)) != NULL) {
-    if ((curres = r_arg_parser_parse_options (parser, ret, argc, argv)) == R_ARG_PARSE_OK) {
-      curres = r_arg_parser_parse_command (parser, flags, ret, argc, argv);
+    if ((curres = r_arg_parser_parse_options (parser, ret, argc, argv)) == R_ARG_PARSE_OK &&
+        (curres = r_arg_parser_parse_positionals (parser, ret, argc, argv)) == R_ARG_PARSE_OK) {
+      if (!r_arg_parser_check_required_options (parser, ret))
+        curres = R_ARG_PARSE_MISSING_OPTION;
+      else
+        curres = r_arg_parser_parse_command (parser, flags, ret, argc, argv);
     }
 
     if (curres != R_ARG_PARSE_OK) {
