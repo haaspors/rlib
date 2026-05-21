@@ -83,18 +83,33 @@ r_dsa_decode_sig (rconstpointer sig, rsize sigsize, rmpint * r, rmpint * s)
   RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
   rboolean ok = FALSE;
 
-  if ((dec = r_asn1_bin_decoder_new (R_ASN1_BER, sig, sigsize)) == NULL)
+  /* RFC 3279 §2.2.2 mandates DER. */
+  if ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, sig, sigsize)) == NULL)
     return FALSE;
+
+  /* DER requires INTEGERs in their minimum-byte form: a leading 0x00
+   * is allowed only when the next byte has the high bit set (would
+   * otherwise be interpreted as negative). Rejecting non-minimal
+   * encoding closes a signature-malleability gap. */
+#define MINIMAL_POS_INT(tlv) \
+    ((tlv).len >= 1 && \
+     !((tlv).len >= 2 && (tlv).value[0] == 0 && ((tlv).value[1] & 0x80) == 0))
 
   r_mpint_init (r);
   r_mpint_init (s);
   if (r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
+      R_ASN1_BIN_TLV_ID_TAG (&tlv) == R_ASN1_ID_SEQUENCE &&
+      tlv.value + tlv.len == (const ruint8 *)sig + sigsize &&
       r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
+      MINIMAL_POS_INT (tlv) &&
       r_asn1_bin_tlv_parse_integer_mpint (&tlv, r) == R_ASN1_DECODER_OK &&
       r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
-      r_asn1_bin_tlv_parse_integer_mpint (&tlv, s) == R_ASN1_DECODER_OK) {
+      MINIMAL_POS_INT (tlv) &&
+      r_asn1_bin_tlv_parse_integer_mpint (&tlv, s) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_EOC) {
     ok = TRUE;
   }
+#undef MINIMAL_POS_INT
   r_asn1_bin_decoder_unref (dec);
   if (!ok) {
     r_mpint_clear (r);
