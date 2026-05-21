@@ -50,6 +50,19 @@ R_API rboolean r_dsa_pub_key_get_g (const RCryptoKey * key, rmpint * g);
 R_API rboolean r_dsa_pub_key_get_y (const RCryptoKey * key, rmpint * y);
 R_API rboolean r_dsa_priv_key_get_x (const RCryptoKey * key, rmpint * x);
 
+R_API RCryptoResult r_dsa_sign_msg (const RCryptoKey * key, RPrng * prng,
+    RMsgDigestType mdtype, rconstpointer msg, rsize msgsize,
+    rpointer sig, rsize * sigsize);
+R_API RCryptoResult r_dsa_sign_msg_hash (const RCryptoKey * key, RPrng * prng,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
+    rpointer sig, rsize * sigsize);
+R_API RCryptoResult r_dsa_verify_msg (const RCryptoKey * key,
+    RMsgDigestType mdtype, rconstpointer msg, rsize msgsize,
+    rconstpointer sig, rsize sigsize);
+R_API RCryptoResult r_dsa_verify_msg_with_hash (const RCryptoKey * key,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
+    rconstpointer sig, rsize sigsize);
+
 R_END_DECLS
 
 #endif /* __R_CRYPTO_DSA_H__ */

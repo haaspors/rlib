@@ -489,3 +489,111 @@ RTEST_LOOP (rdsa, wycheproof_2048_256_sha256_verify, RTEST_SLOW,
   }
 }
 RTEST_END;
+
+RTEST (rdsa, sign_msg_verify_msg_roundtrip, RTEST_FAST)
+{
+  /* The _msg helpers hash internally and produce signatures verify-able
+   * both by the matching _msg verifier and by the pre-hashed verifier
+   * path. */
+  static const ruint8 message[] =
+      "The quick brown fox jumps over the lazy dog.";
+  rmpint p, q, g, y, x;
+  RCryptoKey * priv, * pub;
+  RPrng * prng;
+  ruint8 sig[64];
+  rsize sigsize = sizeof (sig);
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_assert_cmpptr ((priv = r_dsa_priv_key_new (&p, &q, &g, &y, &x)), !=, NULL);
+  r_assert_cmpptr ((pub  = r_dsa_pub_key_new_full (&p, &q, &g, &y)), !=, NULL);
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+
+  r_assert_cmpint (r_dsa_sign_msg (priv, prng, R_MSG_DIGEST_TYPE_SHA1,
+        message, sizeof (message) - 1, sig, &sigsize), ==, R_CRYPTO_OK);
+  r_assert_cmpuint (sigsize, >, 0);
+
+  r_assert_cmpint (r_dsa_verify_msg (pub, R_MSG_DIGEST_TYPE_SHA1,
+        message, sizeof (message) - 1, sig, sigsize), ==, R_CRYPTO_OK);
+
+  /* Cross-check: hashing manually and using verify_msg_with_hash must
+   * land on the same internal hash and so accept the same sig. */
+  {
+    RMsgDigest * md;
+    ruint8 hash[20];
+    rsize hashsize;
+    r_assert_cmpptr ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_SHA1)), !=, NULL);
+    hashsize = r_msg_digest_size (md);
+    r_assert_cmpuint (hashsize, ==, sizeof (hash));
+    r_assert (r_msg_digest_update (md, message, sizeof (message) - 1));
+    r_assert (r_msg_digest_get_data (md, hash, hashsize, NULL));
+    r_msg_digest_free (md);
+
+    r_assert_cmpint (r_dsa_verify_msg_with_hash (pub, R_MSG_DIGEST_TYPE_SHA1,
+          hash, hashsize, sig, sigsize), ==, R_CRYPTO_OK);
+  }
+
+  r_crypto_key_unref (priv);
+  r_crypto_key_unref (pub);
+  r_prng_unref (prng);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+}
+RTEST_END;
+
+RTEST (rdsa, sign_msg_hash_matches_crypto_key_sign, RTEST_FAST)
+{
+  /* r_dsa_sign_msg_hash and r_dsa_verify_msg_with_hash are name-
+   * symmetric thin shells over r_crypto_key_sign / _verify. Confirm
+   * they round-trip and that tampered hashes are still rejected via
+   * the shortcut. */
+  rmpint p, q, g, y, x;
+  RCryptoKey * priv, * pub;
+  RPrng * prng;
+  ruint8 sig[64];
+  rsize sigsize = sizeof (sig);
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_assert_cmpptr ((priv = r_dsa_priv_key_new (&p, &q, &g, &y, &x)), !=, NULL);
+  r_assert_cmpptr ((pub  = r_dsa_pub_key_new_full (&p, &q, &g, &y)), !=, NULL);
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+
+  r_assert_cmpint (r_dsa_sign_msg_hash (priv, prng, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig, &sigsize), ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_dsa_verify_msg_with_hash (pub, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig, sigsize), ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_dsa_verify_msg_with_hash (pub, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_b, sizeof (dsa_hash_b), sig, sigsize),
+      ==, R_CRYPTO_VERIFY_FAILED);
+
+  r_crypto_key_unref (priv);
+  r_crypto_key_unref (pub);
+  r_prng_unref (prng);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+}
+RTEST_END;
+
+RTEST (rdsa, sign_msg_rejects_empty, RTEST_FAST)
+{
+  /* msg == NULL / msgsize == 0 must be refused up front rather than
+   * silently signing the empty hash. */
+  rmpint p, q, g, y, x;
+  RCryptoKey * priv, * pub;
+  RPrng * prng;
+  ruint8 sig[64];
+  rsize sigsize = sizeof (sig);
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_assert_cmpptr ((priv = r_dsa_priv_key_new (&p, &q, &g, &y, &x)), !=, NULL);
+  r_assert_cmpptr ((pub  = r_dsa_pub_key_new_full (&p, &q, &g, &y)), !=, NULL);
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+
+  r_assert_cmpint (r_dsa_sign_msg (priv, prng, R_MSG_DIGEST_TYPE_SHA1,
+        NULL, 0, sig, &sigsize), ==, R_CRYPTO_INVAL);
+  r_assert_cmpint (r_dsa_verify_msg (pub, R_MSG_DIGEST_TYPE_SHA1,
+        NULL, 0, sig, sigsize), ==, R_CRYPTO_INVAL);
+
+  r_crypto_key_unref (priv);
+  r_crypto_key_unref (pub);
+  r_prng_unref (prng);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+}
+RTEST_END;
