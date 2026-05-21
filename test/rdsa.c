@@ -597,3 +597,107 @@ RTEST (rdsa, sign_msg_rejects_empty, RTEST_FAST)
   clear_dsa_mpints (&p, &q, &g, &y, &x);
 }
 RTEST_END;
+
+RTEST (rdsa, gen_sign_verify_roundtrip, RTEST_SLOW)
+{
+  /* Generate a fresh DSA-1024 / N=160 keypair, sign a SHA-1-sized hash
+   * with it, verify with the matching public view. Exercises the full
+   * keygen pipeline (q + p + g + x + y) plus the sign / verify math
+   * against parameters we didn't precompute. The 1024 / 160 size is
+   * chosen to keep the probable-prime search inside an acceptable test
+   * runtime; larger combinations are validated by the FIPS sample
+   * keypair tests above. */
+  RCryptoKey * priv, * pub;
+  RPrng * prng;
+  rmpint p, q, g, y;
+  ruint8 sig[64];
+  rsize sigsize = sizeof (sig);
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((priv = r_dsa_priv_key_new_gen (1024, 160, prng)), !=, NULL);
+  r_assert_cmpuint (r_crypto_key_get_algo (priv), ==, R_CRYPTO_ALGO_DSA);
+  r_assert_cmpuint (r_crypto_key_get_type (priv), ==, R_CRYPTO_PRIVATE_KEY);
+  r_assert_cmpuint (r_crypto_key_get_bitsize (priv), ==, 1024);
+
+  /* Sanity-check the generated parameter shape. */
+  r_mpint_init (&p);
+  r_mpint_init (&q);
+  r_mpint_init (&g);
+  r_mpint_init (&y);
+  r_assert (r_dsa_pub_key_get_p (priv, &p));
+  r_assert (r_dsa_pub_key_get_q (priv, &q));
+  r_assert (r_dsa_pub_key_get_g (priv, &g));
+  r_assert (r_dsa_pub_key_get_y (priv, &y));
+  r_assert_cmpuint (r_mpint_bits_used (&p), ==, 1024);
+  r_assert_cmpuint (r_mpint_bits_used (&q), ==, 160);
+  r_assert_cmpint (r_mpint_cmp_i32 (&g, 1), >, 0);
+  r_assert_cmpint (r_mpint_cmp (&g, &p), <, 0);
+
+  /* q divides p - 1. */
+  {
+    rmpint pminus1, rem;
+    r_mpint_init (&pminus1);
+    r_mpint_init (&rem);
+    r_assert (r_mpint_sub_i32 (&pminus1, &p, 1));
+    r_assert (r_mpint_mod (&rem, &pminus1, &q));
+    r_assert (r_mpint_iszero (&rem));
+    r_mpint_clear (&pminus1);
+    r_mpint_clear (&rem);
+  }
+
+  /* g has order q in (Z/pZ)*: g^q ≡ 1 mod p, and g != 1. */
+  {
+    rmpint t;
+    r_mpint_init (&t);
+    r_assert (r_mpint_expmod (&t, &g, &q, &p));
+    r_assert_cmpint (r_mpint_cmp_i32 (&t, 1), ==, 0);
+    r_mpint_clear (&t);
+  }
+
+  /* y = g^x mod p for the generated x. */
+  {
+    rmpint x, t;
+    r_mpint_init (&x);
+    r_mpint_init (&t);
+    r_assert (r_dsa_priv_key_get_x (priv, &x));
+    r_assert (r_mpint_expmod (&t, &g, &x, &p));
+    r_assert_cmpint (r_mpint_cmp (&t, &y), ==, 0);
+    r_mpint_clear (&x);
+    r_mpint_clear (&t);
+  }
+
+  /* p and q are prime (or at least not composite per Miller-Rabin). */
+  r_assert_cmpint (r_mpint_isprime (&p), !=, R_MPINT_NON_PRIME);
+  r_assert_cmpint (r_mpint_isprime (&q), !=, R_MPINT_NON_PRIME);
+
+  r_assert_cmpptr ((pub = r_dsa_pub_key_new_full (&p, &q, &g, &y)), !=, NULL);
+
+  r_assert_cmpint (r_crypto_key_sign (priv, prng, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig, &sigsize), ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_crypto_key_verify (pub, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_a, sizeof (dsa_hash_a), sig, sigsize), ==, R_CRYPTO_OK);
+
+  /* Tampered hash must still fail with the freshly-generated key. */
+  r_assert_cmpint (r_crypto_key_verify (pub, R_MSG_DIGEST_TYPE_SHA1,
+        dsa_hash_b, sizeof (dsa_hash_b), sig, sigsize),
+      ==, R_CRYPTO_VERIFY_FAILED);
+
+  r_crypto_key_unref (priv);
+  r_crypto_key_unref (pub);
+  r_prng_unref (prng);
+  r_mpint_clear (&p);
+  r_mpint_clear (&q);
+  r_mpint_clear (&g);
+  r_mpint_clear (&y);
+}
+RTEST_END;
+
+RTEST (rdsa, gen_rejects_unsupported_sizes, RTEST_FAST)
+{
+  /* Only the four FIPS-approved (L, N) pairs are accepted. */
+  r_assert_cmpptr (r_dsa_priv_key_new_gen (1024, 224, NULL), ==, NULL);
+  r_assert_cmpptr (r_dsa_priv_key_new_gen (2048, 160, NULL), ==, NULL);
+  r_assert_cmpptr (r_dsa_priv_key_new_gen ( 512, 160, NULL), ==, NULL);
+  r_assert_cmpptr (r_dsa_priv_key_new_gen (4096, 256, NULL), ==, NULL);
+}
+RTEST_END;

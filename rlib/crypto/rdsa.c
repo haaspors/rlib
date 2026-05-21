@@ -21,6 +21,8 @@
 
 #include <rlib/crypto/rdsa.h>
 
+#include "../data/rmpint-private.h"
+
 #include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>
 
@@ -506,6 +508,197 @@ r_dsa_priv_key_new_binary (rconstpointer p, rsize psize,
   }
 
   return (RCryptoKey *)ret;
+}
+
+/* FIPS 186-4 §4.2 — the approved (L, N) pairs. */
+static rboolean
+r_dsa_size_pair_supported (rsize L, rsize N)
+{
+  return (L == 1024 && N == 160) ||
+         (L == 2048 && N == 224) ||
+         (L == 2048 && N == 256) ||
+         (L == 3072 && N == 256);
+}
+
+/* Search for an L-bit prime p such that q divides (p-1).
+ * Picks a random even (L-N)-bit multiplier m, sets p = m*q + 1, and
+ * keeps retrying until both length and primality match. With ~1/L
+ * prime density the expected iteration count is O(L), each iteration
+ * dominated by the Miller-Rabin probability tests on the candidate. */
+/* Two-stage primality: first the small-witness sieve via the public
+ * isprime_t (cheap rejection of most composites), then random-witness
+ * Miller-Rabin against the prng. r_mpint_gen_prime's non-safe path
+ * uses only the small-witness stage, which can let crafted pseudo-
+ * primes through; for DSA we need p with p-1 divisible by q to give
+ * a group of exact order q, so a single non-prime slipping through
+ * breaks the math (g^q !≡ 1 mod p). */
+static rboolean
+r_dsa_strong_isprime (const rmpint * p, RPrng * prng)
+{
+  return r_mpint_isprime_t (p, 8) > R_MPINT_NON_PRIME &&
+      r_mpint_prime_miller_rabin_full (p, prng) > R_MPINT_NON_PRIME;
+}
+
+static rboolean
+r_dsa_gen_prime_p (rmpint * p, const rmpint * q, rsize L, RPrng * prng)
+{
+  rmpint m;
+  rsize N = r_mpint_bits_used (q);
+  rsize mbytes;
+  ruint8 * mbuf;
+
+  if (L <= N)
+    return FALSE;
+
+  mbytes = (L - N + 7) / 8;
+  mbuf = r_alloca (mbytes);
+  r_mpint_init (&m);
+
+  for (;;) {
+    if (!r_prng_fill (prng, mbuf, mbytes))
+      break;
+    /* Force m even so m * q is even and p = m * q + 1 is odd. */
+    mbuf[mbytes - 1] &= 0xfe;
+    r_mpint_set_binary (&m, mbuf, mbytes);
+    if (!r_mpint_mul (p, &m, q) || !r_mpint_add_i32 (p, p, 1))
+      break;
+    /* Reject candidates that fall short of L bits (m * q happened
+     * to land below 2^(L-1)). Statistically ~50% of samples make
+     * the cut and we move on to the expensive primality test. */
+    if (r_mpint_bits_used (p) != L)
+      continue;
+    if (r_dsa_strong_isprime (p, prng)) {
+      r_mpint_clear (&m);
+      return TRUE;
+    }
+  }
+
+  r_mpint_clear (&m);
+  return FALSE;
+}
+
+/* FIPS 186-4 §A.2.1 — pick g of order q in (Z/pZ)*: sample h in
+ * [2, p-2], compute g = h^((p-1)/q) mod p, retry while g == 1. */
+static rboolean
+r_dsa_gen_generator (rmpint * g, const rmpint * p, const rmpint * q,
+    RPrng * prng)
+{
+  rmpint e, h, pm1;
+  rsize pbytes = (r_mpint_bits_used (p) + 7) / 8;
+  ruint8 * hbuf;
+  rboolean ok = FALSE;
+
+  r_mpint_init (&e);
+  r_mpint_init (&h);
+  r_mpint_init (&pm1);
+  hbuf = r_alloca (pbytes);
+
+  /* Two-step compute to dodge aliasing: r_mpint_div doesn't take its
+   * numerator and quotient as the same mpint. */
+  if (!r_mpint_sub_i32 (&pm1, p, 1) || !r_mpint_div (&e, NULL, &pm1, q))
+    goto out;
+
+  for (;;) {
+    if (!r_prng_fill (prng, hbuf, pbytes))
+      break;
+    r_mpint_set_binary (&h, hbuf, pbytes);
+    r_mpint_mod (&h, &h, p);
+    if (r_mpint_cmp_i32 (&h, 2) < 0)
+      continue;
+    if (!r_mpint_expmod (g, &h, &e, p))
+      break;
+    if (r_mpint_cmp_i32 (g, 1) != 0) {
+      ok = TRUE;
+      break;
+    }
+  }
+
+out:
+  r_mpint_clear (&e);
+  r_mpint_clear (&h);
+  r_mpint_clear (&pm1);
+  return ok;
+}
+
+RCryptoKey *
+r_dsa_priv_key_new_gen (rsize L, rsize N, RPrng * prng)
+{
+  RDsaPrivKey * ret;
+  rsize xbytes;
+  ruint8 * xbuf;
+
+  if (R_UNLIKELY (!r_dsa_size_pair_supported (L, N)))
+    return NULL;
+
+  if ((ret = r_mem_new0 (RDsaPrivKey)) == NULL)
+    return NULL;
+
+  r_dsa_priv_key_init (&ret->pub.key, (ruint) L);
+  r_mpint_init (&ret->pub.p);
+  r_mpint_init (&ret->pub.q);
+  r_mpint_init (&ret->pub.g);
+  r_mpint_init (&ret->pub.y);
+  r_mpint_init (&ret->x);
+
+  if (prng != NULL)
+    r_prng_ref (prng);
+  else
+    prng = r_rand_prng_new ();
+
+  /* gen_prime uses the lenient small-witness sieve only; re-test with
+   * random witnesses to catch the rare crafted-or-unlucky composite. */
+  for (;;) {
+    if (!r_mpint_gen_prime (&ret->pub.q, N, prng))
+      goto fail;
+    if (r_dsa_strong_isprime (&ret->pub.q, prng))
+      break;
+  }
+  if (!r_dsa_gen_prime_p (&ret->pub.p, &ret->pub.q, L, prng))
+    goto fail;
+  if (!r_dsa_gen_generator (&ret->pub.g, &ret->pub.p, &ret->pub.q, prng))
+    goto fail;
+
+  /* Defensive: assert g actually has order q. If p was prime and the
+   * arithmetic was correct, g^q ≡ 1 mod p by Fermat — failure here
+   * means either a composite slipped through both primality tests or
+   * mpint arithmetic went sideways, and shipping such a key would
+   * produce signatures that can't be verified. */
+  {
+    rmpint t;
+    rboolean ok;
+    r_mpint_init (&t);
+    ok = r_mpint_expmod (&t, &ret->pub.g, &ret->pub.q, &ret->pub.p) &&
+        r_mpint_cmp_i32 (&t, 1) == 0;
+    r_mpint_clear (&t);
+    if (!ok)
+      goto fail;
+  }
+
+  /* Sample x via the same "Extra Random Bits" technique used for k in
+   * r_dsa_sign (FIPS 186-4 §B.2.1): N+64 random bits reduced mod q,
+   * reject 0. */
+  xbytes = (N + 7) / 8 + 8;
+  xbuf = r_alloca (xbytes);
+  for (;;) {
+    if (!r_prng_fill (prng, xbuf, xbytes))
+      goto fail;
+    r_mpint_set_binary (&ret->x, xbuf, xbytes);
+    if (!r_mpint_mod (&ret->x, &ret->x, &ret->pub.q))
+      goto fail;
+    if (!r_mpint_iszero (&ret->x))
+      break;
+  }
+
+  if (!r_mpint_expmod (&ret->pub.y, &ret->pub.g, &ret->x, &ret->pub.p))
+    goto fail;
+
+  r_prng_unref (prng);
+  return (RCryptoKey *) ret;
+
+fail:
+  r_prng_unref (prng);
+  r_crypto_key_unref ((RCryptoKey *) ret);
+  return NULL;
 }
 
 RCryptoKey *
