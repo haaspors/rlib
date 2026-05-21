@@ -46,6 +46,13 @@ typedef enum {
   R_ARG_OPTION_FLAG_HIDDEN          = 1 << 0,
   R_ARG_OPTION_FLAG_INVERSE         = 1 << 1,
   R_ARG_OPTION_FLAG_REQUIRED        = 1 << 2,
+  /* Positional argument: bound by position in argv, not by --name.
+   * 'longarg' is the name used as the storage key and in help text;
+   * 'eqname' (or longarg uppercased) becomes the name in the Usage
+   * line. shortarg is ignored. Cannot be combined with TYPE_NONE
+   * since positionals always carry a value. REQUIRED is implied
+   * when defval is NULL. */
+  R_ARG_OPTION_FLAG_POSITIONAL      = 1 << 3,
 } RArgOptionFlags;
 
 typedef struct {
