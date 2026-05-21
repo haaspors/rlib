@@ -21,6 +21,7 @@
 
 #include <rlib/crypto/rdsa.h>
 
+#include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>
 
 typedef struct {
@@ -54,12 +55,71 @@ r_dsa_pub_key_free (rpointer data)
   }
 }
 
+static RCryptoResult
+r_dsa_pub_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  RCryptoResult ret = R_CRYPTO_ERROR;
+  const RDsaPubKey * pk = (const RDsaPubKey *)key;
+  ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+
+  /* SubjectPublicKeyInfo ::= SEQUENCE {
+   *   AlgorithmIdentifier { dsaEncryption, Dss-Parms { p, q, g } },
+   *   BIT STRING (INTEGER y)  -- DSAPublicKey, RFC 3279 §2.3.2 */
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) != R_ASN1_ENCODER_OK)
+    return ret;
+
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+    r_asn1_bin_encoder_add_oid_rawsz (enc, R_X9CM_OID_DSA);
+    if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+      r_asn1_bin_encoder_add_integer_mpint (enc, &pk->p);
+      r_asn1_bin_encoder_add_integer_mpint (enc, &pk->q);
+      r_asn1_bin_encoder_add_integer_mpint (enc, &pk->g);
+      r_asn1_bin_encoder_end_constructed (enc);
+    }
+    r_asn1_bin_encoder_end_constructed (enc);
+  }
+
+  if (r_asn1_bin_encoder_begin_bit_string (enc, 0) == R_ASN1_ENCODER_OK) {
+    if (r_asn1_bin_encoder_add_integer_mpint (enc, &pk->y) == R_ASN1_ENCODER_OK)
+      ret = R_CRYPTO_OK;
+    r_asn1_bin_encoder_end_bit_string (enc);
+  }
+
+  r_asn1_bin_encoder_end_constructed (enc);
+  return ret;
+}
+
+static RCryptoResult
+r_dsa_priv_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  /* Traditional OpenSSL DSAPrivateKey payload — a single self-describing
+   *   SEQUENCE { ver, p, q, g, y, x }
+   * matching the import side in r_dsa_priv_key_new_from_asn1. */
+  ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+    const RDsaPrivKey * pk = (const RDsaPrivKey *)key;
+    if (r_asn1_bin_encoder_add_integer_i32 (enc, pk->ver) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->pub.p) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->pub.q) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->pub.g) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->pub.y) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_integer_mpint (enc, &pk->x) == R_ASN1_ENCODER_OK) {
+      r_asn1_bin_encoder_end_constructed (enc);
+      return R_CRYPTO_OK;
+    }
+    r_asn1_bin_encoder_end_constructed (enc);
+  }
+
+  return R_CRYPTO_ERROR;
+}
+
 static void
 r_dsa_pub_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo dsa_pub_key_info = {
     R_CRYPTO_ALGO_DSA, R_DSA_STR,
-    NULL, NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, r_dsa_pub_key_export
   };
 
   r_ref_init (key, r_dsa_pub_key_free);
@@ -84,7 +144,7 @@ r_dsa_priv_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo dsa_priv_key_info = {
     R_CRYPTO_ALGO_DSA, R_DSA_STR,
-    NULL, NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, r_dsa_priv_key_export
   };
 
   r_ref_init (key, r_dsa_priv_key_free);
@@ -148,6 +208,7 @@ r_dsa_priv_key_new (const rmpint * p, const rmpint * q,
 
   if (p != NULL && q != NULL && g != NULL && y != NULL && x != NULL) {
     if ((ret = r_mem_new (RDsaPrivKey)) != NULL) {
+      ret->ver = 0;
       r_mpint_init_copy (&ret->pub.p, p);
       r_mpint_init_copy (&ret->pub.q, q);
       r_mpint_init_copy (&ret->pub.g, g);
@@ -172,6 +233,7 @@ r_dsa_priv_key_new_binary (rconstpointer p, rsize psize,
   if (p != NULL && psize > 0 && q != NULL && qsize > 0 && g != NULL && gsize > 0 &&
       y != NULL && ysize > 0 && x != NULL && xsize > 0) {
     if ((ret = r_mem_new (RDsaPrivKey)) != NULL) {
+      ret->ver = 0;
       r_mpint_init_binary (&ret->pub.p, p, psize);
       r_mpint_init_binary (&ret->pub.q, q, qsize);
       r_mpint_init_binary (&ret->pub.g, g, gsize);
