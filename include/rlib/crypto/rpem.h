@@ -87,6 +87,10 @@ R_API rchar * r_pem_write_public_key_dup (const RCryptoKey * key,
     rsize linesize, rsize * out);
 R_API rboolean r_pem_write_public_key (const RCryptoKey * key,
     rpointer data, rsize size, rsize linesize, rsize * out);
+R_API rchar * r_pem_write_private_key_dup (const RCryptoKey * key,
+    rsize linesize, rsize * out);
+R_API rboolean r_pem_write_private_key (const RCryptoKey * key,
+    rpointer data, rsize size, rsize linesize, rsize * out);
 R_API rchar * r_pem_write_cert_dup (const RCryptoCert * cert,
     rsize linesize, rsize * out);
 R_API rboolean r_pem_write_cert (const RCryptoCert * cert,
