@@ -220,6 +220,178 @@ RTEST (rbuffer, mem_insert, RTEST_FAST)
 }
 RTEST_END;
 
+static RBuffer *
+fill_buffer_one_byte_per_mem (ruint count)
+{
+  RBuffer * buf = r_buffer_new ();
+  ruint i;
+
+  for (i = 0; i < count; i++) {
+    ruint8 * payload = r_malloc (1);
+    RMem * mem;
+    payload[0] = (ruint8) i;
+    mem = r_mem_new_take (R_MEM_FLAG_NONE, payload, 1, 1, 0);
+    if (!r_buffer_mem_append (buf, mem)) {
+      r_mem_unref (mem);
+      r_buffer_unref (buf);
+      return NULL;
+    }
+    r_mem_unref (mem);
+  }
+
+  return buf;
+}
+
+RTEST (rbuffer, mem_insert_overflow_at_zero, RTEST_FAST)
+{
+  RBuffer * buf;
+  RMem * mem;
+  ruint8 * payload;
+  ruint8 readback[33];
+  ruint i;
+
+  r_assert_cmpptr ((buf = fill_buffer_one_byte_per_mem (32)), !=, NULL);
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 32);
+
+  payload = r_malloc (1);
+  payload[0] = 0xff;
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, payload, 1, 1, 0)), !=, NULL);
+  r_assert (r_buffer_mem_insert (buf, mem, 0));
+  r_mem_unref (mem);
+
+  /* The whole suffix collapses into a single mem behind the new one. */
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 2);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, 33);
+  r_assert_cmpuint (r_buffer_extract (buf, 0, readback, sizeof (readback)), ==, 33);
+  r_assert_cmpuint (readback[0], ==, 0xff);
+  for (i = 0; i < 32; i++)
+    r_assert_cmpuint (readback[i + 1], ==, i);
+
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rbuffer, mem_insert_overflow_in_middle, RTEST_FAST)
+{
+  RBuffer * buf;
+  RMem * mem;
+  ruint8 * payload;
+  ruint8 readback[33];
+  ruint i;
+
+  r_assert_cmpptr ((buf = fill_buffer_one_byte_per_mem (32)), !=, NULL);
+
+  payload = r_malloc (1);
+  payload[0] = 0xff;
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, payload, 1, 1, 0)), !=, NULL);
+  r_assert (r_buffer_mem_insert (buf, mem, 15));
+  r_mem_unref (mem);
+
+  /* prefix=15, suffix=17 -> suffix collapses: [orig 0..14, new, merged]. */
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 17);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, 33);
+  r_assert_cmpuint (r_buffer_extract (buf, 0, readback, sizeof (readback)), ==, 33);
+  for (i = 0; i < 15; i++)
+    r_assert_cmpuint (readback[i], ==, i);
+  r_assert_cmpuint (readback[15], ==, 0xff);
+  for (i = 15; i < 32; i++)
+    r_assert_cmpuint (readback[i + 1], ==, i);
+
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rbuffer, mem_insert_overflow_before_last, RTEST_FAST)
+{
+  RBuffer * buf;
+  RMem * mem;
+  ruint8 * payload;
+  ruint8 readback[33];
+  ruint i;
+
+  r_assert_cmpptr ((buf = fill_buffer_one_byte_per_mem (32)), !=, NULL);
+
+  payload = r_malloc (1);
+  payload[0] = 0xff;
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, payload, 1, 1, 0)), !=, NULL);
+  r_assert (r_buffer_mem_insert (buf, mem, 31));
+  r_mem_unref (mem);
+
+  /* prefix=31, suffix=1 -> prefix collapses: [merged, new, orig[31]]. */
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 3);
+  r_assert_cmpuint (r_buffer_get_size (buf), ==, 33);
+  r_assert_cmpuint (r_buffer_extract (buf, 0, readback, sizeof (readback)), ==, 33);
+  for (i = 0; i < 31; i++)
+    r_assert_cmpuint (readback[i], ==, i);
+  r_assert_cmpuint (readback[31], ==, 0xff);
+  r_assert_cmpuint (readback[32], ==, 31);
+
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rbuffer, mem_prepend_overflow, RTEST_FAST)
+{
+  RBuffer * buf;
+  RMem * mem;
+  ruint8 * payload;
+  ruint8 readback[33];
+  ruint i;
+
+  r_assert_cmpptr ((buf = fill_buffer_one_byte_per_mem (32)), !=, NULL);
+
+  payload = r_malloc (1);
+  payload[0] = 0xff;
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, payload, 1, 1, 0)), !=, NULL);
+  r_assert (r_buffer_mem_prepend (buf, mem));
+  r_mem_unref (mem);
+
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 2);
+  r_assert_cmpuint (r_buffer_extract (buf, 0, readback, sizeof (readback)), ==, 33);
+  r_assert_cmpuint (readback[0], ==, 0xff);
+  for (i = 0; i < 32; i++)
+    r_assert_cmpuint (readback[i + 1], ==, i);
+
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rbuffer, mem_insert_overflow_frees_slots, RTEST_FAST)
+{
+  RBuffer * buf;
+  RMem * mem;
+  ruint8 * payload;
+  ruint i;
+
+  /* After one overflowing insert at idx=16, prefix=16 ties suffix=16, so
+   * the suffix collapses and a batch of slots is freed. Verify several
+   * subsequent inserts succeed without triggering another collapse. */
+  r_assert_cmpptr ((buf = fill_buffer_one_byte_per_mem (32)), !=, NULL);
+
+  payload = r_malloc (1);
+  payload[0] = 0xff;
+  r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, payload, 1, 1, 0)), !=, NULL);
+  r_assert (r_buffer_mem_insert (buf, mem, 16));
+  r_mem_unref (mem);
+
+  /* prefix=16, suffix=16, tie -> suffix collapses: 16 originals + new + merged = 18. */
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 18);
+
+  for (i = 0; i < 13; i++) {
+    payload = r_malloc (1);
+    payload[0] = (ruint8) (0xa0 + i);
+    r_assert_cmpptr ((mem = r_mem_new_take (R_MEM_FLAG_NONE, payload, 1, 1, 0)), !=, NULL);
+    r_assert (r_buffer_mem_insert (buf, mem, 5));
+    r_mem_unref (mem);
+  }
+
+  /* 18 + 13 = 31, still below R_BUFFER_MAX_MEM (32), no further collapse. */
+  r_assert_cmpuint (r_buffer_mem_count (buf), ==, 31);
+
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rbuffer, mem_replace, RTEST_FAST)
 {
   RBuffer * buf;

@@ -263,11 +263,38 @@ r_buffer_mem_insert (RBuffer * buffer, RMem * mem, ruint idx)
 {
   if (R_UNLIKELY (buffer == NULL)) return FALSE;
   if (R_UNLIKELY (mem == NULL)) return FALSE;
-  /* FIXME: Compress memory chunks */
-  if (R_UNLIKELY (buffer->mem_count >= R_BUFFER_MAX_MEM)) return FALSE;
 
   if (idx >= buffer->mem_count)
     return r_buffer_mem_append (buffer, mem);
+
+  if (R_UNLIKELY (buffer->mem_count >= R_BUFFER_MAX_MEM)) {
+    /* Collapse the larger run on one side of idx into a single mem so
+     * the bytes around the insertion point keep their order and a batch
+     * of slots is freed for subsequent inserts. */
+    RMem * merged;
+    ruint i;
+    ruint prefix = idx;
+    ruint suffix = buffer->mem_count - idx;
+
+    if (prefix > suffix) {
+      if ((merged = r_mem_merge_array (NULL, &buffer->mem[0], prefix)) == NULL)
+        return FALSE;
+      for (i = 0; i < prefix; i++)
+        r_mem_unref (buffer->mem[i]);
+      buffer->mem[0] = merged;
+      r_memmove (&buffer->mem[1], &buffer->mem[prefix],
+          sizeof (RMem *) * suffix);
+      buffer->mem_count -= prefix - 1;
+      idx = 1;
+    } else {
+      if ((merged = r_mem_merge_array (NULL, &buffer->mem[idx], suffix)) == NULL)
+        return FALSE;
+      for (i = idx; i < buffer->mem_count; i++)
+        r_mem_unref (buffer->mem[i]);
+      buffer->mem[idx] = merged;
+      buffer->mem_count = idx + 1;
+    }
+  }
 
   r_memmove (&buffer->mem[idx+1], &buffer->mem[idx],
       sizeof (RMem *) * (buffer->mem_count++ - idx));
