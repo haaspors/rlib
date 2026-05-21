@@ -633,26 +633,12 @@ r_rsa_raw_encrypt (const RCryptoKey * key, RPrng * prng,
   return ret;
 }
 
-static RCryptoResult
-r_rsa_raw_decrypt_internal (const RRsaPrivKey * key,
-    rconstpointer data, ruint8 * out, rsize size)
+/* The actual c^d mod n step. Caller is responsible for blinding c before
+ * the call and unblinding m after — keeping that logic separate keeps the
+ * CRT/non-CRT dispatch readable. */
+static rboolean
+r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
 {
-  RCryptoResult ret;
-  rsize k;
-  rmpint c, m;
-
-  k = r_mpint_digits_used (&key->pub.n) * sizeof (rmpint_digit);
-  if (size != k)
-    return R_CRYPTO_INVAL;
-
-  r_mpint_init_binary (&c, data, size);
-  if (r_mpint_iszero (&c)) {
-    r_mpint_clear (&c);
-    return R_CRYPTO_WRONG_SIZE;
-  }
-
-  r_mpint_init_size (&m, r_mpint_digits_used (&key->pub.n));
-
   if (!r_mpint_iszero (&key->p) && !r_mpint_iszero (&key->q) &&
       !r_mpint_iszero (&key->dp) && !r_mpint_iszero (&key->dq) &&
       !r_mpint_iszero (&key->qp)) {
@@ -671,8 +657,8 @@ r_rsa_raw_decrypt_internal (const RRsaPrivKey * key,
     r_mpint_init (&m2_p);
     r_mpint_init (&h);
 
-    ok = r_mpint_expmod (&m1, &c, &key->dp, &key->p)
-      && r_mpint_expmod (&m2, &c, &key->dq, &key->q)
+    ok = r_mpint_expmod (&m1, c, &key->dp, &key->p)
+      && r_mpint_expmod (&m2, c, &key->dq, &key->q)
       && r_mpint_mod (&m2_p, &m2, &key->p)
       && r_mpint_sub (&h, &m1, &m2_p);
     if (ok && r_mpint_isneg (&h))
@@ -680,23 +666,86 @@ r_rsa_raw_decrypt_internal (const RRsaPrivKey * key,
     ok = ok
       && r_mpint_mul (&h, &h, &key->qp)
       && r_mpint_mod (&h, &h, &key->p)
-      && r_mpint_mul (&m, &h, &key->q)
-      && r_mpint_add (&m, &m, &m2)
-      && r_mpint_to_binary_with_size (&m, out, k);
+      && r_mpint_mul (m, &h, &key->q)
+      && r_mpint_add (m, m, &m2);
 
     r_mpint_clear (&m1);
     r_mpint_clear (&m2);
     r_mpint_clear (&m2_p);
     r_mpint_clear (&h);
-    ret = ok ? R_CRYPTO_OK : R_CRYPTO_DECRYPT_FAILED;
+    return ok;
   } else {
-    ret = (r_mpint_expmod (&m, &c, &key->d, &key->pub.n)
-        && r_mpint_to_binary_with_size (&m, out, k))
-      ? R_CRYPTO_OK : R_CRYPTO_DECRYPT_FAILED;
+    return r_mpint_expmod (m, c, &key->d, &key->pub.n);
+  }
+}
+
+static RCryptoResult
+r_rsa_raw_decrypt_internal (const RRsaPrivKey * key, RPrng * prng,
+    rconstpointer data, ruint8 * out, rsize size)
+{
+  RCryptoResult ret;
+  rsize k;
+  rmpint c, m, r, r_inv, r_e;
+  ruint8 * rbuf;
+  rboolean own_prng = FALSE;
+  rboolean ok;
+
+  k = r_mpint_digits_used (&key->pub.n) * sizeof (rmpint_digit);
+  if (size != k)
+    return R_CRYPTO_INVAL;
+
+  r_mpint_init_binary (&c, data, size);
+  if (r_mpint_iszero (&c)) {
+    r_mpint_clear (&c);
+    return R_CRYPTO_WRONG_SIZE;
   }
 
-  r_mpint_clear (&m);
+  if (prng == NULL) {
+    if ((prng = r_rand_prng_new ()) == NULL) {
+      r_mpint_clear (&c);
+      return R_CRYPTO_ERROR;
+    }
+    own_prng = TRUE;
+  }
+
+  r_mpint_init_size (&m, r_mpint_digits_used (&key->pub.n));
+  r_mpint_init (&r);
+  r_mpint_init (&r_inv);
+  r_mpint_init (&r_e);
+  rbuf = r_alloca (size);
+
+  /* RSA blinding: instead of computing m = c^d mod n directly — whose
+   * timing would correlate with d — sample a random r in (0, n) with
+   * gcd(r, n) = 1, compute c' = c * r^e mod n, run the private-key op
+   * on c', then unblind via m = m' * r^-1 mod n. For random 2048-bit r
+   * and n = p*q the gcd is essentially always 1, but we still iterate
+   * until invmod succeeds rather than silently failing. */
+  do {
+    if (!r_prng_fill (prng, rbuf, size)) {
+      ok = FALSE;
+      goto done;
+    }
+    r_mpint_set_binary (&r, rbuf, size);
+    r_mpint_mod (&r, &r, &key->pub.n);
+  } while (r_mpint_iszero (&r) || !r_mpint_invmod (&r_inv, &r, &key->pub.n));
+
+  ok = r_mpint_expmod (&r_e, &r, &key->pub.e, &key->pub.n)
+    && r_mpint_mulmod (&c, &c, &r_e, &key->pub.n)
+    && r_rsa_modexp_private (key, &c, &m)
+    && r_mpint_mulmod (&m, &m, &r_inv, &key->pub.n)
+    && r_mpint_to_binary_with_size (&m, out, k);
+
+done:
+  ret = ok ? R_CRYPTO_OK : R_CRYPTO_DECRYPT_FAILED;
+
   r_mpint_clear (&c);
+  r_mpint_clear (&m);
+  r_mpint_clear (&r);
+  r_mpint_clear (&r_inv);
+  r_mpint_clear (&r_e);
+  if (own_prng)
+    r_prng_unref (prng);
+
   return ret;
 }
 
@@ -713,7 +762,7 @@ r_rsa_raw_decrypt (const RCryptoKey * key,
   if (R_UNLIKELY (data == NULL || out == NULL || outsize == NULL))
     return R_CRYPTO_INVAL;
 
-  if ((ret = r_rsa_raw_decrypt_internal ((const RRsaPrivKey*)key, data, out, size)) == R_CRYPTO_OK)
+  if ((ret = r_rsa_raw_decrypt_internal ((const RRsaPrivKey*)key, NULL, data, out, size)) == R_CRYPTO_OK)
     *outsize = size;
 
   return ret;
@@ -771,7 +820,7 @@ r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
 
   buffer = (*outsize >= size) ? out : r_alloca (size);
 
-  if ((ret = r_rsa_raw_decrypt_internal ((const RRsaPrivKey*)key, data, buffer, size)) == R_CRYPTO_OK) {
+  if ((ret = r_rsa_raw_decrypt_internal ((const RRsaPrivKey*)key, NULL, data, buffer, size)) == R_CRYPTO_OK) {
     ruint8 * ptr;
 
     if (size < 11 || buffer[0] != 0x00 || buffer[1] != R_RSA_EME_PKCS1)
@@ -920,7 +969,7 @@ r_rsa_pkcs1v1_5_sign_msg_hash (const RCryptoKey * key, RPrng * prng,
   r_memcpy (ptr, di, di_size);
   r_free (di);
 
-  if (r_rsa_raw_decrypt_internal ((const RRsaPrivKey *)key, sig, sig, k) != R_CRYPTO_OK)
+  if (r_rsa_raw_decrypt_internal ((const RRsaPrivKey *)key, prng, sig, sig, k) != R_CRYPTO_OK)
     ret = R_CRYPTO_SIGN_FAILED;
   else
     ret = R_CRYPTO_OK;
@@ -933,8 +982,6 @@ r_rsa_pkcs1v1_5_sign_hash (const RCryptoKey * key, RPrng * prng,
 {
   rsize k;
   ruint8 * ptr;
-
-  (void) prng;
 
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_RSA)) return R_CRYPTO_WRONG_TYPE;
@@ -957,7 +1004,7 @@ r_rsa_pkcs1v1_5_sign_hash (const RCryptoKey * key, RPrng * prng,
 
   r_memcpy (ptr, hash, hashsize);
 
-  if (r_rsa_raw_decrypt_internal ((const RRsaPrivKey *)key, sig, sig, k) != R_CRYPTO_OK)
+  if (r_rsa_raw_decrypt_internal ((const RRsaPrivKey *)key, prng, sig, sig, k) != R_CRYPTO_OK)
     return R_CRYPTO_SIGN_FAILED;
   return R_CRYPTO_OK;
 }
