@@ -1,5 +1,7 @@
 #include <rlib/rcrypto.h>
 
+#include "wycheproof_rsa_pkcs1.h"
+
 RTEST (rrsa, pub_key_init, RTEST_FAST)
 {
   rmpint n, e;
@@ -495,6 +497,41 @@ RTEST (rrsa, gen_key, RTEST_SLOW)
   r_assert_cmpmem (pt, ==, in, size);
 
   r_prng_unref (prng);
+  r_crypto_key_unref (key);
+}
+RTEST_END;
+
+/* One Wycheproof RsaesPkcs1Decrypt vector per iteration: "valid" entries
+ * must round-trip to the expected plaintext; "invalid" entries must
+ * produce a non-OK result. The point is broad correctness coverage on
+ * inputs that historically broke RSA implementations (padding oracles,
+ * malformed CTs, Montgomery edges, etc.) — see test/wycheproof_rsa_pkcs1.h
+ * for the vector source. Each iteration is its own test with its own
+ * timeout, so a single 2048-bit decrypt comfortably fits the SLOW
+ * budget even under TSan / ASan. */
+RTEST_LOOP (rrsa, wycheproof_pkcs1_decrypt, RTEST_SLOW,
+    0, R_N_ELEMENTS (wp_rsa_pkcs1_tests))
+{
+  const WycheproofRsaPkcs1Test * t = &wp_rsa_pkcs1_tests[__i];
+  const WycheproofRsaKey * k = &wp_rsa_keys[t->key_idx];
+  RCryptoKey * key;
+  ruint8 pt[512];
+  rsize ptsize = sizeof (pt);
+  RCryptoResult res;
+
+  r_assert_cmpptr ((key = r_rsa_priv_key_new_binary (k->n, k->n_len,
+          k->e, k->e_len, k->d, k->d_len)), !=, NULL);
+
+  res = r_rsa_pkcs1v1_5_decrypt (key, t->ct, t->ct_len, pt, &ptsize);
+
+  if (t->valid) {
+    r_assert_cmpint (res, ==, R_CRYPTO_OK);
+    r_assert_cmpuint (ptsize, ==, t->msg_len);
+    r_assert_cmpmem (pt, ==, t->msg, ptsize);
+  } else {
+    r_assert_cmpint (res, !=, R_CRYPTO_OK);
+  }
+
   r_crypto_key_unref (key);
 }
 RTEST_END;
