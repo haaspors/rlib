@@ -52,6 +52,7 @@ rlib_sources = [
   'crypto/raes.c',
   'crypto/rcert.c',
   'crypto/rcipher.c',
+  'crypto/rdh.c',
   'crypto/rdsa.c',
   'crypto/recc.c',
   'crypto/rhmac.c',
