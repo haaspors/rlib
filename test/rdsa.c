@@ -135,3 +135,183 @@ RTEST (rdsa, asn1_priv_roundtrip, RTEST_FAST)
   r_mpint_clear (&got);
 }
 RTEST_END;
+
+RTEST (rdsa, pub_key_new_full_rejects_null_y, RTEST_FAST)
+{
+  rmpint p, q, g;
+  RCryptoKey * key;
+
+  r_mpint_init_str (&p, dsa_p_str, NULL, 16);
+  r_mpint_init_str (&q, dsa_q_str, NULL, 16);
+  r_mpint_init_str (&g, dsa_g_str, NULL, 16);
+
+  /* y is required; the params themselves are documented optional via
+   * the r_dsa_pub_key_new(y) shortcut, but a NULL y must still fail. */
+  r_assert_cmpptr ((key = r_dsa_pub_key_new_full (&p, &q, &g, NULL)), ==, NULL);
+
+  r_mpint_clear (&p);
+  r_mpint_clear (&q);
+  r_mpint_clear (&g);
+}
+RTEST_END;
+
+RTEST (rdsa, pub_key_new_shortcut_only_y, RTEST_FAST)
+{
+  /* The r_dsa_pub_key_new(y) macro builds a public key with no group
+   * parameters — useful when the verifier already knows (p, q, g) from
+   * a peer's full key and only needs y to validate signatures. */
+  rmpint y, got;
+  RCryptoKey * key;
+
+  r_mpint_init_str (&y, dsa_y_str, NULL, 16);
+  r_mpint_init (&got);
+
+  r_assert_cmpptr ((key = r_dsa_pub_key_new (&y)), !=, NULL);
+  r_assert_cmpuint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_DSA);
+  r_assert_cmpuint (r_crypto_key_get_type (key), ==, R_CRYPTO_PUBLIC_KEY);
+
+  r_assert (r_dsa_pub_key_get_y (key, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &y), ==, 0);
+
+  /* Unset params come back as zero rather than uninitialised. */
+  r_assert (r_dsa_pub_key_get_p (key, &got));
+  r_assert (r_mpint_iszero (&got));
+  r_assert (r_dsa_pub_key_get_q (key, &got));
+  r_assert (r_mpint_iszero (&got));
+  r_assert (r_dsa_pub_key_get_g (key, &got));
+  r_assert (r_mpint_iszero (&got));
+
+  r_crypto_key_unref (key);
+  r_mpint_clear (&y);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rdsa, pub_key_new_binary, RTEST_FAST)
+{
+  /* Round-trip through the byte-array constructor: encode each field
+   * with r_mpint_to_binary_new, build a key, and assert the getters
+   * return the same value. */
+  rmpint p, q, g, y, x, got;
+  RCryptoKey * key;
+  ruint8 * pb, * qb, * gb, * yb;
+  rsize psize, qsize, gsize, ysize;
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_mpint_init (&got);
+
+  pb = r_mpint_to_binary_new (&p, &psize);
+  qb = r_mpint_to_binary_new (&q, &qsize);
+  gb = r_mpint_to_binary_new (&g, &gsize);
+  yb = r_mpint_to_binary_new (&y, &ysize);
+  r_assert (pb != NULL && qb != NULL && gb != NULL && yb != NULL);
+
+  r_assert_cmpptr ((key = r_dsa_pub_key_new_binary (pb, psize, qb, qsize,
+          gb, gsize, yb, ysize)), !=, NULL);
+  r_assert_cmpuint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_DSA);
+
+  r_assert (r_dsa_pub_key_get_p (key, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &p), ==, 0);
+  r_assert (r_dsa_pub_key_get_q (key, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &q), ==, 0);
+  r_assert (r_dsa_pub_key_get_g (key, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &g), ==, 0);
+  r_assert (r_dsa_pub_key_get_y (key, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &y), ==, 0);
+
+  r_free (pb); r_free (qb); r_free (gb); r_free (yb);
+  r_crypto_key_unref (key);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rdsa, priv_key_new_rejects_null, RTEST_FAST)
+{
+  rmpint p, q, g, y, x;
+  RCryptoKey * key;
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+
+  r_assert_cmpptr ((key = r_dsa_priv_key_new (NULL, &q, &g, &y, &x)), ==, NULL);
+  r_assert_cmpptr ((key = r_dsa_priv_key_new (&p, NULL, &g, &y, &x)), ==, NULL);
+  r_assert_cmpptr ((key = r_dsa_priv_key_new (&p, &q, NULL, &y, &x)), ==, NULL);
+  r_assert_cmpptr ((key = r_dsa_priv_key_new (&p, &q, &g, NULL, &x)), ==, NULL);
+  r_assert_cmpptr ((key = r_dsa_priv_key_new (&p, &q, &g, &y, NULL)), ==, NULL);
+
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+}
+RTEST_END;
+
+RTEST (rdsa, priv_key_new_binary, RTEST_FAST)
+{
+  rmpint p, q, g, y, x, got;
+  RCryptoKey * key;
+  ruint8 * pb, * qb, * gb, * yb, * xb;
+  rsize psize, qsize, gsize, ysize, xsize;
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_mpint_init (&got);
+
+  pb = r_mpint_to_binary_new (&p, &psize);
+  qb = r_mpint_to_binary_new (&q, &qsize);
+  gb = r_mpint_to_binary_new (&g, &gsize);
+  yb = r_mpint_to_binary_new (&y, &ysize);
+  xb = r_mpint_to_binary_new (&x, &xsize);
+
+  r_assert_cmpptr ((key = r_dsa_priv_key_new_binary (pb, psize, qb, qsize,
+          gb, gsize, yb, ysize, xb, xsize)), !=, NULL);
+  r_assert_cmpuint (r_crypto_key_get_type (key), ==, R_CRYPTO_PRIVATE_KEY);
+
+  r_assert (r_dsa_pub_key_get_p (key, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &p), ==, 0);
+  r_assert (r_dsa_priv_key_get_x (key, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &x), ==, 0);
+
+  r_free (pb); r_free (qb); r_free (gb); r_free (yb); r_free (xb);
+  r_crypto_key_unref (key);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rdsa, getter_guards, RTEST_FAST)
+{
+  /* Getters must reject NULL args, wrong-algorithm keys (RSA here), and
+   * — for priv_key_get_x — keys that are public-only. */
+  rmpint p, q, g, y, x, n, e, got;
+  RCryptoKey * pub, * priv, * rsa_key;
+
+  init_dsa_mpints (&p, &q, &g, &y, &x);
+  r_mpint_init_str (&n, dsa_p_str, NULL, 16);
+  r_mpint_init_str (&e, "65537", NULL, 10);
+  r_mpint_init (&got);
+
+  r_assert_cmpptr ((pub  = r_dsa_pub_key_new_full (&p, &q, &g, &y)), !=, NULL);
+  r_assert_cmpptr ((priv = r_dsa_priv_key_new (&p, &q, &g, &y, &x)), !=, NULL);
+  r_assert_cmpptr ((rsa_key = r_rsa_pub_key_new (&n, &e)), !=, NULL);
+
+  /* NULL args. */
+  r_assert (!r_dsa_pub_key_get_p (NULL, &got));
+  r_assert (!r_dsa_pub_key_get_p (pub, NULL));
+  r_assert (!r_dsa_pub_key_get_q (NULL, &got));
+  r_assert (!r_dsa_pub_key_get_g (NULL, &got));
+  r_assert (!r_dsa_pub_key_get_y (NULL, &got));
+  r_assert (!r_dsa_priv_key_get_x (NULL, &got));
+  r_assert (!r_dsa_priv_key_get_x (priv, NULL));
+
+  /* Wrong algorithm. */
+  r_assert (!r_dsa_pub_key_get_p (rsa_key, &got));
+  r_assert (!r_dsa_priv_key_get_x (rsa_key, &got));
+
+  /* Public-only key does not expose x. */
+  r_assert (!r_dsa_priv_key_get_x (pub, &got));
+
+  r_crypto_key_unref (pub);
+  r_crypto_key_unref (priv);
+  r_crypto_key_unref (rsa_key);
+  clear_dsa_mpints (&p, &q, &g, &y, &x);
+  r_mpint_clear (&n);
+  r_mpint_clear (&e);
+  r_mpint_clear (&got);
+}
+RTEST_END;
