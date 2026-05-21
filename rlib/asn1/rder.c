@@ -28,16 +28,22 @@ r_asn1_der_parse_length (const ruint8 * ptr, rsize * lensize, rsize * ret)
     if (*ptr == R_ASN1_BIN_LENGTH_INDEFINITE) {
       return R_ASN1_DECODER_INDEFINITE;
     } else if (*ptr & R_ASN1_BIN_LENGTH_INDEFINITE) {
-      /* definite long form */
-      rsize i;
+      /* Long form. DER requires the minimum number of octets (X.690
+       * §10.1), so reject lengths that would fit in short form or
+       * carry a redundant leading zero, and reject length-of-length
+       * counts that can't fit in rsize. */
+      rsize nlen, i;
 
-      if ((*ptr & 0x7f) >= *lensize)
+      nlen = *ptr & 0x7f;
+      if (nlen == 0 || nlen > sizeof (rsize) || nlen >= *lensize)
+        return R_ASN1_DECODER_OVERFLOW;
+      ptr++;
+      if (ptr[0] == 0 || (nlen == 1 && ptr[0] < 0x80))
         return R_ASN1_DECODER_OVERFLOW;
 
-      *lensize = *ptr++ & 0x7f;
-      for (*ret = i = 0; i < *lensize; i++)
+      for (*ret = i = 0; i < nlen; i++)
         *ret = (*ret << 8) | *ptr++;
-      (*lensize)++;
+      *lensize = nlen + 1;
     } else {
       /* definite short form */
       *lensize = 1;
@@ -62,6 +68,12 @@ r_asn1_der_tlv_init (RAsn1BinTLV * tlv, const ruint8 * start, rsize size)
   lensize = size - 1;
   if ((ret = r_asn1_der_parse_length (start + 1, &lensize, &tlv->len)) ==
       R_ASN1_DECODER_OK) {
+    /* The declared content length must fit in the surrounding buffer.
+     * Compare via subtraction so pointer/size arithmetic can't overflow
+     * on adversarial lengths (e.g. 2^64 - 1 from a fabricated long-form
+     * length octet). */
+    if (1 + lensize > size || tlv->len > size - 1 - lensize)
+      return R_ASN1_DECODER_OVERFLOW;
     tlv->start = start;
     tlv->value = start + 1 + lensize;
   }
