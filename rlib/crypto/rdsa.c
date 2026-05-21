@@ -593,3 +593,73 @@ r_dsa_priv_key_get_x (const RCryptoKey * key, rmpint * x)
   return TRUE;
 }
 
+/* Drive RMsgDigest from mdtype over (msg, msgsize), writing the digest
+ * to a caller-supplied buffer (64 bytes is enough for SHA-512).
+ * Returns the digest size on success, 0 on failure. */
+static rsize
+r_dsa_compute_hash (RMsgDigestType mdtype, rconstpointer msg, rsize msgsize,
+    ruint8 * hashbuf, rsize hashbuf_max)
+{
+  RMsgDigest * md;
+  rsize hashsize;
+
+  if ((md = r_msg_digest_new (mdtype)) == NULL)
+    return 0;
+  hashsize = r_msg_digest_size (md);
+  if (hashsize == 0 || hashsize > hashbuf_max ||
+      !r_msg_digest_update (md, msg, msgsize) ||
+      !r_msg_digest_get_data (md, hashbuf, hashsize, NULL)) {
+    r_msg_digest_free (md);
+    return 0;
+  }
+  r_msg_digest_free (md);
+  return hashsize;
+}
+
+RCryptoResult
+r_dsa_sign_msg_hash (const RCryptoKey * key, RPrng * prng,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
+    rpointer sig, rsize * sigsize)
+{
+  /* The algo->sign callback already accepts a pre-computed hash; this
+   * is just a name-symmetric shortcut to match the RSA shape. */
+  return r_crypto_key_sign (key, prng, mdtype, hash, hashsize, sig, sigsize);
+}
+
+RCryptoResult
+r_dsa_sign_msg (const RCryptoKey * key, RPrng * prng,
+    RMsgDigestType mdtype, rconstpointer msg, rsize msgsize,
+    rpointer sig, rsize * sigsize)
+{
+  ruint8 hash[64];
+  rsize hashsize;
+
+  if (R_UNLIKELY (msg == NULL || msgsize == 0))
+    return R_CRYPTO_INVAL;
+  if ((hashsize = r_dsa_compute_hash (mdtype, msg, msgsize, hash, sizeof (hash))) == 0)
+    return R_CRYPTO_HASH_FAILED;
+  return r_crypto_key_sign (key, prng, mdtype, hash, hashsize, sig, sigsize);
+}
+
+RCryptoResult
+r_dsa_verify_msg_with_hash (const RCryptoKey * key,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
+    rconstpointer sig, rsize sigsize)
+{
+  return r_crypto_key_verify (key, mdtype, hash, hashsize, sig, sigsize);
+}
+
+RCryptoResult
+r_dsa_verify_msg (const RCryptoKey * key,
+    RMsgDigestType mdtype, rconstpointer msg, rsize msgsize,
+    rconstpointer sig, rsize sigsize)
+{
+  ruint8 hash[64];
+  rsize hashsize;
+
+  if (R_UNLIKELY (msg == NULL || msgsize == 0))
+    return R_CRYPTO_INVAL;
+  if ((hashsize = r_dsa_compute_hash (mdtype, msg, msgsize, hash, sizeof (hash))) == 0)
+    return R_CRYPTO_HASH_FAILED;
+  return r_crypto_key_verify (key, mdtype, hash, hashsize, sig, sigsize);
+}
