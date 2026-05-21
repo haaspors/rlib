@@ -23,6 +23,7 @@
 #include <rlib/crypto/raes.h>
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rcipher.h>
+#include <rlib/crypto/rdh.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/recc.h>
 #include <rlib/crypto/rhmac.h>
