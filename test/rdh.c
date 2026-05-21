@@ -239,3 +239,121 @@ RTEST (rdh, compute_shared_rejects_mismatched_group, RTEST_FAST)
   r_mpint_clear (&y);
 }
 RTEST_END;
+
+static RCryptoKey *
+encode_then_decode_pub (const RCryptoKey * pub)
+{
+  RAsn1BinEncoder * enc;
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  ruint8 * buf;
+  rsize bufsize;
+  RCryptoKey * decoded = NULL;
+
+  if ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)) == NULL)
+    return NULL;
+  if (r_crypto_key_to_asn1 (pub, enc) != R_CRYPTO_OK) {
+    r_asn1_bin_encoder_unref (enc);
+    return NULL;
+  }
+  buf = r_asn1_bin_encoder_get_data (enc, &bufsize);
+  r_asn1_bin_encoder_unref (enc);
+  if (buf == NULL)
+    return NULL;
+
+  if ((dec = r_asn1_bin_decoder_new (R_ASN1_BER, buf, bufsize)) != NULL) {
+    if (r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK)
+      decoded = r_crypto_key_from_asn1_public_key (dec, &tlv);
+    r_asn1_bin_decoder_unref (dec);
+  }
+  r_free (buf);
+  return decoded;
+}
+
+RTEST (rdh, asn1_pub_roundtrip, RTEST_FAST)
+{
+  /* Build a DH public key, export to ASN.1 (SubjectPublicKeyInfo), parse
+   * back through r_crypto_key_from_asn1_public_key and assert every
+   * field matches the original. */
+  rmpint p, g, y, got;
+  RCryptoKey * orig, * decoded;
+
+  r_mpint_init_str (&p, "0xFEDCBA9876543210FEDCBA9876543211", NULL, 16);
+  r_mpint_init_str (&g, "0x02", NULL, 16);
+  r_mpint_init_str (&y, "0x0123456789abcdef0123456789abcdef", NULL, 16);
+  r_mpint_init (&got);
+
+  r_assert_cmpptr ((orig = r_dh_pub_key_new (&p, &g, &y)), !=, NULL);
+  r_assert_cmpptr ((decoded = encode_then_decode_pub (orig)), !=, NULL);
+
+  r_assert_cmpuint (r_crypto_key_get_algo (decoded), ==, R_CRYPTO_ALGO_DH);
+  r_assert_cmpuint (r_crypto_key_get_type (decoded), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert (r_dh_pub_key_get_p (decoded, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &p), ==, 0);
+  r_assert (r_dh_pub_key_get_g (decoded, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &g), ==, 0);
+  r_assert (r_dh_pub_key_get_y (decoded, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &y), ==, 0);
+
+  r_crypto_key_unref (orig);
+  r_crypto_key_unref (decoded);
+  r_mpint_clear (&p);
+  r_mpint_clear (&g);
+  r_mpint_clear (&y);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rdh, asn1_priv_roundtrip, RTEST_FAST)
+{
+  /* Same shape as the pub round-trip, but via the
+   * SEQUENCE { ver, p, g, x } payload that r_dh_priv_key_new_from_asn1
+   * accepts. */
+  rmpint p, g, y, x, got;
+  RCryptoKey * orig, * decoded;
+  RAsn1BinEncoder * enc;
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  ruint8 * buf;
+  rsize bufsize;
+
+  r_mpint_init_str (&p, "0xFEDCBA9876543210FEDCBA9876543211", NULL, 16);
+  r_mpint_init_str (&g, "0x02", NULL, 16);
+  r_mpint_init_str (&x, "0x0a0b0c0d0e0f10", NULL, 16);
+  r_mpint_init (&y);
+  r_assert (r_mpint_expmod (&y, &g, &x, &p));
+  r_mpint_init (&got);
+
+  r_assert_cmpptr ((orig = r_dh_priv_key_new (&p, &g, &y, &x)), !=, NULL);
+
+  r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+  r_assert_cmpuint (r_crypto_key_to_asn1 (orig, enc), ==, R_CRYPTO_OK);
+  r_assert_cmpptr ((buf = r_asn1_bin_encoder_get_data (enc, &bufsize)), !=, NULL);
+  r_asn1_bin_encoder_unref (enc);
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER, buf, bufsize)), !=, NULL);
+  r_assert_cmpuint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpptr ((decoded = r_dh_priv_key_new_from_asn1 (dec, &tlv)), !=, NULL);
+  r_asn1_bin_decoder_unref (dec);
+  r_free (buf);
+
+  r_assert_cmpuint (r_crypto_key_get_type (decoded), ==, R_CRYPTO_PRIVATE_KEY);
+  r_assert (r_dh_pub_key_get_p (decoded, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &p), ==, 0);
+  r_assert (r_dh_pub_key_get_g (decoded, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &g), ==, 0);
+  r_assert (r_dh_priv_key_get_x (decoded, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &x), ==, 0);
+  /* y is reconstructed from (g, x, p) on the decode side. */
+  r_assert (r_dh_pub_key_get_y (decoded, &got));
+  r_assert_cmpint (r_mpint_cmp (&got, &y), ==, 0);
+
+  r_crypto_key_unref (orig);
+  r_crypto_key_unref (decoded);
+  r_mpint_clear (&p);
+  r_mpint_clear (&g);
+  r_mpint_clear (&y);
+  r_mpint_clear (&x);
+  r_mpint_clear (&got);
+}
+RTEST_END;
