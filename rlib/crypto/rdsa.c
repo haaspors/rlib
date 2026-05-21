@@ -55,6 +55,230 @@ r_dsa_pub_key_free (rpointer data)
   }
 }
 
+/* FIPS 186-4 §4.6: the integer z fed to the sign/verify equations is
+ * formed from the leftmost min(N, outlen) bits of the message hash,
+ * where N is the bit length of q. The mpint is assumed uninitialised
+ * on entry. */
+static void
+r_dsa_hash_to_mpint (rmpint * z, const rmpint * q,
+    const ruint8 * hash, rsize hashsize)
+{
+  ruint qbits = r_mpint_bits_used (q);
+  rsize hashbits = hashsize * 8;
+  rsize use_bits = qbits < hashbits ? qbits : hashbits;
+  rsize use_bytes = (use_bits + 7) / 8;
+
+  r_mpint_init_binary (z, hash, use_bytes);
+  if ((use_bits & 7) != 0)
+    r_mpint_shr (z, z, 8 - (use_bits & 7));
+}
+
+/* Decode Dss-Sig-Value ::= SEQUENCE { r INTEGER, s INTEGER } (RFC 3279
+ * §2.2.2) from sig/sigsize. Caller owns r and s; both are initialised
+ * here on success. */
+static rboolean
+r_dsa_decode_sig (rconstpointer sig, rsize sigsize, rmpint * r, rmpint * s)
+{
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  rboolean ok = FALSE;
+
+  if ((dec = r_asn1_bin_decoder_new (R_ASN1_BER, sig, sigsize)) == NULL)
+    return FALSE;
+
+  r_mpint_init (r);
+  r_mpint_init (s);
+  if (r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_tlv_parse_integer_mpint (&tlv, r) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_decoder_next (dec, &tlv) == R_ASN1_DECODER_OK &&
+      r_asn1_bin_tlv_parse_integer_mpint (&tlv, s) == R_ASN1_DECODER_OK) {
+    ok = TRUE;
+  }
+  r_asn1_bin_decoder_unref (dec);
+  if (!ok) {
+    r_mpint_clear (r);
+    r_mpint_clear (s);
+  }
+  return ok;
+}
+
+static RCryptoResult
+r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
+    rconstpointer hash, rsize hashsize, rpointer sig, rsize * sigsize)
+{
+  const RDsaPrivKey * pk = (const RDsaPrivKey *)key;
+  rmpint k, kinv, r, s, z, xr;
+  ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  RAsn1BinEncoder * enc = NULL;
+  ruint8 * sigbuf = NULL;
+  rsize qbytes, kbytes, sigbufsize;
+  ruint8 * kbuf;
+  rboolean own_prng = FALSE;
+  rboolean ok = FALSE;
+  RCryptoResult ret;
+
+  (void) mdtype;  /* DSA signs the raw hash; mdtype is purely informational. */
+
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY))
+    return R_CRYPTO_WRONG_TYPE;
+  if (R_UNLIKELY (hash == NULL || hashsize == 0))
+    return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (r_mpint_iszero (&pk->pub.p) || r_mpint_iszero (&pk->pub.q) ||
+        r_mpint_iszero (&pk->pub.g) || r_mpint_iszero (&pk->x)))
+    return R_CRYPTO_INVAL;
+
+  if (prng == NULL) {
+    if ((prng = r_rand_prng_new ()) == NULL)
+      return R_CRYPTO_ERROR;
+    own_prng = TRUE;
+  } else {
+    r_prng_ref (prng);
+  }
+
+  /* Sample 64 extra bits beyond q before reducing — FIPS 186-4
+   * Appendix B.2.1's "Extra Random Bits" technique. Reducing N+64
+   * uniform bits modulo q drops the resulting bias on k from
+   * (2^N - q)/2^N down to ~2^-64, which is cryptographically
+   * negligible. The naive "sample N bits then reduce" approach skews
+   * the low end of [1, q-1] in a way that leaks a fraction of a bit
+   * per signature and stacks across many signatures. */
+  qbytes = (r_mpint_bits_used (&pk->pub.q) + 7) / 8;
+  kbytes = qbytes + 8;
+  kbuf = r_alloca (kbytes);
+
+  r_mpint_init (&k);
+  r_mpint_init (&kinv);
+  r_mpint_init (&r);
+  r_mpint_init (&s);
+  r_mpint_init (&xr);
+  r_dsa_hash_to_mpint (&z, &pk->pub.q, hash, hashsize);
+
+  for (;;) {
+    do {
+      if (!r_prng_fill (prng, kbuf, kbytes))
+        goto cleanup;
+      r_mpint_set_binary (&k, kbuf, kbytes);
+      if (!r_mpint_mod (&k, &k, &pk->pub.q))
+        goto cleanup;
+    } while (r_mpint_iszero (&k));
+
+    /* r = (g^k mod p) mod q; retry on the (negligible) chance r == 0. */
+    if (!r_mpint_expmod (&r, &pk->pub.g, &k, &pk->pub.p) ||
+        !r_mpint_mod (&r, &r, &pk->pub.q))
+      goto cleanup;
+    if (r_mpint_iszero (&r))
+      continue;
+
+    /* s = k^-1 * (z + x * r) mod q; retry on s == 0. */
+    if (!r_mpint_invmod (&kinv, &k, &pk->pub.q) ||
+        !r_mpint_mul (&xr, &pk->x, &r) ||
+        !r_mpint_add (&xr, &xr, &z) ||
+        !r_mpint_mul (&s, &kinv, &xr) ||
+        !r_mpint_mod (&s, &s, &pk->pub.q))
+      goto cleanup;
+    if (!r_mpint_iszero (&s))
+      break;
+  }
+
+  /* Dss-Sig-Value ::= SEQUENCE { r INTEGER, s INTEGER } */
+  if ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)) == NULL)
+    goto cleanup;
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) != R_ASN1_ENCODER_OK)
+    goto cleanup;
+  if (r_asn1_bin_encoder_add_integer_mpint (enc, &r) != R_ASN1_ENCODER_OK ||
+      r_asn1_bin_encoder_add_integer_mpint (enc, &s) != R_ASN1_ENCODER_OK) {
+    r_asn1_bin_encoder_end_constructed (enc);
+    goto cleanup;
+  }
+  r_asn1_bin_encoder_end_constructed (enc);
+
+  if ((sigbuf = r_asn1_bin_encoder_get_data (enc, &sigbufsize)) == NULL)
+    goto cleanup;
+
+  if (*sigsize < sigbufsize) {
+    ret = R_CRYPTO_BUFFER_TOO_SMALL;
+    goto cleanup_with_ret;
+  }
+  r_memcpy (sig, sigbuf, sigbufsize);
+  *sigsize = sigbufsize;
+  ok = TRUE;
+
+cleanup:
+  ret = ok ? R_CRYPTO_OK : R_CRYPTO_SIGN_FAILED;
+cleanup_with_ret:
+  r_free (sigbuf);
+  if (enc != NULL) r_asn1_bin_encoder_unref (enc);
+  r_mpint_clear (&k);
+  r_mpint_clear (&kinv);
+  r_mpint_clear (&r);
+  r_mpint_clear (&s);
+  r_mpint_clear (&xr);
+  r_mpint_clear (&z);
+  r_prng_unref (prng);
+  (void) own_prng;
+  return ret;
+}
+
+static RCryptoResult
+r_dsa_verify (const RCryptoKey * key, RMsgDigestType mdtype,
+    rconstpointer hash, rsize hashsize, rconstpointer sig, rsize sigsize)
+{
+  const RDsaPubKey * pk = (const RDsaPubKey *)key;
+  rmpint r, s, z, w, u1, u2, gu1, yu2, v;
+  RCryptoResult ret = R_CRYPTO_VERIFY_FAILED;
+
+  (void) mdtype;
+
+  if (R_UNLIKELY (hash == NULL || hashsize == 0 || sig == NULL || sigsize == 0))
+    return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (r_mpint_iszero (&pk->p) || r_mpint_iszero (&pk->q) ||
+        r_mpint_iszero (&pk->g) || r_mpint_iszero (&pk->y)))
+    return R_CRYPTO_INVAL;
+
+  if (!r_dsa_decode_sig (sig, sigsize, &r, &s))
+    return R_CRYPTO_VERIFY_FAILED;
+
+  /* Reject 0 < r < q and 0 < s < q out-of-range signatures up front. */
+  if (r_mpint_iszero (&r) || r_mpint_cmp (&r, &pk->q) >= 0 ||
+      r_mpint_iszero (&s) || r_mpint_cmp (&s, &pk->q) >= 0)
+    goto out;
+
+  r_dsa_hash_to_mpint (&z, &pk->q, hash, hashsize);
+  r_mpint_init (&w);
+  r_mpint_init (&u1);
+  r_mpint_init (&u2);
+  r_mpint_init (&gu1);
+  r_mpint_init (&yu2);
+  r_mpint_init (&v);
+
+  /* v = ((g^u1 * y^u2) mod p) mod q  where u1 = z*w, u2 = r*w, w = s^-1 mod q */
+  if (r_mpint_invmod (&w, &s, &pk->q) &&
+      r_mpint_mul (&u1, &z, &w) && r_mpint_mod (&u1, &u1, &pk->q) &&
+      r_mpint_mul (&u2, &r, &w) && r_mpint_mod (&u2, &u2, &pk->q) &&
+      r_mpint_expmod (&gu1, &pk->g, &u1, &pk->p) &&
+      r_mpint_expmod (&yu2, &pk->y, &u2, &pk->p) &&
+      r_mpint_mul (&v, &gu1, &yu2) &&
+      r_mpint_mod (&v, &v, &pk->p) &&
+      r_mpint_mod (&v, &v, &pk->q) &&
+      r_mpint_cmp (&v, &r) == 0) {
+    ret = R_CRYPTO_OK;
+  }
+
+  r_mpint_clear (&z);
+  r_mpint_clear (&w);
+  r_mpint_clear (&u1);
+  r_mpint_clear (&u2);
+  r_mpint_clear (&gu1);
+  r_mpint_clear (&yu2);
+  r_mpint_clear (&v);
+
+out:
+  r_mpint_clear (&r);
+  r_mpint_clear (&s);
+  return ret;
+}
+
 static RCryptoResult
 r_dsa_pub_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
 {
@@ -119,7 +343,7 @@ r_dsa_pub_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo dsa_pub_key_info = {
     R_CRYPTO_ALGO_DSA, R_DSA_STR,
-    NULL, NULL, NULL, NULL, r_dsa_pub_key_export
+    NULL, NULL, NULL, r_dsa_verify, r_dsa_pub_key_export
   };
 
   r_ref_init (key, r_dsa_pub_key_free);
@@ -144,7 +368,7 @@ r_dsa_priv_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo dsa_priv_key_info = {
     R_CRYPTO_ALGO_DSA, R_DSA_STR,
-    NULL, NULL, NULL, NULL, r_dsa_priv_key_export
+    NULL, NULL, r_dsa_sign, r_dsa_verify, r_dsa_priv_key_export
   };
 
   r_ref_init (key, r_dsa_priv_key_free);
