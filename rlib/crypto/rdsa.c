@@ -123,7 +123,7 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
     rconstpointer hash, rsize hashsize, rpointer sig, rsize * sigsize)
 {
   const RDsaPrivKey * pk = (const RDsaPrivKey *)key;
-  rmpint k, kinv, r, s, z, xr;
+  rmpint k, kinv, r, s, z, xr, b;
   ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
   RAsn1BinEncoder * enc = NULL;
   ruint8 * sigbuf = NULL;
@@ -167,6 +167,7 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
   r_mpint_init (&r);
   r_mpint_init (&s);
   r_mpint_init (&xr);
+  r_mpint_init (&b);
   r_dsa_hash_to_mpint (&z, &pk->pub.q, hash, hashsize);
 
   for (;;) {
@@ -185,8 +186,27 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
     if (r_mpint_iszero (&r))
       continue;
 
+    /* k^-1 mod q via multiplicative blinding. r_mpint_invmod uses an
+     * extended-Euclidean ladder whose loop and shift counts vary with
+     * the input — and k is the per-signature secret, so its timing
+     * would leak bits of k (the Nguyen/Shparlinski style attack that
+     * lets an attacker recover x from a handful of biased signatures).
+     * Pick a fresh random b in [1, q-1], compute t = k*b mod q, run
+     * invmod on the blinded t, then unblind: k^-1 = t^-1 * b mod q.
+     * invmod still runs in variable time, but on input that no longer
+     * correlates with k. */
+    do {
+      if (!r_prng_fill (prng, kbuf, kbytes))
+        goto cleanup;
+      r_mpint_set_binary (&b, kbuf, kbytes);
+      if (!r_mpint_mod (&b, &b, &pk->pub.q))
+        goto cleanup;
+    } while (r_mpint_iszero (&b));
+
     /* s = k^-1 * (z + x * r) mod q; retry on s == 0. */
-    if (!r_mpint_invmod (&kinv, &k, &pk->pub.q) ||
+    if (!r_mpint_mulmod (&kinv, &k, &b, &pk->pub.q) ||
+        !r_mpint_invmod (&kinv, &kinv, &pk->pub.q) ||
+        !r_mpint_mulmod (&kinv, &kinv, &b, &pk->pub.q) ||
         !r_mpint_mul (&xr, &pk->x, &r) ||
         !r_mpint_add (&xr, &xr, &z) ||
         !r_mpint_mul (&s, &kinv, &xr) ||
@@ -229,6 +249,7 @@ cleanup_with_ret:
   r_mpint_clear (&r);
   r_mpint_clear (&s);
   r_mpint_clear (&xr);
+  r_mpint_clear (&b);
   r_mpint_clear (&z);
   r_prng_unref (prng);
   (void) own_prng;
