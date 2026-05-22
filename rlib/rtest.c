@@ -1246,9 +1246,16 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
         } else {
           ret->runs[cur].start = ret->runs[cur].end = r_time_get_ts_monotonic ();
           ret->runs[cur].state = R_TEST_RUN_STATE_SKIP;
-          ret->skip++;
-          if (tests[i].skip == R_TEST_SKIP_HEAVY) ret->skip_heavy++;
-          else if (tests[i].skip == R_TEST_SKIP_BROKEN) ret->skip_broken++;
+          /* Only count tests that are gated by a SKIP / HEAVY / BROKEN
+           * marker. Tests filtered out by name pattern or type mask
+           * also land in this branch but aren't interesting to the
+           * per-run summary; they're inferrable from
+           * (total - run - skip). */
+          if (tests[i].skip != R_TEST_NO_SKIP) {
+            ret->skip++;
+            if (tests[i].skip == R_TEST_SKIP_HEAVY) ret->skip_heavy++;
+            else if (tests[i].skip == R_TEST_SKIP_BROKEN) ret->skip_broken++;
+          }
         }
       }
     }
@@ -1418,25 +1425,30 @@ r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
   }
 
   elapsed = report->end - report->start;
-  /* "Skip:" in the summary is the temporarily-disabled count, not the
-   * grand total - HEAVY and BROKEN have their own columns so each
-   * bucket stays visible. The runner tracks the grand total in
-   * report->skip; subtract the sub-bucket counters to recover the
-   * SKIP_RTEST_* (temp) count. */
+  /* Two-line summary so the run result and the gated count stay on
+   * different axes. The "Gated:" line is omitted when nothing's
+   * gated, to keep the trivial case quiet. */
   r_fprintf (f,
-      "%s\n%"RSIZE_FMT" tests"
-      " (Ran: %"RSIZE_FMT
-      " %sSkip: %"RSIZE_FMT"%s"
-      " %sHeavy: %"RSIZE_FMT"%s"
-      " %sBroken: %"RSIZE_FMT"%s)"
-      " [%s%"R_TIME_FORMAT"%s]\n"
-      "\t%sSuccess: %"RSIZE_FMT"%s, %sFailures: %"RSIZE_FMT"%s, %sErrors: %"RSIZE_FMT"%s\n",
+      "%s\n"
+      "Result: %s%"RSIZE_FMT" passed%s, %s%"RSIZE_FMT" failed%s, "
+          "%s%"RSIZE_FMT" errors%s   [%s%"R_TIME_FORMAT"%s]\n",
       "================================================================================",
-      report->total, report->run,
-      _SKIP_ARGS (report->skip - report->skip_heavy - report->skip_broken),
-      _HEAVY_ARGS (report->skip_heavy),
-      _BROKEN_ARGS (report->skip_broken),
-      _TIME_CLR, R_TIME_ARGS (elapsed), _RESET_CLR,
-      _SUCC_ARGS (report->success), _FAIL_ARGS (report->fail), _ERR_ARGS (report->error));
+      _SUCC_ARGS (report->success),
+      _FAIL_ARGS (report->fail),
+      _ERR_ARGS (report->error),
+      _TIME_CLR, R_TIME_ARGS (elapsed), _RESET_CLR);
+
+  if (report->skip > 0) {
+    /* report->skip is the grand total. Subtract the sub-bucket
+     * counters to recover the SKIP_RTEST_* (temp) count. */
+    r_fprintf (f,
+        "Gated:  %s%"RSIZE_FMT" skip%s, %s%"RSIZE_FMT" heavy%s, "
+            "%s%"RSIZE_FMT" broken%s   (--include-skip / --heavy / --broken to opt in)\n",
+        _SKIP_ARGS (report->skip - report->skip_heavy - report->skip_broken),
+        _HEAVY_ARGS (report->skip_heavy),
+        _BROKEN_ARGS (report->skip_broken));
+  }
+
+  r_fprintf (f, "[%"RSIZE_FMT" tests total]\n", report->total);
 }
 
