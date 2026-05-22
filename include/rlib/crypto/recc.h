@@ -25,6 +25,7 @@
 #include <rlib/rtypes.h>
 #include <rlib/crypto/recurve.h>
 #include <rlib/crypto/rkey.h>
+#include <rlib/rrand.h>
 
 R_BEGIN_DECLS
 
@@ -44,6 +45,27 @@ R_API RCryptoKey * r_ecdh_priv_key_new (REcurveID curve,
 R_API REcurveID r_ecc_key_get_curve (const RCryptoKey * key);
 R_API rboolean r_ecc_priv_key_get_scalar (const RCryptoKey * key,
     const ruint8 ** scalar, rsize * scalarsize);
+
+/* Pick a random d in [1, n-1] for `curve` and produce a private ECDH
+ * key whose public point is Q = d * G. Caller owns the returned key.
+ * If `prng` is NULL a fresh system PRNG is used. */
+R_API RCryptoKey * r_ecdh_priv_key_new_gen (REcurveID curve,
+    RPrng * prng) R_ATTR_MALLOC;
+
+/* Retrieve the affine public point Q for an ECDSA or ECDH key. Returns
+ * FALSE if `key` doesn't carry a parsed point (e.g. an ECDSA key built
+ * from an encoding the math layer can't yet decode). */
+R_API rboolean r_ecc_key_get_q (const RCryptoKey * key, REcurveAffinePoint * q);
+
+/* Compute the ECDH shared secret X-coordinate (peer_pub.Q * priv.d).x
+ * and write it as a left-zero-padded big-endian byte string sized to
+ * the curve's coord_bytes. The two keys must use the same named curve;
+ * the peer's point is on-curve checked (it was validated at key
+ * construction, but private-key paths that derived Q internally also
+ * need to refuse the identity). On entry *outsize is the capacity of
+ * out; on success it is updated to the number of bytes written. */
+R_API RCryptoResult r_ecdh_compute_shared (const RCryptoKey * priv,
+    const RCryptoKey * peer_pub, ruint8 * out, rsize * outsize);
 
 R_END_DECLS
 
