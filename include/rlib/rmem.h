@@ -92,6 +92,14 @@ R_API rboolean r_mem_using_system_default (void);
 
 /* Common memory operations */
 R_API int       r_memcmp (rconstpointer a, rconstpointer b, rsize size);
+/* Constant-time variant of r_memcmp: returns 0 iff every byte
+ * matches, non-zero otherwise. No early-out on the first mismatch,
+ * so the wall-clock latency depends only on `size` and not on which
+ * bytes (if any) differ - suitable for comparing MAC tags, signature
+ * digests, and similar secret-derived material against attacker-
+ * supplied values. Does NOT preserve memcmp's sign semantics; only
+ * the zero / non-zero distinction is meaningful. */
+R_API int       r_memcmp_ct (rconstpointer a, rconstpointer b, rsize size);
 R_API rpointer  r_memset (rpointer a, int v, rsize size);
 #define r_memclear(ptr, size)   r_memset (ptr, 0, size)
 /* Zero `size` bytes at `ptr` in a way the compiler can't elide. A

@@ -107,6 +107,28 @@ r_memcmp (rconstpointer a, rconstpointer b, rsize size)
   return memcmp (a, b, size);
 }
 
+int
+r_memcmp_ct (rconstpointer a, rconstpointer b, rsize size)
+{
+  const volatile ruint8 * pa = a;
+  const volatile ruint8 * pb = b;
+  ruint8 diff = 0;
+  rsize i;
+
+  /* NULL handling is a separate, public-input check; the timing
+   * doesn't depend on a or b's contents. */
+  if (R_UNLIKELY (pa == NULL)) return pa != pb;
+  if (R_UNLIKELY (pb == NULL)) return pa != pb;
+
+  /* OR every byte XOR into diff; volatile keeps the compiler from
+   * spotting that a partial diff already settles the answer and
+   * inserting a short-circuit branch. */
+  for (i = 0; i < size; i++)
+    diff |= pa[i] ^ pb[i];
+
+  return diff;
+}
+
 rpointer
 r_memset (rpointer a, int v, rsize size)
 {
