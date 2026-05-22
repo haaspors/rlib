@@ -225,6 +225,27 @@ r_ecc_priv_key_load_scalar (REccPrivKey * priv, REcurveID curve,
       r_mpint_clear (&priv->d);
       return FALSE;
     }
+    /* For ECDH (derive_q_if_needed == TRUE), also verify Q == d * G.
+     * The caller has handed us both halves of a keypair and we have
+     * everything we need to confirm they actually match - refusing
+     * mismatched (ecp, scalar) inputs at construction beats deferring
+     * the inconsistency to compute_shared. ECDSA stays lenient (we
+     * accept whatever ASN.1 / cert decoders hand in). */
+    if (derive_q_if_needed) {
+      REcurveAffinePoint Qd;
+      rboolean match;
+      r_ecurve_point_init (&Qd);
+      match = r_ecurve_point_scalar_mul (&Qd, &priv->d,
+                  &priv->pub.curve.G, &priv->pub.curve) &&
+              !Qd.is_infinity &&
+              r_mpint_cmp (&Qd.x, &priv->pub.Q.x) == 0 &&
+              r_mpint_cmp (&Qd.y, &priv->pub.Q.y) == 0;
+      r_ecurve_point_clear (&Qd);
+      if (!match) {
+        r_mpint_clear (&priv->d);
+        return FALSE;
+      }
+    }
   } else if (derive_q_if_needed) {
     /* ECDH path with no public point on hand: we need real math.
      * Refuse outright if the curve isn't supported by the math layer
