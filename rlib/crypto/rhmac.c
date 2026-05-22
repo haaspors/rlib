@@ -68,7 +68,11 @@ r_hmac_free (RHmac * hmac)
   if (hmac != NULL) {
     r_msg_digest_free (hmac->inner);
     r_msg_digest_free (hmac->outer);
-    r_free (hmac->keyblock);
+    if (hmac->keyblock != NULL) {
+      /* keyblock holds the post-hash or zero-padded HMAC key. */
+      r_memclear_secure (hmac->keyblock, hmac->blocksize);
+      r_free (hmac->keyblock);
+    }
     r_free (hmac);
   }
 }
@@ -96,6 +100,10 @@ r_hmac_reset (RHmac * hmac)
   for (i = 0; i < hmac->blocksize / sizeof (ruint32); i++)
     block[i] = hmac->keyblock[i] ^ 0x5c5c5c5c;
   r_msg_digest_update (hmac->outer, block, hmac->blocksize);
+
+  /* block carried the keyed ipad/opad expansions; wipe before the
+   * stack frame is popped. */
+  r_memclear_secure (block, hmac->blocksize);
 }
 
 
