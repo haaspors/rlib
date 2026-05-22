@@ -222,7 +222,7 @@ r_dh_priv_key_new (const rmpint * p, const rmpint * g,
     r_mpint_init_copy (&ret->pub.p, p);
     r_mpint_init_copy (&ret->pub.g, g);
     r_mpint_init_copy (&ret->pub.y, y);
-    r_mpint_init_copy (&ret->x, x);
+    r_mpint_init_copy_secure (&ret->x, x);
     r_dh_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.p));
   }
 
@@ -246,7 +246,7 @@ r_dh_priv_key_new_binary (rconstpointer p, rsize psize,
     r_mpint_init_binary (&ret->pub.p, p, psize);
     r_mpint_init_binary (&ret->pub.g, g, gsize);
     r_mpint_init_binary (&ret->pub.y, y, ysize);
-    r_mpint_init_binary (&ret->x, x, xsize);
+    r_mpint_init_binary_secure (&ret->x, x, xsize);
     r_dh_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.p));
   }
 
@@ -280,7 +280,7 @@ r_dh_priv_key_new_gen (const rmpint * p, const rmpint * g, RPrng * prng)
   r_mpint_init_copy (&ret->pub.p, p);
   r_mpint_init_copy (&ret->pub.g, g);
   r_mpint_init (&ret->pub.y);
-  r_mpint_init (&ret->x);
+  r_mpint_init_secure (&ret->x);
 
   r_mpint_init (&p_2);
   r_mpint_sub_i32 (&p_2, p, 2);
@@ -431,7 +431,7 @@ r_dh_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   r_mpint_init (&ret->pub.p);
   r_mpint_init (&ret->pub.g);
   r_mpint_init (&ret->pub.y);
-  r_mpint_init (&ret->x);
+  r_mpint_init_secure (&ret->x);
 
   /* DHPrivateKey ::= SEQUENCE { ver INTEGER, p INTEGER, g INTEGER, x INTEGER }
    * Caller positioned the decoder at the wrapping SEQUENCE. */

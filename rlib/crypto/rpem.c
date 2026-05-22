@@ -547,7 +547,7 @@ r_pem_legacy_bytes_to_key (const ruint8 * passphrase, rsize ppsize,
     r_memcpy (key + off, d, used);
     off += used;
   }
-  r_memclear (d, sizeof (d));
+  r_memclear_secure (d, sizeof (d));
   return TRUE;
 }
 
@@ -575,7 +575,7 @@ r_pem_decrypt_legacy (RPemBlock * block, const ruint8 * passphrase, rsize ppsize
   r_memcpy (iv, block->iv, sizeof (iv));
   cipher = r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CBC,
       (ruint) keysize * 8, key);
-  r_memclear (key, sizeof (key));
+  r_memclear_secure (key, sizeof (key));
   if (cipher == NULL)
     return NULL;
 
