@@ -1312,14 +1312,44 @@ r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
 
   for (i = 0; i < report->total; i++) {
     RTestRun * run = &report->runs[i];
+    rsize loop_skip_count = 1;
+
+    /* A skipped LOOP test produces one SKIP entry per iteration, but
+     * to a human they all say the same thing: "the whole loop didn't
+     * run". Collapse a run of consecutive SKIP entries from the same
+     * loop test into a single summary line. The runner skips or runs
+     * an entire loop atomically (filtering is per-test, not per-
+     * iteration), so consecutive matching entries are always the
+     * full set. */
+    if (run->state == R_TEST_RUN_STATE_SKIP &&
+        (run->test->type & R_TEST_FLAG_LOOP) &&
+        i > 0 &&
+        report->runs[i - 1].state == R_TEST_RUN_STATE_SKIP &&
+        report->runs[i - 1].test == run->test)
+      continue;
+
     if (run->state > R_TEST_RUN_STATE_SUCCESS ||
         (flags & R_TEST_REPORT_FLAG_VERBOSE) == R_TEST_REPORT_FLAG_VERBOSE) {
       elapsed = run->end - run->start;
       const rchar * runres;
       rchar * extra, * name;
 
+      if (run->state == R_TEST_RUN_STATE_SKIP &&
+          (run->test->type & R_TEST_FLAG_LOOP)) {
+        rsize j = i + 1;
+        while (j < report->total &&
+               report->runs[j].state == R_TEST_RUN_STATE_SKIP &&
+               report->runs[j].test == run->test) {
+          loop_skip_count++;
+          j++;
+        }
+      }
+
       runres = r_test_get_run_str (run->state, &runresclr, f);
-      if (run->test->type & R_TEST_FLAG_LOOP)
+      if (loop_skip_count > 1)
+        name = r_strprintf ("/%s/%s (%"RSIZE_FMT" iterations)",
+            run->test->suite, run->test->name, loop_skip_count);
+      else if (run->test->type & R_TEST_FLAG_LOOP)
         name = r_strprintf ("/%s/%s/%"RSIZE_FMT,
             run->test->suite, run->test->name, run->__i);
       else
