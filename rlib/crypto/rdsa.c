@@ -164,8 +164,11 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
   kbytes = qbytes + 8;
   kbuf = r_alloca (kbytes);
 
-  r_mpint_init (&k);
-  r_mpint_init (&kinv);
+  /* k is the per-signature secret nonce; kinv = k^-1 mod q derives
+   * from it and is equally sensitive. Both want secure-clear so
+   * neither lingers in freed heap after this function returns. */
+  r_mpint_init_secure (&k);
+  r_mpint_init_secure (&kinv);
   r_mpint_init (&r);
   r_mpint_init (&s);
   r_mpint_init (&xr);
@@ -475,7 +478,7 @@ r_dsa_priv_key_new (const rmpint * p, const rmpint * q,
       r_mpint_init_copy (&ret->pub.q, q);
       r_mpint_init_copy (&ret->pub.g, g);
       r_mpint_init_copy (&ret->pub.y, y);
-      r_mpint_init_copy (&ret->x, x);
+      r_mpint_init_copy_secure (&ret->x, x);
       r_dsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.y));
     }
   } else {
@@ -500,7 +503,7 @@ r_dsa_priv_key_new_binary (rconstpointer p, rsize psize,
       r_mpint_init_binary (&ret->pub.q, q, qsize);
       r_mpint_init_binary (&ret->pub.g, g, gsize);
       r_mpint_init_binary (&ret->pub.y, y, ysize);
-      r_mpint_init_binary (&ret->x, x, xsize);
+      r_mpint_init_binary_secure (&ret->x, x, xsize);
       r_dsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.y));
     }
   } else {
@@ -638,7 +641,7 @@ r_dsa_priv_key_new_gen (rsize L, rsize N, RPrng * prng)
   r_mpint_init (&ret->pub.q);
   r_mpint_init (&ret->pub.g);
   r_mpint_init (&ret->pub.y);
-  r_mpint_init (&ret->x);
+  r_mpint_init_secure (&ret->x);
 
   if (prng != NULL)
     r_prng_ref (prng);

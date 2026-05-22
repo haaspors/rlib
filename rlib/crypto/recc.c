@@ -195,7 +195,7 @@ r_ecc_priv_key_free (rpointer data)
       r_ecurve_clear (&key->pub.curve);
     }
     if (key->scalar != NULL) {
-      r_memclear (key->scalar, key->scalarsize);
+      r_memclear_secure (key->scalar, key->scalarsize);
       r_free (key->scalar);
     }
     r_free (key->pub.ecp);
@@ -214,7 +214,7 @@ static rboolean
 r_ecc_priv_key_load_scalar (REccPrivKey * priv, REcurveID curve,
     const ruint8 * scalar, rsize scalarsize, rboolean derive_q_if_needed)
 {
-  r_mpint_init (&priv->d);
+  r_mpint_init_secure (&priv->d);
   r_mpint_set_binary (&priv->d, scalar, scalarsize);
 
   if (priv->pub.has_math) {
@@ -413,7 +413,11 @@ r_ecdh_priv_key_new_gen (REcurveID curve, RPrng * prng)
     r_prng_ref (prng);
   }
 
-  r_mpint_init (&d);
+  /* d carries the private scalar; mark it secure so the buffer it
+   * ends up backing in the key (we hand it off by struct copy below)
+   * is wiped when the key is freed. The flag survives the struct
+   * copy. */
+  r_mpint_init_secure (&d);
   r_ecurve_point_init (&Q);
 
   /* Sample d in [1, n-1] by drawing a fresh integer of the same byte
@@ -470,14 +474,14 @@ r_ecdh_priv_key_new_gen (REcurveID curve, RPrng * prng)
   ret->pub.key.algo = &ecdh_priv_key_info;
   ret->pub.key.bits = (ruint) (dbytes * 8);
 
-  r_memclear (dbuf, dbytes);
+  r_memclear_secure (dbuf, dbytes);
   r_prng_unref (prng);
   return (RCryptoKey *) ret;
 
 fail:
-  r_memclear (dbuf, dbytes);
+  r_memclear_secure (dbuf, dbytes);
   if (scalarbuf != NULL) {
-    r_memclear (scalarbuf, dbytes);
+    r_memclear_secure (scalarbuf, dbytes);
     r_free (scalarbuf);
   }
   r_free (ecpcopy);
