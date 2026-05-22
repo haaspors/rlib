@@ -1038,8 +1038,10 @@ RTEST (rmpint, gen_prime_1024bits, RTEST_FASTSLOW)
 }
 RTEST_END;
 
-/* FIXME: This is not functioning as expected */
-SKIP_RTEST (rmpint, gen_prime_1024bits_safe, RTEST_FASTSLOW)
+/* 1024-bit safe-prime generation doesn't terminate within the test
+ * timeout (no convergence observed even at much longer waits). Marked
+ * BROKEN until r_mpint_gen_prime_full's safe-prime path is fixed. */
+BROKEN_RTEST (rmpint, gen_prime_1024bits_safe, RTEST_FASTSLOW)
 {
   rmpint a;
   RPrng * prng;
