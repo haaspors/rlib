@@ -1,5 +1,7 @@
 #include <rlib/rcrypto.h>
 
+#include "wipewitness.h"
+
 RTEST (rcryptomac, hmac_md5, R_TEST_TYPE_FAST)
 {
   RHmac * hmac;
@@ -72,6 +74,30 @@ RTEST (rcryptomac, hmac_unsupported_type, R_TEST_TYPE_FAST)
   r_assert_cmpptr ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA384, "k", 1)),
       !=, NULL);
   r_hmac_free (hmac);
+}
+RTEST_END;
+
+RTEST (rcryptomac, free_wipes_keyblock, R_TEST_TYPE_FAST)
+{
+  /* Sentinel-tagged HMAC key: shorter than the SHA-256 block size
+   * so r_hmac_new takes the zero-padding branch into keyblock, then
+   * r_hmac_reset folds it into the inner/outer pads. Both code
+   * paths must wipe before release; otherwise the sentinel survives
+   * in the freed-buffer pile. */
+  static const ruint8 sentinel_key[24] = {
+    0xCA, 0xFE, 0xBA, 0xBE, 0xDE, 0xAD, 0xBE, 0xEF,
+    0xFE, 0xED, 0xFA, 0xCE, 0xBA, 0xAD, 0xF0, 0x0D,
+    0x13, 0x37, 0xC0, 0xDE, 0xB1, 0x05, 0xF0, 0x0D
+  };
+  RHmac * hmac;
+
+  r_wipe_witness_install ();
+  r_assert_cmpptr ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA256, sentinel_key,
+          sizeof (sentinel_key))), !=, NULL);
+  r_hmac_free (hmac);
+  r_wipe_witness_uninstall ();
+
+  r_assert (!r_wipe_witness_freed_contains (sentinel_key, sizeof (sentinel_key)));
 }
 RTEST_END;
 
