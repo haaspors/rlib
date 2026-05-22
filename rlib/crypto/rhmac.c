@@ -142,3 +142,31 @@ r_hmac_get_hex (RHmac * hmac)
   return NULL;
 }
 
+rboolean
+r_hmac_verify (RHmac * hmac, rconstpointer expected_tag, rsize tag_size)
+{
+  ruint8 * computed;
+  rsize hmac_size, got_size;
+  rboolean ok;
+
+  if (R_UNLIKELY (hmac == NULL || expected_tag == NULL)) return FALSE;
+  if (R_UNLIKELY ((hmac_size = r_msg_digest_size (hmac->inner)) == 0)) return FALSE;
+  /* Refuse over-long tags: tag_size > hmac_size would compare past
+   * the HMAC output. tag_size == 0 is degenerate-true but cheap to
+   * allow - r_memcmp_ct returns 0 there. */
+  if (R_UNLIKELY (tag_size > hmac_size)) return FALSE;
+
+  computed = r_alloca (hmac_size);
+  if (R_UNLIKELY (!r_hmac_get_data (hmac, computed, hmac_size, &got_size) ||
+        got_size < tag_size)) {
+    r_memclear_secure (computed, hmac_size);
+    return FALSE;
+  }
+
+  ok = r_memcmp_ct (computed, expected_tag, tag_size) == 0;
+  /* computed is a finalised MAC tag; wipe before the stack frame
+   * is popped so the bytes don't linger. */
+  r_memclear_secure (computed, hmac_size);
+  return ok;
+}
+
