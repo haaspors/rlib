@@ -273,12 +273,12 @@ r_rsa_priv_key_new (const rmpint * n, const rmpint * e, const rmpint * d)
     if ((ret = r_mem_new0 (RRsaPrivKey)) != NULL) {
       r_mpint_init_copy (&ret->pub.n, n);
       r_mpint_init_copy (&ret->pub.e, e);
-      r_mpint_init_copy (&ret->d, d);
-      r_mpint_init (&ret->p);
-      r_mpint_init (&ret->q);
-      r_mpint_init (&ret->dp);
-      r_mpint_init (&ret->dq);
-      r_mpint_init (&ret->qp);
+      r_mpint_init_copy_secure (&ret->d, d);
+      r_mpint_init_secure (&ret->p);
+      r_mpint_init_secure (&ret->q);
+      r_mpint_init_secure (&ret->dp);
+      r_mpint_init_secure (&ret->dq);
+      r_mpint_init_secure (&ret->qp);
       ret->pub.padding = R_RSA_PADDING_PKCS1_V15;
       r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
     }
@@ -301,17 +301,17 @@ r_rsa_priv_key_new_full (rint32 ver, const rmpint * n, const rmpint * e,
       ret->ver = ver;
       r_mpint_init_copy (&ret->pub.n, n);
       r_mpint_init_copy (&ret->pub.e, e);
-      r_mpint_init_copy (&ret->d, d);
-      if (p != NULL)  r_mpint_init_copy (&ret->p, p);
-      else            r_mpint_init (&ret->p);
-      if (q != NULL)  r_mpint_init_copy (&ret->q, q);
-      else            r_mpint_init (&ret->q);
-      if (dp != NULL) r_mpint_init_copy (&ret->dp, dp);
-      else            r_mpint_init (&ret->dp);
-      if (dq != NULL) r_mpint_init_copy (&ret->dq, dq);
-      else            r_mpint_init (&ret->dq);
-      if (qp != NULL) r_mpint_init_copy (&ret->qp, qp);
-      else            r_mpint_init (&ret->qp);
+      r_mpint_init_copy_secure (&ret->d, d);
+      if (p != NULL)  r_mpint_init_copy_secure (&ret->p, p);
+      else            r_mpint_init_secure (&ret->p);
+      if (q != NULL)  r_mpint_init_copy_secure (&ret->q, q);
+      else            r_mpint_init_secure (&ret->q);
+      if (dp != NULL) r_mpint_init_copy_secure (&ret->dp, dp);
+      else            r_mpint_init_secure (&ret->dp);
+      if (dq != NULL) r_mpint_init_copy_secure (&ret->dq, dq);
+      else            r_mpint_init_secure (&ret->dq);
+      if (qp != NULL) r_mpint_init_copy_secure (&ret->qp, qp);
+      else            r_mpint_init_secure (&ret->qp);
       ret->pub.padding = R_RSA_PADDING_PKCS1_V15;
       r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
     }
@@ -332,12 +332,12 @@ r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
     if ((ret = r_mem_new0 (RRsaPrivKey)) != NULL) {
       r_mpint_init_binary (&ret->pub.n, n, nsize);
       r_mpint_init_binary (&ret->pub.e, e, esize);
-      r_mpint_init_binary (&ret->d, d, dsize);
-      r_mpint_init (&ret->p);
-      r_mpint_init (&ret->q);
-      r_mpint_init (&ret->dp);
-      r_mpint_init (&ret->dq);
-      r_mpint_init (&ret->qp);
+      r_mpint_init_binary_secure (&ret->d, d, dsize);
+      r_mpint_init_secure (&ret->p);
+      r_mpint_init_secure (&ret->q);
+      r_mpint_init_secure (&ret->dp);
+      r_mpint_init_secure (&ret->dq);
+      r_mpint_init_secure (&ret->qp);
       ret->pub.padding = R_RSA_PADDING_PKCS1_V15;
       r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
     }
@@ -357,12 +357,12 @@ r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 
     r_mpint_init (&ret->pub.n);
     r_mpint_init (&ret->pub.e);
-    r_mpint_init (&ret->d);
-    r_mpint_init (&ret->p);
-    r_mpint_init (&ret->q);
-    r_mpint_init (&ret->dp);
-    r_mpint_init (&ret->dq);
-    r_mpint_init (&ret->qp);
+    r_mpint_init_secure (&ret->d);
+    r_mpint_init_secure (&ret->p);
+    r_mpint_init_secure (&ret->q);
+    r_mpint_init_secure (&ret->dp);
+    r_mpint_init_secure (&ret->dq);
+    r_mpint_init_secure (&ret->qp);
 
     if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK ||
         r_asn1_bin_tlv_parse_integer_i32 (tlv, &ret->ver) != R_ASN1_DECODER_OK ||
@@ -410,13 +410,16 @@ r_rsa_priv_key_new_gen (rsize bits, ruint64 e, RPrng * prng)
     r_mpint_init (&ret->pub.e);
     r_mpint_set_u64 (&ret->pub.e, e);
     r_mpint_init (&ret->pub.n);
-    r_mpint_init (&ret->p);
-    r_mpint_init (&ret->q);
+    r_mpint_init_secure (&ret->p);
+    r_mpint_init_secure (&ret->q);
 
-    r_mpint_init (&g);
-    r_mpint_init (&p_1);
-    r_mpint_init (&q_1);
-    r_mpint_init (&p_1mulq_1);
+    /* g, p_1, q_1, p_1mulq_1 are derived from the primes p / q and so
+     * are themselves secret. Mark them so the data buffers don't end
+     * up in freed heap after this function returns. */
+    r_mpint_init_secure (&g);
+    r_mpint_init_secure (&p_1);
+    r_mpint_init_secure (&q_1);
+    r_mpint_init_secure (&p_1mulq_1);
 
     if (prng != NULL)
       r_prng_ref (prng);
@@ -453,10 +456,10 @@ r_rsa_priv_key_new_gen (rsize bits, ruint64 e, RPrng * prng)
     } while (!(pq_gcd = (r_mpint_cmp_i32 (&g, 1) == 0)));
 
     if (pq_gcd) {
-      r_mpint_init (&ret->d);
-      r_mpint_init (&ret->dp);
-      r_mpint_init (&ret->dq);
-      r_mpint_init (&ret->qp);
+      r_mpint_init_secure (&ret->d);
+      r_mpint_init_secure (&ret->dp);
+      r_mpint_init_secure (&ret->dq);
+      r_mpint_init_secure (&ret->qp);
 
       r_mpint_invmod (&ret->qp, &ret->q, &ret->p);        /* qp = q^-1 mod p */
       r_mpint_invmod (&ret->d, &ret->pub.e, &p_1mulq_1);  /* d  = e^-1 mod ((p - 1) * (q - 1)) */

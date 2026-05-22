@@ -108,6 +108,36 @@ RTEST (rrsa, decrypt_pkcs, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrsa, priv_key_new_marks_d_secure, RTEST_FAST)
+{
+  rmpint n, e, d, out;
+  RCryptoKey * key;
+
+  r_mpint_init_str (&n,
+      "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"
+      "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"
+      "358143b44a35449eb264113121a455bd7fde3fac919e94b56fb9bb4f651cdb23ead439"
+      "d6cd523eb08191e75b35fd13a7419b3090f24787bd4f4e1967", NULL, 16);
+  r_mpint_init_str (&d,
+      "0x1628e4a39ebea86c8df0cd11572691017cfefb14ea1c12e1dedc7856032dad0f9612"
+      "00a38684f0a36dca30102e2464989d19a805933794c7d329ebc890089d3c4c6f602766"
+      "e5d62add74e82e490bbf92f6a482153853031be2844a700557b97673e727cd1316d3e6"
+      "fa7fc991d4227366ec552cbe90d367ef2e2e79fe66d26311", NULL, 16);
+  r_mpint_init_str (&e, "65537", NULL, 10);
+  r_mpint_init (&out);
+
+  r_assert_cmpptr ((key = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
+  r_assert (r_rsa_priv_key_get_d (key, &out));
+  r_assert_cmpuint (out.flags & R_MPINT_FLAG_SECURE_CLEAR, !=, 0);
+
+  r_mpint_clear (&out);
+  r_mpint_clear (&n);
+  r_mpint_clear (&d);
+  r_mpint_clear (&e);
+  r_crypto_key_unref (key);
+}
+RTEST_END;
+
 RTEST (rrsa, encrypt_decrypt_1024, RTEST_FAST)
 {
   rchar before[] = "foobar\n";
@@ -456,6 +486,18 @@ RTEST (rrsa, gen_key, RTEST_SLOW)
     r_assert (r_rsa_priv_key_get_dp (key, &dp));
     r_assert (r_rsa_priv_key_get_dq (key, &dq));
     r_assert (r_rsa_priv_key_get_qp (key, &qp));
+
+    /* Sticky-propagation: secret components from the gen'd key carry
+     * the secure-clear flag, so r_mpint_set into a plain caller mpint
+     * inherits it. Public components must not. */
+    r_assert_cmpuint (n.flags & R_MPINT_FLAG_SECURE_CLEAR, ==, 0);
+    r_assert_cmpuint (e.flags & R_MPINT_FLAG_SECURE_CLEAR, ==, 0);
+    r_assert_cmpuint (d.flags  & R_MPINT_FLAG_SECURE_CLEAR, !=, 0);
+    r_assert_cmpuint (p.flags  & R_MPINT_FLAG_SECURE_CLEAR, !=, 0);
+    r_assert_cmpuint (q.flags  & R_MPINT_FLAG_SECURE_CLEAR, !=, 0);
+    r_assert_cmpuint (dp.flags & R_MPINT_FLAG_SECURE_CLEAR, !=, 0);
+    r_assert_cmpuint (dq.flags & R_MPINT_FLAG_SECURE_CLEAR, !=, 0);
+    r_assert_cmpuint (qp.flags & R_MPINT_FLAG_SECURE_CLEAR, !=, 0);
 
     r_assert_cmpuint (r_mpint_isprime (&q), >=, R_MPINT_CERTAIN_PRIME);
     r_assert_cmpuint (r_mpint_isprime (&p), >=, R_MPINT_CERTAIN_PRIME);
