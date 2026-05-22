@@ -26,6 +26,28 @@ RTEST (rmem, set_vtable_validation, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmem, get_set_vtable_roundtrip, RTEST_FAST)
+{
+  /* r_mem_get_vtable returns the exact pointers the rlib TU sees, so
+   * save + restore through it leaves r_mem_using_system_default
+   * intact even across DLL boundaries where locally-typed
+   * { malloc, calloc, realloc, free } resolve to different thunks. */
+  RMemVTable saved;
+  RMemVTable hook = { malloc, calloc, realloc, free };
+
+  r_assert (r_mem_using_system_default ());
+  r_mem_get_vtable (&saved);
+
+  r_mem_set_vtable (&hook);
+  /* hook is well-formed so the install takes effect; whether the
+   * resulting vtable equals the system default depends on DLL-thunk
+   * identity, so don't assert on it here. */
+
+  r_mem_set_vtable (&saved);
+  r_assert (r_mem_using_system_default ());
+}
+RTEST_END;
+
 RTEST (rmem, cmp, RTEST_FAST)
 {
   ruint8 foo[]    = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
