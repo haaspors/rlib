@@ -1175,6 +1175,14 @@ r_mpint_div (rmpint * q, rmpint * r, const rmpint * n, const rmpint * d)
   }
   qp->dig_used = nn - tt + 1;
   qp->sign = n->sign ^ d->sign;
+  /* Zero the quotient digits before the algorithm runs. The top digit
+   * is built up by `qp->data[nn - tt]++` below and the lower digits
+   * are filled in via `*qit` writes during Step 3, but neither path
+   * initialises the buffer first. r_mpint_ensure_digits only clears
+   * digits past the prior dig_used, so any stale content in [0..nn-tt]
+   * (notably when q aliases n and inherits n's representation) would
+   * leak into the result. */
+  r_memset (qp->data, 0, (nn - tt + 1) * sizeof (rmpint_digit));
 
   /* step 2 */
   r_mpint_shl_digit (&tmp1, &y, nn - tt);
