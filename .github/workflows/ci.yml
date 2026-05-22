@@ -135,7 +135,7 @@ jobs:
           path: build/meson-logs/
 
   full-tests:
-    name: Full test sweep / ${{ matrix.compiler }}
+    name: Full test sweep
     runs-on: ubuntu-latest
     # Only on the scheduled cron and on demand. The corpus is sized for
     # ~10 minutes of wall time per run, which is fine for a nightly /
