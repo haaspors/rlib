@@ -27,13 +27,27 @@
 void
 r_mpint_ensure_digits (rmpint * mpi, ruint16 digits)
 {
+  ruint16 old_alloc = mpi->dig_alloc;
+  rmpint_digit * old_data = mpi->data;
+
   digits += RMPINT_DEF_DIGITS - 1;
   digits &= ~(RMPINT_DEF_DIGITS - 1);
-  if (digits <= mpi->dig_alloc)
+  if (digits <= old_alloc)
     return;
 
   mpi->dig_alloc = digits;
-  mpi->data = r_realloc (mpi->data, digits * sizeof (rmpint_digit));
+  if (old_data != NULL && (mpi->flags & R_MPINT_FLAG_SECURE_CLEAR) != 0) {
+    /* The old buffer might already hold a secret. r_realloc would
+     * release it without wiping, leaving the secret behind in freed
+     * heap memory. Manually copy + wipe + free instead. */
+    mpi->data = r_malloc (digits * sizeof (rmpint_digit));
+    if (R_LIKELY (mpi->data != NULL))
+      r_memcpy (mpi->data, old_data, old_alloc * sizeof (rmpint_digit));
+    r_memclear_secure (old_data, old_alloc * sizeof (rmpint_digit));
+    r_free (old_data);
+  } else {
+    mpi->data = r_realloc (old_data, digits * sizeof (rmpint_digit));
+  }
   r_memset (&mpi->data[mpi->dig_used], 0,
       (digits - mpi->dig_used) * sizeof (rmpint_digit));
 }
@@ -43,6 +57,34 @@ r_mpint_init_size (rmpint * mpi, ruint16 digits)
 {
   r_memset (mpi, 0, sizeof (rmpint));
   r_mpint_ensure_digits (mpi, MAX (digits, RMPINT_DEF_DIGITS));
+}
+
+void
+r_mpint_init_secure (rmpint * mpi)
+{
+  r_mpint_init (mpi);
+  mpi->flags |= R_MPINT_FLAG_SECURE_CLEAR;
+}
+
+void
+r_mpint_init_binary_secure (rmpint * mpi, rconstpointer data, rsize size)
+{
+  r_mpint_init_secure (mpi);
+  r_mpint_set_binary (mpi, data, size);
+}
+
+void
+r_mpint_init_copy_secure (rmpint * mpi, const rmpint * b)
+{
+  r_mpint_init_secure (mpi);
+  r_mpint_set (mpi, b);
+}
+
+void
+r_mpint_set_secure_clear (rmpint * mpi)
+{
+  if (mpi != NULL)
+    mpi->flags |= R_MPINT_FLAG_SECURE_CLEAR;
 }
 
 void
@@ -118,6 +160,8 @@ r_mpint_init_copy (rmpint * dst, const rmpint * src)
 void
 r_mpint_clear (rmpint * mpi)
 {
+  if ((mpi->flags & R_MPINT_FLAG_SECURE_CLEAR) != 0 && mpi->data != NULL)
+    r_memclear_secure (mpi->data, mpi->dig_alloc * sizeof (rmpint_digit));
   r_free (mpi->data);
   r_memset (mpi, 0, sizeof (rmpint));
 }
@@ -565,6 +609,12 @@ r_mpint_set (rmpint * mpi, const rmpint * b)
   mpi->sign = b->sign;
   mpi->dig_used = b->dig_used;
   r_mpint_ensure_digits (mpi, b->dig_used);
+  /* Sensitivity is sticky across copies: if the source carried a
+   * secret, the destination now holds a copy of that secret and
+   * needs the same wipe-on-clear treatment. Only propagates one way
+   * (set never clears the flag) so a destination already marked
+   * secure stays that way. */
+  mpi->flags |= (b->flags & R_MPINT_FLAG_SECURE_CLEAR);
   r_memcpy (mpi->data, b->data, mpi->dig_used * sizeof (rmpint_digit));
 }
 

@@ -36,12 +36,34 @@ typedef ruint64         rmpint_word;
 typedef struct {
   ruint16         dig_alloc, dig_used;
   ruint32         sign;
+  /* Bit 0 (R_MPINT_FLAG_SECURE_CLEAR): wipe data with r_memclear_secure
+   * on r_mpint_clear. Set this on any mpint that carries a secret
+   * (private scalars, nonces, intermediate plaintexts) so the buffer
+   * doesn't leak into freed heap when the mpint is released. */
+  ruint32         flags;
   rmpint_digit *  data;
 } rmpint;
 
-#define R_MPINT_INIT            { 0, 0, 0, NULL }
+#define R_MPINT_FLAG_SECURE_CLEAR (1u << 0)
+
+#define R_MPINT_INIT            { 0, 0, 0, 0, NULL }
 #define r_mpint_init(mpi)       r_mpint_init_size (mpi, RMPINT_DEF_DIGITS)
 R_API void r_mpint_init_size (rmpint * mpi, ruint16 digits);
+/* Same shape as r_mpint_init but with R_MPINT_FLAG_SECURE_CLEAR set,
+ * so the underlying buffer gets wiped on r_mpint_clear. Use this for
+ * any mpint that will hold secret material at any point in its life
+ * - the flag is sticky across set / copy / arithmetic, so callers
+ * only need to remember to use this at init time. */
+R_API void r_mpint_init_secure (rmpint * mpi);
+/* One-shot wrappers around init_secure + set_binary / + set, so a
+ * key being imported from raw bytes or copied from another mpint
+ * never spends a moment with the secure flag clear. */
+R_API void r_mpint_init_binary_secure (rmpint * mpi, rconstpointer data, rsize size);
+R_API void r_mpint_init_copy_secure (rmpint * mpi, const rmpint * b);
+/* Flip the secure-clear flag on an existing mpint. Useful when an
+ * mpint was init'd via r_mpint_init_binary / _copy / _str and only
+ * afterwards turns out to need secure handling. */
+R_API void r_mpint_set_secure_clear (rmpint * mpi);
 R_API void r_mpint_init_binary (rmpint * mpi, rconstpointer data, rsize size);
 R_API void r_mpint_init_str (rmpint * mpi, const rchar * str,
     const rchar ** endptr, ruint base);
