@@ -26,6 +26,7 @@
 #include <rlib/crypto/rdh.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/recc.h>
+#include <rlib/crypto/recurve.h>
 #include <rlib/crypto/rhmac.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rpem.h>

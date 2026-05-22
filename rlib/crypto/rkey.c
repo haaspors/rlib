@@ -22,6 +22,7 @@
 #include <rlib/crypto/rdh.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/recc.h>
+#include <rlib/crypto/recurve.h>
 #include <rlib/crypto/rrsa.h>
 
 #include <rlib/asn1/roid.h>
@@ -334,11 +335,11 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         r_mpint_clear (&g);
         r_mpint_clear (&y);
       } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_X9_62_OID_EC_PUB_KEY)) {
-        REcNamedCurve curve;
+        REcurveID curve;
 
         if (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
             R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) &&
-            r_ecc_parse_named_curve (&curve, tlv->value, tlv->len)) {
+            r_ecurve_id_from_oid (&curve, tlv->value, tlv->len)) {
           r_asn1_bin_decoder_out (dec, tlv);
           if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING) &&
               tlv->len >= 2 && tlv->value[0] == 0)
@@ -347,11 +348,11 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
           r_asn1_bin_decoder_out (dec, tlv);
         }
       } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_CERTICOM_OID_ECDH_PUB_KEY)) {
-        REcNamedCurve curve;
+        REcurveID curve;
 
         if (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
             R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) &&
-            r_ecc_parse_named_curve (&curve, tlv->value, tlv->len)) {
+            r_ecurve_id_from_oid (&curve, tlv->value, tlv->len)) {
           r_asn1_bin_decoder_out (dec, tlv);
           if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING) &&
               tlv->len >= 2 && tlv->value[0] == 0)
@@ -377,7 +378,7 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
  * step inside the SEQUENCE and returns without a matching out. */
 static RCryptoKey *
 r_ecc_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv,
-    REcNamedCurve curve, rboolean is_ecdh)
+    REcurveID curve, rboolean is_ecdh)
 {
   RCryptoKey * ret = NULL;
   rint32 ec_ver = 0;
@@ -437,12 +438,12 @@ r_crypto_key_from_asn1_private_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
           r_asn1_oid_bin_equals (tlv->value, tlv->len, R_CERTICOM_OID_ECDH_PUB_KEY)) {
         rboolean is_ecdh = r_asn1_oid_bin_equals (tlv->value, tlv->len,
             R_CERTICOM_OID_ECDH_PUB_KEY);
-        REcNamedCurve curve;
+        REcurveID curve;
 
         /* parameters: named curve OID (sibling of algorithm OID). */
         if (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
             R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) &&
-            r_ecc_parse_named_curve (&curve, tlv->value, tlv->len)) {
+            r_ecurve_id_from_oid (&curve, tlv->value, tlv->len)) {
           if (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK &&
               r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
             ret = r_ecc_priv_key_new_from_asn1 (dec, tlv, curve, is_ecdh);

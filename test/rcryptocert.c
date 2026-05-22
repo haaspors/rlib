@@ -414,7 +414,7 @@ RTEST (rcryptocert, chrome_ec_secp256r1_dtls, RTEST_FAST)
   r_assert_cmpuint (r_crypto_key_get_type (pk), ==, R_CRYPTO_PUBLIC_KEY);
   r_assert_cmpuint (r_crypto_key_get_algo (pk), ==, R_CRYPTO_ALGO_ECDSA);
   r_assert_cmpuint (r_crypto_key_get_bitsize (pk), ==, 65*8);
-  r_assert_cmphex (r_ecc_key_get_curve (pk), ==, R_EC_NAMED_CURVE_SECP256R1);
+  r_assert_cmphex (r_ecc_key_get_curve (pk), ==, R_ECURVE_ID_SECP256R1);
   r_crypto_key_unref (pk);
 
   r_crypto_cert_unref (cert);

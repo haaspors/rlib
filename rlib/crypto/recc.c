@@ -21,12 +21,11 @@
 
 #include <rlib/crypto/recc.h>
 
-#include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>
 
 typedef struct {
   RCryptoKey key;
-  REcNamedCurve namedcurve;
+  REcurveID namedcurve;
 
   rsize ecpsize;
   ruint8 * ecp;
@@ -66,7 +65,7 @@ r_ecdsa_pub_key_init (RCryptoKey * key, ruint bits)
 }
 
 RCryptoKey *
-r_ecdsa_pub_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize)
+r_ecdsa_pub_key_new (REcurveID curve, rconstpointer ecp, rsize ecpsize)
 {
   REccPubKey * ret;
 
@@ -99,7 +98,7 @@ r_ecdh_pub_key_init (RCryptoKey * key, ruint bits)
 }
 
 RCryptoKey *
-r_ecdh_pub_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize)
+r_ecdh_pub_key_new (REcurveID curve, rconstpointer ecp, rsize ecpsize)
 {
   REccPubKey * ret;
 
@@ -117,13 +116,13 @@ r_ecdh_pub_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize)
   return (RCryptoKey *)ret;
 }
 
-REcNamedCurve
+REcurveID
 r_ecc_key_get_curve (const RCryptoKey * key)
 {
-  if (R_UNLIKELY (key == NULL)) return R_EC_NAMED_CURVE_NONE;
+  if (R_UNLIKELY (key == NULL)) return R_ECURVE_ID_NONE;
   if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_ECDSA &&
         key->algo->algo != R_CRYPTO_ALGO_ECDH))
-    return R_EC_NAMED_CURVE_NONE;
+    return R_ECURVE_ID_NONE;
 
   return ((const REccPubKey *)key)->namedcurve;
 }
@@ -145,7 +144,7 @@ r_ecc_priv_key_free (rpointer data)
 }
 
 static RCryptoKey *
-r_ecc_priv_key_new_full (REcNamedCurve curve, RCryptoAlgorithm algo,
+r_ecc_priv_key_new_full (REcurveID curve, RCryptoAlgorithm algo,
     const rchar * algo_str, rconstpointer ecp, rsize ecpsize,
     rconstpointer scalar, rsize scalarsize)
 {
@@ -178,7 +177,7 @@ r_ecc_priv_key_new_full (REcNamedCurve curve, RCryptoAlgorithm algo,
 }
 
 RCryptoKey *
-r_ecdsa_priv_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize,
+r_ecdsa_priv_key_new (REcurveID curve, rconstpointer ecp, rsize ecpsize,
     rconstpointer scalar, rsize scalarsize)
 {
   return r_ecc_priv_key_new_full (curve, R_CRYPTO_ALGO_ECDSA, R_ECDSA_STR,
@@ -186,7 +185,7 @@ r_ecdsa_priv_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize,
 }
 
 RCryptoKey *
-r_ecdh_priv_key_new (REcNamedCurve curve, rconstpointer ecp, rsize ecpsize,
+r_ecdh_priv_key_new (REcurveID curve, rconstpointer ecp, rsize ecpsize,
     rconstpointer scalar, rsize scalarsize)
 {
   return r_ecc_priv_key_new_full (curve, R_CRYPTO_ALGO_ECDH, R_ECDH_STR,
@@ -208,36 +207,6 @@ r_ecc_priv_key_get_scalar (const RCryptoKey * key,
   priv = (const REccPrivKey *) key;
   if (scalar != NULL) *scalar = priv->scalar;
   if (scalarsize != NULL) *scalarsize = priv->scalarsize;
-  return TRUE;
-}
-
-rboolean
-r_ecc_parse_named_curve (REcNamedCurve * curve,
-    rconstpointer oid, rsize oidsize)
-{
-  if (R_UNLIKELY (curve == NULL)) return FALSE;
-  if (R_UNLIKELY (oid == NULL)) return FALSE;
-  if (R_UNLIKELY (oidsize == 0)) return FALSE;
-
-  if (r_asn1_oid_bin_equals (oid, oidsize, R_EC_GRP_OID_SECP192R1))
-    *curve = R_EC_NAMED_CURVE_SECP192R1;
-  else if (r_asn1_oid_bin_equals (oid, oidsize, R_EC_GRP_OID_SECP256R1))
-    *curve = R_EC_NAMED_CURVE_SECP256R1;
-  else if (r_asn1_oid_bin_equals (oid, oidsize, R_EC_GRP_OID_SECP224R1))
-    *curve = R_EC_NAMED_CURVE_SECP224R1;
-  else if (r_asn1_oid_bin_equals (oid, oidsize, R_EC_GRP_OID_SECP384R1))
-    *curve = R_EC_NAMED_CURVE_SECP384R1;
-  else if (r_asn1_oid_bin_equals (oid, oidsize, R_EC_GRP_OID_SECP521R1))
-    *curve = R_EC_NAMED_CURVE_SECP521R1;
-  else if (r_asn1_oid_bin_equals (oid, oidsize, R_EC_GRP_OID_SECP192K1))
-    *curve = R_EC_NAMED_CURVE_SECP192K1;
-  else if (r_asn1_oid_bin_equals (oid, oidsize, R_EC_GRP_OID_SECP224K1))
-    *curve = R_EC_NAMED_CURVE_SECP224K1;
-  else if (r_asn1_oid_bin_equals (oid, oidsize, R_EC_GRP_OID_SECP256K1))
-    *curve = R_EC_NAMED_CURVE_SECP256K1;
-  else
-    return FALSE;
-
   return TRUE;
 }
 

@@ -767,7 +767,7 @@ RTEST (rcryptopem, ec_p256_pkcs8_private_key, RTEST_FAST)
   r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
   r_assert_cmpint (r_crypto_key_get_type (key), ==, R_CRYPTO_PRIVATE_KEY);
   r_assert_cmpint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_ECDSA);
-  r_assert_cmpint (r_ecc_key_get_curve (key), ==, R_EC_NAMED_CURVE_SECP256R1);
+  r_assert_cmpint (r_ecc_key_get_curve (key), ==, R_ECURVE_ID_SECP256R1);
 
   r_assert (r_ecc_priv_key_get_scalar (key, &scalar, &scalarsize));
   r_assert_cmpuint (scalarsize, ==, sizeof (expected_scalar));
