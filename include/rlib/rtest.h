@@ -169,6 +169,30 @@ typedef struct {
 #define SKIP_RTEST_STRESS_F(suite, name, type)    RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 1, (type) | R_TEST_FLAG_STRESS, RTEST_STRESS_TIMEOUT, 0, 1)
 #define SKIP_RTEST_BENCH(suite, name, type)       RTEST_DEFINE_TEST (suite, name, 1, (type) | R_TEST_FLAG_BENCH, R_CLOCK_TIME_NONE, 0, 1)
 #define SKIP_RTEST_BENCH_F(suite, name, type)     RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 1, (type) | R_TEST_FLAG_BENCH, R_CLOCK_TIME_NONE, 0, 1)
+/* HEAVY and BROKE share SKIP's runtime gating (don't run unless
+ * --ignore-skip / rlibtest -i is passed) but carve out distinct
+ * intents at the source level. Pick the macro that says why the test
+ * isn't in the default suite:
+ *
+ *   SKIP_RTEST_*  - temporarily disabled, expected to come back soon
+ *                   (work-in-progress, debugging, etc.)
+ *   HEAVY_RTEST_* - works correctly but too expensive for the default
+ *                   budget (Wycheproof corpora, slow prime generation,
+ *                   anything else gated to the nightly / on-demand
+ *                   sweep).
+ *   BROKEN_RTEST_* - known-failing or known-flaky and not under active
+ *                   repair. Carrying it in the source keeps the
+ *                   regression visible without polluting the default
+ *                   pass / fail tally.
+ */
+#define HEAVY_RTEST(suite, name, type)            SKIP_RTEST (suite, name, type)
+#define HEAVY_RTEST_F(suite, name, type)          SKIP_RTEST_F (suite, name, type)
+#define HEAVY_RTEST_LOOP(suite, name, type, s,e)  SKIP_RTEST_LOOP (suite, name, type, s, e)
+#define HEAVY_RTEST_LOOP_F(suite, name,type,s,e)  SKIP_RTEST_LOOP_F (suite, name, type, s, e)
+#define BROKEN_RTEST(suite, name, type)            SKIP_RTEST (suite, name, type)
+#define BROKEN_RTEST_F(suite, name, type)          SKIP_RTEST_F (suite, name, type)
+#define BROKEN_RTEST_LOOP(suite, name, type, s,e)  SKIP_RTEST_LOOP (suite, name, type, s, e)
+#define BROKEN_RTEST_LOOP_F(suite, name,type,s,e)  SKIP_RTEST_LOOP_F (suite, name, type, s, e)
 /* End your test with this macro! */
 #define RTEST_END _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE); }
 
