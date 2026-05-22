@@ -157,12 +157,14 @@ jobs:
         run: meson setup build --buildtype=debugoptimized
       - name: Build
         run: meson compile -C build
-      - name: Test (--ignore-skip)
-        # --ignore-skip enables the HEAVY_RTEST / SKIP_RTEST tests
-        # (Wycheproof ECDH on all four NIST prime curves, live DNS
-        # resolver, etc). The 30x timeout multiplier gives meson's
-        # per-test cap room for the secp521r1 sweep.
-        run: meson test -C build --print-errorlogs --timeout-multiplier 30 -- -i
+      - name: Test (--heavy)
+        # --heavy / -H enables the HEAVY_RTEST_* tests (the four
+        # Wycheproof ECDH curves) - but not BROKEN_RTEST_* (which
+        # would fail by definition) or SKIP_RTEST_* (which are
+        # environment-dependent, e.g. live DNS). The 30x timeout
+        # multiplier gives meson's per-test cap room for the
+        # secp521r1 sweep.
+        run: meson test -C build --print-errorlogs --timeout-multiplier 30 -- -H
       - name: Upload test logs on failure
         if: failure()
         uses: actions/upload-artifact@v4

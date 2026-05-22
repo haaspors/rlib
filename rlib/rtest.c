@@ -1289,8 +1289,27 @@ r_test_filter_default (const RTest * test, rsize __i, rpointer data)
 
   if ((ctx->type & test->type) == 0)
     return FALSE;
-  if (test->skip && (ctx->flags & R_TEST_RUN_FLAG_IGNORE_SKIP) == 0)
-    return FALSE;
+  if (test->skip) {
+    /* One INCLUDE_* flag per skip category, independently gated so
+     * e.g. a --heavy nightly doesn't drag BROKEN tests in with it. */
+    rboolean include;
+    switch (test->skip) {
+      case R_TEST_SKIP_TEMP:
+        include = (ctx->flags & R_TEST_RUN_FLAG_INCLUDE_SKIP) != 0;
+        break;
+      case R_TEST_SKIP_HEAVY:
+        include = (ctx->flags & R_TEST_RUN_FLAG_INCLUDE_HEAVY) != 0;
+        break;
+      case R_TEST_SKIP_BROKEN:
+        include = (ctx->flags & R_TEST_RUN_FLAG_INCLUDE_BROKEN) != 0;
+        break;
+      default:
+        include = FALSE;
+        break;
+    }
+    if (!include)
+      return FALSE;
+  }
   if (ctx->filter == NULL)
     return TRUE;
 
