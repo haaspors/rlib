@@ -73,6 +73,13 @@ r_realloc (rpointer ptr, rsize size)
 }
 
 void
+r_mem_get_vtable (RMemVTable * out)
+{
+  if (R_UNLIKELY (out == NULL)) return;
+  *out = r_memvtable;
+}
+
+void
 r_mem_set_vtable (RMemVTable * vtable)
 {
   /* Reject vtables that would set any callback to NULL: every allocation

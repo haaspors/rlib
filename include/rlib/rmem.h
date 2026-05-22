@@ -80,6 +80,13 @@ typedef struct {
 } RMemVTable;
 
 R_API void r_mem_set_vtable (RMemVTable * vtable);
+/* Copy the current vtable into *out. Pairs with r_mem_set_vtable so a
+ * caller (typically a test) can save the active vtable, swap in its
+ * own, then restore exactly the pointers it saw. Restoring via
+ * r_mem_set_vtable with locally-typed { malloc, calloc, realloc, free }
+ * is not safe across DLL boundaries on Windows - the test binary's
+ * import thunks resolve to different addresses than the rlib DLL's. */
+R_API void r_mem_get_vtable (RMemVTable * out);
 R_API rboolean r_mem_using_system_default (void);
 
 
