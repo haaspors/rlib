@@ -108,6 +108,39 @@ RTEST (rrsa, decrypt_pkcs, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrsa, pkcs1v1_5_decrypt_buffer_too_small, RTEST_FAST)
+{
+  rmpint n, e, d;
+  RCryptoKey * key;
+  ruint8 dst[1];
+  rsize size = 0;
+
+  r_mpint_init_str (&n,
+      "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"
+      "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"
+      "358143b44a35449eb264113121a455bd7fde3fac919e94b56fb9bb4f651cdb23ead439"
+      "d6cd523eb08191e75b35fd13a7419b3090f24787bd4f4e1967", NULL, 16);
+  r_mpint_init_str (&d,
+      "0x1628e4a39ebea86c8df0cd11572691017cfefb14ea1c12e1dedc7856032dad0f9612"
+      "00a38684f0a36dca30102e2464989d19a805933794c7d329ebc890089d3c4c6f602766"
+      "e5d62add74e82e490bbf92f6a482153853031be2844a700557b97673e727cd1316d3e6"
+      "fa7fc991d4227366ec552cbe90d367ef2e2e79fe66d26311", NULL, 16);
+  r_mpint_init_str (&e, "65537", NULL, 10);
+
+  r_assert_cmpptr ((key = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
+  /* outsize=0 forces the scratch-buffer path; padding strips fine but
+   * the output buffer can't hold the plaintext, so the function must
+   * still reach the out_wipe label and return BUFFER_TOO_SMALL. */
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt (key, rsa_encrypted, sizeof (rsa_encrypted),
+        dst, &size), ==, R_CRYPTO_BUFFER_TOO_SMALL);
+
+  r_mpint_clear (&n);
+  r_mpint_clear (&d);
+  r_mpint_clear (&e);
+  r_crypto_key_unref (key);
+}
+RTEST_END;
+
 RTEST (rrsa, priv_key_new_marks_d_secure, RTEST_FAST)
 {
   rmpint n, e, d, out;
