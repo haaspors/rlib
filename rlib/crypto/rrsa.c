@@ -421,10 +421,20 @@ r_rsa_priv_key_new_gen (rsize bits, ruint64 e, RPrng * prng)
     r_mpint_init_secure (&q_1);
     r_mpint_init_secure (&p_1mulq_1);
 
-    if (prng != NULL)
+    if (prng != NULL) {
       r_prng_ref (prng);
-    else
-      prng = r_rand_prng_new ();
+    } else if ((prng = r_rand_prng_new ()) == NULL) {
+      /* No usable PRNG and the caller didn't supply one. Bail out
+       * cleanly - the rest of the gen path relies on prng being
+       * non-NULL, and proceeding with a NULL would just crash
+       * inside r_mpint_gen_prime. */
+      r_mpint_clear (&p_1mulq_1);
+      r_mpint_clear (&q_1);
+      r_mpint_clear (&p_1);
+      r_mpint_clear (&g);
+      r_crypto_key_unref ((RCryptoKey *)ret);
+      return NULL;
+    }
 
     /* Find two primes p and q where;
      * GCD (e, (p - 1) * (q - 1)) == 1
