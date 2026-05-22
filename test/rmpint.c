@@ -1055,3 +1055,59 @@ SKIP_RTEST (rmpint, gen_prime_1024bits_safe, RTEST_FASTSLOW)
 }
 RTEST_END;
 
+RTEST (rmpint, add_with_stale_high_digits, RTEST_FAST)
+{
+  /* Regression for an mpint bug surfaced by ECDH-on-secp521r1: when
+   * r_mpint_mod (or r_mpint_div) reduces dig_used, the slots beyond
+   * the new dig_used can retain leftover digits from the unreduced
+   * input - r_mpint_shr writes more slots than the final dig_used
+   * indicates, and ensure_digits doesn't zero memory that was already
+   * allocated. A follow-up r_mpint_add whose `add` operand was longer
+   * then folded that stale tail into the sum because the loop reads
+   * both operands up to MAX(a->dig_used, b->dig_used). r_mpint_get_digit
+   * now treats reads past dig_used as zero, which is the safety
+   * invariant operations have always promised. */
+  rmpint x, y, sum_aliased, sum_disjoint, p, one;
+
+  r_mpint_init (&x);
+  r_mpint_init (&y);
+  r_mpint_init (&sum_aliased);
+  r_mpint_init (&sum_disjoint);
+  r_mpint_init (&p);
+  r_mpint_init (&one);
+
+  /* p = 2^521 - 1 - a convenient 521-bit value. */
+  r_mpint_set_u32 (&p, 1);
+  r_mpint_shl (&p, &p, 521);
+  r_mpint_sub_u32 (&p, &p, 1);
+
+  /* x = 2^521 mod p = 1. The mod step internally leaves p's digits
+   * in x's data past the new dig_used. */
+  r_mpint_set_u32 (&one, 1);
+  r_mpint_shl (&x, &one, 521);
+  r_mpint_mod (&x, &x, &p);
+  r_assert_cmpuint (r_mpint_digits_used (&x), <=, 1);
+
+  /* y = p; y->dig_used > x->dig_used so the add loop reads x past
+   * its (small) dig_used. Sum should be p + 1 = 2^521 (522 bits). */
+  r_mpint_set (&y, &p);
+
+  r_mpint_add (&sum_disjoint, &x, &y);
+  r_assert_cmpint (r_mpint_bits_used (&sum_disjoint), ==, 522);
+
+  /* Same with dst aliasing x (the path the secp521r1 on-curve check
+   * was hitting). */
+  r_mpint_add (&sum_aliased, &x, &y);
+  r_mpint_add (&x, &x, &y);
+  r_assert_cmpint (r_mpint_cmp (&x, &sum_disjoint), ==, 0);
+  r_assert_cmpint (r_mpint_cmp (&sum_aliased, &sum_disjoint), ==, 0);
+
+  r_mpint_clear (&x);
+  r_mpint_clear (&y);
+  r_mpint_clear (&sum_aliased);
+  r_mpint_clear (&sum_disjoint);
+  r_mpint_clear (&p);
+  r_mpint_clear (&one);
+}
+RTEST_END;
+

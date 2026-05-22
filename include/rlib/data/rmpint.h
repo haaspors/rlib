@@ -94,9 +94,17 @@ R_API void r_mpint_set_i32 (rmpint * mpi, rint32 value);
 R_API void r_mpint_set_u32 (rmpint * mpi, ruint32 value);
 R_API void r_mpint_set_i64 (rmpint * mpi, rint64 value);
 R_API void r_mpint_set_u64 (rmpint * mpi, ruint64 value);
-#define r_mpint_get_digit(mpi, d) (mpi)->data[d]
+/* Treat reads past dig_used as zero. mpint operations promise that
+ * `data[0..dig_used)` carries the value, but several producers (e.g.
+ * the final shr in r_mpint_div, and any path that shortens dig_used
+ * without zeroing the now-unused tail) leave stale bytes behind in
+ * `data[dig_used..dig_alloc)`. Without this clamp, consumers that
+ * loop up to `MAX(a->dig_used, b->dig_used)` and read both operands -
+ * notably r_mpint_add_unsigned with dst aliasing the shorter operand -
+ * end up folding that stale data into the result. */
+#define r_mpint_get_digit(mpi, d) \
+  ((d) < (mpi)->dig_used ? (mpi)->data[d] : (rmpint_digit)0)
 
-//R_API ruint32 r_mpint_clz (const rmpint * mpi);
 R_API ruint32 r_mpint_ctz (const rmpint * mpi);
 
 R_API int r_mpint_cmp (const rmpint * a, const rmpint * b);
