@@ -1,5 +1,7 @@
 #include <rlib/rcrypto.h>
 
+#include "wycheproof_ecdh.h"
+
 /* Build a SEC 1 uncompressed encoding (0x04 || X || Y) from two
  * coordinate hex strings whose byte lengths must match `coord_bytes`.
  * Caller-supplied buffer; returns the bytes written. */
@@ -572,5 +574,104 @@ RTEST_LOOP (recdh, compute_shared_known_answer, RTEST_SLOW,
   r_crypto_key_unref (mine);
   r_crypto_key_unref (peer_pub);
   r_ecurve_clear (&params);
+}
+RTEST_END;
+
+/* Run one Wycheproof ECDH test case end-to-end. Failure paths are
+ * collapsed to a single helper so each per-curve loop below only owns
+ * the table it points at, not the result-handling boilerplate.
+ *
+ * Wycheproof's three result categories map to our API as follows:
+ *
+ *   "valid"      - construct, compute, output must equal shared.
+ *   "acceptable" - either reject at construction / compute_shared,
+ *                  or produce output equal to shared. Both are
+ *                  conformant; the flag exists so tools can warn
+ *                  about edge cases without forcing one answer.
+ *   "invalid"    - must reject somewhere along the way. If we compute
+ *                  a shared and it happens to match the vector's
+ *                  field anyway, that's still a failure - the vector
+ *                  was crafted so a correct implementation says no.
+ *
+ * On failure the assert position points here; cross-reference the
+ * loop's __i with the matching .inc file (tcId N is at index N-1)
+ * for the test's published comment and flags.
+ */
+static void
+run_wycheproof_ecdh_test (const WycheproofEcdhTest * t)
+{
+  RCryptoKey * priv = r_ecdh_priv_key_new (t->curve, NULL, 0,
+      t->priv, t->priv_len);
+  RCryptoKey * peer = r_ecdh_pub_key_new (t->curve, t->pub, t->pub_len);
+  ruint8 out[1 + 2 * 66];
+  rsize outsize = sizeof (out);
+  RCryptoResult cs = R_CRYPTO_ERROR;
+  rboolean got_match;
+
+  if (priv != NULL && peer != NULL) {
+    cs = r_ecdh_compute_shared (priv, peer, out, &outsize);
+  }
+  got_match = (cs == R_CRYPTO_OK &&
+               outsize == t->shared_len &&
+               r_memcmp (out, t->shared, outsize) == 0);
+
+  switch (t->expected) {
+    case WYCHEPROOF_VALID:
+      r_assert_cmpptr (priv, !=, NULL);
+      r_assert_cmpptr (peer, !=, NULL);
+      r_assert_cmpint (cs, ==, R_CRYPTO_OK);
+      r_assert_cmpuint (outsize, ==, t->shared_len);
+      r_assert_cmpmem (out, ==, t->shared, outsize);
+      break;
+    case WYCHEPROOF_ACCEPTABLE:
+      /* Either path is fine; if we computed *and* produced output, it
+       * should match the published shared. */
+      if (cs == R_CRYPTO_OK) {
+        r_assert_cmpuint (outsize, ==, t->shared_len);
+        r_assert_cmpmem (out, ==, t->shared, outsize);
+      }
+      break;
+    case WYCHEPROOF_INVALID:
+      r_assert (!got_match);
+      break;
+  }
+
+  if (priv != NULL) r_crypto_key_unref (priv);
+  if (peer != NULL) r_crypto_key_unref (peer);
+}
+
+/* HEAVY_RTEST_LOOP - too slow for the default suite. Run with
+ * --ignore-skip (rlibtest -i) when you want the full sweep. */
+HEAVY_RTEST_LOOP (recdh, wycheproof_secp224r1, RTEST_SLOW,
+    0, R_N_ELEMENTS (wp_ecdh_secp224r1_tests))
+{
+  run_wycheproof_ecdh_test (&wp_ecdh_secp224r1_tests[__i]);
+}
+RTEST_END;
+
+/* HEAVY_RTEST_LOOP - too slow for the default suite. Run with
+ * --ignore-skip (rlibtest -i) when you want the full sweep. */
+HEAVY_RTEST_LOOP (recdh, wycheproof_secp256r1, RTEST_SLOW,
+    0, R_N_ELEMENTS (wp_ecdh_secp256r1_tests))
+{
+  run_wycheproof_ecdh_test (&wp_ecdh_secp256r1_tests[__i]);
+}
+RTEST_END;
+
+/* HEAVY_RTEST_LOOP - too slow for the default suite. Run with
+ * --ignore-skip (rlibtest -i) when you want the full sweep. */
+HEAVY_RTEST_LOOP (recdh, wycheproof_secp384r1, RTEST_SLOW,
+    0, R_N_ELEMENTS (wp_ecdh_secp384r1_tests))
+{
+  run_wycheproof_ecdh_test (&wp_ecdh_secp384r1_tests[__i]);
+}
+RTEST_END;
+
+/* HEAVY_RTEST_LOOP - too slow for the default suite. Run with
+ * --ignore-skip (rlibtest -i) when you want the full sweep. */
+HEAVY_RTEST_LOOP (recdh, wycheproof_secp521r1, RTEST_SLOW,
+    0, R_N_ELEMENTS (wp_ecdh_secp521r1_tests))
+{
+  run_wycheproof_ecdh_test (&wp_ecdh_secp521r1_tests[__i]);
 }
 RTEST_END;
