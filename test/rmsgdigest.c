@@ -1,5 +1,7 @@
 #include <rlib/rlib.h>
 
+#include "wipewitness.h"
+
 RTEST (rmsgdigest, type_string, R_TEST_TYPE_FAST)
 {
   r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_MD5), ==, "md5");
@@ -280,6 +282,30 @@ RTEST (rmsgdigest, sha512_fill_block, R_TEST_TYPE_FAST)
       "27e08ffc73ae538d581b65a2eb706459817ff51172742a9e1cf832b0727cc66");
   r_free (hex);
   r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, free_wipes_state, R_TEST_TYPE_FAST)
+{
+  /* Sentinel-tagged input shorter than the MD5 block: with no
+   * finalise call the trailing per-algorithm partial-block buffer
+   * still holds the raw input bytes verbatim. r_msg_digest_free
+   * must wipe the whole md (mdsize covers the trailing state)
+   * before r_free, or the sentinel survives in the freed pile. */
+  static const ruint8 sentinel[24] = {
+    0xCA, 0xFE, 0xBA, 0xBE, 0xDE, 0xAD, 0xBE, 0xEF,
+    0xFE, 0xED, 0xFA, 0xCE, 0xBA, 0xAD, 0xF0, 0x0D,
+    0x13, 0x37, 0xC0, 0xDE, 0xB1, 0x05, 0xF0, 0x0D
+  };
+  RMsgDigest * md;
+
+  r_wipe_witness_install ();
+  r_assert_cmpptr ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_MD5)), !=, NULL);
+  r_assert (r_msg_digest_update (md, sentinel, sizeof (sentinel)));
+  r_msg_digest_free (md);
+  r_wipe_witness_uninstall ();
+
+  r_assert (!r_wipe_witness_freed_contains (sentinel, sizeof (sentinel)));
 }
 RTEST_END;
 

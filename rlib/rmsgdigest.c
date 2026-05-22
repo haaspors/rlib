@@ -138,7 +138,16 @@ r_msg_digest_new (RMsgDigestType type)
 void
 r_msg_digest_free (RMsgDigest * md)
 {
-  r_free (md);
+  if (md != NULL) {
+    /* The trailing per-algorithm state (RMd5 / RSha* compression
+     * variables and partial-block buffer) is allocated in one block
+     * with the header - md->mdsize covers the lot. For HMAC and the
+     * legacy-PEM KDF the state mid-stream is key-dependent, so we
+     * wipe unconditionally rather than trying to track which callers
+     * fed secret data. */
+    r_memclear_secure (md, md->mdsize);
+    r_free (md);
+  }
 }
 
 rsize
@@ -253,11 +262,16 @@ r_msg_digest_get_data (const RMsgDigest * md, ruint8 * data, rsize size, rsize *
 {
   if (!md->is_final) {
     RMsgDigest * h = (RMsgDigest *) r_alloca (md->mdsize);
+    rboolean ret;
 
     r_memcpy (h, md, md->mdsize);
     r_msg_digest_finish (h);
 
-    return md->get (h, data, size, out);
+    ret = md->get (h, data, size, out);
+    /* h cloned the compression-variable state to finalise without
+     * touching md; wipe before the stack frame is popped. */
+    r_memclear_secure (h, md->mdsize);
+    return ret;
   }
 
   return md->get (md, data, size, out);
