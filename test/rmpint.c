@@ -570,6 +570,47 @@ RTEST (rmpint, div, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmpint, div_aliasing, RTEST_FAST)
+{
+  /* Calling r_mpint_div with q (or r) aliased to n must still produce
+   * the same (quotient, remainder) as the unaliased call. Pre-fix the
+   * quotient buffer wasn't zeroed before the algorithm wrote into it,
+   * so when q == n the top quotient digit inherited the corresponding
+   * digit of n's representation — the symptom that surfaced inside DSA
+   * keygen as a g that didn't actually have order q. */
+  rmpint n, d, expected_q, expected_r, got;
+  r_mpint_init_str (&n, "234845527586835683495634", NULL, 10);
+  r_mpint_init_str (&d, "1248358125842835824385", NULL, 10);
+  r_mpint_init (&expected_q);
+  r_mpint_init (&expected_r);
+  r_assert (r_mpint_div (&expected_q, &expected_r, &n, &d));
+
+  /* q == n */
+  r_mpint_init_copy (&got, &n);
+  r_assert (r_mpint_div (&got, NULL, &got, &d));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected_q), ==, 0);
+  r_mpint_clear (&got);
+
+  /* r == n */
+  r_mpint_init_copy (&got, &n);
+  r_assert (r_mpint_div (NULL, &got, &got, &d));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected_r), ==, 0);
+  r_mpint_clear (&got);
+
+  /* Also check the documented mod shortcut, which expands to
+   * r_mpint_div (NULL, dst, dst, mod). */
+  r_mpint_init_copy (&got, &n);
+  r_assert (r_mpint_mod (&got, &got, &d));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected_r), ==, 0);
+  r_mpint_clear (&got);
+
+  r_mpint_clear (&n);
+  r_mpint_clear (&d);
+  r_mpint_clear (&expected_q);
+  r_mpint_clear (&expected_r);
+}
+RTEST_END;
+
 RTEST (rmpint, shl, RTEST_FAST)
 {
   rmpint a = R_MPINT_INIT, res;
