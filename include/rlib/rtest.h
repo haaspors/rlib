@@ -104,8 +104,8 @@ typedef enum {
 /* Values for the `skip` field on RTest. Encodes the intent the source-
  * level SKIP_RTEST / HEAVY_RTEST / BROKEN_RTEST macros expressed, so
  * the runner can keep the three buckets separate in the final tally
- * without changing the gating behaviour (any non-zero value gates the
- * test behind --ignore-skip). */
+ * and let callers opt into each category independently via the
+ * matching R_TEST_RUN_FLAG_INCLUDE_* flag. */
 typedef enum {
   R_TEST_NO_SKIP     = 0,
   R_TEST_SKIP_TEMP   = 1, /* SKIP_RTEST_*   - temporarily disabled */
@@ -114,9 +114,16 @@ typedef enum {
 } RTestSkipReason;
 
 typedef enum {
-  R_TEST_RUN_FLAG_NONE          = 0,
-  R_TEST_RUN_FLAG_IGNORE_SKIP   = 1 << 0,
-  R_TEST_RUN_FLAG_PRINT         = 1 << 1,
+  R_TEST_RUN_FLAG_NONE           = 0,
+  /* One flag per skip category. Setting an INCLUDE_* bit opts that
+   * category into the run; clearing it keeps those tests gated out.
+   * Each bucket is independent so e.g. the nightly sweep can opt
+   * HEAVY in without dragging BROKEN along (which would fail by
+   * definition). To run all three, pass all three. */
+  R_TEST_RUN_FLAG_INCLUDE_SKIP   = 1 << 0,
+  R_TEST_RUN_FLAG_PRINT          = 1 << 1,
+  R_TEST_RUN_FLAG_INCLUDE_HEAVY  = 1 << 2,
+  R_TEST_RUN_FLAG_INCLUDE_BROKEN = 1 << 3,
 } RTestRunFlag;
 
 typedef struct {
@@ -186,7 +193,7 @@ typedef struct {
 #define SKIP_RTEST_BENCH(suite, name, type)       RTEST_DEFINE_TEST (suite, name, 1, (type) | R_TEST_FLAG_BENCH, R_CLOCK_TIME_NONE, 0, 1)
 #define SKIP_RTEST_BENCH_F(suite, name, type)     RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, 1, (type) | R_TEST_FLAG_BENCH, R_CLOCK_TIME_NONE, 0, 1)
 /* HEAVY and BROKE share SKIP's runtime gating (don't run unless
- * --ignore-skip / rlibtest -i is passed) but carve out distinct
+ * the matching --include-skip / --heavy / --broken flag is passed) but carve out distinct
  * intents at the source level. Pick the macro that says why the test
  * isn't in the default suite:
  *
@@ -235,8 +242,12 @@ int main (int argc, rchar ** argv) {                                            
       "Print verbose info", NULL, NULL },                                       \
     { "print",       'p', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
       "Print all tests which ran", NULL, NULL },                                \
-    { "ignore-skip", 'i', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
-      "Run tests that default would be skipped", NULL, NULL },                  \
+    { "include-skip", 'i', R_ARG_OPTION_TYPE_BOOL,    R_ARG_OPTION_FLAG_NONE,   \
+      "Also run SKIP_RTEST_* tests (temporarily disabled)", NULL, NULL },       \
+    { "heavy",       'H', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
+      "Also run HEAVY_RTEST_* tests (slow but not broken)", NULL, NULL },       \
+    { "broken",      'B', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
+      "Also run BROKEN_RTEST_* tests (likely to fail)", NULL, NULL },           \
     { "filter",      'f', R_ARG_OPTION_TYPE_STRING,   R_ARG_OPTION_FLAG_NONE,   \
       "Filter on test path - default is * (\"/<suite>/<name>\")", NULL, NULL }, \
     { "output",      'o', R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_NONE,   \
@@ -257,8 +268,12 @@ int main (int argc, rchar ** argv) {                                            
       report_flags |= R_TEST_REPORT_FLAG_VERBOSE;                               \
     if (r_arg_parse_ctx_get_option_bool (ctx, "print"))                         \
       run_flags |= R_TEST_RUN_FLAG_PRINT;                                       \
-    if (r_arg_parse_ctx_get_option_bool (ctx, "ignore-skip"))                   \
-      run_flags |= R_TEST_RUN_FLAG_IGNORE_SKIP;                                 \
+    if (r_arg_parse_ctx_get_option_bool (ctx, "include-skip"))                  \
+      run_flags |= R_TEST_RUN_FLAG_INCLUDE_SKIP;                                \
+    if (r_arg_parse_ctx_get_option_bool (ctx, "heavy"))                         \
+      run_flags |= R_TEST_RUN_FLAG_INCLUDE_HEAVY;                               \
+    if (r_arg_parse_ctx_get_option_bool (ctx, "broken"))                        \
+      run_flags |= R_TEST_RUN_FLAG_INCLUDE_BROKEN;                              \
                                                                                 \
     if ((output = r_arg_parse_ctx_get_option_string (ctx, "output")) != NULL && \
         !r_str_equals (output, "-")) {                                          \

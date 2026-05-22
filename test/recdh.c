@@ -640,8 +640,8 @@ run_wycheproof_ecdh_test (const WycheproofEcdhTest * t)
   if (peer != NULL) r_crypto_key_unref (peer);
 }
 
-/* HEAVY_RTEST_LOOP - too slow for the default suite. Run with
- * --ignore-skip (rlibtest -i) when you want the full sweep. */
+/* HEAVY_RTEST_LOOP - too slow for the default suite. Pass --heavy
+ * (rlibtest -H) when you want the full sweep. */
 HEAVY_RTEST_LOOP (recdh, wycheproof_secp224r1, RTEST_SLOW,
     0, R_N_ELEMENTS (wp_ecdh_secp224r1_tests))
 {
@@ -649,8 +649,8 @@ HEAVY_RTEST_LOOP (recdh, wycheproof_secp224r1, RTEST_SLOW,
 }
 RTEST_END;
 
-/* HEAVY_RTEST_LOOP - too slow for the default suite. Run with
- * --ignore-skip (rlibtest -i) when you want the full sweep. */
+/* HEAVY_RTEST_LOOP - too slow for the default suite. Pass --heavy
+ * (rlibtest -H) when you want the full sweep. */
 HEAVY_RTEST_LOOP (recdh, wycheproof_secp256r1, RTEST_SLOW,
     0, R_N_ELEMENTS (wp_ecdh_secp256r1_tests))
 {
@@ -658,8 +658,8 @@ HEAVY_RTEST_LOOP (recdh, wycheproof_secp256r1, RTEST_SLOW,
 }
 RTEST_END;
 
-/* HEAVY_RTEST_LOOP - too slow for the default suite. Run with
- * --ignore-skip (rlibtest -i) when you want the full sweep. */
+/* HEAVY_RTEST_LOOP - too slow for the default suite. Pass --heavy
+ * (rlibtest -H) when you want the full sweep. */
 HEAVY_RTEST_LOOP (recdh, wycheproof_secp384r1, RTEST_SLOW,
     0, R_N_ELEMENTS (wp_ecdh_secp384r1_tests))
 {
@@ -667,8 +667,8 @@ HEAVY_RTEST_LOOP (recdh, wycheproof_secp384r1, RTEST_SLOW,
 }
 RTEST_END;
 
-/* HEAVY_RTEST_LOOP - too slow for the default suite. Run with
- * --ignore-skip (rlibtest -i) when you want the full sweep. */
+/* HEAVY_RTEST_LOOP - too slow for the default suite. Pass --heavy
+ * (rlibtest -H) when you want the full sweep. */
 HEAVY_RTEST_LOOP (recdh, wycheproof_secp521r1, RTEST_SLOW,
     0, R_N_ELEMENTS (wp_ecdh_secp521r1_tests))
 {
