@@ -265,7 +265,6 @@ r_tls_parser_decrypt (RTLSParser * parser,
 
       if (mac != NULL) {
         ruint8 scratch[sizeof (ruint64) + sizeof (ruint8) + sizeof (ruint16) + sizeof (ruint16)];
-        ruint8 * macbuf = r_alloca (macsize);
 
         r_hmac_reset (mac);
         if (r_tls_parser_is_dtls (parser)) {
@@ -290,8 +289,7 @@ r_tls_parser_decrypt (RTLSParser * parser,
         r_hmac_update (mac, &scratch, sizeof (scratch));
         r_hmac_update (mac, info.data, contentsize);
 
-        if (!r_hmac_get_data (mac, macbuf, macsize, &macsize) ||
-            r_memcmp (&info.data[contentsize], macbuf, macsize) != 0) {
+        if (!r_hmac_verify (mac, &info.data[contentsize], macsize)) {
           r_buffer_unmap (buf, &info);
           return R_TLS_ERROR_INVALID_MAC;
         }
