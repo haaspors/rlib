@@ -1,5 +1,7 @@
 #include <rlib/rcrypto.h>
 
+#include "wipewitness.h"
+
 RTEST (raes, new_args, RTEST_FAST)
 {
   ruint8 key[32] = { 0 };
@@ -387,6 +389,28 @@ RTEST_LOOP (raes, ofb, RTEST_FAST, 0, R_N_ELEMENTS (OFB_test_data))
   r_free (plaintxt);
   r_free (ciphertxt);
   r_free (out);
+}
+RTEST_END;
+
+RTEST (raes, free_wipes_cipher_state, RTEST_FAST)
+{
+  /* Sentinel-tagged AES key: if r_cipher_aes_free fails to wipe the
+   * RAesCipher (key + round-key schedules) before r_free, the bytes
+   * survive in the freed-buffer pile the allocator hook captured. */
+  static const ruint8 sentinel_key[32] = {
+    0xCA, 0xFE, 0xBA, 0xBE, 0xDE, 0xAD, 0xBE, 0xEF,
+    0xFE, 0xED, 0xFA, 0xCE, 0xBA, 0xAD, 0xF0, 0x0D,
+    0x13, 0x37, 0xC0, 0xDE, 0xB1, 0x05, 0xF0, 0x0D,
+    0x8B, 0xAD, 0xF0, 0x0D, 0x0F, 0xF1, 0xCE, 0x42
+  };
+  RCryptoCipher * cipher;
+
+  r_wipe_witness_install ();
+  r_assert_cmpptr ((cipher = r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CBC, 256, sentinel_key)), !=, NULL);
+  r_crypto_cipher_unref (cipher);
+  r_wipe_witness_uninstall ();
+
+  r_assert (!r_wipe_witness_freed_contains (sentinel_key, sizeof (sentinel_key)));
 }
 RTEST_END;
 

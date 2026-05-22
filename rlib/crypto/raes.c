@@ -20,6 +20,7 @@
 #include <rlib/crypto/raes.h>
 #include <rlib/crypto/raes-data.inc>
 
+#include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
 #define R_AES_MAX_KEY_BYTES   32
@@ -129,6 +130,9 @@ const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ofb = { "AES-256-OFB",
 static void
 r_cipher_aes_free (RAesCipher * cipher)
 {
+  /* key + round-key schedules are key-equivalent; wipe before
+   * release so heap reuse, swap, or core dumps don't expose them. */
+  r_memclear_secure (cipher, sizeof (*cipher));
   r_free (cipher);
 }
 
@@ -611,6 +615,7 @@ r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
     r_memcpy (iv, scratch, R_AES_BLOCK_BYTES);
   }
 
+  r_memclear_secure (scratch, sizeof (scratch));
   return R_CRYPTO_CIPHER_OK;
 }
 
@@ -651,6 +656,7 @@ r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
     }
   }
 
+  r_memclear_secure (scratch, sizeof (scratch));
   return R_CRYPTO_CIPHER_OK;
 }
 
@@ -686,6 +692,7 @@ r_cipher_aes_cfb_encrypt (const RCryptoCipher * cipher,
       dst[i] = scratch[i] ^ ptr[i];
   }
 
+  r_memclear_secure (scratch, sizeof (scratch));
   return R_CRYPTO_CIPHER_OK;
 }
 
@@ -723,6 +730,8 @@ r_cipher_aes_cfb_decrypt (const RCryptoCipher * cipher,
       dst[i] = scratch[i] ^ ptr[i];
   }
 
+  r_memclear_secure (scratch, sizeof (scratch));
+  r_memclear_secure (ctsave, sizeof (ctsave));
   return R_CRYPTO_CIPHER_OK;
 }
 
