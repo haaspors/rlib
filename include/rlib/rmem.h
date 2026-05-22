@@ -87,6 +87,13 @@ R_API rboolean r_mem_using_system_default (void);
 R_API int       r_memcmp (rconstpointer a, rconstpointer b, rsize size);
 R_API rpointer  r_memset (rpointer a, int v, rsize size);
 #define r_memclear(ptr, size)   r_memset (ptr, 0, size)
+/* Zero `size` bytes at `ptr` in a way the compiler can't elide. A
+ * regular memset before a free is provably unobservable from the
+ * caller's perspective and gets removed by the optimiser ("dead
+ * store elimination") - which is exactly the wrong outcome for
+ * wiping secret material. Use this for buffers that contained
+ * keys, scalars, nonces, plaintexts, etc. before they're released. */
+R_API void      r_memclear_secure (rpointer ptr, rsize size);
 R_API rpointer  r_memcpy (void * R_ATTR_RESTRICT dst,
     const void * R_ATTR_RESTRICT src, rsize size);
 R_API rpointer  r_memmove (rpointer dst, rconstpointer src, rsize size);
