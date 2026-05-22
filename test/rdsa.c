@@ -598,7 +598,7 @@ RTEST (rdsa, sign_msg_rejects_empty, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rdsa, gen_sign_verify_roundtrip, RTEST_SLOW)
+HEAVY_RTEST (rdsa, gen_sign_verify_roundtrip, RTEST_SLOW)
 {
   /* Generate a fresh DSA-1024 / N=160 keypair, sign a SHA-1-sized hash
    * with it, verify with the matching public view. Exercises the full
