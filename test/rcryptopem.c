@@ -1,5 +1,7 @@
 #include <rlib/rcrypto.h>
 
+#include "wipewitness.h"
+
 static const rchar pem_invalid[] =
   "---BEGIN PRIVATE KEY-----\n"
   "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCqGKukO1De7zhZj6+H0qtjTkVxwTCpvKe4eCZ0\n"
@@ -731,6 +733,52 @@ RTEST (rcryptopem, legacy_encrypted_rsa_aes256, RTEST_FAST)
 {
   verify_legacy_pem (pem_legacy_enc_aes256, sizeof (pem_legacy_enc_aes256),
       "test123");
+}
+RTEST_END;
+
+RTEST (rcryptopem, legacy_decrypted_plaintext_wiped, RTEST_FAST)
+{
+  /* Decrypt a legacy-encrypted PEM and verify that the DER-encoded
+   * plaintext (the buffer r_pem_decrypt_legacy returned) does not
+   * survive in any freed allocation. The modulus bytes are a
+   * convenient long-enough needle that lives inside the decrypted
+   * DER but not in any non-secret intermediate. */
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  rmpint n;
+  ruint8 modulus[128];
+
+  /* Pull the modulus bytes from the unencrypted reference key first,
+   * outside the hook so the allocation noise doesn't end up in the
+   * captured pile. */
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_legacy_unenc, sizeof (pem_legacy_unenc))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_mpint_init (&n);
+  r_assert (r_rsa_pub_key_get_n (key, &n));
+  r_assert (r_mpint_to_binary_with_size (&n, modulus, sizeof (modulus)));
+  r_mpint_clear (&n);
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+
+  r_wipe_witness_install ();
+  r_assert_cmpptr ((parser = r_pem_parser_new (pem_legacy_enc_aes128,
+          sizeof (pem_legacy_enc_aes128))), !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, "test123", 7)), !=, NULL);
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+  r_wipe_witness_uninstall ();
+
+  /* A 32-byte run of the modulus is uniquely identifying and gives a
+   * clean signal: present in the DER plaintext, absent from every
+   * non-secret intermediate that flowed through the allocator. */
+  r_assert (!r_wipe_witness_freed_contains (modulus + 16, 32));
 }
 RTEST_END;
 

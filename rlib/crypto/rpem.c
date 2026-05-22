@@ -606,9 +606,15 @@ r_pem_decrypt_legacy (RPemBlock * block, const ruint8 * passphrase, rsize ppsize
 RCryptoKey *
 r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
 {
-  RCryptoKey * ret;
+  RCryptoKey * ret = NULL;
   RAsn1BinDecoder * dec;
   RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  /* When non-NULL, this buffer holds the DER-encoded private key
+   * plaintext from r_pem_decrypt_legacy and must be wiped on every
+   * return path (the ASN.1 decoder uses a borrowed reference here
+   * via the const-data variant). */
+  ruint8 * decrypted = NULL;
+  rsize decrypted_size = 0;
 
   if (R_UNLIKELY (block == NULL))
     return NULL;
@@ -625,22 +631,23 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
       return NULL;
     if (r_pem_decrypt_legacy (block, (const ruint8 *) passphrase, ppsize,
             decoded, decoded_size, &plain_size) == NULL) {
+      /* Wrong-passphrase residue: failed AES-CBC output, not the
+       * plaintext, but still wipe before release. */
+      r_memclear_secure (decoded, decoded_size);
       r_free (decoded);
       return NULL;
     }
-    if ((dec = r_asn1_bin_decoder_new_with_data (R_ASN1_BER, decoded,
-            plain_size)) == NULL) {
-      r_free (decoded);
-      return NULL;
-    }
+    decrypted = decoded;
+    decrypted_size = decoded_size;
+    if ((dec = r_asn1_bin_decoder_new (R_ASN1_BER, decoded, plain_size)) == NULL)
+      goto out_wipe;
   } else if ((dec = r_pem_block_get_asn1_decoder (block)) == NULL) {
     return NULL;
   }
 
-  if (r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK) {
-    r_asn1_bin_decoder_unref (dec);
-    return NULL;
-  }
+  if (r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK)
+    goto out_unref;
+
   switch (r_pem_block_get_type (block)) {
     case R_PEM_TYPE_PUBLIC_KEY:
       ret = r_crypto_key_from_asn1_public_key (dec, &tlv);
@@ -656,9 +663,16 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
       break;
     /* TODO: PKCS#8 EncryptedPrivateKeyInfo */
     default:
-      ret = NULL;
+      break;
   }
+
+out_unref:
   r_asn1_bin_decoder_unref (dec);
+out_wipe:
+  if (decrypted != NULL) {
+    r_memclear_secure (decrypted, decrypted_size);
+    r_free (decrypted);
+  }
 
   return ret;
 }
