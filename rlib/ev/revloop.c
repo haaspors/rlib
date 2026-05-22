@@ -557,25 +557,52 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
   ret = r_poll (loop->pollset.handles, loop->pollset.count, timeout);
   if (ret >= 0) {
-    int processed = 0;
-    R_LOG_DEBUG ("r_poll for loop %p with %d events", loop, ret);
-    for (i = 0; i < loop->pollset.count && processed < ret; i++) {
-      REvIOEvents rev = 0;
-      evio = r_poll_set_get_user (&loop->pollset, loop->pollset.handles[i].handle);
-      r_assert_cmpptr (evio, !=, NULL);
+    /* Snapshot what to dispatch before invoking any iocb: a callback
+     * may mutate the pollset, and reading loop->pollset.handles[i] in
+     * the same pass that fires callbacks risks landing on a slot whose
+     * handle / hash mapping has shifted underneath us. */
+    struct {
+      REvIO * evio;
+      REvIOEvents rev;
+      RIOHandle handle;
+    } dispatch[R_EV_LOOP_MAX_EVENTS];
+    int ndispatch = 0;
+    int j;
 
-      if (loop->pollset.handles[i].revents & R_IO_ERR)  rev |= R_EV_IO_ERROR;
-      if (loop->pollset.handles[i].revents & R_IO_HUP)  rev |= R_EV_IO_HANGUP;
-      if (loop->pollset.handles[i].revents & R_IO_IN)   rev |= R_EV_IO_READABLE;
-      if (loop->pollset.handles[i].revents & R_IO_OUT)  rev |= R_EV_IO_WRITABLE;
+    R_LOG_DEBUG ("r_poll for loop %p with %d events", loop, ret);
+    for (i = 0; i < loop->pollset.count && ndispatch < ret &&
+        ndispatch < R_EV_LOOP_MAX_EVENTS; i++) {
+      REvIOEvents rev = 0;
+      RIOHandle handle = loop->pollset.handles[i].handle;
+      rushort revents = loop->pollset.handles[i].revents;
       loop->pollset.handles[i].revents = 0;
 
-      R_LOG_INFO ("r_poll for loop %p handle %"R_IO_HANDLE_FMT" evio: "R_EV_IO_FORMAT" - %u",
-          loop, loop->pollset.handles[i].handle, R_EV_IO_ARGS (evio), (ruint)rev);
-      if (R_LIKELY (rev != 0)) {
-        processed++;
-        r_ev_io_invoke_iocb (evio, rev);
+      if (revents & R_IO_ERR)  rev |= R_EV_IO_ERROR;
+      if (revents & R_IO_HUP)  rev |= R_EV_IO_HANGUP;
+      if (revents & R_IO_IN)   rev |= R_EV_IO_READABLE;
+      if (revents & R_IO_OUT)  rev |= R_EV_IO_WRITABLE;
+
+      if (rev == 0)
+        continue;
+
+      evio = r_poll_set_get_user (&loop->pollset, handle);
+      if (R_UNLIKELY (evio == NULL)) {
+        R_LOG_WARNING ("loop %p: r_poll reported events on stale handle "
+            "%"R_IO_HANDLE_FMT" (no evio); skipping", loop, handle);
+        continue;
       }
+
+      dispatch[ndispatch].evio = evio;
+      dispatch[ndispatch].rev = rev;
+      dispatch[ndispatch].handle = handle;
+      ndispatch++;
+    }
+
+    for (j = 0; j < ndispatch; j++) {
+      R_LOG_INFO ("r_poll for loop %p handle %"R_IO_HANDLE_FMT" evio: "R_EV_IO_FORMAT" - %u",
+          loop, dispatch[j].handle, R_EV_IO_ARGS (dispatch[j].evio),
+          (ruint)dispatch[j].rev);
+      r_ev_io_invoke_iocb (dispatch[j].evio, dispatch[j].rev);
     }
   } else {
     R_LOG_ERROR ("r_poll for loop %p failed with error %d", loop, ret);
