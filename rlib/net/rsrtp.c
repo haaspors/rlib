@@ -573,8 +573,6 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
 
         if (stream->rtp.mac != NULL && tagsize > 0) {
           ruint8 * authtag = rtp.pay.data + rtp.pay.size - tagsize;
-          ruint8 calctag[32];
-          rsize calcsize;
           ruint32 roc = RUINT32_TO_BE ((ruint32)(idx >> 16));
 
           r_hmac_reset (stream->rtp.mac);
@@ -582,9 +580,8 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
               (rtp.ext.data == NULL ||
                r_hmac_update (stream->rtp.mac, rtp.ext.data, rtp.ext.size)) &&
               r_hmac_update (stream->rtp.mac, rtp.pay.data, payloadsize) &&
-              r_hmac_update (stream->rtp.mac, &roc, sizeof (ruint32)) &&
-              r_hmac_get_data (stream->rtp.mac, calctag, sizeof (calctag), &calcsize)) {
-            if (R_UNLIKELY (r_memcmp (authtag, calctag, tagsize) != 0)) {
+              r_hmac_update (stream->rtp.mac, &roc, sizeof (ruint32))) {
+            if (R_UNLIKELY (!r_hmac_verify (stream->rtp.mac, authtag, tagsize))) {
               R_LOG_INFO ("stream: 0x%.8x - SRTP auth failed for idx 0x%"R_RTP_SEQIDX_FMT,
                   stream->ssrc, idx);
               err = R_SRTP_ERROR_AUTH;
@@ -822,13 +819,9 @@ r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
         }
 
         if (stream->rtcp.mac != NULL && tagsize > 0) {
-          ruint8 calctag[32];
-          rsize calcsize;
-
           r_hmac_reset (stream->rtcp.mac);
-          if (r_hmac_update (stream->rtcp.mac, rtcp.info.data, newsize + sizeof (ruint32)) &&
-              r_hmac_get_data (stream->rtcp.mac, calctag, sizeof (calctag), &calcsize)) {
-            if (R_UNLIKELY (r_memcmp (authtag, calctag, tagsize) != 0)) {
+          if (r_hmac_update (stream->rtcp.mac, rtcp.info.data, newsize + sizeof (ruint32))) {
+            if (R_UNLIKELY (!r_hmac_verify (stream->rtcp.mac, authtag, tagsize))) {
               R_LOG_INFO ("stream: 0x%.8x - SRTP auth failed for idx 0x%"R_RTP_SEQIDX_FMT,
                   stream->ssrc, (ruint64)idx);
               err = R_SRTP_ERROR_AUTH;
