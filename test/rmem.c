@@ -63,6 +63,32 @@ RTEST (rmem, cmp, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmem, cmp_ct, RTEST_FAST)
+{
+  ruint8 a[]      = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  ruint8 b[]      = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  ruint8 diff_first[] = { 9, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  ruint8 diff_last[]  = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 0 };
+  const rsize size = sizeof (a);
+
+  /* Equal -> 0. Differ-first / differ-last both produce non-zero;
+   * since r_memcmp_ct drops memcmp's sign semantics, only assert
+   * the zero / non-zero distinction. */
+  r_assert_cmpint (r_memcmp_ct (a, b, size),          ==, 0);
+  r_assert_cmpint (r_memcmp_ct (a, diff_first, size), !=, 0);
+  r_assert_cmpint (r_memcmp_ct (a, diff_last,  size), !=, 0);
+
+  /* size == 0 is a degenerate equal case. */
+  r_assert_cmpint (r_memcmp_ct (a, diff_first, 0),    ==, 0);
+
+  /* NULL handling: same as r_memcmp (timing of the NULL check is
+   * not on the secret-data path). */
+  r_assert_cmpint (r_memcmp_ct (NULL, a, size),       !=, 0);
+  r_assert_cmpint (r_memcmp_ct (a, NULL, size),       !=, 0);
+  r_assert_cmpint (r_memcmp_ct (NULL, NULL, size),    ==, 0);
+}
+RTEST_END;
+
 RTEST (rmem, set, RTEST_FAST)
 {
   ruint8 data[1024];
