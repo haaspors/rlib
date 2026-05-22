@@ -1057,6 +1057,50 @@ BROKEN_RTEST (rmpint, gen_prime_1024bits_safe, RTEST_FASTSLOW)
 }
 RTEST_END;
 
+RTEST (rmpint, secure_clear_flag, RTEST_FAST)
+{
+  rmpint a, b;
+
+  /* Plain init: flag clear. */
+  r_mpint_init (&a);
+  r_assert ((a.flags & R_MPINT_FLAG_SECURE_CLEAR) == 0);
+  r_mpint_clear (&a);
+
+  /* init_secure: flag set. */
+  r_mpint_init_secure (&a);
+  r_assert ((a.flags & R_MPINT_FLAG_SECURE_CLEAR) != 0);
+  r_mpint_clear (&a);
+
+  /* set_secure_clear flips the flag on an existing mpint. */
+  r_mpint_init (&a);
+  r_assert ((a.flags & R_MPINT_FLAG_SECURE_CLEAR) == 0);
+  r_mpint_set_secure_clear (&a);
+  r_assert ((a.flags & R_MPINT_FLAG_SECURE_CLEAR) != 0);
+  r_mpint_clear (&a);
+
+  /* The flag is sticky across r_mpint_set: copying a secure mpint
+   * into a non-secure one upgrades the destination so the copy is
+   * also wiped on clear. */
+  r_mpint_init_secure (&a);
+  r_mpint_set_u32 (&a, 0xdeadbeef);
+  r_mpint_init (&b);
+  r_assert ((b.flags & R_MPINT_FLAG_SECURE_CLEAR) == 0);
+  r_mpint_set (&b, &a);
+  r_assert ((b.flags & R_MPINT_FLAG_SECURE_CLEAR) != 0);
+  r_mpint_clear (&b);
+  r_mpint_clear (&a);
+
+  /* r_mpint_init_copy also propagates (it lowers to init + set). */
+  r_mpint_init_secure (&a);
+  r_mpint_set_u32 (&a, 0xfeedface);
+  r_mpint_init_copy (&b, &a);
+  r_assert ((b.flags & R_MPINT_FLAG_SECURE_CLEAR) != 0);
+  r_mpint_clear (&b);
+  r_mpint_clear (&a);
+}
+RTEST_END;
+
+
 RTEST (rmpint, add_with_stale_high_digits, RTEST_FAST)
 {
   /* Regression for an mpint bug surfaced by ECDH-on-secp521r1: when
