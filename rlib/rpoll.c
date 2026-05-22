@@ -266,10 +266,10 @@ r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user)
   if (R_UNLIKELY (ps == NULL)) return -1;
   if (R_UNLIKELY (handle == R_IO_HANDLE_INVALID)) return -1;
 
-  if (ps->alloc < ps->count) {
+  if (ps->count >= ps->alloc) {
     do {
       ps->alloc += R_POLL_SET_MIN_INCREASE;
-    } while (ps->alloc < ps->count);
+    } while (ps->count >= ps->alloc);
     ps->handles = r_realloc (ps->handles, sizeof (RPoll) * ps->alloc);
     if (R_UNLIKELY (ps->handles == NULL)) {
       /* FIXME: Error out properly */

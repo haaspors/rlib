@@ -152,3 +152,28 @@ RTEST (rpollset, get_user, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rpollset, add_grows_past_initial_alloc, RTEST_FAST)
+{
+  RPollSet ps;
+  const ruint n = 200;
+  ruint i;
+
+  /* r_poll_set_init picks a default alloc; we want to push enough
+   * entries past it that the grow path runs and every slot still
+   * lands inside the (re)allocated buffer. */
+  r_poll_set_init (&ps, 0);
+
+  for (i = 1; i <= n; i++)
+    r_assert_cmpint (r_poll_set_add (&ps, (RIOHandle)(rsize)i, 0,
+          (rpointer)(rsize)i), >=, 0);
+
+  r_assert_cmpuint (ps.count, ==, n);
+  r_assert_cmpuint (ps.alloc, >=, n);
+  for (i = 1; i <= n; i++)
+    r_assert_cmpptr (r_poll_set_get_user (&ps, (RIOHandle)(rsize)i),
+        ==, (rpointer)(rsize)i);
+
+  r_poll_set_clear (&ps);
+}
+RTEST_END;
+
