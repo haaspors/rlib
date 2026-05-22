@@ -80,10 +80,12 @@ static RTss                         g__r_test_last_pos_tss = R_TSS_INIT (NULL);
 #define _TIME_ERR_CLR _DO_CLR (R_TTY_SGR1 (R_TTY_SGR_FG_ARG (R_CLR_YELLOW)))
 #define _RES_CLR(CLR) _DO_CLR (R_TTY_SGR2 (R_TTY_SGR_BOLD_ARG, R_TTY_SGR_FG_ARG(CLR)))
 
-#define _SKIP_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_BLUE)) : "", COUNT, _RESET_CLR
-#define _SUCC_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_GREEN)) : "", COUNT, _RESET_CLR
-#define _FAIL_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_RED)) : "", COUNT, _RESET_CLR
-#define _ERR_ARGS(COUNT)  (COUNT) ? (_RES_CLR (R_CLR_MAGENTA)) : "", COUNT, _RESET_CLR
+#define _SKIP_ARGS(COUNT)  (COUNT) ? (_RES_CLR (R_CLR_BLUE))    : "", COUNT, _RESET_CLR
+#define _HEAVY_ARGS(COUNT) (COUNT) ? (_RES_CLR (R_CLR_CYAN))    : "", COUNT, _RESET_CLR
+#define _BROKEN_ARGS(COUNT)(COUNT) ? (_RES_CLR (R_CLR_YELLOW))  : "", COUNT, _RESET_CLR
+#define _SUCC_ARGS(COUNT)  (COUNT) ? (_RES_CLR (R_CLR_GREEN))   : "", COUNT, _RESET_CLR
+#define _FAIL_ARGS(COUNT)  (COUNT) ? (_RES_CLR (R_CLR_RED))     : "", COUNT, _RESET_CLR
+#define _ERR_ARGS(COUNT)   (COUNT) ? (_RES_CLR (R_CLR_MAGENTA)) : "", COUNT, _RESET_CLR
 
 #if defined (R_OS_WIN32)
 static const int g__r_test_sigs[] = {
@@ -177,7 +179,8 @@ static RTestReport *  g__r_test_current_report = NULL;
 static rsize          g__r_test_current_run_idx = 0;
 
 static const rchar *
-r_test_get_run_str (RTestRunState state, const rchar ** runresclr, FILE * f)
+r_test_get_run_str (RTestRunState state, RTestSkipReason skip,
+    const rchar ** runresclr, FILE * f)
 {
   switch (state) {
     case R_TEST_RUN_STATE_SUCCESS:
@@ -190,6 +193,13 @@ r_test_get_run_str (RTestRunState state, const rchar ** runresclr, FILE * f)
       *runresclr = _RES_CLR (R_CLR_MAGENTA);
       return "ERROR:";
     case R_TEST_RUN_STATE_SKIP:
+      if (skip == R_TEST_SKIP_HEAVY) {
+        *runresclr = _RES_CLR (R_CLR_CYAN);
+        return "HEAVY:";
+      } else if (skip == R_TEST_SKIP_BROKEN) {
+        *runresclr = _RES_CLR (R_CLR_YELLOW);
+        return "BROKEN:";
+      }
       *runresclr = _RES_CLR (R_CLR_BLUE);
       return "SKIP:";
     case R_TEST_RUN_STATE_TIMEOUT:
@@ -253,7 +263,7 @@ _r_test_dump_progress (FILE * f)
     const rchar * runres, * runresclr;
     run = &rep->runs[i];
     if (run->test == NULL) continue;
-    runres = r_test_get_run_str (run->state, &runresclr, f);
+    runres = r_test_get_run_str (run->state, run->test->skip, &runresclr, f);
     r_fprintf (f, "    %-9s [%"R_TIME_FORMAT"] /%s/%s/%"RSIZE_FMT"\n",
         runres, R_TIME_ARGS (run->end - run->start),
         run->test->suite, run->test->name, run->__i);
@@ -1198,6 +1208,8 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
               /* This shouldn't happen */
               ret->run--;
               ret->skip++;
+              if (tests[i].skip == R_TEST_SKIP_HEAVY) ret->skip_heavy++;
+              else if (tests[i].skip == R_TEST_SKIP_BROKEN) ret->skip_broken++;
               break;
             case R_TEST_RUN_STATE_SUCCESS:
               ret->success++;
@@ -1214,7 +1226,8 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
           if (flags & R_TEST_RUN_FLAG_PRINT) {
             const rchar * runres, * runresclr;
 
-            runres = r_test_get_run_str (ret->runs[cur].state, &runresclr, f);
+            runres = r_test_get_run_str (ret->runs[cur].state,
+                ret->runs[cur].test->skip, &runresclr, f);
 
             if (ret->runs[cur].test->type & R_TEST_FLAG_LOOP) {
               r_print ("%s%-9s%s[%s%"R_TIME_FORMAT"%s] %s/%s/%s/%"RSIZE_FMT"%s [pid: %d, exit: %d]\n",
@@ -1234,6 +1247,8 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
           ret->runs[cur].start = ret->runs[cur].end = r_time_get_ts_monotonic ();
           ret->runs[cur].state = R_TEST_RUN_STATE_SKIP;
           ret->skip++;
+          if (tests[i].skip == R_TEST_SKIP_HEAVY) ret->skip_heavy++;
+          else if (tests[i].skip == R_TEST_SKIP_BROKEN) ret->skip_broken++;
         }
       }
     }
@@ -1345,7 +1360,7 @@ r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
         }
       }
 
-      runres = r_test_get_run_str (run->state, &runresclr, f);
+      runres = r_test_get_run_str (run->state, run->test->skip, &runresclr, f);
       if (loop_skip_count > 1)
         name = r_strprintf ("/%s/%s (%"RSIZE_FMT" iterations)",
             run->test->suite, run->test->name, loop_skip_count);
@@ -1384,12 +1399,24 @@ r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
   }
 
   elapsed = report->end - report->start;
+  /* "Skip:" in the summary is the temporarily-disabled count, not the
+   * grand total - HEAVY and BROKEN have their own columns so each
+   * bucket stays visible. The runner tracks the grand total in
+   * report->skip; subtract the sub-bucket counters to recover the
+   * SKIP_RTEST_* (temp) count. */
   r_fprintf (f,
-      "%s\n%"RSIZE_FMT" tests (Ran: %"RSIZE_FMT" %sSkip: %"RSIZE_FMT"%s)"
+      "%s\n%"RSIZE_FMT" tests"
+      " (Ran: %"RSIZE_FMT
+      " %sSkip: %"RSIZE_FMT"%s"
+      " %sHeavy: %"RSIZE_FMT"%s"
+      " %sBroken: %"RSIZE_FMT"%s)"
       " [%s%"R_TIME_FORMAT"%s]\n"
       "\t%sSuccess: %"RSIZE_FMT"%s, %sFailures: %"RSIZE_FMT"%s, %sErrors: %"RSIZE_FMT"%s\n",
       "================================================================================",
-      report->total, report->run, _SKIP_ARGS (report->skip),
+      report->total, report->run,
+      _SKIP_ARGS (report->skip - report->skip_heavy - report->skip_broken),
+      _HEAVY_ARGS (report->skip_heavy),
+      _BROKEN_ARGS (report->skip_broken),
       _TIME_CLR, R_TIME_ARGS (elapsed), _RESET_CLR,
       _SUCC_ARGS (report->success), _FAIL_ARGS (report->fail), _ERR_ARGS (report->error));
 }

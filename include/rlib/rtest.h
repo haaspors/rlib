@@ -101,6 +101,18 @@ typedef enum {
   R_TEST_RUN_STATE_TIMEOUT    = 6
 } RTestRunState;
 
+/* Values for the `skip` field on RTest. Encodes the intent the source-
+ * level SKIP_RTEST / HEAVY_RTEST / BROKEN_RTEST macros expressed, so
+ * the runner can keep the three buckets separate in the final tally
+ * without changing the gating behaviour (any non-zero value gates the
+ * test behind --ignore-skip). */
+typedef enum {
+  R_TEST_NO_SKIP     = 0,
+  R_TEST_SKIP_TEMP   = 1, /* SKIP_RTEST_*   - temporarily disabled */
+  R_TEST_SKIP_HEAVY  = 2, /* HEAVY_RTEST_*  - too expensive for default */
+  R_TEST_SKIP_BROKEN = 3, /* BROKEN_RTEST_* - known broken, not under repair */
+} RTestSkipReason;
+
 typedef enum {
   R_TEST_RUN_FLAG_NONE          = 0,
   R_TEST_RUN_FLAG_IGNORE_SKIP   = 1 << 0,
@@ -137,6 +149,10 @@ typedef enum {
 typedef struct {
   rsize total;
   rsize run, skip;
+  /* skip is the grand total. skip_heavy / skip_broken are the
+   * subcounts for HEAVY_RTEST_* and BROKEN_RTEST_*; the temporarily-
+   * disabled SKIP_RTEST_* count is skip - skip_heavy - skip_broken. */
+  rsize skip_heavy, skip_broken;
   rsize success, fail, error;
 
   RClockTime start;
@@ -185,14 +201,14 @@ typedef struct {
  *                   regression visible without polluting the default
  *                   pass / fail tally.
  */
-#define HEAVY_RTEST(suite, name, type)            SKIP_RTEST (suite, name, type)
-#define HEAVY_RTEST_F(suite, name, type)          SKIP_RTEST_F (suite, name, type)
-#define HEAVY_RTEST_LOOP(suite, name, type, s,e)  SKIP_RTEST_LOOP (suite, name, type, s, e)
-#define HEAVY_RTEST_LOOP_F(suite, name,type,s,e)  SKIP_RTEST_LOOP_F (suite, name, type, s, e)
-#define BROKEN_RTEST(suite, name, type)            SKIP_RTEST (suite, name, type)
-#define BROKEN_RTEST_F(suite, name, type)          SKIP_RTEST_F (suite, name, type)
-#define BROKEN_RTEST_LOOP(suite, name, type, s,e)  SKIP_RTEST_LOOP (suite, name, type, s, e)
-#define BROKEN_RTEST_LOOP_F(suite, name,type,s,e)  SKIP_RTEST_LOOP_F (suite, name, type, s, e)
+#define HEAVY_RTEST(suite, name, type)             RTEST_DEFINE_TEST (suite, name, R_TEST_SKIP_HEAVY, type, RTEST_TYPE_TIMEOUT(type), 0, 1)
+#define HEAVY_RTEST_F(suite, name, type)           RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, R_TEST_SKIP_HEAVY, type, RTEST_TYPE_TIMEOUT(type), 0, 1)
+#define HEAVY_RTEST_LOOP(suite, name, type, s,e)   RTEST_DEFINE_TEST (suite, name, R_TEST_SKIP_HEAVY, (type) | R_TEST_FLAG_LOOP, RTEST_TYPE_TIMEOUT(type), s, e)
+#define HEAVY_RTEST_LOOP_F(suite, name,type, s,e)  RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, R_TEST_SKIP_HEAVY, (type) | R_TEST_FLAG_LOOP, RTEST_TYPE_TIMEOUT(type), s, e)
+#define BROKEN_RTEST(suite, name, type)            RTEST_DEFINE_TEST (suite, name, R_TEST_SKIP_BROKEN, type, RTEST_TYPE_TIMEOUT(type), 0, 1)
+#define BROKEN_RTEST_F(suite, name, type)          RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, R_TEST_SKIP_BROKEN, type, RTEST_TYPE_TIMEOUT(type), 0, 1)
+#define BROKEN_RTEST_LOOP(suite, name, type, s,e)  RTEST_DEFINE_TEST (suite, name, R_TEST_SKIP_BROKEN, (type) | R_TEST_FLAG_LOOP, RTEST_TYPE_TIMEOUT(type), s, e)
+#define BROKEN_RTEST_LOOP_F(suite, name,type,s,e)  RTEST_DEFINE_TEST_WITH_FIXTURE (suite, name, R_TEST_SKIP_BROKEN, (type) | R_TEST_FLAG_LOOP, RTEST_TYPE_TIMEOUT(type), s, e)
 /* End your test with this macro! */
 #define RTEST_END _r_test_mark_position (__FILE__, __LINE__, R_STRFUNC, FALSE); }
 
