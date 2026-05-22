@@ -38,6 +38,14 @@ R_API void r_hmac_reset (RHmac * hmac);
 R_API rboolean r_hmac_update (RHmac * hmac, rconstpointer data, rsize size);
 R_API rboolean r_hmac_get_data (RHmac * hmac, ruint8 * data, rsize size, rsize * out);
 R_API rchar * r_hmac_get_hex (RHmac * hmac);
+/* Finalise the HMAC and compare its first `tag_size` bytes against
+ * `expected_tag` in constant time. Returns TRUE iff the tag matches.
+ * `tag_size` may be shorter than r_hmac_size for truncated-MAC
+ * profiles (SRTP-80, SRTP-32, etc.) but must not exceed it. The
+ * compare uses r_memcmp_ct, so the timing leaks neither which byte
+ * (if any) differed nor whether the verify failed early. */
+R_API rboolean r_hmac_verify (RHmac * hmac,
+    rconstpointer expected_tag, rsize tag_size);
 
 R_END_DECLS
 

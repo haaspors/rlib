@@ -101,3 +101,68 @@ RTEST (rcryptomac, free_wipes_keyblock, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rcryptomac, hmac_verify, R_TEST_TYPE_FAST)
+{
+  /* RFC 4231 Test Case 2: HMAC-MD5("Jefe", "what do ya want for
+   * nothing?") = 750c783e6ab0b503eaa86e310a5db738. r_hmac_verify
+   * must accept the matching tag, reject single-byte tweaks at
+   * both ends, accept truncated-tag prefixes, and refuse over-long
+   * tags. */
+  static const ruint8 tag_full[] = {
+    0x75, 0x0c, 0x78, 0x3e, 0x6a, 0xb0, 0xb5, 0x03,
+    0xea, 0xa8, 0x6e, 0x31, 0x0a, 0x5d, 0xb7, 0x38
+  };
+  static const ruint8 tag_bad_first[] = {
+    0x76, 0x0c, 0x78, 0x3e, 0x6a, 0xb0, 0xb5, 0x03,
+    0xea, 0xa8, 0x6e, 0x31, 0x0a, 0x5d, 0xb7, 0x38
+  };
+  static const ruint8 tag_bad_last[] = {
+    0x75, 0x0c, 0x78, 0x3e, 0x6a, 0xb0, 0xb5, 0x03,
+    0xea, 0xa8, 0x6e, 0x31, 0x0a, 0x5d, 0xb7, 0x39
+  };
+  RHmac * hmac;
+
+#define _MAC_NEW_AND_UPDATE() do {                                              \
+    r_assert_cmpptr ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_MD5, "Jefe", 4)),    \
+        !=, NULL);                                                              \
+    r_assert (r_hmac_update (hmac, "what do ya want for nothing?", 28));        \
+  } while (0)
+
+  _MAC_NEW_AND_UPDATE ();
+  r_assert (r_hmac_verify (hmac, tag_full, sizeof (tag_full)));
+  r_hmac_free (hmac);
+
+  _MAC_NEW_AND_UPDATE ();
+  r_assert (!r_hmac_verify (hmac, tag_bad_first, sizeof (tag_bad_first)));
+  r_hmac_free (hmac);
+
+  _MAC_NEW_AND_UPDATE ();
+  r_assert (!r_hmac_verify (hmac, tag_bad_last, sizeof (tag_bad_last)));
+  r_hmac_free (hmac);
+
+  /* Truncated tag: matching the first 10 bytes (SRTP-80-style) is
+   * accepted; flipping byte 4 within that prefix is rejected. */
+  _MAC_NEW_AND_UPDATE ();
+  r_assert (r_hmac_verify (hmac, tag_full, 10));
+  r_hmac_free (hmac);
+
+  _MAC_NEW_AND_UPDATE ();
+  r_assert (!r_hmac_verify (hmac, tag_bad_first, 10));
+  r_hmac_free (hmac);
+
+  /* tag_size > r_hmac_size is rejected without going through the
+   * compare. */
+  _MAC_NEW_AND_UPDATE ();
+  r_assert (!r_hmac_verify (hmac, tag_full, sizeof (tag_full) + 1));
+  r_hmac_free (hmac);
+
+  /* NULL arguments are rejected. */
+  _MAC_NEW_AND_UPDATE ();
+  r_assert (!r_hmac_verify (hmac, NULL, sizeof (tag_full)));
+  r_hmac_free (hmac);
+  r_assert (!r_hmac_verify (NULL, tag_full, sizeof (tag_full)));
+
+#undef _MAC_NEW_AND_UPDATE
+}
+RTEST_END;
+
