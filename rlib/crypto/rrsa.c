@@ -711,10 +711,14 @@ r_rsa_raw_decrypt_internal (const RRsaPrivKey * key, RPrng * prng,
     own_prng = TRUE;
   }
 
+  /* m ends up holding the plaintext; r / r_inv / r_e are the blinding
+   * factor and its variants. None of those should linger in freed
+   * heap after this function returns. */
   r_mpint_init_size (&m, r_mpint_digits_used (&key->pub.n));
-  r_mpint_init (&r);
-  r_mpint_init (&r_inv);
-  r_mpint_init (&r_e);
+  r_mpint_set_secure_clear (&m);
+  r_mpint_init_secure (&r);
+  r_mpint_init_secure (&r_inv);
+  r_mpint_init_secure (&r_e);
   rbuf = r_alloca (size);
 
   /* RSA blinding: instead of computing m = c^d mod n directly — whose
@@ -741,6 +745,9 @@ r_rsa_raw_decrypt_internal (const RRsaPrivKey * key, RPrng * prng,
 done:
   ret = ok ? R_CRYPTO_OK : R_CRYPTO_DECRYPT_FAILED;
 
+  /* rbuf held raw PRNG output used to seed the blinding factor; the
+   * blinding mpint itself is wiped via secure-clear above. */
+  r_memclear_secure (rbuf, size);
   r_mpint_clear (&c);
   r_mpint_clear (&m);
   r_mpint_clear (&r);
@@ -811,6 +818,7 @@ r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
 {
   RCryptoResult ret;
   ruint8 * buffer;
+  rboolean scratch;
 
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_RSA)) return R_CRYPTO_WRONG_TYPE;
@@ -821,28 +829,44 @@ r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
   if (size != r_mpint_digits_used (&((const RRsaPrivKey*)key)->pub.n) * sizeof (rmpint_digit))
     return R_CRYPTO_WRONG_SIZE;
 
-  buffer = (*outsize >= size) ? out : r_alloca (size);
+  /* When out is big enough we decrypt straight into it; otherwise a
+   * scratch alloca holds the padded plaintext until we strip the
+   * PS / 0x00 separator and copy the message out. The scratch case
+   * gets a secure wipe at the end - it's a full RSA plaintext (TLS
+   * premaster secrets in particular) and shouldn't linger on the
+   * popped stack frame. */
+  scratch = (*outsize < size);
+  buffer = scratch ? r_alloca (size) : out;
 
   if ((ret = r_rsa_raw_decrypt_internal ((const RRsaPrivKey*)key, NULL, data, buffer, size)) == R_CRYPTO_OK) {
     ruint8 * ptr;
 
-    if (size < 11 || buffer[0] != 0x00 || buffer[1] != R_RSA_EME_PKCS1)
-      return R_CRYPTO_INVALID_PADDING;
+    if (size < 11 || buffer[0] != 0x00 || buffer[1] != R_RSA_EME_PKCS1) {
+      ret = R_CRYPTO_INVALID_PADDING;
+      goto out_wipe;
+    }
 
     ptr = buffer + 2;
     while (ptr < buffer + size && *ptr != 0) ptr++;
 
-    if (ptr - buffer < 10 || ptr >= buffer + size)
-      return R_CRYPTO_INVALID_PADDING;
+    if (ptr - buffer < 10 || ptr >= buffer + size) {
+      ret = R_CRYPTO_INVALID_PADDING;
+      goto out_wipe;
+    }
     ptr++;
 
-    if (*outsize < size - (ptr - buffer))
-      return R_CRYPTO_BUFFER_TOO_SMALL;
+    if (*outsize < size - (ptr - buffer)) {
+      ret = R_CRYPTO_BUFFER_TOO_SMALL;
+      goto out_wipe;
+    }
 
     *outsize = size - (ptr - buffer);
     r_memmove (out, ptr, *outsize);
   }
 
+out_wipe:
+  if (scratch)
+    r_memclear_secure (buffer, size);
   return ret;
 }
 
