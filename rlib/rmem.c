@@ -19,6 +19,9 @@
 #include "config.h"
 #include <rlib/rmem.h>
 #include <string.h>
+#if defined (R_OS_WIN32)
+#include <windows.h>
+#endif
 
 static const RMemVTable r_memsysvtable  = { malloc, calloc, realloc, free };
 static RMemVTable r_memvtable           = { malloc, calloc, realloc, free };
@@ -103,6 +106,54 @@ r_memset (rpointer a, int v, rsize size)
   if (a != NULL)
     memset (a, v, size);
   return a;
+}
+
+void
+r_memclear_secure (rpointer ptr, rsize size)
+{
+  /* Compiler-resistant zero: a regular memset before a free is
+   * provably unobservable from the caller and gets elided by the
+   * optimiser. Each platform has a documented escape hatch:
+   *
+   *   Win32          - SecureZeroMemory (RtlSecureZeroMemory), guaranteed
+   *                    not to be optimised away.
+   *   glibc 2.25+,   - explicit_bzero. Same contract.
+   *   *BSD, musl,
+   *   bionic, newer
+   *   macOS toolchains
+   *
+   * On platforms without either we fall back to a volatile pointer
+   * loop, which is portable and equally bulletproof - just byte-
+   * at-a-time. C11 Annex K's memset_s would be another option but
+   * requires __STDC_WANT_LIB_EXT1__ wrangling at TU level and isn't
+   * widely shipped on Linux. */
+  if (R_UNLIKELY (ptr == NULL || size == 0))
+    return;
+#if defined (R_OS_WIN32)
+  SecureZeroMemory (ptr, size);
+#elif defined (HAVE_EXPLICIT_BZERO)
+  explicit_bzero (ptr, size);
+#else
+  {
+    /* Word-at-a-time through a volatile pointer, with byte-at-a-time
+     * fixups for any leading or trailing fragment that doesn't fall
+     * on a word boundary. volatile on the wider type keeps the
+     * compiler-barrier guarantee. */
+    volatile ruint8 * pb = (volatile ruint8 *) ptr;
+    volatile ruintptr * pw;
+    rsize i;
+    while (size > 0 && (((ruintptr) pb) & (sizeof (ruintptr) - 1)) != 0) {
+      *pb++ = 0;
+      size--;
+    }
+    pw = (volatile ruintptr *) pb;
+    for (i = size / sizeof (ruintptr); i > 0; i--)
+      *pw++ = 0;
+    pb = (volatile ruint8 *) pw;
+    for (size %= sizeof (ruintptr); size > 0; size--)
+      *pb++ = 0;
+  }
+#endif
 }
 
 rpointer

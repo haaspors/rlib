@@ -255,3 +255,39 @@ RTEST (rmem, scan_pattern_str, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmem, memclear_secure, RTEST_FAST)
+{
+  /* Basic correctness for the secure-wipe primitive - it's the same
+   * surface area as memset(0) but with a compiler barrier that
+   * keeps the writes from being elided. The "actually goes through
+   * the compiler barrier" property is invisible to a C-level test
+   * (we'd have to inspect machine code), so this just confirms the
+   * functional zeroing across a few interesting sizes plus the
+   * NULL / zero-length edge cases. */
+  static const rsize sizes[] = { 1, 7, 15, 16, 17, 33, 64, 256 };
+  ruint8 buf[256];
+  rsize i, j;
+
+  for (j = 0; j < R_N_ELEMENTS (sizes); j++) {
+    rsize n = sizes[j];
+    for (i = 0; i < n; i++)
+      buf[i] = (ruint8) (0xa5u ^ (i & 0xff));
+    /* Sentinel byte one past the requested size; must NOT be wiped. */
+    if (n < sizeof (buf))
+      buf[n] = 0x77;
+
+    r_memclear_secure (buf, n);
+
+    for (i = 0; i < n; i++)
+      r_assert_cmpuint (buf[i], ==, 0);
+    if (n < sizeof (buf))
+      r_assert_cmpuint (buf[n], ==, 0x77);
+  }
+
+  /* No-op on NULL / zero-length, no crash. */
+  r_memclear_secure (NULL, 16);
+  r_memclear_secure (NULL, 0);
+  r_memclear_secure (buf, 0);
+}
+RTEST_END;
+

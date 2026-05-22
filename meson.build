@@ -328,6 +328,7 @@ check_funcs = [
   [ 'select', 'sys/select.h' ],
   [ 'sigaction', 'signal.h' ],
   [ 'sigaltstack', 'signal.h' ],
+  [ 'explicit_bzero', 'string.h' ],
 ]
 if host_machine.system() == 'windows'
   check_funcs += [
