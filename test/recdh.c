@@ -428,6 +428,67 @@ RTEST (recdh, priv_key_rejects_out_of_range_scalar, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (recdh, priv_key_new_rejects_mismatched_ecp_and_scalar, RTEST_FAST)
+{
+  /* When both halves of a keypair are supplied, they have to match.
+   * A caller that hands us a Q that isn't d * G is either confused
+   * or hostile - either way, refusing the construction is safer
+   * than carrying the inconsistency forward into compute_shared. */
+  REcurve curve;
+  REcurveAffinePoint Q_other;
+  ruint8 enc_other[1 + 2 * 32];
+  rsize enc_size;
+  ruint8 d_one[32] = { 0 };
+  RCryptoKey * key;
+  rmpint d_other;
+
+  r_assert (r_ecurve_init (&curve, R_ECURVE_ID_SECP256R1));
+  d_one[31] = 0x01;  /* d = 1; matching Q would be G itself. */
+
+  /* Compute Q for d = 2 (deliberately different from d = 1). */
+  r_ecurve_point_init (&Q_other);
+  r_mpint_init (&d_other);
+  r_mpint_set_u32 (&d_other, 2);
+  r_assert (r_ecurve_point_scalar_mul (&Q_other, &d_other, &curve.G, &curve));
+  enc_size = sizeof (enc_other);
+  r_assert (r_ecurve_point_to_uncompressed (&Q_other, &curve, enc_other, &enc_size));
+
+  /* Hand the (d = 1, Q = 2 * G) mismatch to the constructor; expect NULL. */
+  key = r_ecdh_priv_key_new (R_ECURVE_ID_SECP256R1,
+      enc_other, enc_size, d_one, sizeof (d_one));
+  r_assert_cmpptr (key, ==, NULL);
+
+  r_mpint_clear (&d_other);
+  r_ecurve_point_clear (&Q_other);
+  r_ecurve_clear (&curve);
+}
+RTEST_END;
+
+RTEST (recdh, priv_key_new_gen_uses_supplied_prng, RTEST_FAST)
+{
+  /* r_ecdh_priv_key_new_gen accepts a caller-provided PRNG. Exercise
+   * the passthrough path (the default-PRNG path is covered by every
+   * other gen test in this file). */
+  RPrng * prng;
+  RCryptoKey * key;
+  const ruint8 * scalar;
+  rsize scalarsize;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt_with_seed (0xc0ffee)), !=, NULL);
+  r_assert_cmpptr ((key = r_ecdh_priv_key_new_gen (R_ECURVE_ID_SECP256R1, prng)),
+      !=, NULL);
+  r_assert_cmpuint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_ECDH);
+  r_assert (r_ecc_priv_key_get_scalar (key, &scalar, &scalarsize));
+  r_assert_cmpuint (scalarsize, ==, 32);
+  /* Scalar should be non-zero (PRNG with a fixed seed always produces
+   * the same bytes; r_ecdh_priv_key_new_gen would reject a zero d). */
+  r_assert_cmpuint (scalar[0] | scalar[1] | scalar[2] | scalar[3], !=, 0);
+
+  r_crypto_key_unref (key);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
 RTEST (recdh, priv_key_new_accepts_both_ecp_and_scalar, RTEST_FAST)
 {
   /* The "we already have both halves" import path: caller supplies
