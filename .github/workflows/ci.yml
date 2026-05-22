@@ -4,6 +4,13 @@ on:
   push:
     branches: [master]
   pull_request:
+  schedule:
+    # Daily at 04:00 UTC - exercises the HEAVY_RTEST / SKIP_RTEST gated
+    # test corpora (Wycheproof ECDH, live DNS, anything else opted out
+    # of the default suite) the regular jobs don't have the timeout
+    # budget for.
+    - cron: '0 4 * * *'
+  workflow_dispatch:
 
 jobs:
   linux:
@@ -125,4 +132,40 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: testlog-sanitizers-${{ matrix.name }}
+          path: build/meson-logs/
+
+  full-tests:
+    name: Full test sweep / ${{ matrix.compiler }}
+    runs-on: ubuntu-latest
+    # Only on the scheduled cron and on demand. The corpus is sized for
+    # ~10 minutes of wall time per run, which is fine for a nightly /
+    # manual sweep but too much to put on every PR.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build
+      - name: Configure
+        env:
+          CC: ${{ matrix.compiler }}
+        run: meson setup build --buildtype=debugoptimized
+      - name: Build
+        run: meson compile -C build
+      - name: Test (--ignore-skip)
+        # --ignore-skip enables the HEAVY_RTEST / SKIP_RTEST tests
+        # (Wycheproof ECDH on all four NIST prime curves, live DNS
+        # resolver, etc). The 30x timeout multiplier gives meson's
+        # per-test cap room for the secp521r1 sweep.
+        run: meson test -C build --print-errorlogs --timeout-multiplier 30 -- -i
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlog-full-${{ matrix.compiler }}
           path: build/meson-logs/
