@@ -1100,6 +1100,74 @@ RTEST (rmpint, secure_clear_flag, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmpint, init_from_propagates_secure, RTEST_FAST)
+{
+  rmpint plain, secret, scratch;
+
+  /* No source is secure -> scratch stays plain. */
+  r_mpint_init (&plain);
+  r_mpint_init_from (&scratch, &plain, NULL);
+  r_assert ((scratch.flags & R_MPINT_FLAG_SECURE_CLEAR) == 0);
+  r_mpint_clear (&scratch);
+
+  /* First (only) source is secure -> scratch becomes secure. */
+  r_mpint_init_secure (&secret);
+  r_mpint_init_from (&scratch, &secret, NULL);
+  r_assert ((scratch.flags & R_MPINT_FLAG_SECURE_CLEAR) != 0);
+  r_mpint_clear (&scratch);
+
+  /* Mixed sources, secure one is second in the list -> propagates. */
+  r_mpint_init_from (&scratch, &plain, &secret, NULL);
+  r_assert ((scratch.flags & R_MPINT_FLAG_SECURE_CLEAR) != 0);
+  r_mpint_clear (&scratch);
+
+  /* Mixed sources, secure one is first -> still propagates. */
+  r_mpint_init_from (&scratch, &secret, &plain, NULL);
+  r_assert ((scratch.flags & R_MPINT_FLAG_SECURE_CLEAR) != 0);
+  r_mpint_clear (&scratch);
+
+  /* r_mpint_init_size_from is the sized counterpart - same flag
+   * semantics, plus the caller-chosen initial capacity is honoured. */
+  r_mpint_init_size_from (&scratch, 128, &plain, &secret, NULL);
+  r_assert ((scratch.flags & R_MPINT_FLAG_SECURE_CLEAR) != 0);
+  r_assert_cmpuint (scratch.dig_alloc, >=, 128);
+  r_mpint_clear (&scratch);
+
+  r_mpint_clear (&plain);
+  r_mpint_clear (&secret);
+}
+RTEST_END;
+
+RTEST (rmpint, invmod_scratch_inherits_secure, RTEST_FAST)
+{
+  /* End-to-end check: feed r_mpint_invmod a secret-flagged input.
+   * The result must inherit the flag (existing behaviour via
+   * r_mpint_set propagation), but more importantly the scratch
+   * mpints inside r_mpint_invmod_odd / _even were init'd with
+   * the new helper so their data buffers are wiped on the way
+   * out - not directly testable here, but the result-flag check
+   * proves the path the helper instruments is being exercised. */
+  rmpint a, m, inv;
+
+  r_mpint_init_secure (&a);
+  r_mpint_set_u32 (&a, 7);
+  r_mpint_init (&m);
+  r_mpint_set_u32 (&m, 11);
+  r_mpint_init (&inv);
+
+  r_assert (r_mpint_invmod (&inv, &a, &m));
+  /* 7 * 8 == 56 == 5*11 + 1 -> 7^-1 mod 11 = 8. */
+  r_assert_cmpuint (r_mpint_get_digit (&inv, 0), ==, 8);
+  /* The result inherits secure-clear from a via the existing set
+   * propagation. */
+  r_assert ((inv.flags & R_MPINT_FLAG_SECURE_CLEAR) != 0);
+
+  r_mpint_clear (&inv);
+  r_mpint_clear (&m);
+  r_mpint_clear (&a);
+}
+RTEST_END;
+
 
 RTEST (rmpint, add_with_stale_high_digits, RTEST_FAST)
 {

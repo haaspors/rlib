@@ -64,6 +64,18 @@ R_API void r_mpint_init_copy_secure (rmpint * mpi, const rmpint * b);
  * mpint was init'd via r_mpint_init_binary / _copy / _str and only
  * afterwards turns out to need secure handling. */
 R_API void r_mpint_set_secure_clear (rmpint * mpi);
+/* Initialise dst as a normal (default-size) mpint, then OR in
+ * R_MPINT_FLAG_SECURE_CLEAR if any source in the NULL-terminated
+ * argument list has it set. Scratch mpints inside arithmetic
+ * primitives use this so they inherit the secure-clear treatment
+ * of whichever operand contributed to them, without each call
+ * site having to repeat the conditional. */
+R_API void r_mpint_init_from (rmpint * dst, const rmpint * src1, ...)
+    R_ATTR_NULL_TERMINATED;
+/* Same shape with a caller-chosen initial digit capacity, for call
+ * sites that allocate a specifically-sized scratch up front. */
+R_API void r_mpint_init_size_from (rmpint * dst, ruint16 digits,
+    const rmpint * src1, ...) R_ATTR_NULL_TERMINATED;
 R_API void r_mpint_init_binary (rmpint * mpi, rconstpointer data, rsize size);
 R_API void r_mpint_init_str (rmpint * mpi, const rchar * str,
     const rchar ** endptr, ruint base);
