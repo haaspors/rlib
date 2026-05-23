@@ -745,6 +745,63 @@ r_mpint_set_u64 (rmpint * mpi, ruint64 value)
   r_mpint_clamp (mpi);
 }
 
+void
+r_mpint_swap_ct (rmpint * a, rmpint * b, ruint32 bit)
+{
+  /* Branchless conditional XOR-swap.
+   *
+   *   mask     = -bit       -> 0x00... when bit==0, 0xFF... when bit==1
+   *   diff     = (a ^ b) & mask  -> 0 when no swap, (a^b) when swap
+   *   a ^= diff;  b ^= diff;
+   *
+   * Apply to each field in turn, plus the data pointer (cast to
+   * ruintptr so the XOR is well-defined on the integer
+   * representation rather than the pointer value). The data buffer
+   * itself stays in place - only the (a, b) -> buffer mapping
+   * swaps - so cost is O(1) regardless of operand size, and an
+   * attacker observing cache behaviour can't tell whether a swap
+   * happened from where future loads come from.
+   *
+   * Unsigned negation gets the mask to the target width without an
+   * intermediate type-promotion step that would zero-extend a
+   * 32-bit "all-ones" into a ruintptr larger than 32 bits and
+   * leave its upper half clear. */
+  ruint32 mask32;
+  ruintptr maskp;
+  ruint32 d;
+  ruintptr dp, pa, pb;
+
+  if (R_UNLIKELY (a == NULL || b == NULL))
+    return;
+
+  mask32 = 0u - (ruint32)(bit & 1u);
+  maskp  = (ruintptr)0 - (ruintptr)(bit & 1u);
+
+  /* dig_alloc + dig_used pack into a ruint32 (each is ruint16, the
+   * struct lays them adjacently). Swap them as a single word. */
+  d = (((ruint32)a->dig_alloc << 16) | a->dig_used) ^
+      (((ruint32)b->dig_alloc << 16) | b->dig_used);
+  d &= mask32;
+  a->dig_alloc ^= (ruint16)(d >> 16);
+  a->dig_used  ^= (ruint16)(d);
+  b->dig_alloc ^= (ruint16)(d >> 16);
+  b->dig_used  ^= (ruint16)(d);
+
+  d = (a->sign ^ b->sign) & mask32;
+  a->sign ^= d;
+  b->sign ^= d;
+
+  d = (a->flags ^ b->flags) & mask32;
+  a->flags ^= d;
+  b->flags ^= d;
+
+  pa = (ruintptr)a->data;
+  pb = (ruintptr)b->data;
+  dp = (pa ^ pb) & maskp;
+  a->data = (rmpint_digit *)(pa ^ dp);
+  b->data = (rmpint_digit *)(pb ^ dp);
+}
+
 ruint32
 r_mpint_ctz (const rmpint * mpi)
 {
