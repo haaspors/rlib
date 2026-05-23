@@ -1225,3 +1225,101 @@ RTEST (rmpint, add_with_stale_high_digits, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmpint, swap_ct_noop_when_bit_zero, RTEST_FAST)
+{
+  /* bit == 0 must leave both operands bit-identical to their
+   * pre-call state - every field is XOR-and'd with a zero mask. */
+  rmpint a, b;
+  rmpint_digit * a_data_before;
+  rmpint_digit * b_data_before;
+  ruint16 a_alloc_before, a_used_before;
+  ruint16 b_alloc_before, b_used_before;
+
+  r_mpint_init_str (&a, "0xdeadbeef", NULL, 16);
+  r_mpint_init_str (&b, "0x1234567890abcdef", NULL, 16);
+  a_data_before = a.data;
+  b_data_before = b.data;
+  a_alloc_before = a.dig_alloc;
+  a_used_before  = a.dig_used;
+  b_alloc_before = b.dig_alloc;
+  b_used_before  = b.dig_used;
+
+  r_mpint_swap_ct (&a, &b, 0);
+
+  r_assert_cmpptr (a.data, ==, a_data_before);
+  r_assert_cmpptr (b.data, ==, b_data_before);
+  r_assert_cmpuint (a.dig_alloc, ==, a_alloc_before);
+  r_assert_cmpuint (a.dig_used,  ==, a_used_before);
+  r_assert_cmpuint (b.dig_alloc, ==, b_alloc_before);
+  r_assert_cmpuint (b.dig_used,  ==, b_used_before);
+
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+}
+RTEST_END;
+
+RTEST (rmpint, swap_ct_swaps_when_bit_set, RTEST_FAST)
+{
+  /* bit == 1 must exchange a and b in every observable way: the
+   * value seen by readers, the secure-clear flag, and the
+   * underlying data pointer (no copy, just a swap). Different
+   * alloc sizes confirm metadata travels with the pointer. */
+  rmpint a, b, expected_a, expected_b;
+  rmpint_digit * a_data_before;
+  rmpint_digit * b_data_before;
+
+  r_mpint_init_str (&a, "0xdeadbeef", NULL, 16);
+  r_mpint_init_str (&b, "0x1234567890abcdef", NULL, 16);
+  r_mpint_init_str (&expected_a, "0xdeadbeef", NULL, 16);
+  r_mpint_init_str (&expected_b, "0x1234567890abcdef", NULL, 16);
+  r_mpint_set_secure_clear (&b);
+
+  a_data_before = a.data;
+  b_data_before = b.data;
+
+  r_mpint_swap_ct (&a, &b, 1);
+
+  /* a now holds what b had, with b's secure-clear flag and data
+   * pointer, and vice versa. */
+  r_assert_cmpint (r_mpint_cmp (&a, &expected_b), ==, 0);
+  r_assert_cmpint (r_mpint_cmp (&b, &expected_a), ==, 0);
+  r_assert_cmpuint (a.flags & R_MPINT_FLAG_SECURE_CLEAR, !=, 0);
+  r_assert_cmpuint (b.flags & R_MPINT_FLAG_SECURE_CLEAR, ==, 0);
+  r_assert_cmpptr (a.data, ==, b_data_before);
+  r_assert_cmpptr (b.data, ==, a_data_before);
+
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+  r_mpint_clear (&expected_a);
+  r_mpint_clear (&expected_b);
+}
+RTEST_END;
+
+RTEST (rmpint, swap_ct_double_swap_is_identity, RTEST_FAST)
+{
+  /* Swap-then-swap must return to the starting state regardless
+   * of bit value - the Montgomery-ladder pattern relies on this
+   * to wrap a single arithmetic step. */
+  rmpint a, b, orig_a, orig_b;
+
+  r_mpint_init_str (&a, "0xfeedface", NULL, 16);
+  r_mpint_init_str (&b, "0xcafebabe", NULL, 16);
+  r_mpint_init_str (&orig_a, "0xfeedface", NULL, 16);
+  r_mpint_init_str (&orig_b, "0xcafebabe", NULL, 16);
+
+  r_mpint_swap_ct (&a, &b, 1);
+  r_mpint_swap_ct (&a, &b, 1);
+  r_assert_cmpint (r_mpint_cmp (&a, &orig_a), ==, 0);
+  r_assert_cmpint (r_mpint_cmp (&b, &orig_b), ==, 0);
+
+  r_mpint_swap_ct (&a, &b, 0);
+  r_mpint_swap_ct (&a, &b, 0);
+  r_assert_cmpint (r_mpint_cmp (&a, &orig_a), ==, 0);
+  r_assert_cmpint (r_mpint_cmp (&b, &orig_b), ==, 0);
+
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+  r_mpint_clear (&orig_a);
+  r_mpint_clear (&orig_b);
+}
+RTEST_END;

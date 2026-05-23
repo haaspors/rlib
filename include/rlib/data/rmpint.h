@@ -128,6 +128,14 @@ R_API void r_mpint_set_i32 (rmpint * mpi, rint32 value);
 R_API void r_mpint_set_u32 (rmpint * mpi, ruint32 value);
 R_API void r_mpint_set_i64 (rmpint * mpi, rint64 value);
 R_API void r_mpint_set_u64 (rmpint * mpi, ruint64 value);
+/* Constant-time conditional swap: if `bit` is non-zero, exchange
+ * the metadata and data pointer of `a` and `b`; if zero, leave
+ * both untouched. Same execution time and memory access pattern
+ * regardless of the bit, so a Montgomery ladder driven by it
+ * doesn't leak the scalar's bit pattern through the per-step
+ * branch shape. The contents of `data` are NOT swapped - only
+ * the pointer - so this is O(1) regardless of the operand size. */
+R_API void r_mpint_swap_ct (rmpint * a, rmpint * b, ruint32 bit);
 /* Treat reads past dig_used as zero. mpint operations promise that
  * `data[0..dig_used)` carries the value, but several producers (e.g.
  * the final shr in r_mpint_div, and any path that shortens dig_used

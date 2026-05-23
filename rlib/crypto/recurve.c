@@ -333,17 +333,47 @@ r_ecurve_point_is_on_curve (const REcurveAffinePoint * point,
   return ok;
 }
 
+/* Constant-time swap of two affine points: exchanges x / y mpint
+ * metadata + data pointer and the is_infinity flag iff bit is set,
+ * with no data-dependent branches or copies. */
+static void
+r_ecurve_point_swap_ct (REcurveAffinePoint * a, REcurveAffinePoint * b,
+    ruint32 bit)
+{
+  ruint32 mask = 0u - (ruint32)(bit & 1u);
+  ruint32 d;
+
+  r_mpint_swap_ct (&a->x, &b->x, bit);
+  r_mpint_swap_ct (&a->y, &b->y, bit);
+  d = ((ruint32)a->is_infinity ^ (ruint32)b->is_infinity) & mask;
+  a->is_infinity = (rboolean)((ruint32)a->is_infinity ^ d);
+  b->is_infinity = (rboolean)((ruint32)b->is_infinity ^ d);
+}
+
 rboolean
 r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
     const REcurveAffinePoint * point, const REcurve * curve)
 {
   /* Left-to-right Montgomery ladder. Maintain (R0, R1) such that
-   * R1 - R0 == point at every step; one add + one dbl per scalar bit
-   * keeps the high-level branch shape uniform regardless of the
-   * scalar's bit pattern. The underlying mpint ops aren't constant-
-   * time, so this isn't full side-channel hardening — that's a
-   * separate concern. */
-  REcurveAffinePoint R0, R1, tmp;
+   * R1 - R0 == point at every step; one add + one dbl per scalar
+   * bit keeps the high-level branch shape uniform regardless of
+   * the scalar's bit pattern.
+   *
+   * Constant-time wrapping: instead of the textbook
+   *   if (bit) { R0 = R0 + R1; R1 = 2*R1; }
+   *   else     { R1 = R0 + R1; R0 = 2*R0; }
+   * (two different sequences of pointer operations that leak the
+   * bit through the per-step code path) we swap_ct(R0, R1, bit),
+   * always run R1 = R0 + R1 and R0 = 2*R0, then swap_ct back.
+   * Both bit values exercise the exact same operations in the
+   * same order on the same struct fields - the only difference
+   * is whether the swaps are no-ops.
+   *
+   * The underlying r_ecurve_point_add / _dbl and the mpint ops
+   * they call are still variable-time, so this is partial
+   * hardening - removing the per-bit branch shape oracle is what
+   * item 1 of #100 fixes; the rest is in items 2-4. */
+  REcurveAffinePoint R0, R1;
   ruint16 d, b;
   rmpint_digit bit;
   rboolean ok = FALSE;
@@ -355,7 +385,6 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
 
   r_ecurve_point_init (&R0);
   r_ecurve_point_init (&R1);
-  r_ecurve_point_init (&tmp);
   r_ecurve_point_set_infinity (&R0);
   r_ecurve_point_copy (&R1, point);
 
@@ -364,17 +393,11 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
     for (b = 0; b < sizeof (rmpint_digit) * 8; b++) {
       bit = (dig >> (sizeof (rmpint_digit) * 8 - 1)) & 1;
       dig <<= 1;
-      if (bit) {
-        if (!r_ecurve_point_add (&tmp, &R0, &R1, curve)) goto cleanup;
-        r_ecurve_point_copy (&R0, &tmp);
-        if (!r_ecurve_point_dbl (&tmp, &R1, curve)) goto cleanup;
-        r_ecurve_point_copy (&R1, &tmp);
-      } else {
-        if (!r_ecurve_point_add (&tmp, &R0, &R1, curve)) goto cleanup;
-        r_ecurve_point_copy (&R1, &tmp);
-        if (!r_ecurve_point_dbl (&tmp, &R0, curve)) goto cleanup;
-        r_ecurve_point_copy (&R0, &tmp);
-      }
+
+      r_ecurve_point_swap_ct (&R0, &R1, (ruint32)bit);
+      if (!r_ecurve_point_add (&R1, &R0, &R1, curve)) goto cleanup;
+      if (!r_ecurve_point_dbl (&R0, &R0, curve)) goto cleanup;
+      r_ecurve_point_swap_ct (&R0, &R1, (ruint32)bit);
     }
   }
 
@@ -384,7 +407,6 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
 cleanup:
   r_ecurve_point_clear (&R0);
   r_ecurve_point_clear (&R1);
-  r_ecurve_point_clear (&tmp);
   return ok;
 }
 
