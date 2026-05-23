@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include "rcrypto-private.h"
+#include "../data/rmpint-private.h"
 
 #include <rlib/crypto/recurve.h>
 
@@ -99,6 +100,38 @@ r_ecurve_init (REcurve * curve, REcurveID named)
   r_mpint_set_binary (&curve->G.y, pd->gy_data, pd->gy_size);
   curve->G.is_infinity = FALSE;
   curve->coord_bytes = pd->coord_bytes;
+
+  /* Precompute Montgomery setup constants used by the constant-time
+   * scalar-mul ladder. mont_mp = -p^-1 mod 2^digit_bits is the per-
+   * digit reduction multiplier; mont_r_squared is R^2 mod p, used to
+   * lift a normal-form value into Montgomery form via a single
+   * Montgomery multiplication; mont_a is the a coefficient already
+   * in Montgomery form (a * R mod p), kept here so the dbl formula
+   * doesn't have to lift it on every call. */
+  if (!r_mpint_montgomery_setup (&curve->mont_mp, &curve->p)) {
+    r_ecurve_clear (curve);
+    return FALSE;
+  }
+  /* Compute R^2 mod p in two steps: normalize lifts to R mod p,
+   * then a plain (non-Montgomery) square + reduce mod p gives
+   * R^2 mod p. Note we can't use Montgomery multiplication for
+   * this step - M(R, R) = R * R / R = R, not R^2. */
+  r_mpint_init (&curve->mont_r_squared);
+  if (!r_mpint_montgomery_normalize (&curve->mont_r_squared, &curve->p) ||
+      !r_mpint_mul (&curve->mont_r_squared, &curve->mont_r_squared,
+        &curve->mont_r_squared) ||
+      !r_mpint_mod (&curve->mont_r_squared, &curve->mont_r_squared, &curve->p)) {
+    r_ecurve_clear (curve);
+    return FALSE;
+  }
+  /* mont_a = a * R mod p. With R^2 mod p in hand, one Montgomery
+   * multiplication M(a, R^2) = a * R^2 / R = a * R does the lift. */
+  r_mpint_init (&curve->mont_a);
+  if (!r_mpint_mul (&curve->mont_a, &curve->a, &curve->mont_r_squared) ||
+      !r_mpint_montgomery_reduce_ct (&curve->mont_a, &curve->p, curve->mont_mp)) {
+    r_ecurve_clear (curve);
+    return FALSE;
+  }
   return TRUE;
 }
 
@@ -110,6 +143,288 @@ r_ecurve_clear (REcurve * curve)
   r_mpint_clear (&curve->b);
   r_mpint_clear (&curve->n);
   r_ecurve_point_clear (&curve->G);
+  r_mpint_clear (&curve->mont_r_squared);
+  r_mpint_clear (&curve->mont_a);
+}
+
+/* --- Internal Montgomery-form field arithmetic. Used by the
+ * constant-time scalar-mul ladder. All inputs/outputs are mpints
+ * in Montgomery form (value * R mod p) unless otherwise noted.
+ * The curve's precomputed mont_mp / mont_r_squared / mont_a are
+ * the per-curve setup values. --- */
+
+/* "if a >= p, a := a - p". Branchless XOR-select, but ends with a
+ * value-dependent r_mpint_clamp - the result's bit-length leaks
+ * via dig_used, which the rest of the mpint API depends on for
+ * its no-leading-zeros invariant (r_mpint_cmp returns non-zero
+ * for values that are equal-but-padded). Item 4 of #100
+ * (constant-time memory access patterns) should revisit. */
+static void
+r_ecurve_cond_subp_ct (rmpint * a, const rmpint * p)
+{
+  ruint16 x, n;
+  rmpint_digit borrow, mask;
+  rmpint_digit * scratch;
+  rmpint_word t;
+
+  n = r_mpint_digits_used (p);
+  r_mpint_ensure_digits (a, n + 1);
+  for (x = a->dig_used; x < n + 1; x++)
+    a->data[x] = 0;
+  a->dig_used = n + 1;
+  a->sign = 0;
+
+  scratch = r_alloca ((n + 1) * sizeof (rmpint_digit));
+  borrow = 0;
+  for (x = 0; x < n; x++) {
+    t = (rmpint_word)a->data[x] -
+        (rmpint_word)r_mpint_get_digit (p, x) -
+        (rmpint_word)borrow;
+    scratch[x] = (rmpint_digit)t;
+    borrow = (rmpint_digit)((t >> (sizeof (rmpint_digit) * 8)) & 1u);
+  }
+  t = (rmpint_word)a->data[n] - (rmpint_word)borrow;
+  scratch[n] = (rmpint_digit)t;
+  borrow = (rmpint_digit)((t >> (sizeof (rmpint_digit) * 8)) & 1u);
+
+  mask = (rmpint_digit)0 - (rmpint_digit)((borrow & 1u) ^ 1u);
+  for (x = 0; x < n + 1; x++)
+    a->data[x] = (a->data[x] & ~mask) | (scratch[x] & mask);
+
+  r_mpint_clamp (a);
+  r_memclear_secure (scratch, (n + 1) * sizeof (rmpint_digit));
+}
+
+/* out := a * b * R^-1 mod p. If a and b are in Montgomery form,
+ * out is in Montgomery form too. */
+static rboolean
+r_ecurve_mont_mul (rmpint * out, const rmpint * a, const rmpint * b,
+    const REcurve * curve)
+{
+  return r_mpint_mul (out, a, b) &&
+         r_mpint_montgomery_reduce_ct (out, &curve->p, curve->mont_mp);
+}
+
+/* out := a^2 * R^-1 mod p. */
+static rboolean
+r_ecurve_mont_sqr (rmpint * out, const rmpint * a, const REcurve * curve)
+{
+  return r_ecurve_mont_mul (out, a, a, curve);
+}
+
+/* out := (a + b) mod p. Inputs may be in Montgomery form or normal -
+ * addition commutes with the Montgomery transform. */
+static rboolean
+r_ecurve_mont_add (rmpint * out, const rmpint * a, const rmpint * b,
+    const REcurve * curve)
+{
+  if (!r_mpint_add (out, a, b))
+    return FALSE;
+  r_ecurve_cond_subp_ct (out, &curve->p);
+  return TRUE;
+}
+
+/* out := (a - b) mod p. Computed as (a + p - b) so the intermediate
+ * never goes negative; then a constant-time conditional subtract of
+ * p brings it back into [0, p). */
+static rboolean
+r_ecurve_mont_sub (rmpint * out, const rmpint * a, const rmpint * b,
+    const REcurve * curve)
+{
+  rmpint tmp;
+  rboolean ok;
+
+  r_mpint_init (&tmp);
+  ok = r_mpint_add (&tmp, a, &curve->p) &&
+       r_mpint_sub (out, &tmp, b);
+  r_mpint_clear (&tmp);
+  if (!ok) return FALSE;
+  r_ecurve_cond_subp_ct (out, &curve->p);
+  return TRUE;
+}
+
+/* out := a * R mod p. Lifts a normal-form value into Montgomery
+ * form via one Montgomery multiplication with R^2. */
+static rboolean
+r_ecurve_mont_in (rmpint * out, const rmpint * a, const REcurve * curve)
+{
+  return r_ecurve_mont_mul (out, a, &curve->mont_r_squared, curve);
+}
+
+/* out := a / R mod p. Drops a Montgomery-form value back to normal
+ * form via Montgomery reduction. */
+static rboolean
+r_ecurve_mont_out (rmpint * out, const rmpint * a, const REcurve * curve)
+{
+  if (out != a)
+    r_mpint_set (out, a);
+  return r_mpint_montgomery_reduce_ct (out, &curve->p, curve->mont_mp);
+}
+
+/* out_M := (a_M)^-1 in Montgomery form. Uses the existing
+ * variable-time r_mpint_invmod internally - that's the residual
+ * leak item 3 of #100 will replace with constant-time Fermat
+ * (a^(p-2) via constant-time expmod).
+ *
+ * Algebraic derivation: invmod(a_M) returns (a*R)^-1 = a^-1 * R^-1
+ * in normal form. Multiplying that by R^2 (full multiply, not
+ * Montgomery) gives a^-1 * R^-1 * R^2 = a^-1 * R = (a^-1)_M, which
+ * is what callers need to feed back into mont_mul. */
+static rboolean
+r_ecurve_mont_invmod (rmpint * out, const rmpint * a, const REcurve * curve)
+{
+  rmpint inv;
+  rboolean ok;
+
+  r_mpint_init (&inv);
+  ok = r_mpint_invmod (&inv, a, &curve->p) &&
+       r_mpint_mulmod (out, &inv, &curve->mont_r_squared, &curve->p);
+  r_mpint_clear (&inv);
+  return ok;
+}
+
+/* Internal dbl operating on Montgomery-form points. Assumes a is
+ * in Montgomery form and curve->mont_a is precomputed. Produces
+ * out in Montgomery form. */
+static rboolean
+r_ecurve_point_dbl_mont (REcurveAffinePoint * out,
+    const REcurveAffinePoint * a, const REcurve * curve)
+{
+  rmpint slope, t, num, den;
+  rboolean ok;
+
+  if (a->is_infinity || r_mpint_iszero (&a->y)) {
+    r_ecurve_point_set_infinity (out);
+    return TRUE;
+  }
+
+  r_mpint_init (&slope);
+  r_mpint_init (&t);
+  r_mpint_init (&num);
+  r_mpint_init (&den);
+
+  /* num = 3 * x^2 + a (all in Montgomery form) */
+  ok = r_ecurve_mont_sqr (&t, &a->x, curve) &&            /* t = (x^2)_M */
+       r_ecurve_mont_add (&num, &t, &t, curve) &&         /* num = 2 * x^2_M */
+       r_ecurve_mont_add (&num, &num, &t, curve) &&       /* num = 3 * x^2_M */
+       r_ecurve_mont_add (&num, &num, &curve->mont_a, curve);
+  if (!ok) goto out;
+
+  /* den = 2 * y (in Montgomery form) */
+  ok = r_ecurve_mont_add (&den, &a->y, &a->y, curve);
+  if (!ok) goto out;
+
+  /* slope = num / den = num * inv(den) (in Montgomery form) */
+  ok = r_ecurve_mont_invmod (&t, &den, curve) &&
+       r_ecurve_mont_mul (&slope, &num, &t, curve);
+  if (!ok) goto out;
+
+  /* X = slope^2 - 2*x mod p (Montgomery) */
+  ok = r_ecurve_mont_sqr (&num, &slope, curve) &&
+       r_ecurve_mont_sub (&t, &num, &a->x, curve) &&
+       r_ecurve_mont_sub (&num, &t, &a->x, curve);   /* num holds X */
+  if (!ok) goto out;
+
+  /* Y = slope * (x - X) - y mod p (Montgomery) */
+  ok = r_ecurve_mont_sub (&t, &a->x, &num, curve) &&
+       r_ecurve_mont_mul (&den, &slope, &t, curve) &&
+       r_ecurve_mont_sub (&t, &den, &a->y, curve);   /* t holds Y */
+  if (!ok) goto out;
+
+  r_mpint_set (&out->x, &num);
+  r_mpint_set (&out->y, &t);
+  out->is_infinity = FALSE;
+
+out:
+  r_mpint_clear (&slope);
+  r_mpint_clear (&t);
+  r_mpint_clear (&num);
+  r_mpint_clear (&den);
+  return ok;
+}
+
+/* Internal add operating on Montgomery-form points. Same shape as
+ * r_ecurve_point_add but every modular operation runs through the
+ * Montgomery helpers. The "equal x" branches still defer to dbl
+ * or set_infinity. */
+static rboolean
+r_ecurve_point_add_mont (REcurveAffinePoint * out,
+    const REcurveAffinePoint * a, const REcurveAffinePoint * b,
+    const REcurve * curve)
+{
+  rmpint slope, t, num, den, x_new, neg_by;
+  rboolean ok, y_neg;
+
+  if (a->is_infinity) {
+    r_ecurve_point_copy (out, b);
+    return TRUE;
+  }
+  if (b->is_infinity) {
+    r_ecurve_point_copy (out, a);
+    return TRUE;
+  }
+  if (r_mpint_cmp (&a->x, &b->x) == 0) {
+    if (r_mpint_cmp (&a->y, &b->y) == 0)
+      return r_ecurve_point_dbl_mont (out, a, curve);
+    /* y_b == -y_a holds in Montgomery form for the same reason it
+     * holds in normal form: negation is linear and commutes with
+     * multiplication by R. The check is plain p - y_a_M; both
+     * operands are mpints in [0, p) so a plain unsigned subtract
+     * suffices. */
+    r_mpint_init (&neg_by);
+    if (!r_mpint_sub (&neg_by, &curve->p, &a->y)) {
+      r_mpint_clear (&neg_by);
+      return FALSE;
+    }
+    y_neg = (r_mpint_cmp (&b->y, &neg_by) == 0);
+    r_mpint_clear (&neg_by);
+    if (y_neg) {
+      r_ecurve_point_set_infinity (out);
+      return TRUE;
+    }
+    return FALSE;
+  }
+
+  r_mpint_init (&slope);
+  r_mpint_init (&t);
+  r_mpint_init (&num);
+  r_mpint_init (&den);
+  r_mpint_init (&x_new);
+
+  /* num = b->y - a->y mod p (Montgomery form) */
+  /* den = b->x - a->x mod p (Montgomery form) */
+  ok = r_ecurve_mont_sub (&num, &b->y, &a->y, curve) &&
+       r_ecurve_mont_sub (&den, &b->x, &a->x, curve);
+  if (!ok) goto out;
+
+  /* slope = num / den (Montgomery form) */
+  ok = r_ecurve_mont_invmod (&t, &den, curve) &&
+       r_ecurve_mont_mul (&slope, &num, &t, curve);
+  if (!ok) goto out;
+
+  /* X = slope^2 - a->x - b->x mod p */
+  ok = r_ecurve_mont_sqr (&x_new, &slope, curve) &&
+       r_ecurve_mont_sub (&x_new, &x_new, &a->x, curve) &&
+       r_ecurve_mont_sub (&x_new, &x_new, &b->x, curve);
+  if (!ok) goto out;
+
+  /* Y = slope * (a->x - X) - a->y mod p */
+  ok = r_ecurve_mont_sub (&t, &a->x, &x_new, curve) &&
+       r_ecurve_mont_mul (&t, &slope, &t, curve) &&
+       r_ecurve_mont_sub (&t, &t, &a->y, curve);
+  if (!ok) goto out;
+
+  r_mpint_set (&out->x, &x_new);
+  r_mpint_set (&out->y, &t);
+  out->is_infinity = FALSE;
+
+out:
+  r_mpint_clear (&slope);
+  r_mpint_clear (&t);
+  r_mpint_clear (&num);
+  r_mpint_clear (&den);
+  r_mpint_clear (&x_new);
+  return ok;
 }
 
 rboolean
@@ -354,25 +669,26 @@ rboolean
 r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
     const REcurveAffinePoint * point, const REcurve * curve)
 {
-  /* Left-to-right Montgomery ladder. Maintain (R0, R1) such that
-   * R1 - R0 == point at every step; one add + one dbl per scalar
-   * bit keeps the high-level branch shape uniform regardless of
-   * the scalar's bit pattern.
+  /* Left-to-right Montgomery ladder, run in the Montgomery field
+   * representation: the input point is lifted to (x*R, y*R) once
+   * on entry, every add / dbl in the loop body uses Montgomery
+   * multiplication and constant-time field add/sub, and the
+   * final R0 is mapped back to normal coordinates on exit. The
+   * per-step Montgomery reduce replaces the variable-time
+   * schoolbook long-division that r_mpint_mod used to do, so the
+   * timing of the scalar-mul body no longer depends on the value
+   * of intermediate results.
    *
-   * Constant-time wrapping: instead of the textbook
-   *   if (bit) { R0 = R0 + R1; R1 = 2*R1; }
-   *   else     { R1 = R0 + R1; R0 = 2*R0; }
-   * (two different sequences of pointer operations that leak the
-   * bit through the per-step code path) we swap_ct(R0, R1, bit),
-   * always run R1 = R0 + R1 and R0 = 2*R0, then swap_ct back.
-   * Both bit values exercise the exact same operations in the
-   * same order on the same struct fields - the only difference
-   * is whether the swaps are no-ops.
+   * The bit-dispatch in the loop body uses r_ecurve_point_swap_ct
+   * around a single "R1 = R0 + R1; R0 = 2 * R0" sequence (item 1
+   * of #100), so both bit values exercise the same operations in
+   * the same order; only the swap-or-not is bit-dependent, and
+   * the swap itself is branchless.
    *
-   * The underlying r_ecurve_point_add / _dbl and the mpint ops
-   * they call are still variable-time, so this is partial
-   * hardening - removing the per-bit branch shape oracle is what
-   * item 1 of #100 fixes; the rest is in items 2-4. */
+   * Residual leak: r_ecurve_mont_invmod still calls the variable-
+   * time r_mpint_invmod for the slope inversion (one per step).
+   * That's the channel item 3 of #100 closes with a Fermat-based
+   * constant-time inversion. */
   REcurveAffinePoint R0, R1;
   ruint16 d, b;
   rmpint_digit bit;
@@ -385,8 +701,15 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
 
   r_ecurve_point_init (&R0);
   r_ecurve_point_init (&R1);
-  r_ecurve_point_set_infinity (&R0);
-  r_ecurve_point_copy (&R1, point);
+
+  /* R0 stays at infinity (set by init); lift the input point into
+   * Montgomery form directly into R1 (= R1.x = x * R mod p,
+   * R1.y = y * R mod p). The ladder maintains R1 - R0 == P
+   * throughout, both in Montgomery and after the final mont_out. */
+  if (!r_ecurve_mont_in (&R1.x, &point->x, curve) ||
+      !r_ecurve_mont_in (&R1.y, &point->y, curve))
+    goto cleanup;
+  R1.is_infinity = FALSE;
 
   for (d = r_mpint_digits_used (scalar); d > 0; d--) {
     rmpint_digit dig = r_mpint_get_digit (scalar, d - 1);
@@ -395,13 +718,21 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
       dig <<= 1;
 
       r_ecurve_point_swap_ct (&R0, &R1, (ruint32)bit);
-      if (!r_ecurve_point_add (&R1, &R0, &R1, curve)) goto cleanup;
-      if (!r_ecurve_point_dbl (&R0, &R0, curve)) goto cleanup;
+      if (!r_ecurve_point_add_mont (&R1, &R0, &R1, curve)) goto cleanup;
+      if (!r_ecurve_point_dbl_mont (&R0, &R0, curve)) goto cleanup;
       r_ecurve_point_swap_ct (&R0, &R1, (ruint32)bit);
     }
   }
 
-  r_ecurve_point_copy (out, &R0);
+  /* Map R0 back to normal coordinates for the caller. */
+  if (R0.is_infinity) {
+    r_ecurve_point_set_infinity (out);
+  } else {
+    if (!r_ecurve_mont_out (&out->x, &R0.x, curve) ||
+        !r_ecurve_mont_out (&out->y, &R0.y, curve))
+      goto cleanup;
+    out->is_infinity = FALSE;
+  }
   ok = TRUE;
 
 cleanup:
