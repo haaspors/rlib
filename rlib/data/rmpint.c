@@ -24,6 +24,8 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
+#include <stdarg.h>
+
 void
 r_mpint_ensure_digits (rmpint * mpi, ruint16 digits)
 {
@@ -85,6 +87,46 @@ r_mpint_set_secure_clear (rmpint * mpi)
 {
   if (mpi != NULL)
     mpi->flags |= R_MPINT_FLAG_SECURE_CLEAR;
+}
+
+/* Walk a NULL-terminated va_list of mpint sources, ORing in the
+ * secure-clear flag on the first match. Caller passes the first
+ * source separately so the standard va_start contract holds. */
+static void
+__r_mpint_propagate_secure (rmpint * dst, const rmpint * src1, va_list args)
+{
+  const rmpint * src = src1;
+  while (src != NULL) {
+    if ((src->flags & R_MPINT_FLAG_SECURE_CLEAR) != 0) {
+      dst->flags |= R_MPINT_FLAG_SECURE_CLEAR;
+      return;
+    }
+    src = va_arg (args, const rmpint *);
+  }
+}
+
+void
+r_mpint_init_from (rmpint * dst, const rmpint * src1, ...)
+{
+  va_list args;
+
+  r_mpint_init (dst);
+
+  va_start (args, src1);
+  __r_mpint_propagate_secure (dst, src1, args);
+  va_end (args);
+}
+
+void
+r_mpint_init_size_from (rmpint * dst, ruint16 digits, const rmpint * src1, ...)
+{
+  va_list args;
+
+  r_mpint_init_size (dst, digits);
+
+  va_start (args, src1);
+  __r_mpint_propagate_secure (dst, src1, args);
+  va_end (args);
 }
 
 void
@@ -1097,8 +1139,12 @@ r_mpint_mul (rmpint * dst, const rmpint * a, const rmpint * b)
 #endif
 
   if (a == dst || b == dst) {
+    /* dst aliases one of the operands; build the full product in a
+     * fresh scratch first, then r_mpint_set into dst. The scratch
+     * holds the entire a*b product so it leaks bits of both -
+     * inherit secure-clear from either. */
     tmp = r_mem_newa (rmpint);
-    r_mpint_init_size (tmp, used);
+    r_mpint_init_size_from (tmp, used, a, b, NULL);
     out = tmp;
   } else {
     tmp = NULL;
@@ -1197,10 +1243,15 @@ r_mpint_div (rmpint * q, rmpint * r, const rmpint * n, const rmpint * d)
     return TRUE;
   }
 
-  r_mpint_init (&tmp1);
-  r_mpint_init (&tmp2);
+  /* tmp1 / tmp2 carry partial dividend / divisor multiples through
+   * the long-division steps - they leak bits of n. y is a shifted
+   * copy of d. x is init_copy'd from n (already inherits via the
+   * existing flag propagation), but tmp1 / tmp2 / y need explicit
+   * inheritance from either operand. */
+  r_mpint_init_from (&tmp1, n, d, NULL);
+  r_mpint_init_from (&tmp2, n, d, NULL);
   r_mpint_init_copy (&x, n);
-  r_mpint_init_size (&y, r_mpint_digits_used (d) * 3);
+  r_mpint_init_size_from (&y, r_mpint_digits_used (d) * 3, n, d, NULL);
 
   bits = r_mpint_bits_used (d);
   if ((norm = bits % (sizeof (rmpint_digit) * 8)) < sizeof (rmpint_digit) * 8 - 1) {
@@ -1220,7 +1271,11 @@ r_mpint_div (rmpint * q, rmpint * r, const rmpint * n, const rmpint * d)
     r_mpint_ensure_digits (q, nn - tt + 1);
     qp = q;
   } else {
-    r_mpint_init_size (&qtmp, nn - tt + 1);
+    /* qtmp is the discarded quotient when the caller only wants the
+     * remainder (the r_mpint_mod path). Its digits accumulate
+     * partial quotients of n / d - same leakage shape as tmp1 /
+     * tmp2 - so inherit secure-clear from either operand. */
+    r_mpint_init_size_from (&qtmp, nn - tt + 1, n, d, NULL);
     qp = &qtmp;
   }
   qp->dig_used = nn - tt + 1;
@@ -1436,7 +1491,11 @@ r_mpint_invmod_even (rmpint * dst, const rmpint * a, const rmpint * m)
     return TRUE;
   }
 
-  r_mpint_init (&u);
+  /* u is `a mod m`, v is `m`; the A/B/C/D scratches accumulate
+   * Bezout coefficients that mix bits of both. Inherit secure-clear
+   * from either input so a leaks neither directly via u nor
+   * indirectly via the coefficient accumulators. */
+  r_mpint_init_from (&u, a, m, NULL);
   if (!r_mpint_mod (&u, a, m)) {
     r_mpint_clear (&u);
     return FALSE;
@@ -1448,10 +1507,10 @@ r_mpint_invmod_even (rmpint * dst, const rmpint * a, const rmpint * m)
 
   r_mpint_init_copy (&v, m);
 
-  r_mpint_init (&A);
-  r_mpint_init (&B);
-  r_mpint_init (&C);
-  r_mpint_init (&D);
+  r_mpint_init_from (&A, a, m, NULL);
+  r_mpint_init_from (&B, a, m, NULL);
+  r_mpint_init_from (&C, a, m, NULL);
+  r_mpint_init_from (&D, a, m, NULL);
   r_mpint_set_u32 (&A, 1);
   r_mpint_set_u32 (&D, 1);
 
@@ -1486,8 +1545,11 @@ r_mpint_invmod_odd (rmpint * dst, const rmpint * a, const rmpint * m)
   r_mpint_init_copy (&u, m);
   r_mpint_init_copy (&v, a);
   v.sign = 0;
-  r_mpint_init (&B);
-  r_mpint_init (&D);
+  /* B and D accumulate Bezout coefficients that are linear
+   * combinations of a and m - they leak bits of a, so inherit the
+   * secure-clear flag from either input. */
+  r_mpint_init_from (&B, a, m, NULL);
+  r_mpint_init_from (&D, a, m, NULL);
   r_mpint_set_u32 (&D, 1);
 
   do {
@@ -1554,8 +1616,12 @@ r_mpint_expmod (rmpint * dst, const rmpint * b, const rmpint * e, const rmpint *
   if (!r_mpint_montgomery_setup (&mp, m))
      return FALSE;
 
-  r_mpint_init (&R[0]);
-  r_mpint_init (&R[1]);
+  /* R[0] and R[1] carry Montgomery-domain intermediates of b^e mod m.
+   * Inherit secure-clear from the base b (the secret in our typical
+   * RSA / DSA usage); m is usually public but include it just in
+   * case a caller's modulus is also sensitive. */
+  r_mpint_init_from (&R[0], b, e, m, NULL);
+  r_mpint_init_from (&R[1], b, e, m, NULL);
 
   if (!r_mpint_montgomery_normalize (&R[0], m))
     goto expmod_failed;
@@ -1622,7 +1688,11 @@ r_mpint_gcd (rmpint * dst, const rmpint * x, const rmpint * y)
   }
 
   /* Step 1 */
-  r_mpint_init (&g);
+  /* g accumulates the shared power-of-2 factor; a/b/c/d carry
+   * Bezout coefficients that mix bits of x and y. Inherit
+   * secure-clear from either input - in rrsa.c, gcd is called
+   * with the secret (p-1)*(q-1). */
+  r_mpint_init_from (&g, x, y, NULL);
   r_mpint_set_u32 (&g, 1);
 
   /* Step 2 */
@@ -1635,10 +1705,10 @@ r_mpint_gcd (rmpint * dst, const rmpint * x, const rmpint * y)
   }
 
   /* Step 3 */
-  r_mpint_init (&a);
+  r_mpint_init_from (&a, x, y, NULL);
   r_mpint_set_u32 (&a, 1);
-  r_mpint_init (&b);
-  r_mpint_init (&c);
+  r_mpint_init_from (&b, x, y, NULL);
+  r_mpint_init_from (&c, x, y, NULL);
   r_mpint_init_copy (&d, &a);
 
   /* Step 4, 5, 6 */
