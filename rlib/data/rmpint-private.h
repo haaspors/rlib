@@ -44,6 +44,14 @@ R_API_HIDDEN RMpintPrimeTest r_mpint_prime_miller_rabin_full (const rmpint * n, 
 R_API_HIDDEN rboolean r_mpint_montgomery_setup (rmpint_digit * mp, const rmpint * m);
 R_API_HIDDEN rboolean r_mpint_montgomery_reduce (rmpint * a, const rmpint * m,
     rmpint_digit mp);
+/* Constant-time variant of r_mpint_montgomery_reduce. Same semantics
+ * (a := a * R^-1 mod m) but the final "subtract m if >= m" step is
+ * unconditional + masked, and the result's dig_used is forced to
+ * digits_used(m) regardless of value - subsequent ops see a
+ * fixed-width representation. Caller must guarantee a < m * R at
+ * entry (the standard precondition for Montgomery reduction). */
+R_API_HIDDEN rboolean r_mpint_montgomery_reduce_ct (rmpint * a,
+    const rmpint * m, rmpint_digit mp);
 R_API_HIDDEN rboolean r_mpint_montgomery_normalize (rmpint * a, const rmpint * m);
 
 R_END_DECLS
