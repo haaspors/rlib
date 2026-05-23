@@ -163,8 +163,10 @@ jobs:
         # would fail by definition) or SKIP_RTEST_* (which are
         # environment-dependent, e.g. live DNS). The 30x timeout
         # multiplier gives meson's per-test cap room for the
-        # secp521r1 sweep.
-        run: meson test -C build --print-errorlogs --timeout-multiplier 30 -- -H
+        # secp521r1 sweep. Pass -H via --test-args so the flag
+        # reaches the rlibtest binary; meson otherwise treats any
+        # trailing positional argument as a test-name pattern.
+        run: meson test -C build --print-errorlogs --timeout-multiplier 30 --test-args=-H
       - name: Upload test logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
