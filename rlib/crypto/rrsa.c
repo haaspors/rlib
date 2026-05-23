@@ -21,6 +21,8 @@
 
 #include <rlib/crypto/rrsa.h>
 
+#include <rlib/crypto/rhmac.h>
+
 #include <rlib/asn1/rasn1.h>
 #include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>
@@ -878,6 +880,171 @@ out_wipe:
   if (scratch)
     r_memclear_secure (buffer, size);
   return ret;
+}
+
+/* Branchless u32 equality: 0xFFFFFFFF if a == b, 0 otherwise.
+ *
+ *   x = a ^ b           is zero iff a == b
+ *   y = x | (-x)        top bit set iff x != 0 (one of x or -x is non-zero
+ *                       and has bit 31 set when interpreted as unsigned)
+ *   d = y >> 31         maps to 0 (equal) or 1 (different)
+ *   d - 1               wraps unsigned: 0xFFFFFFFF for equal, 0 for different
+ *
+ * No branches, no data-dependent timing. */
+static inline ruint32
+r_ct_u32_eq (ruint32 a, ruint32 b)
+{
+  ruint32 x = a ^ b;
+  return (((x | ((~x) + 1u)) >> 31) - 1u);
+}
+
+/* Same shape, treating a single byte as a 32-bit value for mask
+ * width. Returns 0xFFFFFFFF if a == b, 0 otherwise. */
+static inline ruint32
+r_ct_byte_eq (ruint8 a, ruint8 b)
+{
+  return r_ct_u32_eq ((ruint32)a, (ruint32)b);
+}
+
+/* Branchless u32 select: mask is the all-ones / all-zeros output of
+ * one of the r_ct_*_eq helpers. */
+static inline ruint32
+r_ct_u32_select (ruint32 mask, ruint32 t, ruint32 f)
+{
+  return (mask & t) | ((~mask) & f);
+}
+
+/* HKDF-Expand-style stretching of HMAC-SHA256 (private exponent,
+ * counter || ciphertext) into out_size bytes of deterministic
+ * synthetic plaintext. Same (key, ciphertext) always produces the
+ * same byte stream, so replaying a chosen ciphertext yields the
+ * same output as before - an attacker can't tell whether the
+ * apparent random data came from a padding failure or from a
+ * different ciphertext that happened to decrypt to it. */
+static rboolean
+r_rsa_pkcs1v1_5_synthetic (const rmpint * d, rconstpointer ciphertext,
+    rsize ct_size, ruint8 * out, rsize out_size)
+{
+  ruint8 * d_bytes;
+  rsize d_size;
+  RHmac * hmac;
+  ruint8 block[32];
+  rsize block_size;
+  ruint8 counter;
+  rsize emitted;
+  rboolean ok = TRUE;
+
+  d_size = r_mpint_bytes_used (d);
+  if (R_UNLIKELY (d_size == 0))
+    return FALSE;
+  d_bytes = r_alloca (d_size);
+  if (R_UNLIKELY (!r_mpint_to_binary_with_size (d, d_bytes, d_size))) {
+    r_memclear_secure (d_bytes, d_size);
+    return FALSE;
+  }
+
+  for (counter = 1, emitted = 0; emitted < out_size && ok; counter++) {
+    block_size = sizeof (block);
+    if ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA256, d_bytes, d_size)) == NULL) {
+      ok = FALSE;
+      break;
+    }
+    ok = r_hmac_update (hmac, &counter, sizeof (counter)) &&
+         r_hmac_update (hmac, ciphertext, ct_size) &&
+         r_hmac_get_data (hmac, block, sizeof (block), &block_size);
+    r_hmac_free (hmac);
+    if (ok) {
+      rsize take = MIN (block_size, out_size - emitted);
+      r_memcpy (out + emitted, block, take);
+      emitted += take;
+    }
+  }
+
+  r_memclear_secure (d_bytes, d_size);
+  r_memclear_secure (block, sizeof (block));
+  return ok;
+}
+
+RCryptoResult
+r_rsa_pkcs1v1_5_decrypt_implicit (const RCryptoKey * key,
+    rconstpointer data, rsize size, ruint8 * out, rsize out_size)
+{
+  RCryptoResult ret;
+  const RRsaPrivKey * pk;
+  ruint8 * em;
+  ruint8 * synth;
+  rsize k, i;
+  ruint32 valid;
+  ruint32 zero_seen;
+  ruint32 zero_pos;
+
+  if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_RSA)) return R_CRYPTO_WRONG_TYPE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return R_CRYPTO_WRONG_TYPE;
+  if (R_UNLIKELY (data == NULL || out == NULL)) return R_CRYPTO_INVAL;
+
+  pk = (const RRsaPrivKey *)key;
+  k = r_mpint_digits_used (&pk->pub.n) * sizeof (rmpint_digit);
+  if (R_UNLIKELY (size != k)) return R_CRYPTO_WRONG_SIZE;
+  /* PKCS#1 v1.5 requires |PS| >= 8 plus the 0x00 0x02 prefix and the
+   * 0x00 separator, so the message can be at most k - 11 bytes. */
+  if (R_UNLIKELY (out_size == 0 || out_size > k - 11))
+    return R_CRYPTO_WRONG_SIZE;
+
+  em = r_alloca (size);
+  synth = r_alloca (out_size);
+
+  /* Raw decrypt: out-of-range / zero ciphertexts surface as an error
+   * here. Bleichenbacher candidates are always in [0, n), so this
+   * doesn't expose a useful oracle - it's input validation, not a
+   * padding check. */
+  if ((ret = r_rsa_raw_decrypt_internal (pk, NULL, data, em, size)) != R_CRYPTO_OK) {
+    r_memclear_secure (em, size);
+    return ret;
+  }
+
+  if (!r_rsa_pkcs1v1_5_synthetic (&pk->d, data, size, synth, out_size)) {
+    r_memclear_secure (em, size);
+    return R_CRYPTO_ERROR;
+  }
+
+  /* Padding shape:
+   *   em[0] == 0x00
+   *   em[1] == 0x02
+   *   em[2..k-1] = PS || 0x00 || M, |PS| >= 8
+   * To match the requested out_size, the 0x00 separator must be at
+   * position k - out_size - 1. The scan accumulates the position of
+   * the FIRST 0x00 in em[2..k-1] using a once-set "zero_seen" mask;
+   * a too-early zero (PS shorter than 8) trips the position check
+   * against k - out_size - 1, which we enforced to be >= 10 above. */
+  valid = r_ct_byte_eq (em[0], 0x00) & r_ct_byte_eq (em[1], R_RSA_EME_PKCS1);
+
+  zero_seen = 0;
+  zero_pos = 0;
+  for (i = 2; i < size; i++) {
+    ruint32 is_zero = r_ct_byte_eq (em[i], 0x00);
+    ruint32 first_zero = is_zero & ~zero_seen;
+    zero_pos = r_ct_u32_select (first_zero, (ruint32)i, zero_pos);
+    zero_seen |= is_zero;
+  }
+
+  valid &= zero_seen;
+  valid &= r_ct_u32_eq (zero_pos, (ruint32)(k - out_size - 1));
+
+  /* Constant-time select: out[i] = valid ? em[k - out_size + i]
+   *                                      : synth[i]. The load from
+   * em is always at the same offset regardless of where the real
+   * message would actually start, so a malformed em can't tilt the
+   * memory-access pattern. */
+  for (i = 0; i < out_size; i++) {
+    ruint32 real_byte = (ruint32)em[k - out_size + i];
+    ruint32 synth_byte = (ruint32)synth[i];
+    out[i] = (ruint8)r_ct_u32_select (valid, real_byte, synth_byte);
+  }
+
+  r_memclear_secure (em, size);
+  r_memclear_secure (synth, out_size);
+  return R_CRYPTO_OK;
 }
 
 RCryptoResult

@@ -108,6 +108,186 @@ RTEST (rrsa, decrypt_pkcs, RTEST_FAST)
 }
 RTEST_END;
 
+/* The encrypted plaintext for `rsa_encrypted` above is "foobar\n",
+ * 7 bytes. The implicit-rejection variant takes a fixed out_size
+ * and returns either the real plaintext (when padding valid AND
+ * length matches out_size) or a deterministic synthetic of the
+ * same shape. */
+#define _DECRYPT_IMPLICIT_INIT(_key)                                              \
+  rmpint __n, __e, __d;                                                           \
+  r_mpint_init_str (&__n,                                                         \
+      "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"    \
+      "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"    \
+      "358143b44a35449eb264113121a455bd7fde3fac919e94b56fb9bb4f651cdb23ead439"    \
+      "d6cd523eb08191e75b35fd13a7419b3090f24787bd4f4e1967", NULL, 16);            \
+  r_mpint_init_str (&__d,                                                         \
+      "0x1628e4a39ebea86c8df0cd11572691017cfefb14ea1c12e1dedc7856032dad0f9612"    \
+      "00a38684f0a36dca30102e2464989d19a805933794c7d329ebc890089d3c4c6f602766"    \
+      "e5d62add74e82e490bbf92f6a482153853031be2844a700557b97673e727cd1316d3e6"    \
+      "fa7fc991d4227366ec552cbe90d367ef2e2e79fe66d26311", NULL, 16);              \
+  r_mpint_init_str (&__e, "65537", NULL, 10);                                     \
+  r_assert_cmpptr (((_key) = r_rsa_priv_key_new (&__n, &__e, &__d)), !=, NULL)
+
+#define _DECRYPT_IMPLICIT_FINI(_key)                                              \
+  r_mpint_clear (&__n);                                                           \
+  r_mpint_clear (&__d);                                                           \
+  r_mpint_clear (&__e);                                                           \
+  r_crypto_key_unref ((_key))
+
+RTEST (rrsa, decrypt_pkcs_implicit_valid, RTEST_FAST)
+{
+  /* The "foobar\n" plaintext is 7 bytes; ask the implicit-rejection
+   * API for exactly that, and the real plaintext must come back. */
+  static const rchar expected[] = "foobar\n";
+  ruint8 out[7];
+  RCryptoKey * key;
+
+  _DECRYPT_IMPLICIT_INIT (key);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        rsa_encrypted, sizeof (rsa_encrypted), out, sizeof (out)),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpmem (out, ==, expected, sizeof (out));
+  _DECRYPT_IMPLICIT_FINI (key);
+}
+RTEST_END;
+
+RTEST (rrsa, decrypt_pkcs_implicit_wrong_length_synthetic, RTEST_FAST)
+{
+  /* Same valid ciphertext but the caller asks for a different
+   * length than the real plaintext (7 bytes). The function must
+   * still return R_CRYPTO_OK with the requested-length synthetic
+   * - no error-code divergence, no length divergence, no oracle. */
+  static const rchar real_pt[] = "foobar\n";
+  ruint8 out_short[3];
+  ruint8 out_long[16];
+  RCryptoKey * key;
+
+  _DECRYPT_IMPLICIT_INIT (key);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        rsa_encrypted, sizeof (rsa_encrypted), out_short, sizeof (out_short)),
+      ==, R_CRYPTO_OK);
+  /* The synthetic must not coincide with a prefix of the real
+   * plaintext - the chance of collision on 3 random bytes drawn
+   * from HMAC-SHA256 is 2^-24, fine for a single test. */
+  r_assert_cmpmem (out_short, !=, real_pt, sizeof (out_short));
+
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        rsa_encrypted, sizeof (rsa_encrypted), out_long, sizeof (out_long)),
+      ==, R_CRYPTO_OK);
+  _DECRYPT_IMPLICIT_FINI (key);
+}
+RTEST_END;
+
+RTEST (rrsa, decrypt_pkcs_implicit_bad_padding_synthetic, RTEST_FAST)
+{
+  /* Flip the first ciphertext byte: with overwhelming probability
+   * the recovered em no longer starts with 0x00 0x02, so the
+   * padding check fails. The function must still return R_CRYPTO_OK
+   * with a synthetic of the requested length, and the synthetic
+   * must NOT match the real plaintext. */
+  static const rchar real_pt[] = "foobar\n";
+  ruint8 corrupt_ct[sizeof (rsa_encrypted)];
+  ruint8 out[7];
+  RCryptoKey * key;
+
+  r_memcpy (corrupt_ct, rsa_encrypted, sizeof (rsa_encrypted));
+  corrupt_ct[0] ^= 0x55;
+
+  _DECRYPT_IMPLICIT_INIT (key);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        corrupt_ct, sizeof (corrupt_ct), out, sizeof (out)),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpmem (out, !=, real_pt, sizeof (out));
+  _DECRYPT_IMPLICIT_FINI (key);
+}
+RTEST_END;
+
+RTEST (rrsa, decrypt_pkcs_implicit_synthetic_deterministic, RTEST_FAST)
+{
+  /* Same (key, ciphertext, out_size) must produce the same
+   * synthetic across calls - replay protection. An attacker
+   * submitting the same crafted ciphertext repeatedly gets the
+   * same bytes back as if it were a deterministic decrypt. */
+  ruint8 corrupt_ct[sizeof (rsa_encrypted)];
+  ruint8 out_a[32], out_b[32];
+  RCryptoKey * key;
+
+  r_memcpy (corrupt_ct, rsa_encrypted, sizeof (rsa_encrypted));
+  corrupt_ct[0] ^= 0xA5;
+
+  _DECRYPT_IMPLICIT_INIT (key);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        corrupt_ct, sizeof (corrupt_ct), out_a, sizeof (out_a)),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        corrupt_ct, sizeof (corrupt_ct), out_b, sizeof (out_b)),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpmem (out_a, ==, out_b, sizeof (out_a));
+  _DECRYPT_IMPLICIT_FINI (key);
+}
+RTEST_END;
+
+RTEST (rrsa, decrypt_pkcs_implicit_synthetic_varies_by_ct, RTEST_FAST)
+{
+  /* Different ciphertexts (both failing padding) must produce
+   * different synthetics - otherwise the synthetic itself becomes
+   * an oracle (an attacker who finds two CTs with matching output
+   * learns something about the key). */
+  ruint8 ct_a[sizeof (rsa_encrypted)];
+  ruint8 ct_b[sizeof (rsa_encrypted)];
+  ruint8 out_a[32], out_b[32];
+  RCryptoKey * key;
+
+  r_memcpy (ct_a, rsa_encrypted, sizeof (rsa_encrypted));
+  r_memcpy (ct_b, rsa_encrypted, sizeof (rsa_encrypted));
+  ct_a[0] ^= 0x11;
+  ct_b[0] ^= 0x22;
+
+  _DECRYPT_IMPLICIT_INIT (key);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        ct_a, sizeof (ct_a), out_a, sizeof (out_a)), ==, R_CRYPTO_OK);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        ct_b, sizeof (ct_b), out_b, sizeof (out_b)), ==, R_CRYPTO_OK);
+  r_assert_cmpmem (out_a, !=, out_b, sizeof (out_a));
+  _DECRYPT_IMPLICIT_FINI (key);
+}
+RTEST_END;
+
+RTEST (rrsa, decrypt_pkcs_implicit_arg_validation, RTEST_FAST)
+{
+  /* NULL / wrong-type / wrong-size / over-long out_size all
+   * surface as input errors. These checks happen before the raw
+   * decrypt so they don't interact with the constant-time path. */
+  ruint8 out[7];
+  RCryptoKey * key;
+
+  _DECRYPT_IMPLICIT_INIT (key);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (NULL,
+        rsa_encrypted, sizeof (rsa_encrypted), out, sizeof (out)),
+      ==, R_CRYPTO_INVAL);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        NULL, sizeof (rsa_encrypted), out, sizeof (out)),
+      ==, R_CRYPTO_INVAL);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        rsa_encrypted, sizeof (rsa_encrypted), NULL, sizeof (out)),
+      ==, R_CRYPTO_INVAL);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        rsa_encrypted, sizeof (rsa_encrypted) - 1, out, sizeof (out)),
+      ==, R_CRYPTO_WRONG_SIZE);
+  /* out_size == 0 is rejected. */
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        rsa_encrypted, sizeof (rsa_encrypted), out, 0),
+      ==, R_CRYPTO_WRONG_SIZE);
+  /* out_size > k - 11 (where k = 128 for this 1024-bit modulus) is
+   * rejected: a message that big can't fit any valid PKCS#1 padding. */
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt_implicit (key,
+        rsa_encrypted, sizeof (rsa_encrypted), out, 128 - 10),
+      ==, R_CRYPTO_WRONG_SIZE);
+  _DECRYPT_IMPLICIT_FINI (key);
+}
+RTEST_END;
+
+
 RTEST (rrsa, pkcs1v1_5_decrypt_buffer_too_small, RTEST_FAST)
 {
   rmpint n, e, d;
@@ -606,6 +786,66 @@ RTEST_LOOP (rrsa, wycheproof_pkcs1_decrypt, RTEST_SLOW,
   } else {
     r_assert_cmpint (res, !=, R_CRYPTO_OK);
   }
+
+  r_crypto_key_unref (key);
+}
+RTEST_END;
+
+/* Parallel Wycheproof sweep against the implicit-rejection API:
+ * valid vectors must yield the real plaintext when out_size matches
+ * msg_len; invalid vectors must produce R_CRYPTO_OK (raw decrypt
+ * succeeded) with a synthetic that doesn't coincide with the
+ * expected message. Vectors whose ciphertext is mathematically
+ * out-of-range (c == 0 or c >= n) surface as a non-OK error
+ * because the raw decrypt step rejects them before any padding
+ * inspection - those aren't Bleichenbacher candidates. */
+RTEST_LOOP (rrsa, wycheproof_pkcs1_decrypt_implicit, RTEST_SLOW,
+    0, R_N_ELEMENTS (wp_rsa_pkcs1_tests))
+{
+  const WycheproofRsaPkcs1Test * t = &wp_rsa_pkcs1_tests[__i];
+  const WycheproofRsaKey * k = &wp_rsa_keys[t->key_idx];
+  RCryptoKey * key;
+  ruint8 pt[512];
+  rsize out_size;
+  RCryptoResult res;
+
+  r_assert_cmpptr ((key = r_rsa_priv_key_new_binary (k->n, k->n_len,
+          k->e, k->e_len, k->d, k->d_len)), !=, NULL);
+
+  /* Wycheproof has valid vectors with msg_len == 0 (empty plaintext
+   * with a full PS field), but the implicit API requires out_size
+   * >= 1 - empty output buffers don't fit any well-formed PKCS#1
+   * padding. Skip those vectors; the regular pkcs1_decrypt loop
+   * still exercises them via the variable-length API. */
+  if (t->valid && t->msg_len == 0) {
+    r_crypto_key_unref (key);
+    return;
+  }
+
+  /* For valid vectors ask for exactly msg_len; for invalid vectors
+   * pick an arbitrary modest length the synthetic generator can
+   * always satisfy. */
+  out_size = t->valid ? t->msg_len : 32;
+  if (out_size > k->n_len - 11) {
+    r_crypto_key_unref (key);
+    return;
+  }
+
+  res = r_rsa_pkcs1v1_5_decrypt_implicit (key, t->ct, t->ct_len, pt, out_size);
+
+  if (t->valid) {
+    r_assert_cmpint (res, ==, R_CRYPTO_OK);
+    r_assert_cmpmem (pt, ==, t->msg, out_size);
+  } else if (res == R_CRYPTO_OK) {
+    /* Synthetic returned: a few invalid vectors carry an msg_len
+     * (the "what the attacker hoped to recover" plaintext) - the
+     * synthetic must NOT coincide with that. */
+    if (t->msg_len == out_size && t->msg_len > 0 && t->msg != NULL)
+      r_assert_cmpmem (pt, !=, t->msg, out_size);
+  }
+  /* res != R_CRYPTO_OK is acceptable for invalid vectors with
+   * malformed ciphertexts (c out of range, etc.) - not an oracle
+   * because the same error fires for any same-shape malformed input. */
 
   r_crypto_key_unref (key);
 }

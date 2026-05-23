@@ -85,8 +85,41 @@ R_API RCryptoResult r_rsa_oaep_decrypt (const RCryptoKey * key,
 
 R_API RCryptoResult r_rsa_pkcs1v1_5_encrypt (const RCryptoKey * key, RPrng * prng,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
+/* Variable-length PKCS#1 v1.5 decrypt that returns distinct error
+ * codes for each padding-validation failure mode and walks the PS
+ * field via an early-out loop. Both of those signals are
+ * attacker-observable - the function is a Bleichenbacher oracle
+ * when exposed to chosen-ciphertext input. SAFE only for
+ * trusted-source ciphertexts (e.g. blob decryption where you
+ * encrypted the data yourself and just need to recover it).
+ *
+ * For network-facing decrypt - TLS-RSA premaster, JWE RSA1_5,
+ * S/MIME, anything else where an attacker can submit ciphertexts
+ * and observe accept / reject - use r_rsa_pkcs1v1_5_decrypt_implicit
+ * below, which collapses every failure mode into a constant-time
+ * synthetic message of caller-supplied length. */
 R_API RCryptoResult r_rsa_pkcs1v1_5_decrypt (const RCryptoKey * key,
     rconstpointer data, rsize size, ruint8 * out, rsize * outsize);
+/* RSAES-PKCS1-v1_5 decrypt with implicit rejection - the standard
+ * Bleichenbacher / ROBOT / Marvin mitigation. Always writes out_size
+ * bytes to `out` and returns R_CRYPTO_OK on any well-formed raw
+ * decrypt: the real plaintext when padding is valid and the
+ * recovered message length matches out_size, or a deterministic
+ * synthetic message derived from the private key + ciphertext
+ * otherwise. The padding check and the length scan are constant-
+ * time across every byte of the recovered block, and success /
+ * failure share the same return code and output length, so a
+ * network attacker can't distinguish them.
+ *
+ * Callers that need to detect "ciphertext doesn't decrypt to what
+ * the protocol expected" must do so at a higher layer (e.g. the
+ * TLS Finished transcript check), never through return-code
+ * inspection on this primitive. out_size must be in (0, k - 11]
+ * where k is the modulus byte length, matching the RSAES-PKCS1-v1_5
+ * maximum-message bound; out_size = 0 or larger out_size returns
+ * R_CRYPTO_WRONG_SIZE. */
+R_API RCryptoResult r_rsa_pkcs1v1_5_decrypt_implicit (const RCryptoKey * key,
+    rconstpointer data, rsize size, ruint8 * out, rsize out_size);
 R_API RCryptoResult r_rsa_pkcs1v1_5_sign_msg (const RCryptoKey * key, RPrng * prng,
     RMsgDigestType mdtype, rconstpointer msg, rsize msgsize,
     rpointer sig, rsize * sigsize);
