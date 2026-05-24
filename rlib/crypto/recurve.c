@@ -132,6 +132,13 @@ r_ecurve_init (REcurve * curve, REcurveID named)
     r_ecurve_clear (curve);
     return FALSE;
   }
+  /* p_minus_2: Fermat inverter computes a^(p-2) mod p. p is an odd
+   * prime so p-2 fits without any borrow. */
+  r_mpint_init (&curve->p_minus_2);
+  if (!r_mpint_sub_i32 (&curve->p_minus_2, &curve->p, 2)) {
+    r_ecurve_clear (curve);
+    return FALSE;
+  }
   return TRUE;
 }
 
@@ -145,6 +152,7 @@ r_ecurve_clear (REcurve * curve)
   r_ecurve_point_clear (&curve->G);
   r_mpint_clear (&curve->mont_r_squared);
   r_mpint_clear (&curve->mont_a);
+  r_mpint_clear (&curve->p_minus_2);
 }
 
 /* --- Internal Montgomery-form field arithmetic. Used by the
@@ -152,6 +160,45 @@ r_ecurve_clear (REcurve * curve)
  * in Montgomery form (value * R mod p) unless otherwise noted.
  * The curve's precomputed mont_mp / mont_r_squared / mont_a are
  * the per-curve setup values. --- */
+
+/* CT zero-check across a fixed n-digit prefix of a's buffer. Returns
+ * an all-ones rmpint_digit mask if every digit is zero, an all-zeros
+ * mask otherwise. Reads exactly n digits regardless of a->dig_used,
+ * so the test does not leak the operand's bit length. Caller must
+ * ensure a->dig_alloc >= n. */
+static rmpint_digit
+r_mpint_iszero_n_ct (const rmpint * a, ruint16 n)
+{
+  ruint16 i;
+  rmpint_digit acc = 0;
+  rmpint_digit nz;
+
+  for (i = 0; i < n; i++)
+    acc |= a->data[i];
+  /* (acc | -acc) has its top bit set iff acc != 0. Shift down to a
+   * single 0/1 in nz, then nz - 1 gives all-ones if zero, 0 if not. */
+  nz = (acc | ((rmpint_digit)0 - acc)) >> (sizeof (rmpint_digit) * 8 - 1);
+  return nz - (rmpint_digit)1;
+}
+
+/* CT digit-wise select: out := (mask == all-ones) ? a : b, over the
+ * first n digits of each input. Output is left with dig_used = n and
+ * no clamp (so the dig_used itself is value-independent). Caller
+ * ensures a, b, out have dig_alloc >= n. */
+static void
+r_mpint_select_n_ct (rmpint * out, rmpint_digit mask,
+    const rmpint * a, const rmpint * b, ruint16 n)
+{
+  ruint16 i;
+
+  r_mpint_ensure_digits (out, n);
+  for (i = 0; i < n; i++)
+    out->data[i] = (a->data[i] & mask) | (b->data[i] & ~mask);
+  for (i = n; i < out->dig_alloc; i++)
+    out->data[i] = 0;
+  out->dig_used = n;
+  out->sign = 0;
+}
 
 /* "if a >= p, a := a - p". Branchless XOR-select, but ends with a
  * value-dependent r_mpint_clamp - the result's bit-length leaks
@@ -226,19 +273,16 @@ r_ecurve_mont_add (rmpint * out, const rmpint * a, const rmpint * b,
 
 /* out := (a - b) mod p. Computed as (a + p - b) so the intermediate
  * never goes negative; then a constant-time conditional subtract of
- * p brings it back into [0, p). */
+ * p brings it back into [0, p). r_mpint_add / _sub iterate digits
+ * and write each output position after reading the matching input
+ * digits, so the in-place form is safe when out aliases a or b. */
 static rboolean
 r_ecurve_mont_sub (rmpint * out, const rmpint * a, const rmpint * b,
     const REcurve * curve)
 {
-  rmpint tmp;
-  rboolean ok;
-
-  r_mpint_init (&tmp);
-  ok = r_mpint_add (&tmp, a, &curve->p) &&
-       r_mpint_sub (out, &tmp, b);
-  r_mpint_clear (&tmp);
-  if (!ok) return FALSE;
+  if (!r_mpint_add (out, a, &curve->p) ||
+      !r_mpint_sub (out, out, b))
+    return FALSE;
   r_ecurve_cond_subp_ct (out, &curve->p);
   return TRUE;
 }
@@ -261,169 +305,361 @@ r_ecurve_mont_out (rmpint * out, const rmpint * a, const REcurve * curve)
   return r_mpint_montgomery_reduce_ct (out, &curve->p, curve->mont_mp);
 }
 
-/* out_M := (a_M)^-1 in Montgomery form. Uses the existing
- * variable-time r_mpint_invmod internally - that's the residual
- * leak item 3 of #100 will replace with constant-time Fermat
- * (a^(p-2) via constant-time expmod).
+/* out_M := base_M^exp in Montgomery form. base is already in
+ * Montgomery form on entry; out is in Montgomery form on exit
+ * (i.e. (base_actual^exp) * R mod p).
  *
- * Algebraic derivation: invmod(a_M) returns (a*R)^-1 = a^-1 * R^-1
- * in normal form. Multiplying that by R^2 (full multiply, not
- * Montgomery) gives a^-1 * R^-1 * R^2 = a^-1 * R = (a^-1)_M, which
- * is what callers need to feed back into mont_mul. */
+ * Left-to-right Montgomery ladder over the exponent bits, with the
+ * per-bit dispatch routed through r_mpint_swap_ct so cache and
+ * branch behaviour stay independent of the bit being processed.
+ * The CT Montgomery reduce keeps the per-iteration field ops
+ * branch-free on the secret base too. The exponent here is
+ * curve->p_minus_2 (a public per-curve constant), so timing
+ * variation in exp itself - bit length, set-bit count - is fine;
+ * what matters is that the secret base's bit pattern doesn't
+ * influence control flow.
+ *
+ * Invariant after each iteration: R[1] = R[0] * base_M (in
+ * Montgomery form). Starting from R[0] = 1_M, R[1] = base_M, the
+ * pair evolves so R[0] = base_M^(exp_bits_seen) at the end. */
 static rboolean
-r_ecurve_mont_invmod (rmpint * out, const rmpint * a, const REcurve * curve)
+r_ecurve_mont_expmod (rmpint * out, const rmpint * base_M,
+    const rmpint * exp, const REcurve * curve)
 {
-  rmpint inv;
-  rboolean ok;
+  rmpint R[2];
+  ruint16 didx, bidx;
+  rmpint_digit bit;
+  rboolean ok = FALSE;
 
-  r_mpint_init (&inv);
-  ok = r_mpint_invmod (&inv, a, &curve->p) &&
-       r_mpint_mulmod (out, &inv, &curve->mont_r_squared, &curve->p);
-  r_mpint_clear (&inv);
+  r_mpint_init_from (&R[0], base_M, &curve->p, NULL);
+  r_mpint_init_from (&R[1], base_M, &curve->p, NULL);
+
+  /* R[0] = 1 in Montgomery form (= R mod p). R[1] = base_M. */
+  if (!r_mpint_montgomery_normalize (&R[0], &curve->p))
+    goto cleanup;
+  r_mpint_set (&R[1], base_M);
+
+  for (didx = r_mpint_digits_used (exp); didx > 0; didx--) {
+    rmpint_digit dig = r_mpint_get_digit (exp, didx - 1);
+    for (bidx = 0; bidx < sizeof (rmpint_digit) * 8; bidx++) {
+      bit = (dig >> (sizeof (rmpint_digit) * 8 - 1)) & 1;
+      dig <<= 1;
+
+      /* swap-wrap routes the conventional
+       *   if (bit) { R[0] = R[0]*R[1]; R[1] = R[1]^2; }
+       *   else     { R[1] = R[0]*R[1]; R[0] = R[0]^2; }
+       * through a fixed sequence: swap, do the bit=0 branch, swap
+       * back. See r_ecurve_point_scalar_mul for the same pattern
+       * on the EC ladder. */
+      r_mpint_swap_ct (&R[0], &R[1], (ruint32)bit);
+      if (!r_ecurve_mont_mul (&R[1], &R[0], &R[1], curve) ||
+          !r_ecurve_mont_sqr (&R[0], &R[0], curve))
+        goto cleanup;
+      r_mpint_swap_ct (&R[0], &R[1], (ruint32)bit);
+    }
+  }
+
+  r_mpint_set (out, &R[0]);
+  ok = TRUE;
+cleanup:
+  r_mpint_clear (&R[0]);
+  r_mpint_clear (&R[1]);
   return ok;
 }
 
-/* Internal dbl operating on Montgomery-form points. Assumes a is
- * in Montgomery form and curve->mont_a is precomputed. Produces
- * out in Montgomery form. */
+/* out_M := (a_M)^-1 in Montgomery form, via Fermat's little
+ * theorem: for a in (Z/pZ)*, a^(p-1) = 1, so a^-1 = a^(p-2).
+ *
+ * Running the exponentiation directly in the Montgomery domain
+ * keeps the operand in Montgomery form throughout - no detour
+ * through normal form + r_mpint_mulmod, both of which are
+ * variable-time on the secret value. */
 static rboolean
-r_ecurve_point_dbl_mont (REcurveAffinePoint * out,
-    const REcurveAffinePoint * a, const REcurve * curve)
+r_ecurve_mont_invmod (rmpint * out, const rmpint * a, const REcurve * curve)
 {
-  rmpint slope, t, num, den;
-  rboolean ok;
+  return r_ecurve_mont_expmod (out, a, &curve->p_minus_2, curve);
+}
 
-  if (a->is_infinity || r_mpint_iszero (&a->y)) {
+/* --- Internal Jacobian-projective point arithmetic, used inside
+ * the scalar-mul ladder. A Jacobian point (X, Y, Z) represents the
+ * affine point (X/Z^2, Y/Z^3), with Z=0 marking the identity. All
+ * coordinates are stored in Montgomery form. Working in projective
+ * coords keeps the per-step cost at a few field multiplications
+ * (no inversion), so the single Fermat-based inversion at the end
+ * for the affine conversion is amortised over all bits of the
+ * scalar. --- */
+
+typedef struct {
+  rmpint X;
+  rmpint Y;
+  rmpint Z;
+} REcurveJacobianPoint;
+
+/* Pre-allocated scratch pool used by the Jacobian dbl + add. The
+ * mpints live for the duration of one scalar_mul - allocating them
+ * here once and reusing across all ~521 ladder steps avoids the
+ * malloc / free churn the per-call init / clear pattern would
+ * otherwise incur (the secure-clear flag makes that churn even more
+ * expensive: each free zeroes the digit buffer before releasing).
+ *
+ * The 21 slots cover the worst case (r_ecurve_jp_add); the dbl
+ * uses the first 11 under different aliases. Keeping a single pool
+ * shared between the two operations keeps the scalar_mul setup
+ * compact - the alternative is two separate scratch structs which
+ * would duplicate the per-call buffer pressure. */
+typedef struct {
+  rmpint t[21];
+} REcurveJacobianScratch;
+
+static void
+r_ecurve_jp_scratch_init (REcurveJacobianScratch * s)
+{
+  rsize i;
+  for (i = 0; i < R_N_ELEMENTS (s->t); i++)
+    r_mpint_init_secure (&s->t[i]);
+}
+
+static void
+r_ecurve_jp_scratch_clear (REcurveJacobianScratch * s)
+{
+  rsize i;
+  for (i = 0; i < R_N_ELEMENTS (s->t); i++)
+    r_mpint_clear (&s->t[i]);
+}
+
+static void
+r_ecurve_jp_init (REcurveJacobianPoint * P)
+{
+  /* Inherit secure-clear so any intermediate the ladder accumulates
+   * gets wiped on r_mpint_clear, just like the affine point lifecycle. */
+  r_mpint_init_secure (&P->X);
+  r_mpint_init_secure (&P->Y);
+  r_mpint_init_secure (&P->Z);
+}
+
+static void
+r_ecurve_jp_clear (REcurveJacobianPoint * P)
+{
+  r_mpint_clear (&P->X);
+  r_mpint_clear (&P->Y);
+  r_mpint_clear (&P->Z);
+}
+
+static void
+r_ecurve_jp_swap_ct (REcurveJacobianPoint * a, REcurveJacobianPoint * b,
+    ruint32 bit)
+{
+  r_mpint_swap_ct (&a->X, &b->X, bit);
+  r_mpint_swap_ct (&a->Y, &b->Y, bit);
+  r_mpint_swap_ct (&a->Z, &b->Z, bit);
+}
+
+/* Jacobian doubling, generic short Weierstrass y^2 = x^3 + ax + b.
+ * Z=0 input ("identity") propagates to Z=0 output because the new
+ * Z' = 2*Y*Z is multiplied by Z; X' and Y' fall out as junk but the
+ * Z=0 marker keeps the point classified as identity, so callers
+ * don't have to special-case it. */
+static rboolean
+r_ecurve_jp_dbl (REcurveJacobianPoint * out,
+    const REcurveJacobianPoint * P, const REcurve * curve,
+    REcurveJacobianScratch * s)
+{
+  rmpint * const XX   = &s->t[0];
+  rmpint * const YY   = &s->t[1];
+  rmpint * const YYYY = &s->t[2];
+  rmpint * const ZZ   = &s->t[3];
+  rmpint * const Z4   = &s->t[4];
+  rmpint * const S    = &s->t[5];
+  rmpint * const M    = &s->t[6];
+  rmpint * const T    = &s->t[7];
+  rmpint * const Znew = &s->t[8];
+  rmpint * const Ynew = &s->t[9];
+  rmpint * const tmp  = &s->t[10];
+
+  /* All reads of P happen before any write to out, so out aliasing P
+   * is fine. */
+  if (!r_ecurve_mont_sqr (XX,   &P->X, curve))   return FALSE; /* X^2 */
+  if (!r_ecurve_mont_sqr (YY,   &P->Y, curve))   return FALSE; /* Y^2 */
+  if (!r_ecurve_mont_sqr (YYYY, YY,    curve))   return FALSE; /* Y^4 */
+  if (!r_ecurve_mont_sqr (ZZ,   &P->Z, curve))   return FALSE; /* Z^2 */
+  if (!r_ecurve_mont_sqr (Z4,   ZZ,    curve))   return FALSE; /* Z^4 */
+
+  /* S = 4 * X * YY */
+  if (!r_ecurve_mont_mul (tmp, &P->X, YY,  curve)) return FALSE;
+  if (!r_ecurve_mont_add (S,   tmp,   tmp, curve)) return FALSE;
+  if (!r_ecurve_mont_add (S,   S,     S,   curve)) return FALSE;
+
+  /* M = 3 * XX + a * Z^4 */
+  if (!r_ecurve_mont_mul (M,   &curve->mont_a, Z4, curve)) return FALSE;
+  if (!r_ecurve_mont_add (tmp, XX, XX, curve))             return FALSE;
+  if (!r_ecurve_mont_add (tmp, tmp, XX, curve))            return FALSE;
+  if (!r_ecurve_mont_add (M,   M, tmp, curve))             return FALSE;
+
+  /* T = M^2 - 2*S  ( = X' ) */
+  if (!r_ecurve_mont_sqr (T, M, curve))     return FALSE;
+  if (!r_ecurve_mont_sub (T, T, S, curve))  return FALSE;
+  if (!r_ecurve_mont_sub (T, T, S, curve))  return FALSE;
+
+  /* Y' = M * (S - T) - 8 * YYYY */
+  if (!r_ecurve_mont_sub (tmp,  S, T, curve))     return FALSE;
+  if (!r_ecurve_mont_mul (Ynew, M, tmp, curve))   return FALSE;
+  if (!r_ecurve_mont_add (tmp,  YYYY, YYYY, curve)) return FALSE;
+  if (!r_ecurve_mont_add (tmp,  tmp, tmp, curve))   return FALSE;
+  if (!r_ecurve_mont_add (tmp,  tmp, tmp, curve))   return FALSE;
+  if (!r_ecurve_mont_sub (Ynew, Ynew, tmp, curve))  return FALSE;
+
+  /* Z' = 2 * Y * Z. Must read P->Y / P->Z before writing out->Y / out->Z
+   * (matters when out aliases P). */
+  if (!r_ecurve_mont_mul (Znew, &P->Y, &P->Z, curve)) return FALSE;
+  if (!r_ecurve_mont_add (Znew, Znew, Znew, curve))   return FALSE;
+
+  r_mpint_set (&out->X, T);
+  r_mpint_set (&out->Y, Ynew);
+  r_mpint_set (&out->Z, Znew);
+
+  return TRUE;
+}
+
+/* Jacobian addition. Standard formula plus a branchless identity
+ * fix-up: when either input has Z=0 the formula's output isn't the
+ * correct sum (Z3 lands at 0 but X3,Y3 are garbage), so we mask in
+ * the non-identity operand. The P == Q case is left intentionally
+ * undefined here because the ladder invariant R1 = R0 + base_point
+ * keeps R0 and R1 from ever coinciding (base_point != identity).
+ * The P == -Q case (R1 - R0 = base_point != 0 means this can't
+ * happen either) is incidentally handled by the formula because
+ * H = 0, R != 0 makes Z3 = 0. */
+static rboolean
+r_ecurve_jp_add (REcurveJacobianPoint * out,
+    const REcurveJacobianPoint * P, const REcurveJacobianPoint * Q,
+    const REcurve * curve, REcurveJacobianScratch * s)
+{
+  rmpint * const Z1Z1    = &s->t[0];
+  rmpint * const Z2Z2    = &s->t[1];
+  rmpint * const Z1cubed = &s->t[2];
+  rmpint * const Z2cubed = &s->t[3];
+  rmpint * const U1      = &s->t[4];
+  rmpint * const U2      = &s->t[5];
+  rmpint * const S1      = &s->t[6];
+  rmpint * const S2      = &s->t[7];
+  rmpint * const H       = &s->t[8];
+  rmpint * const R       = &s->t[9];
+  rmpint * const H2      = &s->t[10];
+  rmpint * const H3      = &s->t[11];
+  rmpint * const U1H2    = &s->t[12];
+  rmpint * const X3      = &s->t[13];
+  rmpint * const Y3      = &s->t[14];
+  rmpint * const Z3      = &s->t[15];
+  rmpint * const tmp     = &s->t[16];
+  rmpint * const X_final = &s->t[17];
+  rmpint * const Y_final = &s->t[18];
+  rmpint * const Z_final = &s->t[19];
+  rmpint_digit p_is_zero, q_is_zero;
+  ruint16 n;
+
+  n = r_mpint_digits_used (&curve->p);
+
+  /* Identity probes are computed up front so they reflect the state
+   * of the operands before the standard formula trashes intermediate
+   * buffers. The +1 covers the fixed-width Montgomery representation
+   * that r_mpint_montgomery_reduce_ct produces (n + 1 digits, low end
+   * padded with zeros for a true zero). */
+  p_is_zero = r_mpint_iszero_n_ct (&P->Z, (ruint16)(n + 1));
+  q_is_zero = r_mpint_iszero_n_ct (&Q->Z, (ruint16)(n + 1));
+
+  /* Standard formula: U1 = X1*Z2^2, U2 = X2*Z1^2, S1 = Y1*Z2^3,
+   * S2 = Y2*Z1^3, H = U2 - U1, R = S2 - S1. */
+  if (!r_ecurve_mont_sqr (Z1Z1, &P->Z, curve))            return FALSE;
+  if (!r_ecurve_mont_sqr (Z2Z2, &Q->Z, curve))            return FALSE;
+  if (!r_ecurve_mont_mul (Z1cubed, &P->Z, Z1Z1, curve))   return FALSE;
+  if (!r_ecurve_mont_mul (Z2cubed, &Q->Z, Z2Z2, curve))   return FALSE;
+
+  if (!r_ecurve_mont_mul (U1, &P->X, Z2Z2, curve))         return FALSE;
+  if (!r_ecurve_mont_mul (U2, &Q->X, Z1Z1, curve))         return FALSE;
+  if (!r_ecurve_mont_mul (S1, &P->Y, Z2cubed, curve))      return FALSE;
+  if (!r_ecurve_mont_mul (S2, &Q->Y, Z1cubed, curve))      return FALSE;
+
+  if (!r_ecurve_mont_sub (H, U2, U1, curve))   return FALSE;
+  if (!r_ecurve_mont_sub (R, S2, S1, curve))   return FALSE;
+
+  if (!r_ecurve_mont_sqr (H2, H, curve))             return FALSE;
+  if (!r_ecurve_mont_mul (H3, H, H2, curve))         return FALSE;
+  if (!r_ecurve_mont_mul (U1H2, U1, H2, curve))      return FALSE;
+
+  /* X3 = R^2 - H^3 - 2 * U1*H^2 */
+  if (!r_ecurve_mont_sqr (X3, R, curve))             return FALSE;
+  if (!r_ecurve_mont_sub (X3, X3, H3, curve))        return FALSE;
+  if (!r_ecurve_mont_sub (X3, X3, U1H2, curve))      return FALSE;
+  if (!r_ecurve_mont_sub (X3, X3, U1H2, curve))      return FALSE;
+
+  /* Y3 = R * (U1*H^2 - X3) - S1*H^3 */
+  if (!r_ecurve_mont_sub (tmp, U1H2, X3, curve))    return FALSE;
+  if (!r_ecurve_mont_mul (Y3, R, tmp, curve))       return FALSE;
+  if (!r_ecurve_mont_mul (tmp, S1, H3, curve))      return FALSE;
+  if (!r_ecurve_mont_sub (Y3, Y3, tmp, curve))      return FALSE;
+
+  /* Z3 = Z1 * Z2 * H */
+  if (!r_ecurve_mont_mul (Z3, &P->Z, &Q->Z, curve))   return FALSE;
+  if (!r_ecurve_mont_mul (Z3, Z3, H, curve))          return FALSE;
+
+  /* Identity fix-up via masked select:
+   *   X_final = q_is_zero ? P.X : X3;     (then) p_is_zero ? Q.X : X_final
+   *   ... same for Y, Z.
+   * The double pass correctly handles all four (p, q) identity
+   * combinations: see the case table in this function's docstring. */
+  r_mpint_select_n_ct (X_final, q_is_zero, &P->X, X3, (ruint16)(n + 1));
+  r_mpint_select_n_ct (Y_final, q_is_zero, &P->Y, Y3, (ruint16)(n + 1));
+  r_mpint_select_n_ct (Z_final, q_is_zero, &P->Z, Z3, (ruint16)(n + 1));
+  r_mpint_select_n_ct (X_final, p_is_zero, &Q->X, X_final, (ruint16)(n + 1));
+  r_mpint_select_n_ct (Y_final, p_is_zero, &Q->Y, Y_final, (ruint16)(n + 1));
+  r_mpint_select_n_ct (Z_final, p_is_zero, &Q->Z, Z_final, (ruint16)(n + 1));
+
+  /* Assign last so out can safely alias P or Q. */
+  r_mpint_set (&out->X, X_final);
+  r_mpint_set (&out->Y, Y_final);
+  r_mpint_set (&out->Z, Z_final);
+
+  return TRUE;
+}
+
+/* Jacobian -> affine: divide out the Z. Identity (Z=0) maps to
+ * is_infinity = TRUE. The Z != 0 path costs one Fermat inversion +
+ * a handful of field multiplications. */
+static rboolean
+r_ecurve_jp_to_affine (REcurveAffinePoint * out,
+    const REcurveJacobianPoint * P, const REcurve * curve)
+{
+  rmpint Z_inv, Z2_inv, Z3_inv, x_M, y_M;
+  ruint16 n = r_mpint_digits_used (&curve->p);
+  rboolean ok = FALSE;
+
+  if (r_mpint_iszero_n_ct (&P->Z, (ruint16)(n + 1)) != 0) {
     r_ecurve_point_set_infinity (out);
     return TRUE;
   }
 
-  r_mpint_init (&slope);
-  r_mpint_init (&t);
-  r_mpint_init (&num);
-  r_mpint_init (&den);
+  r_mpint_init_secure (&Z_inv);
+  r_mpint_init_secure (&Z2_inv);
+  r_mpint_init_secure (&Z3_inv);
+  r_mpint_init_secure (&x_M);
+  r_mpint_init_secure (&y_M);
 
-  /* num = 3 * x^2 + a (all in Montgomery form) */
-  ok = r_ecurve_mont_sqr (&t, &a->x, curve) &&            /* t = (x^2)_M */
-       r_ecurve_mont_add (&num, &t, &t, curve) &&         /* num = 2 * x^2_M */
-       r_ecurve_mont_add (&num, &num, &t, curve) &&       /* num = 3 * x^2_M */
-       r_ecurve_mont_add (&num, &num, &curve->mont_a, curve);
-  if (!ok) goto out;
-
-  /* den = 2 * y (in Montgomery form) */
-  ok = r_ecurve_mont_add (&den, &a->y, &a->y, curve);
-  if (!ok) goto out;
-
-  /* slope = num / den = num * inv(den) (in Montgomery form) */
-  ok = r_ecurve_mont_invmod (&t, &den, curve) &&
-       r_ecurve_mont_mul (&slope, &num, &t, curve);
-  if (!ok) goto out;
-
-  /* X = slope^2 - 2*x mod p (Montgomery) */
-  ok = r_ecurve_mont_sqr (&num, &slope, curve) &&
-       r_ecurve_mont_sub (&t, &num, &a->x, curve) &&
-       r_ecurve_mont_sub (&num, &t, &a->x, curve);   /* num holds X */
-  if (!ok) goto out;
-
-  /* Y = slope * (x - X) - y mod p (Montgomery) */
-  ok = r_ecurve_mont_sub (&t, &a->x, &num, curve) &&
-       r_ecurve_mont_mul (&den, &slope, &t, curve) &&
-       r_ecurve_mont_sub (&t, &den, &a->y, curve);   /* t holds Y */
-  if (!ok) goto out;
-
-  r_mpint_set (&out->x, &num);
-  r_mpint_set (&out->y, &t);
+  if (!r_ecurve_mont_invmod (&Z_inv, &P->Z, curve))             goto cleanup;
+  if (!r_ecurve_mont_sqr (&Z2_inv, &Z_inv, curve))              goto cleanup;
+  if (!r_ecurve_mont_mul (&Z3_inv, &Z_inv, &Z2_inv, curve))     goto cleanup;
+  if (!r_ecurve_mont_mul (&x_M, &P->X, &Z2_inv, curve))         goto cleanup;
+  if (!r_ecurve_mont_mul (&y_M, &P->Y, &Z3_inv, curve))         goto cleanup;
+  if (!r_ecurve_mont_out (&out->x, &x_M, curve))                goto cleanup;
+  if (!r_ecurve_mont_out (&out->y, &y_M, curve))                goto cleanup;
   out->is_infinity = FALSE;
+  ok = TRUE;
 
-out:
-  r_mpint_clear (&slope);
-  r_mpint_clear (&t);
-  r_mpint_clear (&num);
-  r_mpint_clear (&den);
-  return ok;
-}
-
-/* Internal add operating on Montgomery-form points. Same shape as
- * r_ecurve_point_add but every modular operation runs through the
- * Montgomery helpers. The "equal x" branches still defer to dbl
- * or set_infinity. */
-static rboolean
-r_ecurve_point_add_mont (REcurveAffinePoint * out,
-    const REcurveAffinePoint * a, const REcurveAffinePoint * b,
-    const REcurve * curve)
-{
-  rmpint slope, t, num, den, x_new, neg_by;
-  rboolean ok, y_neg;
-
-  if (a->is_infinity) {
-    r_ecurve_point_copy (out, b);
-    return TRUE;
-  }
-  if (b->is_infinity) {
-    r_ecurve_point_copy (out, a);
-    return TRUE;
-  }
-  if (r_mpint_cmp (&a->x, &b->x) == 0) {
-    if (r_mpint_cmp (&a->y, &b->y) == 0)
-      return r_ecurve_point_dbl_mont (out, a, curve);
-    /* y_b == -y_a holds in Montgomery form for the same reason it
-     * holds in normal form: negation is linear and commutes with
-     * multiplication by R. The check is plain p - y_a_M; both
-     * operands are mpints in [0, p) so a plain unsigned subtract
-     * suffices. */
-    r_mpint_init (&neg_by);
-    if (!r_mpint_sub (&neg_by, &curve->p, &a->y)) {
-      r_mpint_clear (&neg_by);
-      return FALSE;
-    }
-    y_neg = (r_mpint_cmp (&b->y, &neg_by) == 0);
-    r_mpint_clear (&neg_by);
-    if (y_neg) {
-      r_ecurve_point_set_infinity (out);
-      return TRUE;
-    }
-    return FALSE;
-  }
-
-  r_mpint_init (&slope);
-  r_mpint_init (&t);
-  r_mpint_init (&num);
-  r_mpint_init (&den);
-  r_mpint_init (&x_new);
-
-  /* num = b->y - a->y mod p (Montgomery form) */
-  /* den = b->x - a->x mod p (Montgomery form) */
-  ok = r_ecurve_mont_sub (&num, &b->y, &a->y, curve) &&
-       r_ecurve_mont_sub (&den, &b->x, &a->x, curve);
-  if (!ok) goto out;
-
-  /* slope = num / den (Montgomery form) */
-  ok = r_ecurve_mont_invmod (&t, &den, curve) &&
-       r_ecurve_mont_mul (&slope, &num, &t, curve);
-  if (!ok) goto out;
-
-  /* X = slope^2 - a->x - b->x mod p */
-  ok = r_ecurve_mont_sqr (&x_new, &slope, curve) &&
-       r_ecurve_mont_sub (&x_new, &x_new, &a->x, curve) &&
-       r_ecurve_mont_sub (&x_new, &x_new, &b->x, curve);
-  if (!ok) goto out;
-
-  /* Y = slope * (a->x - X) - a->y mod p */
-  ok = r_ecurve_mont_sub (&t, &a->x, &x_new, curve) &&
-       r_ecurve_mont_mul (&t, &slope, &t, curve) &&
-       r_ecurve_mont_sub (&t, &t, &a->y, curve);
-  if (!ok) goto out;
-
-  r_mpint_set (&out->x, &x_new);
-  r_mpint_set (&out->y, &t);
-  out->is_infinity = FALSE;
-
-out:
-  r_mpint_clear (&slope);
-  r_mpint_clear (&t);
-  r_mpint_clear (&num);
-  r_mpint_clear (&den);
-  r_mpint_clear (&x_new);
+cleanup:
+  r_mpint_clear (&Z_inv);
+  r_mpint_clear (&Z2_inv);
+  r_mpint_clear (&Z3_inv);
+  r_mpint_clear (&x_M);
+  r_mpint_clear (&y_M);
   return ok;
 }
 
@@ -648,48 +884,26 @@ r_ecurve_point_is_on_curve (const REcurveAffinePoint * point,
   return ok;
 }
 
-/* Constant-time swap of two affine points: exchanges x / y mpint
- * metadata + data pointer and the is_infinity flag iff bit is set,
- * with no data-dependent branches or copies. */
-static void
-r_ecurve_point_swap_ct (REcurveAffinePoint * a, REcurveAffinePoint * b,
-    ruint32 bit)
-{
-  ruint32 mask = 0u - (ruint32)(bit & 1u);
-  ruint32 d;
-
-  r_mpint_swap_ct (&a->x, &b->x, bit);
-  r_mpint_swap_ct (&a->y, &b->y, bit);
-  d = ((ruint32)a->is_infinity ^ (ruint32)b->is_infinity) & mask;
-  a->is_infinity = (rboolean)((ruint32)a->is_infinity ^ d);
-  b->is_infinity = (rboolean)((ruint32)b->is_infinity ^ d);
-}
-
 rboolean
 r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
     const REcurveAffinePoint * point, const REcurve * curve)
 {
-  /* Left-to-right Montgomery ladder, run in the Montgomery field
-   * representation: the input point is lifted to (x*R, y*R) once
-   * on entry, every add / dbl in the loop body uses Montgomery
-   * multiplication and constant-time field add/sub, and the
-   * final R0 is mapped back to normal coordinates on exit. The
-   * per-step Montgomery reduce replaces the variable-time
-   * schoolbook long-division that r_mpint_mod used to do, so the
-   * timing of the scalar-mul body no longer depends on the value
-   * of intermediate results.
+  /* Left-to-right Montgomery ladder in Jacobian-projective coords.
+   * The ladder maintains R1 = R0 + P; per bit we swap R0/R1 in
+   * constant time, perform a single "R1 = R0 + R1; R0 = 2*R0", and
+   * swap back. Working in Jacobian removes the per-step inversion
+   * that affine slope arithmetic required - we pay one Fermat
+   * inversion at the end (in r_ecurve_jp_to_affine) instead of two
+   * per bit, which is the property that makes the constant-time
+   * Fermat inverter practical here.
    *
-   * The bit-dispatch in the loop body uses r_ecurve_point_swap_ct
-   * around a single "R1 = R0 + R1; R0 = 2 * R0" sequence (item 1
-   * of #100), so both bit values exercise the same operations in
-   * the same order; only the swap-or-not is bit-dependent, and
-   * the swap itself is branchless.
-   *
-   * Residual leak: r_ecurve_mont_invmod still calls the variable-
-   * time r_mpint_invmod for the slope inversion (one per step).
-   * That's the channel item 3 of #100 closes with a Fermat-based
-   * constant-time inversion. */
-  REcurveAffinePoint R0, R1;
+   * Identity is encoded as Z=0. The Jacobian dbl naturally
+   * propagates that, and r_ecurve_jp_add masks in the non-identity
+   * operand when one side has Z=0 - so the leading-zero bits of
+   * the scalar, during which R0 sits at identity, do not require
+   * value-dependent branching. */
+  REcurveJacobianPoint R0, R1;
+  REcurveJacobianScratch scratch;
   ruint16 d, b;
   rmpint_digit bit;
   rboolean ok = FALSE;
@@ -699,17 +913,17 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
     return TRUE;
   }
 
-  r_ecurve_point_init (&R0);
-  r_ecurve_point_init (&R1);
+  r_ecurve_jp_init (&R0);
+  r_ecurve_jp_init (&R1);
+  r_ecurve_jp_scratch_init (&scratch);
 
-  /* R0 stays at infinity (set by init); lift the input point into
-   * Montgomery form directly into R1 (= R1.x = x * R mod p,
-   * R1.y = y * R mod p). The ladder maintains R1 - R0 == P
-   * throughout, both in Montgomery and after the final mont_out. */
-  if (!r_ecurve_mont_in (&R1.x, &point->x, curve) ||
-      !r_ecurve_mont_in (&R1.y, &point->y, curve))
+  /* R0 stays at identity (X=Y=Z=0 from init; Z=0 marks it). R1 is
+   * the input point lifted into Jacobian: (x_M, y_M, 1_M), where
+   * 1_M = R mod p is what r_mpint_montgomery_normalize produces. */
+  if (!r_ecurve_mont_in (&R1.X, &point->x, curve) ||
+      !r_ecurve_mont_in (&R1.Y, &point->y, curve) ||
+      !r_mpint_montgomery_normalize (&R1.Z, &curve->p))
     goto cleanup;
-  R1.is_infinity = FALSE;
 
   for (d = r_mpint_digits_used (scalar); d > 0; d--) {
     rmpint_digit dig = r_mpint_get_digit (scalar, d - 1);
@@ -717,27 +931,21 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
       bit = (dig >> (sizeof (rmpint_digit) * 8 - 1)) & 1;
       dig <<= 1;
 
-      r_ecurve_point_swap_ct (&R0, &R1, (ruint32)bit);
-      if (!r_ecurve_point_add_mont (&R1, &R0, &R1, curve)) goto cleanup;
-      if (!r_ecurve_point_dbl_mont (&R0, &R0, curve)) goto cleanup;
-      r_ecurve_point_swap_ct (&R0, &R1, (ruint32)bit);
+      r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit);
+      if (!r_ecurve_jp_add (&R1, &R0, &R1, curve, &scratch)) goto cleanup;
+      if (!r_ecurve_jp_dbl (&R0, &R0, curve, &scratch))      goto cleanup;
+      r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit);
     }
   }
 
-  /* Map R0 back to normal coordinates for the caller. */
-  if (R0.is_infinity) {
-    r_ecurve_point_set_infinity (out);
-  } else {
-    if (!r_ecurve_mont_out (&out->x, &R0.x, curve) ||
-        !r_ecurve_mont_out (&out->y, &R0.y, curve))
-      goto cleanup;
-    out->is_infinity = FALSE;
-  }
+  if (!r_ecurve_jp_to_affine (out, &R0, curve))
+    goto cleanup;
   ok = TRUE;
 
 cleanup:
-  r_ecurve_point_clear (&R0);
-  r_ecurve_point_clear (&R1);
+  r_ecurve_jp_scratch_clear (&scratch);
+  r_ecurve_jp_clear (&R0);
+  r_ecurve_jp_clear (&R1);
   return ok;
 }
 

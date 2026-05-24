@@ -93,7 +93,8 @@ typedef struct {
  * are precomputed at r_ecurve_init so the secret-dependent
  * scalar-multiplication ladder can run a constant-time Montgomery
  * variant of the point arithmetic without paying conversion cost
- * per bit. */
+ * per bit. p_minus_2 is the Fermat exponent used by the
+ * constant-time inverter inside the ladder. */
 typedef struct {
   rmpint p;
   rmpint a;
@@ -104,6 +105,7 @@ typedef struct {
   rmpint_digit mont_mp;       /* -p^-1 mod 2^digit_bits */
   rmpint mont_r_squared;      /* R^2 mod p */
   rmpint mont_a;              /* a * R mod p - used by the Montgomery dbl */
+  rmpint p_minus_2;           /* p - 2 - Fermat inversion exponent */
 } REcurve;
 
 R_API void r_ecurve_point_init (REcurveAffinePoint * point);
