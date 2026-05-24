@@ -173,9 +173,9 @@ r_mpint_montgomery_reduce_ct (rmpint * a, const rmpint * m, rmpint_digit mp)
    * compare via r_mpint_cmp (which treats dig_used difference as
    * value difference) see the canonical representation. Variable-
    * time on the result's bit-length - a real residual leak that
-   * item 4 of #100 (memory-access audit) should revisit, but
-   * required for correctness against the rest of the mpint
-   * primitives that assume the no-leading-zeros invariant. */
+   * a future memory-access audit should revisit, but required
+   * for correctness against the rest of the mpint primitives that
+   * assume the no-leading-zeros invariant. */
   a->dig_used = n + 1;
   r_mpint_clamp (a);
 

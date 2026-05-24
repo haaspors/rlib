@@ -157,8 +157,8 @@ r_ecurve_clear (REcurve * curve)
  * value-dependent r_mpint_clamp - the result's bit-length leaks
  * via dig_used, which the rest of the mpint API depends on for
  * its no-leading-zeros invariant (r_mpint_cmp returns non-zero
- * for values that are equal-but-padded). Item 4 of #100
- * (constant-time memory access patterns) should revisit. */
+ * for values that are equal-but-padded). A future constant-time
+ * memory-access pass should revisit. */
 static void
 r_ecurve_cond_subp_ct (rmpint * a, const rmpint * p)
 {
