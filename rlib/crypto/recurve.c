@@ -155,369 +155,446 @@ r_ecurve_clear (REcurve * curve)
   r_mpint_clear (&curve->p_minus_2);
 }
 
-/* --- Internal Montgomery-form field arithmetic. Used by the
- * constant-time scalar-mul ladder. All inputs/outputs are mpints
- * in Montgomery form (value * R mod p) unless otherwise noted.
- * The curve's precomputed mont_mp / mont_r_squared / mont_a are
- * the per-curve setup values. --- */
+/* --- Internal field arithmetic, in a fixed-width Montgomery
+ * representation. The REcurveFE type stores a value mod p as a flat
+ * inline array of digits, sized once at compile time to fit our
+ * widest curve. Every primitive iterates exactly the curve's digit
+ * count - no clamping, no dig_used field that varies with the value
+ * the variable currently holds. That removes the residual memory-
+ * access leak the rmpint-based path had (where r_mpint_mul's inner
+ * loop iterates the operand's actual bit length).
+ *
+ * REcurveFEContext gathers the per-curve constants in FE form and is
+ * built fresh at the top of scalar_mul, so the public REcurve struct
+ * doesn't have to expose this internal representation. --- */
 
-/* CT zero-check across a fixed n-digit prefix of a's buffer. Returns
- * an all-ones rmpint_digit mask if every digit is zero, an all-zeros
- * mask otherwise. Reads exactly n digits regardless of a->dig_used,
- * so the test does not leak the operand's bit length. Caller must
- * ensure a->dig_alloc >= n. */
+/* secp521r1 is the widest curve we ship, needing 17 32-bit digits; +1
+ * leaves room for headroom and keeps small structs aligned. */
+#define R_ECURVE_FE_MAX_DIGITS  18
+
+typedef struct {
+  rmpint_digit d[R_ECURVE_FE_MAX_DIGITS];
+} REcurveFE;
+
+typedef struct {
+  REcurveFE p;
+  REcurveFE mont_r_squared;
+  REcurveFE mont_a;
+  REcurveFE p_minus_2;
+  REcurveFE n;
+  rmpint_digit mp;            /* -p^-1 mod 2^digit_bits */
+  ruint16 n_digits;           /* curve's p / n / etc. all fit in n_digits digits */
+  ruint p_minus_2_bits;       /* bit length of p-2, drives the Fermat exp loop */
+  ruint n_bits;               /* bit length of curve order, drives scalar conditioning */
+} REcurveFEContext;
+
+/* Per-iteration scratch for the Jacobian dbl + add. Allocated as a
+ * single struct on the scalar_mul stack frame so the FE temporaries
+ * survive across all ladder iterations without per-call setup cost.
+ * The 21 slots cover the wider operation (r_ecurve_jp_add); jp_dbl
+ * reuses the first 11 under different aliases. */
+typedef struct {
+  REcurveFE t[21];
+} REcurveJacobianScratch;
+
+/* ---- FE primitives. All CT and infallible (no heap, no failure). ---- */
+
+static void
+r_ecurve_fe_zero (REcurveFE * x)
+{
+  rsize i;
+  for (i = 0; i < R_N_ELEMENTS (x->d); i++)
+    x->d[i] = 0;
+}
+
+static void
+r_ecurve_fe_copy (REcurveFE * dst, const REcurveFE * src)
+{
+  rsize i;
+  for (i = 0; i < R_N_ELEMENTS (dst->d); i++)
+    dst->d[i] = src->d[i];
+}
+
+/* Copy an mpint's value into an FE, zero-padding to n digits. The
+ * "truncate beyond n" branch is unreachable for curve constants and
+ * for scalars in the documented [0, 2^(32*n)) range, so it doesn't
+ * leak anything callers care about. */
+static void
+r_ecurve_fe_from_mpint (REcurveFE * fe, const rmpint * mpi, ruint16 n)
+{
+  ruint16 i;
+  ruint16 to_copy = mpi->dig_used;
+  if (to_copy > n) to_copy = n;
+  for (i = 0; i < to_copy; i++)
+    fe->d[i] = mpi->data[i];
+  for (i = to_copy; i < R_ECURVE_FE_MAX_DIGITS; i++)
+    fe->d[i] = 0;
+}
+
+/* Extract a normal-form FE into an mpint, ending with a clamp so the
+ * caller-visible mpint is canonical. The clamp is value-dependent,
+ * but the FE has already left the CT-sensitive code path at this
+ * point - it's en route to the public REcurveAffinePoint output. */
+static rboolean
+r_ecurve_fe_to_mpint (rmpint * mpi, const REcurveFE * fe, ruint16 n)
+{
+  ruint16 i;
+  r_mpint_ensure_digits (mpi, n);
+  if (R_UNLIKELY (mpi->dig_alloc < n)) return FALSE;
+  for (i = 0; i < n; i++)
+    mpi->data[i] = fe->d[i];
+  for (i = n; i < mpi->dig_alloc; i++)
+    mpi->data[i] = 0;
+  mpi->dig_used = n;
+  mpi->sign = 0;
+  r_mpint_clamp (mpi);
+  return TRUE;
+}
+
+/* Mask returns all-ones if x's low n digits are all zero, else all-zeros. */
 static rmpint_digit
-r_mpint_iszero_n_ct (const rmpint * a, ruint16 n)
+r_ecurve_fe_iszero_ct (const REcurveFE * x, ruint16 n)
 {
   ruint16 i;
   rmpint_digit acc = 0;
   rmpint_digit nz;
-
   for (i = 0; i < n; i++)
-    acc |= a->data[i];
-  /* (acc | -acc) has its top bit set iff acc != 0. Shift down to a
-   * single 0/1 in nz, then nz - 1 gives all-ones if zero, 0 if not. */
+    acc |= x->d[i];
   nz = (acc | ((rmpint_digit)0 - acc)) >> (sizeof (rmpint_digit) * 8 - 1);
   return nz - (rmpint_digit)1;
 }
 
-/* CT digit-wise select: out := (mask == all-ones) ? a : b, over the
- * first n digits of each input. Output is left with dig_used = n and
- * no clamp (so the dig_used itself is value-independent). Caller
- * ensures a, b, out have dig_alloc >= n. */
+/* out := (mask == all-ones) ? a : b, digit-wise over n digits.
+ * Aliasing out with a or b is safe (each digit is read before write). */
 static void
-r_mpint_select_n_ct (rmpint * out, rmpint_digit mask,
-    const rmpint * a, const rmpint * b, ruint16 n)
+r_ecurve_fe_select_ct (REcurveFE * out, rmpint_digit mask,
+    const REcurveFE * a, const REcurveFE * b, ruint16 n)
 {
   ruint16 i;
-
-  r_mpint_ensure_digits (out, n);
   for (i = 0; i < n; i++)
-    out->data[i] = (a->data[i] & mask) | (b->data[i] & ~mask);
-  for (i = n; i < out->dig_alloc; i++)
-    out->data[i] = 0;
-  out->dig_used = n;
-  out->sign = 0;
+    out->d[i] = (a->d[i] & mask) | (b->d[i] & ~mask);
 }
 
-/* "if a >= p, a := a - p". Branchless XOR-select, but ends with a
- * value-dependent r_mpint_clamp - the result's bit-length leaks
- * via dig_used, which the rest of the mpint API depends on for
- * its no-leading-zeros invariant (r_mpint_cmp returns non-zero
- * for values that are equal-but-padded). A future constant-time
- * memory-access pass should revisit. */
+/* Branchless XOR-swap of two FEs (n low digits) gated on `bit`. */
 static void
-r_ecurve_cond_subp_ct (rmpint * a, const rmpint * p)
+r_ecurve_fe_swap_ct (REcurveFE * a, REcurveFE * b, ruint32 bit, ruint16 n)
 {
-  ruint16 x, n;
-  rmpint_digit borrow, mask;
-  rmpint_digit * scratch;
-  rmpint_word t;
-
-  n = r_mpint_digits_used (p);
-  r_mpint_ensure_digits (a, n + 1);
-  for (x = a->dig_used; x < n + 1; x++)
-    a->data[x] = 0;
-  a->dig_used = n + 1;
-  a->sign = 0;
-
-  scratch = r_alloca ((n + 1) * sizeof (rmpint_digit));
-  borrow = 0;
-  for (x = 0; x < n; x++) {
-    t = (rmpint_word)a->data[x] -
-        (rmpint_word)r_mpint_get_digit (p, x) -
-        (rmpint_word)borrow;
-    scratch[x] = (rmpint_digit)t;
-    borrow = (rmpint_digit)((t >> (sizeof (rmpint_digit) * 8)) & 1u);
+  rmpint_digit mask = (rmpint_digit)0 - (rmpint_digit)(bit & 1u);
+  ruint16 i;
+  for (i = 0; i < n; i++) {
+    rmpint_digit d = (a->d[i] ^ b->d[i]) & mask;
+    a->d[i] ^= d;
+    b->d[i] ^= d;
   }
-  t = (rmpint_word)a->data[n] - (rmpint_word)borrow;
-  scratch[n] = (rmpint_digit)t;
-  borrow = (rmpint_digit)((t >> (sizeof (rmpint_digit) * 8)) & 1u);
+}
+
+/* out := (a + b) mod p, inputs and output in [0, p). */
+static void
+r_ecurve_fe_add (REcurveFE * out, const REcurveFE * a, const REcurveFE * b,
+    const REcurveFEContext * ctx)
+{
+  rmpint_digit t[R_ECURVE_FE_MAX_DIGITS + 1];
+  rmpint_digit scratch[R_ECURVE_FE_MAX_DIGITS + 1];
+  ruint16 i, n = ctx->n_digits;
+  rmpint_word u;
+  rmpint_digit carry = 0, borrow = 0, mask;
+
+  for (i = 0; i < n; i++) {
+    u = (rmpint_word)a->d[i] + (rmpint_word)b->d[i] + (rmpint_word)carry;
+    t[i] = (rmpint_digit)u;
+    carry = (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8));
+  }
+  t[n] = carry;
+
+  /* scratch = t - p, in n+1 digits. Borrow flags "t < p". */
+  for (i = 0; i < n; i++) {
+    u = (rmpint_word)t[i] - (rmpint_word)ctx->p.d[i] - (rmpint_word)borrow;
+    scratch[i] = (rmpint_digit)u;
+    borrow = (rmpint_digit)((u >> (sizeof (rmpint_digit) * 8)) & 1u);
+  }
+  u = (rmpint_word)t[n] - (rmpint_word)borrow;
+  scratch[n] = (rmpint_digit)u;
+  borrow = (rmpint_digit)((u >> (sizeof (rmpint_digit) * 8)) & 1u);
+
+  /* borrow == 1 means t < p; keep t. borrow == 0 means t >= p; use scratch. */
+  mask = (rmpint_digit)0 - (rmpint_digit)((borrow & 1u) ^ 1u);
+  for (i = 0; i < n; i++)
+    out->d[i] = (t[i] & ~mask) | (scratch[i] & mask);
+  for (i = n; i < R_ECURVE_FE_MAX_DIGITS; i++)
+    out->d[i] = 0;
+}
+
+/* out := (a - b) mod p. If a < b the subtract underflows and we add
+ * p back via a borrow-driven mask, so the operation stays branchless. */
+static void
+r_ecurve_fe_sub (REcurveFE * out, const REcurveFE * a, const REcurveFE * b,
+    const REcurveFEContext * ctx)
+{
+  rmpint_digit t[R_ECURVE_FE_MAX_DIGITS];
+  ruint16 i, n = ctx->n_digits;
+  rmpint_word u;
+  rmpint_digit borrow = 0, carry = 0, mask;
+
+  for (i = 0; i < n; i++) {
+    u = (rmpint_word)a->d[i] - (rmpint_word)b->d[i] - (rmpint_word)borrow;
+    t[i] = (rmpint_digit)u;
+    borrow = (rmpint_digit)((u >> (sizeof (rmpint_digit) * 8)) & 1u);
+  }
+
+  /* If borrow=1, t is the 2's-complement of -(b-a); adding p (also
+   * mod 2^(32n)) lands at p - (b - a) = a - b + p, the canonical
+   * non-negative result. The carry out of this add is discarded by
+   * design - the value fits in n digits. */
+  mask = (rmpint_digit)0 - (rmpint_digit)(borrow & 1u);
+  for (i = 0; i < n; i++) {
+    u = (rmpint_word)t[i] + (rmpint_word)(ctx->p.d[i] & mask) + (rmpint_word)carry;
+    out->d[i] = (rmpint_digit)u;
+    carry = (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8));
+  }
+  for (i = n; i < R_ECURVE_FE_MAX_DIGITS; i++)
+    out->d[i] = 0;
+}
+
+/* Montgomery multiplication via CIOS (Coarsely Integrated Operand
+ * Scanning). out := a * b * R^-1 mod p, R = 2^(32*n). Aliasing out
+ * with a or b is fine (we read a and b through their original
+ * pointers and only write to out at the end). */
+static void
+r_ecurve_fe_mul_mont (REcurveFE * out, const REcurveFE * a, const REcurveFE * b,
+    const REcurveFEContext * ctx)
+{
+  rmpint_digit T[R_ECURVE_FE_MAX_DIGITS + 2];
+  rmpint_digit scratch[R_ECURVE_FE_MAX_DIGITS + 1];
+  ruint16 i, j, n = ctx->n_digits;
+  rmpint_word u;
+  rmpint_digit c, mu, borrow = 0, mask;
+
+  for (i = 0; i < n + 2; i++) T[i] = 0;
+
+  for (i = 0; i < n; i++) {
+    /* T = T + a * b[i] */
+    c = 0;
+    for (j = 0; j < n; j++) {
+      u = (rmpint_word)T[j] +
+          (rmpint_word)a->d[j] * (rmpint_word)b->d[i] +
+          (rmpint_word)c;
+      T[j] = (rmpint_digit)u;
+      c = (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8));
+    }
+    u = (rmpint_word)T[n] + (rmpint_word)c;
+    T[n] = (rmpint_digit)u;
+    T[n + 1] = (rmpint_digit)(T[n + 1] +
+        (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8)));
+
+    /* mu = T[0] * mp. Choosing mu this way makes T[0] zero after the
+     * next multiply-add, which is what lets the right-shift be exact. */
+    mu = T[0] * ctx->mp;
+
+    /* T = T + mu * p */
+    c = 0;
+    for (j = 0; j < n; j++) {
+      u = (rmpint_word)T[j] +
+          (rmpint_word)mu * (rmpint_word)ctx->p.d[j] +
+          (rmpint_word)c;
+      T[j] = (rmpint_digit)u;
+      c = (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8));
+    }
+    u = (rmpint_word)T[n] + (rmpint_word)c;
+    T[n] = (rmpint_digit)u;
+    T[n + 1] = (rmpint_digit)(T[n + 1] +
+        (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8)));
+
+    /* T >>= digit_bits. T[0] is zero by construction. */
+    for (j = 0; j < n + 1; j++) T[j] = T[j + 1];
+    T[n + 1] = 0;
+  }
+
+  /* T is in [0, 2p). Conditional subtract p (over n+1 digits, since
+   * T[n] can carry a 1 from the last iteration). */
+  for (j = 0; j < n; j++) {
+    u = (rmpint_word)T[j] - (rmpint_word)ctx->p.d[j] - (rmpint_word)borrow;
+    scratch[j] = (rmpint_digit)u;
+    borrow = (rmpint_digit)((u >> (sizeof (rmpint_digit) * 8)) & 1u);
+  }
+  u = (rmpint_word)T[n] - (rmpint_word)borrow;
+  scratch[n] = (rmpint_digit)u;
+  borrow = (rmpint_digit)((u >> (sizeof (rmpint_digit) * 8)) & 1u);
 
   mask = (rmpint_digit)0 - (rmpint_digit)((borrow & 1u) ^ 1u);
-  for (x = 0; x < n + 1; x++)
-    a->data[x] = (a->data[x] & ~mask) | (scratch[x] & mask);
-
-  r_mpint_clamp (a);
-  r_memclear_secure (scratch, (n + 1) * sizeof (rmpint_digit));
+  for (j = 0; j < n; j++)
+    out->d[j] = (T[j] & ~mask) | (scratch[j] & mask);
+  for (j = n; j < R_ECURVE_FE_MAX_DIGITS; j++)
+    out->d[j] = 0;
 }
 
-/* out := a * b * R^-1 mod p. If a and b are in Montgomery form,
- * out is in Montgomery form too. */
-static rboolean
-r_ecurve_mont_mul (rmpint * out, const rmpint * a, const rmpint * b,
-    const REcurve * curve)
+static void
+r_ecurve_fe_sqr_mont (REcurveFE * out, const REcurveFE * a,
+    const REcurveFEContext * ctx)
 {
-  return r_mpint_mul (out, a, b) &&
-         r_mpint_montgomery_reduce_ct (out, &curve->p, curve->mont_mp);
+  r_ecurve_fe_mul_mont (out, a, a, ctx);
 }
 
-/* out := a^2 * R^-1 mod p. */
-static rboolean
-r_ecurve_mont_sqr (rmpint * out, const rmpint * a, const REcurve * curve)
+/* Normal -> Montgomery: out = a * R mod p. */
+static void
+r_ecurve_fe_mont_in (REcurveFE * out, const REcurveFE * a,
+    const REcurveFEContext * ctx)
 {
-  return r_ecurve_mont_mul (out, a, a, curve);
+  r_ecurve_fe_mul_mont (out, a, &ctx->mont_r_squared, ctx);
 }
 
-/* out := (a + b) mod p. Inputs may be in Montgomery form or normal -
- * addition commutes with the Montgomery transform. */
-static rboolean
-r_ecurve_mont_add (rmpint * out, const rmpint * a, const rmpint * b,
-    const REcurve * curve)
+/* Montgomery -> normal: out = a / R mod p. Performed as M(a, 1), which
+ * gives a * 1 * R^-1 = a/R. */
+static void
+r_ecurve_fe_mont_out (REcurveFE * out, const REcurveFE * a,
+    const REcurveFEContext * ctx)
 {
-  if (!r_mpint_add (out, a, b))
-    return FALSE;
-  r_ecurve_cond_subp_ct (out, &curve->p);
-  return TRUE;
+  REcurveFE one;
+  r_ecurve_fe_zero (&one);
+  one.d[0] = 1;
+  r_ecurve_fe_mul_mont (out, a, &one, ctx);
 }
 
-/* out := (a - b) mod p. Computed as (a + p - b) so the intermediate
- * never goes negative; then a constant-time conditional subtract of
- * p brings it back into [0, p). r_mpint_add / _sub iterate digits
- * and write each output position after reading the matching input
- * digits, so the in-place form is safe when out aliases a or b. */
-static rboolean
-r_ecurve_mont_sub (rmpint * out, const rmpint * a, const rmpint * b,
-    const REcurve * curve)
+/* Fermat-based inversion in Montgomery form: out = a_M^(p-2) mod p
+ * (also in Mont form). Left-to-right Montgomery exponentiation with
+ * swap-wrap CT dispatch on each exponent bit. The exponent is
+ * curve-public (p-2 for the named curve) so its bit pattern doesn't
+ * leak anything; the secret is the base, and the CT FE primitives
+ * keep that base's bit pattern out of timing. */
+static void
+r_ecurve_fe_invmod_mont (REcurveFE * out, const REcurveFE * a_M,
+    const REcurveFEContext * ctx)
 {
-  if (!r_mpint_add (out, a, &curve->p) ||
-      !r_mpint_sub (out, out, b))
-    return FALSE;
-  r_ecurve_cond_subp_ct (out, &curve->p);
-  return TRUE;
-}
-
-/* out := a * R mod p. Lifts a normal-form value into Montgomery
- * form via one Montgomery multiplication with R^2. */
-static rboolean
-r_ecurve_mont_in (rmpint * out, const rmpint * a, const REcurve * curve)
-{
-  return r_ecurve_mont_mul (out, a, &curve->mont_r_squared, curve);
-}
-
-/* out := a / R mod p. Drops a Montgomery-form value back to normal
- * form via Montgomery reduction. */
-static rboolean
-r_ecurve_mont_out (rmpint * out, const rmpint * a, const REcurve * curve)
-{
-  if (out != a)
-    r_mpint_set (out, a);
-  return r_mpint_montgomery_reduce_ct (out, &curve->p, curve->mont_mp);
-}
-
-/* out_M := base_M^exp in Montgomery form. base is already in
- * Montgomery form on entry; out is in Montgomery form on exit
- * (i.e. (base_actual^exp) * R mod p).
- *
- * Left-to-right Montgomery ladder over the exponent bits, with the
- * per-bit dispatch routed through r_mpint_swap_ct so cache and
- * branch behaviour stay independent of the bit being processed.
- * The CT Montgomery reduce keeps the per-iteration field ops
- * branch-free on the secret base too. The exponent here is
- * curve->p_minus_2 (a public per-curve constant), so timing
- * variation in exp itself - bit length, set-bit count - is fine;
- * what matters is that the secret base's bit pattern doesn't
- * influence control flow.
- *
- * Invariant after each iteration: R[1] = R[0] * base_M (in
- * Montgomery form). Starting from R[0] = 1_M, R[1] = base_M, the
- * pair evolves so R[0] = base_M^(exp_bits_seen) at the end. */
-static rboolean
-r_ecurve_mont_expmod (rmpint * out, const rmpint * base_M,
-    const rmpint * exp, const REcurve * curve)
-{
-  rmpint R[2];
-  ruint16 didx, bidx;
+  REcurveFE R[2], one;
+  ruint i;
   rmpint_digit bit;
-  rboolean ok = FALSE;
 
-  r_mpint_init_from (&R[0], base_M, &curve->p, NULL);
-  r_mpint_init_from (&R[1], base_M, &curve->p, NULL);
+  r_ecurve_fe_zero (&one);
+  one.d[0] = 1;
+  r_ecurve_fe_mont_in (&R[0], &one, ctx);   /* R[0] = 1 in Mont (= R mod p) */
+  r_ecurve_fe_copy (&R[1], a_M);             /* R[1] = a_M */
 
-  /* R[0] = 1 in Montgomery form (= R mod p). R[1] = base_M. */
-  if (!r_mpint_montgomery_normalize (&R[0], &curve->p))
-    goto cleanup;
-  r_mpint_set (&R[1], base_M);
+  for (i = ctx->p_minus_2_bits; i > 0; i--) {
+    ruint bp = i - 1;
+    bit = (ctx->p_minus_2.d[bp / (sizeof (rmpint_digit) * 8)] >>
+           (bp % (sizeof (rmpint_digit) * 8))) & 1u;
 
-  for (didx = r_mpint_digits_used (exp); didx > 0; didx--) {
-    rmpint_digit dig = r_mpint_get_digit (exp, didx - 1);
-    for (bidx = 0; bidx < sizeof (rmpint_digit) * 8; bidx++) {
-      bit = (dig >> (sizeof (rmpint_digit) * 8 - 1)) & 1;
-      dig <<= 1;
-
-      /* swap-wrap routes the conventional
-       *   if (bit) { R[0] = R[0]*R[1]; R[1] = R[1]^2; }
-       *   else     { R[1] = R[0]*R[1]; R[0] = R[0]^2; }
-       * through a fixed sequence: swap, do the bit=0 branch, swap
-       * back. See r_ecurve_point_scalar_mul for the same pattern
-       * on the EC ladder. */
-      r_mpint_swap_ct (&R[0], &R[1], (ruint32)bit);
-      if (!r_ecurve_mont_mul (&R[1], &R[0], &R[1], curve) ||
-          !r_ecurve_mont_sqr (&R[0], &R[0], curve))
-        goto cleanup;
-      r_mpint_swap_ct (&R[0], &R[1], (ruint32)bit);
-    }
+    r_ecurve_fe_swap_ct (&R[0], &R[1], (ruint32)bit, ctx->n_digits);
+    r_ecurve_fe_mul_mont (&R[1], &R[0], &R[1], ctx);
+    r_ecurve_fe_sqr_mont (&R[0], &R[0], ctx);
+    r_ecurve_fe_swap_ct (&R[0], &R[1], (ruint32)bit, ctx->n_digits);
   }
 
-  r_mpint_set (out, &R[0]);
-  ok = TRUE;
-cleanup:
-  r_mpint_clear (&R[0]);
-  r_mpint_clear (&R[1]);
-  return ok;
+  r_ecurve_fe_copy (out, &R[0]);
+  r_memclear_secure (R, sizeof (R));
 }
 
-/* out_M := (a_M)^-1 in Montgomery form, via Fermat's little
- * theorem: for a in (Z/pZ)*, a^(p-1) = 1, so a^-1 = a^(p-2).
- *
- * Running the exponentiation directly in the Montgomery domain
- * keeps the operand in Montgomery form throughout - no detour
- * through normal form + r_mpint_mulmod, both of which are
- * variable-time on the secret value. */
-static rboolean
-r_ecurve_mont_invmod (rmpint * out, const rmpint * a, const REcurve * curve)
-{
-  return r_ecurve_mont_expmod (out, a, &curve->p_minus_2, curve);
-}
-
-/* --- Internal Jacobian-projective point arithmetic, used inside
- * the scalar-mul ladder. A Jacobian point (X, Y, Z) represents the
- * affine point (X/Z^2, Y/Z^3), with Z=0 marking the identity. All
- * coordinates are stored in Montgomery form. Working in projective
- * coords keeps the per-step cost at a few field multiplications
- * (no inversion), so the single Fermat-based inversion at the end
- * for the affine conversion is amortised over all bits of the
- * scalar. --- */
+/* ---- Jacobian-projective point arithmetic on FE coords. A point
+ * (X, Y, Z) represents the affine (X/Z^2, Y/Z^3); Z = 0 marks the
+ * identity. All coordinates are in Mont form. ---- */
 
 typedef struct {
-  rmpint X;
-  rmpint Y;
-  rmpint Z;
+  REcurveFE X;
+  REcurveFE Y;
+  REcurveFE Z;
 } REcurveJacobianPoint;
 
-/* Pre-allocated scratch pool used by the Jacobian dbl + add. The
- * mpints live for the duration of one scalar_mul - allocating them
- * here once and reusing across all ~521 ladder steps avoids the
- * malloc / free churn the per-call init / clear pattern would
- * otherwise incur (the secure-clear flag makes that churn even more
- * expensive: each free zeroes the digit buffer before releasing).
- *
- * The 21 slots cover the worst case (r_ecurve_jp_add); the dbl
- * uses the first 11 under different aliases. Keeping a single pool
- * shared between the two operations keeps the scalar_mul setup
- * compact - the alternative is two separate scratch structs which
- * would duplicate the per-call buffer pressure. */
-typedef struct {
-  rmpint t[21];
-} REcurveJacobianScratch;
+static void
+r_ecurve_jp_init (REcurveJacobianPoint * P)
+{
+  r_ecurve_fe_zero (&P->X);
+  r_ecurve_fe_zero (&P->Y);
+  r_ecurve_fe_zero (&P->Z);
+}
+
+static void
+r_ecurve_jp_clear (REcurveJacobianPoint * P)
+{
+  r_memclear_secure (P, sizeof (*P));
+}
+
+static void
+r_ecurve_jp_swap_ct (REcurveJacobianPoint * a, REcurveJacobianPoint * b,
+    ruint32 bit, ruint16 n)
+{
+  r_ecurve_fe_swap_ct (&a->X, &b->X, bit, n);
+  r_ecurve_fe_swap_ct (&a->Y, &b->Y, bit, n);
+  r_ecurve_fe_swap_ct (&a->Z, &b->Z, bit, n);
+}
 
 static void
 r_ecurve_jp_scratch_init (REcurveJacobianScratch * s)
 {
   rsize i;
   for (i = 0; i < R_N_ELEMENTS (s->t); i++)
-    r_mpint_init_secure (&s->t[i]);
+    r_ecurve_fe_zero (&s->t[i]);
 }
 
 static void
 r_ecurve_jp_scratch_clear (REcurveJacobianScratch * s)
 {
-  rsize i;
-  for (i = 0; i < R_N_ELEMENTS (s->t); i++)
-    r_mpint_clear (&s->t[i]);
-}
-
-static void
-r_ecurve_jp_init (REcurveJacobianPoint * P)
-{
-  /* Inherit secure-clear so any intermediate the ladder accumulates
-   * gets wiped on r_mpint_clear, just like the affine point lifecycle. */
-  r_mpint_init_secure (&P->X);
-  r_mpint_init_secure (&P->Y);
-  r_mpint_init_secure (&P->Z);
-}
-
-static void
-r_ecurve_jp_clear (REcurveJacobianPoint * P)
-{
-  r_mpint_clear (&P->X);
-  r_mpint_clear (&P->Y);
-  r_mpint_clear (&P->Z);
-}
-
-static void
-r_ecurve_jp_swap_ct (REcurveJacobianPoint * a, REcurveJacobianPoint * b,
-    ruint32 bit)
-{
-  r_mpint_swap_ct (&a->X, &b->X, bit);
-  r_mpint_swap_ct (&a->Y, &b->Y, bit);
-  r_mpint_swap_ct (&a->Z, &b->Z, bit);
+  r_memclear_secure (s, sizeof (*s));
 }
 
 /* Jacobian doubling, generic short Weierstrass y^2 = x^3 + ax + b.
  * Z=0 input ("identity") propagates to Z=0 output because the new
  * Z' = 2*Y*Z is multiplied by Z; X' and Y' fall out as junk but the
- * Z=0 marker keeps the point classified as identity, so callers
- * don't have to special-case it. */
-static rboolean
-r_ecurve_jp_dbl (REcurveJacobianPoint * out,
-    const REcurveJacobianPoint * P, const REcurve * curve,
-    REcurveJacobianScratch * s)
+ * Z=0 marker keeps the point classified as identity. */
+static void
+r_ecurve_jp_dbl (REcurveJacobianPoint * out, const REcurveJacobianPoint * P,
+    const REcurveFEContext * ctx, REcurveJacobianScratch * s)
 {
-  rmpint * const XX   = &s->t[0];
-  rmpint * const YY   = &s->t[1];
-  rmpint * const YYYY = &s->t[2];
-  rmpint * const ZZ   = &s->t[3];
-  rmpint * const Z4   = &s->t[4];
-  rmpint * const S    = &s->t[5];
-  rmpint * const M    = &s->t[6];
-  rmpint * const T    = &s->t[7];
-  rmpint * const Znew = &s->t[8];
-  rmpint * const Ynew = &s->t[9];
-  rmpint * const tmp  = &s->t[10];
+  REcurveFE * const XX   = &s->t[0];
+  REcurveFE * const YY   = &s->t[1];
+  REcurveFE * const YYYY = &s->t[2];
+  REcurveFE * const ZZ   = &s->t[3];
+  REcurveFE * const Z4   = &s->t[4];
+  REcurveFE * const S    = &s->t[5];
+  REcurveFE * const M    = &s->t[6];
+  REcurveFE * const T    = &s->t[7];
+  REcurveFE * const Znew = &s->t[8];
+  REcurveFE * const Ynew = &s->t[9];
+  REcurveFE * const tmp  = &s->t[10];
 
-  /* All reads of P happen before any write to out, so out aliasing P
-   * is fine. */
-  if (!r_ecurve_mont_sqr (XX,   &P->X, curve))   return FALSE; /* X^2 */
-  if (!r_ecurve_mont_sqr (YY,   &P->Y, curve))   return FALSE; /* Y^2 */
-  if (!r_ecurve_mont_sqr (YYYY, YY,    curve))   return FALSE; /* Y^4 */
-  if (!r_ecurve_mont_sqr (ZZ,   &P->Z, curve))   return FALSE; /* Z^2 */
-  if (!r_ecurve_mont_sqr (Z4,   ZZ,    curve))   return FALSE; /* Z^4 */
+  /* All reads of P happen before any write to out, so aliasing out
+   * with P is fine. */
+  r_ecurve_fe_sqr_mont (XX, &P->X, ctx);
+  r_ecurve_fe_sqr_mont (YY, &P->Y, ctx);
+  r_ecurve_fe_sqr_mont (YYYY, YY, ctx);
+  r_ecurve_fe_sqr_mont (ZZ, &P->Z, ctx);
+  r_ecurve_fe_sqr_mont (Z4, ZZ, ctx);
 
   /* S = 4 * X * YY */
-  if (!r_ecurve_mont_mul (tmp, &P->X, YY,  curve)) return FALSE;
-  if (!r_ecurve_mont_add (S,   tmp,   tmp, curve)) return FALSE;
-  if (!r_ecurve_mont_add (S,   S,     S,   curve)) return FALSE;
+  r_ecurve_fe_mul_mont (tmp, &P->X, YY, ctx);
+  r_ecurve_fe_add (S, tmp, tmp, ctx);
+  r_ecurve_fe_add (S, S, S, ctx);
 
   /* M = 3 * XX + a * Z^4 */
-  if (!r_ecurve_mont_mul (M,   &curve->mont_a, Z4, curve)) return FALSE;
-  if (!r_ecurve_mont_add (tmp, XX, XX, curve))             return FALSE;
-  if (!r_ecurve_mont_add (tmp, tmp, XX, curve))            return FALSE;
-  if (!r_ecurve_mont_add (M,   M, tmp, curve))             return FALSE;
+  r_ecurve_fe_mul_mont (M, &ctx->mont_a, Z4, ctx);
+  r_ecurve_fe_add (tmp, XX, XX, ctx);
+  r_ecurve_fe_add (tmp, tmp, XX, ctx);
+  r_ecurve_fe_add (M, M, tmp, ctx);
 
   /* T = M^2 - 2*S  ( = X' ) */
-  if (!r_ecurve_mont_sqr (T, M, curve))     return FALSE;
-  if (!r_ecurve_mont_sub (T, T, S, curve))  return FALSE;
-  if (!r_ecurve_mont_sub (T, T, S, curve))  return FALSE;
+  r_ecurve_fe_sqr_mont (T, M, ctx);
+  r_ecurve_fe_sub (T, T, S, ctx);
+  r_ecurve_fe_sub (T, T, S, ctx);
 
   /* Y' = M * (S - T) - 8 * YYYY */
-  if (!r_ecurve_mont_sub (tmp,  S, T, curve))     return FALSE;
-  if (!r_ecurve_mont_mul (Ynew, M, tmp, curve))   return FALSE;
-  if (!r_ecurve_mont_add (tmp,  YYYY, YYYY, curve)) return FALSE;
-  if (!r_ecurve_mont_add (tmp,  tmp, tmp, curve))   return FALSE;
-  if (!r_ecurve_mont_add (tmp,  tmp, tmp, curve))   return FALSE;
-  if (!r_ecurve_mont_sub (Ynew, Ynew, tmp, curve))  return FALSE;
+  r_ecurve_fe_sub (tmp, S, T, ctx);
+  r_ecurve_fe_mul_mont (Ynew, M, tmp, ctx);
+  r_ecurve_fe_add (tmp, YYYY, YYYY, ctx);
+  r_ecurve_fe_add (tmp, tmp, tmp, ctx);
+  r_ecurve_fe_add (tmp, tmp, tmp, ctx);
+  r_ecurve_fe_sub (Ynew, Ynew, tmp, ctx);
 
-  /* Z' = 2 * Y * Z. Must read P->Y / P->Z before writing out->Y / out->Z
-   * (matters when out aliases P). */
-  if (!r_ecurve_mont_mul (Znew, &P->Y, &P->Z, curve)) return FALSE;
-  if (!r_ecurve_mont_add (Znew, Znew, Znew, curve))   return FALSE;
+  /* Z' = 2 * Y * Z. Reads of P->Y / P->Z happen before writes to
+   * out->Y / out->Z, so the aliased case is safe. */
+  r_ecurve_fe_mul_mont (Znew, &P->Y, &P->Z, ctx);
+  r_ecurve_fe_add (Znew, Znew, Znew, ctx);
 
-  r_mpint_set (&out->X, T);
-  r_mpint_set (&out->Y, Ynew);
-  r_mpint_set (&out->Z, Znew);
-
-  return TRUE;
+  r_ecurve_fe_copy (&out->X, T);
+  r_ecurve_fe_copy (&out->Y, Ynew);
+  r_ecurve_fe_copy (&out->Z, Znew);
 }
 
 /* Jacobian addition. Standard formula plus a branchless identity
@@ -526,140 +603,123 @@ r_ecurve_jp_dbl (REcurveJacobianPoint * out,
  * the non-identity operand. The P == Q case is left intentionally
  * undefined here because the ladder invariant R1 = R0 + base_point
  * keeps R0 and R1 from ever coinciding (base_point != identity).
- * The P == -Q case (R1 - R0 = base_point != 0 means this can't
- * happen either) is incidentally handled by the formula because
+ * The P == -Q case is incidentally handled by the formula because
  * H = 0, R != 0 makes Z3 = 0. */
-static rboolean
-r_ecurve_jp_add (REcurveJacobianPoint * out,
-    const REcurveJacobianPoint * P, const REcurveJacobianPoint * Q,
-    const REcurve * curve, REcurveJacobianScratch * s)
+static void
+r_ecurve_jp_add (REcurveJacobianPoint * out, const REcurveJacobianPoint * P,
+    const REcurveJacobianPoint * Q, const REcurveFEContext * ctx,
+    REcurveJacobianScratch * s)
 {
-  rmpint * const Z1Z1    = &s->t[0];
-  rmpint * const Z2Z2    = &s->t[1];
-  rmpint * const Z1cubed = &s->t[2];
-  rmpint * const Z2cubed = &s->t[3];
-  rmpint * const U1      = &s->t[4];
-  rmpint * const U2      = &s->t[5];
-  rmpint * const S1      = &s->t[6];
-  rmpint * const S2      = &s->t[7];
-  rmpint * const H       = &s->t[8];
-  rmpint * const R       = &s->t[9];
-  rmpint * const H2      = &s->t[10];
-  rmpint * const H3      = &s->t[11];
-  rmpint * const U1H2    = &s->t[12];
-  rmpint * const X3      = &s->t[13];
-  rmpint * const Y3      = &s->t[14];
-  rmpint * const Z3      = &s->t[15];
-  rmpint * const tmp     = &s->t[16];
-  rmpint * const X_final = &s->t[17];
-  rmpint * const Y_final = &s->t[18];
-  rmpint * const Z_final = &s->t[19];
+  REcurveFE * const Z1Z1    = &s->t[0];
+  REcurveFE * const Z2Z2    = &s->t[1];
+  REcurveFE * const Z1cubed = &s->t[2];
+  REcurveFE * const Z2cubed = &s->t[3];
+  REcurveFE * const U1      = &s->t[4];
+  REcurveFE * const U2      = &s->t[5];
+  REcurveFE * const S1      = &s->t[6];
+  REcurveFE * const S2      = &s->t[7];
+  REcurveFE * const H       = &s->t[8];
+  REcurveFE * const R       = &s->t[9];
+  REcurveFE * const H2      = &s->t[10];
+  REcurveFE * const H3      = &s->t[11];
+  REcurveFE * const U1H2    = &s->t[12];
+  REcurveFE * const X3      = &s->t[13];
+  REcurveFE * const Y3      = &s->t[14];
+  REcurveFE * const Z3      = &s->t[15];
+  REcurveFE * const tmp     = &s->t[16];
+  REcurveFE * const X_final = &s->t[17];
+  REcurveFE * const Y_final = &s->t[18];
+  REcurveFE * const Z_final = &s->t[19];
+  ruint16 n = ctx->n_digits;
   rmpint_digit p_is_zero, q_is_zero;
-  ruint16 n;
 
-  n = r_mpint_digits_used (&curve->p);
+  /* Identity probes computed up front, before the standard formula
+   * trashes the operands' images in scratch. */
+  p_is_zero = r_ecurve_fe_iszero_ct (&P->Z, n);
+  q_is_zero = r_ecurve_fe_iszero_ct (&Q->Z, n);
 
-  /* Identity probes are computed up front so they reflect the state
-   * of the operands before the standard formula trashes intermediate
-   * buffers. The +1 covers the fixed-width Montgomery representation
-   * that r_mpint_montgomery_reduce_ct produces (n + 1 digits, low end
-   * padded with zeros for a true zero). */
-  p_is_zero = r_mpint_iszero_n_ct (&P->Z, (ruint16)(n + 1));
-  q_is_zero = r_mpint_iszero_n_ct (&Q->Z, (ruint16)(n + 1));
+  /* Standard formula. */
+  r_ecurve_fe_sqr_mont (Z1Z1, &P->Z, ctx);
+  r_ecurve_fe_sqr_mont (Z2Z2, &Q->Z, ctx);
+  r_ecurve_fe_mul_mont (Z1cubed, &P->Z, Z1Z1, ctx);
+  r_ecurve_fe_mul_mont (Z2cubed, &Q->Z, Z2Z2, ctx);
 
-  /* Standard formula: U1 = X1*Z2^2, U2 = X2*Z1^2, S1 = Y1*Z2^3,
-   * S2 = Y2*Z1^3, H = U2 - U1, R = S2 - S1. */
-  if (!r_ecurve_mont_sqr (Z1Z1, &P->Z, curve))            return FALSE;
-  if (!r_ecurve_mont_sqr (Z2Z2, &Q->Z, curve))            return FALSE;
-  if (!r_ecurve_mont_mul (Z1cubed, &P->Z, Z1Z1, curve))   return FALSE;
-  if (!r_ecurve_mont_mul (Z2cubed, &Q->Z, Z2Z2, curve))   return FALSE;
+  r_ecurve_fe_mul_mont (U1, &P->X, Z2Z2, ctx);
+  r_ecurve_fe_mul_mont (U2, &Q->X, Z1Z1, ctx);
+  r_ecurve_fe_mul_mont (S1, &P->Y, Z2cubed, ctx);
+  r_ecurve_fe_mul_mont (S2, &Q->Y, Z1cubed, ctx);
 
-  if (!r_ecurve_mont_mul (U1, &P->X, Z2Z2, curve))         return FALSE;
-  if (!r_ecurve_mont_mul (U2, &Q->X, Z1Z1, curve))         return FALSE;
-  if (!r_ecurve_mont_mul (S1, &P->Y, Z2cubed, curve))      return FALSE;
-  if (!r_ecurve_mont_mul (S2, &Q->Y, Z1cubed, curve))      return FALSE;
+  r_ecurve_fe_sub (H, U2, U1, ctx);
+  r_ecurve_fe_sub (R, S2, S1, ctx);
 
-  if (!r_ecurve_mont_sub (H, U2, U1, curve))   return FALSE;
-  if (!r_ecurve_mont_sub (R, S2, S1, curve))   return FALSE;
-
-  if (!r_ecurve_mont_sqr (H2, H, curve))             return FALSE;
-  if (!r_ecurve_mont_mul (H3, H, H2, curve))         return FALSE;
-  if (!r_ecurve_mont_mul (U1H2, U1, H2, curve))      return FALSE;
+  r_ecurve_fe_sqr_mont (H2, H, ctx);
+  r_ecurve_fe_mul_mont (H3, H, H2, ctx);
+  r_ecurve_fe_mul_mont (U1H2, U1, H2, ctx);
 
   /* X3 = R^2 - H^3 - 2 * U1*H^2 */
-  if (!r_ecurve_mont_sqr (X3, R, curve))             return FALSE;
-  if (!r_ecurve_mont_sub (X3, X3, H3, curve))        return FALSE;
-  if (!r_ecurve_mont_sub (X3, X3, U1H2, curve))      return FALSE;
-  if (!r_ecurve_mont_sub (X3, X3, U1H2, curve))      return FALSE;
+  r_ecurve_fe_sqr_mont (X3, R, ctx);
+  r_ecurve_fe_sub (X3, X3, H3, ctx);
+  r_ecurve_fe_sub (X3, X3, U1H2, ctx);
+  r_ecurve_fe_sub (X3, X3, U1H2, ctx);
 
   /* Y3 = R * (U1*H^2 - X3) - S1*H^3 */
-  if (!r_ecurve_mont_sub (tmp, U1H2, X3, curve))    return FALSE;
-  if (!r_ecurve_mont_mul (Y3, R, tmp, curve))       return FALSE;
-  if (!r_ecurve_mont_mul (tmp, S1, H3, curve))      return FALSE;
-  if (!r_ecurve_mont_sub (Y3, Y3, tmp, curve))      return FALSE;
+  r_ecurve_fe_sub (tmp, U1H2, X3, ctx);
+  r_ecurve_fe_mul_mont (Y3, R, tmp, ctx);
+  r_ecurve_fe_mul_mont (tmp, S1, H3, ctx);
+  r_ecurve_fe_sub (Y3, Y3, tmp, ctx);
 
   /* Z3 = Z1 * Z2 * H */
-  if (!r_ecurve_mont_mul (Z3, &P->Z, &Q->Z, curve))   return FALSE;
-  if (!r_ecurve_mont_mul (Z3, Z3, H, curve))          return FALSE;
+  r_ecurve_fe_mul_mont (Z3, &P->Z, &Q->Z, ctx);
+  r_ecurve_fe_mul_mont (Z3, Z3, H, ctx);
 
-  /* Identity fix-up via masked select:
-   *   X_final = q_is_zero ? P.X : X3;     (then) p_is_zero ? Q.X : X_final
-   *   ... same for Y, Z.
-   * The double pass correctly handles all four (p, q) identity
-   * combinations: see the case table in this function's docstring. */
-  r_mpint_select_n_ct (X_final, q_is_zero, &P->X, X3, (ruint16)(n + 1));
-  r_mpint_select_n_ct (Y_final, q_is_zero, &P->Y, Y3, (ruint16)(n + 1));
-  r_mpint_select_n_ct (Z_final, q_is_zero, &P->Z, Z3, (ruint16)(n + 1));
-  r_mpint_select_n_ct (X_final, p_is_zero, &Q->X, X_final, (ruint16)(n + 1));
-  r_mpint_select_n_ct (Y_final, p_is_zero, &Q->Y, Y_final, (ruint16)(n + 1));
-  r_mpint_select_n_ct (Z_final, p_is_zero, &Q->Z, Z_final, (ruint16)(n + 1));
+  /* Identity fix-up: pick (computed; P; Q) per the (p,q) zero pair. */
+  r_ecurve_fe_select_ct (X_final, q_is_zero, &P->X, X3, n);
+  r_ecurve_fe_select_ct (Y_final, q_is_zero, &P->Y, Y3, n);
+  r_ecurve_fe_select_ct (Z_final, q_is_zero, &P->Z, Z3, n);
+  r_ecurve_fe_select_ct (X_final, p_is_zero, &Q->X, X_final, n);
+  r_ecurve_fe_select_ct (Y_final, p_is_zero, &Q->Y, Y_final, n);
+  r_ecurve_fe_select_ct (Z_final, p_is_zero, &Q->Z, Z_final, n);
 
   /* Assign last so out can safely alias P or Q. */
-  r_mpint_set (&out->X, X_final);
-  r_mpint_set (&out->Y, Y_final);
-  r_mpint_set (&out->Z, Z_final);
-
-  return TRUE;
+  r_ecurve_fe_copy (&out->X, X_final);
+  r_ecurve_fe_copy (&out->Y, Y_final);
+  r_ecurve_fe_copy (&out->Z, Z_final);
 }
 
 /* Jacobian -> affine: divide out the Z. Identity (Z=0) maps to
  * is_infinity = TRUE. The Z != 0 path costs one Fermat inversion +
  * a handful of field multiplications. */
 static rboolean
-r_ecurve_jp_to_affine (REcurveAffinePoint * out,
-    const REcurveJacobianPoint * P, const REcurve * curve)
+r_ecurve_jp_to_affine (REcurveAffinePoint * out, const REcurveJacobianPoint * P,
+    const REcurveFEContext * ctx)
 {
-  rmpint Z_inv, Z2_inv, Z3_inv, x_M, y_M;
-  ruint16 n = r_mpint_digits_used (&curve->p);
-  rboolean ok = FALSE;
+  REcurveFE Z_inv, Z2_inv, Z3_inv, x_M, y_M, x_norm, y_norm;
+  ruint16 n = ctx->n_digits;
+  rboolean ok = TRUE;
 
-  if (r_mpint_iszero_n_ct (&P->Z, (ruint16)(n + 1)) != 0) {
+  if (r_ecurve_fe_iszero_ct (&P->Z, n) != 0) {
     r_ecurve_point_set_infinity (out);
     return TRUE;
   }
 
-  r_mpint_init_secure (&Z_inv);
-  r_mpint_init_secure (&Z2_inv);
-  r_mpint_init_secure (&Z3_inv);
-  r_mpint_init_secure (&x_M);
-  r_mpint_init_secure (&y_M);
+  r_ecurve_fe_invmod_mont (&Z_inv, &P->Z, ctx);
+  r_ecurve_fe_sqr_mont (&Z2_inv, &Z_inv, ctx);
+  r_ecurve_fe_mul_mont (&Z3_inv, &Z_inv, &Z2_inv, ctx);
+  r_ecurve_fe_mul_mont (&x_M, &P->X, &Z2_inv, ctx);
+  r_ecurve_fe_mul_mont (&y_M, &P->Y, &Z3_inv, ctx);
+  r_ecurve_fe_mont_out (&x_norm, &x_M, ctx);
+  r_ecurve_fe_mont_out (&y_norm, &y_M, ctx);
 
-  if (!r_ecurve_mont_invmod (&Z_inv, &P->Z, curve))             goto cleanup;
-  if (!r_ecurve_mont_sqr (&Z2_inv, &Z_inv, curve))              goto cleanup;
-  if (!r_ecurve_mont_mul (&Z3_inv, &Z_inv, &Z2_inv, curve))     goto cleanup;
-  if (!r_ecurve_mont_mul (&x_M, &P->X, &Z2_inv, curve))         goto cleanup;
-  if (!r_ecurve_mont_mul (&y_M, &P->Y, &Z3_inv, curve))         goto cleanup;
-  if (!r_ecurve_mont_out (&out->x, &x_M, curve))                goto cleanup;
-  if (!r_ecurve_mont_out (&out->y, &y_M, curve))                goto cleanup;
+  if (!r_ecurve_fe_to_mpint (&out->x, &x_norm, n) ||
+      !r_ecurve_fe_to_mpint (&out->y, &y_norm, n))
+    ok = FALSE;
   out->is_infinity = FALSE;
-  ok = TRUE;
 
-cleanup:
-  r_mpint_clear (&Z_inv);
-  r_mpint_clear (&Z2_inv);
-  r_mpint_clear (&Z3_inv);
-  r_mpint_clear (&x_M);
-  r_mpint_clear (&y_M);
+  r_memclear_secure (&Z_inv, sizeof (Z_inv));
+  r_memclear_secure (&Z2_inv, sizeof (Z2_inv));
+  r_memclear_secure (&Z3_inv, sizeof (Z3_inv));
+  r_memclear_secure (&x_M, sizeof (x_M));
+  r_memclear_secure (&y_M, sizeof (y_M));
   return ok;
 }
 
@@ -914,87 +974,127 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
    * operand when one side has Z=0 - so the leading-zero bits at the
    * start of k' (above its conditioned MSB) do not require value-
    * dependent branching. */
+  REcurveFEContext ctx;
+  REcurveFE x_norm, y_norm, one;
   REcurveJacobianPoint R0, R1;
   REcurveJacobianScratch scratch;
-  rmpint k1, k2, k_prime;
-  ruint16 niter_digits, dig_bound, i;
-  ruint nbits, bp, j;
-  rmpint_digit bit, msb_set, mask;
+  /* Scalar conditioning needs literal multi-digit add (not mod p), so
+   * use raw digit arrays sized to n+1 digits for k+n and k+2n. */
+  rmpint_digit k1[R_ECURVE_FE_MAX_DIGITS + 1];
+  rmpint_digit k2[R_ECURVE_FE_MAX_DIGITS + 1];
+  rmpint_digit k_prime[R_ECURVE_FE_MAX_DIGITS + 1];
+  ruint16 n, i, to_copy;
+  ruint nbits, bp;
+  ruint j;
+  rmpint_word u;
+  rmpint_digit bit, msb_set, mask, carry;
   rboolean ok = FALSE;
 
-  /* point->is_infinity is a public flag (caller-side metadata), so
-   * branching on it doesn't leak anything sensitive. The scalar
-   * fast-path is handled inside the ladder: a zero scalar produces
-   * a k' = 2n with bit at position bit_count(n) set; the ladder
-   * runs the full iteration count and lands at R0 = identity. */
+  /* point->is_infinity is public caller-side metadata - branching on
+   * it doesn't leak anything sensitive. A zero scalar is handled
+   * inside the ladder: conditioning maps k=0 to k' = 2n which has
+   * the conditioned MSB set, the ladder runs the full iteration
+   * count and lands at R0 = identity. */
   if (point->is_infinity) {
     r_ecurve_point_set_infinity (out);
     return TRUE;
   }
 
+  /* Build the FE context from the curve's precomputed rmpint
+   * constants. This is a few digit copies per constant - much cheaper
+   * than one ladder iteration. */
+  n = r_mpint_digits_used (&curve->p);
+  ctx.n_digits = n;
+  ctx.mp = curve->mont_mp;
+  ctx.p_minus_2_bits = r_mpint_bits_used (&curve->p_minus_2);
+  ctx.n_bits = r_mpint_bits_used (&curve->n);
+  r_ecurve_fe_from_mpint (&ctx.p, &curve->p, n);
+  r_ecurve_fe_from_mpint (&ctx.mont_r_squared, &curve->mont_r_squared, n);
+  r_ecurve_fe_from_mpint (&ctx.mont_a, &curve->mont_a, n);
+  r_ecurve_fe_from_mpint (&ctx.p_minus_2, &curve->p_minus_2, n);
+  r_ecurve_fe_from_mpint (&ctx.n, &curve->n, n);
+
   r_ecurve_jp_init (&R0);
   r_ecurve_jp_init (&R1);
   r_ecurve_jp_scratch_init (&scratch);
-  r_mpint_init_secure (&k1);
-  r_mpint_init_secure (&k2);
-  r_mpint_init_secure (&k_prime);
 
-  /* R0 stays at identity (X=Y=Z=0 from init; Z=0 marks it). R1 is
-   * the input point lifted into Jacobian: (x_M, y_M, 1_M), where
-   * 1_M = R mod p is what r_mpint_montgomery_normalize produces. */
-  if (!r_ecurve_mont_in (&R1.X, &point->x, curve) ||
-      !r_ecurve_mont_in (&R1.Y, &point->y, curve) ||
-      !r_mpint_montgomery_normalize (&R1.Z, &curve->p))
-    goto cleanup;
+  /* R0 stays at identity (X=Y=Z=0). R1 is the input point lifted
+   * into Jacobian Mont form: (x_M, y_M, 1_M), where 1_M = R mod p
+   * is computed as mont_in(1). */
+  r_ecurve_fe_from_mpint (&x_norm, &point->x, n);
+  r_ecurve_fe_from_mpint (&y_norm, &point->y, n);
+  r_ecurve_fe_mont_in (&R1.X, &x_norm, &ctx);
+  r_ecurve_fe_mont_in (&R1.Y, &y_norm, &ctx);
+  r_ecurve_fe_zero (&one);
+  one.d[0] = 1;
+  r_ecurve_fe_mont_in (&R1.Z, &one, &ctx);
 
-  /* Condition the scalar. niter_digits + 1 covers the worst case for
-   * either candidate (k + 2n < 3n always fits in n.dig_used + 1
-   * digits for the curves we ship). */
-  niter_digits = r_mpint_digits_used (&curve->n);
-  nbits = r_mpint_bits_used (&curve->n);
-  dig_bound = (ruint16)(niter_digits + 1);
+  /* Condition the scalar in n+1 digit literal arithmetic (not mod p):
+   *   k1 = k + n
+   *   k2 = k + 2n
+   * The mask-select picks whichever has its bit at position nbits set,
+   * so k_prime ends up with exactly nbits+1 bits, MSB always 1. */
+  nbits = ctx.n_bits;
 
-  if (!r_mpint_add (&k1, scalar, &curve->n) ||
-      !r_mpint_add (&k2, &k1, &curve->n))
-    goto cleanup;
+  /* Copy scalar into k1[0..n], zero-padded. Truncating beyond n digits
+   * is the documented "scalar in [0, 2^(32*n))" precondition; the only
+   * way we lose info is if a caller passes a scalar exceeding that. */
+  to_copy = scalar->dig_used;
+  if (to_copy > n) to_copy = n;
+  for (i = 0; i < to_copy; i++) k1[i] = scalar->data[i];
+  for (i = to_copy; i < n + 1; i++) k1[i] = 0;
 
-  /* Force fixed width so the select + bit extraction below read a
-   * known number of digits regardless of the operand's actual value. */
-  r_mpint_ensure_digits (&k1, dig_bound);
-  r_mpint_ensure_digits (&k2, dig_bound);
-  for (i = k1.dig_used; i < dig_bound; i++) k1.data[i] = 0;
-  for (i = k2.dig_used; i < dig_bound; i++) k2.data[i] = 0;
-  k1.dig_used = dig_bound;
-  k2.dig_used = dig_bound;
+  /* k1 += n (literal n+1 digit add). */
+  carry = 0;
+  for (i = 0; i < n; i++) {
+    u = (rmpint_word)k1[i] + (rmpint_word)ctx.n.d[i] + (rmpint_word)carry;
+    k1[i] = (rmpint_digit)u;
+    carry = (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8));
+  }
+  u = (rmpint_word)k1[n] + (rmpint_word)carry;
+  k1[n] = (rmpint_digit)u;
 
-  /* mask = all-ones if bit at position nbits of k1 is set (use k1),
-   * else all-zeros (use k2). */
-  msb_set = (k1.data[nbits / (sizeof (rmpint_digit) * 8)] >>
+  /* k2 = k1 + n. */
+  carry = 0;
+  for (i = 0; i < n; i++) {
+    u = (rmpint_word)k1[i] + (rmpint_word)ctx.n.d[i] + (rmpint_word)carry;
+    k2[i] = (rmpint_digit)u;
+    carry = (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8));
+  }
+  u = (rmpint_word)k1[n] + (rmpint_word)carry;
+  k2[n] = (rmpint_digit)u;
+
+  /* Bit at position nbits of k1: if set, k1 already has nbits+1 bits;
+   * else k2 does (because n < 2^nbits means 2n's top bit lands at
+   * position nbits). */
+  msb_set = (k1[nbits / (sizeof (rmpint_digit) * 8)] >>
              (nbits % (sizeof (rmpint_digit) * 8))) & 1u;
   mask = (rmpint_digit)0 - msb_set;
-  r_mpint_select_n_ct (&k_prime, mask, &k1, &k2, dig_bound);
+  for (i = 0; i < n + 1; i++)
+    k_prime[i] = (k1[i] & mask) | (k2[i] & ~mask);
 
-  /* Iterate exactly nbits + 1 bits (the fixed bit count of k'),
-   * starting from the conditioned MSB which is always 1. */
+  /* Iterate exactly nbits + 1 bits, starting from the conditioned MSB
+   * (always 1). */
   for (j = nbits + 1; j > 0; j--) {
     bp = j - 1;
-    bit = (k_prime.data[bp / (sizeof (rmpint_digit) * 8)] >>
+    bit = (k_prime[bp / (sizeof (rmpint_digit) * 8)] >>
            (bp % (sizeof (rmpint_digit) * 8))) & 1u;
 
-    r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit);
-    if (!r_ecurve_jp_add (&R1, &R0, &R1, curve, &scratch)) goto cleanup;
-    if (!r_ecurve_jp_dbl (&R0, &R0, curve, &scratch))      goto cleanup;
-    r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit);
+    r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit, n);
+    r_ecurve_jp_add (&R1, &R0, &R1, &ctx, &scratch);
+    r_ecurve_jp_dbl (&R0, &R0, &ctx, &scratch);
+    r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit, n);
   }
 
-  if (!r_ecurve_jp_to_affine (out, &R0, curve))
-    goto cleanup;
-  ok = TRUE;
+  if (r_ecurve_jp_to_affine (out, &R0, &ctx))
+    ok = TRUE;
 
-cleanup:
-  r_mpint_clear (&k1);
-  r_mpint_clear (&k2);
-  r_mpint_clear (&k_prime);
+  r_memclear_secure (k1, sizeof (k1));
+  r_memclear_secure (k2, sizeof (k2));
+  r_memclear_secure (k_prime, sizeof (k_prime));
+  r_memclear_secure (&x_norm, sizeof (x_norm));
+  r_memclear_secure (&y_norm, sizeof (y_norm));
+  r_memclear_secure (&ctx, sizeof (ctx));
   r_ecurve_jp_scratch_clear (&scratch);
   r_ecurve_jp_clear (&R0);
   r_ecurve_jp_clear (&R1);
