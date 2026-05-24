@@ -191,6 +191,113 @@ R_API rboolean r_mpint_expmod (rmpint * dst, const rmpint * b, const rmpint * e,
 R_API rboolean r_mpint_gcd (rmpint * dst, const rmpint * a, const rmpint * b);
 R_API rboolean r_mpint_lcm (rmpint * dst, const rmpint * a, const rmpint * b);
 
+
+/* --- Fixed-width Montgomery-form field elements (RMpintFE).
+ *
+ * Unlike rmpint, RMpintFE stores its digits inline in the struct
+ * (no heap, no dig_used field) and every primitive iterates exactly
+ * the modulus's digit count regardless of operand value. That gives
+ * genuinely constant-time arithmetic at the cycle-count level - no
+ * residual leak through r_mpint_clamp shrinking dig_used to the
+ * value's bit length.
+ *
+ * Used by the ECC scalar-mul ladder (rlib/crypto/recurve.c). DSA
+ * signing and RSA private operations want the same primitives. The
+ * type is public so consumers outside rlib can reuse the same
+ * audited implementation - same reason r_mpint_swap_ct and the rest
+ * of the CT primitives live in this header. --- */
+
+/* Widest curve we ship is secp521r1 at 17 32-bit digits; +1 leaves
+ * headroom for the Montgomery accumulator's top carry slot. DSA |q|
+ * (256 bits) fits comfortably; RSA moduli do not - a separate type
+ * (or a bumped MAX) is the right answer there. */
+#define R_MPINT_FE_MAX_DIGITS  18
+
+typedef struct {
+  rmpint_digit d[R_MPINT_FE_MAX_DIGITS];
+} RMpintFE;
+
+/* Per-modulus Montgomery context. All FE primitives below take a
+ * pointer to one of these so the modulus / its Montgomery inverse /
+ * the digit width don't have to thread through every call site. */
+typedef struct {
+  RMpintFE p;
+  rmpint_digit mp;            /* -p^-1 mod 2^digit_bits */
+  ruint16 n_digits;           /* number of digits the modulus occupies */
+} RMpintFEMontCtx;
+
+/* ---- Per-modulus setup. Both helpers are one-time costs paid by the
+ * caller before any FE arithmetic; the resulting ctx + mont_r_squared
+ * are reusable across as many FE operations as the modulus is in
+ * scope for. ---- */
+
+/* Fill ctx (p, mp, n_digits) from an mpint modulus. Returns FALSE if
+ * m is even or larger than R_MPINT_FE_MAX_DIGITS digits. */
+R_API rboolean r_mpint_fe_mont_ctx_init (RMpintFEMontCtx * ctx, const rmpint * m);
+
+/* Compute R^2 mod m for the supplied n-digit modulus (R = 2^(32*n)).
+ * Used to feed mont_r_squared into r_mpint_fe_mont_in / _invmod_mont. */
+R_API rboolean r_mpint_fe_compute_r_squared (RMpintFE * out, const rmpint * m,
+    ruint16 n);
+
+/* ---- Lifecycle / conversion. ---- */
+
+R_API void r_mpint_fe_zero (RMpintFE * x);
+R_API void r_mpint_fe_copy (RMpintFE * dst, const RMpintFE * src);
+/* Copy mpi -> fe, zero-padded to n digits. Truncates beyond n. */
+R_API void r_mpint_fe_from_mpint (RMpintFE * fe, const rmpint * mpi, ruint16 n);
+/* Copy fe -> mpi, ending with r_mpint_clamp so the mpint side stays
+ * canonical (value-dependent, but the value has left the CT path by
+ * this point - it's en route to a public output). */
+R_API rboolean r_mpint_fe_to_mpint (rmpint * mpi, const RMpintFE * fe, ruint16 n);
+
+/* ---- Constant-time helpers (no field arithmetic). ---- */
+
+/* All-ones mask iff x's low n digits are zero; all-zeros otherwise. */
+R_API rmpint_digit r_mpint_fe_iszero_ct (const RMpintFE * x, ruint16 n);
+/* out := (mask == all-ones) ? a : b, digit-wise over n digits. Safe
+ * to alias out with a or b (digits read before write). */
+R_API void r_mpint_fe_select_ct (RMpintFE * out, rmpint_digit mask,
+    const RMpintFE * a, const RMpintFE * b, ruint16 n);
+/* Branchless XOR-swap of two FEs gated on bit. */
+R_API void r_mpint_fe_swap_ct (RMpintFE * a, RMpintFE * b,
+    ruint32 bit, ruint16 n);
+
+/* ---- Modular arithmetic mod p (inputs in [0, p), outputs in [0, p)).
+ * Add / sub commute with the Montgomery transform, so they work both
+ * for normal-form and Mont-form operands. ---- */
+
+R_API void r_mpint_fe_add (RMpintFE * out, const RMpintFE * a,
+    const RMpintFE * b, const RMpintFEMontCtx * ctx);
+R_API void r_mpint_fe_sub (RMpintFE * out, const RMpintFE * a,
+    const RMpintFE * b, const RMpintFEMontCtx * ctx);
+
+/* Montgomery multiplication via CIOS: out := a * b * R^-1 mod p
+ * (R = 2^(32 * n_digits)). If a and b are in Mont form, out is too. */
+R_API void r_mpint_fe_mul_mont (RMpintFE * out, const RMpintFE * a,
+    const RMpintFE * b, const RMpintFEMontCtx * ctx);
+R_API void r_mpint_fe_sqr_mont (RMpintFE * out, const RMpintFE * a,
+    const RMpintFEMontCtx * ctx);
+
+/* Lift / unlift between normal and Montgomery form. The mont_in
+ * variant needs mont_r_squared (= R^2 mod p) precomputed by the
+ * caller - it lives outside RMpintFEMontCtx because not every caller
+ * needs it. */
+R_API void r_mpint_fe_mont_in (RMpintFE * out, const RMpintFE * a,
+    const RMpintFE * mont_r_squared, const RMpintFEMontCtx * ctx);
+R_API void r_mpint_fe_mont_out (RMpintFE * out, const RMpintFE * a,
+    const RMpintFEMontCtx * ctx);
+
+/* ---- Derived operations built on the primitives above. ---- */
+
+/* Fermat-based modular inversion in Mont form: out := a_M^(p-2) mod p
+ * (also in Mont form). Requires p prime and a coprime to p (a == 0
+ * returns 0). p_minus_2_bits is the bit length of (p - 2) - drives
+ * the inner exponentiation loop. */
+R_API void r_mpint_fe_invmod_mont (RMpintFE * out, const RMpintFE * a_M,
+    const RMpintFE * p_minus_2, ruint p_minus_2_bits,
+    const RMpintFE * mont_r_squared, const RMpintFEMontCtx * ctx);
+
 R_END_DECLS
 
 #endif /* __R_MPINT_H__ */
