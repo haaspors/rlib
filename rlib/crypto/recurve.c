@@ -897,18 +897,37 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
    * per bit, which is the property that makes the constant-time
    * Fermat inverter practical here.
    *
-   * Identity is encoded as Z=0. The Jacobian dbl naturally
-   * propagates that, and r_ecurve_jp_add masks in the non-identity
-   * operand when one side has Z=0 - so the leading-zero bits of
-   * the scalar, during which R0 sits at identity, do not require
-   * value-dependent branching. */
+   * Scalar conditioning: instead of iterating bit_count(scalar) bits
+   * (which would leak the scalar's bit length via the loop count and
+   * also leak whether the scalar is zero via the fast-path branch),
+   * precompute k' such that k' has a fixed bit_count(n)+1 bits and
+   * k' === k (mod n). Then iterate exactly that fixed bit count.
+   * The choice between k+n and k+2n is mask-selected on whether the
+   * bit at position bit_count(n) of (k+n) is set: if it is, k+n has
+   * the required extra bit and is used directly; otherwise k+n is
+   * one bit short and we use k+2n, which (with n < 2^bit_count(n))
+   * lands the high bit one position up by construction. Both
+   * choices satisfy [k']P = [k]P since [n]P = [2n]P = identity.
+   *
+   * Identity is still encoded as Z=0; the Jacobian dbl propagates
+   * that naturally, and r_ecurve_jp_add masks in the non-identity
+   * operand when one side has Z=0 - so the leading-zero bits at the
+   * start of k' (above its conditioned MSB) do not require value-
+   * dependent branching. */
   REcurveJacobianPoint R0, R1;
   REcurveJacobianScratch scratch;
-  ruint16 d, b;
-  rmpint_digit bit;
+  rmpint k1, k2, k_prime;
+  ruint16 niter_digits, dig_bound, i;
+  ruint nbits, bp, j;
+  rmpint_digit bit, msb_set, mask;
   rboolean ok = FALSE;
 
-  if (r_mpint_iszero (scalar) || point->is_infinity) {
+  /* point->is_infinity is a public flag (caller-side metadata), so
+   * branching on it doesn't leak anything sensitive. The scalar
+   * fast-path is handled inside the ladder: a zero scalar produces
+   * a k' = 2n with bit at position bit_count(n) set; the ladder
+   * runs the full iteration count and lands at R0 = identity. */
+  if (point->is_infinity) {
     r_ecurve_point_set_infinity (out);
     return TRUE;
   }
@@ -916,6 +935,9 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
   r_ecurve_jp_init (&R0);
   r_ecurve_jp_init (&R1);
   r_ecurve_jp_scratch_init (&scratch);
+  r_mpint_init_secure (&k1);
+  r_mpint_init_secure (&k2);
+  r_mpint_init_secure (&k_prime);
 
   /* R0 stays at identity (X=Y=Z=0 from init; Z=0 marks it). R1 is
    * the input point lifted into Jacobian: (x_M, y_M, 1_M), where
@@ -925,17 +947,44 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
       !r_mpint_montgomery_normalize (&R1.Z, &curve->p))
     goto cleanup;
 
-  for (d = r_mpint_digits_used (scalar); d > 0; d--) {
-    rmpint_digit dig = r_mpint_get_digit (scalar, d - 1);
-    for (b = 0; b < sizeof (rmpint_digit) * 8; b++) {
-      bit = (dig >> (sizeof (rmpint_digit) * 8 - 1)) & 1;
-      dig <<= 1;
+  /* Condition the scalar. niter_digits + 1 covers the worst case for
+   * either candidate (k + 2n < 3n always fits in n.dig_used + 1
+   * digits for the curves we ship). */
+  niter_digits = r_mpint_digits_used (&curve->n);
+  nbits = r_mpint_bits_used (&curve->n);
+  dig_bound = (ruint16)(niter_digits + 1);
 
-      r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit);
-      if (!r_ecurve_jp_add (&R1, &R0, &R1, curve, &scratch)) goto cleanup;
-      if (!r_ecurve_jp_dbl (&R0, &R0, curve, &scratch))      goto cleanup;
-      r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit);
-    }
+  if (!r_mpint_add (&k1, scalar, &curve->n) ||
+      !r_mpint_add (&k2, &k1, &curve->n))
+    goto cleanup;
+
+  /* Force fixed width so the select + bit extraction below read a
+   * known number of digits regardless of the operand's actual value. */
+  r_mpint_ensure_digits (&k1, dig_bound);
+  r_mpint_ensure_digits (&k2, dig_bound);
+  for (i = k1.dig_used; i < dig_bound; i++) k1.data[i] = 0;
+  for (i = k2.dig_used; i < dig_bound; i++) k2.data[i] = 0;
+  k1.dig_used = dig_bound;
+  k2.dig_used = dig_bound;
+
+  /* mask = all-ones if bit at position nbits of k1 is set (use k1),
+   * else all-zeros (use k2). */
+  msb_set = (k1.data[nbits / (sizeof (rmpint_digit) * 8)] >>
+             (nbits % (sizeof (rmpint_digit) * 8))) & 1u;
+  mask = (rmpint_digit)0 - msb_set;
+  r_mpint_select_n_ct (&k_prime, mask, &k1, &k2, dig_bound);
+
+  /* Iterate exactly nbits + 1 bits (the fixed bit count of k'),
+   * starting from the conditioned MSB which is always 1. */
+  for (j = nbits + 1; j > 0; j--) {
+    bp = j - 1;
+    bit = (k_prime.data[bp / (sizeof (rmpint_digit) * 8)] >>
+           (bp % (sizeof (rmpint_digit) * 8))) & 1u;
+
+    r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit);
+    if (!r_ecurve_jp_add (&R1, &R0, &R1, curve, &scratch)) goto cleanup;
+    if (!r_ecurve_jp_dbl (&R0, &R0, curve, &scratch))      goto cleanup;
+    r_ecurve_jp_swap_ct (&R0, &R1, (ruint32)bit);
   }
 
   if (!r_ecurve_jp_to_affine (out, &R0, curve))
@@ -943,6 +992,9 @@ r_ecurve_point_scalar_mul (REcurveAffinePoint * out, const rmpint * scalar,
   ok = TRUE;
 
 cleanup:
+  r_mpint_clear (&k1);
+  r_mpint_clear (&k2);
+  r_mpint_clear (&k_prime);
   r_ecurve_jp_scratch_clear (&scratch);
   r_ecurve_jp_clear (&R0);
   r_ecurve_jp_clear (&R1);
