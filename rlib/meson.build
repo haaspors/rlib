@@ -72,6 +72,7 @@ rlib_sources = [
   'data/rkvptrarray.c',
   'data/rlist.c',
   'data/rmpint.c',
+  'data/rmpint_fe.c',
   'data/rmpint_montgomery.c',
   'data/rptrarray.c',
   'data/rqueuering.c',
