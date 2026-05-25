@@ -650,7 +650,20 @@ r_rsa_raw_encrypt (const RCryptoKey * key, RPrng * prng,
 
 /* The actual c^d mod n step. Caller is responsible for blinding c before
  * the call and unblinding m after — keeping that logic separate keeps the
- * CRT/non-CRT dispatch readable. */
+ * CRT/non-CRT dispatch readable.
+ *
+ * The exponentiations use r_mpint_expmod_ct so the private exponent
+ * (d, or the CRT exponents dP / dQ) doesn't leak via array-indexed
+ * Mont ladder dispatch or variable-time per-iteration reduce. The
+ * exp_bits caps are bit_count of the respective moduli - dP < p,
+ * dQ < q, d < n - so the loops are bounded by public constants.
+ *
+ * Residual leak: the CRT post-processing (m2 reduce, subtract, mul
+ * by qInv, etc.) uses variable-time mpint primitives on values that
+ * depend on the secret intermediates m1 / m2. Closing this needs CT
+ * variants of mpint sub/mul/mod (or a wider FE type for RSA-sized
+ * operands); for now it's flagged as the same dig_used residual the
+ * CT expmod itself has. */
 static rboolean
 r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
 {
@@ -672,8 +685,10 @@ r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
     r_mpint_init (&m2_p);
     r_mpint_init (&h);
 
-    ok = r_mpint_expmod (&m1, c, &key->dp, &key->p)
-      && r_mpint_expmod (&m2, c, &key->dq, &key->q)
+    ok = r_mpint_expmod_ct (&m1, c, &key->dp, &key->p,
+            r_mpint_bits_used (&key->p))
+      && r_mpint_expmod_ct (&m2, c, &key->dq, &key->q,
+            r_mpint_bits_used (&key->q))
       && r_mpint_mod (&m2_p, &m2, &key->p)
       && r_mpint_sub (&h, &m1, &m2_p);
     if (ok && r_mpint_isneg (&h))
@@ -690,7 +705,8 @@ r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
     r_mpint_clear (&h);
     return ok;
   } else {
-    return r_mpint_expmod (m, c, &key->d, &key->pub.n);
+    return r_mpint_expmod_ct (m, c, &key->d, &key->pub.n,
+        r_mpint_bits_used (&key->pub.n));
   }
 }
 
