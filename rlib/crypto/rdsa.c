@@ -35,11 +35,22 @@ typedef struct {
   rmpint y;
 } RDsaPubKey;
 
+/* Per-key Montgomery context for mod-q arithmetic. r_dsa_sign needs
+ * a CT Mont context, R^2 mod q, the Fermat exponent (q - 2) and x in
+ * Mont form on every call; precomputing these once at key construction
+ * lets repeated signs by the same key skip the per-call setup work. */
 typedef struct {
   RDsaPubKey pub;
 
   rint32 ver;
   rmpint x;
+
+  RMpintFEMontCtx ctx_q;
+  RMpintFE mont_r_sq_q;
+  RMpintFE q_minus_2_fe;
+  RMpintFE x_M;
+  ruint q_minus_2_bits;
+  ruint q_bits;
 } RDsaPrivKey;
 
 static void
@@ -125,12 +136,9 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
     rconstpointer hash, rsize hashsize, rpointer sig, rsize * sigsize)
 {
   const RDsaPrivKey * pk = (const RDsaPrivKey *)key;
-  rmpint k, r, s, z, q_minus_2;
-  RMpintFEMontCtx ctx_q;
-  RMpintFE mont_r_sq_q, q_minus_2_fe;
-  RMpintFE k_fe, k_M, kinv_M, z_fe, z_M, x_fe, x_M, r_fe, r_M;
+  rmpint k, r, s, z;
+  RMpintFE k_fe, k_M, kinv_M, z_fe, z_M, r_fe, r_M;
   RMpintFE xr_M, zr_M, s_M, s_fe;
-  ruint q_minus_2_bits, q_bits;
   ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
   RAsn1BinEncoder * enc = NULL;
   ruint8 * sigbuf = NULL;
@@ -172,31 +180,19 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
   /* k is the per-signature secret nonce; everything derived from it
    * (kinv_M, s_M, the FE temporaries) is equally sensitive. The
    * rmpints want secure-clear so they don't linger in freed heap;
-   * the inline-storage FEs get memclear_secure'd at function exit. */
+   * the inline-storage FEs get memclear_secure'd at function exit.
+   * The mod-q Montgomery context and x_M are precomputed on the
+   * private key (cached in r_dsa_priv_key_precompute_cache) so this
+   * function doesn't pay the setup cost per signature. */
   r_mpint_init_secure (&k);
   r_mpint_init (&r);
   r_mpint_init (&s);
-  r_mpint_init (&q_minus_2);
   r_dsa_hash_to_mpint (&z, &pk->pub.q, hash, hashsize);
 
-  /* Set up mod-q Montgomery context for the CT arithmetic. p_minus_2
-   * here is q_minus_2 - "p" is just the FE convention for "the
-   * modulus", not DSA's p. */
-  if (!r_mpint_fe_mont_ctx_init (&ctx_q, &pk->pub.q))
-    goto cleanup;
-  if (!r_mpint_fe_compute_r_squared (&mont_r_sq_q, &pk->pub.q,
-        ctx_q.n_digits))
-    goto cleanup;
-  if (!r_mpint_sub_i32 (&q_minus_2, &pk->pub.q, 2))
-    goto cleanup;
-  r_mpint_fe_from_mpint (&q_minus_2_fe, &q_minus_2, ctx_q.n_digits);
-  q_minus_2_bits = r_mpint_bits_used (&q_minus_2);
-  q_bits = r_mpint_bits_used (&pk->pub.q);
-
-  /* x is the long-term private key. Lift to FE/Mont once outside the
-   * retry loop. */
-  r_mpint_fe_from_mpint (&x_fe, &pk->x, ctx_q.n_digits);
-  r_mpint_fe_mont_in (&x_M, &x_fe, &mont_r_sq_q, &ctx_q);
+  /* z is loop-invariant - it depends only on the hash input, not on
+   * k - so the FE / Mont lift happens once outside the retry. */
+  r_mpint_fe_from_mpint (&z_fe, &z, pk->ctx_q.n_digits);
+  r_mpint_fe_mont_in (&z_M, &z_fe, &pk->mont_r_sq_q, &pk->ctx_q);
 
   for (;;) {
     do {
@@ -210,7 +206,7 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
     /* r = (g^k mod p) mod q. The CT expmod processes exactly
      * bit_count(q) bits of k regardless of k's actual value, so the
      * iteration count doesn't leak k's bit length. */
-    if (!r_mpint_expmod_ct (&r, &pk->pub.g, &k, &pk->pub.p, q_bits) ||
+    if (!r_mpint_expmod_ct (&r, &pk->pub.g, &k, &pk->pub.p, pk->q_bits) ||
         !r_mpint_mod (&r, &r, &pk->pub.q))
       goto cleanup;
     if (r_mpint_iszero (&r))
@@ -222,19 +218,17 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
      * leaks k. The multiplicative blinding the old path used as
      * defence-in-depth is dropped - the CT inverter is the actual
      * fix. */
-    r_mpint_fe_from_mpint (&k_fe, &k, ctx_q.n_digits);
-    r_mpint_fe_from_mpint (&z_fe, &z, ctx_q.n_digits);
-    r_mpint_fe_from_mpint (&r_fe, &r, ctx_q.n_digits);
-    r_mpint_fe_mont_in (&k_M, &k_fe, &mont_r_sq_q, &ctx_q);
-    r_mpint_fe_mont_in (&z_M, &z_fe, &mont_r_sq_q, &ctx_q);
-    r_mpint_fe_mont_in (&r_M, &r_fe, &mont_r_sq_q, &ctx_q);
-    r_mpint_fe_invmod_mont (&kinv_M, &k_M, &q_minus_2_fe, q_minus_2_bits,
-        &mont_r_sq_q, &ctx_q);
-    r_mpint_fe_mul_mont (&xr_M, &x_M, &r_M, &ctx_q);
-    r_mpint_fe_add (&zr_M, &z_M, &xr_M, &ctx_q);
-    r_mpint_fe_mul_mont (&s_M, &kinv_M, &zr_M, &ctx_q);
-    r_mpint_fe_mont_out (&s_fe, &s_M, &ctx_q);
-    if (!r_mpint_fe_to_mpint (&s, &s_fe, ctx_q.n_digits))
+    r_mpint_fe_from_mpint (&k_fe, &k, pk->ctx_q.n_digits);
+    r_mpint_fe_from_mpint (&r_fe, &r, pk->ctx_q.n_digits);
+    r_mpint_fe_mont_in (&k_M, &k_fe, &pk->mont_r_sq_q, &pk->ctx_q);
+    r_mpint_fe_mont_in (&r_M, &r_fe, &pk->mont_r_sq_q, &pk->ctx_q);
+    r_mpint_fe_invmod_mont (&kinv_M, &k_M, &pk->q_minus_2_fe,
+        pk->q_minus_2_bits, &pk->mont_r_sq_q, &pk->ctx_q);
+    r_mpint_fe_mul_mont (&xr_M, &pk->x_M, &r_M, &pk->ctx_q);
+    r_mpint_fe_add (&zr_M, &z_M, &xr_M, &pk->ctx_q);
+    r_mpint_fe_mul_mont (&s_M, &kinv_M, &zr_M, &pk->ctx_q);
+    r_mpint_fe_mont_out (&s_fe, &s_M, &pk->ctx_q);
+    if (!r_mpint_fe_to_mpint (&s, &s_fe, pk->ctx_q.n_digits))
       goto cleanup;
     if (!r_mpint_iszero (&s))
       break;
@@ -272,20 +266,16 @@ cleanup_with_ret:
   r_mpint_clear (&r);
   r_mpint_clear (&s);
   r_mpint_clear (&z);
-  r_mpint_clear (&q_minus_2);
-  /* Inline-storage FE temporaries derived from k / x live on the
-   * stack and would survive the function frame until overwritten;
-   * wipe them explicitly so they don't leak into a later allocation. */
-  r_memclear_secure (&ctx_q, sizeof (ctx_q));
-  r_memclear_secure (&mont_r_sq_q, sizeof (mont_r_sq_q));
-  r_memclear_secure (&q_minus_2_fe, sizeof (q_minus_2_fe));
+  /* Inline-storage FE temporaries derived from k live on the stack
+   * and would survive the function frame until overwritten; wipe
+   * them explicitly so they don't leak into a later allocation. The
+   * key-cached fields (ctx_q, mont_r_sq_q, q_minus_2_fe, x_M) stay
+   * around with the key and get wiped in r_dsa_priv_key_free. */
   r_memclear_secure (&k_fe, sizeof (k_fe));
   r_memclear_secure (&k_M, sizeof (k_M));
   r_memclear_secure (&kinv_M, sizeof (kinv_M));
   r_memclear_secure (&z_fe, sizeof (z_fe));
   r_memclear_secure (&z_M, sizeof (z_M));
-  r_memclear_secure (&x_fe, sizeof (x_fe));
-  r_memclear_secure (&x_M, sizeof (x_M));
   r_memclear_secure (&r_fe, sizeof (r_fe));
   r_memclear_secure (&r_M, sizeof (r_M));
   r_memclear_secure (&xr_M, sizeof (xr_M));
@@ -429,12 +419,52 @@ r_dsa_pub_key_init (RCryptoKey * key, ruint bits)
   key->bits = bits;
 }
 
+/* Populate the per-key Montgomery cache (ctx_q, mont_r_sq_q,
+ * q_minus_2_fe, q_bits, q_minus_2_bits, x_M) from pub.q + x. Callers
+ * invoke this from each construction path once q and x are final.
+ * Returns FALSE if q is even (Mont setup requires gcd(q, 2)=1) or
+ * doesn't fit in the FE storage; for any real DSA key both hold. */
+static rboolean
+r_dsa_priv_key_precompute_cache (RDsaPrivKey * pk)
+{
+  rmpint q_minus_2;
+  RMpintFE x_fe;
+  rboolean ok = FALSE;
+
+  if (!r_mpint_fe_mont_ctx_init (&pk->ctx_q, &pk->pub.q))
+    return FALSE;
+  if (!r_mpint_fe_compute_r_squared (&pk->mont_r_sq_q, &pk->pub.q,
+        pk->ctx_q.n_digits))
+    return FALSE;
+
+  r_mpint_init (&q_minus_2);
+  if (r_mpint_sub_i32 (&q_minus_2, &pk->pub.q, 2)) {
+    r_mpint_fe_from_mpint (&pk->q_minus_2_fe, &q_minus_2, pk->ctx_q.n_digits);
+    pk->q_minus_2_bits = r_mpint_bits_used (&q_minus_2);
+    pk->q_bits = r_mpint_bits_used (&pk->pub.q);
+
+    r_mpint_fe_from_mpint (&x_fe, &pk->x, pk->ctx_q.n_digits);
+    r_mpint_fe_mont_in (&pk->x_M, &x_fe, &pk->mont_r_sq_q, &pk->ctx_q);
+    r_memclear_secure (&x_fe, sizeof (x_fe));
+    ok = TRUE;
+  }
+  r_mpint_clear (&q_minus_2);
+  return ok;
+}
+
 static void
 r_dsa_priv_key_free (rpointer data)
 {
   RDsaPrivKey * key;
 
   if ((key = data) != NULL) {
+    /* The cached FE fields hold values derived from the secret x (and
+     * the long-term modulus q); wipe before the freeing the struct so
+     * they don't linger on the heap. */
+    r_memclear_secure (&key->ctx_q, sizeof (key->ctx_q));
+    r_memclear_secure (&key->mont_r_sq_q, sizeof (key->mont_r_sq_q));
+    r_memclear_secure (&key->q_minus_2_fe, sizeof (key->q_minus_2_fe));
+    r_memclear_secure (&key->x_M, sizeof (key->x_M));
     r_mpint_clear (&key->x);
     r_dsa_pub_key_free (key);
   }
@@ -508,7 +538,7 @@ r_dsa_priv_key_new (const rmpint * p, const rmpint * q,
   RDsaPrivKey * ret;
 
   if (p != NULL && q != NULL && g != NULL && y != NULL && x != NULL) {
-    if ((ret = r_mem_new (RDsaPrivKey)) != NULL) {
+    if ((ret = r_mem_new0 (RDsaPrivKey)) != NULL) {
       ret->ver = 0;
       r_mpint_init_copy (&ret->pub.p, p);
       r_mpint_init_copy (&ret->pub.q, q);
@@ -516,6 +546,10 @@ r_dsa_priv_key_new (const rmpint * p, const rmpint * q,
       r_mpint_init_copy (&ret->pub.y, y);
       r_mpint_init_copy_secure (&ret->x, x);
       r_dsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.y));
+      if (!r_dsa_priv_key_precompute_cache (ret)) {
+        r_crypto_key_unref ((RCryptoKey *)ret);
+        return NULL;
+      }
     }
   } else {
     ret = NULL;
@@ -533,7 +567,7 @@ r_dsa_priv_key_new_binary (rconstpointer p, rsize psize,
 
   if (p != NULL && psize > 0 && q != NULL && qsize > 0 && g != NULL && gsize > 0 &&
       y != NULL && ysize > 0 && x != NULL && xsize > 0) {
-    if ((ret = r_mem_new (RDsaPrivKey)) != NULL) {
+    if ((ret = r_mem_new0 (RDsaPrivKey)) != NULL) {
       ret->ver = 0;
       r_mpint_init_binary (&ret->pub.p, p, psize);
       r_mpint_init_binary (&ret->pub.q, q, qsize);
@@ -541,6 +575,10 @@ r_dsa_priv_key_new_binary (rconstpointer p, rsize psize,
       r_mpint_init_binary (&ret->pub.y, y, ysize);
       r_mpint_init_binary_secure (&ret->x, x, xsize);
       r_dsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.y));
+      if (!r_dsa_priv_key_precompute_cache (ret)) {
+        r_crypto_key_unref ((RCryptoKey *)ret);
+        return NULL;
+      }
     }
   } else {
     ret = NULL;
@@ -731,6 +769,9 @@ r_dsa_priv_key_new_gen (rsize L, rsize N, RPrng * prng)
   if (!r_mpint_expmod (&ret->pub.y, &ret->pub.g, &ret->x, &ret->pub.p))
     goto fail;
 
+  if (!r_dsa_priv_key_precompute_cache (ret))
+    goto fail;
+
   r_prng_unref (prng);
   return (RCryptoKey *) ret;
 
@@ -745,7 +786,7 @@ r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
   RDsaPrivKey * ret;
 
-  if ((ret = r_mem_new (RDsaPrivKey)) != NULL) {
+  if ((ret = r_mem_new0 (RDsaPrivKey)) != NULL) {
     r_mpint_init (&ret->pub.p);
     r_mpint_init (&ret->pub.q);
     r_mpint_init (&ret->pub.g);
@@ -768,6 +809,10 @@ r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
       ret = NULL;
     } else {
       r_dsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.y));
+      if (!r_dsa_priv_key_precompute_cache (ret)) {
+        r_crypto_key_unref ((RCryptoKey *)ret);
+        ret = NULL;
+      }
     }
   }
 
