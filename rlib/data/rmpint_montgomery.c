@@ -80,14 +80,16 @@ r_mpint_montgomery_reduce (rmpint * a, const rmpint * m, rmpint_digit mp)
 }
 
 rboolean
-r_mpint_montgomery_reduce_ct (rmpint * a, const rmpint * m, rmpint_digit mp)
+r_mpint_montgomery_reduce_ct_into (rmpint * a, const rmpint * m,
+    rmpint_digit mp, rmpint * c)
 {
-  /* Constant-time Montgomery reduction. The main body is the same
-   * Comba-style loop as r_mpint_montgomery_reduce, but the final
-   * "if (a >= m) a -= m" is unconditional + masked, and the carry
-   * propagation runs through the same fixed digit count regardless
-   * of where the carry actually stops. */
-  rmpint c;
+  /* Same algorithm as r_mpint_montgomery_reduce_ct but the 2n+1 digit
+   * Comba accumulator is supplied by the caller. Hot loops (e.g. the
+   * r_mpint_expmod_ct inner ladder) allocate `c` once at function
+   * entry and reuse it across thousands of reduce calls, killing the
+   * malloc / free churn the per-call allocation would otherwise incur.
+   * The caller is responsible for c being large enough (dig_alloc >=
+   * 2n+1) and for clearing it after use. */
   rmpint_digit * cptr;
   rmpint_digit mu;
   ruint16 x, y, n;
@@ -95,23 +97,32 @@ r_mpint_montgomery_reduce_ct (rmpint * a, const rmpint * m, rmpint_digit mp)
   rmpint_digit * scratch;
   rmpint_word t;
 
-  if (R_UNLIKELY (a == NULL || m == NULL))
+  if (R_UNLIKELY (a == NULL || m == NULL || c == NULL))
     return FALSE;
 
   n = r_mpint_digits_used (m);
   if (R_UNLIKELY (n == 0))
     return FALSE;
 
-  r_mpint_init_size (&c, 2 * n + 1);
-  /* c is initialised zero-padded by init_size; copying a in only
-   * overwrites the low dig_used digits, so any tail stays zero. */
-  r_mpint_set (&c, a);
+  if (R_UNLIKELY (c->dig_alloc < 2 * n + 1))
+    return FALSE;
+
+  /* Zero out the full accumulator before refilling with a's value, so
+   * stale digits from a previous call don't contaminate the high end.
+   * r_mpint_set copies only a's dig_used digits, which can leave the
+   * tail dirty when the same scratch services successive operands of
+   * different bit widths. */
+  for (x = 0; x < c->dig_alloc; x++)
+    c->data[x] = 0;
+  c->dig_used = 0;
+  c->sign = 0;
+  r_mpint_set (c, a);
 
   for (x = 0; x < n; x++) {
     rmpint_digit carry = 0;
 
-    mu = c.data[x] * mp;
-    cptr = c.data + x;
+    mu = c->data[x] * mp;
+    cptr = c->data + x;
     /* Multiply-add m * mu into c starting at digit x. */
     for (y = 0; y < n; y++) {
       t = ((rmpint_word)cptr[0] + (rmpint_word)carry) +
@@ -121,7 +132,7 @@ r_mpint_montgomery_reduce_ct (rmpint * a, const rmpint * m, rmpint_digit mp)
       ++cptr;
     }
     /* Propagate the remaining carry through the rest of c. cptr is
-     * now at c.data[x + n]; the buffer extends through c.data[2n],
+     * now at c->data[x + n]; the buffer extends through c->data[2n],
      * so n + 1 - x positions remain. Iterate that many regardless of
      * whether carry has already settled - keeps the loop length
      * value-independent. */
@@ -133,13 +144,13 @@ r_mpint_montgomery_reduce_ct (rmpint * a, const rmpint * m, rmpint_digit mp)
     }
   }
 
-  /* After the body c.data[0..n) is zero by construction; c.data[n..2n+1)
+  /* After the body c->data[0..n) is zero by construction; c->data[n..2n+1)
    * holds a value v in [0, 2m). Move it down without going through
    * r_mpint_shr_digit (which clamps and so reports a value-dependent
    * dig_used). */
   r_mpint_ensure_digits (a, n + 1);
   for (x = 0; x < n + 1; x++)
-    a->data[x] = c.data[n + x];
+    a->data[x] = c->data[n + x];
   for (x = n + 1; x < a->dig_alloc; x++)
     a->data[x] = 0;
   a->dig_used = n + 1;
@@ -182,8 +193,30 @@ r_mpint_montgomery_reduce_ct (rmpint * a, const rmpint * m, rmpint_digit mp)
   /* scratch held an intermediate derived from a (potentially secret);
    * wipe before the stack frame is popped. */
   r_memclear_secure (scratch, (n + 1) * sizeof (rmpint_digit));
-  r_mpint_clear (&c);
   return TRUE;
+}
+
+rboolean
+r_mpint_montgomery_reduce_ct (rmpint * a, const rmpint * m, rmpint_digit mp)
+{
+  /* Convenience wrapper for one-shot callers; the per-call scratch
+   * allocation is fine when the function isn't on a hot path.
+   * r_mpint_expmod_ct and the RSA private-key path use the _into
+   * variant directly to avoid the allocation entirely. */
+  rmpint c;
+  ruint16 n;
+  rboolean ok;
+
+  if (R_UNLIKELY (a == NULL || m == NULL))
+    return FALSE;
+  n = r_mpint_digits_used (m);
+  if (R_UNLIKELY (n == 0))
+    return FALSE;
+
+  r_mpint_init_size (&c, 2 * n + 1);
+  ok = r_mpint_montgomery_reduce_ct_into (a, m, mp, &c);
+  r_mpint_clear (&c);
+  return ok;
 }
 
 rboolean

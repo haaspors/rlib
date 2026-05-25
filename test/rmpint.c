@@ -995,6 +995,39 @@ RTEST (rmpint, expmod_ct, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmpint, expmod_ct_with_mp, RTEST_FAST)
+{
+  /* The _with_mp variant should produce the same answer as the
+   * convenience wrapper for any modulus + mp pair the wrapper would
+   * derive itself - it's a perf split, not a semantic split. */
+  rmpint b, e, m, expected, got;
+  rmpint_digit mp;
+  ruint i;
+
+  r_mpint_init (&b);
+  r_mpint_init (&e);
+  r_mpint_init (&m);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+
+  r_mpint_set_u32 (&m, 65537);
+  r_assert (r_mpint_montgomery_setup (&mp, &m));
+  for (i = 1; i < 16; i++) {
+    r_mpint_set_u32 (&b, 2 + i);
+    r_mpint_set_u32 (&e, 1000 + i * 731);
+    r_assert (r_mpint_expmod_ct (&expected, &b, &e, &m, 32));
+    r_assert (r_mpint_expmod_ct_with_mp (&got, &b, &e, &m, mp, 32));
+    r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+  }
+
+  r_mpint_clear (&b);
+  r_mpint_clear (&e);
+  r_mpint_clear (&m);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
 RTEST (rmpint, ctz, RTEST_FAST)
 {
   rmpint a;

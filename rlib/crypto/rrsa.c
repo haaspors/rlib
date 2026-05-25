@@ -50,6 +50,17 @@ typedef struct {
   rmpint dp;
   rmpint dq;
   rmpint qp;
+
+  /* Per-modulus Montgomery inverses, populated at key construction
+   * by r_rsa_priv_key_precompute_cache and consumed by the CT
+   * exponentiation in r_rsa_modexp_private. Avoids running
+   * r_mpint_montgomery_setup on every private operation. mp_p and
+   * mp_q are only valid when the matching p/q are present (CRT
+   * path); have_pq tracks whether those got populated. */
+  rmpint_digit mp_n;
+  rmpint_digit mp_p;
+  rmpint_digit mp_q;
+  rboolean have_pq;
 } RRsaPrivKey;
 
 static RCryptoResult
@@ -196,6 +207,30 @@ r_rsa_pub_key_init (RCryptoKey * key, ruint bits)
   key->bits = bits;
 }
 
+/* Populate the per-modulus Montgomery cache (mp_n, plus mp_p / mp_q
+ * when the CRT primes are present) from n / p / q. Called from each
+ * private-key construction path once those fields are final.
+ * Returns FALSE on the degenerate cases - empty n or even modulus -
+ * neither of which occurs for a real RSA key but guarded so the
+ * cache populate chain doesn't silently rot. */
+static rboolean
+r_rsa_priv_key_precompute_cache (RRsaPrivKey * pk)
+{
+  if (r_mpint_iszero (&pk->pub.n))
+    return FALSE;
+  if (!r_mpint_montgomery_setup (&pk->mp_n, &pk->pub.n))
+    return FALSE;
+
+  pk->have_pq = !r_mpint_iszero (&pk->p) && !r_mpint_iszero (&pk->q);
+  if (pk->have_pq) {
+    if (!r_mpint_montgomery_setup (&pk->mp_p, &pk->p))
+      return FALSE;
+    if (!r_mpint_montgomery_setup (&pk->mp_q, &pk->q))
+      return FALSE;
+  }
+  return TRUE;
+}
+
 static void
 r_rsa_priv_key_free (rpointer data)
 {
@@ -283,6 +318,10 @@ r_rsa_priv_key_new (const rmpint * n, const rmpint * e, const rmpint * d)
       r_mpint_init_secure (&ret->qp);
       ret->pub.padding = R_RSA_PADDING_PKCS1_V15;
       r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
+      if (!r_rsa_priv_key_precompute_cache (ret)) {
+        r_crypto_key_unref ((RCryptoKey *)ret);
+        return NULL;
+      }
     }
   } else {
     ret = NULL;
@@ -299,7 +338,7 @@ r_rsa_priv_key_new_full (rint32 ver, const rmpint * n, const rmpint * e,
   RRsaPrivKey * ret;
 
   if (n != NULL && e != NULL && d != NULL) {
-    if ((ret = r_mem_new (RRsaPrivKey)) != NULL) {
+    if ((ret = r_mem_new0 (RRsaPrivKey)) != NULL) {
       ret->ver = ver;
       r_mpint_init_copy (&ret->pub.n, n);
       r_mpint_init_copy (&ret->pub.e, e);
@@ -316,6 +355,10 @@ r_rsa_priv_key_new_full (rint32 ver, const rmpint * n, const rmpint * e,
       else            r_mpint_init_secure (&ret->qp);
       ret->pub.padding = R_RSA_PADDING_PKCS1_V15;
       r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
+      if (!r_rsa_priv_key_precompute_cache (ret)) {
+        r_crypto_key_unref ((RCryptoKey *)ret);
+        return NULL;
+      }
     }
   } else {
     ret = NULL;
@@ -342,6 +385,10 @@ r_rsa_priv_key_new_binary (rconstpointer n, rsize nsize,
       r_mpint_init_secure (&ret->qp);
       ret->pub.padding = R_RSA_PADDING_PKCS1_V15;
       r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
+      if (!r_rsa_priv_key_precompute_cache (ret)) {
+        r_crypto_key_unref ((RCryptoKey *)ret);
+        return NULL;
+      }
     }
   } else {
     ret = NULL;
@@ -355,7 +402,7 @@ r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
   RRsaPrivKey * ret;
 
-  if ((ret = r_mem_new (RRsaPrivKey)) != NULL) {
+  if ((ret = r_mem_new0 (RRsaPrivKey)) != NULL) {
 
     r_mpint_init (&ret->pub.n);
     r_mpint_init (&ret->pub.e);
@@ -389,6 +436,10 @@ r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
     } else {
       ret->pub.padding = R_RSA_PADDING_PKCS1_V15;
       r_rsa_priv_key_init (&ret->pub.key, r_mpint_bits_used (&ret->pub.n));
+      if (!r_rsa_priv_key_precompute_cache (ret)) {
+        r_crypto_key_unref ((RCryptoKey *)ret);
+        ret = NULL;
+      }
     }
   }
 
@@ -477,6 +528,10 @@ r_rsa_priv_key_new_gen (rsize bits, ruint64 e, RPrng * prng)
       r_mpint_invmod (&ret->d, &ret->pub.e, &p_1mulq_1);  /* d  = e^-1 mod ((p - 1) * (q - 1)) */
       r_mpint_mod (&ret->dp, &ret->d, &p_1);              /* dp = d mod (p - 1) */
       r_mpint_mod (&ret->dq, &ret->d, &q_1);              /* dq = d mod (q - 1) */
+      if (!r_rsa_priv_key_precompute_cache (ret)) {
+        r_crypto_key_unref (ret);
+        ret = NULL;
+      }
     } else {
       r_crypto_key_unref (ret);
       ret = NULL;
@@ -685,10 +740,10 @@ r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
     r_mpint_init (&m2_p);
     r_mpint_init (&h);
 
-    ok = r_mpint_expmod_ct (&m1, c, &key->dp, &key->p,
-            r_mpint_bits_used (&key->p))
-      && r_mpint_expmod_ct (&m2, c, &key->dq, &key->q,
-            r_mpint_bits_used (&key->q))
+    ok = r_mpint_expmod_ct_with_mp (&m1, c, &key->dp, &key->p,
+            key->mp_p, r_mpint_bits_used (&key->p))
+      && r_mpint_expmod_ct_with_mp (&m2, c, &key->dq, &key->q,
+            key->mp_q, r_mpint_bits_used (&key->q))
       && r_mpint_mod (&m2_p, &m2, &key->p)
       && r_mpint_sub (&h, &m1, &m2_p);
     if (ok && r_mpint_isneg (&h))
@@ -705,8 +760,8 @@ r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
     r_mpint_clear (&h);
     return ok;
   } else {
-    return r_mpint_expmod_ct (m, c, &key->d, &key->pub.n,
-        r_mpint_bits_used (&key->pub.n));
+    return r_mpint_expmod_ct_with_mp (m, c, &key->d, &key->pub.n,
+        key->mp_n, r_mpint_bits_used (&key->pub.n));
   }
 }
 

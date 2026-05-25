@@ -209,6 +209,21 @@ R_API rboolean r_mpint_expmod (rmpint * dst, const rmpint * b, const rmpint * e,
  * on k directly. */
 R_API rboolean r_mpint_expmod_ct (rmpint * dst, const rmpint * b,
     const rmpint * e, const rmpint * m, ruint exp_bits);
+/* Compute the per-modulus Montgomery inverse mp = -m^-1 mod 2^digit_bits.
+ * Used by r_mpint_expmod_ct_with_mp and any other caller that wants
+ * to cache the mp once per modulus rather than recompute on every
+ * Montgomery operation. m must be odd. */
+R_API rboolean r_mpint_montgomery_setup (rmpint_digit * mp, const rmpint * m);
+
+/* Variant of r_mpint_expmod_ct that takes the per-modulus Montgomery
+ * inverse mp as input rather than deriving it from m on every call.
+ * Callers that sign / decrypt repeatedly with the same modulus
+ * (RSA private operations, DSA signing) cache mp on their key struct
+ * - one r_mpint_montgomery_setup at construction instead of one per
+ * call. Same exp_bits semantics and residual-leak behaviour as
+ * r_mpint_expmod_ct above. */
+R_API rboolean r_mpint_expmod_ct_with_mp (rmpint * dst, const rmpint * b,
+    const rmpint * e, const rmpint * m, rmpint_digit mp, ruint exp_bits);
 
 R_API rboolean r_mpint_gcd (rmpint * dst, const rmpint * a, const rmpint * b);
 R_API rboolean r_mpint_lcm (rmpint * dst, const rmpint * a, const rmpint * b);
