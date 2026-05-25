@@ -351,6 +351,31 @@ RTEST (rrsa, priv_key_new_marks_d_secure, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrsa, priv_key_new_rejects_even_n, RTEST_FAST)
+{
+  /* Per-key Montgomery setup needs gcd(n, 2) = 1, so an even n has
+   * no Montgomery inverse. The precompute that runs inside every
+   * private-key constructor rejects it - test the rejection
+   * propagates so we don't return a key whose first decrypt would
+   * read garbage from the uninitialised mp cache. Not reachable
+   * with a real RSA key (n is the product of two odd primes), but
+   * the early-return chain spans five constructors and is worth
+   * guarding against silent rot. */
+  rmpint n, e, d;
+  RCryptoKey * key;
+
+  r_mpint_init_str (&n, "10000", NULL, 10);
+  r_mpint_init_str (&e, "3", NULL, 10);
+  r_mpint_init_str (&d, "7", NULL, 10);
+
+  r_assert_cmpptr ((key = r_rsa_priv_key_new (&n, &e, &d)), ==, NULL);
+
+  r_mpint_clear (&n);
+  r_mpint_clear (&e);
+  r_mpint_clear (&d);
+}
+RTEST_END;
+
 RTEST (rrsa, encrypt_decrypt_1024, RTEST_FAST)
 {
   rchar before[] = "foobar\n";

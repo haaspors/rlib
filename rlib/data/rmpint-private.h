@@ -41,7 +41,6 @@ R_API_HIDDEN extern const rmpint_digit r_mpint_primes[RMPINT_N_PRIMES];
 R_API_HIDDEN RMpintPrimeTest r_mpint_prime_miller_rabin (const rmpint * n, const rmpint * a);
 R_API_HIDDEN RMpintPrimeTest r_mpint_prime_miller_rabin_full (const rmpint * n, RPrng * prng);
 
-R_API_HIDDEN rboolean r_mpint_montgomery_setup (rmpint_digit * mp, const rmpint * m);
 R_API_HIDDEN rboolean r_mpint_montgomery_reduce (rmpint * a, const rmpint * m,
     rmpint_digit mp);
 /* Constant-time variant of r_mpint_montgomery_reduce. Same semantics
@@ -52,6 +51,12 @@ R_API_HIDDEN rboolean r_mpint_montgomery_reduce (rmpint * a, const rmpint * m,
  * entry (the standard precondition for Montgomery reduction). */
 R_API_HIDDEN rboolean r_mpint_montgomery_reduce_ct (rmpint * a,
     const rmpint * m, rmpint_digit mp);
+/* Scratch-hoisting variant for hot paths. c must have dig_alloc at
+ * least 2 * digits_used(m) + 1; r_mpint_expmod_ct passes the same
+ * scratch through every iteration of its inner ladder to avoid the
+ * per-call allocation the convenience wrapper above incurs. */
+R_API_HIDDEN rboolean r_mpint_montgomery_reduce_ct_into (rmpint * a,
+    const rmpint * m, rmpint_digit mp, rmpint * c);
 R_API_HIDDEN rboolean r_mpint_montgomery_normalize (rmpint * a, const rmpint * m);
 
 R_END_DECLS
