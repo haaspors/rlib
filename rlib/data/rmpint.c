@@ -1722,6 +1722,21 @@ expmod_failed:
   return FALSE;
 }
 
+/* Force dig_used to a fixed width n, explicitly zeroing any tail the
+ * previous owner of this mpint may have left non-zero. The windowed
+ * expmod below relies on every Mont-form value carrying exactly n
+ * digits so its inner mul iteration count is value-independent and
+ * the CT table lookup reads well-defined zeros at the high end. */
+static void
+r_mpint_ct_pad_dig_used (rmpint * a, ruint16 n)
+{
+  ruint16 i;
+  for (i = a->dig_used; i < n; i++)
+    a->data[i] = 0;
+  a->dig_used = n;
+  a->sign = 0;
+}
+
 /* CT table lookup: copy table[idx] into dst, accessing every entry
  * once so the cache footprint doesn't depend on idx. Caller supplies
  * n_digits per entry; entries' data[0..n) must be populated (the
@@ -1826,7 +1841,7 @@ r_mpint_expmod_ct_with_mp (rmpint * dst, const rmpint * b, const rmpint * e,
   /* table[0] = 1 in Montgomery form (= R mod m). */
   if (!r_mpint_montgomery_normalize (&table[0], m))
     goto cleanup;
-  table[0].dig_used = n;  /* uniform width for the CT lookup */
+  r_mpint_ct_pad_dig_used (&table[0], n);
 
   /* table[1] = base in Montgomery form. */
   if (r_mpint_ucmp (b, m) > 0) {
@@ -1837,7 +1852,7 @@ r_mpint_expmod_ct_with_mp (rmpint * dst, const rmpint * b, const rmpint * e,
   }
   if (!r_mpint_mulmod (&table[1], &table[1], &table[0], m))
     goto cleanup;
-  table[1].dig_used = n;
+  r_mpint_ct_pad_dig_used (&table[1], n);
 
   /* table[i] = table[i-1] * table[1] for i in 2..15. Mont mul keeps
    * everything in the Mont domain. */
@@ -1845,12 +1860,12 @@ r_mpint_expmod_ct_with_mp (rmpint * dst, const rmpint * b, const rmpint * e,
     if (!r_mpint_mul (&table[w], &table[w - 1], &table[1]) ||
         !r_mpint_montgomery_reduce_ct_into (&table[w], m, mp, &reduce_scratch))
       goto cleanup;
-    table[w].dig_used = n;
+    r_mpint_ct_pad_dig_used (&table[w], n);
   }
 
   /* Initial result = 1_M (= table[0]). */
   r_mpint_set (&result, &table[0]);
-  result.dig_used = n;
+  r_mpint_ct_pad_dig_used (&result, n);
 
   /* Round exp_bits up to a multiple of WINDOW_BITS - the topmost
    * window's missing positions read as zero via r_mpint_get_digit
@@ -1867,7 +1882,7 @@ r_mpint_expmod_ct_with_mp (rmpint * dst, const rmpint * b, const rmpint * e,
       if (!r_mpint_mul (&result, &result, &result) ||
           !r_mpint_montgomery_reduce_ct_into (&result, m, mp, &reduce_scratch))
         goto cleanup;
-      result.dig_used = n;
+      r_mpint_ct_pad_dig_used (&result, n);
     }
 
     /* Extract bits [i - WINDOW_BITS, i) MSB-first into window_val. */
@@ -1887,7 +1902,7 @@ r_mpint_expmod_ct_with_mp (rmpint * dst, const rmpint * b, const rmpint * e,
     if (!r_mpint_mul (&result, &result, &picked) ||
         !r_mpint_montgomery_reduce_ct_into (&result, m, mp, &reduce_scratch))
       goto cleanup;
-    result.dig_used = n;
+    r_mpint_ct_pad_dig_used (&result, n);
   }
 
   /* Drop result out of Montgomery form: M(result_M, 1) = result. */
