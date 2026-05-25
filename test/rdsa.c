@@ -235,6 +235,33 @@ RTEST (rdsa, priv_key_new_rejects_null, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rdsa, priv_key_new_rejects_even_q, RTEST_FAST)
+{
+  /* Mont setup needs gcd(q, 2)=1, so even q has no Montgomery inverse.
+   * The per-key precompute that runs inside every constructor rejects
+   * it - test the rejection propagates so we don't return a key whose
+   * first sign would dereference an uninitialised Mont context. Not
+   * reachable with a real DSA key (q is always prime), purely a guard
+   * against the precompute chain silently rotting. */
+  rmpint p, q, g, y, x;
+  RCryptoKey * key;
+
+  r_mpint_init_str (&p, "10007", NULL, 10);
+  r_mpint_init_str (&q, "100", NULL, 10);
+  r_mpint_init_str (&g, "2", NULL, 10);
+  r_mpint_init_str (&y, "3", NULL, 10);
+  r_mpint_init_str (&x, "5", NULL, 10);
+
+  r_assert_cmpptr ((key = r_dsa_priv_key_new (&p, &q, &g, &y, &x)), ==, NULL);
+
+  r_mpint_clear (&p);
+  r_mpint_clear (&q);
+  r_mpint_clear (&g);
+  r_mpint_clear (&y);
+  r_mpint_clear (&x);
+}
+RTEST_END;
+
 RTEST (rdsa, priv_key_new_binary, RTEST_FAST)
 {
   rmpint p, q, g, y, x, got;
