@@ -1722,43 +1722,91 @@ expmod_failed:
   return FALSE;
 }
 
+/* CT table lookup: copy table[idx] into dst, accessing every entry
+ * once so the cache footprint doesn't depend on idx. Caller supplies
+ * n_digits per entry; entries' data[0..n) must be populated (the
+ * windowed expmod below force-pads dig_used after every reduce so
+ * the high digits are well-defined zeros rather than stale stack).
+ * dst must have dig_alloc >= n; its dig_used is left at n on exit. */
+static void
+r_mpint_ct_table_select (rmpint * dst, const rmpint * table, rsize n_entries,
+    rsize idx, ruint16 n)
+{
+  rsize i;
+  ruint16 d;
+  rmpint_digit mask, xor_val, nz;
+
+  for (d = 0; d < n; d++)
+    dst->data[d] = 0;
+
+  for (i = 0; i < n_entries; i++) {
+    /* mask = all-ones iff i == idx, else all-zeros. Using XOR + the
+     * "(x | -x) >> (W-1)" zero-test trick keeps the comparison
+     * branch-free and timing-independent of idx. */
+    xor_val = (rmpint_digit)(i ^ idx);
+    nz = (xor_val | ((rmpint_digit)0 - xor_val))
+        >> (sizeof (rmpint_digit) * 8 - 1);
+    mask = nz - (rmpint_digit)1;
+    for (d = 0; d < n; d++)
+      dst->data[d] |= table[i].data[d] & mask;
+  }
+  /* Pad dig_used to n so the result is itself uniform-width for any
+   * downstream r_mpint_mul / reduce. */
+  for (d = n; d < dst->dig_alloc; d++)
+    dst->data[d] = 0;
+  dst->dig_used = n;
+  dst->sign = 0;
+}
+
+#define R_MPINT_EXPMOD_CT_WINDOW_BITS    4
+#define R_MPINT_EXPMOD_CT_WINDOW_SIZE    (1u << R_MPINT_EXPMOD_CT_WINDOW_BITS)
+#define R_MPINT_EXPMOD_CT_WINDOW_MASK    (R_MPINT_EXPMOD_CT_WINDOW_SIZE - 1u)
+
 rboolean
 r_mpint_expmod_ct_with_mp (rmpint * dst, const rmpint * b, const rmpint * e,
     const rmpint * m, rmpint_digit mp, ruint exp_bits)
 {
-  /* Constant-time variant of r_mpint_expmod with the per-modulus
-   * Montgomery inverse mp supplied by the caller. Iterates a fixed
-   * bit count over the exponent and routes the per-bit dispatch
-   * through r_mpint_swap_ct rather than R[bit^1] / R[bit] array
-   * indexing, so neither the exponent's bit pattern nor its bit
-   * length leaks via memory-access patterns. The per-iteration
-   * Montgomery reduce runs through r_mpint_montgomery_reduce_ct_into
-   * with a single hoisted scratch buffer, avoiding the per-call
-   * allocation the variable-width reduce would otherwise pay
-   * thousands of times per expmod.
+  /* Constant-time fixed-window Montgomery exponentiation. Precomputes
+   * table[i] = base_M^i mod m for i in 0..15, then processes the
+   * exponent in 4-bit windows MSB-down: 4 squarings followed by a
+   * single multiplication by the looked-up table entry per window.
+   * That's ~1.25 Mont muls per exponent bit vs the 2 muls per bit
+   * the bit-by-bit ladder pays, for a ~1.5x speedup on RSA-sized
+   * exponents.
    *
-   * Callers that repeat with a fixed modulus (RSA private operations
-   * on n / p / q, DSA signing on p) precompute mp once at key
-   * construction and feed it through every call - that's the win
-   * over the convenience wrapper below, which derives mp each call.
+   * CT properties:
+   * - The table lookup touches every entry's storage on every
+   *   access (r_mpint_ct_table_select), so cache footprint doesn't
+   *   reveal the window value (and thus the exponent bits).
+   * - All Mont reduces go through the _into variant with a hoisted
+   *   scratch buffer (saves the per-call alloc the convenience
+   *   wrapper would pay).
+   * - dig_used is force-padded to n after every reduce so table
+   *   entries and intermediate values have uniform width, keeping
+   *   the inner mul's iteration count value-independent within a
+   *   given modulus.
+   *
+   * Callers that repeat with a fixed modulus (RSA private operations,
+   * DSA signing) pass mp precomputed at key construction; the
+   * convenience wrapper below derives mp from m for one-shot uses.
    *
    * The base b is still treated as non-secret: the initial
    * mpint_mod / mulmod that lift it into Montgomery form are
-   * variable-time. RSA private-key callers using approach 1 from
-   * #136 accept the setup-time leak; the alternative is pre-lifting
-   * b separately.
-   *
-   * exp_bits caps the inner loop; pass a value that upper-bounds the
-   * actual bit length of e. The function iterates exactly exp_bits
-   * bits regardless of e's actual value, so two callers with
-   * different e's run the same loop. The cap can be larger than e's
-   * actual bit length - the extra leading zeros are no-ops on the
-   * ladder. */
-  rmpint R[2];
+   * variable-time. exp_bits caps the inner loop; pass a value that
+   * upper-bounds the actual bit length of e. exp_bits gets rounded
+   * up internally to the next multiple of R_MPINT_EXPMOD_CT_WINDOW_BITS
+   * so the top window is treated uniformly with the rest. */
+  rmpint table[R_MPINT_EXPMOD_CT_WINDOW_SIZE];
+  rmpint result;
+  rmpint picked;
   rmpint reduce_scratch;
+  ruint windowed_bits;
+  ruint window_idx;
   ruint i;
   ruint16 n;
-  rmpint_digit bit;
+  rsize w;
+  ruint j;
+  rmpint_digit window_val;
   rboolean ok = FALSE;
 
   if (R_UNLIKELY (dst == NULL || b == NULL || e == NULL || m == NULL))
@@ -1768,57 +1816,92 @@ r_mpint_expmod_ct_with_mp (rmpint * dst, const rmpint * b, const rmpint * e,
   if (R_UNLIKELY (n == 0))
     return FALSE;
 
-  r_mpint_init_from (&R[0], b, e, m, NULL);
-  r_mpint_init_from (&R[1], b, e, m, NULL);
-
-  /* One 2n+1 digit accumulator services every per-iteration Montgomery
-   * reduce; the same scratch is reused across all the calls below. */
+  for (w = 0; w < R_MPINT_EXPMOD_CT_WINDOW_SIZE; w++)
+    r_mpint_init_size_from (&table[w], (ruint16)(n + 1), b, e, m, NULL);
+  r_mpint_init_size_from (&result, (ruint16)(n + 1), b, e, m, NULL);
+  r_mpint_init_size_from (&picked, (ruint16)(n + 1), b, e, m, NULL);
   r_mpint_init_size_from (&reduce_scratch, (ruint16)(2 * n + 1),
       b, e, m, NULL);
 
-  /* R[0] = 1 in Montgomery form (= R mod m). */
-  if (!r_mpint_montgomery_normalize (&R[0], m))
+  /* table[0] = 1 in Montgomery form (= R mod m). */
+  if (!r_mpint_montgomery_normalize (&table[0], m))
     goto cleanup;
+  table[0].dig_used = n;  /* uniform width for the CT lookup */
 
-  /* R[1] = b in Montgomery form. The base lift is variable-time on b
-   * (documented as non-secret above). */
+  /* table[1] = base in Montgomery form. */
   if (r_mpint_ucmp (b, m) > 0) {
-    if (!r_mpint_mod (&R[1], b, m))
+    if (!r_mpint_mod (&table[1], b, m))
       goto cleanup;
   } else {
-    r_mpint_set (&R[1], b);
+    r_mpint_set (&table[1], b);
   }
-  if (!r_mpint_mulmod (&R[1], &R[1], &R[0], m))
+  if (!r_mpint_mulmod (&table[1], &table[1], &table[0], m))
     goto cleanup;
+  table[1].dig_used = n;
 
-  /* Iterate exactly exp_bits bits, MSB-down. The swap-wrap pattern
-   * routes both bit=0 and bit=1 through the same operation sequence
-   * (R[1] = R[0]*R[1]; R[0] = R[0]^2), so the per-bit cache and
-   * branch behaviour doesn't depend on the exponent value. */
-  for (i = exp_bits; i > 0; i--) {
-    ruint bp = i - 1;
-    bit = (r_mpint_get_digit (e, (ruint16)(bp / (sizeof (rmpint_digit) * 8))) >>
-           (bp % (sizeof (rmpint_digit) * 8))) & 1u;
-
-    r_mpint_swap_ct (&R[0], &R[1], (ruint32)bit);
-    if (!r_mpint_mul (&R[1], &R[0], &R[1]) ||
-        !r_mpint_montgomery_reduce_ct_into (&R[1], m, mp, &reduce_scratch) ||
-        !r_mpint_mul (&R[0], &R[0], &R[0]) ||
-        !r_mpint_montgomery_reduce_ct_into (&R[0], m, mp, &reduce_scratch))
+  /* table[i] = table[i-1] * table[1] for i in 2..15. Mont mul keeps
+   * everything in the Mont domain. */
+  for (w = 2; w < R_MPINT_EXPMOD_CT_WINDOW_SIZE; w++) {
+    if (!r_mpint_mul (&table[w], &table[w - 1], &table[1]) ||
+        !r_mpint_montgomery_reduce_ct_into (&table[w], m, mp, &reduce_scratch))
       goto cleanup;
-    r_mpint_swap_ct (&R[0], &R[1], (ruint32)bit);
+    table[w].dig_used = n;
   }
 
-  /* Drop R[0] out of Montgomery form. */
-  if (!r_mpint_montgomery_reduce_ct_into (&R[0], m, mp, &reduce_scratch))
+  /* Initial result = 1_M (= table[0]). */
+  r_mpint_set (&result, &table[0]);
+  result.dig_used = n;
+
+  /* Round exp_bits up to a multiple of WINDOW_BITS - the topmost
+   * window's missing positions read as zero via r_mpint_get_digit
+   * and contribute nothing. Then iterate exactly windowed_bits /
+   * WINDOW_BITS windows. */
+  windowed_bits = (exp_bits + (R_MPINT_EXPMOD_CT_WINDOW_BITS - 1u)) &
+      ~(ruint)(R_MPINT_EXPMOD_CT_WINDOW_BITS - 1u);
+
+  for (i = windowed_bits; i >= R_MPINT_EXPMOD_CT_WINDOW_BITS;
+      i -= R_MPINT_EXPMOD_CT_WINDOW_BITS) {
+    /* 4 squarings. The first iteration squares result = 1 four times
+     * (still 1); harmless and keeps the loop body uniform. */
+    for (j = 0; j < R_MPINT_EXPMOD_CT_WINDOW_BITS; j++) {
+      if (!r_mpint_mul (&result, &result, &result) ||
+          !r_mpint_montgomery_reduce_ct_into (&result, m, mp, &reduce_scratch))
+        goto cleanup;
+      result.dig_used = n;
+    }
+
+    /* Extract bits [i - WINDOW_BITS, i) MSB-first into window_val. */
+    window_val = 0;
+    for (j = R_MPINT_EXPMOD_CT_WINDOW_BITS; j > 0; j--) {
+      ruint bp = i - (R_MPINT_EXPMOD_CT_WINDOW_BITS - j + 1);
+      rmpint_digit bit = (r_mpint_get_digit (e,
+              (ruint16)(bp / (sizeof (rmpint_digit) * 8))) >>
+              (bp % (sizeof (rmpint_digit) * 8))) & 1u;
+      window_val = (window_val << 1) | bit;
+    }
+
+    /* CT table lookup + multiply. */
+    window_idx = (ruint)(window_val & R_MPINT_EXPMOD_CT_WINDOW_MASK);
+    r_mpint_ct_table_select (&picked, table, R_MPINT_EXPMOD_CT_WINDOW_SIZE,
+        window_idx, n);
+    if (!r_mpint_mul (&result, &result, &picked) ||
+        !r_mpint_montgomery_reduce_ct_into (&result, m, mp, &reduce_scratch))
+      goto cleanup;
+    result.dig_used = n;
+  }
+
+  /* Drop result out of Montgomery form: M(result_M, 1) = result. */
+  if (!r_mpint_montgomery_reduce_ct_into (&result, m, mp, &reduce_scratch))
     goto cleanup;
 
-  r_mpint_set (dst, &R[0]);
+  r_mpint_set (dst, &result);
   ok = TRUE;
 cleanup:
   r_mpint_clear (&reduce_scratch);
-  r_mpint_clear (&R[0]);
-  r_mpint_clear (&R[1]);
+  r_mpint_clear (&picked);
+  r_mpint_clear (&result);
+  for (w = 0; w < R_MPINT_EXPMOD_CT_WINDOW_SIZE; w++)
+    r_mpint_clear (&table[w]);
   return ok;
 }
 
