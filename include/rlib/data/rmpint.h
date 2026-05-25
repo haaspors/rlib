@@ -187,6 +187,28 @@ R_API rboolean r_mpint_exp (rmpint * dst, const rmpint * b, ruint16 e);
 
 R_API rboolean r_mpint_invmod (rmpint * dst, const rmpint * a, const rmpint * m);
 R_API rboolean r_mpint_expmod (rmpint * dst, const rmpint * b, const rmpint * e, const rmpint * m);
+/* Constant-time variant of r_mpint_expmod. Iterates exactly exp_bits
+ * bits over the exponent and routes the per-bit dispatch through
+ * r_mpint_swap_ct rather than secret-indexed lookups; the per-
+ * iteration Montgomery reduce runs through the CT variant. The base
+ * b is treated as non-secret: the initial lift into Montgomery form
+ * is variable-time.
+ *
+ * exp_bits must upper-bound the bit length of e - silent truncation
+ * otherwise. bit_count(m) is always safe; a tighter bound (such as
+ * bit_count(q) for DSA's k < q) saves work. The bit window is the
+ * one timing channel the caller fully controls; pick the same value
+ * across calls if uniformity matters.
+ *
+ * Residual leak: r_mpint backs the intermediates, so each per-bit
+ * Mont mul iterates the intermediate value's dig_used. That leaks
+ * the bit length of the partial product, not the exponent. Removing
+ * this would require either a fixed-width type sized for the modulus
+ * (cf. RMpintFE for ECC) or non-clamping rmpint variants. For DSA's
+ * mod-p path the leak is on intermediate g^(partial-k) values, not
+ * on k directly. */
+R_API rboolean r_mpint_expmod_ct (rmpint * dst, const rmpint * b,
+    const rmpint * e, const rmpint * m, ruint exp_bits);
 
 R_API rboolean r_mpint_gcd (rmpint * dst, const rmpint * a, const rmpint * b);
 R_API rboolean r_mpint_lcm (rmpint * dst, const rmpint * a, const rmpint * b);

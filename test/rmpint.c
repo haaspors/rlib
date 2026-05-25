@@ -931,6 +931,70 @@ RTEST (rmpint, expmod, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rmpint, expmod_ct, RTEST_FAST)
+{
+  rmpint b, e, m, expected, got;
+  ruint i;
+
+  /* NULL guards. */
+  {
+    rmpint zb = R_MPINT_INIT, ze = R_MPINT_INIT, zm = R_MPINT_INIT;
+    r_assert (!r_mpint_expmod_ct (NULL, &zb, &ze, &zm, 32));
+    r_assert (!r_mpint_expmod_ct (&got, NULL, &ze, &zm, 32));
+    r_assert (!r_mpint_expmod_ct (&got, &zb, NULL, &zm, 32));
+    r_assert (!r_mpint_expmod_ct (&got, &zb, &ze, NULL, 32));
+  }
+
+  r_mpint_init (&b);
+  r_mpint_init (&e);
+  r_mpint_init (&m);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+
+  /* Same vector as the r_mpint_expmod test above - 4^13 mod 497 = 445. */
+  r_mpint_set_u32 (&b, 4);
+  r_mpint_set_u32 (&e, 13);
+  r_mpint_set_u32 (&m, 497);
+  r_mpint_set_u32 (&expected, 445);
+  r_assert (r_mpint_expmod_ct (&got, &b, &e, &m, r_mpint_bits_used (&e)));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  /* exp_bits cap larger than e's bit count must still produce the same
+   * result - the extra leading-zero iterations are no-ops. */
+  r_assert (r_mpint_expmod_ct (&got, &b, &e, &m, 64));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  /* Match the variable-time expmod across a handful of cases. */
+  r_mpint_set_u32 (&m, 65537);  /* small Fermat prime, used elsewhere */
+  for (i = 1; i < 16; i++) {
+    r_mpint_set_u32 (&b, 2 + i);
+    r_mpint_set_u32 (&e, 1000 + i * 731);
+    r_assert (r_mpint_expmod (&expected, &b, &e, &m));
+    r_assert (r_mpint_expmod_ct (&got, &b, &e, &m, 32));
+    r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+  }
+
+  /* Multi-digit modulus to exercise the rmpint-sized inner mul + reduce.
+   * Clear first - we re-use the mpints with init_str. */
+  r_mpint_clear (&b);
+  r_mpint_clear (&e);
+  r_mpint_clear (&m);
+  r_mpint_clear (&expected);
+  r_mpint_init_str (&b, "4782572232345452435234534", NULL, 10);
+  r_mpint_init_str (&e, "2345243524352435452983475", NULL, 10);
+  r_mpint_init_str (&m, "42359872349587", NULL, 10);
+  r_mpint_init_str (&expected, "8454269506363", NULL, 10);
+  r_assert (r_mpint_expmod_ct (&got, &b, &e, &m, r_mpint_bits_used (&e)));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  r_mpint_clear (&b);
+  r_mpint_clear (&e);
+  r_mpint_clear (&m);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
 RTEST (rmpint, ctz, RTEST_FAST)
 {
   rmpint a;

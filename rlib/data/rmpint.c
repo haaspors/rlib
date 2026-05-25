@@ -1722,6 +1722,90 @@ expmod_failed:
   return FALSE;
 }
 
+rboolean
+r_mpint_expmod_ct (rmpint * dst, const rmpint * b, const rmpint * e,
+    const rmpint * m, ruint exp_bits)
+{
+  /* Constant-time variant of r_mpint_expmod. Iterates a fixed bit
+   * count over the exponent and routes the per-bit dispatch through
+   * r_mpint_swap_ct rather than R[bit^1] / R[bit] array indexing, so
+   * neither the exponent's bit pattern nor its bit length leaks via
+   * memory-access patterns. The per-iteration Montgomery reduce
+   * runs through r_mpint_montgomery_reduce_ct.
+   *
+   * The base b is treated as non-secret: the initial mpint_mod and
+   * mulmod that lift it into Montgomery form are variable-time. For
+   * DSA's r = g^k mod p that's fine (g is public); RSA private-key
+   * use cases want to either pre-lift the base or accept the
+   * setup-time leak.
+   *
+   * exp_bits caps the inner loop: caller knows e is bounded (e.g.
+   * DSA's k < q means exp_bits = bit_count(q)) and passes that. The
+   * function iterates exactly exp_bits bits regardless of e's actual
+   * value, so two callers with different e's run the same loop. The
+   * cap can be larger than e's actual bit length - the extra leading
+   * zeros are no-ops on the ladder. */
+  rmpint R[2];
+  rmpint_digit mp;
+  ruint i;
+  rmpint_digit bit;
+
+  if (R_UNLIKELY (dst == NULL || b == NULL || e == NULL || m == NULL))
+    return FALSE;
+
+  if (!r_mpint_montgomery_setup (&mp, m))
+    return FALSE;
+
+  r_mpint_init_from (&R[0], b, e, m, NULL);
+  r_mpint_init_from (&R[1], b, e, m, NULL);
+
+  /* R[0] = 1 in Montgomery form (= R mod m). */
+  if (!r_mpint_montgomery_normalize (&R[0], m))
+    goto expmod_ct_failed;
+
+  /* R[1] = b in Montgomery form. The base lift is variable-time on b
+   * (documented as non-secret above). */
+  if (r_mpint_ucmp (b, m) > 0) {
+    if (!r_mpint_mod (&R[1], b, m))
+      goto expmod_ct_failed;
+  } else {
+    r_mpint_set (&R[1], b);
+  }
+  if (!r_mpint_mulmod (&R[1], &R[1], &R[0], m))
+    goto expmod_ct_failed;
+
+  /* Iterate exactly exp_bits bits, MSB-down. The swap-wrap pattern
+   * routes both bit=0 and bit=1 through the same operation sequence
+   * (R[1] = R[0]*R[1]; R[0] = R[0]^2), so the per-bit cache and
+   * branch behaviour doesn't depend on the exponent value. */
+  for (i = exp_bits; i > 0; i--) {
+    ruint bp = i - 1;
+    bit = (r_mpint_get_digit (e, (ruint16)(bp / (sizeof (rmpint_digit) * 8))) >>
+           (bp % (sizeof (rmpint_digit) * 8))) & 1u;
+
+    r_mpint_swap_ct (&R[0], &R[1], (ruint32)bit);
+    if (!r_mpint_mul (&R[1], &R[0], &R[1]) ||
+        !r_mpint_montgomery_reduce_ct (&R[1], m, mp) ||
+        !r_mpint_mul (&R[0], &R[0], &R[0]) ||
+        !r_mpint_montgomery_reduce_ct (&R[0], m, mp))
+      goto expmod_ct_failed;
+    r_mpint_swap_ct (&R[0], &R[1], (ruint32)bit);
+  }
+
+  /* Drop R[0] out of Montgomery form. */
+  if (!r_mpint_montgomery_reduce_ct (&R[0], m, mp))
+    goto expmod_ct_failed;
+
+  r_mpint_set (dst, &R[0]);
+  r_mpint_clear (&R[0]);
+  r_mpint_clear (&R[1]);
+  return TRUE;
+expmod_ct_failed:
+  r_mpint_clear (&R[0]);
+  r_mpint_clear (&R[1]);
+  return FALSE;
+}
+
 /* Based on Handbook of Applied Cryptography (HAC) 14.4.3 (p.608) */
 rboolean
 r_mpint_gcd (rmpint * dst, const rmpint * x, const rmpint * y)
