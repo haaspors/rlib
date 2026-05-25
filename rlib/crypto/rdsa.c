@@ -125,7 +125,12 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
     rconstpointer hash, rsize hashsize, rpointer sig, rsize * sigsize)
 {
   const RDsaPrivKey * pk = (const RDsaPrivKey *)key;
-  rmpint k, kinv, r, s, z, xr, b;
+  rmpint k, r, s, z, q_minus_2;
+  RMpintFEMontCtx ctx_q;
+  RMpintFE mont_r_sq_q, q_minus_2_fe;
+  RMpintFE k_fe, k_M, kinv_M, z_fe, z_M, x_fe, x_M, r_fe, r_M;
+  RMpintFE xr_M, zr_M, s_M, s_fe;
+  ruint q_minus_2_bits, q_bits;
   ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
   RAsn1BinEncoder * enc = NULL;
   ruint8 * sigbuf = NULL;
@@ -164,16 +169,34 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
   kbytes = qbytes + 8;
   kbuf = r_alloca (kbytes);
 
-  /* k is the per-signature secret nonce; kinv = k^-1 mod q derives
-   * from it and is equally sensitive. Both want secure-clear so
-   * neither lingers in freed heap after this function returns. */
+  /* k is the per-signature secret nonce; everything derived from it
+   * (kinv_M, s_M, the FE temporaries) is equally sensitive. The
+   * rmpints want secure-clear so they don't linger in freed heap;
+   * the inline-storage FEs get memclear_secure'd at function exit. */
   r_mpint_init_secure (&k);
-  r_mpint_init_secure (&kinv);
   r_mpint_init (&r);
   r_mpint_init (&s);
-  r_mpint_init (&xr);
-  r_mpint_init (&b);
+  r_mpint_init (&q_minus_2);
   r_dsa_hash_to_mpint (&z, &pk->pub.q, hash, hashsize);
+
+  /* Set up mod-q Montgomery context for the CT arithmetic. p_minus_2
+   * here is q_minus_2 - "p" is just the FE convention for "the
+   * modulus", not DSA's p. */
+  if (!r_mpint_fe_mont_ctx_init (&ctx_q, &pk->pub.q))
+    goto cleanup;
+  if (!r_mpint_fe_compute_r_squared (&mont_r_sq_q, &pk->pub.q,
+        ctx_q.n_digits))
+    goto cleanup;
+  if (!r_mpint_sub_i32 (&q_minus_2, &pk->pub.q, 2))
+    goto cleanup;
+  r_mpint_fe_from_mpint (&q_minus_2_fe, &q_minus_2, ctx_q.n_digits);
+  q_minus_2_bits = r_mpint_bits_used (&q_minus_2);
+  q_bits = r_mpint_bits_used (&pk->pub.q);
+
+  /* x is the long-term private key. Lift to FE/Mont once outside the
+   * retry loop. */
+  r_mpint_fe_from_mpint (&x_fe, &pk->x, ctx_q.n_digits);
+  r_mpint_fe_mont_in (&x_M, &x_fe, &mont_r_sq_q, &ctx_q);
 
   for (;;) {
     do {
@@ -184,38 +207,34 @@ r_dsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
         goto cleanup;
     } while (r_mpint_iszero (&k));
 
-    /* r = (g^k mod p) mod q; retry on the (negligible) chance r == 0. */
-    if (!r_mpint_expmod (&r, &pk->pub.g, &k, &pk->pub.p) ||
+    /* r = (g^k mod p) mod q. The CT expmod processes exactly
+     * bit_count(q) bits of k regardless of k's actual value, so the
+     * iteration count doesn't leak k's bit length. */
+    if (!r_mpint_expmod_ct (&r, &pk->pub.g, &k, &pk->pub.p, q_bits) ||
         !r_mpint_mod (&r, &r, &pk->pub.q))
       goto cleanup;
     if (r_mpint_iszero (&r))
       continue;
 
-    /* k^-1 mod q via multiplicative blinding. r_mpint_invmod uses an
-     * extended-Euclidean ladder whose loop and shift counts vary with
-     * the input — and k is the per-signature secret, so its timing
-     * would leak bits of k (the Nguyen/Shparlinski style attack that
-     * lets an attacker recover x from a handful of biased signatures).
-     * Pick a fresh random b in [1, q-1], compute t = k*b mod q, run
-     * invmod on the blinded t, then unblind: k^-1 = t^-1 * b mod q.
-     * invmod still runs in variable time, but on input that no longer
-     * correlates with k. */
-    do {
-      if (!r_prng_fill (prng, kbuf, kbytes))
-        goto cleanup;
-      r_mpint_set_binary (&b, kbuf, kbytes);
-      if (!r_mpint_mod (&b, &b, &pk->pub.q))
-        goto cleanup;
-    } while (r_mpint_iszero (&b));
-
-    /* s = k^-1 * (z + x * r) mod q; retry on s == 0. */
-    if (!r_mpint_mulmod (&kinv, &k, &b, &pk->pub.q) ||
-        !r_mpint_invmod (&kinv, &kinv, &pk->pub.q) ||
-        !r_mpint_mulmod (&kinv, &kinv, &b, &pk->pub.q) ||
-        !r_mpint_mul (&xr, &pk->x, &r) ||
-        !r_mpint_add (&xr, &xr, &z) ||
-        !r_mpint_mul (&s, &kinv, &xr) ||
-        !r_mpint_mod (&s, &s, &pk->pub.q))
+    /* CT s = k^-1 * (z + x*r) mod q. All arithmetic runs through the
+     * fixed-width FE primitives; k^-1 uses Fermat instead of the
+     * extended-Euclidean ladder so the inversion itself no longer
+     * leaks k. The multiplicative blinding the old path used as
+     * defence-in-depth is dropped - the CT inverter is the actual
+     * fix. */
+    r_mpint_fe_from_mpint (&k_fe, &k, ctx_q.n_digits);
+    r_mpint_fe_from_mpint (&z_fe, &z, ctx_q.n_digits);
+    r_mpint_fe_from_mpint (&r_fe, &r, ctx_q.n_digits);
+    r_mpint_fe_mont_in (&k_M, &k_fe, &mont_r_sq_q, &ctx_q);
+    r_mpint_fe_mont_in (&z_M, &z_fe, &mont_r_sq_q, &ctx_q);
+    r_mpint_fe_mont_in (&r_M, &r_fe, &mont_r_sq_q, &ctx_q);
+    r_mpint_fe_invmod_mont (&kinv_M, &k_M, &q_minus_2_fe, q_minus_2_bits,
+        &mont_r_sq_q, &ctx_q);
+    r_mpint_fe_mul_mont (&xr_M, &x_M, &r_M, &ctx_q);
+    r_mpint_fe_add (&zr_M, &z_M, &xr_M, &ctx_q);
+    r_mpint_fe_mul_mont (&s_M, &kinv_M, &zr_M, &ctx_q);
+    r_mpint_fe_mont_out (&s_fe, &s_M, &ctx_q);
+    if (!r_mpint_fe_to_mpint (&s, &s_fe, ctx_q.n_digits))
       goto cleanup;
     if (!r_mpint_iszero (&s))
       break;
@@ -250,12 +269,29 @@ cleanup_with_ret:
   r_free (sigbuf);
   if (enc != NULL) r_asn1_bin_encoder_unref (enc);
   r_mpint_clear (&k);
-  r_mpint_clear (&kinv);
   r_mpint_clear (&r);
   r_mpint_clear (&s);
-  r_mpint_clear (&xr);
-  r_mpint_clear (&b);
   r_mpint_clear (&z);
+  r_mpint_clear (&q_minus_2);
+  /* Inline-storage FE temporaries derived from k / x live on the
+   * stack and would survive the function frame until overwritten;
+   * wipe them explicitly so they don't leak into a later allocation. */
+  r_memclear_secure (&ctx_q, sizeof (ctx_q));
+  r_memclear_secure (&mont_r_sq_q, sizeof (mont_r_sq_q));
+  r_memclear_secure (&q_minus_2_fe, sizeof (q_minus_2_fe));
+  r_memclear_secure (&k_fe, sizeof (k_fe));
+  r_memclear_secure (&k_M, sizeof (k_M));
+  r_memclear_secure (&kinv_M, sizeof (kinv_M));
+  r_memclear_secure (&z_fe, sizeof (z_fe));
+  r_memclear_secure (&z_M, sizeof (z_M));
+  r_memclear_secure (&x_fe, sizeof (x_fe));
+  r_memclear_secure (&x_M, sizeof (x_M));
+  r_memclear_secure (&r_fe, sizeof (r_fe));
+  r_memclear_secure (&r_M, sizeof (r_M));
+  r_memclear_secure (&xr_M, sizeof (xr_M));
+  r_memclear_secure (&zr_M, sizeof (zr_M));
+  r_memclear_secure (&s_M, sizeof (s_M));
+  r_memclear_secure (&s_fe, sizeof (s_fe));
   r_prng_unref (prng);
   (void) own_prng;
   return ret;
