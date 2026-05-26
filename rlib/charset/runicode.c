@@ -90,7 +90,10 @@ r_utf8_to_unichar (const rchar * utf8, rsize size, runichar * uc)
   if (size == 0)
     return 0;
 
-  if (utf8[0] > 0) {
+  /* High-bit-clear means single-byte ASCII; testing against 0x80
+   * directly avoids depending on whether `char` is signed (AArch64
+   * defaults to unsigned, x86 to signed). */
+  if ((utf8[0] & 0x80) == 0) {
     *uc = (runichar)(utf8[0] & 0x7f);
     return 1;
   } else if ((utf8[0] & 0xe0) == 0xc0) {
