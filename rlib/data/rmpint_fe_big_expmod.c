@@ -43,13 +43,14 @@
 
 /* Branchless table lookup: dst := table[idx], touching every entry
  * once so the memory access pattern is independent of idx. n is the
- * digit count being used (ctx->n_digits); the high tail of each FE
- * is zero by construction (set by the FE primitives that produced
- * table entries) and the lookup reads through MAX anyway since the
- * select operates on the full inline storage. */
+ * runtime modulus digit count (ctx->n_digits); the OR loop only
+ * iterates that working window since the high tail of every FE_Big
+ * the rest of this file produces is zero by construction. The
+ * initial full-width zero of dst maintains that tail invariant on
+ * dst for downstream consumers. */
 static void
 r_mpint_fe_big_table_select (RMpintFE_Big * dst, const RMpintFE_Big * table,
-    rsize n_entries, ruint idx)
+    rsize n_entries, ruint idx, ruint16 n)
 {
   rsize i;
   ruint16 d;
@@ -65,7 +66,7 @@ r_mpint_fe_big_table_select (RMpintFE_Big * dst, const RMpintFE_Big * table,
     nz = (xor_val | ((rmpint_digit)0 - xor_val))
         >> (sizeof (rmpint_digit) * 8 - 1);
     mask = nz - (rmpint_digit)1;
-    for (d = 0; d < R_N_ELEMENTS (dst->d); d++)
+    for (d = 0; d < n; d++)
       dst->d[d] |= table[i].d[d] & mask;
   }
 }
@@ -148,7 +149,7 @@ r_mpint_fe_big_expmod_ct (rmpint * dst, const rmpint * base,
     /* CT table lookup + multiply. */
     window_idx = (ruint)(window_val & R_MPINT_FE_BIG_EXPMOD_WINDOW_MASK);
     r_mpint_fe_big_table_select (&picked, table,
-        R_MPINT_FE_BIG_EXPMOD_WINDOW_SIZE, window_idx);
+        R_MPINT_FE_BIG_EXPMOD_WINDOW_SIZE, window_idx, n);
     r_mpint_fe_big_mul_mont (&result, &result, &picked, ctx);
   }
 
