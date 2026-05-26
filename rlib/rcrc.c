@@ -18,6 +18,16 @@
 
 #include "config.h"
 #include <rlib/rcrc.h>
+#include <rlib/rcpufeatures.h>
+#include <rlib/rmem.h>
+
+#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+# include <nmmintrin.h>
+#endif
+
+#if defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+# include <arm_acle.h>
+#endif
 
 static const ruint32 g__r_crc32_tbl[] = {
   0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
@@ -134,8 +144,8 @@ r_crc32_update (ruint32 crc, rconstpointer buffer, rsize size)
   return ~crc;
 }
 
-ruint32
-r_crc32c_update (ruint32 crc, rconstpointer buffer, rsize size)
+static ruint32
+r_crc32c_update_sw (ruint32 crc, rconstpointer buffer, rsize size)
 {
   const ruint8 * ptr = buffer;
 
@@ -143,6 +153,85 @@ r_crc32c_update (ruint32 crc, rconstpointer buffer, rsize size)
   while (size--)
     crc = (g__r_crc32c_tbl[(crc ^ *ptr++) & 0xff]) ^ (crc >> 8);
   return ~crc;
+}
+
+#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+/* The per-function target attribute lets us call _mm_crc32_* without
+ * -msse4.2 at file scope; r_crc32c_update gates entry on
+ * R_CPU_FEATURE_SSE4_2 so the SSE4.2 instructions only ever run
+ * on a CPU that supports them. */
+# if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("sse4.2")))
+# endif
+static ruint32
+r_crc32c_update_sse42 (ruint32 crc, rconstpointer buffer, rsize size)
+{
+  const ruint8 * ptr = buffer;
+  ruint32 c = ~crc;
+# if defined(R_ARCH_X86_64)
+  while (size >= 8) {
+    ruint64 q;
+    /* memcpy avoids the unaligned-load UB a direct (ruint64*)ptr
+     * cast carries; compilers fold it into a single mov. */
+    r_memcpy (&q, ptr, sizeof (q));
+    c = (ruint32) _mm_crc32_u64 (c, q);
+    ptr += 8;
+    size -= 8;
+  }
+# endif
+  while (size >= 4) {
+    ruint32 d;
+    r_memcpy (&d, ptr, sizeof (d));
+    c = _mm_crc32_u32 (c, d);
+    ptr += 4;
+    size -= 4;
+  }
+  while (size--)
+    c = _mm_crc32_u8 (c, *ptr++);
+  return ~c;
+}
+#endif
+
+#if defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+/* Same target-attribute pattern as the SSE4.2 path; entry gated on
+ * R_CPU_FEATURE_ARM_CRC32 by r_crc32c_update. */
+__attribute__((target("+crc")))
+static ruint32
+r_crc32c_update_armv8 (ruint32 crc, rconstpointer buffer, rsize size)
+{
+  const ruint8 * ptr = buffer;
+  ruint32 c = ~crc;
+  while (size >= 8) {
+    ruint64 q;
+    r_memcpy (&q, ptr, sizeof (q));
+    c = __crc32cd (c, q);
+    ptr += 8;
+    size -= 8;
+  }
+  while (size >= 4) {
+    ruint32 d;
+    r_memcpy (&d, ptr, sizeof (d));
+    c = __crc32cw (c, d);
+    ptr += 4;
+    size -= 4;
+  }
+  while (size--)
+    c = __crc32cb (c, *ptr++);
+  return ~c;
+}
+#endif
+
+ruint32
+r_crc32c_update (ruint32 crc, rconstpointer buffer, rsize size)
+{
+#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+  if (r_cpu_has (R_CPU_FEATURE_SSE4_2))
+    return r_crc32c_update_sse42 (crc, buffer, size);
+#elif defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+  if (r_cpu_has (R_CPU_FEATURE_ARM_CRC32))
+    return r_crc32c_update_armv8 (crc, buffer, size);
+#endif
+  return r_crc32c_update_sw (crc, buffer, size);
 }
 
 ruint32
