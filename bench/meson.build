@@ -1,5 +1,5 @@
 
-rlibbench = executable('rlibbench', ['revudp.c', 'main.c'],
+rlibbench = executable('rlibbench', ['revudp.c', 'rrsa.c', 'main.c'],
   include_directories : inc,
   link_with : librlib,
   install : false)
