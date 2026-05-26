@@ -109,3 +109,73 @@ RTEST_BENCH (raes, ctr_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
   r_crypto_cipher_unref (c);
 }
 RTEST_END;
+
+RTEST_BENCH (raes, ecb_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* ECB - block-by-block AES with no chaining. Same per-block
+   * cost as CBC's inner round, no IV mixing. The CBC/CTR-vs-ECB
+   * delta isolates the chaining overhead. */
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_128_ecb_new (aes_bench_key)), !=, NULL);
+  run_aes_bench (c, "128 ECB");
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
+
+RTEST_BENCH (raes, ecb_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_256_ecb_new (aes_bench_key)), !=, NULL);
+  run_aes_bench (c, "256 ECB");
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
+
+RTEST_BENCH (raes, cfb_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* CFB - feedback stream variant; each ciphertext block feeds
+   * into the next plaintext encrypt. Same engine as CBC, mostly
+   * here for completeness. */
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_128_cfb_new (aes_bench_key)), !=, NULL);
+  run_aes_bench (c, "128 CFB");
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
+
+RTEST_BENCH (raes, cfb_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_256_cfb_new (aes_bench_key)), !=, NULL);
+  run_aes_bench (c, "256 CFB");
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
+
+RTEST_BENCH (raes, ofb_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* OFB - output feedback stream variant; the keystream is
+   * derived by repeatedly re-encrypting the IV (independent of
+   * plaintext), so this measures pure keystream-generation
+   * throughput. */
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_128_ofb_new (aes_bench_key)), !=, NULL);
+  run_aes_bench (c, "128 OFB");
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
+
+RTEST_BENCH (raes, ofb_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_256_ofb_new (aes_bench_key)), !=, NULL);
+  run_aes_bench (c, "256 OFB");
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
