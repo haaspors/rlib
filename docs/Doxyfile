@@ -1,0 +1,90 @@
+# Doxygen configuration for rlib. Kept tight on purpose: only values
+# that differ from Doxygen's defaults are set, so upgrading Doxygen
+# inherits new defaults without us having to chase a 3000-line config.
+#
+# Documentation convention: /** ... */ comments opt declarations into
+# the generated docs. Plain /* ... */ comments stay invisible to the
+# generator and are used for "for-the-implementor" prose that doesn't
+# belong on the API surface. Per-domain documentation passes happen
+# on follow-up issues - each one converts that scope's API comments
+# from /* */ to /** */, adds @param / @return tags where useful, and
+# graduates that scope to WARN_AS_ERROR.
+
+PROJECT_NAME            = "rlib"
+PROJECT_BRIEF           = "Convenience library for useful things"
+
+# Source layout: public API headers under include/, implementations
+# under rlib/. README.md at the repo root anchors the main page.
+INPUT                   = include rlib README.md
+RECURSIVE               = YES
+FILE_PATTERNS           = *.h *.c *.md
+USE_MDFILE_AS_MAINPAGE  = README.md
+
+# Output lands under docs/output/html; .gitignore drops the tree.
+OUTPUT_DIRECTORY        = docs/output
+
+# EXTRACT_ALL stays off (the default) so /** */ is the opt-in marker
+# for "show this on the API page". EXTRACT_STATIC picks up static
+# helpers in .c files that explicitly carry /** */, useful for
+# implementation-side prose that still wants doxygen rendering.
+EXTRACT_STATIC          = YES
+
+OPTIMIZE_OUTPUT_FOR_C   = YES
+
+# Don't pull Markdown headings into the navigation tree. Without this,
+# the README's Setext-style H1 / H2 headings get auto-nested under
+# the "Data Structures" navtree node (a known Doxygen quirk when the
+# main page is a markdown file). Setting to 0 keeps the README's
+# in-page TOC working while removing the misplaced nav entries.
+TOC_INCLUDE_HEADINGS    = 0
+
+# Strip rlib's visibility / attribute macros before parsing so the
+# parser sees plain declarations. Adding new R_* attribute macros
+# here as they appear in headers keeps Doxygen's view of the API
+# matching the C parser's.
+ENABLE_PREPROCESSING    = YES
+MACRO_EXPANSION         = YES
+EXPAND_ONLY_PREDEF      = YES
+PREDEFINED              = R_API= \
+                          R_API_HIDDEN= \
+                          R_BEGIN_DECLS= \
+                          R_END_DECLS= \
+                          R_ATTR_MALLOC= \
+                          R_ATTR_NULL_TERMINATED= \
+                          R_ATTR_PRINTF(x,y)= \
+                          R_ATTR_WARN_UNUSED= \
+                          R_UNLIKELY(x)=x \
+                          R_LIKELY(x)=x
+
+# Paths shown in the generated docs are repo-relative ("include/rlib/...")
+# rather than absolute, so the output is reproducible regardless of where
+# CI checks the source out.
+FULL_PATH_NAMES         = YES
+STRIP_FROM_PATH         = .
+STRIP_FROM_INC_PATH     = include
+
+# Output formats: HTML only. LaTeX / man / RTF / XML are all switched
+# off until somebody asks for them.
+GENERATE_HTML           = YES
+GENERATE_LATEX          = NO
+GENERATE_MAN            = NO
+GENERATE_RTF            = NO
+GENERATE_XML            = NO
+
+# Skip graphviz - keeps the CI install footprint small and the run fast.
+# Worth revisiting once we want call / include graphs.
+HAVE_DOT                = NO
+
+# Stdout stays quiet so CI logs don't drown in progress trivia.
+# WARN_IF_UNDOCUMENTED stays off until per-domain documentation lands
+# - flipping it on now would spam every declaration in the repo, none
+# of which carry /** */ yet. WARN_IF_DOC_ERROR catches structural
+# breakage in any /** */ comment that does exist, and is worth keeping
+# on even at this stage. WARN_AS_ERROR follows scopes as they
+# graduate from /* */ to /** */.
+QUIET                   = YES
+WARNINGS                = YES
+WARN_IF_UNDOCUMENTED    = NO
+WARN_IF_DOC_ERROR       = YES
+WARN_NO_PARAMDOC        = NO
+WARN_AS_ERROR           = NO
