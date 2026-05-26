@@ -6,6 +6,7 @@ rlib_sources = [
   'rbase64.c',
   'rbuffer.c',
   'rclock.c',
+  'rcpufeatures.c',
   'rcrc.c',
   'renv.c',
   'rio.c',

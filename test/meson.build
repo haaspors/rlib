@@ -14,6 +14,7 @@ rlibtest_sources = [
   'rcbqueue.c',
   'rcbrlist.c',
   'rclock.c',
+  'rcpufeatures.c',
   'rcrc.c',
   'rcryptocert.c',
   'rcryptocipher.c',

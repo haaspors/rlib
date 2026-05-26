@@ -31,6 +31,7 @@
 #include <rlib/rbuffer.h>
 #include <rlib/rclock.h>
 #include <rlib/rclr.h>
+#include <rlib/rcpufeatures.h>
 #include <rlib/rcrc.h>
 #include <rlib/renv.h>
 #include <rlib/rio.h>
