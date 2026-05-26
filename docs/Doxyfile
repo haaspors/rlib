@@ -75,6 +75,25 @@ GENERATE_XML            = NO
 # Worth revisiting once we want call / include graphs.
 HAVE_DOT                = NO
 
+# Modern HTML theme. Without this Doxygen ships its default
+# circa-2005 layout; doxygen-awesome-css is a pure-CSS drop-in
+# theme that renders the same generator output with a much
+# cleaner look. Vendored under docs/doxygen-awesome-css/; see
+# the README there for refresh instructions.
+#
+# The theme's recommended Doxygen settings: keep the sidebar
+# navtree on (GENERATE_TREEVIEW), keep the top tab bar visible
+# (DISABLE_INDEX = NO), and don't expand the sidebar to mirror
+# the full menu structure (FULL_SIDEBAR = NO; the theme styles
+# the compact form). HTML_COLORSTYLE = LIGHT pins the palette -
+# dark-mode toggle is a follow-up (needs an extra JS file plus a
+# custom HTML_HEADER).
+GENERATE_TREEVIEW       = YES
+DISABLE_INDEX           = NO
+FULL_SIDEBAR            = NO
+HTML_COLORSTYLE         = LIGHT
+HTML_EXTRA_STYLESHEET   = docs/doxygen-awesome-css/doxygen-awesome.css
+
 # Stdout stays quiet so CI logs don't drown in progress trivia.
 # WARN_IF_UNDOCUMENTED stays off until per-domain documentation lands
 # - flipping it on now would spam every declaration in the repo, none
