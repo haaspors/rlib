@@ -476,6 +476,12 @@ r_mpint_prime_miller_rabin_full (const rmpint * n, RPrng * prng)
       if (!r_mpint_shr (&a, &a, abits - bits))
         goto error;
     }
+    /* r_mpint_set_binary clamps trailing zero digits, so an all-zero
+     * tmp leaves dig_used == 0. The OR below sets data[0] but does
+     * not restore dig_used, so without this nudge subsequent
+     * dig_used-driven ops would still treat the witness as zero. */
+    if (a.dig_used == 0)
+      a.dig_used = 1;
     a.data[0] |= 3;
     if (r_mpint_cmp (&a, &n1) >= 0) {
       if (!r_mpint_shr (&a, &a, 1))
