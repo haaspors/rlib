@@ -71,3 +71,39 @@ RTEST_BENCH (rmsgdigest, sha512, RTEST_FAST | RTEST_SYSTEM)
   run_digest_bench (R_MSG_DIGEST_TYPE_SHA512, "SHA-512");
 }
 RTEST_END;
+
+/* The remaining four are legacy digests carried for compatibility
+ * (MD5 / SHA-1) or as the short-output cousins of the workhorses
+ * (SHA-224 truncates SHA-256, SHA-384 truncates SHA-512). They
+ * share the same compression-function families as the workhorses
+ * so the numbers should be near-identical to their full-output
+ * siblings - the benches are here mostly so regressions on the
+ * legacy primitives don't go unnoticed. */
+
+RTEST_BENCH (rmsgdigest, md5, RTEST_FAST | RTEST_SYSTEM)
+{
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  run_digest_bench (R_MSG_DIGEST_TYPE_MD5, "MD5");
+}
+RTEST_END;
+
+RTEST_BENCH (rmsgdigest, sha1, RTEST_FAST | RTEST_SYSTEM)
+{
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  run_digest_bench (R_MSG_DIGEST_TYPE_SHA1, "SHA-1");
+}
+RTEST_END;
+
+RTEST_BENCH (rmsgdigest, sha224, RTEST_FAST | RTEST_SYSTEM)
+{
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  run_digest_bench (R_MSG_DIGEST_TYPE_SHA224, "SHA-224");
+}
+RTEST_END;
+
+RTEST_BENCH (rmsgdigest, sha384, RTEST_FAST | RTEST_SYSTEM)
+{
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  run_digest_bench (R_MSG_DIGEST_TYPE_SHA384, "SHA-384");
+}
+RTEST_END;
