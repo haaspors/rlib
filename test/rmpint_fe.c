@@ -421,3 +421,145 @@ RTEST (rmpint_fe, multi_digit_against_curve_modulus, RTEST_FAST)
   r_mpint_clear (&ainv_norm);
 }
 RTEST_END;
+
+/* ---- RMpintFE_Big sanity. Same template, wider storage, exercised
+ * here against RSA-sized moduli that the ECC-width tests above can't
+ * reach. Correctness is cross-checked against the existing rmpint
+ * primitives (mulmod / add / sub + mod); the FE primitives only
+ * differ from those in their constant-time access pattern, not in
+ * their arithmetic. ---- */
+
+static void
+fe_big_mul_via (rmpint * out, const RMpintFE_BigMontCtx * ctx,
+    const RMpintFE_Big * mont_r_squared, ruint16 n,
+    const rmpint * a, const rmpint * b)
+{
+  RMpintFE_Big fa, fb, fam, fbm, frm, fr;
+  r_mpint_fe_big_from_mpint (&fa, a, n);
+  r_mpint_fe_big_from_mpint (&fb, b, n);
+  r_mpint_fe_big_mont_in (&fam, &fa, mont_r_squared, ctx);
+  r_mpint_fe_big_mont_in (&fbm, &fb, mont_r_squared, ctx);
+  r_mpint_fe_big_mul_mont (&frm, &fam, &fbm, ctx);
+  r_mpint_fe_big_mont_out (&fr, &frm, ctx);
+  r_assert (r_mpint_fe_big_to_mpint (out, &fr, n));
+}
+
+/* Build an n-bit odd modulus by setting bit (n-1), bit 0, and a few
+ * mid-range bits via OR. Not prime - but mul / add / sub correctness
+ * doesn't need primality, only odd-ness for the Montgomery setup. */
+static void
+build_big_odd_modulus (rmpint * m, ruint bits)
+{
+  rmpint t;
+  r_mpint_set_u32 (m, 1);
+  r_assert (r_mpint_shl (m, m, bits - 1));
+  r_mpint_init (&t);
+  r_mpint_set_u32 (&t, 0xdeadbeefu);
+  r_assert (r_mpint_shl (&t, &t, bits / 2));  /* mid-range bits */
+  r_assert (r_mpint_add (m, m, &t));
+  r_assert (r_mpint_add_i32 (m, m, 1));  /* force odd */
+  r_mpint_clear (&t);
+}
+
+RTEST (rmpint_fe_big, mont_ctx_init_rejects_oversize, RTEST_FAST)
+{
+  /* A modulus with more digits than R_MPINT_FE_BIG_MAX_DIGITS should
+   * be refused so callers can't silently overflow the inline storage. */
+  RMpintFE_BigMontCtx ctx;
+  rmpint m;
+
+  r_mpint_init (&m);
+  r_mpint_set_u32 (&m, 1);
+  /* Push to one digit past the maximum (32 * (MAX+1) bits). */
+  r_assert (r_mpint_shl (&m, &m, 32u * (R_MPINT_FE_BIG_MAX_DIGITS + 1u)));
+  r_assert (r_mpint_add_i32 (&m, &m, 1));
+  r_assert (!r_mpint_fe_big_mont_ctx_init (&ctx, &m));
+
+  r_mpint_clear (&m);
+}
+RTEST_END;
+
+RTEST (rmpint_fe_big, mul_round_trip_2048, RTEST_FAST)
+{
+  /* Round-trip mul check at an RSA-2048-sized modulus. Exercises the
+   * 64+ digit CIOS inner loop that the ECC-width tests don't reach. */
+  RMpintFE_BigMontCtx ctx;
+  RMpintFE_Big mont_r_squared;
+  rmpint m, a, b, expected, got;
+  ruint16 n;
+  ruint trial;
+
+  r_mpint_init (&m);
+  build_big_odd_modulus (&m, 2048);
+  r_assert (r_mpint_fe_big_mont_ctx_init (&ctx, &m));
+  n = ctx.n_digits;
+  r_assert_cmpuint (n, ==, 64);
+  r_assert (r_mpint_fe_big_compute_r_squared (&mont_r_squared, &m, n));
+
+  r_mpint_init (&a);
+  r_mpint_init (&b);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+
+  for (trial = 0; trial < 4; trial++) {
+    r_mpint_set_u32 (&a, 0x12345678u + trial * 0x10101010u);
+    r_assert (r_mpint_shl (&a, &a, 700u + trial * 50u));
+    r_mpint_set_u32 (&b, 0xdeadbeefu - trial * 0x01010101u);
+    r_assert (r_mpint_shl (&b, &b, 1100u + trial * 40u));
+
+    r_assert (r_mpint_mulmod (&expected, &a, &b, &m));
+    fe_big_mul_via (&got, &ctx, &mont_r_squared, n, &a, &b);
+    r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+    /* sqr matches mul (a, a). */
+    r_assert (r_mpint_mulmod (&expected, &a, &a, &m));
+    fe_big_mul_via (&got, &ctx, &mont_r_squared, n, &a, &a);
+    r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+  }
+
+  r_mpint_clear (&m);
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+HEAVY_RTEST (rmpint_fe_big, mul_round_trip_8192, RTEST_FAST)
+{
+  /* RSA-8192 modulus = 256 digits, the widest the type supports.
+   * Single trial - the inner loop runs n^2 ~= 65k iterations per
+   * mul_mont call, slow enough to gate behind --heavy. */
+  RMpintFE_BigMontCtx ctx;
+  RMpintFE_Big mont_r_squared;
+  rmpint m, a, b, expected, got;
+  ruint16 n;
+
+  r_mpint_init (&m);
+  build_big_odd_modulus (&m, 8192);
+  r_assert (r_mpint_fe_big_mont_ctx_init (&ctx, &m));
+  n = ctx.n_digits;
+  r_assert_cmpuint (n, ==, 256);
+  r_assert (r_mpint_fe_big_compute_r_squared (&mont_r_squared, &m, n));
+
+  r_mpint_init (&a);
+  r_mpint_init (&b);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+
+  r_mpint_set_u32 (&a, 0xcafebabeu);
+  r_assert (r_mpint_shl (&a, &a, 3000));
+  r_mpint_set_u32 (&b, 0xdeadbeefu);
+  r_assert (r_mpint_shl (&b, &b, 5000));
+
+  r_assert (r_mpint_mulmod (&expected, &a, &b, &m));
+  fe_big_mul_via (&got, &ctx, &mont_r_squared, n, &a, &b);
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  r_mpint_clear (&m);
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;

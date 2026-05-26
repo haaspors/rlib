@@ -246,8 +246,8 @@ R_API rboolean r_mpint_lcm (rmpint * dst, const rmpint * a, const rmpint * b);
 
 /* Widest curve we ship is secp521r1 at 17 32-bit digits; +1 leaves
  * headroom for the Montgomery accumulator's top carry slot. DSA |q|
- * (256 bits) fits comfortably; RSA moduli do not - a separate type
- * (or a bumped MAX) is the right answer there. */
+ * (256 bits) fits comfortably; RSA moduli do not - that's what
+ * RMpintFE_Big below is for. */
 #define R_MPINT_FE_MAX_DIGITS  18
 
 typedef struct {
@@ -262,6 +262,24 @@ typedef struct {
   rmpint_digit mp;            /* -p^-1 mod 2^digit_bits */
   ruint16 n_digits;           /* number of digits the modulus occupies */
 } RMpintFEMontCtx;
+
+/* RSA-width parallel to RMpintFE. Covers up to RSA-8192 (256 32-bit
+ * digits for the full modulus, 128 for a CRT half) with one carry
+ * slot of margin. The function bodies are generated from the same
+ * template as the ECC width, so the two surfaces share one audited
+ * implementation - only the storage width and the function-name
+ * prefix differ. Bump this if you need RSA-16384 or wider. */
+#define R_MPINT_FE_BIG_MAX_DIGITS  257
+
+typedef struct {
+  rmpint_digit d[R_MPINT_FE_BIG_MAX_DIGITS];
+} RMpintFE_Big;
+
+typedef struct {
+  RMpintFE_Big p;
+  rmpint_digit mp;
+  ruint16 n_digits;
+} RMpintFE_BigMontCtx;
 
 /* ---- Per-modulus setup. Both helpers are one-time costs paid by the
  * caller before any FE arithmetic; the resulting ctx + mont_r_squared
@@ -334,6 +352,51 @@ R_API void r_mpint_fe_mont_out (RMpintFE * out, const RMpintFE * a,
 R_API void r_mpint_fe_invmod_mont (RMpintFE * out, const RMpintFE * a_M,
     const RMpintFE * p_minus_2, ruint p_minus_2_bits,
     const RMpintFE * mont_r_squared, const RMpintFEMontCtx * ctx);
+
+/* ---- Big-width counterparts. The function semantics match the
+ * RMpintFE primitives above byte-for-byte (they are emitted from the
+ * same template); only the storage width and the type / function
+ * name spellings differ. The ctx / r-squared / exponent-bits inputs
+ * are the same role; consult the RMpintFE comments above for the
+ * details. ---- */
+
+R_API rboolean r_mpint_fe_big_mont_ctx_init (RMpintFE_BigMontCtx * ctx,
+    const rmpint * m);
+R_API rboolean r_mpint_fe_big_compute_r_squared (RMpintFE_Big * out,
+    const rmpint * m, ruint16 n);
+
+R_API void r_mpint_fe_big_zero (RMpintFE_Big * x);
+R_API void r_mpint_fe_big_copy (RMpintFE_Big * dst, const RMpintFE_Big * src);
+R_API void r_mpint_fe_big_from_mpint (RMpintFE_Big * fe, const rmpint * mpi,
+    ruint16 n);
+R_API rboolean r_mpint_fe_big_to_mpint (rmpint * mpi, const RMpintFE_Big * fe,
+    ruint16 n);
+
+R_API rmpint_digit r_mpint_fe_big_iszero_ct (const RMpintFE_Big * x, ruint16 n);
+R_API void r_mpint_fe_big_select_ct (RMpintFE_Big * out, rmpint_digit mask,
+    const RMpintFE_Big * a, const RMpintFE_Big * b, ruint16 n);
+R_API void r_mpint_fe_big_swap_ct (RMpintFE_Big * a, RMpintFE_Big * b,
+    ruint32 bit, ruint16 n);
+
+R_API void r_mpint_fe_big_add (RMpintFE_Big * out, const RMpintFE_Big * a,
+    const RMpintFE_Big * b, const RMpintFE_BigMontCtx * ctx);
+R_API void r_mpint_fe_big_sub (RMpintFE_Big * out, const RMpintFE_Big * a,
+    const RMpintFE_Big * b, const RMpintFE_BigMontCtx * ctx);
+
+R_API void r_mpint_fe_big_mul_mont (RMpintFE_Big * out, const RMpintFE_Big * a,
+    const RMpintFE_Big * b, const RMpintFE_BigMontCtx * ctx);
+R_API void r_mpint_fe_big_sqr_mont (RMpintFE_Big * out, const RMpintFE_Big * a,
+    const RMpintFE_BigMontCtx * ctx);
+
+R_API void r_mpint_fe_big_mont_in (RMpintFE_Big * out, const RMpintFE_Big * a,
+    const RMpintFE_Big * mont_r_squared, const RMpintFE_BigMontCtx * ctx);
+R_API void r_mpint_fe_big_mont_out (RMpintFE_Big * out, const RMpintFE_Big * a,
+    const RMpintFE_BigMontCtx * ctx);
+
+R_API void r_mpint_fe_big_invmod_mont (RMpintFE_Big * out,
+    const RMpintFE_Big * a_M,
+    const RMpintFE_Big * p_minus_2, ruint p_minus_2_bits,
+    const RMpintFE_Big * mont_r_squared, const RMpintFE_BigMontCtx * ctx);
 
 R_END_DECLS
 
