@@ -20,8 +20,17 @@
 #include <rlib/crypto/raes.h>
 #include <rlib/crypto/raes-data.inc>
 
+#include <rlib/rcpufeatures.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
+
+#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+# include <wmmintrin.h>           /* AES-NI */
+#endif
+
+#if defined(R_ARCH_AARCH64)
+# include <arm_neon.h>            /* ARMv8 AES */
+#endif
 
 #define R_AES_MAX_KEY_BYTES   32
 
@@ -419,6 +428,107 @@ r_cipher_aes_new_from_hex (RCryptoCipherMode mode, const rchar * hexkey)
   return ret;
 }
 
+#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+/* AES-NI uses the same {LE u32} round-key layout the SW path
+ * already produces - _mm_loadu_si128 sees the four LE u32s as a
+ * 16-byte block with byte 0 in the low lane, matching the AES
+ * state's column-major layout. Decrypt likewise consumes drk
+ * directly since the SW key schedule pre-applies InvMixColumns
+ * to the middle keys, which is what _mm_aesdec_si128 expects. */
+# if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("aes,sse2")))
+# endif
+static rboolean
+r_cipher_aes_ecb_encrypt_block_aesni (const RAesCipher * aes,
+    ruint8 ciphertxt[R_AES_BLOCK_BYTES],
+    const ruint8 plaintxt[R_AES_BLOCK_BYTES])
+{
+  __m128i block = _mm_loadu_si128 ((const __m128i *)plaintxt);
+  const __m128i * rk = (const __m128i *)aes->erk;
+  ruint8 i;
+
+  block = _mm_xor_si128 (block, _mm_loadu_si128 (rk++));
+  for (i = 1; i < aes->rounds; i++, rk++)
+    block = _mm_aesenc_si128 (block, _mm_loadu_si128 (rk));
+  block = _mm_aesenclast_si128 (block, _mm_loadu_si128 (rk));
+
+  _mm_storeu_si128 ((__m128i *)ciphertxt, block);
+  return TRUE;
+}
+
+# if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("aes,sse2")))
+# endif
+static rboolean
+r_cipher_aes_ecb_decrypt_block_aesni (const RAesCipher * aes,
+    ruint8 plaintxt[R_AES_BLOCK_BYTES],
+    const ruint8 ciphertxt[R_AES_BLOCK_BYTES])
+{
+  __m128i block = _mm_loadu_si128 ((const __m128i *)ciphertxt);
+  const __m128i * rk = (const __m128i *)aes->drk;
+  ruint8 i;
+
+  block = _mm_xor_si128 (block, _mm_loadu_si128 (rk++));
+  for (i = 1; i < aes->rounds; i++, rk++)
+    block = _mm_aesdec_si128 (block, _mm_loadu_si128 (rk));
+  block = _mm_aesdeclast_si128 (block, _mm_loadu_si128 (rk));
+
+  _mm_storeu_si128 ((__m128i *)plaintxt, block);
+  return TRUE;
+}
+#endif
+
+#if defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+/* ARMv8 AESE/AESD do (AddRoundKey then SubBytes/ShiftRows) in a
+ * single instruction, paired with AESMC/AESIMC for MixColumns.
+ * Decrypt expects the encrypt round keys in reverse order - the
+ * SW drk array (InvMixColumns pre-applied) doesn't match, so the
+ * decrypt path walks erk backward instead. */
+__attribute__((target("+crypto")))
+static rboolean
+r_cipher_aes_ecb_encrypt_block_armv8 (const RAesCipher * aes,
+    ruint8 ciphertxt[R_AES_BLOCK_BYTES],
+    const ruint8 plaintxt[R_AES_BLOCK_BYTES])
+{
+  uint8x16_t block = vld1q_u8 (plaintxt);
+  const ruint8 * rk = (const ruint8 *)aes->erk;
+  ruint8 i;
+
+  for (i = 0; i < aes->rounds - 1; i++, rk += 16) {
+    block = vaeseq_u8 (block, vld1q_u8 (rk));
+    block = vaesmcq_u8 (block);
+  }
+  block = vaeseq_u8 (block, vld1q_u8 (rk));
+  rk += 16;
+  block = veorq_u8 (block, vld1q_u8 (rk));
+
+  vst1q_u8 (ciphertxt, block);
+  return TRUE;
+}
+
+__attribute__((target("+crypto")))
+static rboolean
+r_cipher_aes_ecb_decrypt_block_armv8 (const RAesCipher * aes,
+    ruint8 plaintxt[R_AES_BLOCK_BYTES],
+    const ruint8 ciphertxt[R_AES_BLOCK_BYTES])
+{
+  uint8x16_t block = vld1q_u8 (ciphertxt);
+  const ruint8 * rk = (const ruint8 *)aes->erk + aes->rounds * 16;
+  ruint8 i;
+
+  for (i = 0; i < aes->rounds - 1; i++, rk -= 16) {
+    block = vaesdq_u8 (block, vld1q_u8 (rk));
+    block = vaesimcq_u8 (block);
+  }
+  block = vaesdq_u8 (block, vld1q_u8 (rk));
+  rk -= 16;
+  block = veorq_u8 (block, vld1q_u8 (rk));
+
+  vst1q_u8 (plaintxt, block);
+  return TRUE;
+}
+#endif
+
 rboolean
 r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
     ruint8 ciphertxt[R_AES_BLOCK_BYTES], const ruint8 plaintxt[R_AES_BLOCK_BYTES])
@@ -431,6 +541,15 @@ r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
   if (R_UNLIKELY (cipher == NULL)) return FALSE;
 
   aes = (const RAesCipher *)cipher;
+
+#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+  if (r_cpu_has (R_CPU_FEATURE_AES_NI))
+    return r_cipher_aes_ecb_encrypt_block_aesni (aes, ciphertxt, plaintxt);
+#elif defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+  if (r_cpu_has (R_CPU_FEATURE_ARM_AES))
+    return r_cipher_aes_ecb_encrypt_block_armv8 (aes, ciphertxt, plaintxt);
+#endif
+
   rk = aes->erk;
 
   input[0] = r_load_le32 (&plaintxt[0x0]) ^ *rk++;
@@ -486,6 +605,15 @@ r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
   if (R_UNLIKELY (cipher == NULL)) return FALSE;
 
   aes = (const RAesCipher *)cipher;
+
+#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+  if (r_cpu_has (R_CPU_FEATURE_AES_NI))
+    return r_cipher_aes_ecb_decrypt_block_aesni (aes, plaintxt, ciphertxt);
+#elif defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+  if (r_cpu_has (R_CPU_FEATURE_ARM_AES))
+    return r_cipher_aes_ecb_decrypt_block_armv8 (aes, plaintxt, ciphertxt);
+#endif
+
   rk = aes->drk;
 
   input[0] = r_load_le32 (&ciphertxt[0x0]) ^ *rk++;
