@@ -22,7 +22,7 @@ jobs:
         compiler: [gcc, clang]
         buildtype: [debugoptimized, release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -37,7 +37,7 @@ jobs:
         run: meson test -C build --print-errorlogs
       - name: Upload test logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: testlog-linux-${{ matrix.compiler }}-${{ matrix.buildtype }}
           path: build/meson-logs/
@@ -50,7 +50,7 @@ jobs:
       matrix:
         buildtype: [debugoptimized, release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install dependencies
         run: brew install meson ninja
       - name: Configure
@@ -61,7 +61,7 @@ jobs:
         run: meson test -C build --print-errorlogs
       - name: Upload test logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: testlog-macos-${{ matrix.buildtype }}
           path: build/meson-logs/
@@ -74,7 +74,7 @@ jobs:
       matrix:
         buildtype: [debugoptimized, release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Install meson + ninja
         run: pip install meson ninja
@@ -89,7 +89,7 @@ jobs:
         run: meson test -C build --print-errorlogs --timeout-multiplier 6
       - name: Upload test logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: testlog-windows-${{ matrix.buildtype }}
           path: build/meson-logs/
@@ -108,7 +108,7 @@ jobs:
             sanitize: thread
             extra_args: ''
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -129,7 +129,7 @@ jobs:
         run: meson test -C build --print-errorlogs --timeout-multiplier 4
       - name: Upload test logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: testlog-sanitizers-${{ matrix.name }}
           path: build/meson-logs/
@@ -138,7 +138,7 @@ jobs:
     name: Docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Doxygen
         run: |
           sudo apt-get update
@@ -150,7 +150,7 @@ jobs:
         # without checking out and building. Kept across all events
         # (PR, master push, schedule, manual) so the artifact is
         # always there to download.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rlib-docs
           path: docs/output/html
@@ -161,7 +161,7 @@ jobs:
         # action from upload-artifact - the pages-specific format is
         # what the deploy-pages step downstream consumes.
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs/output/html
 
@@ -188,7 +188,7 @@ jobs:
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   full-tests:
     name: Full test sweep
@@ -202,7 +202,7 @@ jobs:
       matrix:
         compiler: [gcc, clang]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -225,7 +225,7 @@ jobs:
         run: meson test -C build --print-errorlogs --timeout-multiplier 30 --test-args=-H
       - name: Upload test logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: testlog-full-${{ matrix.compiler }}
           path: build/meson-logs/
