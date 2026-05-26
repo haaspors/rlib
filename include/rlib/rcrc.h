@@ -25,6 +25,13 @@
 #include <rlib/rtypes.h>
 
 /**
+ * @defgroup r_crc CRC32
+ * @brief CRC32 checksum variants (IEEE 802.3, Castagnoli /
+ * CRC32C, bzip2 non-reflected).
+ * @{
+ */
+
+/**
  * @file rlib/rcrc.h
  * @brief CRC32 checksum variants.
  *
@@ -82,6 +89,8 @@ R_API ruint32 r_crc32c_update (ruint32 crc, rconstpointer buffer, rsize size);
 R_API ruint32 r_crc32bzip2_update (ruint32 crc, rconstpointer buffer, rsize size);
 
 R_END_DECLS
+
+/** @} */ /* r_crc group */
 
 #endif /* __R_CRC_H__ */
 
