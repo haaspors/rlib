@@ -30,6 +30,13 @@
 #include <float.h>
 
 /**
+ * @defgroup r_types Foundational types
+ * @brief Type aliases (@c rint32, @c rsize, @c rchar, @c rpointer,
+ * ...) every other rlib header builds on.
+ * @{
+ */
+
+/**
  * @file rlib/rtypes.h
  * @brief Foundational type aliases used by every rlib header.
  *
@@ -338,6 +345,8 @@ typedef rpointer (*RFuncUniversalReturn) ();
 
 
 R_END_DECLS
+
+/** @} */ /* r_types group */
 
 #include <rlib/types/rendianness.h>
 #include <rlib/types/rbitops.h>
