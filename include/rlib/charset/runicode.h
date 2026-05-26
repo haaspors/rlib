@@ -25,6 +25,12 @@
 #include <rlib/rtypes.h>
 
 /**
+ * @defgroup r_unicode Unicode conversion
+ * @brief UTF-8 / UTF-16 encoding conversions.
+ * @{
+ */
+
+/**
  * @file rlib/charset/runicode.h
  * @brief UTF-8 / UTF-16 conversions.
  *
@@ -145,5 +151,7 @@ R_API runichar2 * r_utf32_to_uft16 (const runichar *, rlong len,
 #endif
 
 R_END_DECLS
+
+/** @} */ /* r_unicode group */
 
 #endif /* __R_UNICODE_H__ */
