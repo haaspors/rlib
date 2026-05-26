@@ -15,3 +15,4 @@
 /waf*-*-*
 /.waf*
 /_build*
+/docs/output/

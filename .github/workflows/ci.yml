@@ -134,6 +134,62 @@ jobs:
           name: testlog-sanitizers-${{ matrix.name }}
           path: build/meson-logs/
 
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen
+      - name: Generate documentation
+        run: doxygen docs/Doxyfile
+      - name: Upload PR-review artifact
+        # 14-day retention for reviewers to browse a branch's output
+        # without checking out and building. Kept across all events
+        # (PR, master push, schedule, manual) so the artifact is
+        # always there to download.
+        uses: actions/upload-artifact@v4
+        with:
+          name: rlib-docs
+          path: docs/output/html
+          retention-days: 14
+      - name: Upload GitHub Pages artifact
+        # Pages publishes only from master pushes; PRs / scheduled
+        # runs skip this step. upload-pages-artifact is a separate
+        # action from upload-artifact - the pages-specific format is
+        # what the deploy-pages step downstream consumes.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/output/html
+
+  docs-deploy:
+    name: Deploy docs to GitHub Pages
+    needs: docs
+    # Master pushes only - PRs don't deploy, scheduled cron runs
+    # don't deploy. The site is regenerated entirely each time, so
+    # a missed scheduled run doesn't matter.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write          # publish to the gh-pages target
+      id-token: write       # OIDC for the deploy action's auth
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Serialise Pages deploys so two rapid master pushes don't fight
+    # each other; cancel-in-progress = false lets the in-flight deploy
+    # finish before the next one starts (deploys take seconds).
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
+
   full-tests:
     name: Full test sweep
     runs-on: ubuntu-latest
