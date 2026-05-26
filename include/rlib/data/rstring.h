@@ -26,6 +26,13 @@
 #include <stdarg.h>
 
 /**
+ * @defgroup r_string Mutable strings (RString)
+ * @brief Heap-allocated mutable string-builder type, complement to
+ * the immutable @c rchar @c * helpers in @c rlib/rstr.h.
+ * @{
+ */
+
+/**
  * @file rlib/data/rstring.h
  * @brief Mutable string-builder type.
  *
@@ -179,6 +186,8 @@ R_API rsize r_string_erase (RString * str, rsize pos, rsize len);
 /** @} */
 
 R_END_DECLS
+
+/** @} */ /* r_string group */
 
 #endif /* __R_STRING_H__ */
 
