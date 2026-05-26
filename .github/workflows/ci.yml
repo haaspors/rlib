@@ -42,6 +42,37 @@ jobs:
           name: testlog-linux-${{ matrix.compiler }}-${{ matrix.buildtype }}
           path: build/meson-logs/
 
+  linux-arm:
+    name: Linux ARM / ${{ matrix.compiler }} / ${{ matrix.buildtype }}
+    # Exercises the AArch64 + Linux HWCAP detection path; the macOS
+    # job already covers AArch64 + Darwin sysctl.
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        buildtype: [debugoptimized, release]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build
+      - name: Configure
+        env:
+          CC: ${{ matrix.compiler }}
+        run: meson setup build --buildtype=${{ matrix.buildtype }}
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        run: meson test -C build --print-errorlogs
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: testlog-linux-arm-${{ matrix.compiler }}-${{ matrix.buildtype }}
+          path: build/meson-logs/
+
   macos:
     name: macOS / clang / ${{ matrix.buildtype }}
     runs-on: macos-latest
