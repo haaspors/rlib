@@ -1119,7 +1119,7 @@ RTEST (rmpint, gen_prime, RTEST_FAST)
 }
 RTEST_END;
 
-RTEST (rmpint, gen_prime_1024bits, RTEST_FASTSLOW)
+RTEST_STRESS (rmpint, gen_prime_1024bits, RTEST_FAST)
 {
   rmpint a;
   RPrng * prng;
