@@ -122,6 +122,13 @@ R_API void r_ecurve_clear (REcurve * curve);
  * enum value. Returns FALSE for OIDs we don't recognise. */
 R_API rboolean r_ecurve_id_from_oid (REcurveID * curve,
     rconstpointer oid, rsize oidsize);
+/* Inverse of r_ecurve_id_from_oid: returns a pointer to the pre-
+ * encoded OID bytes for the given curve, with the length written to
+ * *size. Length is exposed because several curve OIDs contain an
+ * embedded NUL, so a NUL-terminated convention (strlen on the
+ * macro) would truncate them. NULL + *size = 0 for unknown curves;
+ * size may be NULL if the caller already knows the length. */
+R_API const ruint8 * r_ecurve_oid_from_id (REcurveID curve, rsize * size);
 
 R_API rboolean r_ecurve_point_neg (REcurveAffinePoint * out,
     const REcurveAffinePoint * a, const REcurve * curve);
