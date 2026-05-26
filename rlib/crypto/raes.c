@@ -62,7 +62,11 @@
       r_aes_rtbl[0][(Y[3]      ) & 0xff] ^ r_aes_rtbl[1][(Y[2] >>  8) & 0xff] ^\
       r_aes_rtbl[2][(Y[1] >> 16) & 0xff] ^ r_aes_rtbl[3][(Y[0] >> 24) & 0xff];
 
-typedef struct {
+typedef struct _RAesCipher RAesCipher;
+typedef rboolean (*RAesBlockFn) (const RAesCipher * aes,
+    ruint8 dst[R_AES_BLOCK_BYTES], const ruint8 src[R_AES_BLOCK_BYTES]);
+
+struct _RAesCipher {
   RCryptoCipher cipher;
 
   ruint8 key[R_AES_MAX_KEY_BYTES];
@@ -70,7 +74,32 @@ typedef struct {
   ruint32 erk[R_AES_BLOCK_BYTES * sizeof (ruint32)];
   ruint32 drk[R_AES_BLOCK_BYTES * sizeof (ruint32)];
   ruint8 rounds;
-} RAesCipher;
+
+  /* Per-block fast path picked once at construction in
+   * r_cipher_aes_new_with_info based on r_cpu_has; saves the
+   * feature check + extra branch on every block dispatch. */
+  RAesBlockFn encrypt_block;
+  RAesBlockFn decrypt_block;
+};
+
+static rboolean r_cipher_aes_ecb_encrypt_block_sw (const RAesCipher * aes,
+    ruint8 dst[R_AES_BLOCK_BYTES], const ruint8 src[R_AES_BLOCK_BYTES]);
+static rboolean r_cipher_aes_ecb_decrypt_block_sw (const RAesCipher * aes,
+    ruint8 dst[R_AES_BLOCK_BYTES], const ruint8 src[R_AES_BLOCK_BYTES]);
+
+#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+static rboolean r_cipher_aes_ecb_encrypt_block_aesni (const RAesCipher * aes,
+    ruint8 dst[R_AES_BLOCK_BYTES], const ruint8 src[R_AES_BLOCK_BYTES]);
+static rboolean r_cipher_aes_ecb_decrypt_block_aesni (const RAesCipher * aes,
+    ruint8 dst[R_AES_BLOCK_BYTES], const ruint8 src[R_AES_BLOCK_BYTES]);
+#endif
+
+#if defined(R_ARCH_AARCH64)
+static rboolean r_cipher_aes_ecb_encrypt_block_armv8 (const RAesCipher * aes,
+    ruint8 dst[R_AES_BLOCK_BYTES], const ruint8 src[R_AES_BLOCK_BYTES]);
+static rboolean r_cipher_aes_ecb_decrypt_block_armv8 (const RAesCipher * aes,
+    ruint8 dst[R_AES_BLOCK_BYTES], const ruint8 src[R_AES_BLOCK_BYTES]);
+#endif
 
 const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ecb =  { "AES-128-ECB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 128, 16, 16,
@@ -257,6 +286,22 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
     *rk++ = *src++;
     *rk++ = *src++;
     *rk++ = *src++;
+
+#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+    if (r_cpu_has (R_CPU_FEATURE_AES_NI)) {
+      ret->encrypt_block = r_cipher_aes_ecb_encrypt_block_aesni;
+      ret->decrypt_block = r_cipher_aes_ecb_decrypt_block_aesni;
+    } else
+#elif defined(R_ARCH_AARCH64)
+    if (r_cpu_has (R_CPU_FEATURE_ARM_AES)) {
+      ret->encrypt_block = r_cipher_aes_ecb_encrypt_block_armv8;
+      ret->decrypt_block = r_cipher_aes_ecb_decrypt_block_armv8;
+    } else
+#endif
+    {
+      ret->encrypt_block = r_cipher_aes_ecb_encrypt_block_sw;
+      ret->decrypt_block = r_cipher_aes_ecb_decrypt_block_sw;
+    }
   }
 
   return (RCryptoCipher *)ret;
@@ -478,13 +523,18 @@ r_cipher_aes_ecb_decrypt_block_aesni (const RAesCipher * aes,
 }
 #endif
 
-#if defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+#if defined(R_ARCH_AARCH64)
+# if defined(__GNUC__) || defined(__clang__)
+#  define R_AES_ARM_TARGET R_AES_ARM_TARGET
+# else
+#  define R_AES_ARM_TARGET
+# endif
 /* ARMv8 AESE/AESD do (AddRoundKey then SubBytes/ShiftRows) in a
  * single instruction, paired with AESMC/AESIMC for MixColumns.
  * Decrypt expects the encrypt round keys in reverse order - the
  * SW drk array (InvMixColumns pre-applied) doesn't match, so the
  * decrypt path walks erk backward instead. */
-__attribute__((target("+crypto")))
+R_AES_ARM_TARGET
 static rboolean
 r_cipher_aes_ecb_encrypt_block_armv8 (const RAesCipher * aes,
     ruint8 ciphertxt[R_AES_BLOCK_BYTES],
@@ -506,7 +556,7 @@ r_cipher_aes_ecb_encrypt_block_armv8 (const RAesCipher * aes,
   return TRUE;
 }
 
-__attribute__((target("+crypto")))
+R_AES_ARM_TARGET
 static rboolean
 r_cipher_aes_ecb_decrypt_block_armv8 (const RAesCipher * aes,
     ruint8 plaintxt[R_AES_BLOCK_BYTES],
@@ -529,28 +579,13 @@ r_cipher_aes_ecb_decrypt_block_armv8 (const RAesCipher * aes,
 }
 #endif
 
-rboolean
-r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
+static rboolean
+r_cipher_aes_ecb_encrypt_block_sw (const RAesCipher * aes,
     ruint8 ciphertxt[R_AES_BLOCK_BYTES], const ruint8 plaintxt[R_AES_BLOCK_BYTES])
 {
   ruint32 input[4], tmp[4]; /* 4 * 4 = 16 bytes */
-  const ruint32 * rk;
-  const RAesCipher * aes;
+  const ruint32 * rk = aes->erk;
   ruint8 i;
-
-  if (R_UNLIKELY (cipher == NULL)) return FALSE;
-
-  aes = (const RAesCipher *)cipher;
-
-#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
-  if (r_cpu_has (R_CPU_FEATURE_AES_NI))
-    return r_cipher_aes_ecb_encrypt_block_aesni (aes, ciphertxt, plaintxt);
-#elif defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
-  if (r_cpu_has (R_CPU_FEATURE_ARM_AES))
-    return r_cipher_aes_ecb_encrypt_block_armv8 (aes, ciphertxt, plaintxt);
-#endif
-
-  rk = aes->erk;
 
   input[0] = r_load_le32 (&plaintxt[0x0]) ^ *rk++;
   input[1] = r_load_le32 (&plaintxt[0x4]) ^ *rk++;
@@ -594,27 +629,22 @@ r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
 }
 
 rboolean
-r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
+r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
+    ruint8 ciphertxt[R_AES_BLOCK_BYTES], const ruint8 plaintxt[R_AES_BLOCK_BYTES])
+{
+  const RAesCipher * aes;
+  if (R_UNLIKELY (cipher == NULL)) return FALSE;
+  aes = (const RAesCipher *)cipher;
+  return aes->encrypt_block (aes, ciphertxt, plaintxt);
+}
+
+static rboolean
+r_cipher_aes_ecb_decrypt_block_sw (const RAesCipher * aes,
     ruint8 plaintxt[R_AES_BLOCK_BYTES], const ruint8 ciphertxt[R_AES_BLOCK_BYTES])
 {
   ruint32 input[4], tmp[4]; /* 4 * 4 = 16 bytes */
-  const ruint32 * rk;
-  const RAesCipher * aes;
+  const ruint32 * rk = aes->drk;
   ruint8 i;
-
-  if (R_UNLIKELY (cipher == NULL)) return FALSE;
-
-  aes = (const RAesCipher *)cipher;
-
-#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
-  if (r_cpu_has (R_CPU_FEATURE_AES_NI))
-    return r_cipher_aes_ecb_decrypt_block_aesni (aes, plaintxt, ciphertxt);
-#elif defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
-  if (r_cpu_has (R_CPU_FEATURE_ARM_AES))
-    return r_cipher_aes_ecb_decrypt_block_armv8 (aes, plaintxt, ciphertxt);
-#endif
-
-  rk = aes->drk;
 
   input[0] = r_load_le32 (&ciphertxt[0x0]) ^ *rk++;
   input[1] = r_load_le32 (&ciphertxt[0x4]) ^ *rk++;
@@ -655,6 +685,16 @@ r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
   r_store_le32 (&plaintxt[0xc], input[3]);
 
   return TRUE;
+}
+
+rboolean
+r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
+    ruint8 plaintxt[R_AES_BLOCK_BYTES], const ruint8 ciphertxt[R_AES_BLOCK_BYTES])
+{
+  const RAesCipher * aes;
+  if (R_UNLIKELY (cipher == NULL)) return FALSE;
+  aes = (const RAesCipher *)cipher;
+  return aes->decrypt_block (aes, plaintxt, ciphertxt);
 }
 
 RCryptoCipherResult
