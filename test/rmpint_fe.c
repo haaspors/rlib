@@ -525,6 +525,153 @@ RTEST (rmpint_fe_big, mul_round_trip_2048, RTEST_FAST)
 }
 RTEST_END;
 
+/* Wrap the setup boilerplate for r_mpint_fe_big_expmod_ct: take m,
+ * fill ctx + mont_r_squared, run the new expmod, return its output. */
+static rboolean
+big_expmod_via (rmpint * out, const rmpint * base, const rmpint * exp,
+    const rmpint * m, ruint exp_bits)
+{
+  RMpintFE_BigMontCtx ctx;
+  RMpintFE_Big r2;
+  if (!r_mpint_fe_big_mont_ctx_init (&ctx, m))
+    return FALSE;
+  if (!r_mpint_fe_big_compute_r_squared (&r2, m, ctx.n_digits))
+    return FALSE;
+  return r_mpint_fe_big_expmod_ct (out, base, exp, m, &ctx, &r2, exp_bits);
+}
+
+RTEST (rmpint_fe_big, expmod_basic, RTEST_FAST)
+{
+  /* NULL guards + the standard 4^13 mod 497 = 445 vector + a small
+   * 65537 modulus loop, mirroring the r_mpint_expmod_ct test in
+   * test/rmpint.c so the two CT expmods agree on the same shapes. */
+  RMpintFE_BigMontCtx ctx;
+  RMpintFE_Big r2;
+  rmpint b, e, m, expected, got;
+  ruint i;
+
+  r_mpint_init (&b);
+  r_mpint_init (&e);
+  r_mpint_init (&m);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+
+  /* Pre-populate ctx + r2 against m = 497 so the NULL-pointer guard
+   * checks below can pass valid ctx / r2 and isolate the NULL case. */
+  r_mpint_set_u32 (&m, 497);
+  r_assert (r_mpint_fe_big_mont_ctx_init (&ctx, &m));
+  r_assert (r_mpint_fe_big_compute_r_squared (&r2, &m, ctx.n_digits));
+
+  {
+    rmpint zb = R_MPINT_INIT, ze = R_MPINT_INIT;
+    r_assert (!r_mpint_fe_big_expmod_ct (NULL, &zb, &ze, &m, &ctx, &r2, 32));
+    r_assert (!r_mpint_fe_big_expmod_ct (&got, NULL, &ze, &m, &ctx, &r2, 32));
+    r_assert (!r_mpint_fe_big_expmod_ct (&got, &zb, NULL, &m, &ctx, &r2, 32));
+    r_assert (!r_mpint_fe_big_expmod_ct (&got, &zb, &ze, NULL, &ctx, &r2, 32));
+    r_assert (!r_mpint_fe_big_expmod_ct (&got, &zb, &ze, &m, NULL, &r2, 32));
+    r_assert (!r_mpint_fe_big_expmod_ct (&got, &zb, &ze, &m, &ctx, NULL, 32));
+  }
+
+  r_mpint_set_u32 (&b, 4);
+  r_mpint_set_u32 (&e, 13);
+  r_mpint_set_u32 (&expected, 445);
+  r_assert (big_expmod_via (&got, &b, &e, &m, r_mpint_bits_used (&e)));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  /* exp_bits cap larger than e's bit count must produce the same
+   * result - the leading-zero iterations are no-ops. */
+  r_assert (big_expmod_via (&got, &b, &e, &m, 64));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  /* Cross-check against the variable-time r_mpint_expmod over a
+   * scatter of small operands modulo a Fermat prime. */
+  r_mpint_set_u32 (&m, 65537);
+  for (i = 1; i < 16; i++) {
+    r_mpint_set_u32 (&b, 2 + i);
+    r_mpint_set_u32 (&e, 1000 + i * 731);
+    r_assert (r_mpint_expmod (&expected, &b, &e, &m));
+    r_assert (big_expmod_via (&got, &b, &e, &m, 32));
+    r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+  }
+
+  r_mpint_clear (&b);
+  r_mpint_clear (&e);
+  r_mpint_clear (&m);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rmpint_fe_big, expmod_rsa_2048, RTEST_FAST)
+{
+  /* Exercise the windowed expmod at an RSA-2048-sized modulus.
+   * Cross-check against the variable-time r_mpint_expmod so any
+   * algorithmic drift between the two paths surfaces here rather
+   * than in a wycheproof RSA test that's three layers up. */
+  rmpint m, base, exp, expected, got;
+
+  r_mpint_init (&m);
+  r_mpint_init (&base);
+  r_mpint_init (&exp);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+
+  build_big_odd_modulus (&m, 2048);
+
+  /* base = 0xcafebabe << 700, exp = 0x12345 << 1500. */
+  r_mpint_set_u32 (&base, 0xcafebabeu);
+  r_assert (r_mpint_shl (&base, &base, 700));
+  r_mpint_set_u32 (&exp, 0x12345u);
+  r_assert (r_mpint_shl (&exp, &exp, 1500));
+
+  r_assert (r_mpint_expmod (&expected, &base, &exp, &m));
+  r_assert (big_expmod_via (&got, &base, &exp, &m, r_mpint_bits_used (&exp)));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  /* exp_bits = 2048 (uniform timing case) must give the same result. */
+  r_assert (big_expmod_via (&got, &base, &exp, &m, 2048));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  r_mpint_clear (&m);
+  r_mpint_clear (&base);
+  r_mpint_clear (&exp);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+HEAVY_RTEST (rmpint_fe_big, expmod_rsa_8192, RTEST_FASTSLOW)
+{
+  /* Same cross-check at RSA-8192. Slow enough on a debug build to
+   * gate behind --heavy and to want the FASTSLOW timeout budget; the
+   * algorithmic property is also verified at 2048 in the FAST test
+   * above. */
+  rmpint m, base, exp, expected, got;
+
+  r_mpint_init (&m);
+  r_mpint_init (&base);
+  r_mpint_init (&exp);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+
+  build_big_odd_modulus (&m, 8192);
+  r_mpint_set_u32 (&base, 0xcafebabeu);
+  r_assert (r_mpint_shl (&base, &base, 3000));
+  r_mpint_set_u32 (&exp, 0x65537u);
+  r_assert (r_mpint_shl (&exp, &exp, 6000));
+
+  r_assert (r_mpint_expmod (&expected, &base, &exp, &m));
+  r_assert (big_expmod_via (&got, &base, &exp, &m, r_mpint_bits_used (&exp)));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  r_mpint_clear (&m);
+  r_mpint_clear (&base);
+  r_mpint_clear (&exp);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
 HEAVY_RTEST (rmpint_fe_big, mul_round_trip_8192, RTEST_FAST)
 {
   /* RSA-8192 modulus = 256 digits, the widest the type supports.

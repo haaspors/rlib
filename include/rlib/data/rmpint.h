@@ -398,6 +398,24 @@ R_API void r_mpint_fe_big_invmod_mont (RMpintFE_Big * out,
     const RMpintFE_Big * p_minus_2, ruint p_minus_2_bits,
     const RMpintFE_Big * mont_r_squared, const RMpintFE_BigMontCtx * ctx);
 
+/* Modular exponentiation in Z_m where m is the modulus carried by ctx:
+ * dst := base^exp mod m. base is reduced mod m internally if needed
+ * (variable-time on base; for RSA the base is the public ciphertext,
+ * so the reduce isn't a leak). The exponent flows through a 4-bit
+ * windowed Montgomery exponentiation with constant-time table lookup
+ * via FE_Big primitives - no dig_used residual on intermediate values
+ * the way r_mpint_expmod_ct has, since FE_Big storage is fixed-width.
+ *
+ * exp_bits drives the iteration count: the loop runs exactly
+ * ceil(exp_bits / 4) windows regardless of the exponent's actual bit
+ * length, so callers wanting a uniform timing profile across keys can
+ * pass the modulus's bit length (or any constant >= the exponent's
+ * true bit length). */
+R_API rboolean r_mpint_fe_big_expmod_ct (rmpint * dst,
+    const rmpint * base, const rmpint * exp, const rmpint * m,
+    const RMpintFE_BigMontCtx * ctx,
+    const RMpintFE_Big * mont_r_squared, ruint exp_bits);
+
 R_END_DECLS
 
 #endif /* __R_MPINT_H__ */
