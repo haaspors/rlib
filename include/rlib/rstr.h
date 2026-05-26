@@ -28,6 +28,13 @@
 #include <stdio.h>
 
 /**
+ * @defgroup r_str String utilities
+ * @brief NUL-terminated string utilities (immutable @c rchar @c *
+ * operations, search, comparison, parsing, formatting, ...).
+ * @{
+ */
+
+/**
  * @file rlib/rstr.h
  * @brief NUL-terminated string utilities.
  *
@@ -941,6 +948,8 @@ R_API void r_strv_free (rchar ** strv);
 /** @} */
 
 R_END_DECLS
+
+/** @} */ /* r_str group */
 
 #endif /* __R_STR_H__ */
 
