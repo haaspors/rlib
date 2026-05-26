@@ -850,6 +850,38 @@ r_ecurve_point_from_uncompressed (const ruint8 * in, rsize insize,
   return TRUE;
 }
 
+const ruint8 *
+r_ecurve_oid_from_id (REcurveID curve, rsize * size)
+{
+  /* Inverse of r_ecurve_id_from_oid - returns a pointer to the
+   * pre-encoded OID bytes plus their length. Length is needed
+   * separately because several curve OIDs (SECP224R1 / 384R1 / 521R1
+   * / 192K1 / 224K1 / 256K1) contain an embedded \x00, so strlen on
+   * the macro truncates them mid-OID and r_asn1_bin_encoder_add_oid_rawsz
+   * is unusable. NULL for any curve we don't have an OID mapping for;
+   * *size is then set to 0. */
+#define R_ECURVE_RETURN_OID(macro) \
+    do { \
+      if (size != NULL) *size = sizeof (macro) - 1; \
+      return (const ruint8 *)(macro); \
+    } while (0)
+
+  switch (curve) {
+    case R_ECURVE_ID_SECP192R1: R_ECURVE_RETURN_OID (R_EC_GRP_OID_SECP192R1);
+    case R_ECURVE_ID_SECP224R1: R_ECURVE_RETURN_OID (R_EC_GRP_OID_SECP224R1);
+    case R_ECURVE_ID_SECP256R1: R_ECURVE_RETURN_OID (R_EC_GRP_OID_SECP256R1);
+    case R_ECURVE_ID_SECP384R1: R_ECURVE_RETURN_OID (R_EC_GRP_OID_SECP384R1);
+    case R_ECURVE_ID_SECP521R1: R_ECURVE_RETURN_OID (R_EC_GRP_OID_SECP521R1);
+    case R_ECURVE_ID_SECP192K1: R_ECURVE_RETURN_OID (R_EC_GRP_OID_SECP192K1);
+    case R_ECURVE_ID_SECP224K1: R_ECURVE_RETURN_OID (R_EC_GRP_OID_SECP224K1);
+    case R_ECURVE_ID_SECP256K1: R_ECURVE_RETURN_OID (R_EC_GRP_OID_SECP256K1);
+    default:
+      if (size != NULL) *size = 0;
+      return NULL;
+  }
+#undef R_ECURVE_RETURN_OID
+}
+
 rboolean
 r_ecurve_id_from_oid (REcurveID * curve,
     rconstpointer oid, rsize oidsize)

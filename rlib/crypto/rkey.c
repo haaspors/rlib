@@ -117,6 +117,7 @@ r_crypto_key_to_asn1 (const RCryptoKey * key, RAsn1BinEncoder * enc)
 {
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (enc == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (key->algo->export == NULL)) return R_CRYPTO_NOT_AVAILABLE;
 
   return key->algo->export (key, enc);
 }

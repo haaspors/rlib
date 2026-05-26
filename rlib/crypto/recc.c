@@ -22,6 +22,7 @@
 #include <rlib/crypto/recc.h>
 
 #include <rlib/asn1/rasn1.h>
+#include <rlib/asn1/roid.h>
 #include <rlib/rmem.h>
 #include <rlib/rrand.h>
 
@@ -70,13 +71,35 @@ typedef struct {
 
 /* Forward declarations - the algo-info structs in the key-init helpers
  * below reference these, and the bodies live further down so the
- * cache-aware sign / verify code sits next to the cache populate. */
+ * cache-aware sign / verify code sits next to the cache populate. The
+ * ASN.1 export wrappers are similarly forward-declared so all the
+ * algo-info structs in the same compilation unit can name them. */
 static RCryptoResult r_ecdsa_sign (const RCryptoKey * key, RPrng * prng,
     RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rpointer sig, rsize * sigsize);
 static RCryptoResult r_ecdsa_verify (const RCryptoKey * key,
     RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
     rconstpointer sig, rsize sigsize);
+static RCryptoResult r_ecdsa_pub_key_export (const RCryptoKey * key,
+    RAsn1BinEncoder * enc);
+static RCryptoResult r_ecdsa_priv_key_export (const RCryptoKey * key,
+    RAsn1BinEncoder * enc);
+static RCryptoResult r_ecdh_pub_key_export (const RCryptoKey * key,
+    RAsn1BinEncoder * enc);
+static RCryptoResult r_ecdh_priv_key_export (const RCryptoKey * key,
+    RAsn1BinEncoder * enc);
+
+/* Priv-key algo-info tables. Hoisted to file scope so the two
+ * construction paths (r_ecc_priv_key_new_full and r_ecdh_priv_key_new_gen)
+ * pick up the same table without duplicating the definition. */
+static const RCryptoAlgoInfo g_ecdsa_priv_key_info = {
+  R_CRYPTO_ALGO_ECDSA, R_ECDSA_STR,
+  NULL, NULL, r_ecdsa_sign, r_ecdsa_verify, r_ecdsa_priv_key_export
+};
+static const RCryptoAlgoInfo g_ecdh_priv_key_info = {
+  R_CRYPTO_ALGO_ECDH, R_ECDH_STR,
+  NULL, NULL, NULL, NULL, r_ecdh_priv_key_export
+};
 
 static void
 r_ecc_pub_key_free (rpointer data)
@@ -121,7 +144,7 @@ r_ecdsa_pub_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo ecdsa_pub_key_info = {
     R_CRYPTO_ALGO_ECDSA, R_ECDSA_STR,
-    NULL, NULL, NULL, r_ecdsa_verify, NULL
+    NULL, NULL, NULL, r_ecdsa_verify, r_ecdsa_pub_key_export
   };
 
   r_ref_init (key, r_ecc_pub_key_free);
@@ -160,7 +183,7 @@ r_ecdh_pub_key_init (RCryptoKey * key, ruint bits)
 {
   static const RCryptoAlgoInfo ecdh_pub_key_info = {
     R_CRYPTO_ALGO_ECDH, R_ECDH_STR,
-    NULL, NULL, NULL, NULL, NULL
+    NULL, NULL, NULL, NULL, r_ecdh_pub_key_export
   };
 
   r_ref_init (key, r_ecc_pub_key_free);
@@ -240,12 +263,17 @@ r_ecc_priv_key_free (rpointer data)
   }
 }
 
-/* Load the scalar bytes into priv->d and, if no explicit public point
- * was supplied but the curve is known and the caller wants it,
- * derive Q = d * G so ECDH private keys minted from "just the scalar"
- * still expose a usable public point. Range-checks d to [1, n-1] in
- * both branches; returns FALSE on a scalar that isn't a valid private
- * key for the curve. */
+/* Load the scalar bytes into priv->d. When no explicit public point
+ * is supplied, attempt r_ecurve_init on the named curve; if it
+ * succeeds, derive Q = d * G so subsequent sign / verify / shared-
+ * secret paths can use the parsed key without an out-of-line ecp
+ * dance. derive_q_if_needed only controls the failure semantics
+ * when the math layer can't load the curve: TRUE for ECDH (which
+ * needs Q to do anything useful, so we refuse the construction),
+ * FALSE for ECDSA (which keeps the lenient raw-bytes-only fallback
+ * so ASN.1 / cert fixtures on unsupported curves still parse).
+ * Range-checks d to [1, n-1] whenever math is available; returns
+ * FALSE on a scalar that isn't a valid private key for the curve. */
 static rboolean
 r_ecc_priv_key_load_scalar (REccPrivKey * priv, REcurveID curve,
     const ruint8 * scalar, rsize scalarsize, rboolean derive_q_if_needed)
@@ -282,34 +310,36 @@ r_ecc_priv_key_load_scalar (REccPrivKey * priv, REcurveID curve,
         return FALSE;
       }
     }
-  } else if (derive_q_if_needed) {
-    /* ECDH path with no public point on hand: we need real math.
-     * Refuse outright if the curve isn't supported by the math layer
-     * (returning a parsable-but-useless key would just defer the
-     * failure to compute_shared). */
-    if (!r_ecurve_init (&priv->pub.curve, curve)) {
+  } else {
+    /* No ecp was parsed. Try to load the math layer regardless of
+     * algorithm; if the curve is supported, derive Q from d so the
+     * subsequent sign / verify / compute_shared paths can use it.
+     * For ECDH math is mandatory (a usable key requires Q); we
+     * refuse the construction if init fails. For ECDSA we keep the
+     * lenient fallback - some ASN.1 / cert tests carry keys on
+     * curves the math layer can't yet decode, and those should
+     * still parse as raw-d-only. */
+    if (r_ecurve_init (&priv->pub.curve, curve)) {
+      if (r_mpint_cmp_i32 (&priv->d, 1) < 0 ||
+          r_mpint_cmp (&priv->d, &priv->pub.curve.n) >= 0) {
+        r_ecurve_clear (&priv->pub.curve);
+        r_mpint_clear (&priv->d);
+        return FALSE;
+      }
+      r_ecurve_point_init (&priv->pub.Q);
+      if (!r_ecurve_point_scalar_mul (&priv->pub.Q, &priv->d,
+            &priv->pub.curve.G, &priv->pub.curve)) {
+        r_ecurve_point_clear (&priv->pub.Q);
+        r_ecurve_clear (&priv->pub.curve);
+        r_mpint_clear (&priv->d);
+        return FALSE;
+      }
+      priv->pub.has_math = TRUE;
+    } else if (derive_q_if_needed) {
       r_mpint_clear (&priv->d);
       return FALSE;
     }
-    if (r_mpint_cmp_i32 (&priv->d, 1) < 0 ||
-        r_mpint_cmp (&priv->d, &priv->pub.curve.n) >= 0) {
-      r_ecurve_clear (&priv->pub.curve);
-      r_mpint_clear (&priv->d);
-      return FALSE;
-    }
-    r_ecurve_point_init (&priv->pub.Q);
-    if (!r_ecurve_point_scalar_mul (&priv->pub.Q, &priv->d,
-          &priv->pub.curve.G, &priv->pub.curve)) {
-      r_ecurve_point_clear (&priv->pub.Q);
-      r_ecurve_clear (&priv->pub.curve);
-      r_mpint_clear (&priv->d);
-      return FALSE;
-    }
-    priv->pub.has_math = TRUE;
   }
-  /* else: ECDSA path with no public point - keep d as raw bytes only
-   * so existing ASN.1 / cert tests using encodings the math layer
-   * can't yet decode keep loading. */
 
   priv->has_d = TRUE;
   return TRUE;
@@ -632,19 +662,202 @@ out:
   return ret;
 }
 
+/* ---- ASN.1 export (RFC 5480 SubjectPublicKeyInfo for pub keys,
+ * RFC 5958 OneAsymmetricKey + RFC 5915 ECPrivateKey for priv keys).
+ * ECDSA and ECDH differ only in the AlgorithmIdentifier OID; share
+ * one helper per side, dispatch on the OID. ---- */
+
+/* Emit an OID TLV with an explicit byte length. The library's
+ * r_asn1_bin_encoder_add_oid_rawsz uses strlen, which truncates
+ * mid-OID for any OID containing an embedded NUL (which several of
+ * the ECC curve OIDs do: SECP224R1 / 384R1 / 521R1 / 192K1 / 224K1
+ * / 256K1 all have \x00 in their encoding). */
+static RAsn1EncoderStatus
+r_ecc_encoder_add_oid (RAsn1BinEncoder * enc, const ruint8 * oid, rsize size)
+{
+  ruint8 id_oid = R_ASN1_ID (R_ASN1_ID_UNIVERSAL,
+      R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OBJECT_IDENTIFIER);
+  return r_asn1_bin_encoder_add_raw (enc, id_oid, oid, size);
+}
+
+static RCryptoResult
+r_ecc_pub_key_export_with_algo_oid (const RCryptoKey * key,
+    RAsn1BinEncoder * enc, const ruint8 * algo_oid, rsize algo_oid_size)
+{
+  const REccPubKey * pk = (const REccPubKey *)key;
+  ruint8 id_seq = R_ASN1_ID (R_ASN1_ID_UNIVERSAL,
+      R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  const ruint8 * curve_oid;
+  rsize curve_oid_size;
+  RCryptoResult ret = R_CRYPTO_ERROR;
+
+  if (R_UNLIKELY (pk->ecp == NULL || pk->ecpsize == 0))
+    return R_CRYPTO_NOT_AVAILABLE;
+  if ((curve_oid = r_ecurve_oid_from_id (pk->namedcurve, &curve_oid_size)) == NULL)
+    return R_CRYPTO_NOT_AVAILABLE;
+
+  /* SubjectPublicKeyInfo ::= SEQUENCE {
+   *   algorithm AlgorithmIdentifier { algo_oid, named-curve OID },
+   *   subjectPublicKey BIT STRING (SEC 1 uncompressed point bytes) } */
+  if (r_asn1_bin_encoder_begin_constructed (enc, id_seq, 0) != R_ASN1_ENCODER_OK)
+    return R_CRYPTO_ERROR;
+  if (r_asn1_bin_encoder_begin_constructed (enc, id_seq, 0) == R_ASN1_ENCODER_OK) {
+    if (r_ecc_encoder_add_oid (enc, algo_oid, algo_oid_size) == R_ASN1_ENCODER_OK &&
+        r_ecc_encoder_add_oid (enc, curve_oid, curve_oid_size) == R_ASN1_ENCODER_OK) {
+      r_asn1_bin_encoder_end_constructed (enc);
+      if (r_asn1_bin_encoder_add_bit_string_raw (enc, pk->ecp, pk->ecpsize)
+          == R_ASN1_ENCODER_OK)
+        ret = R_CRYPTO_OK;
+    } else {
+      r_asn1_bin_encoder_end_constructed (enc);
+    }
+  }
+  r_asn1_bin_encoder_end_constructed (enc);
+  return ret;
+}
+
+#define R_ECC_OID_LITERAL(macro)  ((const ruint8 *)(macro)), (sizeof (macro) - 1)
+
+static RCryptoResult
+r_ecdsa_pub_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  return r_ecc_pub_key_export_with_algo_oid (key, enc,
+      R_ECC_OID_LITERAL (R_X9_62_OID_EC_PUB_KEY));
+}
+
+static RCryptoResult
+r_ecdh_pub_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  return r_ecc_pub_key_export_with_algo_oid (key, enc,
+      R_ECC_OID_LITERAL (R_CERTICOM_OID_ECDH_PUB_KEY));
+}
+
+/* Build the inner ECPrivateKey SEQUENCE (RFC 5915) for the given
+ * private key into a fresh DER buffer. Caller r_free's *buf on
+ * success. The optional [0] curve OID is omitted (the outer
+ * PKCS#8 AlgorithmIdentifier already carries it, which is what the
+ * matching decoder reads); the optional [1] BIT STRING pubkey is
+ * included when the key's ecp bytes are available, so external
+ * libraries that need it round-trip the full payload. */
+static rboolean
+r_ecc_build_ec_private_key_der (const REccPrivKey * pk,
+    ruint8 ** buf, rsize * size)
+{
+  RAsn1BinEncoder * inner;
+  ruint8 id_seq = R_ASN1_ID (R_ASN1_ID_UNIVERSAL,
+      R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  ruint8 id_octet = R_ASN1_ID (R_ASN1_ID_UNIVERSAL,
+      R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OCTET_STRING);
+  ruint8 id_ctx1_constructed = R_ASN1_ID (R_ASN1_ID_CONTEXT,
+      R_ASN1_ID_CONSTRUCTED, 1);
+  rboolean ok = FALSE;
+
+  *buf = NULL;
+  *size = 0;
+  if ((inner = r_asn1_bin_encoder_new (R_ASN1_DER)) == NULL)
+    return FALSE;
+
+  if (r_asn1_bin_encoder_begin_constructed (inner, id_seq, 0)
+      == R_ASN1_ENCODER_OK) {
+    if (r_asn1_bin_encoder_add_integer_i32 (inner, 1) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_raw (inner, id_octet,
+            pk->scalar, pk->scalarsize) == R_ASN1_ENCODER_OK) {
+      ok = TRUE;
+      if (pk->pub.ecp != NULL && pk->pub.ecpsize > 0) {
+        if (r_asn1_bin_encoder_begin_constructed (inner,
+                id_ctx1_constructed, 0) == R_ASN1_ENCODER_OK) {
+          if (r_asn1_bin_encoder_add_bit_string_raw (inner,
+                  pk->pub.ecp, pk->pub.ecpsize) != R_ASN1_ENCODER_OK)
+            ok = FALSE;
+          r_asn1_bin_encoder_end_constructed (inner);
+        } else {
+          ok = FALSE;
+        }
+      }
+    }
+    r_asn1_bin_encoder_end_constructed (inner);
+  }
+
+  if (ok) {
+    *buf = r_asn1_bin_encoder_get_data (inner, size);
+    if (*buf == NULL) ok = FALSE;
+  }
+  r_asn1_bin_encoder_unref (inner);
+  return ok;
+}
+
+static RCryptoResult
+r_ecc_priv_key_export_with_algo_oid (const RCryptoKey * key,
+    RAsn1BinEncoder * enc, const ruint8 * algo_oid, rsize algo_oid_size)
+{
+  const REccPrivKey * pk = (const REccPrivKey *)key;
+  ruint8 id_seq = R_ASN1_ID (R_ASN1_ID_UNIVERSAL,
+      R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  ruint8 id_octet = R_ASN1_ID (R_ASN1_ID_UNIVERSAL,
+      R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OCTET_STRING);
+  const ruint8 * curve_oid;
+  rsize curve_oid_size;
+  ruint8 * ecprivkey_der = NULL;
+  rsize ecprivkey_der_size = 0;
+  RCryptoResult ret = R_CRYPTO_ERROR;
+
+  if (R_UNLIKELY (pk->scalar == NULL || pk->scalarsize == 0))
+    return R_CRYPTO_NOT_AVAILABLE;
+  if ((curve_oid = r_ecurve_oid_from_id (pk->pub.namedcurve,
+          &curve_oid_size)) == NULL)
+    return R_CRYPTO_NOT_AVAILABLE;
+  if (!r_ecc_build_ec_private_key_der (pk, &ecprivkey_der, &ecprivkey_der_size))
+    return R_CRYPTO_ERROR;
+
+  /* OneAsymmetricKey ::= SEQUENCE {
+   *   version INTEGER (0),
+   *   privateKeyAlgorithm AlgorithmIdentifier { algo_oid, named-curve OID },
+   *   privateKey OCTET STRING (DER-encoded ECPrivateKey) } */
+  if (r_asn1_bin_encoder_begin_constructed (enc, id_seq, 0)
+      == R_ASN1_ENCODER_OK) {
+    if (r_asn1_bin_encoder_add_integer_i32 (enc, 0) == R_ASN1_ENCODER_OK) {
+      if (r_asn1_bin_encoder_begin_constructed (enc, id_seq, 0)
+          == R_ASN1_ENCODER_OK) {
+        if (r_ecc_encoder_add_oid (enc, algo_oid, algo_oid_size)
+                == R_ASN1_ENCODER_OK &&
+            r_ecc_encoder_add_oid (enc, curve_oid, curve_oid_size)
+                == R_ASN1_ENCODER_OK) {
+          r_asn1_bin_encoder_end_constructed (enc);
+          if (r_asn1_bin_encoder_add_raw (enc, id_octet,
+                  ecprivkey_der, ecprivkey_der_size) == R_ASN1_ENCODER_OK)
+            ret = R_CRYPTO_OK;
+        } else {
+          r_asn1_bin_encoder_end_constructed (enc);
+        }
+      }
+    }
+    r_asn1_bin_encoder_end_constructed (enc);
+  }
+
+  r_free (ecprivkey_der);
+  return ret;
+}
+
+static RCryptoResult
+r_ecdsa_priv_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  return r_ecc_priv_key_export_with_algo_oid (key, enc,
+      R_ECC_OID_LITERAL (R_X9_62_OID_EC_PUB_KEY));
+}
+
+static RCryptoResult
+r_ecdh_priv_key_export (const RCryptoKey * key, RAsn1BinEncoder * enc)
+{
+  return r_ecc_priv_key_export_with_algo_oid (key, enc,
+      R_ECC_OID_LITERAL (R_CERTICOM_OID_ECDH_PUB_KEY));
+}
+
 static RCryptoKey *
 r_ecc_priv_key_new_full (REcurveID curve, RCryptoAlgorithm algo,
     rconstpointer ecp, rsize ecpsize,
     rconstpointer scalar, rsize scalarsize)
 {
   REccPrivKey * ret;
-  static const RCryptoAlgoInfo ecdsa_priv_key_info = {
-    R_CRYPTO_ALGO_ECDSA, R_ECDSA_STR,
-    NULL, NULL, r_ecdsa_sign, r_ecdsa_verify, NULL
-  };
-  static const RCryptoAlgoInfo ecdh_priv_key_info = {
-    R_CRYPTO_ALGO_ECDH, R_ECDH_STR, NULL, NULL, NULL, NULL, NULL
-  };
   const rboolean is_ecdh = (algo == R_CRYPTO_ALGO_ECDH);
 
   if (scalar == NULL || scalarsize == 0) return NULL;
@@ -673,7 +886,7 @@ r_ecc_priv_key_new_full (REcurveID curve, RCryptoAlgorithm algo,
 
   r_ref_init (&ret->pub.key, r_ecc_priv_key_free);
   ret->pub.key.type = R_CRYPTO_PRIVATE_KEY;
-  ret->pub.key.algo = is_ecdh ? &ecdh_priv_key_info : &ecdsa_priv_key_info;
+  ret->pub.key.algo = is_ecdh ? &g_ecdh_priv_key_info : &g_ecdsa_priv_key_info;
   ret->pub.key.bits = (ruint) (scalarsize * 8);
 
   /* For ECDSA keys with the math layer loaded, populate the mod-n
@@ -761,9 +974,6 @@ r_ecdh_priv_key_new_gen (REcurveID curve, RPrng * prng)
   ruint8 * ecpcopy = NULL;
   ruint8 * scalarbuf = NULL;
   rsize dbytes, ecpsize;
-  static const RCryptoAlgoInfo ecdh_priv_key_info = {
-    R_CRYPTO_ALGO_ECDH, R_ECDH_STR, NULL, NULL, NULL, NULL, NULL
-  };
 
   if (!r_ecurve_init (&params, curve))
     return NULL;
@@ -835,7 +1045,7 @@ r_ecdh_priv_key_new_gen (REcurveID curve, RPrng * prng)
 
   r_ref_init (&ret->pub.key, r_ecc_priv_key_free);
   ret->pub.key.type = R_CRYPTO_PRIVATE_KEY;
-  ret->pub.key.algo = &ecdh_priv_key_info;
+  ret->pub.key.algo = &g_ecdh_priv_key_info;
   ret->pub.key.bits = (ruint) (dbytes * 8);
 
   r_memclear_secure (dbuf, dbytes);

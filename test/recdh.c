@@ -41,6 +41,150 @@ recdh_priv_key_from_hex (REcurveID curve, const rchar * d_hex)
   return key;
 }
 
+/* Round-trip helper: encode `orig` via r_crypto_key_to_asn1 into a
+ * fresh DER buffer, then decode via the matching ASN.1 entry point
+ * (pub vs priv). Caller frees *out_buf. */
+static RCryptoKey *
+recdh_asn1_roundtrip (const RCryptoKey * orig, ruint8 ** out_buf,
+    rsize * out_size, rboolean is_priv)
+{
+  RAsn1BinEncoder * enc;
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  RCryptoKey * back = NULL;
+
+  *out_buf = NULL;
+  *out_size = 0;
+
+  r_assert_cmpptr ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)), !=, NULL);
+  r_assert_cmpint (r_crypto_key_to_asn1 (orig, enc), ==, R_CRYPTO_OK);
+  r_assert_cmpptr ((*out_buf = r_asn1_bin_encoder_get_data (enc, out_size)),
+      !=, NULL);
+  r_asn1_bin_encoder_unref (enc);
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER, *out_buf, *out_size)),
+      !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  back = is_priv
+      ? r_crypto_key_from_asn1_private_key (dec, &tlv)
+      : r_crypto_key_from_asn1_public_key (dec, &tlv);
+  r_asn1_bin_decoder_unref (dec);
+  return back;
+}
+
+RTEST (recdh, asn1_priv_roundtrip, RTEST_FAST)
+{
+  /* Generate a fresh ECDH priv key, export it via OneAsymmetricKey,
+   * decode back, and confirm the resulting key still computes the
+   * same shared secret as the original against a fixed peer pub key.
+   * That's a stronger functional check than scalar-byte equality:
+   * a mis-decoded scalar or curve would produce a different shared
+   * value. */
+  RCryptoKey * orig, * back, * peer_priv, * peer_pub;
+  ruint8 * buf;
+  rsize bufsize;
+  ruint8 shared_orig[128], shared_back[128];
+  rsize shared_orig_size = sizeof (shared_orig);
+  rsize shared_back_size = sizeof (shared_back);
+  REcurveAffinePoint peer_Q;
+  ruint8 peer_ecp[1 + 2 * 32];
+  rsize peer_ecp_size;
+  REcurve curve;
+
+  r_assert_cmpptr ((orig = r_ecdh_priv_key_new_gen (R_ECURVE_ID_SECP256R1, NULL)),
+      !=, NULL);
+  r_assert_cmpptr ((peer_priv = r_ecdh_priv_key_new_gen (R_ECURVE_ID_SECP256R1, NULL)),
+      !=, NULL);
+
+  /* Build a pub key from the peer for both ECDH calls. */
+  r_ecurve_point_init (&peer_Q);
+  r_assert (r_ecc_key_get_q (peer_priv, &peer_Q));
+  r_assert (r_ecurve_init (&curve, R_ECURVE_ID_SECP256R1));
+  peer_ecp_size = sizeof (peer_ecp);
+  r_assert (r_ecurve_point_to_uncompressed (&peer_Q, &curve,
+        peer_ecp, &peer_ecp_size));
+  r_assert_cmpptr ((peer_pub = r_ecdh_pub_key_new (R_ECURVE_ID_SECP256R1,
+        peer_ecp, peer_ecp_size)), !=, NULL);
+
+  r_assert_cmpptr ((back = recdh_asn1_roundtrip (orig, &buf, &bufsize, TRUE)),
+      !=, NULL);
+  r_assert_cmpuint (r_crypto_key_get_algo (back), ==, R_CRYPTO_ALGO_ECDH);
+  r_assert_cmpuint (r_crypto_key_get_type (back), ==, R_CRYPTO_PRIVATE_KEY);
+  r_assert_cmphex (r_ecc_key_get_curve (back), ==, R_ECURVE_ID_SECP256R1);
+
+  r_assert_cmpint (r_ecdh_compute_shared (orig, peer_pub,
+        shared_orig, &shared_orig_size), ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_ecdh_compute_shared (back, peer_pub,
+        shared_back, &shared_back_size), ==, R_CRYPTO_OK);
+  r_assert_cmpuint (shared_orig_size, ==, shared_back_size);
+  r_assert (r_memcmp (shared_orig, shared_back, shared_orig_size) == 0);
+
+  r_ecurve_point_clear (&peer_Q);
+  r_ecurve_clear (&curve);
+  r_crypto_key_unref (orig);
+  r_crypto_key_unref (back);
+  r_crypto_key_unref (peer_priv);
+  r_crypto_key_unref (peer_pub);
+  r_free (buf);
+}
+RTEST_END;
+
+RTEST (recdh, asn1_pub_roundtrip, RTEST_FAST)
+{
+  /* Round-trip an ECDH pub key via SubjectPublicKeyInfo; the rebuilt
+   * key must still compute the same shared secret against a fixed
+   * peer's priv key. */
+  RCryptoKey * orig_priv, * orig_pub, * back_pub, * peer_priv;
+  ruint8 * buf;
+  rsize bufsize;
+  REcurveAffinePoint Q;
+  ruint8 ecp[1 + 2 * 32];
+  rsize ecp_size;
+  REcurve curve;
+  ruint8 shared_orig[128], shared_back[128];
+  rsize shared_orig_size = sizeof (shared_orig);
+  rsize shared_back_size = sizeof (shared_back);
+
+  r_assert_cmpptr ((orig_priv = r_ecdh_priv_key_new_gen (R_ECURVE_ID_SECP256R1, NULL)),
+      !=, NULL);
+
+  /* Wrap orig_priv's public half as a standalone pub key so we have
+   * something to round-trip; r_ecdh_priv_key_new_gen doesn't expose
+   * the matching pub key separately. */
+  r_ecurve_point_init (&Q);
+  r_assert (r_ecc_key_get_q (orig_priv, &Q));
+  r_assert (r_ecurve_init (&curve, R_ECURVE_ID_SECP256R1));
+  ecp_size = sizeof (ecp);
+  r_assert (r_ecurve_point_to_uncompressed (&Q, &curve, ecp, &ecp_size));
+  r_assert_cmpptr ((orig_pub = r_ecdh_pub_key_new (R_ECURVE_ID_SECP256R1,
+        ecp, ecp_size)), !=, NULL);
+
+  r_assert_cmpptr ((back_pub = recdh_asn1_roundtrip (orig_pub, &buf, &bufsize,
+        FALSE)), !=, NULL);
+  r_assert_cmpuint (r_crypto_key_get_algo (back_pub), ==, R_CRYPTO_ALGO_ECDH);
+  r_assert_cmpuint (r_crypto_key_get_type (back_pub), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmphex (r_ecc_key_get_curve (back_pub), ==, R_ECURVE_ID_SECP256R1);
+
+  r_assert_cmpptr ((peer_priv = r_ecdh_priv_key_new_gen (R_ECURVE_ID_SECP256R1, NULL)),
+      !=, NULL);
+
+  r_assert_cmpint (r_ecdh_compute_shared (peer_priv, orig_pub,
+        shared_orig, &shared_orig_size), ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_ecdh_compute_shared (peer_priv, back_pub,
+        shared_back, &shared_back_size), ==, R_CRYPTO_OK);
+  r_assert_cmpuint (shared_orig_size, ==, shared_back_size);
+  r_assert (r_memcmp (shared_orig, shared_back, shared_orig_size) == 0);
+
+  r_ecurve_point_clear (&Q);
+  r_ecurve_clear (&curve);
+  r_crypto_key_unref (orig_priv);
+  r_crypto_key_unref (orig_pub);
+  r_crypto_key_unref (back_pub);
+  r_crypto_key_unref (peer_priv);
+  r_free (buf);
+}
+RTEST_END;
+
 RTEST (recdh, gen_key_has_q_and_curve, RTEST_FAST)
 {
   RCryptoKey * key;
