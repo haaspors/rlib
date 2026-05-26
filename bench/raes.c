@@ -1,6 +1,7 @@
 #include <rlib/rlib.h>
 #include <rlib/crypto/raes.h>
 #include <rlib/crypto/rcipher.h>
+#include "util.h"
 
 /* 16 KiB per encrypt call - large enough to amortise the per-call
  * overhead, small enough to fit comfortably in stack / L1 cache. */
@@ -8,17 +9,12 @@
 #define AES_BENCH_ITERS      2000
 
 static void
-print_aes_result (const rchar * label, ruint iters, rsize block_bytes,
+print_aes_result (const rchar * variant, ruint iters, rsize block_bytes,
     RClockTime elapsed)
 {
-  rdouble elapsed_s = (rdouble)elapsed / (rdouble)R_SECOND;
-  rdouble total_mib = (rdouble)(iters * block_bytes) / (1024.0 * 1024.0);
-  rdouble mib_per_s = total_mib / elapsed_s;
-
-  r_print ("%"R_TIME_FORMAT"  AES-%s: %.1f MiB/s "
-      "(%u x %"RSIZE_FMT"-byte blocks in %.3f s)\n",
-      R_TIME_ARGS (elapsed), label, mib_per_s,
-      iters, block_bytes, elapsed_s);
+  rchar * label = r_strprintf ("AES-%s", variant);
+  bench_print_throughput (label, iters, block_bytes, elapsed);
+  r_free (label);
 }
 
 /* AES_BENCH_BLOCKSIZE encrypts in a tight loop. The cipher is built

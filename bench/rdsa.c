@@ -1,6 +1,7 @@
 #include <rlib/rlib.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rdsa.h>
+#include "util.h"
 
 #define DSA_BENCH_L         2048
 #define DSA_BENCH_N         256
@@ -9,14 +10,9 @@
 static void
 print_dsa_result (const rchar * op, ruint iters, RClockTime elapsed)
 {
-  rdouble elapsed_s = (rdouble)elapsed / (rdouble)R_SECOND;
-  rdouble per_op_ms = elapsed_s * 1000.0 / (rdouble)iters;
-  rdouble ops_per_sec = (rdouble)iters / elapsed_s;
-
-  r_print ("%"R_TIME_FORMAT"  DSA-%u/%u %s: %.3f ms/op, %.1f ops/sec "
-      "(%u iters in %.3f s)\n",
-      R_TIME_ARGS (elapsed), DSA_BENCH_L, DSA_BENCH_N, op,
-      per_op_ms, ops_per_sec, iters, elapsed_s);
+  rchar * label = r_strprintf ("DSA-%u/%u %s", DSA_BENCH_L, DSA_BENCH_N, op);
+  bench_print_ops (label, iters, elapsed);
+  r_free (label);
 }
 
 RTEST_BENCH (rdsa, sign_2048_256, RTEST_FAST | RTEST_SYSTEM)

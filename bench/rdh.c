@@ -1,6 +1,7 @@
 #include <rlib/rlib.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rdh.h>
+#include "util.h"
 
 #define DH_BENCH_ITERS    200
 
@@ -8,14 +9,9 @@ static void
 print_dh_result (const rchar * group_name, ruint iters,
     RClockTime elapsed)
 {
-  rdouble elapsed_s = (rdouble)elapsed / (rdouble)R_SECOND;
-  rdouble per_op_ms = elapsed_s * 1000.0 / (rdouble)iters;
-  rdouble ops_per_sec = (rdouble)iters / elapsed_s;
-
-  r_print ("%"R_TIME_FORMAT"  DH %s compute_shared: %.3f ms/op, "
-      "%.1f ops/sec (%u iters in %.3f s)\n",
-      R_TIME_ARGS (elapsed), group_name, per_op_ms, ops_per_sec,
-      iters, elapsed_s);
+  rchar * label = r_strprintf ("DH %s compute_shared", group_name);
+  bench_print_ops (label, iters, elapsed);
+  r_free (label);
 }
 
 /* One bench body that takes the DH group as a parameter so the two

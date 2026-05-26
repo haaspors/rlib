@@ -1,23 +1,10 @@
 #include <rlib/rlib.h>
+#include "util.h"
 
 /* 16 KiB per hash call - large enough to amortise the per-call
  * setup cost, small enough to fit comfortably in L1 cache. */
 #define DIGEST_BENCH_BLOCKSIZE  (16 * 1024)
 #define DIGEST_BENCH_ITERS      2000
-
-static void
-print_digest_result (const rchar * label, ruint iters, rsize block_bytes,
-    RClockTime elapsed)
-{
-  rdouble elapsed_s = (rdouble)elapsed / (rdouble)R_SECOND;
-  rdouble total_mib = (rdouble)(iters * block_bytes) / (1024.0 * 1024.0);
-  rdouble mib_per_s = total_mib / elapsed_s;
-
-  r_print ("%"R_TIME_FORMAT"  %s: %.1f MiB/s "
-      "(%u x %"RSIZE_FMT"-byte blocks in %.3f s)\n",
-      R_TIME_ARGS (elapsed), label, mib_per_s,
-      iters, block_bytes, elapsed_s);
-}
 
 /* Hash @c DIGEST_BENCH_BLOCKSIZE bytes per iteration. The digest is
  * reset between iterations so each loop body exercises one full
@@ -55,7 +42,7 @@ run_digest_bench (RMsgDigestType type, const rchar * label)
   }
   end = r_time_get_ts_monotonic ();
 
-  print_digest_result (label, DIGEST_BENCH_ITERS, DIGEST_BENCH_BLOCKSIZE,
+  bench_print_throughput (label, DIGEST_BENCH_ITERS, DIGEST_BENCH_BLOCKSIZE,
       end - start);
 
   r_free (input);
