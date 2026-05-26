@@ -2,6 +2,7 @@
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/recc.h>
 #include <rlib/crypto/recurve.h>
+#include "util.h"
 
 #define ECDH_BENCH_ITERS    200
 
@@ -9,14 +10,9 @@ static void
 print_ecdh_result (const rchar * curve_name, ruint iters,
     RClockTime elapsed)
 {
-  rdouble elapsed_s = (rdouble)elapsed / (rdouble)R_SECOND;
-  rdouble per_op_ms = elapsed_s * 1000.0 / (rdouble)iters;
-  rdouble ops_per_sec = (rdouble)iters / elapsed_s;
-
-  r_print ("%"R_TIME_FORMAT"  ECDH %s compute_shared: %.3f ms/op, "
-      "%.1f ops/sec (%u iters in %.3f s)\n",
-      R_TIME_ARGS (elapsed), curve_name, per_op_ms, ops_per_sec,
-      iters, elapsed_s);
+  rchar * label = r_strprintf ("ECDH %s compute_shared", curve_name);
+  bench_print_ops (label, iters, elapsed);
+  r_free (label);
 }
 
 /* One bench body that takes the curve as a parameter so the two

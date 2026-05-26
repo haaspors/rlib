@@ -2,6 +2,7 @@
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/recc.h>
 #include <rlib/crypto/recurve.h>
+#include "util.h"
 
 #define ECDSA_BENCH_ITERS    200
 
@@ -18,14 +19,9 @@ static void
 print_ecdsa_result (const rchar * curve_name, const rchar * op, ruint iters,
     RClockTime elapsed)
 {
-  rdouble elapsed_s = (rdouble)elapsed / (rdouble)R_SECOND;
-  rdouble per_op_ms = elapsed_s * 1000.0 / (rdouble)iters;
-  rdouble ops_per_sec = (rdouble)iters / elapsed_s;
-
-  r_print ("%"R_TIME_FORMAT"  ECDSA %s %s: %.3f ms/op, %.1f ops/sec "
-      "(%u iters in %.3f s)\n",
-      R_TIME_ARGS (elapsed), curve_name, op,
-      per_op_ms, ops_per_sec, iters, elapsed_s);
+  rchar * label = r_strprintf ("ECDSA %s %s", curve_name, op);
+  bench_print_ops (label, iters, elapsed);
+  r_free (label);
 }
 
 /* Build an ECDSA keypair on the given curve. Generates a random

@@ -1,6 +1,7 @@
 #include <rlib/rlib.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rrsa.h>
+#include "util.h"
 
 /* Per-bench iter counts. Private-side (decrypt / sign) is the
  * cubic-in-bits cost driver, so iters are tuned per key size to
@@ -13,21 +14,13 @@
 #define RSA_BENCH_ITERS_4096     50
 #define RSA_BENCH_ITERS_VERIFY 2000
 
-/* Print a single throughput line matching the revudp bench's layout
- * convention - elapsed timestamp + descriptive label + the numbers
- * worth reading at a glance. */
 static void
 print_rsa_result (const rchar * op, ruint bits, ruint iters,
     RClockTime elapsed)
 {
-  rdouble elapsed_s = (rdouble)elapsed / (rdouble)R_SECOND;
-  rdouble per_op_ms = elapsed_s * 1000.0 / (rdouble)iters;
-  rdouble ops_per_sec = (rdouble)iters / elapsed_s;
-
-  r_print ("%"R_TIME_FORMAT"  RSA-%u %s: %.3f ms/op, %.1f ops/sec "
-      "(%u iters in %.3f s)\n",
-      R_TIME_ARGS (elapsed), bits, op, per_op_ms, ops_per_sec,
-      iters, elapsed_s);
+  rchar * label = r_strprintf ("RSA-%u %s", bits, op);
+  bench_print_ops (label, iters, elapsed);
+  r_free (label);
 }
 
 /* PKCS#1v1.5 decrypt loop for the given key size. Exercises
