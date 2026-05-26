@@ -25,6 +25,13 @@
 #include <rlib/rtypes.h>
 
 /**
+ * @defgroup r_base64 Base64 (RFC 4648)
+ * @brief Base64 encoder / decoder. In-buffer and allocating
+ * variants of each direction.
+ * @{
+ */
+
+/**
  * @file rlib/rbase64.h
  * @brief Base64 encoding and decoding (RFC 4648).
  *
@@ -117,6 +124,8 @@ R_API ruint8 * r_base64_decode_dup (const rchar * data, rssize size, rsize * out
 /** @} */
 
 R_END_DECLS
+
+/** @} */ /* r_base64 group */
 
 #endif /* __R_BASE64_H__ */
 
