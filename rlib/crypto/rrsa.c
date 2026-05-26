@@ -51,15 +51,22 @@ typedef struct {
   rmpint dq;
   rmpint qp;
 
-  /* Per-modulus Montgomery inverses, populated at key construction
-   * by r_rsa_priv_key_precompute_cache and consumed by the CT
-   * exponentiation in r_rsa_modexp_private. Avoids running
-   * r_mpint_montgomery_setup on every private operation. mp_p and
-   * mp_q are only valid when the matching p/q are present (CRT
-   * path); have_pq tracks whether those got populated. */
-  rmpint_digit mp_n;
-  rmpint_digit mp_p;
-  rmpint_digit mp_q;
+  /* Per-modulus Montgomery setup cached at key construction by
+   * r_rsa_priv_key_precompute_cache and consumed by the FE_Big
+   * windowed exponentiation in r_rsa_modexp_private. Storing the
+   * full ctx + R^2 mod m here means each private op pays one
+   * r_mpint_fe_big_expmod_ct call instead of a per-call setup chain.
+   * ctx_p / r2_p / ctx_q / r2_q are only valid when the matching
+   * p / q are present (CRT path); have_pq tracks that. Inline
+   * storage is ~6 KB per private key at RSA-8192's worst case -
+   * fine for the typical "a handful of keys per process" workload,
+   * worth knowing if you're holding thousands. */
+  RMpintFE_BigMontCtx ctx_n;
+  RMpintFE_Big        r2_n;
+  RMpintFE_BigMontCtx ctx_p;
+  RMpintFE_Big        r2_p;
+  RMpintFE_BigMontCtx ctx_q;
+  RMpintFE_Big        r2_q;
   rboolean have_pq;
 } RRsaPrivKey;
 
@@ -207,25 +214,35 @@ r_rsa_pub_key_init (RCryptoKey * key, ruint bits)
   key->bits = bits;
 }
 
-/* Populate the per-modulus Montgomery cache (mp_n, plus mp_p / mp_q
- * when the CRT primes are present) from n / p / q. Called from each
- * private-key construction path once those fields are final.
- * Returns FALSE on the degenerate cases - empty n or even modulus -
- * neither of which occurs for a real RSA key but guarded so the
- * cache populate chain doesn't silently rot. */
+/* Populate the per-modulus FE_Big context cache (ctx_n / r2_n, plus
+ * the p / q pair when the CRT primes are present) from n / p / q.
+ * Called from each private-key construction path once those fields
+ * are final. Returns FALSE on the degenerate cases - empty n, even
+ * modulus, or modulus wider than R_MPINT_FE_BIG_MAX_DIGITS - none of
+ * which occurs for a real RSA key but guarded so the cache populate
+ * chain doesn't silently rot. */
 static rboolean
 r_rsa_priv_key_precompute_cache (RRsaPrivKey * pk)
 {
   if (r_mpint_iszero (&pk->pub.n))
     return FALSE;
-  if (!r_mpint_montgomery_setup (&pk->mp_n, &pk->pub.n))
+  if (!r_mpint_fe_big_mont_ctx_init (&pk->ctx_n, &pk->pub.n))
+    return FALSE;
+  if (!r_mpint_fe_big_compute_r_squared (&pk->r2_n, &pk->pub.n,
+        pk->ctx_n.n_digits))
     return FALSE;
 
   pk->have_pq = !r_mpint_iszero (&pk->p) && !r_mpint_iszero (&pk->q);
   if (pk->have_pq) {
-    if (!r_mpint_montgomery_setup (&pk->mp_p, &pk->p))
+    if (!r_mpint_fe_big_mont_ctx_init (&pk->ctx_p, &pk->p))
       return FALSE;
-    if (!r_mpint_montgomery_setup (&pk->mp_q, &pk->q))
+    if (!r_mpint_fe_big_compute_r_squared (&pk->r2_p, &pk->p,
+          pk->ctx_p.n_digits))
+      return FALSE;
+    if (!r_mpint_fe_big_mont_ctx_init (&pk->ctx_q, &pk->q))
+      return FALSE;
+    if (!r_mpint_fe_big_compute_r_squared (&pk->r2_q, &pk->q,
+          pk->ctx_q.n_digits))
       return FALSE;
   }
   return TRUE;
@@ -707,18 +724,22 @@ r_rsa_raw_encrypt (const RCryptoKey * key, RPrng * prng,
  * the call and unblinding m after — keeping that logic separate keeps the
  * CRT/non-CRT dispatch readable.
  *
- * The exponentiations use r_mpint_expmod_ct so the private exponent
- * (d, or the CRT exponents dP / dQ) doesn't leak via array-indexed
- * Mont ladder dispatch or variable-time per-iteration reduce. The
- * exp_bits caps are bit_count of the respective moduli - dP < p,
- * dQ < q, d < n - so the loops are bounded by public constants.
+ * The exponentiations use r_mpint_fe_big_expmod_ct so the private
+ * exponent (d, or the CRT exponents dP / dQ) doesn't leak via array-
+ * indexed dispatch or variable-time per-iteration reduce. FE_Big
+ * stores intermediates at a fixed width and runs each Mont mul over
+ * exactly ctx->n_digits iterations, so the dig_used residual that
+ * the old r_mpint_expmod_ct_with_mp path carried is gone. exp_bits
+ * caps are bit_count of the respective moduli - dP < p, dQ < q,
+ * d < n - so the loop counts are bounded by public constants.
  *
  * Residual leak: the CRT post-processing (m2 reduce, subtract, mul
- * by qInv, etc.) uses variable-time mpint primitives on values that
- * depend on the secret intermediates m1 / m2. Closing this needs CT
- * variants of mpint sub/mul/mod (or a wider FE type for RSA-sized
- * operands); for now it's flagged as the same dig_used residual the
- * CT expmod itself has. */
+ * by qInv, etc.) still uses variable-time mpint primitives on values
+ * that depend on the secret intermediates m1 / m2. Closing that
+ * needs CT variants of mpint sub/mul/mod on top of FE_Big - a
+ * separate follow-up; the dig_used residual on the expmod itself,
+ * which dominated this codepath's leakage surface, is what this
+ * commit eliminates. */
 static rboolean
 r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
 {
@@ -740,10 +761,10 @@ r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
     r_mpint_init (&m2_p);
     r_mpint_init (&h);
 
-    ok = r_mpint_expmod_ct_with_mp (&m1, c, &key->dp, &key->p,
-            key->mp_p, r_mpint_bits_used (&key->p))
-      && r_mpint_expmod_ct_with_mp (&m2, c, &key->dq, &key->q,
-            key->mp_q, r_mpint_bits_used (&key->q))
+    ok = r_mpint_fe_big_expmod_ct (&m1, c, &key->dp, &key->p,
+            &key->ctx_p, &key->r2_p, r_mpint_bits_used (&key->p))
+      && r_mpint_fe_big_expmod_ct (&m2, c, &key->dq, &key->q,
+            &key->ctx_q, &key->r2_q, r_mpint_bits_used (&key->q))
       && r_mpint_mod (&m2_p, &m2, &key->p)
       && r_mpint_sub (&h, &m1, &m2_p);
     if (ok && r_mpint_isneg (&h))
@@ -760,8 +781,8 @@ r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
     r_mpint_clear (&h);
     return ok;
   } else {
-    return r_mpint_expmod_ct_with_mp (m, c, &key->d, &key->pub.n,
-        key->mp_n, r_mpint_bits_used (&key->pub.n));
+    return r_mpint_fe_big_expmod_ct (m, c, &key->d, &key->pub.n,
+        &key->ctx_n, &key->r2_n, r_mpint_bits_used (&key->pub.n));
   }
 }
 
