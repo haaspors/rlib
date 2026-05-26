@@ -50,3 +50,18 @@
 #undef FE_CTX
 #undef FE_FN
 #undef FE_MAX
+
+/* Instantiation #2: RSA width. R_MPINT_FE_BIG_MAX_DIGITS covers
+ * RSA-8192 (256 32-bit digits) with one carry slot. Used by the
+ * RSA private-key modular exponentiation; both the CRT halves
+ * (n_digits ~= 128 for RSA-8192) and the non-CRT fallback (full
+ * modulus, n_digits ~= 256) fit. */
+#define FE_TYPE   RMpintFE_Big
+#define FE_CTX    RMpintFE_BigMontCtx
+#define FE_FN(n)  r_mpint_fe_big_ ## n
+#define FE_MAX    R_MPINT_FE_BIG_MAX_DIGITS
+#include "rmpint_fe_template.h"
+#undef FE_TYPE
+#undef FE_CTX
+#undef FE_FN
+#undef FE_MAX
