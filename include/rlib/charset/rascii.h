@@ -25,6 +25,13 @@
 #include <rlib/rtypes.h>
 
 /**
+ * @defgroup r_ascii ASCII
+ * @brief Locale-independent ASCII character classification and case
+ * conversion. Counterparts to the standard @c <ctype.h> predicates.
+ * @{
+ */
+
+/**
  * @file rlib/charset/rascii.h
  * @brief ASCII character classification and case conversion.
  *
@@ -149,5 +156,7 @@ R_API rchar * r_ascii_make_lower (rchar * str, rssize len);
 /** @} */
 
 R_END_DECLS
+
+/** @} */ /* r_ascii group */
 
 #endif /* __R_ASCII_H__ */
