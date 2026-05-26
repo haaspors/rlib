@@ -527,10 +527,26 @@ r_mpint_gen_prime_full (rmpint * mpi, rsize bits, rboolean safe, RPrng * prng)
       tmp[0] |= 1 << ((bits - 1) & 7);
 
       if (!safe) {
+        /* Two-phase per candidate: the small-primes sieve rejects
+         * most composites cheaply, the Miller-Rabin confirmation
+         * runs only when the sieve hasn't already disqualified the
+         * candidate. The previous code routed every candidate
+         * through r_mpint_isprime which forces 8 MR rounds on every
+         * sieve-passer - thousands of 1024-bit expmods that only
+         * need to happen once. Matches the safe-prime path below. */
         tmp[size - 1] |= 1;
         r_mpint_set_binary (mpi, tmp, size);
-        while (!(ret = r_mpint_isprime (mpi)))
+        while (TRUE) {
+          RMpintPrimeTest t;
+          if ((t = r_mpint_isprime_t (mpi, 0)) > R_MPINT_NON_PRIME &&
+              (t = r_mpint_prime_miller_rabin_full (mpi, prng)) > R_MPINT_NON_PRIME) {
+            ret = TRUE;
+            break;
+          }
+          if (t != R_MPINT_NON_PRIME)
+            break;
           r_mpint_add_u32 (mpi, mpi, 2);
+        }
       } else {
         rmpint r, y;
 
