@@ -26,6 +26,7 @@ rlibtest_sources = [
   'rdictionary.c',
   'rdsa.c',
   'recdh.c',
+  'recdsa.c',
   'recurve.c',
   'rdirtree.c',
   'relf.c',
