@@ -73,6 +73,7 @@ rlib_sources = [
   'data/rlist.c',
   'data/rmpint.c',
   'data/rmpint_fe.c',
+  'data/rmpint_fe_big_expmod.c',
   'data/rmpint_montgomery.c',
   'data/rptrarray.c',
   'data/rqueuering.c',
