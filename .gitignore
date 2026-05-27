@@ -16,3 +16,4 @@
 /.waf*
 /_build*
 /docs/output/
+/.claude/
