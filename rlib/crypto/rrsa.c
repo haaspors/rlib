@@ -1176,7 +1176,7 @@ r_rsa_oid_from_msg_digest (RMsgDigestType mdtype, ruint8 oid[16])
       r_memcpy (oid, "\x2a\x86\x48\x86\xf7\x0d\x01\x01\x04", 9);
       return 9;
     case R_MSG_DIGEST_TYPE_SHA1: /* 1.3.14.3.2.26  */
-      r_memcpy (oid, "\x2b\x0e\x03\x02\x1a", 9);
+      r_memcpy (oid, "\x2b\x0e\x03\x02\x1a", 5);
       return 5;
     case R_MSG_DIGEST_TYPE_SHA256: /* 2.16.840.1.101.3.4.2.1  */
       r_memcpy (oid, "\x60\x86\x48\x01\x65\x03\x04\x02\x01", 9);
