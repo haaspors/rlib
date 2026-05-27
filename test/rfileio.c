@@ -8,10 +8,10 @@ RTEST (rio, open, RTEST_FAST | RTEST_SYSTEM)
   RIOHandle handle;
 
   r_assert_cmpint (r_io_open_file ("/foo/bar/badger", R_FILE_OPEN_EXISTING,
-        R_FILE_READ, R_FILE_SHARE_EXCLUSIVE, R_FILE_FLAG_NONE, NULL), ==, R_IO_HANDLE_INVALID);
+        R_FILE_READ, R_FILE_SHARE_READ, R_FILE_FLAG_NONE, NULL), ==, R_IO_HANDLE_INVALID);
   rchar * path = r_proc_get_exe_path ();
   r_assert_cmpint ((handle = r_io_open_file (path, R_FILE_OPEN_EXISTING,
-        R_FILE_READ, R_FILE_SHARE_EXCLUSIVE, R_FILE_FLAG_NONE, NULL)), !=, R_IO_HANDLE_INVALID);
+        R_FILE_READ, R_FILE_SHARE_READ, R_FILE_FLAG_NONE, NULL)), !=, R_IO_HANDLE_INVALID);
   r_assert (r_io_close (handle));
 
   r_free (path);
