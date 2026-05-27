@@ -371,6 +371,20 @@ R_API void r_mpint_fe_invmod_mont (RMpintFE * out, const RMpintFE * a_M,
     const RMpintFE * p_minus_2, ruint p_minus_2_bits,
     const RMpintFE * mont_r_squared, const RMpintFEMontCtx * ctx);
 
+/* ---- Wide (non-modular) primitives, used by the RSA CRT
+ * recombination to assemble the final plaintext outside any single
+ * field. ---- */
+
+R_API void r_mpint_fe_mul_ct (RMpintFE * out, const RMpintFE * a, ruint16 a_n,
+    const RMpintFE * b, ruint16 b_n);
+R_API void r_mpint_fe_add_ct (RMpintFE * out, const RMpintFE * a, ruint16 a_n,
+    const RMpintFE * b, ruint16 b_n);
+/* Conditional-subtract-once reduce: out = (a < p) ? a : a - p.
+ * Useful only when the caller can guarantee a < 2p; the RSA CRT
+ * case (m2 mod p with m2 < q < 2p) qualifies. */
+R_API void r_mpint_fe_mod_ct (RMpintFE * out, const RMpintFE * a,
+    const RMpintFEMontCtx * ctx);
+
 /* ---- Big-width counterparts. The function semantics match the
  * RMpintFE primitives above byte-for-byte (they are emitted from the
  * same template); only the storage width and the type / function
@@ -415,6 +429,15 @@ R_API void r_mpint_fe_big_invmod_mont (RMpintFE_Big * out,
     const RMpintFE_Big * a_M,
     const RMpintFE_Big * p_minus_2, ruint p_minus_2_bits,
     const RMpintFE_Big * mont_r_squared, const RMpintFE_BigMontCtx * ctx);
+
+R_API void r_mpint_fe_big_mul_ct (RMpintFE_Big * out,
+    const RMpintFE_Big * a, ruint16 a_n,
+    const RMpintFE_Big * b, ruint16 b_n);
+R_API void r_mpint_fe_big_add_ct (RMpintFE_Big * out,
+    const RMpintFE_Big * a, ruint16 a_n,
+    const RMpintFE_Big * b, ruint16 b_n);
+R_API void r_mpint_fe_big_mod_ct (RMpintFE_Big * out, const RMpintFE_Big * a,
+    const RMpintFE_BigMontCtx * ctx);
 
 /* Modular exponentiation in Z_m where m is the modulus carried by ctx:
  * dst := base^exp mod m. base is reduced mod m internally if needed

@@ -710,3 +710,193 @@ HEAVY_RTEST (rmpint_fe_big, mul_round_trip_8192, RTEST_FAST)
   r_mpint_clear (&got);
 }
 RTEST_END;
+
+/* ---- Wide / non-modular primitives. ---- */
+
+RTEST (rmpint_fe, mul_ct_matches_schoolbook, RTEST_FAST)
+{
+  /* a = 0x1234abcd, b = 0xfedcba98. Single-digit operands; product is 2 digits. */
+  RMpintFE fa, fb, fr;
+  rmpint a, b, expected, got;
+
+  r_mpint_fe_zero (&fa);
+  r_mpint_fe_zero (&fb);
+  fa.d[0] = 0x1234abcdu;
+  fb.d[0] = 0xfedcba98u;
+
+  r_mpint_fe_mul_ct (&fr, &fa, 1, &fb, 1);
+
+  r_mpint_init (&a);
+  r_mpint_init (&b);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+  r_mpint_set_u32 (&a, 0x1234abcdu);
+  r_mpint_set_u32 (&b, 0xfedcba98u);
+  r_assert (r_mpint_mul (&expected, &a, &b));
+  r_assert (r_mpint_fe_to_mpint (&got, &fr, 2));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rmpint_fe, add_ct_wide, RTEST_FAST)
+{
+  /* a = 0xffffffff_ffffffff (2 digits), b = 1. Sum = 2^64 (3 digits incl carry). */
+  RMpintFE fa, fb, fr;
+  rmpint expected, got;
+  ruint8 expected_be[9] = { 0x01, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+  r_mpint_fe_zero (&fa);
+  r_mpint_fe_zero (&fb);
+  fa.d[0] = 0xffffffffu;
+  fa.d[1] = 0xffffffffu;
+  fb.d[0] = 1u;
+
+  r_mpint_fe_add_ct (&fr, &fa, 2, &fb, 1);
+
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+  r_mpint_set_binary (&expected, expected_be, sizeof (expected_be));
+  r_assert (r_mpint_fe_to_mpint (&got, &fr, 3));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rmpint_fe, mod_ct_single_subtract, RTEST_FAST)
+{
+  /* p = 65537. a = p + 34463: single subtract gives 34463. a = 100 (< p): unchanged. */
+  rmpint p_mp;
+  RMpintFEMontCtx ctx;
+  RMpintFE fa, fr;
+  rmpint got;
+
+  r_mpint_init (&p_mp);
+  r_mpint_set_u32 (&p_mp, SMALL_P);
+  r_assert (r_mpint_fe_mont_ctx_init (&ctx, &p_mp));
+
+  r_mpint_init (&got);
+
+  r_mpint_fe_zero (&fa);
+  fa.d[0] = 100000u;
+  r_mpint_fe_mod_ct (&fr, &fa, &ctx);
+  r_assert (r_mpint_fe_to_mpint (&got, &fr, ctx.n_digits));
+  r_assert_cmpuint (r_mpint_get_digit (&got, 0), ==, 100000u - SMALL_P);
+
+  r_mpint_fe_zero (&fa);
+  fa.d[0] = 100u;
+  r_mpint_fe_mod_ct (&fr, &fa, &ctx);
+  r_assert (r_mpint_fe_to_mpint (&got, &fr, ctx.n_digits));
+  r_assert_cmpuint (r_mpint_get_digit (&got, 0), ==, 100u);
+
+  r_mpint_clear (&p_mp);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rmpint_fe_big, mul_ct_matches_schoolbook, RTEST_FAST)
+{
+  /* Multiply two 16-digit (512-bit) inputs and compare to r_mpint_mul. */
+  RMpintFE_Big fa, fb, fr;
+  rmpint a, b, expected, got;
+  ruint16 i;
+
+  r_mpint_init (&a);
+  r_mpint_init (&b);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+  for (i = 0; i < 16; i++) {
+    r_assert (r_mpint_shl (&a, &a, 32));
+    r_assert (r_mpint_add_u32 (&a, &a, 0x12340000u + i));
+    r_assert (r_mpint_shl (&b, &b, 32));
+    r_assert (r_mpint_add_u32 (&b, &b, 0x56780000u + (i * 7)));
+  }
+  r_mpint_fe_big_from_mpint (&fa, &a, 16);
+  r_mpint_fe_big_from_mpint (&fb, &b, 16);
+
+  r_mpint_fe_big_mul_ct (&fr, &fa, 16, &fb, 16);
+
+  r_assert (r_mpint_mul (&expected, &a, &b));
+  r_assert (r_mpint_fe_big_to_mpint (&got, &fr, 32));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rmpint_fe_big, add_ct_wide, RTEST_FAST)
+{
+  /* a = 2^512 - 1 (16 all-ones digits), b = 1. Sum = 2^512. */
+  RMpintFE_Big fa, fb, fr;
+  rmpint a, b, expected, got;
+  ruint16 i;
+
+  r_mpint_init (&a);
+  r_mpint_init (&b);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+  for (i = 0; i < 16; i++) {
+    r_assert (r_mpint_shl (&a, &a, 32));
+    r_assert (r_mpint_add_u32 (&a, &a, 0xffffffffu));
+  }
+  r_mpint_set_u32 (&b, 1u);
+  r_mpint_fe_big_from_mpint (&fa, &a, 16);
+  r_mpint_fe_big_from_mpint (&fb, &b, 1);
+
+  r_mpint_fe_big_add_ct (&fr, &fa, 16, &fb, 1);
+
+  r_assert (r_mpint_add (&expected, &a, &b));
+  r_assert (r_mpint_fe_big_to_mpint (&got, &fr, 17));
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  r_mpint_clear (&a);
+  r_mpint_clear (&b);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
+
+RTEST (rmpint_fe_big, mod_ct_single_subtract, RTEST_FAST)
+{
+  /* p = secp256r1 modulus (8 digits). a = p + 12345 (< 2p). */
+  rmpint p_mp;
+  RMpintFE_BigMontCtx ctx;
+  RMpintFE_Big fa, fr;
+  rmpint a, expected, got;
+
+  r_mpint_init (&p_mp);
+  r_mpint_set_binary (&p_mp, SECP256R1_P, sizeof (SECP256R1_P));
+  r_assert (r_mpint_fe_big_mont_ctx_init (&ctx, &p_mp));
+
+  r_mpint_init (&a);
+  r_mpint_init (&expected);
+  r_mpint_init (&got);
+
+  r_assert (r_mpint_add_u32 (&a, &p_mp, 12345u));
+  r_mpint_fe_big_from_mpint (&fa, &a, ctx.n_digits);
+  r_mpint_fe_big_mod_ct (&fr, &fa, &ctx);
+  r_assert (r_mpint_fe_big_to_mpint (&got, &fr, ctx.n_digits));
+  r_mpint_set_u32 (&expected, 12345u);
+  r_assert_cmpint (r_mpint_cmp (&got, &expected), ==, 0);
+
+  r_mpint_set_u32 (&a, 100u);
+  r_mpint_fe_big_from_mpint (&fa, &a, ctx.n_digits);
+  r_mpint_fe_big_mod_ct (&fr, &fa, &ctx);
+  r_assert (r_mpint_fe_big_to_mpint (&got, &fr, ctx.n_digits));
+  r_assert_cmpuint (r_mpint_get_digit (&got, 0), ==, 100u);
+
+  r_mpint_clear (&p_mp);
+  r_mpint_clear (&a);
+  r_mpint_clear (&expected);
+  r_mpint_clear (&got);
+}
+RTEST_END;
