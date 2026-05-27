@@ -149,12 +149,12 @@ struct _RAesCipher {
   /* GCM precomputed state - populated only when info->mode == GCM.
    * H = E_K(0^128), used by every GHASH multiplication; the 4-bit
    * table is built from H once when the SW kernel is in use. The
-   * HW kernels (PCLMULQDQ / PMULL) read H directly. ghash_h_pow
-   * holds H^2, H^3, H^4 in the same representation as ghash_h,
-   * used by the HW kernels' 4-way aggregated path; unused when
-   * the SW kernel is selected. */
+   * HW kernels (PCLMULQDQ / PMULL) read H directly. ghash_h_pow[i]
+   * holds H^(i+2) in the same representation as ghash_h - H^2..H^8
+   * fuel the HW kernels' 4-way / 8-way aggregated paths; unused
+   * when the SW kernel is selected. */
   ruint8 ghash_h[R_AES_BLOCK_BYTES];
-  ruint8 ghash_h_pow[3][R_AES_BLOCK_BYTES];
+  ruint8 ghash_h_pow[7][R_AES_BLOCK_BYTES];
   RGhashTable ghash_t;
   RAesGhashMulFn ghash_mul;
 };
@@ -552,18 +552,18 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
        * polynomial representation (bit i = x^i). rlib's NIST-style
        * H has byte-internal MSB = x^0, so per-byte bit-reverse H
        * once here; the kernel only has to bit-reverse y on entry
-       * and the result on exit. The 4-way aggregated path also
-       * needs H^2, H^3, H^4 in the same representation - compute
+       * and the result on exit. The 4-way / 8-way aggregated paths
+       * also need H^2..H^8 in the same representation - compute
        * them via the SW reference (which expects NIST form) BEFORE
-       * the in-place bit-reverse of H. */
+       * the in-place bit-reverse of H. ghash_h_pow[i] = H^(i+2). */
       rsize idx, p;
       r_aes_copy_block (ret->ghash_h_pow[0], ret->ghash_h);
       r_ghash_mul (ret->ghash_h_pow[0], ret->ghash_h);          /* H^2 */
-      r_aes_copy_block (ret->ghash_h_pow[1], ret->ghash_h_pow[0]);
-      r_ghash_mul (ret->ghash_h_pow[1], ret->ghash_h);          /* H^3 */
-      r_aes_copy_block (ret->ghash_h_pow[2], ret->ghash_h_pow[1]);
-      r_ghash_mul (ret->ghash_h_pow[2], ret->ghash_h);          /* H^4 */
-      for (p = 0; p < 3; p++) {
+      for (p = 1; p < 7; p++) {
+        r_aes_copy_block (ret->ghash_h_pow[p], ret->ghash_h_pow[p - 1]);
+        r_ghash_mul (ret->ghash_h_pow[p], ret->ghash_h);        /* H^(p+2) */
+      }
+      for (p = 0; p < 7; p++) {
         for (idx = 0; idx < R_AES_BLOCK_BYTES; idx++) {
           ruint8 b = ret->ghash_h_pow[p][idx];
           b = (ruint8) (((b & 0xf0) >> 4) | ((b & 0x0f) << 4));
@@ -1080,33 +1080,82 @@ r_ghash_mul_pclmul (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes,
   __m128i h1 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h);
   __m128i lo, hi;
 
+  /* 8-way aggregated path: matches the 4-way shape but stretches the
+   * formula to eight blocks per reduction:
+   *   y_new = (y XOR b0)*H^8 + b1*H^7 + b2*H^6 + b3*H^5
+   *         + b4*H^4 + b5*H^3 + b6*H^2 + b7*H
+   * All eight polynomial multiplies are independent, which PCLMULQDQ
+   * issues at 1/cycle. */
+  if (nblocks >= 8) {
+    __m128i h2 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[0]);
+    __m128i h3 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[1]);
+    __m128i h4 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[2]);
+    __m128i h5 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[3]);
+    __m128i h6 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[4]);
+    __m128i h7 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[5]);
+    __m128i h8 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[6]);
+
+    while (nblocks >= 8) {
+      __m128i b0 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data +   0)));
+      __m128i b1 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data +  16)));
+      __m128i b2 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data +  32)));
+      __m128i b3 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data +  48)));
+      __m128i b4 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data +  64)));
+      __m128i b5 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data +  80)));
+      __m128i b6 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data +  96)));
+      __m128i b7 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data + 112)));
+      __m128i a0 = _mm_xor_si128 (y_br, b0);
+
+      lo = _mm_setzero_si128 ();
+      hi = _mm_setzero_si128 ();
+      r_ghash_poly_mul_acc (&lo, &hi, a0, h8);
+      r_ghash_poly_mul_acc (&lo, &hi, b1, h7);
+      r_ghash_poly_mul_acc (&lo, &hi, b2, h6);
+      r_ghash_poly_mul_acc (&lo, &hi, b3, h5);
+      r_ghash_poly_mul_acc (&lo, &hi, b4, h4);
+      r_ghash_poly_mul_acc (&lo, &hi, b5, h3);
+      r_ghash_poly_mul_acc (&lo, &hi, b6, h2);
+      r_ghash_poly_mul_acc (&lo, &hi, b7, h1);
+      y_br = r_ghash_reduce_pclmul (lo, hi);
+
+      data += 128;
+      nblocks -= 8;
+    }
+  }
+
   if (nblocks >= 4) {
     __m128i h2 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[0]);
     __m128i h3 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[1]);
     __m128i h4 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[2]);
 
-    while (nblocks >= 4) {
-      __m128i b0 = r_ghash_byte_bitrev (
-          _mm_loadu_si128 ((const __m128i *) (data +  0)));
-      __m128i b1 = r_ghash_byte_bitrev (
-          _mm_loadu_si128 ((const __m128i *) (data + 16)));
-      __m128i b2 = r_ghash_byte_bitrev (
-          _mm_loadu_si128 ((const __m128i *) (data + 32)));
-      __m128i b3 = r_ghash_byte_bitrev (
-          _mm_loadu_si128 ((const __m128i *) (data + 48)));
-      __m128i a0 = _mm_xor_si128 (y_br, b0);
+    __m128i b0 = r_ghash_byte_bitrev (
+        _mm_loadu_si128 ((const __m128i *) (data +  0)));
+    __m128i b1 = r_ghash_byte_bitrev (
+        _mm_loadu_si128 ((const __m128i *) (data + 16)));
+    __m128i b2 = r_ghash_byte_bitrev (
+        _mm_loadu_si128 ((const __m128i *) (data + 32)));
+    __m128i b3 = r_ghash_byte_bitrev (
+        _mm_loadu_si128 ((const __m128i *) (data + 48)));
+    __m128i a0 = _mm_xor_si128 (y_br, b0);
 
-      lo = _mm_setzero_si128 ();
-      hi = _mm_setzero_si128 ();
-      r_ghash_poly_mul_acc (&lo, &hi, a0, h4);
-      r_ghash_poly_mul_acc (&lo, &hi, b1, h3);
-      r_ghash_poly_mul_acc (&lo, &hi, b2, h2);
-      r_ghash_poly_mul_acc (&lo, &hi, b3, h1);
-      y_br = r_ghash_reduce_pclmul (lo, hi);
+    lo = _mm_setzero_si128 ();
+    hi = _mm_setzero_si128 ();
+    r_ghash_poly_mul_acc (&lo, &hi, a0, h4);
+    r_ghash_poly_mul_acc (&lo, &hi, b1, h3);
+    r_ghash_poly_mul_acc (&lo, &hi, b2, h2);
+    r_ghash_poly_mul_acc (&lo, &hi, b3, h1);
+    y_br = r_ghash_reduce_pclmul (lo, hi);
 
-      data += 64;
-      nblocks -= 4;
-    }
+    data += 64;
+    nblocks -= 4;
   }
 
   while (nblocks > 0) {
@@ -1461,29 +1510,67 @@ r_ghash_mul_pmull (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes,
   uint8x16_t h1 = vld1q_u8 (aes->ghash_h);
   uint8x16_t lo, hi;
 
+  /* 8-way aggregated path: same formula and instruction shape as
+   * the PCLMUL kernel - eight independent vmull_p64 streams feed
+   * one accumulator, single reduction at the end. */
+  if (nblocks >= 8) {
+    uint8x16_t h2 = vld1q_u8 (aes->ghash_h_pow[0]);
+    uint8x16_t h3 = vld1q_u8 (aes->ghash_h_pow[1]);
+    uint8x16_t h4 = vld1q_u8 (aes->ghash_h_pow[2]);
+    uint8x16_t h5 = vld1q_u8 (aes->ghash_h_pow[3]);
+    uint8x16_t h6 = vld1q_u8 (aes->ghash_h_pow[4]);
+    uint8x16_t h7 = vld1q_u8 (aes->ghash_h_pow[5]);
+    uint8x16_t h8 = vld1q_u8 (aes->ghash_h_pow[6]);
+
+    while (nblocks >= 8) {
+      uint8x16_t b0 = vrbitq_u8 (vld1q_u8 (data +   0));
+      uint8x16_t b1 = vrbitq_u8 (vld1q_u8 (data +  16));
+      uint8x16_t b2 = vrbitq_u8 (vld1q_u8 (data +  32));
+      uint8x16_t b3 = vrbitq_u8 (vld1q_u8 (data +  48));
+      uint8x16_t b4 = vrbitq_u8 (vld1q_u8 (data +  64));
+      uint8x16_t b5 = vrbitq_u8 (vld1q_u8 (data +  80));
+      uint8x16_t b6 = vrbitq_u8 (vld1q_u8 (data +  96));
+      uint8x16_t b7 = vrbitq_u8 (vld1q_u8 (data + 112));
+      uint8x16_t a0 = veorq_u8 (y_br, b0);
+
+      lo = vdupq_n_u8 (0);
+      hi = vdupq_n_u8 (0);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, a0, h8);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b1, h7);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b2, h6);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b3, h5);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b4, h4);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b5, h3);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b6, h2);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b7, h1);
+      y_br = r_ghash_reduce_pmull (lo, hi);
+
+      data += 128;
+      nblocks -= 8;
+    }
+  }
+
   if (nblocks >= 4) {
     uint8x16_t h2 = vld1q_u8 (aes->ghash_h_pow[0]);
     uint8x16_t h3 = vld1q_u8 (aes->ghash_h_pow[1]);
     uint8x16_t h4 = vld1q_u8 (aes->ghash_h_pow[2]);
 
-    while (nblocks >= 4) {
-      uint8x16_t b0 = vrbitq_u8 (vld1q_u8 (data +  0));
-      uint8x16_t b1 = vrbitq_u8 (vld1q_u8 (data + 16));
-      uint8x16_t b2 = vrbitq_u8 (vld1q_u8 (data + 32));
-      uint8x16_t b3 = vrbitq_u8 (vld1q_u8 (data + 48));
-      uint8x16_t a0 = veorq_u8 (y_br, b0);
+    uint8x16_t b0 = vrbitq_u8 (vld1q_u8 (data +  0));
+    uint8x16_t b1 = vrbitq_u8 (vld1q_u8 (data + 16));
+    uint8x16_t b2 = vrbitq_u8 (vld1q_u8 (data + 32));
+    uint8x16_t b3 = vrbitq_u8 (vld1q_u8 (data + 48));
+    uint8x16_t a0 = veorq_u8 (y_br, b0);
 
-      lo = vdupq_n_u8 (0);
-      hi = vdupq_n_u8 (0);
-      r_ghash_poly_mul_acc_pmull (&lo, &hi, a0, h4);
-      r_ghash_poly_mul_acc_pmull (&lo, &hi, b1, h3);
-      r_ghash_poly_mul_acc_pmull (&lo, &hi, b2, h2);
-      r_ghash_poly_mul_acc_pmull (&lo, &hi, b3, h1);
-      y_br = r_ghash_reduce_pmull (lo, hi);
+    lo = vdupq_n_u8 (0);
+    hi = vdupq_n_u8 (0);
+    r_ghash_poly_mul_acc_pmull (&lo, &hi, a0, h4);
+    r_ghash_poly_mul_acc_pmull (&lo, &hi, b1, h3);
+    r_ghash_poly_mul_acc_pmull (&lo, &hi, b2, h2);
+    r_ghash_poly_mul_acc_pmull (&lo, &hi, b3, h1);
+    y_br = r_ghash_reduce_pmull (lo, hi);
 
-      data += 64;
-      nblocks -= 4;
-    }
+    data += 64;
+    nblocks -= 4;
   }
 
   while (nblocks > 0) {
