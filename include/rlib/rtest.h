@@ -430,7 +430,7 @@ int main (int argc, rchar ** argv) {                                            
       "Also run HEAVY_RTEST_* tests (slow but not broken)", NULL, NULL },       \
     { "broken",      'B', R_ARG_OPTION_TYPE_BOOL,     R_ARG_OPTION_FLAG_NONE,   \
       "Also run BROKEN_RTEST_* tests (likely to fail)", NULL, NULL },           \
-    { "filter",      'f', R_ARG_OPTION_TYPE_STRING,   R_ARG_OPTION_FLAG_NONE,   \
+    { "filter", 'f', R_ARG_OPTION_TYPE_STRING_ARRAY, R_ARG_OPTION_FLAG_NONE,    \
       "Filter on test path - default is * (\"/<suite>/<name>\")", NULL, NULL }, \
     { "output",      'o', R_ARG_OPTION_TYPE_FILENAME, R_ARG_OPTION_FLAG_NONE,   \
       "File to print results to, use - for stdout [default]", NULL, NULL },     \
@@ -444,7 +444,7 @@ int main (int argc, rchar ** argv) {                                            
     FILE * f = stdout;                                                          \
     RTestReportFlag report_flags = R_TEST_REPORT_FLAG_NONE;                     \
     RTestRunFlag run_flags = R_TEST_RUN_FLAG_NONE;                              \
-    rchar * output, * filter = NULL;                                            \
+    rchar * output, ** filters = NULL;                                          \
                                                                                 \
     if (r_arg_parse_ctx_get_option_bool (ctx, "verbose"))                       \
       report_flags |= R_TEST_REPORT_FLAG_VERBOSE;                               \
@@ -463,18 +463,18 @@ int main (int argc, rchar ** argv) {                                            
       r_free (output);                                                          \
     }                                                                           \
                                                                                 \
-    filter = r_arg_parse_ctx_get_option_string (ctx, "filter");                 \
+    filters = r_arg_parse_ctx_get_option_string_array (ctx, "filter");          \
     if ((tests = r_test_get_module_tests (NULL, &count)) != NULL &&             \
         (report = r_test_run_tests (tests, count, run_flags, f,                 \
-            R_TEST_ALL_MASK, filter)) != NULL) {                                \
+            R_TEST_ALL_MASK, filters)) != NULL) {                               \
       r_test_report_print (report, report_flags, f);                            \
-      ret = (int) (report->fail + report->error);                              \
+      ret = (int) (report->fail + report->error);                               \
       r_test_report_free (report);                                              \
     }                                                                           \
     if (f != stdout)                                                            \
       fclose (f);                                                               \
                                                                                 \
-    r_free (filter);                                                            \
+    r_strv_free (filters);                                                      \
     r_arg_parse_ctx_unref (ctx);                                                \
   } else {                                                                      \
     ret = r_arg_parser_print_help (parser, R_ARG_PARSE_FLAG_DONT_EXIT, NULL, 1);\
@@ -542,20 +542,24 @@ R_API RTestReport * r_test_run_tests_full (const RTest * tests, rsize count,
     RTestRunFlag flags, FILE * f, RTestFilterFunc filter, rpointer data);
 /**
  * @brief Convenience wrapper around @c r_test_run_tests_full that
- * filters by a type bitmask and a @c r_str_match_simple_pattern-
- * compatible path glob.
+ * filters by a type bitmask and a NULL-terminated array of
+ * @c r_str_match_simple_pattern-compatible path globs.
  *
- * @param tests   Array of tests (typically from @c r_test_get_module_tests).
- * @param count   Number of entries in @p tests.
- * @param flags   Run-time opt-in flags (@c R_TEST_RUN_FLAG_*).
- * @param f       Output FILE for live status lines.
- * @param type    Bitmask of @c R_TEST_TYPE_* base types to include;
- *                use @c R_TEST_ALL_MASK to accept everything.
- * @param filter  Wildcard pattern matched against @c /\<suite\>/\<name\>;
- *                @c NULL accepts every path.
+ * A test runs when its type matches @p type AND at least one of the
+ * @p filters patterns matches its @c /\<suite\>/\<name\> path
+ * (any-match OR semantics across the array).
+ *
+ * @param tests    Array of tests (typically from @c r_test_get_module_tests).
+ * @param count    Number of entries in @p tests.
+ * @param flags    Run-time opt-in flags (@c R_TEST_RUN_FLAG_*).
+ * @param f        Output FILE for live status lines.
+ * @param type     Bitmask of @c R_TEST_TYPE_* base types to include;
+ *                 use @c R_TEST_ALL_MASK to accept everything.
+ * @param filters  NULL-terminated array of wildcard patterns; @c NULL
+ *                 (or an empty array) accepts every path.
  */
 R_API RTestReport * r_test_run_tests (const RTest * tests, rsize count,
-    RTestRunFlag flags, FILE * f, RTestType type, const rchar * filter);
+    RTestRunFlag flags, FILE * f, RTestType type, rchar * const * filters);
 /** @brief Release a report returned by @c r_test_run_tests / _full. */
 #define r_test_report_free(report)  r_free (report)
 
