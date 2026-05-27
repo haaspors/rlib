@@ -374,3 +374,92 @@ FE_FN (invmod_mont) (FE_TYPE * out, const FE_TYPE * a_M,
   FE_FN (copy) (out, &R[0]);
   r_memclear_secure (R, sizeof (R));
 }
+
+/* ---- Wide (non-modular) primitives. Used by the RSA CRT recombination
+ * to assemble m = m2 + h * q in constant time outside of any single
+ * modular field - the result is the full plaintext, valid mod n but
+ * sized as a wide integer for the rmpint hand-off. ---- */
+
+/* Schoolbook multiply: out = a * b, treating a as a_n digits and b
+ * as b_n digits. Output is up to (a_n + b_n) digits in normal
+ * (non-Montgomery) form; trailing positions in [a_n + b_n, FE_MAX)
+ * are zero-padded. Caller is responsible for ensuring
+ * a_n + b_n <= FE_MAX (the field-element storage cap).
+ *
+ * Constant-time in operand contents: no early-out, no data-dependent
+ * branches. Loop counts depend on a_n and b_n only (public). */
+void
+FE_FN (mul_ct) (FE_TYPE * out, const FE_TYPE * a, ruint16 a_n,
+    const FE_TYPE * b, ruint16 b_n)
+{
+  ruint16 i, j, total = (ruint16)(a_n + b_n);
+  rmpint_digit c;
+  rmpint_word u;
+
+  for (i = 0; i < FE_MAX; i++) out->d[i] = 0;
+
+  for (i = 0; i < a_n; i++) {
+    c = 0;
+    for (j = 0; j < b_n; j++) {
+      u = (rmpint_word)a->d[i] * (rmpint_word)b->d[j] +
+          (rmpint_word)out->d[i + j] + (rmpint_word)c;
+      out->d[i + j] = (rmpint_digit)u;
+      c = (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8));
+    }
+    if (i + b_n < FE_MAX) out->d[i + b_n] = c;
+  }
+  /* total <= FE_MAX by precondition; the conditional store inside
+   * the loop already covers the carry-out into position total - 1. */
+  (void) total;
+}
+
+/* Wide add: out = a + b, treating a as a_n digits, b as b_n.
+ * Output is max(a_n, b_n) + 1 digits (one for the carry-out);
+ * trailing positions zero-padded. Caller ensures the carry-out
+ * position fits in FE_MAX. Constant-time in operand contents. */
+void
+FE_FN (add_ct) (FE_TYPE * out, const FE_TYPE * a, ruint16 a_n,
+    const FE_TYPE * b, ruint16 b_n)
+{
+  ruint16 i, max_n = a_n > b_n ? a_n : b_n;
+  rmpint_digit carry = 0;
+  rmpint_word u;
+
+  for (i = 0; i < max_n; i++) {
+    rmpint_digit av = (i < a_n) ? a->d[i] : (rmpint_digit)0;
+    rmpint_digit bv = (i < b_n) ? b->d[i] : (rmpint_digit)0;
+    u = (rmpint_word)av + (rmpint_word)bv + (rmpint_word)carry;
+    out->d[i] = (rmpint_digit)u;
+    carry = (rmpint_digit)(u >> (sizeof (rmpint_digit) * 8));
+  }
+  if (max_n < FE_MAX) out->d[max_n] = carry;
+  for (i = (ruint16)(max_n + 1); i < FE_MAX; i++) out->d[i] = 0;
+}
+
+/* Conditional-subtract-once reduction mod p: out = (a < p) ? a : a - p.
+ * The CRT recombination uses this to land m2 (which is < q < 2p for
+ * any sensibly-chosen RSA key) inside the p-field; outside that
+ * precondition the function is well-defined but the result is not
+ * "a mod p". Constant-time. */
+void
+FE_FN (mod_ct) (FE_TYPE * out, const FE_TYPE * a, const FE_CTX * ctx)
+{
+  FE_TYPE t;
+  ruint16 i, n = ctx->n_digits;
+  rmpint_word u;
+  rmpint_digit borrow = 0, mask;
+
+  /* t = a - p, n digits. Borrow flags "a < p". */
+  for (i = 0; i < n; i++) {
+    u = (rmpint_word)a->d[i] - (rmpint_word)ctx->p.d[i] - (rmpint_word)borrow;
+    t.d[i] = (rmpint_digit)u;
+    borrow = (rmpint_digit)((u >> (sizeof (rmpint_digit) * 8)) & 1u);
+  }
+
+  /* borrow == 1 → a < p, keep a. borrow == 0 → a >= p, use t. */
+  mask = (rmpint_digit)0 - (rmpint_digit)((borrow & 1u) ^ 1u);
+  for (i = 0; i < n; i++)
+    out->d[i] = (a->d[i] & ~mask) | (t.d[i] & mask);
+  for (i = n; i < FE_MAX; i++)
+    out->d[i] = 0;
+}
