@@ -256,7 +256,11 @@ typedef enum {
  *    and @c skip_broken to recover the @c SKIP_RTEST_* (temporarily
  *    disabled) count.
  *  - @c filtered is the count of tests excluded by the -f filter or
- *    a type mask that weren't already gated.
+ *    a type mask that weren't already gated. The @c filtered_pattern
+ *    and @c filtered_type sub-buckets are populated only when the
+ *    default filter is in use (i.e. via @c r_test_run_tests); custom
+ *    filters via @c r_test_run_tests_full leave them at zero and only
+ *    the @c filtered total is meaningful.
  */
 typedef struct {
   rsize total;            /**< Number of tests considered. */
@@ -264,6 +268,8 @@ typedef struct {
   rsize skip_heavy;       /**< Subcount of @c skip - @c HEAVY_RTEST_* tests. */
   rsize skip_broken;      /**< Subcount of @c skip - @c BROKEN_RTEST_* tests. */
   rsize filtered;         /**< Tests excluded by -f / type mask. */
+  rsize filtered_pattern; /**< Subcount of @c filtered rejected by -f. */
+  rsize filtered_type;    /**< Subcount of @c filtered rejected by the type mask. */
   rsize success;          /**< Passed runs. */
   rsize fail;             /**< Failed runs (assertion). */
   rsize error;            /**< Errored runs (crash / timeout / unknown). */

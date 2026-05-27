@@ -1285,6 +1285,13 @@ typedef struct {
   RTestType type;
   const rchar * filter;
   RTestRunFlag flags;
+  /* Side-channel for r_test_run_tests so it can publish a breakdown
+   * of which rejection source dropped each filtered test. Bumped only
+   * for tests the runner would itself count as filtered (i.e. those
+   * with R_TEST_NO_SKIP - skip-gated tests are counted as skip, not
+   * filtered, even when the default filter is what rejected them). */
+  rsize filtered_pattern;
+  rsize filtered_type;
 } RTestFilterCtx;
 
 static rboolean
@@ -1296,8 +1303,11 @@ r_test_filter_default (const RTest * test, rsize __i, rpointer data)
 
   (void)__i;
 
-  if ((ctx->type & test->type) == 0)
+  if ((ctx->type & test->type) == 0) {
+    if (test->skip == R_TEST_NO_SKIP)
+      ctx->filtered_type++;
     return FALSE;
+  }
   if (test->skip) {
     /* One INCLUDE_* flag per skip category, independently gated so
      * e.g. a --heavy nightly doesn't drag BROKEN tests in with it. */
@@ -1328,6 +1338,8 @@ r_test_filter_default (const RTest * test, rsize __i, rpointer data)
   ret = r_str_match_simple_pattern (fullname, -1, wf);
   r_free (wf);
 
+  if (!ret && test->skip == R_TEST_NO_SKIP)
+    ctx->filtered_pattern++;
   return ret;
 }
 
@@ -1335,8 +1347,14 @@ RTestReport *
 r_test_run_tests (const RTest * tests, rsize count, RTestRunFlag flags, FILE * f,
     RTestType type, const rchar * filter)
 {
-  RTestFilterCtx ctx = { type, filter, flags };
-  return r_test_run_tests_full (tests, count, flags, f, r_test_filter_default, &ctx);
+  RTestFilterCtx ctx = { type, filter, flags, 0, 0 };
+  RTestReport * ret = r_test_run_tests_full (tests, count, flags, f,
+      r_test_filter_default, &ctx);
+  if (ret != NULL) {
+    ret->filtered_pattern = ctx.filtered_pattern;
+    ret->filtered_type = ctx.filtered_type;
+  }
+  return ret;
 }
 
 void
@@ -1441,9 +1459,27 @@ r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
       _TIME_CLR, R_TIME_ARGS (elapsed), _RESET_CLR);
 
   if (report->filtered > 0) {
-    r_fprintf (f,
-        "Filtered: %s%"RSIZE_FMT"%s   (by -f / type mask)\n",
-        _SKIP_ARGS (report->filtered));
+    /* Default filter populates the sub-buckets so we can name the
+     * rejection source; custom filters via r_test_run_tests_full
+     * leave both at zero - fall back to the plain total there. */
+    if (report->filtered_pattern + report->filtered_type ==
+        report->filtered) {
+      if (report->filtered_pattern > 0 && report->filtered_type > 0) {
+        r_fprintf (f,
+            "Filtered: %s%"RSIZE_FMT"%s by -f, %s%"RSIZE_FMT"%s by type mask\n",
+            _SKIP_ARGS (report->filtered_pattern),
+            _SKIP_ARGS (report->filtered_type));
+      } else if (report->filtered_pattern > 0) {
+        r_fprintf (f, "Filtered: %s%"RSIZE_FMT"%s by -f\n",
+            _SKIP_ARGS (report->filtered_pattern));
+      } else {
+        r_fprintf (f, "Filtered: %s%"RSIZE_FMT"%s by type mask\n",
+            _SKIP_ARGS (report->filtered_type));
+      }
+    } else {
+      r_fprintf (f, "Filtered: %s%"RSIZE_FMT"%s\n",
+          _SKIP_ARGS (report->filtered));
+    }
   }
 
   if (report->skip > 0) {
