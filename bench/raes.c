@@ -179,3 +179,89 @@ RTEST_BENCH (raes, ofb_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
   r_crypto_cipher_unref (c);
 }
 RTEST_END;
+
+/* AEAD bench: same loop / per-call buffer size as the non-AEAD modes
+ * so the headlines are directly comparable. GCM IV is 12 bytes,
+ * CCM IV is 13 bytes (max L=2 keeps the plaintext-size cap > 16 KiB).
+ * AAD is empty so the headline reflects pure encrypt + tag throughput;
+ * AAD overhead is a separate concern tracked elsewhere. */
+static void
+run_aes_aead_bench (RCryptoCipher * cipher, const rchar * label,
+    rsize ivsize)
+{
+  ruint8 * input;
+  ruint8 * output;
+  ruint8 iv[16];
+  ruint8 tag[16];
+  RClockTime start, end;
+  ruint i;
+
+  r_assert_cmpptr ((input = r_malloc (AES_BENCH_BLOCKSIZE)), !=, NULL);
+  r_assert_cmpptr ((output = r_malloc (AES_BENCH_BLOCKSIZE)), !=, NULL);
+  for (i = 0; i < AES_BENCH_BLOCKSIZE; i++)
+    input[i] = (ruint8)i;
+
+  for (i = 0; i < 5; i++) {
+    r_memset (iv, 0, sizeof (iv));
+    iv[0] = (ruint8)i;
+    r_assert_cmpint (r_crypto_cipher_encrypt_aead (cipher, output,
+          AES_BENCH_BLOCKSIZE, input, NULL, 0, iv, ivsize, tag, sizeof (tag)),
+        ==, R_CRYPTO_CIPHER_OK);
+  }
+
+  start = r_time_get_ts_monotonic ();
+  for (i = 0; i < AES_BENCH_ITERS; i++) {
+    r_memset (iv, 0, sizeof (iv));
+    iv[0] = (ruint8)(i & 0xff);
+    iv[1] = (ruint8)((i >> 8) & 0xff);
+    r_assert_cmpint (r_crypto_cipher_encrypt_aead (cipher, output,
+          AES_BENCH_BLOCKSIZE, input, NULL, 0, iv, ivsize, tag, sizeof (tag)),
+        ==, R_CRYPTO_CIPHER_OK);
+  }
+  end = r_time_get_ts_monotonic ();
+
+  print_aes_result (label, AES_BENCH_ITERS, AES_BENCH_BLOCKSIZE, end - start);
+
+  r_free (input);
+  r_free (output);
+}
+
+RTEST_BENCH (raes, gcm_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_128_gcm_new (aes_bench_key)), !=, NULL);
+  run_aes_aead_bench (c, "128 GCM", 12);
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
+
+RTEST_BENCH (raes, gcm_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_256_gcm_new (aes_bench_key)), !=, NULL);
+  run_aes_aead_bench (c, "256 GCM", 12);
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
+
+RTEST_BENCH (raes, ccm_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_128_ccm_new (aes_bench_key)), !=, NULL);
+  run_aes_aead_bench (c, "128 CCM", 13);
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
+
+RTEST_BENCH (raes, ccm_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+{
+  RCryptoCipher * c;
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  r_assert_cmpptr ((c = r_cipher_aes_256_ccm_new (aes_bench_key)), !=, NULL);
+  run_aes_aead_bench (c, "256 CCM", 13);
+  r_crypto_cipher_unref (c);
+}
+RTEST_END;
