@@ -31,6 +31,7 @@ rlibtest_sources = [
   'recurve.c',
   'recurve-edwards.c',
   'red25519.c',
+  'red448.c',
   'recurve-montgomery.c',
   'rxdh.c',
   'rdirtree.c',
