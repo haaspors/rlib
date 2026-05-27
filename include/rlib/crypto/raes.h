@@ -87,26 +87,47 @@ R_API RCryptoCipher * r_cipher_aes_new_from_hex (RCryptoCipherMode mode, const r
  * key size. Use these when the cipher choice is fixed at compile time.
  * @{
  */
+/** @brief Create an AES-128 ECB cipher. */
 R_API RCryptoCipher * r_cipher_aes_128_ecb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-192 ECB cipher. */
 R_API RCryptoCipher * r_cipher_aes_192_ecb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-256 ECB cipher. */
 R_API RCryptoCipher * r_cipher_aes_256_ecb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-128 CBC cipher. */
 R_API RCryptoCipher * r_cipher_aes_128_cbc_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-192 CBC cipher. */
 R_API RCryptoCipher * r_cipher_aes_192_cbc_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-256 CBC cipher. */
 R_API RCryptoCipher * r_cipher_aes_256_cbc_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-128 CTR cipher. */
 R_API RCryptoCipher * r_cipher_aes_128_ctr_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-192 CTR cipher. */
 R_API RCryptoCipher * r_cipher_aes_192_ctr_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-256 CTR cipher. */
 R_API RCryptoCipher * r_cipher_aes_256_ctr_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-128 CFB cipher. */
 R_API RCryptoCipher * r_cipher_aes_128_cfb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-192 CFB cipher. */
 R_API RCryptoCipher * r_cipher_aes_192_cfb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-256 CFB cipher. */
 R_API RCryptoCipher * r_cipher_aes_256_cfb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-128 OFB cipher. */
 R_API RCryptoCipher * r_cipher_aes_128_ofb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-192 OFB cipher. */
 R_API RCryptoCipher * r_cipher_aes_192_ofb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-256 OFB cipher. */
 R_API RCryptoCipher * r_cipher_aes_256_ofb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-128 GCM cipher (AEAD). */
 R_API RCryptoCipher * r_cipher_aes_128_gcm_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-192 GCM cipher (AEAD). */
 R_API RCryptoCipher * r_cipher_aes_192_gcm_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-256 GCM cipher (AEAD). */
 R_API RCryptoCipher * r_cipher_aes_256_gcm_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-128 CCM cipher (AEAD). */
 R_API RCryptoCipher * r_cipher_aes_128_ccm_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-192 CCM cipher (AEAD). */
 R_API RCryptoCipher * r_cipher_aes_192_ccm_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Create an AES-256 CCM cipher (AEAD). */
 R_API RCryptoCipher * r_cipher_aes_256_ccm_new (const ruint8 * key) R_ATTR_MALLOC;
 /** @} */
 
@@ -150,26 +171,34 @@ R_API rboolean r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
  * @c _decrypt alias resolves to its @c _encrypt sibling.
  * @{
  */
+/** @brief AES-ECB encrypt. */
 R_API RCryptoCipherResult r_cipher_aes_ecb_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+/** @brief AES-ECB decrypt. */
 R_API RCryptoCipherResult r_cipher_aes_ecb_decrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 
+/** @brief AES-CBC encrypt. */
 R_API RCryptoCipherResult r_cipher_aes_cbc_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+/** @brief AES-CBC decrypt. */
 R_API RCryptoCipherResult r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 
+/** @brief AES-CTR encrypt (also covers decrypt; see alias below). */
 R_API RCryptoCipherResult r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 /** @brief CTR is self-inverse; decrypt resolves to encrypt. */
 #define r_cipher_aes_ctr_decrypt r_cipher_aes_ctr_encrypt
 
+/** @brief AES-CFB encrypt. */
 R_API RCryptoCipherResult r_cipher_aes_cfb_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+/** @brief AES-CFB decrypt. */
 R_API RCryptoCipherResult r_cipher_aes_cfb_decrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 
+/** @brief AES-OFB encrypt (also covers decrypt; see alias below). */
 R_API RCryptoCipherResult r_cipher_aes_ofb_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 /** @brief OFB is self-inverse; decrypt resolves to encrypt. */
