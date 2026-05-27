@@ -98,4 +98,10 @@
 #mesondefine HAVE_PTHREAD_SETAFFINITY_NP
 #mesondefine HAVE_PTHREAD_ATTR_SETAFFINITY_NP
 
+#mesondefine HAVE_NMMINTRIN_H
+#mesondefine HAVE_WMMINTRIN_H
+#mesondefine HAVE_ARM_NEON_H
+#mesondefine HAVE_ARM_ACLE_H
+#mesondefine HAVE_INTRIN_H
+
 #endif /* _CONFIG_H_MESON_ */

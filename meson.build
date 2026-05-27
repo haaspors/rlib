@@ -273,6 +273,30 @@ elif host_machine.system() == 'darwin'
   ]
 endif
 
+# SIMD / hardware-acceleration intrinsic headers. Used by rcrc.c and
+# raes.c to decide which HW-dispatch path to compile in. has_header
+# is cheap and decoupled from compiler / arch macros, which keeps
+# the per-arch ifdef shape out of the C source.
+if host_machine.cpu_family() in [ 'x86', 'x86_64' ]
+  check_headers += [
+    'nmmintrin.h',  # SSE4.2 (CRC32C)
+    'wmmintrin.h',  # AES-NI
+  ]
+elif host_machine.cpu_family() == 'aarch64'
+  check_headers += [
+    'arm_neon.h',   # NEON + ARMv8 AES
+    'arm_acle.h',   # ACLE (CRC32, etc.) - GCC / clang
+  ]
+  # intrin.h is an MSVC header. GCC / clang ship a same-named shim
+  # that satisfies cc.has_header (the file exists) but errors out
+  # on actual #include via #include_next once the platform-level
+  # header is missing. Restrict the probe to MSVC so HAVE_INTRIN_H
+  # truthfully means "real MSVC intrin.h, includable".
+  if cc.get_id() == 'msvc'
+    check_headers += [ 'intrin.h' ]
+  endif
+endif
+
 check_funcs = [
   # unistd
   [ 'alarm', 'unistd.h' ],
