@@ -682,14 +682,14 @@ R_AES_AESNI_BLOCKS_X4 (r_cipher_aes_ecb_decrypt_blocks_aesni_256, drk,
       ruint8 dst[R_AES_BLOCK_BYTES], const ruint8 src[R_AES_BLOCK_BYTES])    \
   {                                                                          \
     uint8x16_t block = vld1q_u8 (src);                                       \
-    const ruint8 * rk = (const ruint8 *)aes->erk + (rounds) * 16;            \
+    const ruint8 * rk = (const ruint8 *)aes->drk;                            \
     ruint8 i;                                                                \
-    for (i = 0; i < (rounds) - 1; i++, rk -= 16) {                           \
+    for (i = 0; i < (rounds) - 1; i++, rk += 16) {                           \
       block = vaesdq_u8 (block, vld1q_u8 (rk));                              \
       block = vaesimcq_u8 (block);                                           \
     }                                                                        \
     block = vaesdq_u8 (block, vld1q_u8 (rk));                                \
-    rk -= 16;                                                                \
+    rk += 16;                                                                \
     block = veorq_u8 (block, vld1q_u8 (rk));                                 \
     vst1q_u8 (dst, block);                                                   \
     return TRUE;                                                             \
@@ -744,17 +744,17 @@ R_AES_ARMV8_DECRYPT (r_cipher_aes_ecb_decrypt_block_armv8_256, 14)
     uint8x16_t b1 = vld1q_u8 (src + 16);                                      \
     uint8x16_t b2 = vld1q_u8 (src + 32);                                      \
     uint8x16_t b3 = vld1q_u8 (src + 48);                                      \
-    const ruint8 * rk = (const ruint8 *)aes->erk + (rounds) * 16;             \
+    const ruint8 * rk = (const ruint8 *)aes->drk;                             \
     uint8x16_t k;                                                             \
     ruint8 i;                                                                 \
-    for (i = 0; i < (rounds) - 1; i++, rk -= 16) {                            \
+    for (i = 0; i < (rounds) - 1; i++, rk += 16) {                            \
       k = vld1q_u8 (rk);                                                      \
       b0 = vaesdq_u8 (b0, k); b0 = vaesimcq_u8 (b0);                          \
       b1 = vaesdq_u8 (b1, k); b1 = vaesimcq_u8 (b1);                          \
       b2 = vaesdq_u8 (b2, k); b2 = vaesimcq_u8 (b2);                          \
       b3 = vaesdq_u8 (b3, k); b3 = vaesimcq_u8 (b3);                          \
     }                                                                         \
-    k = vld1q_u8 (rk); rk -= 16;                                              \
+    k = vld1q_u8 (rk); rk += 16;                                              \
     b0 = vaesdq_u8 (b0, k); b1 = vaesdq_u8 (b1, k);                           \
     b2 = vaesdq_u8 (b2, k); b3 = vaesdq_u8 (b3, k);                           \
     k = vld1q_u8 (rk);                                                        \
