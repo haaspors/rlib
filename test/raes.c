@@ -467,6 +467,29 @@ static const RAesGcmTestData GCM_test_data[] = {
                  "7598a2bd2555d1aa8cb08e48590dbb3da7b08b1056828838"
                  "c5f61e6393ba7a0abcc9f662",
     .tag = "76fc6ece0f4e1768cddf8853bb2d551b"
+  },
+  { /* 200-byte AES-256-GCM, exercises 3 full 4-way CTR iterations +
+     * trailing partial block. Generated with pyca/cryptography. */
+    .keybits = 256,
+    .key = "feffe9928665731c6d6a8f9467308308"
+           "feffe9928665731c6d6a8f9467308308",
+    .iv  = "cafebabefacedbaddecaf888",
+    .aad = "feedfacedeadbeeffeedfacedeadbeefabaddad2",
+    .plaintxt  = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+                 "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+                 "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+                 "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+                 "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+                 "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+                 "c0c1c2c3c4c5c6c7",
+    .ciphertxt = "8b1df1d665d77de5592f346d897c6ae8f28c379cbec4210443cd889bb37945c7"
+                 "b0ada0fee8409449a056af1f3309133244adc1a50d82aa6a3e93b760af12f9c7"
+                 "24ee3915a4a83b0d00dcc456bab5aea08ccfbce7bf43ff5e032e478d049947aa"
+                 "079af6eb7e11f5143d36b7161c5aa3c2f0ff1bcc1abe72b8d64a51d469f49a2c"
+                 "3c18b3626061aba40267453583a5c2d0dac05bf17b416ca2cf8fea3aa56510e6"
+                 "5c50d9373ca33d90f9bc09db6a51d324fdeeabe11aefcba64855a71ec040796d"
+                 "18dde7d762c2ca65",
+    .tag = "bf064656ce9919b2c9df3879f520e4d5"
   }
 };
 
