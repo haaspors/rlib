@@ -1255,6 +1255,8 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
             ret->skip++;
             if (tests[i].skip == R_TEST_SKIP_HEAVY) ret->skip_heavy++;
             else if (tests[i].skip == R_TEST_SKIP_BROKEN) ret->skip_broken++;
+          } else {
+            ret->filtered++;
           }
         }
       }
@@ -1430,7 +1432,7 @@ r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
    * gated, to keep the trivial case quiet. */
   r_fprintf (f,
       "%s\n"
-      "Result: %s%"RSIZE_FMT" passed%s, %s%"RSIZE_FMT" failed%s, "
+      "Result:   %s%"RSIZE_FMT" passed%s, %s%"RSIZE_FMT" failed%s, "
           "%s%"RSIZE_FMT" errors%s   [%s%"R_TIME_FORMAT"%s]\n",
       "================================================================================",
       _SUCC_ARGS (report->success),
@@ -1438,11 +1440,17 @@ r_test_report_print (RTestReport * report, RTestReportFlag flags, FILE * f)
       _ERR_ARGS (report->error),
       _TIME_CLR, R_TIME_ARGS (elapsed), _RESET_CLR);
 
+  if (report->filtered > 0) {
+    r_fprintf (f,
+        "Filtered: %s%"RSIZE_FMT"%s   (by -f / type mask)\n",
+        _SKIP_ARGS (report->filtered));
+  }
+
   if (report->skip > 0) {
     /* report->skip is the grand total. Subtract the sub-bucket
      * counters to recover the SKIP_RTEST_* (temp) count. */
     r_fprintf (f,
-        "Gated:  %s%"RSIZE_FMT" skip%s, %s%"RSIZE_FMT" heavy%s, "
+        "Gated:    %s%"RSIZE_FMT" skip%s, %s%"RSIZE_FMT" heavy%s, "
             "%s%"RSIZE_FMT" broken%s   (--include-skip / --heavy / --broken to opt in)\n",
         _SKIP_ARGS (report->skip - report->skip_heavy - report->skip_broken),
         _HEAVY_ARGS (report->skip_heavy),
