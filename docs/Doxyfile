@@ -31,6 +31,13 @@ EXTRACT_STATIC          = YES
 
 OPTIMIZE_OUTPUT_FOR_C   = YES
 
+# Hide rlib's opaque-handle internals: the public API exposes
+# `typedef struct _Foo Foo;` but only Foo is meant to appear in
+# generated docs. Excluding _*-prefixed symbols drops the
+# implementation-side struct definitions from the navtree and
+# class lists without affecting the public typedefs.
+EXCLUDE_SYMBOLS         = _*
+
 # Don't pull Markdown headings into the navigation tree. Without this,
 # the README's Setext-style H1 / H2 headings get auto-nested under
 # the "Data Structures" navtree node (a known Doxygen quirk when the
