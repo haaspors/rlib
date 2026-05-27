@@ -28,8 +28,10 @@ RTEST (raes, new_args, RTEST_FAST)
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 129, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 255, key), ==, NULL);
 
-  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 128, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CCM, 128, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 0, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 129, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 255, key), ==, NULL);
 }
 RTEST_END;
 
@@ -384,6 +386,146 @@ RTEST_LOOP (raes, ofb, RTEST_FAST, 0, R_N_ELEMENTS (OFB_test_data))
   r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, R_AES_BLOCK_BYTES), ==, R_AES_BLOCK_BYTES);
   r_assert_cmpint (r_cipher_aes_ofb_decrypt (cipher, out, plainsize, ciphertxt, iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_OK);
   r_assert_cmpmem (out, ==, plaintxt, plainsize);
+
+  r_crypto_cipher_unref (cipher);
+  r_free (plaintxt);
+  r_free (ciphertxt);
+  r_free (out);
+}
+RTEST_END;
+
+/* AES-GCM vectors from NIST SP 800-38D Appendix B. */
+typedef struct {
+  ruint16 keybits;
+  const rchar * key;
+  const rchar * iv;
+  const rchar * aad;
+  const rchar * plaintxt;
+  const rchar * ciphertxt;
+  const rchar * tag;
+} RAesGcmTestData;
+
+static const RAesGcmTestData GCM_test_data[] = {
+  { /* SP 800-38D test case 2 */
+    .keybits = 128,
+    .key = "00000000000000000000000000000000",
+    .iv  = "000000000000000000000000",
+    .aad = "",
+    .plaintxt  = "00000000000000000000000000000000",
+    .ciphertxt = "0388dace60b6a392f328c2b971b2fe78",
+    .tag = "ab6e47d42cec13bdf53a67b21257bddf"
+  },
+  { /* SP 800-38D test case 3 */
+    .keybits = 128,
+    .key = "feffe9928665731c6d6a8f9467308308",
+    .iv  = "cafebabefacedbaddecaf888",
+    .aad = "",
+    .plaintxt  = "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da"
+                 "2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525"
+                 "b16aedf5aa0de657ba637b391aafd255",
+    .ciphertxt = "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e0"
+                 "35c17e2329aca12e21d514b25466931c7d8f6a5aac84aa05"
+                 "1ba30b396a0aac973d58e091473f5985",
+    .tag = "4d5c2af327cd64a62cf35abd2ba6fab4"
+  },
+  { /* SP 800-38D test case 4: AAD + partial last plaintext block */
+    .keybits = 128,
+    .key = "feffe9928665731c6d6a8f9467308308",
+    .iv  = "cafebabefacedbaddecaf888",
+    .aad = "feedfacedeadbeeffeedfacedeadbeefabaddad2",
+    .plaintxt  = "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da"
+                 "2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525"
+                 "b16aedf5aa0de657ba637b39",
+    .ciphertxt = "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e0"
+                 "35c17e2329aca12e21d514b25466931c7d8f6a5aac84aa05"
+                 "1ba30b396a0aac973d58e091",
+    .tag = "5bc94fbc3221a5db94fae95ae7121a47"
+  },
+  { /* SP 800-38D test case 14 (AES-256, zero key, single-block zero plaintext) */
+    .keybits = 256,
+    .key = "00000000000000000000000000000000"
+           "00000000000000000000000000000000",
+    .iv  = "000000000000000000000000",
+    .aad = "",
+    .plaintxt  = "00000000000000000000000000000000",
+    .ciphertxt = "cea7403d4d606b6e074ec5d3baf39d18",
+    .tag = "d0d1c8a799996bf0265b98b5d48ab919"
+  },
+  { /* SP 800-38D test case 16 (AES-256 with AAD + partial block) */
+    .keybits = 256,
+    .key = "feffe9928665731c6d6a8f9467308308"
+           "feffe9928665731c6d6a8f9467308308",
+    .iv  = "cafebabefacedbaddecaf888",
+    .aad = "feedfacedeadbeeffeedfacedeadbeefabaddad2",
+    .plaintxt  = "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da"
+                 "2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525"
+                 "b16aedf5aa0de657ba637b39",
+    .ciphertxt = "522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c9"
+                 "7598a2bd2555d1aa8cb08e48590dbb3da7b08b1056828838"
+                 "c5f61e6393ba7a0abcc9f662",
+    .tag = "76fc6ece0f4e1768cddf8853bb2d551b"
+  }
+};
+
+RTEST_LOOP (raes, gcm, RTEST_FAST, 0, R_N_ELEMENTS (GCM_test_data))
+{
+  const RAesGcmTestData * data = &GCM_test_data[__i];
+  RCryptoCipher * cipher;
+  ruint8 key[32];
+  ruint8 iv[12];
+  ruint8 aad[64];
+  ruint8 * plaintxt;
+  ruint8 * ciphertxt;
+  ruint8 tag[16];
+  ruint8 outtag[16];
+  ruint8 * out;
+  rsize plainsize, aadsize, tagsize;
+  rsize keysize = data->keybits / 8;
+
+  plainsize  = r_strlen (data->plaintxt) / 2;
+  aadsize    = r_strlen (data->aad) / 2;
+  tagsize    = r_strlen (data->tag) / 2;
+  plaintxt   = r_malloc (plainsize);
+  ciphertxt  = r_malloc (plainsize);
+  out        = r_malloc (plainsize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->key, key, keysize), ==, keysize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, sizeof (iv)), ==, sizeof (iv));
+  if (aadsize > 0)
+    r_assert_cmpuint (r_str_hex_to_binary (data->aad, aad, aadsize), ==, aadsize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->plaintxt, plaintxt, plainsize), ==, plainsize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->ciphertxt, ciphertxt, plainsize), ==, plainsize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->tag, tag, tagsize), ==, tagsize);
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM,
+          data->keybits, key)), !=, NULL);
+  r_assert (r_crypto_cipher_is_aead (cipher));
+
+  /* Encrypt: produces matching ciphertext + tag. */
+  r_assert_cmpint (r_crypto_cipher_encrypt_aead (cipher, out, plainsize, plaintxt,
+        aadsize > 0 ? aad : NULL, aadsize, iv, sizeof (iv),
+        outtag, tagsize), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, ciphertxt, plainsize);
+  r_assert_cmpmem (outtag, ==, tag, tagsize);
+
+  /* Decrypt: recovers plaintext and verifies tag. */
+  r_assert_cmpint (r_crypto_cipher_decrypt_aead (cipher, out, plainsize, ciphertxt,
+        aadsize > 0 ? aad : NULL, aadsize, iv, sizeof (iv),
+        tag, tagsize), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, plaintxt, plainsize);
+
+  /* Decrypt with a tampered tag fails with AUTH_FAILED. */
+  {
+    ruint8 badtag[16];
+    r_memcpy (badtag, tag, tagsize);
+    badtag[0] ^= 0x01;
+    r_assert_cmpint (r_crypto_cipher_decrypt_aead (cipher, out, plainsize, ciphertxt,
+          aadsize > 0 ? aad : NULL, aadsize, iv, sizeof (iv),
+          badtag, tagsize), ==, R_CRYPTO_CIPHER_AUTH_FAILED);
+  }
+
+  /* Calling the non-AEAD entry point on a GCM cipher is rejected. */
+  r_assert_cmpint (r_crypto_cipher_encrypt (cipher, out, plainsize, plaintxt,
+        iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_NEEDS_AEAD);
 
   r_crypto_cipher_unref (cipher);
   r_free (plaintxt);
