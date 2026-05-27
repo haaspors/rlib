@@ -20,7 +20,10 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [gcc, clang]
-        buildtype: [debugoptimized, release]
+        # PR runs build only debugoptimized to keep CI fast; master
+        # pushes / scheduled / manual runs build both buildtypes.
+        # Same pattern repeated across the other platform jobs.
+        buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
     steps:
       - uses: actions/checkout@v6
       - name: Install dependencies
@@ -51,7 +54,7 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [gcc, clang]
-        buildtype: [debugoptimized, release]
+        buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
     steps:
       - uses: actions/checkout@v6
       - name: Install dependencies
@@ -79,7 +82,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        buildtype: [debugoptimized, release]
+        buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
     steps:
       - uses: actions/checkout@v6
       - name: Install dependencies
@@ -103,7 +106,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        buildtype: [debugoptimized, release]
+        buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
     steps:
       - uses: actions/checkout@v6
       - uses: ilammy/msvc-dev-cmd@v1
@@ -133,7 +136,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        buildtype: [debugoptimized, release]
+        buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
     steps:
       - uses: actions/checkout@v6
       - uses: ilammy/msvc-dev-cmd@v1
