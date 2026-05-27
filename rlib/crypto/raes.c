@@ -85,18 +85,6 @@ typedef struct {
   ruint8 e[16][R_AES_BLOCK_BYTES];
 } RGhashTable;
 
-/* Inline 16-byte block copy. r_memcpy is an extern function the
- * compiler cannot inline (no body visible), so the per-iteration
- * staging sequence in CTR / CBC-dec / CFB-dec became a tight chain
- * of memcpy@plt calls. __builtin_memcpy with a constant size folds
- * to a movdqu / vld1q pair on every modern compiler. */
-static inline void
-r_aes_copy_block (ruint8 dst[R_AES_BLOCK_BYTES],
-    const ruint8 src[R_AES_BLOCK_BYTES])
-{
-  __builtin_memcpy (dst, src, R_AES_BLOCK_BYTES);
-}
-
 /* Big-endian counter add-by-n on a 16-byte AES counter block. Treat
  * the low 8 bytes as a 64-bit big-endian counter (the typical
  * working range for any sane CTR / GCM use): byte-swap to host, add,
@@ -557,10 +545,10 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
        * them via the SW reference (which expects NIST form) BEFORE
        * the in-place bit-reverse of H. ghash_h_pow[i] = H^(i+2). */
       rsize idx, p;
-      r_aes_copy_block (ret->ghash_h_pow[0], ret->ghash_h);
+      r_memcpy (ret->ghash_h_pow[0], ret->ghash_h, R_AES_BLOCK_BYTES);
       r_ghash_mul (ret->ghash_h_pow[0], ret->ghash_h);          /* H^2 */
       for (p = 1; p < 7; p++) {
-        r_aes_copy_block (ret->ghash_h_pow[p], ret->ghash_h_pow[p - 1]);
+        r_memcpy (ret->ghash_h_pow[p], ret->ghash_h_pow[p - 1], R_AES_BLOCK_BYTES);
         r_ghash_mul (ret->ghash_h_pow[p], ret->ghash_h);        /* H^(p+2) */
       }
       for (p = 0; p < 7; p++) {
@@ -1414,10 +1402,10 @@ static __forceinline uint8x16_t
 r_pmull_p64 (uint64_t a, uint64_t b)
 {
   __n64 _a, _b;
-  /* r_memcpy is the portable type-pun. __n64 and uint64_t are both
-   * 8 bytes; MSVC optimises the copy away. */
-  r_memcpy (&_a, &a, sizeof (_a));
-  r_memcpy (&_b, &b, sizeof (_b));
+  /* Plain memcpy as the portable type-pun. __n64 and uint64_t are
+   * both 8 bytes; MSVC optimises the copy away. */
+  memcpy (&_a, &a, sizeof (_a));
+  memcpy (&_b, &b, sizeof (_b));
   return vmull_p64 (_a, _b);
 }
 #else
@@ -1808,7 +1796,7 @@ r_cipher_aes_cbc_encrypt (const RCryptoCipher * cipher,
     for (i = 0; i < R_AES_BLOCK_BYTES; i++)
         dst[i] = ptr[i] ^ iv[i];
     r_cipher_aes_ecb_encrypt_block (cipher, dst, dst);
-    r_aes_copy_block (iv, dst);
+    r_memcpy (iv, dst, R_AES_BLOCK_BYTES);
   }
 
   return R_CRYPTO_CIPHER_OK;
@@ -1849,7 +1837,7 @@ r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
         for (i = 0; i < R_AES_BLOCK_BYTES; i++)
           dst[i + R_AES_BLOCK_BYTES * w] ^= scratch[i + R_AES_BLOCK_BYTES * (w - 1)];
       }
-      r_aes_copy_block (iv, scratch + R_AES_BLOCK_BYTES * (R_AES_PARALLEL8_BLOCKS - 1));
+      r_memcpy (iv, scratch + R_AES_BLOCK_BYTES * (R_AES_PARALLEL8_BLOCKS - 1), R_AES_BLOCK_BYTES);
       ptr += R_AES_PARALLEL8_BYTES;
       dst += R_AES_PARALLEL8_BYTES;
     }
@@ -1863,18 +1851,18 @@ r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
         for (i = 0; i < R_AES_BLOCK_BYTES; i++)
           dst[i + R_AES_BLOCK_BYTES * w] ^= scratch[i + R_AES_BLOCK_BYTES * (w - 1)];
       }
-      r_aes_copy_block (iv, scratch + R_AES_BLOCK_BYTES * (R_AES_PARALLEL_BLOCKS - 1));
+      r_memcpy (iv, scratch + R_AES_BLOCK_BYTES * (R_AES_PARALLEL_BLOCKS - 1), R_AES_BLOCK_BYTES);
       ptr += R_AES_PARALLEL_BYTES;
       dst += R_AES_PARALLEL_BYTES;
     }
   }
 
   while (ptr < end) {
-    r_aes_copy_block (scratch, ptr);
+    r_memcpy (scratch, ptr, R_AES_BLOCK_BYTES);
     aes->decrypt_block (aes, dst, ptr);
     for (i = 0; i < R_AES_BLOCK_BYTES; i++)
         dst[i] ^= iv[i];
-    r_aes_copy_block (iv, scratch);
+    r_memcpy (iv, scratch, R_AES_BLOCK_BYTES);
     ptr += R_AES_BLOCK_BYTES;
     dst += R_AES_BLOCK_BYTES;
   }
@@ -1914,7 +1902,7 @@ r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
   if (aes->encrypt_blocks_x8 != NULL) {
     while (ptr + R_AES_PARALLEL8_BYTES <= end) {
       for (w = 0; w < R_AES_PARALLEL8_BLOCKS; w++)
-        r_aes_copy_block (scratch + R_AES_BLOCK_BYTES * w, iv);
+        r_memcpy (scratch + R_AES_BLOCK_BYTES * w, iv, R_AES_BLOCK_BYTES);
       for (w = 1; w < R_AES_PARALLEL8_BLOCKS; w++)
         r_aes_ctr_add (scratch + R_AES_BLOCK_BYTES * w, (ruint32) w);
       aes->encrypt_blocks_x8 (aes, scratch, scratch);
@@ -1928,7 +1916,7 @@ r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
   if (aes->encrypt_blocks_x4 != NULL) {
     while (ptr + R_AES_PARALLEL_BYTES <= end) {
       for (w = 0; w < R_AES_PARALLEL_BLOCKS; w++)
-        r_aes_copy_block (scratch + R_AES_BLOCK_BYTES * w, iv);
+        r_memcpy (scratch + R_AES_BLOCK_BYTES * w, iv, R_AES_BLOCK_BYTES);
       for (w = 1; w < R_AES_PARALLEL_BLOCKS; w++)
         r_aes_ctr_add (scratch + R_AES_BLOCK_BYTES * w, (ruint32) w);
       aes->encrypt_blocks_x4 (aes, scratch, scratch);
@@ -1983,7 +1971,7 @@ r_cipher_aes_cfb_encrypt (const RCryptoCipher * cipher,
       dst[i] = scratch[i] ^ ptr[i];
     /* CFB feedback: encrypt() input for the next block is the just-produced
      * ciphertext, not the plaintext. */
-    r_aes_copy_block (iv, dst);
+    r_memcpy (iv, dst, R_AES_BLOCK_BYTES);
   }
 
   if (size > 0) {
@@ -2027,14 +2015,14 @@ r_cipher_aes_cfb_decrypt (const RCryptoCipher * cipher,
   if (aes->encrypt_blocks_x8 != NULL) {
     while (ptr + R_AES_PARALLEL8_BYTES <= end) {
       r_memcpy (ctsave, ptr, R_AES_PARALLEL8_BYTES);
-      r_aes_copy_block (scratch, iv);
+      r_memcpy (scratch, iv, R_AES_BLOCK_BYTES);
       for (w = 1; w < R_AES_PARALLEL8_BLOCKS; w++)
-        r_aes_copy_block (scratch + R_AES_BLOCK_BYTES * w,
-            ctsave + R_AES_BLOCK_BYTES * (w - 1));
+        r_memcpy (scratch + R_AES_BLOCK_BYTES * w,
+            ctsave + R_AES_BLOCK_BYTES * (w - 1), R_AES_BLOCK_BYTES);
       aes->encrypt_blocks_x8 (aes, scratch, scratch);
       for (i = 0; i < R_AES_PARALLEL8_BYTES; i++)
         dst[i] = scratch[i] ^ ctsave[i];
-      r_aes_copy_block (iv, ctsave + R_AES_BLOCK_BYTES * (R_AES_PARALLEL8_BLOCKS - 1));
+      r_memcpy (iv, ctsave + R_AES_BLOCK_BYTES * (R_AES_PARALLEL8_BLOCKS - 1), R_AES_BLOCK_BYTES);
       ptr += R_AES_PARALLEL8_BYTES;
       dst += R_AES_PARALLEL8_BYTES;
     }
@@ -2042,25 +2030,25 @@ r_cipher_aes_cfb_decrypt (const RCryptoCipher * cipher,
   if (aes->encrypt_blocks_x4 != NULL) {
     while (ptr + R_AES_PARALLEL_BYTES <= end) {
       r_memcpy (ctsave, ptr, R_AES_PARALLEL_BYTES);
-      r_aes_copy_block (scratch, iv);
+      r_memcpy (scratch, iv, R_AES_BLOCK_BYTES);
       for (w = 1; w < R_AES_PARALLEL_BLOCKS; w++)
-        r_aes_copy_block (scratch + R_AES_BLOCK_BYTES * w,
-            ctsave + R_AES_BLOCK_BYTES * (w - 1));
+        r_memcpy (scratch + R_AES_BLOCK_BYTES * w,
+            ctsave + R_AES_BLOCK_BYTES * (w - 1), R_AES_BLOCK_BYTES);
       aes->encrypt_blocks_x4 (aes, scratch, scratch);
       for (i = 0; i < R_AES_PARALLEL_BYTES; i++)
         dst[i] = scratch[i] ^ ctsave[i];
-      r_aes_copy_block (iv, ctsave + R_AES_BLOCK_BYTES * (R_AES_PARALLEL_BLOCKS - 1));
+      r_memcpy (iv, ctsave + R_AES_BLOCK_BYTES * (R_AES_PARALLEL_BLOCKS - 1), R_AES_BLOCK_BYTES);
       ptr += R_AES_PARALLEL_BYTES;
       dst += R_AES_PARALLEL_BYTES;
     }
   }
 
   while (ptr < end) {
-    r_aes_copy_block (ctsave, ptr);
+    r_memcpy (ctsave, ptr, R_AES_BLOCK_BYTES);
     aes->encrypt_block (aes, scratch, iv);
     for (i = 0; i < R_AES_BLOCK_BYTES; i++)
       dst[i] = scratch[i] ^ ptr[i];
-    r_aes_copy_block (iv, ctsave);
+    r_memcpy (iv, ctsave, R_AES_BLOCK_BYTES);
     ptr += R_AES_BLOCK_BYTES;
     dst += R_AES_BLOCK_BYTES;
   }
@@ -2128,7 +2116,7 @@ r_ghash_mul (ruint8 y[R_AES_BLOCK_BYTES], const ruint8 h[R_AES_BLOCK_BYTES])
   ruint8 v[R_AES_BLOCK_BYTES];
   rsize i, j, k;
 
-  r_aes_copy_block (v, h);
+  r_memcpy (v, h, R_AES_BLOCK_BYTES);
 
   for (i = 0; i < R_AES_BLOCK_BYTES; i++) {
     for (j = 0; j < 8; j++) {
@@ -2149,7 +2137,7 @@ r_ghash_mul (ruint8 y[R_AES_BLOCK_BYTES], const ruint8 h[R_AES_BLOCK_BYTES])
     }
   }
 
-  r_aes_copy_block (y, z);
+  r_memcpy (y, z, R_AES_BLOCK_BYTES);
 }
 
 /* Build the 4-bit GHASH table (Shoup's method) into @p t. e[n] holds
@@ -2219,7 +2207,7 @@ r_ghash_mul_4bit (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes,
       for (k = 0; k < R_AES_BLOCK_BYTES; k++)
         z[k] ^= t->e[n][k];
     }
-    r_aes_copy_block (y, z);
+    r_memcpy (y, z, R_AES_BLOCK_BYTES);
 
     data += R_AES_BLOCK_BYTES;
     nblocks--;
@@ -2367,7 +2355,7 @@ r_aes_gcm_op (const RCryptoCipher * cipher,
   }
 
   /* CTR-mode encrypt / decrypt starting at inc_32(J0). */
-  r_aes_copy_block (ctr, j0);
+  r_memcpy (ctr, j0, R_AES_BLOCK_BYTES);
   r_gcm_ctr_inc32 (ctr);
   srcp = data;
   dstp = dst;
@@ -2383,7 +2371,7 @@ r_aes_gcm_op (const RCryptoCipher * cipher,
     rsize w;
     while (remaining >= R_AES_PARALLEL8_BYTES) {
       for (w = 0; w < R_AES_PARALLEL8_BLOCKS; w++)
-        r_aes_copy_block (ks8 + R_AES_BLOCK_BYTES * w, ctr);
+        r_memcpy (ks8 + R_AES_BLOCK_BYTES * w, ctr, R_AES_BLOCK_BYTES);
       for (w = 1; w < R_AES_PARALLEL8_BLOCKS; w++)
         r_gcm_ctr_inc32_n (ks8 + R_AES_BLOCK_BYTES * w, (ruint32) w);
       aes->encrypt_blocks_x8 (aes, ks8, ks8);
@@ -2401,7 +2389,7 @@ r_aes_gcm_op (const RCryptoCipher * cipher,
     rsize w;
     while (remaining >= R_AES_PARALLEL_BYTES) {
       for (w = 0; w < R_AES_PARALLEL_BLOCKS; w++)
-        r_aes_copy_block (ks4 + R_AES_BLOCK_BYTES * w, ctr);
+        r_memcpy (ks4 + R_AES_BLOCK_BYTES * w, ctr, R_AES_BLOCK_BYTES);
       for (w = 1; w < R_AES_PARALLEL_BLOCKS; w++)
         r_gcm_ctr_inc32_n (ks4 + R_AES_BLOCK_BYTES * w, (ruint32) w);
       aes->encrypt_blocks_x4 (aes, ks4, ks4);
@@ -2663,7 +2651,7 @@ r_aes_ccm_op (const RCryptoCipher * cipher,
 
   r_ccm_build_a0 (a0, iv, ivsize, L);
   aes->encrypt_block (aes, s0, a0);
-  r_aes_copy_block (ctr, a0);
+  r_memcpy (ctr, a0, R_AES_BLOCK_BYTES);
   r_ccm_ctr_inc (ctr, L);
 
   if (generate_tag) {
