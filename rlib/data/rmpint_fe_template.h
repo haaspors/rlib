@@ -95,19 +95,27 @@ FE_FN (copy) (FE_TYPE * dst, const FE_TYPE * src)
     dst->d[i] = src->d[i];
 }
 
-/* Copy an mpint's value into an FE, zero-padding to n digits. The
- * "truncate beyond n" branch is unreachable for in-range operands
- * (curve constants, scalars in the documented [0, 2^(32*n)) range),
- * so it doesn't leak anything callers care about. */
+/* Copy an mpint's value into an FE, zero-padding to n digits.
+ *
+ * Iterates uniformly to n (which is the field width, a public
+ * quantity) and reads each source digit via r_mpint_get_digit_ct so
+ * the split between "real value" and "zero padding" doesn't depend
+ * on mpi->dig_used. Trailing positions in [n, FE_MAX) are
+ * unconditional zero - n is public so iterating to a fixed FE_MAX
+ * doesn't leak anything either way.
+ *
+ * Callers that pass non-secret mpints (curve constants, public
+ * scalars) pay a one-digit-per-iteration masked-read cost; callers
+ * that pass secrets (RSA CRT residues, ECC private scalars during
+ * blinded operations) get bit-for-bit identical timing across
+ * different secret values. */
 void
 FE_FN (from_mpint) (FE_TYPE * fe, const rmpint * mpi, ruint16 n)
 {
   ruint16 i;
-  ruint16 to_copy = mpi->dig_used;
-  if (to_copy > n) to_copy = n;
-  for (i = 0; i < to_copy; i++)
-    fe->d[i] = mpi->data[i];
-  for (i = to_copy; i < FE_MAX; i++)
+  for (i = 0; i < n; i++)
+    fe->d[i] = r_mpint_get_digit_ct (mpi, i);
+  for (i = n; i < FE_MAX; i++)
     fe->d[i] = 0;
 }
 

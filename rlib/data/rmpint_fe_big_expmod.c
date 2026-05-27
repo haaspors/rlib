@@ -124,7 +124,7 @@ r_mpint_fe_big_expmod_ct (rmpint * dst, const rmpint * base,
 
   /* Round exp_bits up to a multiple of WINDOW_BITS so the loop body
    * stays uniform across all keys. The topmost window's missing
-   * positions read as zero via r_mpint_get_digit, contributing
+   * positions read as zero via r_mpint_get_digit_ct, contributing
    * nothing to the exponent value. */
   windowed_bits = (exp_bits + (R_MPINT_FE_BIG_EXPMOD_WINDOW_BITS - 1u)) &
       ~(ruint)(R_MPINT_FE_BIG_EXPMOD_WINDOW_BITS - 1u);
@@ -136,12 +136,15 @@ r_mpint_fe_big_expmod_ct (rmpint * dst, const rmpint * base,
     for (j = 0; j < R_MPINT_FE_BIG_EXPMOD_WINDOW_BITS; j++)
       r_mpint_fe_big_sqr_mont (&result, &result, ctx);
 
-    /* Extract bits [i - WINDOW_BITS, i) MSB-first into window_val. */
+    /* Extract bits [i - WINDOW_BITS, i) MSB-first into window_val.
+     * The CT variant of get_digit masks on dig_used so the per-bit
+     * timing depends only on the bit-position arithmetic (public),
+     * not on the secret exponent's active digit count. */
     window_val = 0;
     for (j = R_MPINT_FE_BIG_EXPMOD_WINDOW_BITS; j > 0; j--) {
       ruint bp = i - (R_MPINT_FE_BIG_EXPMOD_WINDOW_BITS - j + 1);
-      rmpint_digit bit = (r_mpint_get_digit (exp,
-              (ruint16)(bp / (sizeof (rmpint_digit) * 8))) >>
+      rmpint_digit bit = (r_mpint_get_digit_ct (exp,
+              (ruint32)(bp / (sizeof (rmpint_digit) * 8))) >>
               (bp % (sizeof (rmpint_digit) * 8))) & 1u;
       window_val = (window_val << 1) | bit;
     }

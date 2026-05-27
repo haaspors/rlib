@@ -147,6 +147,24 @@ R_API void r_mpint_swap_ct (rmpint * a, rmpint * b, ruint32 bit);
 #define r_mpint_get_digit(mpi, d) \
   ((d) < (mpi)->dig_used ? (mpi)->data[d] : (rmpint_digit)0)
 
+/* Constant-time variant. Reads (mpi)->data[d] iff d < dig_alloc
+ * (dig_alloc is a public quantity), then masks the result with
+ * (d < dig_used). The compare on dig_used is branchless, so the
+ * timing depends only on d and dig_alloc, never on dig_used (which
+ * for secret material like an RSA exponent leaks the active digit
+ * count if read directly). Use this in any inner loop that indexes
+ * a secret mpint at known-public positions; for non-secret
+ * material the plain @c r_mpint_get_digit is fine and faster on
+ * paths where the typical d is far past dig_used. */
+static inline rmpint_digit
+r_mpint_get_digit_ct (const rmpint * mpi, ruint32 d)
+{
+  rmpint_digit value = (d < mpi->dig_alloc) ? mpi->data[d] : (rmpint_digit)0;
+  ruint32 below = ((ruint32)d - (ruint32)mpi->dig_used) >> 31;
+  rmpint_digit mask = (rmpint_digit)0 - (rmpint_digit)below;
+  return value & mask;
+}
+
 R_API ruint32 r_mpint_ctz (const rmpint * mpi);
 
 R_API int r_mpint_cmp (const rmpint * a, const rmpint * b);
