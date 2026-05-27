@@ -107,6 +107,9 @@ typedef enum {
   R_CRYPTO_CIPHER_OOM,                  /**< Memory allocation failed. */
   R_CRYPTO_CIPHER_INVAL,                /**< Invalid argument (NULL, wrong size, etc.). */
   R_CRYPTO_CIPHER_WRONG_BLOCK_SIZE,     /**< Input not a multiple of @c blocksize for a block mode. */
+  R_CRYPTO_CIPHER_NEEDS_AEAD,           /**< Cipher mode is AEAD; use @c r_crypto_cipher_encrypt_aead. */
+  R_CRYPTO_CIPHER_NOT_AEAD,             /**< Cipher mode is not AEAD; use @c r_crypto_cipher_encrypt. */
+  R_CRYPTO_CIPHER_AUTH_FAILED,          /**< AEAD tag verification failed; plaintext must be discarded. */
 } RCryptoCipherResult;
 
 /** @brief Opaque cipher handle. */
@@ -133,6 +136,39 @@ typedef RCryptoCipherOperation RCryptoCipherEncrypt;
 typedef RCryptoCipherOperation RCryptoCipherDecrypt;
 
 /**
+ * @brief Operation function signature for AEAD encrypt / decrypt.
+ *
+ * Same as @c RCryptoCipherOperation but adds the AEAD-specific
+ * arguments: additional authenticated data (@p aad / @p aadsize) that
+ * is included in the tag computation but not encrypted, and the
+ * authentication tag (@p tag / @p tagsize). On encrypt the tag is
+ * written; on decrypt it is read, verified, and the function returns
+ * @c R_CRYPTO_CIPHER_AUTH_FAILED on mismatch.
+ *
+ * @param cipher   Cipher instance; must be an AEAD mode.
+ * @param dst      Output buffer; at least @p size bytes.
+ * @param size     Bytes of @p data to process.
+ * @param data     Input buffer; at least @p size bytes. May alias @p dst.
+ * @param aad      Additional authenticated data; may be @c NULL when
+ *                 @p aadsize is 0.
+ * @param aadsize  Bytes of @p aad to include in the tag computation.
+ * @param iv       Nonce; size dictated by @c info->ivsize.
+ * @param ivsize   Size of @p iv in bytes.
+ * @param tag      Tag buffer; @c tagsize bytes. Written on encrypt,
+ *                 read on decrypt.
+ * @param tagsize  Tag size in bytes.
+ */
+typedef RCryptoCipherResult (*RCryptoCipherAeadOperation) (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize);
+/** @brief AEAD encrypt operation alias. */
+typedef RCryptoCipherAeadOperation RCryptoCipherAeadEncrypt;
+/** @brief AEAD decrypt operation alias. */
+typedef RCryptoCipherAeadOperation RCryptoCipherAeadDecrypt;
+
+/**
  * @brief Static descriptor for a (algo, mode, key-bits) triple.
  *
  * Concrete cipher families publish a const array of these and the
@@ -148,8 +184,21 @@ typedef struct {
   rsize                   ivsize;      /**< Expected IV size in bytes (0 if N/A). */
   rsize                   blocksize;   /**< Native block size in bytes (1 for stream modes). */
 
-  RCryptoCipherEncrypt    enc;         /**< Encrypt operation. */
-  RCryptoCipherDecrypt    dec;         /**< Decrypt operation. */
+  /**
+   * Non-AEAD encrypt / decrypt operations. Filled for ECB / CBC / CTR
+   * / CFB / OFB; left @c NULL for AEAD modes (GCM, CCM), whose
+   * @c aead_enc / @c aead_dec slots carry the operations instead.
+   */
+  RCryptoCipherEncrypt    enc;         /**< Encrypt operation, or @c NULL on AEAD modes. */
+  RCryptoCipherDecrypt    dec;         /**< Decrypt operation, or @c NULL on AEAD modes. */
+
+  /**
+   * AEAD encrypt / decrypt operations. Filled for GCM / CCM; left
+   * @c NULL for non-AEAD modes. Exactly one of (@c enc, @c dec) and
+   * (@c aead_enc, @c aead_dec) must be set per info entry.
+   */
+  RCryptoCipherAeadEncrypt aead_enc;   /**< AEAD encrypt operation, or @c NULL on non-AEAD modes. */
+  RCryptoCipherAeadDecrypt aead_dec;   /**< AEAD decrypt operation, or @c NULL on non-AEAD modes. */
 } RCryptoCipherInfo;
 
 /**
@@ -215,7 +264,23 @@ R_API RCryptoCipher * r_crypto_cipher_new (const RCryptoCipherInfo * info,
 /** @} */
 
 /**
+ * @brief Return @c TRUE if @p cipher is an AEAD mode (GCM / CCM).
+ *
+ * AEAD ciphers must be driven through @c r_crypto_cipher_encrypt_aead
+ * / @c _decrypt_aead; non-AEAD ciphers through @c r_crypto_cipher_encrypt
+ * / @c _decrypt. The base entry points reject the wrong family with
+ * @c R_CRYPTO_CIPHER_NEEDS_AEAD / @c NOT_AEAD, so a runtime check is
+ * a safety net rather than a requirement, but exposing this helper
+ * lets callers branch on the contract without spelling out the mode.
+ */
+R_API rboolean r_crypto_cipher_is_aead (const RCryptoCipher * cipher);
+
+/**
  * @name One-shot encrypt / decrypt
+ *
+ * For non-AEAD modes (ECB / CBC / CTR / CFB / OFB). An AEAD-moded
+ * cipher rejects these entry points with
+ * @c R_CRYPTO_CIPHER_NEEDS_AEAD; use the @c _aead variants instead.
  * @{
  */
 /**
@@ -224,7 +289,7 @@ R_API RCryptoCipher * r_crypto_cipher_new (const RCryptoCipherInfo * info,
  * Buffers may alias for in-place operation. For block modes, @p size
  * must be a multiple of @c info->blocksize.
  *
- * @param cipher  Cipher instance.
+ * @param cipher  Cipher instance; must not be an AEAD mode.
  * @param dst     Output buffer; at least @p size bytes.
  * @param size    Number of input bytes.
  * @param data    Input buffer; at least @p size bytes.
@@ -241,6 +306,54 @@ R_API RCryptoCipherResult r_crypto_cipher_encrypt (const RCryptoCipher * cipher,
  */
 R_API RCryptoCipherResult r_crypto_cipher_decrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+/** @} */
+
+/**
+ * @name One-shot AEAD encrypt / decrypt
+ *
+ * For AEAD modes (GCM / CCM). A non-AEAD cipher rejects these entry
+ * points with @c R_CRYPTO_CIPHER_NOT_AEAD; use @c r_crypto_cipher_encrypt
+ * / @c _decrypt instead. Tag is detached (separate buffer from
+ * @p dst); on decrypt, the function returns
+ * @c R_CRYPTO_CIPHER_AUTH_FAILED on tag mismatch and the caller must
+ * discard @p dst.
+ * @{
+ */
+/**
+ * @brief Authenticated encrypt with associated data.
+ *
+ * @param cipher   Cipher instance; must be an AEAD mode.
+ * @param dst      Output ciphertext buffer; at least @p size bytes.
+ * @param size     Plaintext length.
+ * @param data     Plaintext; at least @p size bytes. May alias @p dst.
+ * @param aad      Additional authenticated data (covered by the tag
+ *                 but not encrypted); may be @c NULL when @p aadsize
+ *                 is 0.
+ * @param aadsize  AAD length in bytes.
+ * @param iv       Nonce; size dictated by @c info->ivsize.
+ * @param ivsize   Size of @p iv in bytes.
+ * @param tag      Tag output buffer; @p tagsize bytes written.
+ * @param tagsize  Requested tag size; mode-specific (e.g. 16 for GCM).
+ */
+R_API RCryptoCipherResult r_crypto_cipher_encrypt_aead (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize);
+/**
+ * @brief Authenticated decrypt with associated data and tag verification.
+ *
+ * Same arguments as @c r_crypto_cipher_encrypt_aead, but @p tag is an
+ * input (the expected tag) and is compared in constant time against
+ * the value computed from @p data + @p aad. On mismatch, returns
+ * @c R_CRYPTO_CIPHER_AUTH_FAILED; @p dst contents are undefined and
+ * must be discarded.
+ */
+R_API RCryptoCipherResult r_crypto_cipher_decrypt_aead (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize);
 /** @} */
 
 R_END_DECLS
