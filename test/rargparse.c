@@ -1395,3 +1395,61 @@ RTEST (rargparse, required_without_default_still_required, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rargparse, parse_string_array, RTEST_FAST)
+{
+  static RArgOptionEntry entries[] = {
+    { "filter", 'f', R_ARG_OPTION_TYPE_STRING_ARRAY, R_ARG_OPTION_FLAG_NONE,
+        "Repeatable filter", NULL, NULL },
+  };
+  RArgParser * parser = r_arg_parser_new (NULL, NULL);
+  RArgParseCtx * ctx;
+  rchar ** strv, ** argv, ** got;
+  int argc;
+
+  r_assert (r_arg_parser_add_option_entries (parser, entries, R_N_ELEMENTS (entries)));
+
+  /* Absent option yields a NULL array. */
+  strv = argv = r_strv_new ("rlibtest", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+  r_assert_cmpptr (r_arg_parse_ctx_get_option_string_array (ctx, "filter"),
+      ==, NULL);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  /* Single occurrence yields a one-entry array. */
+  strv = argv = r_strv_new ("rlibtest", "-f", "alpha", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+  got = r_arg_parse_ctx_get_option_string_array (ctx, "filter");
+  r_assert_cmpptr (got, !=, NULL);
+  r_assert_cmpuint (r_strv_len (got), ==, 1);
+  r_assert_cmpstr (got[0], ==, "alpha");
+  r_strv_free (got);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  /* Multiple occurrences accumulate in argv order, mixing short and
+   * long, with and without =. */
+  strv = argv = r_strv_new ("rlibtest", "-f", "alpha", "--filter=beta",
+      "--filter", "gamma", "-f=delta", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, R_ARG_PARSE_FLAG_NONE,
+          &argc, (const rchar ***)&argv, NULL)), !=, NULL);
+  got = r_arg_parse_ctx_get_option_string_array (ctx, "filter");
+  r_assert_cmpptr (got, !=, NULL);
+  r_assert_cmpuint (r_strv_len (got), ==, 4);
+  r_assert_cmpstr (got[0], ==, "alpha");
+  r_assert_cmpstr (got[1], ==, "beta");
+  r_assert_cmpstr (got[2], ==, "gamma");
+  r_assert_cmpstr (got[3], ==, "delta");
+  r_strv_free (got);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
