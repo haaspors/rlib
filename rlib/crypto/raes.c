@@ -1356,11 +1356,9 @@ r_cipher_aes_ofb_encrypt (const RCryptoCipher * cipher,
  * SP 800-38D Section 6.3: byte[0] MSB carries the constant term x^0
  * and byte[15] LSB carries x^127. y is updated in place.
  *
- * Shift-and-XOR implementation: O(128) iterations per multiply,
- * not constant-time, slower than the 4-bit-table approach used in
- * production GHASH. Adequate for correctness and a baseline tests
- * can pin against; a faster implementation can land later without
- * changing this primitive's contract. */
+ * Bit-by-bit shift-and-XOR implementation. Used only to populate
+ * the 4-bit table once per GCM op; the hot path runs through
+ * r_ghash_mul_4bit. */
 static void
 r_ghash_mul (ruint8 y[R_AES_BLOCK_BYTES], const ruint8 h[R_AES_BLOCK_BYTES])
 {
@@ -1392,6 +1390,73 @@ r_ghash_mul (ruint8 y[R_AES_BLOCK_BYTES], const ruint8 h[R_AES_BLOCK_BYTES])
   r_memcpy (y, z, R_AES_BLOCK_BYTES);
 }
 
+/* 4-bit GHASH table (Shoup's method). e[n] holds (n * H) where the
+ * 4-bit value @c n encodes the polynomial chunk for x^0..x^3 in
+ * bit-reversed form (bit 3 of @c n = coefficient of x^0). */
+typedef struct {
+  ruint8 e[16][R_AES_BLOCK_BYTES];
+} RGhashTable;
+
+static void
+r_ghash_init_table (RGhashTable * t, const ruint8 h[R_AES_BLOCK_BYTES])
+{
+  rsize n;
+  r_memset (t->e[0], 0, R_AES_BLOCK_BYTES);
+  for (n = 1; n < 16; n++) {
+    r_memset (t->e[n], 0, R_AES_BLOCK_BYTES);
+    t->e[n][0] = (ruint8) (n << 4);
+    r_ghash_mul (t->e[n], h);
+  }
+}
+
+/* Reduction lookup for the four low-order bits that shift off the
+ * end during each nibble step of r_ghash_mul_4bit. R[rem] stores the
+ * bit-reversed reduction polynomial contributions for those four
+ * positions, spread across the new high-order bytes (z[0], z[1]). */
+static const ruint8 r_ghash_reduce_4bit[16][2] = {
+  { 0x00, 0x00 }, { 0x1c, 0x20 }, { 0x38, 0x40 }, { 0x24, 0x60 },
+  { 0x70, 0x80 }, { 0x6c, 0xa0 }, { 0x48, 0xc0 }, { 0x54, 0xe0 },
+  { 0xe1, 0x00 }, { 0xfd, 0x20 }, { 0xd9, 0x40 }, { 0xc5, 0x60 },
+  { 0x91, 0x80 }, { 0x8d, 0xa0 }, { 0xa9, 0xc0 }, { 0xb5, 0xe0 }
+};
+
+static void
+r_ghash_mul_4bit (ruint8 y[R_AES_BLOCK_BYTES], const RGhashTable * t)
+{
+  ruint8 z[R_AES_BLOCK_BYTES] = { 0 };
+  rssize byte_idx;
+  rsize k;
+  ruint8 n, rem;
+
+  for (byte_idx = R_AES_BLOCK_BYTES - 1; byte_idx >= 0; byte_idx--) {
+    /* Process the low nibble first (higher x position), then high.
+     * Each step is z = (z * x^4) XOR T[n], with z * x^4 done as a
+     * 4-bit right-shift plus the precomputed reduction for the four
+     * bits that fell off. */
+    n = y[byte_idx] & 0xf;
+    rem = z[R_AES_BLOCK_BYTES - 1] & 0xf;
+    for (k = R_AES_BLOCK_BYTES - 1; k > 0; k--)
+      z[k] = (ruint8) ((z[k] >> 4) | (z[k - 1] << 4));
+    z[0] >>= 4;
+    z[0] ^= r_ghash_reduce_4bit[rem][0];
+    z[1] ^= r_ghash_reduce_4bit[rem][1];
+    for (k = 0; k < R_AES_BLOCK_BYTES; k++)
+      z[k] ^= t->e[n][k];
+
+    n = y[byte_idx] >> 4;
+    rem = z[R_AES_BLOCK_BYTES - 1] & 0xf;
+    for (k = R_AES_BLOCK_BYTES - 1; k > 0; k--)
+      z[k] = (ruint8) ((z[k] >> 4) | (z[k - 1] << 4));
+    z[0] >>= 4;
+    z[0] ^= r_ghash_reduce_4bit[rem][0];
+    z[1] ^= r_ghash_reduce_4bit[rem][1];
+    for (k = 0; k < R_AES_BLOCK_BYTES; k++)
+      z[k] ^= t->e[n][k];
+  }
+
+  r_memcpy (y, z, R_AES_BLOCK_BYTES);
+}
+
 /* GCM-specific counter increment: only the low 32 bits advance; the
  * high 96 bits stay fixed at the IV value. */
 static void
@@ -1411,7 +1476,7 @@ r_gcm_ctr_inc32 (ruint8 ctr[R_AES_BLOCK_BYTES])
  * to a full block before mixing. */
 static void
 r_gcm_ghash_update (ruint8 y[R_AES_BLOCK_BYTES],
-    const ruint8 h[R_AES_BLOCK_BYTES],
+    const RGhashTable * t,
     const ruint8 * data, rsize size)
 {
   rsize k;
@@ -1419,7 +1484,7 @@ r_gcm_ghash_update (ruint8 y[R_AES_BLOCK_BYTES],
   while (size >= R_AES_BLOCK_BYTES) {
     for (k = 0; k < R_AES_BLOCK_BYTES; k++)
       y[k] ^= data[k];
-    r_ghash_mul (y, h);
+    r_ghash_mul_4bit (y, t);
     data += R_AES_BLOCK_BYTES;
     size -= R_AES_BLOCK_BYTES;
   }
@@ -1428,7 +1493,7 @@ r_gcm_ghash_update (ruint8 y[R_AES_BLOCK_BYTES],
     r_memcpy (block, data, size);
     for (k = 0; k < R_AES_BLOCK_BYTES; k++)
       y[k] ^= block[k];
-    r_ghash_mul (y, h);
+    r_ghash_mul_4bit (y, t);
   }
 }
 
@@ -1445,7 +1510,7 @@ r_gcm_be64 (ruint8 out[8], ruint64 v)
  * then XOR with E_K(J0) to form the GCM tag. */
 static void
 r_gcm_compute_tag (const RAesCipher * aes,
-    const ruint8 h[R_AES_BLOCK_BYTES],
+    const RGhashTable * t,
     const ruint8 j0[R_AES_BLOCK_BYTES],
     rconstpointer aad, rsize aadsize,
     const ruint8 * ciphertxt, rsize ctsize,
@@ -1456,14 +1521,14 @@ r_gcm_compute_tag (const RAesCipher * aes,
   ruint8 ek[R_AES_BLOCK_BYTES];
   rsize i;
 
-  r_gcm_ghash_update (y, h, aad, aadsize);
-  r_gcm_ghash_update (y, h, ciphertxt, ctsize);
+  r_gcm_ghash_update (y, t, aad, aadsize);
+  r_gcm_ghash_update (y, t, ciphertxt, ctsize);
 
   r_gcm_be64 (lenblock,     (ruint64) aadsize * 8);
   r_gcm_be64 (lenblock + 8, (ruint64) ctsize * 8);
   for (i = 0; i < R_AES_BLOCK_BYTES; i++)
     y[i] ^= lenblock[i];
-  r_ghash_mul (y, h);
+  r_ghash_mul_4bit (y, t);
 
   aes->encrypt_block (aes, ek, j0);
   for (i = 0; i < R_AES_BLOCK_BYTES; i++)
@@ -1488,6 +1553,7 @@ r_aes_gcm_op (const RCryptoCipher * cipher,
   ruint8 ctr[R_AES_BLOCK_BYTES];
   ruint8 ksblock[R_AES_BLOCK_BYTES];
   ruint8 tagcomputed[R_AES_BLOCK_BYTES];
+  RGhashTable ghash_t;
   const ruint8 * srcp;
   ruint8 * dstp;
   rsize remaining, i;
@@ -1507,23 +1573,26 @@ r_aes_gcm_op (const RCryptoCipher * cipher,
 
   aes = (const RAesCipher *) cipher;
 
-  /* H = E_K(0^128); J0 = IV || 0x00000001. */
+  /* H = E_K(0^128); J0 = IV || 0x00000001; precompute the GHASH
+   * 4-bit table once for this op. */
   aes->encrypt_block (aes, h, zero);
   r_memcpy (j0, iv, 12);
   j0[12] = 0; j0[13] = 0; j0[14] = 0; j0[15] = 1;
+  r_ghash_init_table (&ghash_t, h);
 
   /* For decrypt, verify the tag against the ciphertext BEFORE
    * touching @p dst. This way an auth failure leaves any previous
    * @p dst contents intact; the caller never sees released plaintext
    * from a forged input. */
   if (!generate_tag) {
-    r_gcm_compute_tag (aes, h, j0, aad, aadsize, data, size, tagcomputed);
+    r_gcm_compute_tag (aes, &ghash_t, j0, aad, aadsize, data, size, tagcomputed);
     {
       ruint8 diff = 0;
       for (i = 0; i < tagsize; i++)
         diff |= tagcomputed[i] ^ tag[i];
       if (diff != 0) {
         r_memclear_secure (h, sizeof (h));
+        r_memclear_secure (&ghash_t, sizeof (ghash_t));
         r_memclear_secure (tagcomputed, sizeof (tagcomputed));
         return R_CRYPTO_CIPHER_AUTH_FAILED;
       }
@@ -1552,10 +1621,11 @@ r_aes_gcm_op (const RCryptoCipher * cipher,
   }
 
   if (generate_tag) {
-    r_gcm_compute_tag (aes, h, j0, aad, aadsize, dst, size, tagcomputed);
+    r_gcm_compute_tag (aes, &ghash_t, j0, aad, aadsize, dst, size, tagcomputed);
     r_memcpy (tag, tagcomputed, tagsize);
   }
 
+  r_memclear_secure (&ghash_t, sizeof (ghash_t));
   r_memclear_secure (h, sizeof (h));
   r_memclear_secure (ctr, sizeof (ctr));
   r_memclear_secure (ksblock, sizeof (ksblock));
