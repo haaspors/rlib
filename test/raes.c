@@ -28,10 +28,13 @@ RTEST (raes, new_args, RTEST_FAST)
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 129, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_OFB, 255, key), ==, NULL);
 
-  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CCM, 128, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 0, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 129, key), ==, NULL);
   r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_GCM, 255, key), ==, NULL);
+
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CCM, 0, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CCM, 129, key), ==, NULL);
+  r_assert_cmpptr (r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CCM, 255, key), ==, NULL);
 }
 RTEST_END;
 
@@ -526,6 +529,109 @@ RTEST_LOOP (raes, gcm, RTEST_FAST, 0, R_N_ELEMENTS (GCM_test_data))
   /* Calling the non-AEAD entry point on a GCM cipher is rejected. */
   r_assert_cmpint (r_crypto_cipher_encrypt (cipher, out, plainsize, plaintxt,
         iv, sizeof (iv)), ==, R_CRYPTO_CIPHER_NEEDS_AEAD);
+
+  r_crypto_cipher_unref (cipher);
+  r_free (plaintxt);
+  r_free (ciphertxt);
+  r_free (out);
+}
+RTEST_END;
+
+/* AES-CCM vectors from RFC 3610 §8 (test packet vectors 1-2) and
+ * NIST SP 800-38C Appendix C (examples 1-3). */
+typedef struct {
+  ruint16 keybits;
+  const rchar * key;
+  const rchar * iv;
+  const rchar * aad;
+  const rchar * plaintxt;
+  const rchar * ciphertxt;
+  const rchar * tag;
+} RAesCcmTestData;
+
+static const RAesCcmTestData CCM_test_data[] = {
+  { /* NIST SP 800-38C example 1: N=7, M=4 */
+    .keybits = 128,
+    .key = "404142434445464748494a4b4c4d4e4f",
+    .iv  = "10111213141516",
+    .aad = "0001020304050607",
+    .plaintxt  = "20212223",
+    .ciphertxt = "7162015b",
+    .tag = "4dac255d"
+  },
+  { /* NIST SP 800-38C example 2: N=8, M=6 */
+    .keybits = 128,
+    .key = "404142434445464748494a4b4c4d4e4f",
+    .iv  = "1011121314151617",
+    .aad = "000102030405060708090a0b0c0d0e0f",
+    .plaintxt  = "202122232425262728292a2b2c2d2e2f",
+    .ciphertxt = "d2a1f0e051ea5f62081a7792073d593d",
+    .tag = "1fc64fbfaccd"
+  },
+  { /* RFC 3610 test vector 1: N=13, M=8 */
+    .keybits = 128,
+    .key = "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+    .iv  = "00000003020100a0a1a2a3a4a5",
+    .aad = "0001020304050607",
+    .plaintxt  = "08090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+    .ciphertxt = "588c979a61c663d2f066d0c2c0f989806d5f6b61dac384",
+    .tag = "17e8d12cfdf926e0"
+  }
+};
+
+RTEST_LOOP (raes, ccm, RTEST_FAST, 0, R_N_ELEMENTS (CCM_test_data))
+{
+  const RAesCcmTestData * data = &CCM_test_data[__i];
+  RCryptoCipher * cipher;
+  ruint8 key[32];
+  ruint8 iv[16];
+  ruint8 aad[64];
+  ruint8 * plaintxt;
+  ruint8 * ciphertxt;
+  ruint8 tag[16];
+  ruint8 outtag[16];
+  ruint8 * out;
+  rsize plainsize, aadsize, ivsize, tagsize;
+  rsize keysize = data->keybits / 8;
+
+  plainsize  = r_strlen (data->plaintxt) / 2;
+  aadsize    = r_strlen (data->aad) / 2;
+  ivsize     = r_strlen (data->iv) / 2;
+  tagsize    = r_strlen (data->tag) / 2;
+  plaintxt   = r_malloc (plainsize);
+  ciphertxt  = r_malloc (plainsize);
+  out        = r_malloc (plainsize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->key, key, keysize), ==, keysize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->iv, iv, ivsize), ==, ivsize);
+  if (aadsize > 0)
+    r_assert_cmpuint (r_str_hex_to_binary (data->aad, aad, aadsize), ==, aadsize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->plaintxt, plaintxt, plainsize), ==, plainsize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->ciphertxt, ciphertxt, plainsize), ==, plainsize);
+  r_assert_cmpuint (r_str_hex_to_binary (data->tag, tag, tagsize), ==, tagsize);
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CCM,
+          data->keybits, key)), !=, NULL);
+  r_assert (r_crypto_cipher_is_aead (cipher));
+
+  r_assert_cmpint (r_crypto_cipher_encrypt_aead (cipher, out, plainsize, plaintxt,
+        aadsize > 0 ? aad : NULL, aadsize, iv, ivsize,
+        outtag, tagsize), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, ciphertxt, plainsize);
+  r_assert_cmpmem (outtag, ==, tag, tagsize);
+
+  r_assert_cmpint (r_crypto_cipher_decrypt_aead (cipher, out, plainsize, ciphertxt,
+        aadsize > 0 ? aad : NULL, aadsize, iv, ivsize,
+        tag, tagsize), ==, R_CRYPTO_CIPHER_OK);
+  r_assert_cmpmem (out, ==, plaintxt, plainsize);
+
+  {
+    ruint8 badtag[16];
+    r_memcpy (badtag, tag, tagsize);
+    badtag[0] ^= 0x01;
+    r_assert_cmpint (r_crypto_cipher_decrypt_aead (cipher, out, plainsize, ciphertxt,
+          aadsize > 0 ? aad : NULL, aadsize, iv, ivsize,
+          badtag, tagsize), ==, R_CRYPTO_CIPHER_AUTH_FAILED);
+  }
 
   r_crypto_cipher_unref (cipher);
   r_free (plaintxt);
