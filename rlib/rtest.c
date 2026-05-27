@@ -698,7 +698,7 @@ r_test_run_fork (const RTest * test, rsize __i, rboolean notimeout,
     if (r_io_write (fdp[1], failpos, sizeof (RTestLastPos)) != sizeof (RTestLastPos))
       R_LOG_ERROR ("Failed to write to pipe to parent (forker)");
     r_io_close (fdp[1]);
-    exit (0);
+    _exit (0);
   } else {
     R_LOG_ERROR ("Failed to fork test /%s/%s/%"RSIZE_FMT,
         test->suite, test->name, __i);
