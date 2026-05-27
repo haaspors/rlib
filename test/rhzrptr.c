@@ -8,6 +8,32 @@ RTEST (rhzrptr, rec, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rhzrptr, rec_reuse, RTEST_FAST)
+{
+  RHzrPtrRec * recs[16];
+  rsize i, j;
+
+  for (i = 0; i < R_N_ELEMENTS (recs); i++) {
+    recs[i] = r_hzr_ptr_rec_new ();
+    r_assert_cmpptr (recs[i], !=, NULL);
+  }
+  for (i = 0; i < R_N_ELEMENTS (recs); i++)
+    r_hzr_ptr_rec_free (recs[i]);
+
+  for (i = 0; i < R_N_ELEMENTS (recs); i++) {
+    RHzrPtrRec * rec = r_hzr_ptr_rec_new ();
+    rboolean found = FALSE;
+    for (j = 0; j < R_N_ELEMENTS (recs); j++) {
+      if (rec == recs[j]) {
+        found = TRUE;
+        break;
+      }
+    }
+    r_assert (found);
+  }
+}
+RTEST_END;
+
 RTEST (rhzrptr, read, RTEST_FAST)
 {
   rhzrptr hp = R_HZR_PTR_INIT (NULL);

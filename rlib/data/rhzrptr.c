@@ -134,7 +134,9 @@ r_hzr_ptr_rec_new (void)
   r_atomic_bool_set (&rec->active);
 
   old = r_atomic_ptr_load (&g__r_hzrptr);
-  while (!r_atomic_ptr_cmp_xchg_weak (&g__r_hzrptr, &old, rec));
+  do {
+    rec->next = old;
+  } while (!r_atomic_ptr_cmp_xchg_weak (&g__r_hzrptr, &old, rec));
 
 done:
   return rec;
