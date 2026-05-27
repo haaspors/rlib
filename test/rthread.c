@@ -288,6 +288,64 @@ RTEST_STRESS (rthread, rwmutex_stress, RTEST_FAST)
 }
 RTEST_END;
 
+typedef struct {
+  ROnce once;
+  rauint invocations;
+} RThreadsTestOnce;
+
+#define RTHREAD_TEST_ONCE_SENTINEL  RUINT_TO_POINTER (0xcafef00d)
+
+static rpointer
+rthread_test_once_init (rpointer data)
+{
+  RThreadsTestOnce * ctx = data;
+  r_atomic_uint_fetch_add (&ctx->invocations, 1);
+  return RTHREAD_TEST_ONCE_SENTINEL;
+}
+
+RTEST (rthread, call_once_basic, RTEST_FAST)
+{
+  RThreadsTestOnce ctx = { R_ONCE_INIT, 0 };
+  rsize i;
+
+  for (i = 0; i < 16; i++) {
+    r_assert_cmpptr (r_call_once (&ctx.once, rthread_test_once_init, &ctx),
+        ==, RTHREAD_TEST_ONCE_SENTINEL);
+  }
+  r_assert_cmpuint (r_atomic_uint_load (&ctx.invocations), ==, 1);
+}
+RTEST_END;
+
+static rpointer
+rthread_test_once_caller (rpointer data)
+{
+  RThreadsTestOnce * ctx = data;
+  /* Drive enough calls to exercise the slow path on first entry
+   * and the fast path on every later entry. */
+  rsize i;
+  for (i = 0; i < 256; i++)
+    r_assert_cmpptr (r_call_once (&ctx->once, rthread_test_once_init, ctx),
+        ==, RTHREAD_TEST_ONCE_SENTINEL);
+  return NULL;
+}
+
+RTEST_STRESS (rthread, call_once_concurrent, RTEST_FAST)
+{
+  RThreadsTestOnce ctx = { R_ONCE_INIT, 0 };
+  RThread * thr[32];
+  rsize i;
+
+  for (i = 0; i < R_N_ELEMENTS (thr); i++)
+    thr[i] = r_thread_new ("once_caller", rthread_test_once_caller, &ctx);
+  for (i = 0; i < R_N_ELEMENTS (thr); i++) {
+    r_thread_join (thr[i]);
+    r_thread_unref (thr[i]);
+  }
+
+  r_assert_cmpuint (r_atomic_uint_load (&ctx.invocations), ==, 1);
+}
+RTEST_END;
+
 #else
 RTEST (rthread, dummy, RTEST_FAST)
 {
