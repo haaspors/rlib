@@ -125,6 +125,35 @@ jobs:
           name: testlog-windows-${{ matrix.buildtype }}
           path: build/meson-logs/
 
+  windows-arm:
+    name: Windows ARM / MSVC / ${{ matrix.buildtype }}
+    # Exercises the AArch64 + Windows IsProcessorFeaturePresent
+    # detection path and the MSVC __crc32c / arm_neon AES intrinsics.
+    runs-on: windows-11-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        buildtype: [debugoptimized, release]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: arm64
+      - name: Install meson + ninja
+        run: pip install meson ninja
+      - name: Configure
+        run: meson setup build --buildtype=${{ matrix.buildtype }}
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        run: meson test -C build --print-errorlogs --timeout-multiplier 6
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: testlog-windows-arm-${{ matrix.buildtype }}
+          path: build/meson-logs/
+
   sanitizers:
     name: Sanitizers / ${{ matrix.name }}
     runs-on: ubuntu-latest
