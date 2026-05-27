@@ -1283,7 +1283,7 @@ r_test_run_tests_full (const RTest * tests, rsize count, RTestRunFlag flags, FIL
 
 typedef struct {
   RTestType type;
-  const rchar * filter;
+  rchar * const * filters;
   RTestRunFlag flags;
   /* Side-channel for r_test_run_tests so it can publish a breakdown
    * of which rejection source dropped each filtered test. Bumped only
@@ -1298,8 +1298,8 @@ static rboolean
 r_test_filter_default (const RTest * test, rsize __i, rpointer data)
 {
   RTestFilterCtx * ctx = data;
-  rchar fullname[1024], * wf;
-  rboolean ret;
+  rchar fullname[1024];
+  rsize i;
 
   (void)__i;
 
@@ -1329,25 +1329,29 @@ r_test_filter_default (const RTest * test, rsize __i, rpointer data)
     if (!include)
       return FALSE;
   }
-  if (ctx->filter == NULL)
+  if (ctx->filters == NULL || ctx->filters[0] == NULL)
     return TRUE;
 
   fullname[0] = 0;
   r_test_fill_path (test, fullname, sizeof (fullname));
-  wf = r_strprintf ("*%s*", ctx->filter);
-  ret = r_str_match_simple_pattern (fullname, -1, wf);
-  r_free (wf);
+  for (i = 0; ctx->filters[i] != NULL; i++) {
+    rchar * wf = r_strprintf ("*%s*", ctx->filters[i]);
+    rboolean matched = r_str_match_simple_pattern (fullname, -1, wf);
+    r_free (wf);
+    if (matched)
+      return TRUE;
+  }
 
-  if (!ret && test->skip == R_TEST_NO_SKIP)
+  if (test->skip == R_TEST_NO_SKIP)
     ctx->filtered_pattern++;
-  return ret;
+  return FALSE;
 }
 
 RTestReport *
 r_test_run_tests (const RTest * tests, rsize count, RTestRunFlag flags, FILE * f,
-    RTestType type, const rchar * filter)
+    RTestType type, rchar * const * filters)
 {
-  RTestFilterCtx ctx = { type, filter, flags, 0, 0 };
+  RTestFilterCtx ctx = { type, filters, flags, 0, 0 };
   RTestReport * ret = r_test_run_tests_full (tests, count, flags, f,
       r_test_filter_default, &ctx);
   if (ret != NULL) {
