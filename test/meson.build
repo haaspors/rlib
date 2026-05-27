@@ -30,6 +30,7 @@ rlibtest_sources = [
   'recdsa.c',
   'recurve.c',
   'recurve-montgomery.c',
+  'rxdh.c',
   'rdirtree.c',
   'relf.c',
   'rendianness.c',
