@@ -21,12 +21,14 @@
 #include <rlib/rcpufeatures.h>
 #include <rlib/rmem.h>
 
-#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+#ifdef HAVE_NMMINTRIN_H
 # include <nmmintrin.h>
 #endif
 
-#if defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+#ifdef HAVE_ARM_ACLE_H
 # include <arm_acle.h>
+#elif defined(HAVE_INTRIN_H)
+# include <intrin.h>
 #endif
 
 static const ruint32 g__r_crc32_tbl[] = {
@@ -155,7 +157,7 @@ r_crc32c_update_sw (ruint32 crc, rconstpointer buffer, rsize size)
   return ~crc;
 }
 
-#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+#ifdef HAVE_NMMINTRIN_H
 /* The per-function target attribute lets us call _mm_crc32_* without
  * -msse4.2 at file scope; r_crc32c_update gates entry on
  * R_CPU_FEATURE_SSE4_2 so the SSE4.2 instructions only ever run
@@ -192,10 +194,13 @@ r_crc32c_update_sse42 (ruint32 crc, rconstpointer buffer, rsize size)
 }
 #endif
 
-#if defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+#if defined(HAVE_ARM_ACLE_H) || defined(HAVE_INTRIN_H)
 /* Same target-attribute pattern as the SSE4.2 path; entry gated on
- * R_CPU_FEATURE_ARM_CRC32 by r_crc32c_update. */
+ * R_CPU_FEATURE_ARM_CRC32 by r_crc32c_update. MSVC ARM intrinsics
+ * compile in without a per-function target attribute. */
+# if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("+crc")))
+# endif
 static ruint32
 r_crc32c_update_armv8 (ruint32 crc, rconstpointer buffer, rsize size)
 {
@@ -224,10 +229,10 @@ r_crc32c_update_armv8 (ruint32 crc, rconstpointer buffer, rsize size)
 ruint32
 r_crc32c_update (ruint32 crc, rconstpointer buffer, rsize size)
 {
-#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+#ifdef HAVE_NMMINTRIN_H
   if (r_cpu_has (R_CPU_FEATURE_SSE4_2))
     return r_crc32c_update_sse42 (crc, buffer, size);
-#elif defined(R_ARCH_AARCH64) && !defined(_MSC_VER)
+#elif defined(HAVE_ARM_ACLE_H) || defined(HAVE_INTRIN_H)
   if (r_cpu_has (R_CPU_FEATURE_ARM_CRC32))
     return r_crc32c_update_armv8 (crc, buffer, size);
 #endif
