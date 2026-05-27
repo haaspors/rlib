@@ -44,6 +44,40 @@ RTEST (rcipher, find_by_str, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rcipher, aead_misuse_guards, RTEST_FAST)
+{
+  RCryptoCipher * cipher;
+  const ruint8 key[128 / 8] = { 0 };
+  ruint8 iv[R_AES_BLOCK_BYTES] = { 0 };
+  ruint8 dst[R_AES_BLOCK_BYTES];
+  ruint8 src[R_AES_BLOCK_BYTES] = { 0 };
+  ruint8 tag[R_AES_BLOCK_BYTES];
+
+  cipher = r_cipher_aes_128_cbc_new (key);
+  r_assert_cmpptr (cipher, !=, NULL);
+
+  /* Non-AEAD cipher reports is_aead = FALSE. */
+  r_assert (!r_crypto_cipher_is_aead (cipher));
+
+  /* Calling the AEAD entry points on a non-AEAD cipher returns
+   * NOT_AEAD rather than silently dropping authentication. */
+  r_assert_cmpint (r_crypto_cipher_encrypt_aead (cipher, dst, sizeof (dst),
+        src, NULL, 0, iv, sizeof (iv), tag, sizeof (tag)),
+      ==, R_CRYPTO_CIPHER_NOT_AEAD);
+  r_assert_cmpint (r_crypto_cipher_decrypt_aead (cipher, dst, sizeof (dst),
+        src, NULL, 0, iv, sizeof (iv), tag, sizeof (tag)),
+      ==, R_CRYPTO_CIPHER_NOT_AEAD);
+
+  /* NULL cipher hits the parameter guard first. */
+  r_assert (!r_crypto_cipher_is_aead (NULL));
+  r_assert_cmpint (r_crypto_cipher_encrypt_aead (NULL, dst, sizeof (dst),
+        src, NULL, 0, iv, sizeof (iv), tag, sizeof (tag)),
+      ==, R_CRYPTO_CIPHER_INVAL);
+
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
 RTEST (rcipher, null, RTEST_FAST)
 {
   RCryptoCipher * cipher;

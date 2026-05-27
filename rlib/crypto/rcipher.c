@@ -37,7 +37,8 @@ r_crypto_cipher_null_func (const RCryptoCipher * cipher,
 
 const RCryptoCipherInfo g__r_crypto_null_cipher = { "NULL",
   R_CRYPTO_CIPHER_ALGO_NULL, R_CRYPTO_CIPHER_MODE_STREAM, 0, 0, 1,
-  r_crypto_cipher_null_func, r_crypto_cipher_null_func
+  r_crypto_cipher_null_func, r_crypto_cipher_null_func,
+  NULL, NULL
 };
 
 const RCryptoCipherInfo * g__r_crypto_ciphers[] = {
@@ -116,11 +117,21 @@ r_crypto_cipher_new (const RCryptoCipherInfo * info, const ruint8 * key)
   return NULL;
 }
 
+rboolean
+r_crypto_cipher_is_aead (const RCryptoCipher * cipher)
+{
+  if (R_UNLIKELY (cipher == NULL)) return FALSE;
+  return cipher->info->mode == R_CRYPTO_CIPHER_MODE_GCM ||
+         cipher->info->mode == R_CRYPTO_CIPHER_MODE_CCM;
+}
+
 RCryptoCipherResult
 r_crypto_cipher_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize)
 {
   if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (r_crypto_cipher_is_aead (cipher)))
+    return R_CRYPTO_CIPHER_NEEDS_AEAD;
   return cipher->info->enc (cipher, dst, size, data, iv, ivsize);
 }
 
@@ -129,6 +140,36 @@ r_crypto_cipher_decrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize)
 {
   if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (r_crypto_cipher_is_aead (cipher)))
+    return R_CRYPTO_CIPHER_NEEDS_AEAD;
   return cipher->info->dec (cipher, dst, size, data, iv, ivsize);
+}
+
+RCryptoCipherResult
+r_crypto_cipher_encrypt_aead (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize)
+{
+  if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (!r_crypto_cipher_is_aead (cipher)))
+    return R_CRYPTO_CIPHER_NOT_AEAD;
+  return cipher->info->aead_enc (cipher, dst, size, data,
+      aad, aadsize, iv, ivsize, tag, tagsize);
+}
+
+RCryptoCipherResult
+r_crypto_cipher_decrypt_aead (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize)
+{
+  if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (!r_crypto_cipher_is_aead (cipher)))
+    return R_CRYPTO_CIPHER_NOT_AEAD;
+  return cipher->info->aead_dec (cipher, dst, size, data,
+      aad, aadsize, iv, ivsize, tag, tagsize);
 }
 
