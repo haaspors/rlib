@@ -25,88 +25,227 @@
 #include <rlib/rtypes.h>
 #include <rlib/rref.h>
 
+/**
+ * @defgroup r_crypto_cipher Block / stream cipher base
+ * @brief Algorithm-agnostic block / stream cipher interface; concrete
+ * cipher families (AES, ARC4, ...) plug into it via @c RCryptoCipherInfo.
+ * @{
+ */
+
+/**
+ * @file rlib/crypto/rcipher.h
+ * @brief Block / stream cipher base interface.
+ *
+ * Provides the algorithm- and mode-neutral surface every concrete
+ * cipher (AES, ARC4, ...) registers against. A cipher is a reference-
+ * counted @c RCryptoCipher whose @c info pointer carries the
+ * algorithm + mode + key size + operation function pointers; concrete
+ * families publish a static array of @c RCryptoCipherInfo entries (one
+ * per algo/mode/bits triple) and a matching factory.
+ *
+ * **Usage:**
+ *  - Look up an @c RCryptoCipherInfo by name or by tuple
+ *    (@c r_crypto_cipher_find_by_str / @c _find_by_type), or take one
+ *    from the algorithm-specific factory (e.g. @c r_cipher_aes_new).
+ *  - Create the cipher with @c r_crypto_cipher_new (or the family's
+ *    factory) - the new instance retains a borrowed pointer to @p info.
+ *  - Encrypt / decrypt one buffer per call with
+ *    @c r_crypto_cipher_encrypt / @c _decrypt. The @p iv argument is
+ *    read-write; chained-mode callers reuse it to chain successive
+ *    calls.
+ *  - Release with @c r_crypto_cipher_unref.
+ *
+ * The base API is one-shot only - there is no incremental
+ * @c init/update/final flow.
+ */
+
 R_BEGIN_DECLS
 
+/** @brief Cipher algorithm identity (algorithm family, not mode or size). */
 typedef enum {
   R_CRYPTO_CIPHER_ALGO_NONE = 0,
-  R_CRYPTO_CIPHER_ALGO_NULL,
-  R_CRYPTO_CIPHER_ALGO_AES,
-  R_CRYPTO_CIPHER_ALGO_ARC4,
-  R_CRYPTO_CIPHER_ALGO_BLOWFISH,
-  R_CRYPTO_CIPHER_ALGO_DES,
-  R_CRYPTO_CIPHER_ALGO_3DES,
-  R_CRYPTO_CIPHER_ALGO_CAMELLIA,
+  R_CRYPTO_CIPHER_ALGO_NULL,        /**< Pass-through cipher (for negotiation / testing). */
+  R_CRYPTO_CIPHER_ALGO_AES,         /**< AES (FIPS 197). */
+  R_CRYPTO_CIPHER_ALGO_ARC4,        /**< RC4 stream cipher. */
+  R_CRYPTO_CIPHER_ALGO_BLOWFISH,    /**< Blowfish. */
+  R_CRYPTO_CIPHER_ALGO_DES,         /**< Single DES. */
+  R_CRYPTO_CIPHER_ALGO_3DES,        /**< Triple DES. */
+  R_CRYPTO_CIPHER_ALGO_CAMELLIA,    /**< Camellia. */
 } RCryptoCipherAlgorithm;
 
+/**
+ * @brief Mode of operation for a block cipher (or stream-cipher marker).
+ *
+ * Combined with @c RCryptoCipherAlgorithm and a key-size in bits to
+ * uniquely identify an @c RCryptoCipherInfo.
+ */
 typedef enum {
   R_CRYPTO_CIPHER_MODE_NONE = 0,
-  R_CRYPTO_CIPHER_MODE_ECB,
-  R_CRYPTO_CIPHER_MODE_CBC,
-  R_CRYPTO_CIPHER_MODE_CFB,
-  R_CRYPTO_CIPHER_MODE_OFB,
-  R_CRYPTO_CIPHER_MODE_CTR,
-  R_CRYPTO_CIPHER_MODE_GCM,
-  R_CRYPTO_CIPHER_MODE_CCM,
-  R_CRYPTO_CIPHER_MODE_STREAM,
+  R_CRYPTO_CIPHER_MODE_ECB,         /**< Electronic Code Book. */
+  R_CRYPTO_CIPHER_MODE_CBC,         /**< Cipher Block Chaining. */
+  R_CRYPTO_CIPHER_MODE_CFB,         /**< Cipher Feedback. */
+  R_CRYPTO_CIPHER_MODE_OFB,         /**< Output Feedback. */
+  R_CRYPTO_CIPHER_MODE_CTR,         /**< Counter mode. */
+  R_CRYPTO_CIPHER_MODE_GCM,         /**< Galois / Counter Mode (AEAD; future). */
+  R_CRYPTO_CIPHER_MODE_CCM,         /**< Counter with CBC-MAC (AEAD; future). */
+  R_CRYPTO_CIPHER_MODE_STREAM,      /**< Generic stream cipher (no block boundary). */
 } RCryptoCipherMode;
 
+/** @brief Padding scheme for fixed-block modes that need to handle
+ * the residual partial block. Independent of mode dispatch. */
 typedef enum {
-  R_CRYPTO_CIPHER_PADDING_NONE,           /* complete blocks only */
-  R_CRYPTO_CIPHER_PADDING_PKCS7,
-  R_CRYPTO_CIPHER_PADDING_X923,           /* zeros and length     */
-  R_CRYPTO_CIPHER_PADDING_ISO_7816_4,     /* ISO/IEC 7816-4       */
-  R_CRYPTO_CIPHER_PADDING_ZEROS,
+  R_CRYPTO_CIPHER_PADDING_NONE,         /**< No padding; complete blocks only. */
+  R_CRYPTO_CIPHER_PADDING_PKCS7,        /**< PKCS#7 padding (RFC 5652). */
+  R_CRYPTO_CIPHER_PADDING_X923,         /**< ANSI X9.23: zero bytes plus length. */
+  R_CRYPTO_CIPHER_PADDING_ISO_7816_4,   /**< ISO/IEC 7816-4: 0x80 then zeros. */
+  R_CRYPTO_CIPHER_PADDING_ZEROS,        /**< Zero bytes only (length must be known out-of-band). */
 } RCryptoCipherPadding;
 
+/** @brief Result code returned by cipher operations. */
 typedef enum {
-  R_CRYPTO_CIPHER_OK = 0,
-  R_CRYPTO_CIPHER_OOM,
-  R_CRYPTO_CIPHER_INVAL,
-  R_CRYPTO_CIPHER_WRONG_BLOCK_SIZE,
+  R_CRYPTO_CIPHER_OK = 0,               /**< Operation succeeded. */
+  R_CRYPTO_CIPHER_OOM,                  /**< Memory allocation failed. */
+  R_CRYPTO_CIPHER_INVAL,                /**< Invalid argument (NULL, wrong size, etc.). */
+  R_CRYPTO_CIPHER_WRONG_BLOCK_SIZE,     /**< Input not a multiple of @c blocksize for a block mode. */
 } RCryptoCipherResult;
 
+/** @brief Opaque cipher handle. */
 typedef struct _RCryptoCipher RCryptoCipher;
 
+/**
+ * @brief Operation function signature for one-shot encrypt / decrypt.
+ *
+ * @param cipher  Cipher instance.
+ * @param dst     Output buffer; at least @p size bytes.
+ * @param size    Bytes of @p data to process.
+ * @param data    Input buffer; at least @p size bytes. May alias @p dst
+ *                for in-place operation.
+ * @param iv      Initialization vector / counter; read-write so chained
+ *                modes can advance it for the next call. @c NULL is
+ *                accepted only by modes that don't use an IV (ECB).
+ * @param ivsize  Size of @p iv in bytes; must match @c info->ivsize.
+ */
 typedef RCryptoCipherResult (*RCryptoCipherOperation) (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+/** @brief Encrypt operation alias for @c RCryptoCipherOperation. */
 typedef RCryptoCipherOperation RCryptoCipherEncrypt;
+/** @brief Decrypt operation alias for @c RCryptoCipherOperation. */
 typedef RCryptoCipherOperation RCryptoCipherDecrypt;
 
+/**
+ * @brief Static descriptor for a (algo, mode, key-bits) triple.
+ *
+ * Concrete cipher families publish a const array of these and the
+ * lookup functions resolve them by name or by tuple. The matching
+ * @c r_<family>_new / @c r_crypto_cipher_new wires up the resulting
+ * @c RCryptoCipher instance to one of these descriptors.
+ */
 typedef struct {
-  const rchar *           strtype;
-  RCryptoCipherAlgorithm  type;
-  RCryptoCipherMode       mode;
-  ruint16                 keybits;
-  rsize                   ivsize;
-  rsize                   blocksize;
+  const rchar *           strtype;     /**< Canonical name, e.g. @c "AES-128-CBC". */
+  RCryptoCipherAlgorithm  type;        /**< Algorithm family. */
+  RCryptoCipherMode       mode;        /**< Mode of operation. */
+  ruint16                 keybits;     /**< Key size in bits. */
+  rsize                   ivsize;      /**< Expected IV size in bytes (0 if N/A). */
+  rsize                   blocksize;   /**< Native block size in bytes (1 for stream modes). */
 
-  /* Cipher operations */
-  RCryptoCipherEncrypt    enc;
-  RCryptoCipherDecrypt    dec;
+  RCryptoCipherEncrypt    enc;         /**< Encrypt operation. */
+  RCryptoCipherDecrypt    dec;         /**< Decrypt operation. */
 } RCryptoCipherInfo;
 
+/**
+ * @brief Concrete cipher instance.
+ *
+ * Concrete cipher families typically allocate a larger struct that
+ * embeds @c RCryptoCipher at the top, so the @c info pointer indexes
+ * into the family's static info array while the surrounding bytes
+ * carry the family-specific state (key schedule, etc.).
+ */
 struct _RCryptoCipher {
-  RRef ref;
-  const RCryptoCipherInfo * info;
+  RRef ref;                            /**< Reference counter. */
+  const RCryptoCipherInfo * info;      /**< Borrowed descriptor for this instance. */
 };
 
+/**
+ * @name Info lookup
+ * @{
+ */
+/**
+ * @brief Find a cipher descriptor by its canonical name (e.g. @c "AES-128-CBC").
+ *
+ * Case-insensitive; returns @c NULL if no registered cipher matches.
+ */
 R_API const RCryptoCipherInfo * r_crypto_cipher_find_by_str (const rchar * str);
+/**
+ * @brief Find a cipher descriptor by (algorithm, mode, key bits).
+ *
+ * @return Matching descriptor, or @c NULL if no cipher matches.
+ */
 R_API const RCryptoCipherInfo * r_crypto_cipher_find_by_type (
     RCryptoCipherAlgorithm algo, RCryptoCipherMode mode, ruint16 bits);
+/** @} */
 
+/**
+ * @name Cipher lifecycle
+ * @{
+ */
+/**
+ * @brief Pass-through "null" cipher.
+ *
+ * Returns ciphertext == plaintext; used to fill a NULL slot in cipher-
+ * suite negotiation and as a baseline for tests. No key is consumed.
+ */
 R_API RCryptoCipher * r_crypto_cipher_null_new (/* accept key */) R_ATTR_MALLOC;
 
+/**
+ * @brief Create a cipher instance for @p info using @p key.
+ *
+ * Dispatches to the algorithm family's factory; the returned cipher
+ * is bound to @p info for its lifetime.
+ *
+ * @param info  Descriptor selected via @c _find_by_str / @c _find_by_type.
+ * @param key   Key bytes; size dictated by @c info->keybits.
+ * @return Cipher instance; release with @c r_crypto_cipher_unref.
+ */
 R_API RCryptoCipher * r_crypto_cipher_new (const RCryptoCipherInfo * info,
     const ruint8 * key) R_ATTR_MALLOC;
+/** @brief Increment the cipher's refcount. */
 #define r_crypto_cipher_ref r_ref_ref
+/** @brief Decrement the cipher's refcount; frees when it reaches zero. */
 #define r_crypto_cipher_unref r_ref_unref
+/** @} */
 
+/**
+ * @name One-shot encrypt / decrypt
+ * @{
+ */
+/**
+ * @brief Encrypt @p size bytes from @p data into @p dst.
+ *
+ * Buffers may alias for in-place operation. For block modes, @p size
+ * must be a multiple of @c info->blocksize.
+ *
+ * @param cipher  Cipher instance.
+ * @param dst     Output buffer; at least @p size bytes.
+ * @param size    Number of input bytes.
+ * @param data    Input buffer; at least @p size bytes.
+ * @param iv      Initialization vector / counter (read-write); chained
+ *                modes update it in place.
+ * @param ivsize  Size of @p iv; must match @c info->ivsize.
+ */
 R_API RCryptoCipherResult r_crypto_cipher_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+/**
+ * @brief Decrypt @p size bytes from @p data into @p dst.
+ *
+ * See @c r_crypto_cipher_encrypt for the buffer / IV contract.
+ */
 R_API RCryptoCipherResult r_crypto_cipher_decrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+/** @} */
 
 R_END_DECLS
+
+/** @} */ /* r_crypto_cipher group */
 
 #endif /* __R_CRYPTO_CIPHER_H__ */
 

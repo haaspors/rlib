@@ -25,13 +25,68 @@
 #include <rlib/rtypes.h>
 #include <rlib/crypto/rcipher.h>
 
+/**
+ * @defgroup r_crypto_aes AES (FIPS 197)
+ * @brief AES cipher (128 / 192 / 256-bit keys) across ECB, CBC, CTR,
+ * CFB, OFB modes; built on the @c RCryptoCipher base.
+ * @{
+ */
+
+/**
+ * @file rlib/crypto/raes.h
+ * @brief AES block cipher and modes of operation.
+ *
+ * Wraps the 128 / 192 / 256-bit AES cipher in the modes of operation
+ * registered against @c RCryptoCipherInfo (ECB / CBC / CTR / CFB / OFB).
+ * A construction helper picks the right per-bits / HW-accelerated
+ * primitive once at @c r_cipher_aes_new and caches it on the cipher
+ * instance; the registered @c enc / @c dec operations then dispatch
+ * through that cached pointer per call.
+ *
+ * **Picking a constructor:**
+ *  - @c r_cipher_aes_new (mode, bits, key) - generic.
+ *  - @c r_cipher_aes_NNN_MMM_new (key)     - explicit (mode, key-size) form.
+ *  - @c r_cipher_aes_new_from_hex          - convenience for tests / config.
+ *
+ * **HW dispatch:** on x86 with AES-NI or on AArch64 with the +crypto
+ * extension, the per-block primitive runs in hardware; falls back to
+ * a constant-time-ish table implementation otherwise. Selection is
+ * automatic at construction.
+ */
+
 R_BEGIN_DECLS
 
+/** @brief Canonical algorithm name for @c r_crypto_cipher_find_by_str. */
 #define R_AES_STR           "AES"
+/** @brief AES block size in bytes (16, regardless of key length). */
 #define R_AES_BLOCK_BYTES   16
 
+/**
+ * @brief Create an AES cipher with explicit @p mode, @p bits, and @p key.
+ *
+ * @param mode  One of @c R_CRYPTO_CIPHER_MODE_ECB / CBC / CTR / CFB / OFB.
+ * @param bits  128, 192, or 256.
+ * @param key   @p bits / 8 key bytes.
+ * @return Cipher instance, or @c NULL on invalid arguments.
+ */
 R_API RCryptoCipher * r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key) R_ATTR_MALLOC;
+/**
+ * @brief Create an AES cipher with @p mode and a hex-encoded key.
+ *
+ * The key-bit size is inferred from the length of @p hexkey
+ * (32 / 48 / 64 hex characters for 128 / 192 / 256 bits). Convenience
+ * for tests and configuration files; production code should prefer
+ * @c r_cipher_aes_new with raw bytes.
+ */
 R_API RCryptoCipher * r_cipher_aes_new_from_hex (RCryptoCipherMode mode, const rchar * hexkey) R_ATTR_MALLOC;
+
+/**
+ * @name Per-mode / per-size factories
+ *
+ * Each shorthand wraps @c r_cipher_aes_new with the matching mode and
+ * key size. Use these when the cipher choice is fixed at compile time.
+ * @{
+ */
 R_API RCryptoCipher * r_cipher_aes_128_ecb_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_192_ecb_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_256_ecb_new (const ruint8 * key) R_ATTR_MALLOC;
@@ -47,13 +102,48 @@ R_API RCryptoCipher * r_cipher_aes_256_cfb_new (const ruint8 * key) R_ATTR_MALLO
 R_API RCryptoCipher * r_cipher_aes_128_ofb_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_192_ofb_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_256_ofb_new (const ruint8 * key) R_ATTR_MALLOC;
+/** @} */
 
 
+/**
+ * @name Single-block ECB primitive
+ *
+ * Low-level access to one AES block encrypt / decrypt. Exposed for
+ * callers that build their own mode of operation (e.g. KW, custom
+ * KDFs); ordinary use should go through the mode-aware
+ * @c r_crypto_cipher_encrypt entry point.
+ * @{
+ */
+/**
+ * @brief Encrypt one 16-byte block in ECB.
+ *
+ * @return @c TRUE on success.
+ */
 R_API rboolean r_cipher_aes_ecb_encrypt_block (const RCryptoCipher * cipher,
     ruint8 ciphertxt[R_AES_BLOCK_BYTES], const ruint8 plaintxt[R_AES_BLOCK_BYTES]);
+/**
+ * @brief Decrypt one 16-byte block in ECB.
+ *
+ * @return @c TRUE on success.
+ */
 R_API rboolean r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
     ruint8 plaintxt[R_AES_BLOCK_BYTES], const ruint8 ciphertxt[R_AES_BLOCK_BYTES]);
+/** @} */
 
+/**
+ * @name Mode operations
+ *
+ * Each pair is registered against an @c RCryptoCipherInfo so the
+ * generic @c r_crypto_cipher_encrypt / @c _decrypt dispatch via
+ * @c info->enc / @c _dec for that mode. They are also exported here
+ * for callers that already have a typed @c RCryptoCipher and want to
+ * skip the lookup.
+ *
+ * @c CTR and @c OFB are self-inverse - encrypt and decrypt are the
+ * same operation - so each is exposed once and the matching
+ * @c _decrypt alias resolves to its @c _encrypt sibling.
+ * @{
+ */
 R_API RCryptoCipherResult r_cipher_aes_ecb_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 R_API RCryptoCipherResult r_cipher_aes_ecb_decrypt (const RCryptoCipher * cipher,
@@ -66,6 +156,7 @@ R_API RCryptoCipherResult r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher
 
 R_API RCryptoCipherResult r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+/** @brief CTR is self-inverse; decrypt resolves to encrypt. */
 #define r_cipher_aes_ctr_decrypt r_cipher_aes_ctr_encrypt
 
 R_API RCryptoCipherResult r_cipher_aes_cfb_encrypt (const RCryptoCipher * cipher,
@@ -75,9 +166,13 @@ R_API RCryptoCipherResult r_cipher_aes_cfb_decrypt (const RCryptoCipher * cipher
 
 R_API RCryptoCipherResult r_cipher_aes_ofb_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
+/** @brief OFB is self-inverse; decrypt resolves to encrypt. */
 #define r_cipher_aes_ofb_decrypt r_cipher_aes_ofb_encrypt
+/** @} */
 
 R_END_DECLS
+
+/** @} */ /* r_crypto_aes group */
 
 #endif /* __R_CRYPTO_AES_H__ */
 
