@@ -58,6 +58,7 @@ rlib_sources = [
   'crypto/recc.c',
   'crypto/recurve.c',
   'crypto/recurve-edwards.c',
+  'crypto/red25519.c',
   'crypto/recurve-montgomery.c',
   'crypto/rhmac.c',
   'crypto/rkey.c',

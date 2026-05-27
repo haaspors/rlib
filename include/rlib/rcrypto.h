@@ -28,6 +28,7 @@
 #include <rlib/crypto/recc.h>
 #include <rlib/crypto/recurve.h>
 #include <rlib/crypto/recurve-edwards.h>
+#include <rlib/crypto/red25519.h>
 #include <rlib/crypto/recurve-montgomery.h>
 #include <rlib/crypto/rhmac.h>
 #include <rlib/crypto/rkey.h>
