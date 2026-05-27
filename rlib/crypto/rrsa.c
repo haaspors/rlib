@@ -67,6 +67,10 @@ typedef struct {
   RMpintFE_Big        r2_p;
   RMpintFE_BigMontCtx ctx_q;
   RMpintFE_Big        r2_q;
+  /* Montgomery form of qInv in ctx_p; consumed by the CT CRT
+   * recombination so the inner mul_mont is a single FE op per private
+   * key use instead of a per-call mont_in chain. */
+  RMpintFE_Big        qInv_M_p;
   rboolean have_pq;
 } RRsaPrivKey;
 
@@ -244,6 +248,16 @@ r_rsa_priv_key_precompute_cache (RRsaPrivKey * pk)
     if (!r_mpint_fe_big_compute_r_squared (&pk->r2_q, &pk->q,
           pk->ctx_q.n_digits))
       return FALSE;
+
+    /* qInv lifts cleanly into ctx_p only if qInv < p (always true:
+     * it's defined as q^-1 mod p, so it's in [0, p)). The lift is one
+     * FE mul_mont per key build, paying off every private op. */
+    if (!r_mpint_iszero (&pk->qp)) {
+      RMpintFE_Big qInv_fe;
+      r_mpint_fe_big_from_mpint (&qInv_fe, &pk->qp, pk->ctx_p.n_digits);
+      r_mpint_fe_big_mont_in (&pk->qInv_M_p, &qInv_fe, &pk->r2_p, &pk->ctx_p);
+      r_memclear_secure (&qInv_fe, sizeof (qInv_fe));
+    }
   }
   return TRUE;
 }
@@ -751,35 +765,85 @@ r_rsa_modexp_private (const RRsaPrivKey * key, const rmpint * c, rmpint * m)
      *   m2 = c^dq mod q
      *   h  = (m1 - m2) * qInv mod p
      *   m  = m2 + h * q
-     * r_mpint_mod treats inputs as unsigned, so reduce m2 mod p first
-     * to keep (m1 - m2_p) in (-p, p) and add p once if it lands negative. */
-    rmpint m1, m2, m2_p, h;
-    rboolean ok;
+     * The CT branch below assumes bits(p) >= bits(q), which is what
+     * keeps q < 2p and lets mod_ct reduce m2 with a single
+     * conditional subtract. */
+    if (r_mpint_bits_used (&key->p) >= r_mpint_bits_used (&key->q)) {
+      RMpintFE_Big m1_fe, m2_fe, m2_p_fe, h_fe, q_fe, m_wide;
+      ruint16 n_p = key->ctx_p.n_digits;
+      ruint16 n_q = key->ctx_q.n_digits;
+      rmpint m1, m2;
+      rboolean ok;
 
-    r_mpint_init (&m1);
-    r_mpint_init (&m2);
-    r_mpint_init (&m2_p);
-    r_mpint_init (&h);
+      r_mpint_init_secure (&m1);
+      r_mpint_init_secure (&m2);
 
-    ok = r_mpint_fe_big_expmod_ct (&m1, c, &key->dp, &key->p,
-            &key->ctx_p, &key->r2_p, r_mpint_bits_used (&key->p))
-      && r_mpint_fe_big_expmod_ct (&m2, c, &key->dq, &key->q,
-            &key->ctx_q, &key->r2_q, r_mpint_bits_used (&key->q))
-      && r_mpint_mod (&m2_p, &m2, &key->p)
-      && r_mpint_sub (&h, &m1, &m2_p);
-    if (ok && r_mpint_isneg (&h))
-      ok = r_mpint_add (&h, &h, &key->p);
-    ok = ok
-      && r_mpint_mul (&h, &h, &key->qp)
-      && r_mpint_mod (&h, &h, &key->p)
-      && r_mpint_mul (m, &h, &key->q)
-      && r_mpint_add (m, m, &m2);
+      ok = r_mpint_fe_big_expmod_ct (&m1, c, &key->dp, &key->p,
+              &key->ctx_p, &key->r2_p, r_mpint_bits_used (&key->p))
+        && r_mpint_fe_big_expmod_ct (&m2, c, &key->dq, &key->q,
+              &key->ctx_q, &key->r2_q, r_mpint_bits_used (&key->q));
+      if (ok) {
+        r_mpint_fe_big_from_mpint (&m1_fe, &m1, n_p);
+        r_mpint_fe_big_from_mpint (&m2_fe, &m2, n_p);
+        r_mpint_fe_big_mod_ct (&m2_p_fe, &m2_fe, &key->ctx_p);
 
-    r_mpint_clear (&m1);
-    r_mpint_clear (&m2);
-    r_mpint_clear (&m2_p);
-    r_mpint_clear (&h);
-    return ok;
+        r_mpint_fe_big_sub (&h_fe, &m1_fe, &m2_p_fe, &key->ctx_p);
+        r_mpint_fe_big_mont_in (&h_fe, &h_fe, &key->r2_p, &key->ctx_p);
+        r_mpint_fe_big_mul_mont (&h_fe, &h_fe, &key->qInv_M_p, &key->ctx_p);
+        r_mpint_fe_big_mont_out (&h_fe, &h_fe, &key->ctx_p);
+
+        r_mpint_fe_big_from_mpint (&q_fe, &key->q, n_q);
+        r_mpint_fe_big_mul_ct (&m_wide, &h_fe, n_p, &q_fe, n_q);
+        r_mpint_fe_big_from_mpint (&m2_fe, &m2, n_q);
+        r_mpint_fe_big_add_ct (&m_wide, &m_wide,
+            (ruint16)(n_p + n_q), &m2_fe, n_q);
+
+        ok = r_mpint_fe_big_to_mpint (m, &m_wide, (ruint16)(n_p + n_q));
+      }
+
+      r_memclear_secure (&m1_fe, sizeof (m1_fe));
+      r_memclear_secure (&m2_fe, sizeof (m2_fe));
+      r_memclear_secure (&m2_p_fe, sizeof (m2_p_fe));
+      r_memclear_secure (&h_fe, sizeof (h_fe));
+      r_memclear_secure (&q_fe, sizeof (q_fe));
+      r_memclear_secure (&m_wide, sizeof (m_wide));
+      r_mpint_clear (&m1);
+      r_mpint_clear (&m2);
+      return ok;
+    } else {
+      /* bits(p) < bits(q): single conditional subtract isn't enough
+       * to reduce m2 mod p in CT, so use the original variable-time
+       * recombination. r_mpint_mod here leaks bits of m2 / qInv via
+       * its long-division timing - acceptable as a fallback for the
+       * uncommon odd-bit-length keygen path. */
+      rmpint m1, m2, m2_p, h;
+      rboolean ok;
+
+      r_mpint_init (&m1);
+      r_mpint_init (&m2);
+      r_mpint_init (&m2_p);
+      r_mpint_init (&h);
+
+      ok = r_mpint_fe_big_expmod_ct (&m1, c, &key->dp, &key->p,
+              &key->ctx_p, &key->r2_p, r_mpint_bits_used (&key->p))
+        && r_mpint_fe_big_expmod_ct (&m2, c, &key->dq, &key->q,
+              &key->ctx_q, &key->r2_q, r_mpint_bits_used (&key->q))
+        && r_mpint_mod (&m2_p, &m2, &key->p)
+        && r_mpint_sub (&h, &m1, &m2_p);
+      if (ok && r_mpint_isneg (&h))
+        ok = r_mpint_add (&h, &h, &key->p);
+      ok = ok
+        && r_mpint_mul (&h, &h, &key->qp)
+        && r_mpint_mod (&h, &h, &key->p)
+        && r_mpint_mul (m, &h, &key->q)
+        && r_mpint_add (m, m, &m2);
+
+      r_mpint_clear (&m1);
+      r_mpint_clear (&m2);
+      r_mpint_clear (&m2_p);
+      r_mpint_clear (&h);
+      return ok;
+    }
   } else {
     return r_mpint_fe_big_expmod_ct (m, c, &key->d, &key->pub.n,
         &key->ctx_n, &key->r2_n, r_mpint_bits_used (&key->pub.n));
