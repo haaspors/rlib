@@ -348,6 +348,7 @@ R_END_DECLS
 
 /** @} */ /* r_types group */
 
+#include <rlib/types/rmemops.h>
 #include <rlib/types/rendianness.h>
 #include <rlib/types/rbitops.h>
 

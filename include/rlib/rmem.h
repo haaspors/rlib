@@ -90,28 +90,55 @@ R_API void r_mem_get_vtable (RMemVTable * out);
 R_API rboolean r_mem_using_system_default (void);
 
 
-/* Common memory operations */
-R_API int       r_memcmp (rconstpointer a, rconstpointer b, rsize size);
-/* Constant-time variant of r_memcmp: returns 0 iff every byte
- * matches, non-zero otherwise. No early-out on the first mismatch,
- * so the wall-clock latency depends only on `size` and not on which
- * bytes (if any) differ - suitable for comparing MAC tags, signature
- * digests, and similar secret-derived material against attacker-
- * supplied values. Does NOT preserve memcmp's sign semantics; only
- * the zero / non-zero distinction is meaningful. */
+/**
+ * @brief Constant-time variant of @c r_memcmp.
+ *
+ * Returns 0 iff every byte matches, non-zero otherwise. No early-out
+ * on the first mismatch, so wall-clock latency depends only on
+ * @p size and not on which bytes (if any) differ - suitable for
+ * comparing MAC tags, signature digests, and similar secret-derived
+ * material against attacker-supplied values.
+ *
+ * Does **not** preserve @c memcmp's sign semantics; only the zero /
+ * non-zero distinction is meaningful. Stays extern so the volatile-
+ * pointer loop in the implementation isn't sniffed apart by the
+ * optimiser.
+ *
+ * The non-constant-time @c r_memcmp / @c r_memset / @c r_memcpy /
+ * @c r_memmove inline primitives live in @c rlib/types/rmemops.h
+ * (transitively pulled in through this header) - that placement is
+ * forced by their use inside the @c rendianness.h load / store
+ * helpers, which are processed earlier in the include chain.
+ *
+ * @param a    First buffer (may be @c NULL).
+ * @param b    Second buffer (may be @c NULL).
+ * @param size Number of bytes to compare.
+ * @return 0 if @p a and @p b are byte-equal across @p size bytes,
+ *         non-zero otherwise.
+ */
 R_API int       r_memcmp_ct (rconstpointer a, rconstpointer b, rsize size);
-R_API rpointer  r_memset (rpointer a, int v, rsize size);
-#define r_memclear(ptr, size)   r_memset (ptr, 0, size)
-/* Zero `size` bytes at `ptr` in a way the compiler can't elide. A
- * regular memset before a free is provably unobservable from the
- * caller's perspective and gets removed by the optimiser ("dead
+
+/**
+ * @brief Zero @p size bytes at @p ptr in a way the compiler can't
+ * elide.
+ *
+ * A regular @c memset before a @c free is provably unobservable from
+ * the caller's perspective and gets removed by the optimiser ("dead
  * store elimination") - which is exactly the wrong outcome for
- * wiping secret material. Use this for buffers that contained
- * keys, scalars, nonces, plaintexts, etc. before they're released. */
+ * wiping secret material. Use this for buffers that contained keys,
+ * scalars, nonces, plaintexts, etc. before they're released.
+ *
+ * Stays extern so the platform-specific guarantees
+ * (@c SecureZeroMemory on Win32, @c explicit_bzero on glibc / *BSD /
+ * musl, volatile-loop fallback elsewhere) live in one place and the
+ * optimiser can't see through them.
+ *
+ * @param ptr  Destination buffer (may be @c NULL or @p size 0; both
+ *             are silent no-ops).
+ * @param size Number of bytes to wipe.
+ */
 R_API void      r_memclear_secure (rpointer ptr, rsize size);
-R_API rpointer  r_memcpy (void * R_ATTR_RESTRICT dst,
-    const void * R_ATTR_RESTRICT src, rsize size);
-R_API rpointer  r_memmove (rpointer dst, rconstpointer src, rsize size);
+
 R_API rpointer  r_memdup (rconstpointer src, rsize size) R_ATTR_MALLOC;
 R_API rsize     r_memagg (rpointer dst, rsize size, rsize * out, ...) R_ATTR_NULL_TERMINATED;
 R_API rsize     r_memaggv (rpointer dst, rsize size, rsize * out, va_list args);

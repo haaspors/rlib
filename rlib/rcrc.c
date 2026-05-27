@@ -175,7 +175,7 @@ r_crc32c_update_sse42 (ruint32 crc, rconstpointer buffer, rsize size)
     ruint64 q;
     /* memcpy avoids the unaligned-load UB a direct (ruint64*)ptr
      * cast carries; compilers fold it into a single mov. */
-    r_memcpy (&q, ptr, sizeof (q));
+    memcpy (&q, ptr, sizeof (q));
     c = (ruint32) _mm_crc32_u64 (c, q);
     ptr += 8;
     size -= 8;
@@ -183,7 +183,7 @@ r_crc32c_update_sse42 (ruint32 crc, rconstpointer buffer, rsize size)
 # endif
   while (size >= 4) {
     ruint32 d;
-    r_memcpy (&d, ptr, sizeof (d));
+    memcpy (&d, ptr, sizeof (d));
     c = _mm_crc32_u32 (c, d);
     ptr += 4;
     size -= 4;
@@ -208,14 +208,14 @@ r_crc32c_update_armv8 (ruint32 crc, rconstpointer buffer, rsize size)
   ruint32 c = ~crc;
   while (size >= 8) {
     ruint64 q;
-    r_memcpy (&q, ptr, sizeof (q));
+    memcpy (&q, ptr, sizeof (q));
     c = __crc32cd (c, q);
     ptr += 8;
     size -= 8;
   }
   while (size >= 4) {
     ruint32 d;
-    r_memcpy (&d, ptr, sizeof (d));
+    memcpy (&d, ptr, sizeof (d));
     c = __crc32cw (c, d);
     ptr += 4;
     size -= 4;
