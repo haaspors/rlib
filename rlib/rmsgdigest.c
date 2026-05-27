@@ -26,6 +26,7 @@ typedef     void (*RMDInit) (RMsgDigest * md);
 typedef rboolean (*RMDFinal) (RMsgDigest * md);
 typedef rboolean (*RMDUpdate) (RMsgDigest * md, rconstpointer data, rsize size);
 typedef rboolean (*RMDGet) (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
+typedef rboolean (*RMDSqueeze) (RMsgDigest * md, ruint8 * data, rsize size);
 
 /* MD5 */
 #define R_MD5_SIZE         (128 / 8)
@@ -101,6 +102,12 @@ static rboolean r_sha512_final (RMsgDigest * md);
 static rboolean r_sha512_update (RMsgDigest * md, rconstpointer data, rsize size);
 static rboolean r_sha512_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
 
+/* SHAKE256 (FIPS 202 §6.2): sponge over Keccak-f[1600] with
+ * rate r = 1088 bits and capacity c = 512 bits. Output length is
+ * caller-chosen per squeeze, so there is no fixed R_SHAKE256_SIZE
+ * sibling to the Merkle-Damgård digest sizes above. */
+#define R_SHAKE256_RATE         (1088 / 8)
+
 struct _RMsgDigest {
   RMsgDigestType type;
   rboolean is_final;
@@ -111,6 +118,11 @@ struct _RMsgDigest {
   RMDFinal final;
   RMDUpdate update;
   RMDGet get;
+  /* XOF squeeze entry, NULL for fixed-output digests. The fact a
+   * digest is a XOF is also recoverable from the type, but the
+   * function-pointer indirection keeps the dispatch local to the
+   * generic entry points. */
+  RMDSqueeze squeeze;
 };
 
 RMsgDigest *
@@ -129,6 +141,8 @@ r_msg_digest_new (RMsgDigestType type)
       return r_msg_digest_new_sha384 ();
     case R_MSG_DIGEST_TYPE_SHA512:
       return r_msg_digest_new_sha512 ();
+    case R_MSG_DIGEST_TYPE_SHAKE256:
+      return r_msg_digest_new_shake256 ();
     default:
       break;
   }
@@ -166,6 +180,10 @@ r_msg_digest_type_size (RMsgDigestType type)
       return R_SHA384_SIZE;
     case R_MSG_DIGEST_TYPE_SHA512:
       return R_SHA512_SIZE;
+    case R_MSG_DIGEST_TYPE_SHAKE256:
+      /* XOF: caller picks the output length per squeeze, so there
+       * is no constant size to report. */
+      return 0;
     default:
       return 0;
   }
@@ -185,6 +203,8 @@ r_msg_digest_type_blocksize (RMsgDigestType type)
     case R_MSG_DIGEST_TYPE_SHA384:
     case R_MSG_DIGEST_TYPE_SHA512:
       return R_SHA512_BLOCK_SIZE;
+    case R_MSG_DIGEST_TYPE_SHAKE256:
+      return R_SHAKE256_RATE;
     default:
       return 0;
   }
@@ -199,6 +219,7 @@ static const rchar * _r_msg_digest_strtbl[] = {
   "sha-256",
   "sha-384",
   "sha-512",
+  "shake256",
 };
 
 const rchar *
@@ -258,8 +279,28 @@ r_msg_digest_finish (RMsgDigest * md)
 }
 
 rboolean
+r_msg_digest_squeeze (RMsgDigest * md, ruint8 * data, rsize size)
+{
+  if (md == NULL || data == NULL || md->squeeze == NULL)
+    return FALSE;
+  /* First squeeze ratchets through finalise - subsequent squeezes
+   * just keep pulling from the sponge. The fixed-output get path
+   * clones-and-finalises so the caller can keep updating; XOF
+   * semantics deliberately don't allow that, which matches FIPS 202
+   * and is also how every other SHAKE consumer expects to drive it. */
+  if (!md->is_final)
+    md->is_final = md->final (md);
+  return md->is_final ? md->squeeze (md, data, size) : FALSE;
+}
+
+rboolean
 r_msg_digest_get_data (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
 {
+  /* XOF: no fixed output to read - caller must use the squeeze
+   * entry point instead. */
+  if (md->squeeze != NULL)
+    return FALSE;
+
   if (!md->is_final) {
     RMsgDigest * h = (RMsgDigest *) r_alloca (md->mdsize);
     rboolean ret;
@@ -320,6 +361,7 @@ r_msg_digest_new_md5 (void)
     ret->final = r_md5_final;
     ret->update = r_md5_update;
     ret->get = r_md5_get;
+    ret->squeeze = NULL;
 
     ret->init (ret);
   }
@@ -551,6 +593,7 @@ r_msg_digest_new_sha1 (void)
     ret->final = r_sha1_final;
     ret->update = r_sha1_update;
     ret->get = r_sha1_get;
+    ret->squeeze = NULL;
 
     ret->init (ret);
   }
@@ -800,6 +843,7 @@ r_msg_digest_new_sha224 (void)
     ret->final = r_sha256_final;
     ret->update = r_sha256_update;
     ret->get = r_sha224_get;
+    ret->squeeze = NULL;
 
     ret->init (ret);
   }
@@ -859,6 +903,7 @@ r_msg_digest_new_sha256 (void)
     ret->final = r_sha256_final;
     ret->update = r_sha256_update;
     ret->get = r_sha256_get;
+    ret->squeeze = NULL;
 
     ret->init (ret);
   }
@@ -1094,6 +1139,7 @@ r_msg_digest_new_sha384 (void)
     ret->final = r_sha512_final;
     ret->update = r_sha512_update;
     ret->get = r_sha384_get;
+    ret->squeeze = NULL;
 
     ret->init (ret);
   }
@@ -1153,6 +1199,7 @@ r_msg_digest_new_sha512 (void)
     ret->final = r_sha512_final;
     ret->update = r_sha512_update;
     ret->get = r_sha512_get;
+    ret->squeeze = NULL;
 
     ret->init (ret);
   }
@@ -1391,3 +1438,193 @@ r_sha512_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
   return TRUE;
 }
 
+
+/**************************************/
+/*               SHAKE256             */
+/**************************************/
+
+/* SHAKE256 is the extendable-output sibling of SHA3-256 from FIPS
+ * 202. Sponge construction over Keccak-f[1600]:
+ *   - rate    r = 1088 bits  (R_SHAKE256_RATE bytes)
+ *   - cap     c =  512 bits  (64 bytes; gives 256-bit collision and
+ *                             preimage resistance)
+ *   - domain  0x1F at the end of absorption (FIPS 202 §6.2)
+ *   - pad     10*1 to fill the final rate block (FIPS 202 §B.2)
+ *
+ * The 5x5 lane state is held as a 25-entry ruint64 array. Absorb
+ * XORs message bytes into the rate portion, permuting whenever the
+ * rate fills. Squeeze reads bytes back out of the rate portion,
+ * permuting between blocks. */
+
+typedef struct {
+  ruint64 lanes[25];
+  rsize absorb_pos;        /* bytes absorbed into the current rate block */
+  rsize squeeze_pos;       /* bytes already extracted from the current rate block */
+} RShake256;
+
+static const ruint64 r_keccakf_rc[24] = {
+  0x0000000000000001ULL, 0x0000000000008082ULL,
+  0x800000000000808aULL, 0x8000000080008000ULL,
+  0x000000000000808bULL, 0x0000000080000001ULL,
+  0x8000000080008081ULL, 0x8000000000008009ULL,
+  0x000000000000008aULL, 0x0000000000000088ULL,
+  0x0000000080008009ULL, 0x000000008000000aULL,
+  0x000000008000808bULL, 0x800000000000008bULL,
+  0x8000000000008089ULL, 0x8000000000008003ULL,
+  0x8000000000008002ULL, 0x8000000000000080ULL,
+  0x000000000000800aULL, 0x800000008000000aULL,
+  0x8000000080008081ULL, 0x8000000000008080ULL,
+  0x0000000080000001ULL, 0x8000000080008008ULL,
+};
+
+static const ruint r_keccakf_rho[24] = {
+   1,  3,  6, 10, 15, 21, 28, 36, 45, 55,  2, 14,
+  27, 41, 56,  8, 25, 43, 62, 18, 39, 61, 20, 44,
+};
+
+static const ruint r_keccakf_pi[24] = {
+  10,  7, 11, 17, 18,  3,  5, 16,  8, 21, 24,  4,
+  15, 23, 19, 13, 12,  2, 20, 14, 22,  9,  6,  1,
+};
+
+#define R_KECCAK_ROTL64(x, n) (((x) << (n)) | ((x) >> (64 - (n))))
+
+static void
+r_keccakf1600 (ruint64 * a)
+{
+  ruint round;
+  ruint64 b[5], t;
+  ruint i, j;
+
+  for (round = 0; round < 24; round++) {
+    /* theta */
+    for (i = 0; i < 5; i++)
+      b[i] = a[i] ^ a[i + 5] ^ a[i + 10] ^ a[i + 15] ^ a[i + 20];
+    for (i = 0; i < 5; i++) {
+      t = b[(i + 4) % 5] ^ R_KECCAK_ROTL64 (b[(i + 1) % 5], 1);
+      for (j = 0; j < 25; j += 5)
+        a[i + j] ^= t;
+    }
+
+    /* rho + pi via the precomputed permutation: lane index a[1] kicks
+     * off the chain, walks via r_keccakf_pi, rotating each by the
+     * matching r_keccakf_rho offset. */
+    t = a[1];
+    for (i = 0; i < 24; i++) {
+      ruint64 next = a[r_keccakf_pi[i]];
+      a[r_keccakf_pi[i]] = R_KECCAK_ROTL64 (t, r_keccakf_rho[i]);
+      t = next;
+    }
+
+    /* chi */
+    for (j = 0; j < 25; j += 5) {
+      for (i = 0; i < 5; i++)
+        b[i] = a[i + j];
+      for (i = 0; i < 5; i++)
+        a[i + j] = b[i] ^ ((~b[(i + 1) % 5]) & b[(i + 2) % 5]);
+    }
+
+    /* iota */
+    a[0] ^= r_keccakf_rc[round];
+  }
+}
+
+/* Absorb @size bytes into the sponge, XORing into the rate portion
+ * one byte at a time and permuting whenever the rate fills. Byte-
+ * granular to keep the code shape compact and to match FIPS 202's
+ * little-endian lane interpretation directly. */
+static rboolean
+r_shake256_update (RMsgDigest * md, rconstpointer data, rsize size)
+{
+  RShake256 * s = (RShake256 *)(md + 1);
+  const ruint8 * p = data;
+  ruint8 * state_bytes = (ruint8 *)s->lanes;
+  rsize i;
+
+  if (R_UNLIKELY (data == NULL))
+    return FALSE;
+
+  for (i = 0; i < size; i++) {
+    state_bytes[s->absorb_pos++] ^= p[i];
+    if (s->absorb_pos == R_SHAKE256_RATE) {
+      r_keccakf1600 (s->lanes);
+      s->absorb_pos = 0;
+    }
+  }
+  return TRUE;
+}
+
+static rboolean
+r_shake256_final (RMsgDigest * md)
+{
+  RShake256 * s = (RShake256 *)(md + 1);
+  ruint8 * state_bytes = (ruint8 *)s->lanes;
+
+  /* SHAKE domain separator (0x1F = bits 1, 1, 1, 1, 1 reading LSB-
+   * first per FIPS 202 §B.2 - really the suffix bits "1111" followed
+   * by the leading "1" of the 10*1 pad). Then zero-fill up to the
+   * last rate byte, where we OR in 0x80 for the trailing "1" bit of
+   * the pad. */
+  state_bytes[s->absorb_pos] ^= 0x1F;
+  state_bytes[R_SHAKE256_RATE - 1] ^= 0x80;
+  r_keccakf1600 (s->lanes);
+  s->absorb_pos = 0;
+  s->squeeze_pos = 0;
+  return TRUE;
+}
+
+static rboolean
+r_shake256_squeeze (RMsgDigest * md, ruint8 * data, rsize size)
+{
+  RShake256 * s = (RShake256 *)(md + 1);
+  const ruint8 * state_bytes = (const ruint8 *)s->lanes;
+  rsize copied = 0;
+
+  while (copied < size) {
+    rsize avail = R_SHAKE256_RATE - s->squeeze_pos;
+    rsize take = size - copied;
+    if (take > avail) take = avail;
+    r_memcpy (data + copied, state_bytes + s->squeeze_pos, take);
+    s->squeeze_pos += take;
+    copied += take;
+    if (s->squeeze_pos == R_SHAKE256_RATE) {
+      r_keccakf1600 (s->lanes);
+      s->squeeze_pos = 0;
+    }
+  }
+  return TRUE;
+}
+
+static void
+r_shake256_init (RMsgDigest * md)
+{
+  RShake256 * s = (RShake256 *)(md + 1);
+  rsize i;
+  for (i = 0; i < 25; i++)
+    s->lanes[i] = 0;
+  s->absorb_pos = 0;
+  s->squeeze_pos = 0;
+}
+
+RMsgDigest *
+r_msg_digest_new_shake256 (void)
+{
+  RMsgDigest * ret;
+  rsize mdsize = sizeof (RMsgDigest) + sizeof (RShake256);
+
+  if ((ret = r_malloc (mdsize)) != NULL) {
+    ret->type = R_MSG_DIGEST_TYPE_SHAKE256;
+    ret->is_final = FALSE;
+    ret->mdsize = mdsize;
+    ret->blocksize = R_SHAKE256_RATE;
+    ret->init = r_shake256_init;
+    ret->final = r_shake256_final;
+    ret->update = r_shake256_update;
+    ret->get = NULL;
+    ret->squeeze = r_shake256_squeeze;
+
+    ret->init (ret);
+  }
+
+  return ret;
+}

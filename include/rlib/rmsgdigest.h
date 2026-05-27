@@ -26,8 +26,8 @@
 
 /**
  * @defgroup r_msg_digest Cryptographic message digests
- * @brief MD2 / MD4 / MD5 / SHA-1 / SHA-2 family hashes behind a
- * uniform absorb / finalise / extract API.
+ * @brief MD2 / MD4 / MD5 / SHA-1 / SHA-2 family hashes plus the
+ * SHAKE256 extendable-output function (XOF).
  * @{
  */
 
@@ -40,9 +40,14 @@
  * constructed via one of the per-algorithm @c r_msg_digest_new_*
  * helpers (or the type-dispatched @c r_msg_digest_new). Drive it
  * with one or more @c r_msg_digest_update calls and then extract
- * the result with @c r_msg_digest_get_data; every supported
- * algorithm has a fixed output length, available from
- * @c r_msg_digest_size or @c r_msg_digest_type_size.
+ * the result with @c r_msg_digest_get_data.
+ *
+ * Fixed-output digests (MD2 / MD4 / MD5 / SHA-1 / SHA-2 family)
+ * write exactly @c r_msg_digest_size bytes on every extract. The
+ * extendable-output function @c R_MSG_DIGEST_TYPE_SHAKE256 (FIPS
+ * 202 §6.2) is driven through @c r_msg_digest_squeeze instead:
+ * the output length is a caller-chosen per-call parameter and the
+ * sponge can be squeezed incrementally across multiple calls.
  *
  * Free with @c r_msg_digest_free; the destructor wipes the
  * compression-variable state with @c r_memclear_secure since
@@ -64,20 +69,34 @@ typedef enum {
   R_MSG_DIGEST_TYPE_SHA256,       /**< @brief SHA-256 (FIPS 180-4). 256-bit output. */
   R_MSG_DIGEST_TYPE_SHA384,       /**< @brief SHA-384 (FIPS 180-4). 384-bit output. */
   R_MSG_DIGEST_TYPE_SHA512,       /**< @brief SHA-512 (FIPS 180-4). 512-bit output. */
+  /**
+   * @brief SHAKE256 extendable-output function (FIPS 202 §6.2).
+   *
+   * The output length is a caller-chosen per-squeeze parameter.
+   * @c r_msg_digest_type_size returns @c 0 for this type; drive
+   * extraction via @c r_msg_digest_squeeze rather than
+   * @c r_msg_digest_get_data.
+   */
+  R_MSG_DIGEST_TYPE_SHAKE256,
   R_MSG_DIGEST_TYPE_COUNT,        /**< @brief Number of valid types. */
 } RMsgDigestType;
 
 /**
  * @brief Output size in bytes for the named algorithm.
  *
- * @return The fixed output length, or @c 0 for unknown types.
+ * @return The fixed output length for Merkle-Damgård digests, or
+ *         @c 0 for XOF / unknown types (for an XOF the per-squeeze
+ *         length is the caller's choice).
  */
 R_API rsize r_msg_digest_type_size (RMsgDigestType type);
 /**
- * @brief Compression-function block size in bytes for the named
- * algorithm (e.g. @c 64 for SHA-256).
+ * @brief Block size in bytes for the named algorithm.
  *
- * @return Block size, or @c 0 for unknown types.
+ * For Merkle-Damgård digests this is the compression-function
+ * block size (e.g. @c 64 for SHA-256). For @c SHAKE256 it is the
+ * sponge rate (136 bytes).
+ *
+ * @return Block / rate size, or @c 0 for unknown types.
  */
 R_API rsize r_msg_digest_type_blocksize (RMsgDigestType type);
 /**
@@ -128,6 +147,14 @@ R_API RMsgDigest * r_msg_digest_new_sha224 (void);  /**< @brief Construct a fres
 R_API RMsgDigest * r_msg_digest_new_sha256 (void);  /**< @brief Construct a fresh SHA-256 digest. */
 R_API RMsgDigest * r_msg_digest_new_sha384 (void);  /**< @brief Construct a fresh SHA-384 digest. */
 R_API RMsgDigest * r_msg_digest_new_sha512 (void);  /**< @brief Construct a fresh SHA-512 digest. */
+/**
+ * @brief Construct a fresh SHAKE256 sponge.
+ *
+ * After zero or more @c r_msg_digest_update calls, extract output
+ * via @c r_msg_digest_squeeze. @c r_msg_digest_get_data is not
+ * supported for XOF types and will return @c FALSE.
+ */
+R_API RMsgDigest * r_msg_digest_new_shake256 (void);
 
 #define r_md2_new r_msg_digest_new_md2          /**< @brief Short alias. */
 #define r_md4_new r_msg_digest_new_md4          /**< @brief Short alias. */
@@ -137,8 +164,14 @@ R_API RMsgDigest * r_msg_digest_new_sha512 (void);  /**< @brief Construct a fres
 #define r_sha256_new r_msg_digest_new_sha256    /**< @brief Short alias. */
 #define r_sha384_new r_msg_digest_new_sha384    /**< @brief Short alias. */
 #define r_sha512_new r_msg_digest_new_sha512    /**< @brief Short alias. */
+#define r_shake256_new r_msg_digest_new_shake256 /**< @brief Short alias. */
 
-/** @brief Output size in bytes for @p md. */
+/**
+ * @brief Output size in bytes for @p md.
+ *
+ * @return The fixed output length, or @c 0 for XOFs (the size is
+ *         per-squeeze and the caller picks).
+ */
 R_API rsize r_msg_digest_size (const RMsgDigest * md);
 /** @brief Compression-function block size in bytes for @p md. */
 R_API rsize r_msg_digest_blocksize (const RMsgDigest * md);
@@ -149,7 +182,9 @@ R_API void r_msg_digest_reset (RMsgDigest * md);
 /**
  * @brief Absorb @p size bytes from @p data into @p md.
  *
- * Returns @c FALSE if @p md has already been finalised.
+ * Returns @c FALSE if @p md has already been finalised (either via
+ * @c r_msg_digest_finish or implicitly by the first squeeze of a
+ * XOF).
  */
 R_API rboolean r_msg_digest_update (RMsgDigest * md, rconstpointer data, rsize size);
 /**
@@ -167,7 +202,9 @@ R_API rboolean r_msg_digest_finish (RMsgDigest * md);
  * @brief Extract the digest result into @p data.
  *
  * Internally clones @p md and finalises the clone so the caller can
- * continue updating the original.
+ * continue updating the original; this works for fixed-output
+ * digests only. For XOF types this returns @c FALSE - drive
+ * extraction via @c r_msg_digest_squeeze instead.
  *
  * @param md    Digest to read from. Const because the caller-visible
  *              state is preserved.
@@ -177,6 +214,26 @@ R_API rboolean r_msg_digest_finish (RMsgDigest * md);
  * @return @c TRUE on success.
  */
 R_API rboolean r_msg_digest_get_data (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
+
+/**
+ * @brief Pull @p size bytes of XOF output from @p md.
+ *
+ * Only valid for XOF types (@c R_MSG_DIGEST_TYPE_SHAKE256); returns
+ * @c FALSE for fixed-output digests.
+ *
+ * Implicitly finalises on the first call, after which no further
+ * @c r_msg_digest_update is allowed. Subsequent @c _squeeze calls
+ * pull the next chunk of output from the sponge - so squeezing
+ * @c n + @c m bytes in two calls of @c n then @c m produces the same
+ * byte sequence as a single @c n + @c m -byte squeeze. Reset with
+ * @c r_msg_digest_reset to absorb a fresh message.
+ *
+ * @param md    XOF digest.
+ * @param data  Destination buffer.
+ * @param size  Bytes to extract.
+ * @return @c TRUE on success; @c FALSE on NULL inputs or non-XOF type.
+ */
+R_API rboolean r_msg_digest_squeeze (RMsgDigest * md, ruint8 * data, rsize size);
 /**
  * @brief Return the digest result as a heap-allocated lowercase hex
  * string. Caller frees with @c r_free.

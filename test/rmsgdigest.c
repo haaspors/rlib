@@ -309,3 +309,174 @@ RTEST (rmsgdigest, free_wipes_state, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+
+/* ---- SHAKE256 (FIPS 202 §6.2). ---- */
+
+/* NIST CAVP / FIPS 202 published vectors. The 32-byte output of the
+ * empty message and the absorbing-rate boundary test are the two
+ * standard short cases the IETF and FIPS-202 examples publish. */
+
+RTEST (rmsgdigest, shake256_empty_32, R_TEST_TYPE_FAST)
+{
+  /* SHAKE256("", 32) = 46b9dd2b0ba88d13233b3feb743eeb243fcd52ea
+   * 62b81b82b50c27646ed5762f */
+  RMsgDigest * md;
+  ruint8 out[32];
+  static const ruint8 expected[32] = {
+    0x46, 0xb9, 0xdd, 0x2b, 0x0b, 0xa8, 0x8d, 0x13,
+    0x23, 0x3b, 0x3f, 0xeb, 0x74, 0x3e, 0xeb, 0x24,
+    0x3f, 0xcd, 0x52, 0xea, 0x62, 0xb8, 0x1b, 0x82,
+    0xb5, 0x0c, 0x27, 0x64, 0x6e, 0xd5, 0x76, 0x2f,
+  };
+
+  r_assert_cmpptr ((md = r_msg_digest_new_shake256 ()), !=, NULL);
+  r_assert (r_msg_digest_squeeze (md, out, sizeof (out)));
+  r_assert_cmpmem (out, ==, expected, sizeof (out));
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, shake256_empty_64, R_TEST_TYPE_FAST)
+{
+  /* Extending the empty-message squeeze to 64 bytes - tests
+   * permute-between-blocks on the squeeze side. */
+  RMsgDigest * md;
+  ruint8 out[64];
+  static const ruint8 expected[64] = {
+    0x46, 0xb9, 0xdd, 0x2b, 0x0b, 0xa8, 0x8d, 0x13,
+    0x23, 0x3b, 0x3f, 0xeb, 0x74, 0x3e, 0xeb, 0x24,
+    0x3f, 0xcd, 0x52, 0xea, 0x62, 0xb8, 0x1b, 0x82,
+    0xb5, 0x0c, 0x27, 0x64, 0x6e, 0xd5, 0x76, 0x2f,
+    0xd7, 0x5d, 0xc4, 0xdd, 0xd8, 0xc0, 0xf2, 0x00,
+    0xcb, 0x05, 0x01, 0x9d, 0x67, 0xb5, 0x92, 0xf6,
+    0xfc, 0x82, 0x1c, 0x49, 0x47, 0x9a, 0xb4, 0x86,
+    0x40, 0x29, 0x2e, 0xac, 0xb3, 0xb7, 0xc4, 0xbe,
+  };
+
+  r_assert_cmpptr ((md = r_msg_digest_new_shake256 ()), !=, NULL);
+  r_assert (r_msg_digest_squeeze (md, out, sizeof (out)));
+  r_assert_cmpmem (out, ==, expected, sizeof (out));
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, shake256_abc_64, R_TEST_TYPE_FAST)
+{
+  /* SHAKE256("abc", 64) - one of the standard "abc" KATs from the
+   * Keccak team's reference implementation. */
+  RMsgDigest * md;
+  ruint8 out[64];
+  static const ruint8 expected[64] = {
+    0x48, 0x33, 0x66, 0x60, 0x13, 0x60, 0xa8, 0x77,
+    0x1c, 0x68, 0x63, 0x08, 0x0c, 0xc4, 0x11, 0x4d,
+    0x8d, 0xb4, 0x45, 0x30, 0xf8, 0xf1, 0xe1, 0xee,
+    0x4f, 0x94, 0xea, 0x37, 0xe7, 0x8b, 0x57, 0x39,
+    0xd5, 0xa1, 0x5b, 0xef, 0x18, 0x6a, 0x53, 0x86,
+    0xc7, 0x57, 0x44, 0xc0, 0x52, 0x7e, 0x1f, 0xaa,
+    0x9f, 0x87, 0x26, 0xe4, 0x62, 0xa1, 0x2a, 0x4f,
+    0xeb, 0x06, 0xbd, 0x88, 0x01, 0xe7, 0x51, 0xe4,
+  };
+
+  r_assert_cmpptr ((md = r_msg_digest_new_shake256 ()), !=, NULL);
+  r_assert (r_msg_digest_update (md, "abc", 3));
+  r_assert (r_msg_digest_squeeze (md, out, sizeof (out)));
+  r_assert_cmpmem (out, ==, expected, sizeof (out));
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, shake256_long_msg_across_rate, R_TEST_TYPE_FAST)
+{
+  /* Message length 200 bytes of 0xA3 - longer than the 136-byte
+   * rate, so this exercises the absorb-side permute-between-blocks
+   * path. Expected output truncated to 32 bytes per the FIPS 202
+   * Intermediate Values document for SHAKE256. */
+  RMsgDigest * md;
+  ruint8 msg[200];
+  ruint8 out[32];
+  static const ruint8 expected[32] = {
+    0xcd, 0x8a, 0x92, 0x0e, 0xd1, 0x41, 0xaa, 0x04,
+    0x07, 0xa2, 0x2d, 0x59, 0x28, 0x86, 0x52, 0xe9,
+    0xd9, 0xf1, 0xa7, 0xee, 0x0c, 0x1e, 0x7c, 0x1c,
+    0xa6, 0x99, 0x42, 0x4d, 0xa8, 0x4a, 0x90, 0x4d,
+  };
+  rsize i;
+
+  for (i = 0; i < sizeof (msg); i++) msg[i] = 0xA3;
+  r_assert_cmpptr ((md = r_msg_digest_new_shake256 ()), !=, NULL);
+  r_assert (r_msg_digest_update (md, msg, sizeof (msg)));
+  r_assert (r_msg_digest_squeeze (md, out, sizeof (out)));
+  r_assert_cmpmem (out, ==, expected, sizeof (out));
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, shake256_multi_squeeze_concat, R_TEST_TYPE_FAST)
+{
+  /* Squeezing n + m bytes in two calls must produce the same byte
+   * sequence as a single n+m squeeze. Exercises the cross-rate
+   * cursor on the squeeze side. */
+  RMsgDigest * a, * b;
+  ruint8 single[200], split[200];
+
+  r_assert_cmpptr ((a = r_msg_digest_new_shake256 ()), !=, NULL);
+  r_assert (r_msg_digest_update (a, "abc", 3));
+  r_assert (r_msg_digest_squeeze (a, single, sizeof (single)));
+  r_msg_digest_free (a);
+
+  r_assert_cmpptr ((b = r_msg_digest_new_shake256 ()), !=, NULL);
+  r_assert (r_msg_digest_update (b, "abc", 3));
+  r_assert (r_msg_digest_squeeze (b, split, 17));
+  r_assert (r_msg_digest_squeeze (b, split + 17, 120));
+  r_assert (r_msg_digest_squeeze (b, split + 137, sizeof (split) - 137));
+  r_assert_cmpmem (split, ==, single, sizeof (single));
+  r_msg_digest_free (b);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, shake256_get_data_rejected, R_TEST_TYPE_FAST)
+{
+  /* The fixed-output get_data entry point doesn't apply to XOFs;
+   * caller must use _squeeze. */
+  RMsgDigest * md;
+  ruint8 buf[32];
+  rsize out_size;
+
+  r_assert_cmpptr ((md = r_msg_digest_new_shake256 ()), !=, NULL);
+  r_assert (!r_msg_digest_get_data (md, buf, sizeof (buf), &out_size));
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, shake256_squeeze_rejected_for_sha256, R_TEST_TYPE_FAST)
+{
+  /* Inverse: squeeze() must reject fixed-output digests. */
+  RMsgDigest * md;
+  ruint8 buf[32];
+
+  r_assert_cmpptr ((md = r_msg_digest_new_sha256 ()), !=, NULL);
+  r_assert (!r_msg_digest_squeeze (md, buf, sizeof (buf)));
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, shake256_type_metadata, R_TEST_TYPE_FAST)
+{
+  RMsgDigest * md;
+
+  r_assert_cmpuint (r_msg_digest_type_size (R_MSG_DIGEST_TYPE_SHAKE256), ==, 0);
+  r_assert_cmpuint (r_msg_digest_type_blocksize (R_MSG_DIGEST_TYPE_SHAKE256),
+      ==, 136);
+  r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_SHAKE256),
+      ==, "shake256");
+  r_assert_cmpint (r_msg_digest_type_from_str ("shake256", -1),
+      ==, R_MSG_DIGEST_TYPE_SHAKE256);
+
+  /* type-dispatched constructor too. */
+  r_assert_cmpptr ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_SHAKE256)),
+      !=, NULL);
+  r_assert_cmpuint (r_msg_digest_size (md), ==, 0);
+  r_assert_cmpuint (r_msg_digest_blocksize (md), ==, 136);
+  r_msg_digest_free (md);
+}
+RTEST_END;
