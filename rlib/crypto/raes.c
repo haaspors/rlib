@@ -24,11 +24,11 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+#ifdef HAVE_WMMINTRIN_H
 # include <wmmintrin.h>           /* AES-NI */
 #endif
 
-#if defined(R_ARCH_AARCH64)
+#ifdef HAVE_ARM_NEON_H
 # include <arm_neon.h>            /* ARMv8 AES */
 #endif
 
@@ -104,7 +104,7 @@ struct _RAesCipher {
 R_AES_BLOCK_FN_DECL (r_cipher_aes_ecb_encrypt_block_sw);
 R_AES_BLOCK_FN_DECL (r_cipher_aes_ecb_decrypt_block_sw);
 
-#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+#ifdef HAVE_WMMINTRIN_H
 R_AES_BLOCK_FN_DECL  (r_cipher_aes_ecb_encrypt_block_aesni_128);
 R_AES_BLOCK_FN_DECL  (r_cipher_aes_ecb_encrypt_block_aesni_192);
 R_AES_BLOCK_FN_DECL  (r_cipher_aes_ecb_encrypt_block_aesni_256);
@@ -119,7 +119,7 @@ R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks_aesni_192);
 R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks_aesni_256);
 #endif
 
-#if defined(R_ARCH_AARCH64)
+#ifdef HAVE_ARM_NEON_H
 R_AES_BLOCK_FN_DECL  (r_cipher_aes_ecb_encrypt_block_armv8_128);
 R_AES_BLOCK_FN_DECL  (r_cipher_aes_ecb_encrypt_block_armv8_192);
 R_AES_BLOCK_FN_DECL  (r_cipher_aes_ecb_encrypt_block_armv8_256);
@@ -320,7 +320,7 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
     *rk++ = *src++;
     *rk++ = *src++;
 
-#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+#ifdef HAVE_WMMINTRIN_H
     if (r_cpu_has (R_CPU_FEATURE_AES_NI)) {
       switch (ret->rounds) {
         case 10:
@@ -343,7 +343,7 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
           break;
       }
     } else
-#elif defined(R_ARCH_AARCH64)
+#elif defined(HAVE_ARM_NEON_H)
     if (r_cpu_has (R_CPU_FEATURE_ARM_AES)) {
       switch (ret->rounds) {
         case 10:
@@ -544,7 +544,7 @@ r_cipher_aes_new_from_hex (RCryptoCipherMode mode, const rchar * hexkey)
   return ret;
 }
 
-#if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
+#ifdef HAVE_WMMINTRIN_H
 # if defined(__GNUC__) || defined(__clang__)
 #  define R_AES_X86_TARGET __attribute__((target("aes,sse2")))
 # else
@@ -640,7 +640,7 @@ R_AES_AESNI_BLOCKS_X4 (r_cipher_aes_ecb_decrypt_blocks_aesni_256, drk,
     _mm_aesdec_si128, _mm_aesdeclast_si128, 14)
 #endif
 
-#if defined(R_ARCH_AARCH64)
+#ifdef HAVE_ARM_NEON_H
 # if defined(__GNUC__) || defined(__clang__)
 #  define R_AES_ARM_TARGET __attribute__((target("+crypto")))
 # else
@@ -649,9 +649,9 @@ R_AES_AESNI_BLOCKS_X4 (r_cipher_aes_ecb_decrypt_blocks_aesni_256, drk,
 
 /* ARMv8 AESE/AESD do (AddRoundKey then SubBytes/ShiftRows) in a
  * single instruction, paired with AESMC/AESIMC for MixColumns.
- * Decrypt expects the encrypt round keys in reverse order - the
- * SW drk array (InvMixColumns pre-applied) doesn't match, so the
- * decrypt path walks erk backward instead.
+ * Both directions consume the same {LE u32} round-key layout the
+ * SW path uses - encrypt walks erk forward, decrypt walks the
+ * IMC-pre-applied drk forward (same shape as the AES-NI side).
  *
  * Per-bits specialisation matches the AES-NI rationale: literal
  * round count lets the compiler unroll the AESE/AESMC pairs. */
