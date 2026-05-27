@@ -1471,6 +1471,20 @@ r_gcm_ctr_inc32 (ruint8 ctr[R_AES_BLOCK_BYTES])
   ctr[15] =  c        & 0xff;
 }
 
+/* As r_gcm_ctr_inc32 but advances by @p n. ruint32 wraparound matches
+ * the GCM inc_32 spec naturally. */
+static void
+r_gcm_ctr_inc32_n (ruint8 ctr[R_AES_BLOCK_BYTES], ruint32 n)
+{
+  ruint32 c = ((ruint32) ctr[12] << 24) | ((ruint32) ctr[13] << 16)
+            | ((ruint32) ctr[14] <<  8) |  (ruint32) ctr[15];
+  c += n;
+  ctr[12] = (c >> 24) & 0xff;
+  ctr[13] = (c >> 16) & 0xff;
+  ctr[14] = (c >>  8) & 0xff;
+  ctr[15] =  c        & 0xff;
+}
+
 /* Fold @p data into the running GHASH state @p y, one 16-byte block
  * at a time. The trailing partial block (if any) is zero-padded out
  * to a full block before mixing. */
@@ -1605,6 +1619,32 @@ r_aes_gcm_op (const RCryptoCipher * cipher,
   srcp = data;
   dstp = dst;
   remaining = size;
+
+  /* 4-way path: build (ctr, ctr+1, ctr+2, ctr+3) in scratch, encrypt
+   * the four blocks in parallel via the SIMD-interleaved kernel, XOR
+   * with the source window, and advance ctr by 4. Mirrors the shape
+   * of r_cipher_aes_ctr_encrypt; the only twist is GCM's inc_32. */
+  if (aes->encrypt_blocks_x4 != NULL) {
+    ruint8 ks4[R_AES_PARALLEL_BYTES];
+    while (remaining >= R_AES_PARALLEL_BYTES) {
+      r_memcpy (ks4 + R_AES_BLOCK_BYTES * 0, ctr, R_AES_BLOCK_BYTES);
+      r_memcpy (ks4 + R_AES_BLOCK_BYTES * 1, ctr, R_AES_BLOCK_BYTES);
+      r_memcpy (ks4 + R_AES_BLOCK_BYTES * 2, ctr, R_AES_BLOCK_BYTES);
+      r_memcpy (ks4 + R_AES_BLOCK_BYTES * 3, ctr, R_AES_BLOCK_BYTES);
+      r_gcm_ctr_inc32_n (ks4 + R_AES_BLOCK_BYTES * 1, 1);
+      r_gcm_ctr_inc32_n (ks4 + R_AES_BLOCK_BYTES * 2, 2);
+      r_gcm_ctr_inc32_n (ks4 + R_AES_BLOCK_BYTES * 3, 3);
+      aes->encrypt_blocks_x4 (aes, ks4, ks4);
+      for (i = 0; i < R_AES_PARALLEL_BYTES; i++)
+        dstp[i] = ks4[i] ^ srcp[i];
+      r_gcm_ctr_inc32_n (ctr, R_AES_PARALLEL_BLOCKS);
+      srcp += R_AES_PARALLEL_BYTES;
+      dstp += R_AES_PARALLEL_BYTES;
+      remaining -= R_AES_PARALLEL_BYTES;
+    }
+    r_memclear_secure (ks4, sizeof (ks4));
+  }
+
   while (remaining >= R_AES_BLOCK_BYTES) {
     aes->encrypt_block (aes, ksblock, ctr);
     for (i = 0; i < R_AES_BLOCK_BYTES; i++)
