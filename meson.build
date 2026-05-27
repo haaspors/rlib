@@ -280,7 +280,8 @@ endif
 if host_machine.cpu_family() in [ 'x86', 'x86_64' ]
   check_headers += [
     'nmmintrin.h',  # SSE4.2 (CRC32C)
-    'wmmintrin.h',  # AES-NI
+    'tmmintrin.h',  # SSSE3 (PSHUFB - used by the PCLMUL GHASH bit-reverse)
+    'wmmintrin.h',  # AES-NI + PCLMULQDQ
   ]
 elif host_machine.cpu_family() == 'aarch64'
   check_headers += [

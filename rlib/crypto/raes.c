@@ -25,8 +25,10 @@
 #include <rlib/rstr.h>
 
 #ifdef HAVE_WMMINTRIN_H
-# include <tmmintrin.h>           /* SSSE3 (PSHUFB) */
 # include <wmmintrin.h>           /* AES-NI + PCLMULQDQ */
+#endif
+#ifdef HAVE_TMMINTRIN_H
+# include <tmmintrin.h>           /* SSSE3 (PSHUFB - PCLMUL GHASH bit-reverse) */
 #endif
 
 #ifdef HAVE_ARM_NEON_H
@@ -72,7 +74,8 @@ typedef rboolean (*RAesBlockFn) (const RAesCipher * aes,
 typedef void (*RAesBlocksFn) (const RAesCipher * aes,
     ruint8 * dst, const ruint8 * src);
 typedef void (*RAesGhashMulFn) (ruint8 y[R_AES_BLOCK_BYTES],
-    const RAesCipher * aes);
+    const RAesCipher * aes,
+    const ruint8 * data, rsize nblocks);
 
 /* 4-bit GHASH table (Shoup's method). Used by the SW kernel; HW
  * kernels (PCLMULQDQ / PMULL) work straight from ghash_h. */
@@ -105,8 +108,12 @@ struct _RAesCipher {
   /* GCM precomputed state - populated only when info->mode == GCM.
    * H = E_K(0^128), used by every GHASH multiplication; the 4-bit
    * table is built from H once when the SW kernel is in use. The
-   * HW kernels (PCLMULQDQ / PMULL) read H directly. */
+   * HW kernels (PCLMULQDQ / PMULL) read H directly. ghash_h_pow
+   * holds H^2, H^3, H^4 in the same representation as ghash_h,
+   * used by the HW kernels' 4-way aggregated path; unused when
+   * the SW kernel is selected. */
   ruint8 ghash_h[R_AES_BLOCK_BYTES];
+  ruint8 ghash_h_pow[3][R_AES_BLOCK_BYTES];
   RGhashTable ghash_t;
   RAesGhashMulFn ghash_mul;
 };
@@ -121,17 +128,22 @@ struct _RAesCipher {
 R_AES_BLOCK_FN_DECL (r_cipher_aes_ecb_encrypt_block_sw);
 R_AES_BLOCK_FN_DECL (r_cipher_aes_ecb_decrypt_block_sw);
 
+static void r_ghash_mul (ruint8 y[R_AES_BLOCK_BYTES],
+    const ruint8 h[R_AES_BLOCK_BYTES]);
 static void r_ghash_init_table (RGhashTable * t,
     const ruint8 h[R_AES_BLOCK_BYTES]);
 static void r_ghash_mul_4bit (ruint8 y[R_AES_BLOCK_BYTES],
-    const RAesCipher * aes);
-#ifdef HAVE_WMMINTRIN_H
+    const RAesCipher * aes,
+    const ruint8 * data, rsize nblocks);
+#if defined(HAVE_WMMINTRIN_H) && defined(HAVE_TMMINTRIN_H)
 static void r_ghash_mul_pclmul (ruint8 y[R_AES_BLOCK_BYTES],
-    const RAesCipher * aes);
+    const RAesCipher * aes,
+    const ruint8 * data, rsize nblocks);
 #endif
 #ifdef HAVE_ARM_NEON_H
 static void r_ghash_mul_pmull (ruint8 y[R_AES_BLOCK_BYTES],
-    const RAesCipher * aes);
+    const RAesCipher * aes,
+    const ruint8 * data, rsize nblocks);
 #endif
 
 #ifdef HAVE_WMMINTRIN_H
@@ -461,7 +473,7 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
     ruint8 zero[R_AES_BLOCK_BYTES] = { 0 };
     ret->encrypt_block (ret, ret->ghash_h, zero);
     ret->ghash_mul = NULL;
-#ifdef HAVE_WMMINTRIN_H
+#if defined(HAVE_WMMINTRIN_H) && defined(HAVE_TMMINTRIN_H)
     if (r_cpu_has (R_CPU_FEATURE_PCLMUL))
       ret->ghash_mul = r_ghash_mul_pclmul;
 #elif defined(HAVE_ARM_NEON_H)
@@ -473,8 +485,26 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
        * polynomial representation (bit i = x^i). rlib's NIST-style
        * H has byte-internal MSB = x^0, so per-byte bit-reverse H
        * once here; the kernel only has to bit-reverse y on entry
-       * and the result on exit. */
-      rsize idx;
+       * and the result on exit. The 4-way aggregated path also
+       * needs H^2, H^3, H^4 in the same representation - compute
+       * them via the SW reference (which expects NIST form) BEFORE
+       * the in-place bit-reverse of H. */
+      rsize idx, p;
+      r_memcpy (ret->ghash_h_pow[0], ret->ghash_h, R_AES_BLOCK_BYTES);
+      r_ghash_mul (ret->ghash_h_pow[0], ret->ghash_h);          /* H^2 */
+      r_memcpy (ret->ghash_h_pow[1], ret->ghash_h_pow[0], R_AES_BLOCK_BYTES);
+      r_ghash_mul (ret->ghash_h_pow[1], ret->ghash_h);          /* H^3 */
+      r_memcpy (ret->ghash_h_pow[2], ret->ghash_h_pow[1], R_AES_BLOCK_BYTES);
+      r_ghash_mul (ret->ghash_h_pow[2], ret->ghash_h);          /* H^4 */
+      for (p = 0; p < 3; p++) {
+        for (idx = 0; idx < R_AES_BLOCK_BYTES; idx++) {
+          ruint8 b = ret->ghash_h_pow[p][idx];
+          b = (ruint8) (((b & 0xf0) >> 4) | ((b & 0x0f) << 4));
+          b = (ruint8) (((b & 0xcc) >> 2) | ((b & 0x33) << 2));
+          b = (ruint8) (((b & 0xaa) >> 1) | ((b & 0x55) << 1));
+          ret->ghash_h_pow[p][idx] = b;
+        }
+      }
       for (idx = 0; idx < R_AES_BLOCK_BYTES; idx++) {
         ruint8 b = ret->ghash_h[idx];
         b = (ruint8) (((b & 0xf0) >> 4) | ((b & 0x0f) << 4));
@@ -799,7 +829,13 @@ R_AES_AESNI_BLOCKS_X4 (r_cipher_aes_ecb_decrypt_blocks_aesni_192, drk,
     _mm_aesdec_si128, _mm_aesdeclast_si128, 12)
 R_AES_AESNI_BLOCKS_X4 (r_cipher_aes_ecb_decrypt_blocks_aesni_256, drk,
     _mm_aesdec_si128, _mm_aesdeclast_si128, 14)
+#endif /* HAVE_WMMINTRIN_H (AES-NI block kernels) */
 
+/* PCLMUL GHASH kernel: needs PCLMULQDQ (wmmintrin.h) for the
+ * polynomial mul AND PSHUFB (tmmintrin.h, SSSE3) for the per-byte
+ * bit-reverse. Both header probes are independent so a (hypothetical)
+ * system with one but not the other falls back to SW. */
+#if defined(HAVE_WMMINTRIN_H) && defined(HAVE_TMMINTRIN_H)
 # if defined(__GNUC__) || defined(__clang__)
 #  define R_GHASH_X86_TARGET __attribute__((target("pclmul,ssse3")))
 # else
@@ -828,46 +864,35 @@ r_ghash_byte_bitrev (__m128i v)
   return _mm_or_si128 (_mm_slli_epi16 (lo_rev, 4), hi_rev);
 }
 
-/* GHASH single-block multiply via PCLMULQDQ.
- *
- * rlib stores GHASH polynomials with byte-internal MSB = x^0; PCLMUL
- * operates on the natural-LE form (bit i = x^i). Per-byte bit-
- * reverse bridges the two. H is pre-reversed once at cipher
- * construction; the per-call cost is one bit-reverse on entry and
- * one on exit.
- *
- * Multiplication: four PCLMULQDQ build the 256-bit product. The
- * cross-term pair is XORed before splitting across the 128-bit
- * boundary, giving @c lo (low 128) and @c hi (high 128).
- *
- * Reduction (mod g(z) = z^128 + z^7 + z^2 + z + 1): fold the high
- * half by multiplying with the low-order tap polynomial 0x87 =
- * z^7 + z^2 + z + 1, expressed as three 128-bit left shifts (by 1,
- * 2 and 7) plus the unshifted value, all XORed into @c lo. A second
- * pass folds the tiny overflow that those shifts pushed past bit
- * 127 - the topmost 7 bits of @c hi - back through the same tap
- * polynomial. Single-block path; aggregated multi-block GHASH is a
- * separate follow-up. */
+/* a * b in GF(2)[x] (no reduction) XOR-accumulated into the 256-bit
+ * register pair (@c *lo, @c *hi). Four PCLMULQDQ per call; the cross-
+ * term pair is XORed before splitting across the 128-bit boundary. */
 R_GHASH_X86_TARGET
-static void
-r_ghash_mul_pclmul (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
+static inline void
+r_ghash_poly_mul_acc (__m128i * lo, __m128i * hi, __m128i a, __m128i b)
 {
-  __m128i x = r_ghash_byte_bitrev (_mm_loadu_si128 ((const __m128i *) y));
-  __m128i h = _mm_loadu_si128 ((const __m128i *) aes->ghash_h);
-  __m128i t0, t1, t2, t3, lo, hi;
+  __m128i t0 = _mm_clmulepi64_si128 (a, b, 0x00);
+  __m128i t3 = _mm_clmulepi64_si128 (a, b, 0x11);
+  __m128i tm = _mm_xor_si128 (
+      _mm_clmulepi64_si128 (a, b, 0x10),
+      _mm_clmulepi64_si128 (a, b, 0x01));
+  *lo = _mm_xor_si128 (*lo, _mm_xor_si128 (t0, _mm_slli_si128 (tm, 8)));
+  *hi = _mm_xor_si128 (*hi, _mm_xor_si128 (t3, _mm_srli_si128 (tm, 8)));
+}
+
+/* Reduce a 256-bit polynomial (@c lo low, @c hi high) mod NIST g(z)
+ * = z^128 + z^7 + z^2 + z + 1. Fold the high half through the
+ * low-order tap polynomial 0x87 = z^7 + z^2 + z + 1, expressed as
+ * three 128-bit left shifts (by 1, 2 and 7) plus the unshifted
+ * value. A second pass folds the tiny overflow (the topmost 7 bits
+ * of @c hi that Phase 1's shifts pushed past bit 127) back through
+ * the same tap polynomial. */
+R_GHASH_X86_TARGET
+static inline __m128i
+r_ghash_reduce_pclmul (__m128i lo, __m128i hi)
+{
   __m128i s1, s2, s7, c1, c2, c7, over;
 
-  t0 = _mm_clmulepi64_si128 (x, h, 0x00);
-  t3 = _mm_clmulepi64_si128 (x, h, 0x11);
-  t1 = _mm_clmulepi64_si128 (x, h, 0x10);
-  t2 = _mm_clmulepi64_si128 (x, h, 0x01);
-  t1 = _mm_xor_si128 (t1, t2);
-  lo = _mm_xor_si128 (t0, _mm_slli_si128 (t1, 8));
-  hi = _mm_xor_si128 (t3, _mm_srli_si128 (t1, 8));
-
-  /* 128-bit left shift by N: each 32-bit lane shifts left by N; the
-   * top N bits of each lane carry into the next-higher lane via
-   * srli + 4-byte byte shift. */
 # define SHL128(out, src, n)                                                  \
   do {                                                                        \
     __m128i shifted = _mm_slli_epi32 ((src), (n));                            \
@@ -876,7 +901,6 @@ r_ghash_mul_pclmul (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
     (out) = _mm_or_si128 (shifted, carry);                                    \
   } while (0)
 
-  /* Phase 1: hi * 0x87 (low 128 bits) folded into lo. */
   SHL128 (s1, hi, 1);
   SHL128 (s2, hi, 2);
   SHL128 (s7, hi, 7);
@@ -885,11 +909,6 @@ r_ghash_mul_pclmul (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
   lo = _mm_xor_si128 (lo, s2);
   lo = _mm_xor_si128 (lo, s7);
 
-  /* Phase 2: the top {1,2,7} bits of hi shifted past bit 127 in
-   * Phase 1 - capture them via per-lane right shifts, keep only the
-   * top lane's contribution (the overflow lives there), then re-fold
-   * through the same tap polynomial. The overflow is at most 7 bits
-   * so its shifts can't themselves overflow. */
   c1 = _mm_srli_epi32 (hi, 31);
   c2 = _mm_srli_epi32 (hi, 30);
   c7 = _mm_srli_epi32 (hi, 25);
@@ -905,10 +924,77 @@ r_ghash_mul_pclmul (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
   lo = _mm_xor_si128 (lo, s7);
 # undef SHL128
 
-  lo = r_ghash_byte_bitrev (lo);
-  _mm_storeu_si128 ((__m128i *) y, lo);
+  return lo;
 }
-#endif
+
+/* GHASH multi-block update via PCLMULQDQ.
+ *
+ * Bridges rlib's "byte-internal MSB = x^0" representation to PCLMUL's
+ * natural-LE polynomial form via per-byte bit-reverse. H and its
+ * powers are pre-reversed once at cipher construction; @p y stays in
+ * the reversed form across iterations so we only bit-reverse on
+ * entry and exit, not per-block.
+ *
+ * For nblocks >= 4 the 4-way aggregated path runs: four polynomial
+ * multiplies feed one 256-bit accumulator, and a single reduction
+ * collapses it - amortising the reduction cost across 4 blocks. The
+ * formula (y_new = (y XOR b0)*H^4 + b1*H^3 + b2*H^2 + b3*H) makes
+ * the four mults independent, which the CPU schedules at PCLMULQDQ's
+ * 1-cycle throughput. Trailing blocks (< 4) fall through to the
+ * single-block path. */
+R_GHASH_X86_TARGET
+static void
+r_ghash_mul_pclmul (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes,
+    const ruint8 * data, rsize nblocks)
+{
+  __m128i y_br = r_ghash_byte_bitrev (_mm_loadu_si128 ((const __m128i *) y));
+  __m128i h1 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h);
+  __m128i lo, hi;
+
+  if (nblocks >= 4) {
+    __m128i h2 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[0]);
+    __m128i h3 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[1]);
+    __m128i h4 = _mm_loadu_si128 ((const __m128i *) aes->ghash_h_pow[2]);
+
+    while (nblocks >= 4) {
+      __m128i b0 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data +  0)));
+      __m128i b1 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data + 16)));
+      __m128i b2 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data + 32)));
+      __m128i b3 = r_ghash_byte_bitrev (
+          _mm_loadu_si128 ((const __m128i *) (data + 48)));
+      __m128i a0 = _mm_xor_si128 (y_br, b0);
+
+      lo = _mm_setzero_si128 ();
+      hi = _mm_setzero_si128 ();
+      r_ghash_poly_mul_acc (&lo, &hi, a0, h4);
+      r_ghash_poly_mul_acc (&lo, &hi, b1, h3);
+      r_ghash_poly_mul_acc (&lo, &hi, b2, h2);
+      r_ghash_poly_mul_acc (&lo, &hi, b3, h1);
+      y_br = r_ghash_reduce_pclmul (lo, hi);
+
+      data += 64;
+      nblocks -= 4;
+    }
+  }
+
+  while (nblocks > 0) {
+    __m128i b = r_ghash_byte_bitrev (
+        _mm_loadu_si128 ((const __m128i *) data));
+    __m128i a = _mm_xor_si128 (y_br, b);
+    lo = _mm_setzero_si128 ();
+    hi = _mm_setzero_si128 ();
+    r_ghash_poly_mul_acc (&lo, &hi, a, h1);
+    y_br = r_ghash_reduce_pclmul (lo, hi);
+    data += R_AES_BLOCK_BYTES;
+    nblocks--;
+  }
+
+  _mm_storeu_si128 ((__m128i *) y, r_ghash_byte_bitrev (y_br));
+}
+#endif /* HAVE_WMMINTRIN_H && HAVE_TMMINTRIN_H (PCLMUL GHASH kernel) */
 
 #ifdef HAVE_ARM_NEON_H
 # if defined(__GNUC__) || defined(__clang__)
@@ -1041,49 +1127,63 @@ R_AES_ARMV8_BLOCKS_X4_DECRYPT (r_cipher_aes_ecb_decrypt_blocks_armv8_128, 10)
 R_AES_ARMV8_BLOCKS_X4_DECRYPT (r_cipher_aes_ecb_decrypt_blocks_armv8_192, 12)
 R_AES_ARMV8_BLOCKS_X4_DECRYPT (r_cipher_aes_ecb_decrypt_blocks_armv8_256, 14)
 
-/* GHASH single-block multiply via ARMv8 PMULL.
- *
- * Mirrors the x86 PCLMUL kernel - rlib's "byte-internal MSB = x^0"
- * representation gets per-byte bit-reversed (one RBIT, vrbitq_u8)
- * so the polynomial multiplier (vmull_p64) sees the natural-LE
- * polynomial. H is pre-reversed once at cipher construction; the
- * per-call cost is one vrbitq_u8 on entry and one on exit.
- *
- * Multiplication: four vmull_p64; the cross-term pair is XORed
- * before splitting across the 128-bit boundary. Reduction is the
- * same shift-based fold mod g(z) = z^128 + z^7 + z^2 + z + 1 the
- * x86 kernel uses, with a Phase 2 pass to handle the few bits the
- * Phase 1 shifts push past bit 127. Single-block path; aggregated
- * multi-block GHASH is a separate follow-up. */
+/* MSVC ARM64 declares vmull_p64 as taking __n64 (not poly64_t) and
+ * returning __n128 (no poly128_t typedef), so a straight ACLE call
+ * doesn't compile. Wrap the intrinsic once and return uint8x16_t -
+ * on MSVC that's the same underlying type as __n128, on GCC / clang
+ * we reinterpret from poly128_t. The rest of the kernel can stay in
+ * standard ACLE types. */
+#if defined(_MSC_VER) && !defined(__clang__)
 R_AES_ARM_TARGET
-static void
-r_ghash_mul_pmull (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
+static __forceinline uint8x16_t
+r_pmull_p64 (uint64_t a, uint64_t b)
 {
-  uint8x16_t x = vrbitq_u8 (vld1q_u8 (y));
-  uint8x16_t h = vld1q_u8 (aes->ghash_h);
-  poly64_t xlo, xhi, hlo, hhi;
-  poly128_t pmlo, pmhi, pmm1, pmm2;
-  uint8x16_t t1, lo, hi, over;
-  uint8x16_t s1, s2, s7, c1, c2, c7;
+  __n64 _a, _b;
+  /* r_memcpy is the portable type-pun. __n64 and uint64_t are both
+   * 8 bytes; MSVC optimises the copy away. */
+  r_memcpy (&_a, &a, sizeof (_a));
+  r_memcpy (&_b, &b, sizeof (_b));
+  return vmull_p64 (_a, _b);
+}
+#else
+R_AES_ARM_TARGET
+static inline uint8x16_t
+r_pmull_p64 (uint64_t a, uint64_t b)
+{
+  return vreinterpretq_u8_p128 (vmull_p64 ((poly64_t) a, (poly64_t) b));
+}
+#endif
 
-  xlo = vgetq_lane_p64 (vreinterpretq_p64_u8 (x), 0);
-  xhi = vgetq_lane_p64 (vreinterpretq_p64_u8 (x), 1);
-  hlo = vgetq_lane_p64 (vreinterpretq_p64_u8 (h), 0);
-  hhi = vgetq_lane_p64 (vreinterpretq_p64_u8 (h), 1);
+/* a * b in GF(2)[x] (no reduction) XOR-accumulated into the 256-bit
+ * register pair (@c *lo, @c *hi). Mirrors r_ghash_poly_mul_acc on
+ * the x86 side. */
+R_AES_ARM_TARGET
+static inline void
+r_ghash_poly_mul_acc_pmull (uint8x16_t * lo, uint8x16_t * hi,
+    uint8x16_t a, uint8x16_t b)
+{
+  uint64_t alo = vgetq_lane_u64 (vreinterpretq_u64_u8 (a), 0);
+  uint64_t ahi = vgetq_lane_u64 (vreinterpretq_u64_u8 (a), 1);
+  uint64_t blo = vgetq_lane_u64 (vreinterpretq_u64_u8 (b), 0);
+  uint64_t bhi = vgetq_lane_u64 (vreinterpretq_u64_u8 (b), 1);
+  uint8x16_t t0 = r_pmull_p64 (alo, blo);
+  uint8x16_t t3 = r_pmull_p64 (ahi, bhi);
+  uint8x16_t tm = veorq_u8 (r_pmull_p64 (ahi, blo),
+                            r_pmull_p64 (alo, bhi));
+  *lo = veorq_u8 (*lo,
+      veorq_u8 (t0, vextq_u8 (vdupq_n_u8 (0), tm, 8)));
+  *hi = veorq_u8 (*hi,
+      veorq_u8 (t3, vextq_u8 (tm, vdupq_n_u8 (0), 8)));
+}
 
-  pmlo = vmull_p64 (xlo, hlo);
-  pmhi = vmull_p64 (xhi, hhi);
-  pmm1 = vmull_p64 (xhi, hlo);
-  pmm2 = vmull_p64 (xlo, hhi);
-  t1 = veorq_u8 (vreinterpretq_u8_p128 (pmm1),
-                 vreinterpretq_u8_p128 (pmm2));
-  lo = veorq_u8 (vreinterpretq_u8_p128 (pmlo),
-                 vextq_u8 (vdupq_n_u8 (0), t1, 8));
-  hi = veorq_u8 (vreinterpretq_u8_p128 (pmhi),
-                 vextq_u8 (t1, vdupq_n_u8 (0), 8));
+/* Reduce a 256-bit polynomial (@c lo low, @c hi high) mod NIST g(z)
+ * = z^128 + z^7 + z^2 + z + 1. Mirrors r_ghash_reduce_pclmul. */
+R_AES_ARM_TARGET
+static inline uint8x16_t
+r_ghash_reduce_pmull (uint8x16_t lo, uint8x16_t hi)
+{
+  uint8x16_t s1, s2, s7, c1, c2, c7, over;
 
-  /* 128-bit left shift by N: per-32-bit-lane shift plus a lane-
-   * shifted carry, matching the SHL128 macro on the x86 side. */
 # define SHL128(out, src, n)                                                  \
   do {                                                                        \
     uint32x4_t _sh = vshlq_n_u32 (vreinterpretq_u32_u8 (src), (n));           \
@@ -1093,7 +1193,6 @@ r_ghash_mul_pmull (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
     (out) = veorq_u8 (vreinterpretq_u8_u32 (_sh), _cab);                      \
   } while (0)
 
-  /* Phase 1: hi * 0x87 (low 128 bits) folded into lo. */
   SHL128 (s1, hi, 1);
   SHL128 (s2, hi, 2);
   SHL128 (s7, hi, 7);
@@ -1102,8 +1201,6 @@ r_ghash_mul_pmull (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
   lo = veorq_u8 (lo, s2);
   lo = veorq_u8 (lo, s7);
 
-  /* Phase 2: capture the top {1,2,7} bits of hi that shifted past
-   * bit 127 in Phase 1, then re-fold through the same tap. */
   c1 = vreinterpretq_u8_u32 (
         vshrq_n_u32 (vreinterpretq_u32_u8 (hi), 31));
   c2 = vreinterpretq_u8_u32 (
@@ -1111,7 +1208,6 @@ r_ghash_mul_pmull (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
   c7 = vreinterpretq_u8_u32 (
         vshrq_n_u32 (vreinterpretq_u32_u8 (hi), 25));
   over = veorq_u8 (veorq_u8 (c1, c2), c7);
-  /* keep only the top lane (the actual overflow), zero the rest. */
   over = vextq_u8 (over, vdupq_n_u8 (0), 12);
 
   SHL128 (s1, over, 1);
@@ -1123,8 +1219,59 @@ r_ghash_mul_pmull (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
   lo = veorq_u8 (lo, s7);
 # undef SHL128
 
-  lo = vrbitq_u8 (lo);
-  vst1q_u8 (y, lo);
+  return lo;
+}
+
+/* GHASH multi-block update via ARMv8 PMULL. Structurally identical
+ * to r_ghash_mul_pclmul: 4-way aggregated path for nblocks >= 4
+ * (four polynomial multiplies into one accumulator + one reduction),
+ * single-block fallback for the trailing remainder. */
+R_AES_ARM_TARGET
+static void
+r_ghash_mul_pmull (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes,
+    const ruint8 * data, rsize nblocks)
+{
+  uint8x16_t y_br = vrbitq_u8 (vld1q_u8 (y));
+  uint8x16_t h1 = vld1q_u8 (aes->ghash_h);
+  uint8x16_t lo, hi;
+
+  if (nblocks >= 4) {
+    uint8x16_t h2 = vld1q_u8 (aes->ghash_h_pow[0]);
+    uint8x16_t h3 = vld1q_u8 (aes->ghash_h_pow[1]);
+    uint8x16_t h4 = vld1q_u8 (aes->ghash_h_pow[2]);
+
+    while (nblocks >= 4) {
+      uint8x16_t b0 = vrbitq_u8 (vld1q_u8 (data +  0));
+      uint8x16_t b1 = vrbitq_u8 (vld1q_u8 (data + 16));
+      uint8x16_t b2 = vrbitq_u8 (vld1q_u8 (data + 32));
+      uint8x16_t b3 = vrbitq_u8 (vld1q_u8 (data + 48));
+      uint8x16_t a0 = veorq_u8 (y_br, b0);
+
+      lo = vdupq_n_u8 (0);
+      hi = vdupq_n_u8 (0);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, a0, h4);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b1, h3);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b2, h2);
+      r_ghash_poly_mul_acc_pmull (&lo, &hi, b3, h1);
+      y_br = r_ghash_reduce_pmull (lo, hi);
+
+      data += 64;
+      nblocks -= 4;
+    }
+  }
+
+  while (nblocks > 0) {
+    uint8x16_t b = vrbitq_u8 (vld1q_u8 (data));
+    uint8x16_t a = veorq_u8 (y_br, b);
+    lo = vdupq_n_u8 (0);
+    hi = vdupq_n_u8 (0);
+    r_ghash_poly_mul_acc_pmull (&lo, &hi, a, h1);
+    y_br = r_ghash_reduce_pmull (lo, hi);
+    data += R_AES_BLOCK_BYTES;
+    nblocks--;
+  }
+
+  vst1q_u8 (y, vrbitq_u8 (y_br));
 }
 
 #endif
@@ -1677,41 +1824,50 @@ static const ruint8 r_ghash_reduce_4bit[16][2] = {
 };
 
 static void
-r_ghash_mul_4bit (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes)
+r_ghash_mul_4bit (ruint8 y[R_AES_BLOCK_BYTES], const RAesCipher * aes,
+    const ruint8 * data, rsize nblocks)
 {
   const RGhashTable * t = &aes->ghash_t;
-  ruint8 z[R_AES_BLOCK_BYTES] = { 0 };
+  ruint8 z[R_AES_BLOCK_BYTES];
   rssize byte_idx;
   rsize k;
   ruint8 n, rem;
 
-  for (byte_idx = R_AES_BLOCK_BYTES - 1; byte_idx >= 0; byte_idx--) {
-    /* Process the low nibble first (higher x position), then high.
-     * Each step is z = (z * x^4) XOR T[n], with z * x^4 done as a
-     * 4-bit right-shift plus the precomputed reduction for the four
-     * bits that fell off. */
-    n = y[byte_idx] & 0xf;
-    rem = z[R_AES_BLOCK_BYTES - 1] & 0xf;
-    for (k = R_AES_BLOCK_BYTES - 1; k > 0; k--)
-      z[k] = (ruint8) ((z[k] >> 4) | (z[k - 1] << 4));
-    z[0] >>= 4;
-    z[0] ^= r_ghash_reduce_4bit[rem][0];
-    z[1] ^= r_ghash_reduce_4bit[rem][1];
+  while (nblocks > 0) {
     for (k = 0; k < R_AES_BLOCK_BYTES; k++)
-      z[k] ^= t->e[n][k];
+      y[k] ^= data[k];
 
-    n = y[byte_idx] >> 4;
-    rem = z[R_AES_BLOCK_BYTES - 1] & 0xf;
-    for (k = R_AES_BLOCK_BYTES - 1; k > 0; k--)
-      z[k] = (ruint8) ((z[k] >> 4) | (z[k - 1] << 4));
-    z[0] >>= 4;
-    z[0] ^= r_ghash_reduce_4bit[rem][0];
-    z[1] ^= r_ghash_reduce_4bit[rem][1];
-    for (k = 0; k < R_AES_BLOCK_BYTES; k++)
-      z[k] ^= t->e[n][k];
+    r_memset (z, 0, R_AES_BLOCK_BYTES);
+    for (byte_idx = R_AES_BLOCK_BYTES - 1; byte_idx >= 0; byte_idx--) {
+      /* Process the low nibble first (higher x position), then high.
+       * Each step is z = (z * x^4) XOR T[n], with z * x^4 done as a
+       * 4-bit right-shift plus the precomputed reduction for the
+       * four bits that fell off. */
+      n = y[byte_idx] & 0xf;
+      rem = z[R_AES_BLOCK_BYTES - 1] & 0xf;
+      for (k = R_AES_BLOCK_BYTES - 1; k > 0; k--)
+        z[k] = (ruint8) ((z[k] >> 4) | (z[k - 1] << 4));
+      z[0] >>= 4;
+      z[0] ^= r_ghash_reduce_4bit[rem][0];
+      z[1] ^= r_ghash_reduce_4bit[rem][1];
+      for (k = 0; k < R_AES_BLOCK_BYTES; k++)
+        z[k] ^= t->e[n][k];
+
+      n = y[byte_idx] >> 4;
+      rem = z[R_AES_BLOCK_BYTES - 1] & 0xf;
+      for (k = R_AES_BLOCK_BYTES - 1; k > 0; k--)
+        z[k] = (ruint8) ((z[k] >> 4) | (z[k - 1] << 4));
+      z[0] >>= 4;
+      z[0] ^= r_ghash_reduce_4bit[rem][0];
+      z[1] ^= r_ghash_reduce_4bit[rem][1];
+      for (k = 0; k < R_AES_BLOCK_BYTES; k++)
+        z[k] ^= t->e[n][k];
+    }
+    r_memcpy (y, z, R_AES_BLOCK_BYTES);
+
+    data += R_AES_BLOCK_BYTES;
+    nblocks--;
   }
-
-  r_memcpy (y, z, R_AES_BLOCK_BYTES);
 }
 
 /* GCM-specific counter increment: only the low 32 bits advance; the
@@ -1750,21 +1906,15 @@ r_gcm_ghash_update (ruint8 y[R_AES_BLOCK_BYTES],
     const RAesCipher * aes,
     const ruint8 * data, rsize size)
 {
-  rsize k;
+  rsize nblocks = size / R_AES_BLOCK_BYTES;
+  rsize tail = size % R_AES_BLOCK_BYTES;
 
-  while (size >= R_AES_BLOCK_BYTES) {
-    for (k = 0; k < R_AES_BLOCK_BYTES; k++)
-      y[k] ^= data[k];
-    aes->ghash_mul (y, aes);
-    data += R_AES_BLOCK_BYTES;
-    size -= R_AES_BLOCK_BYTES;
-  }
-  if (size > 0) {
+  if (nblocks > 0)
+    aes->ghash_mul (y, aes, data, nblocks);
+  if (tail > 0) {
     ruint8 block[R_AES_BLOCK_BYTES] = { 0 };
-    r_memcpy (block, data, size);
-    for (k = 0; k < R_AES_BLOCK_BYTES; k++)
-      y[k] ^= block[k];
-    aes->ghash_mul (y, aes);
+    r_memcpy (block, data + nblocks * R_AES_BLOCK_BYTES, tail);
+    aes->ghash_mul (y, aes, block, 1);
   }
 }
 
@@ -1796,9 +1946,7 @@ r_gcm_compute_tag (const RAesCipher * aes,
 
   r_gcm_be64 (lenblock,     (ruint64) aadsize * 8);
   r_gcm_be64 (lenblock + 8, (ruint64) ctsize * 8);
-  for (i = 0; i < R_AES_BLOCK_BYTES; i++)
-    y[i] ^= lenblock[i];
-  aes->ghash_mul (y, aes);
+  aes->ghash_mul (y, aes, lenblock, 1);
 
   aes->encrypt_block (aes, ek, j0);
   for (i = 0; i < R_AES_BLOCK_BYTES; i++)
