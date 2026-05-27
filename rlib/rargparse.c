@@ -26,6 +26,7 @@
 #include <rlib/data/rdictionary.h>
 #include <rlib/data/rkvptrarray.h>
 #include <rlib/data/rlist.h>
+#include <rlib/data/rptrarray.h>
 #include <rlib/data/rstring.h>
 #include <rlib/rlog.h>
 #include <rlib/rmem.h>
@@ -70,12 +71,25 @@ struct _RArgParseCtx
   RArgParseCtx * cmdctx;
 };
 
+static void r_arg_parse_ctx_release_string_arrays_in_group (RArgParseCtx * ctx,
+    const RArgOptionGroup * group);
+
 static void
 r_arg_parse_ctx_free (RArgParseCtx * ctx)
 {
   if (ctx->cmdctx)
     r_arg_parse_ctx_unref (ctx->cmdctx);
   r_free (ctx->command);
+
+  /* Per-option STRING_ARRAY storage owns an RPtrArray, which the
+   * dictionary itself doesn't release on unref. Walk all option
+   * entries and unref any RPtrArray we stored. */
+  if (ctx->parser != NULL) {
+    RSList * it;
+    r_arg_parse_ctx_release_string_arrays_in_group (ctx, ctx->parser->main);
+    for (it = ctx->parser->groups; it != NULL; it = it->next)
+      r_arg_parse_ctx_release_string_arrays_in_group (ctx, it->data);
+  }
 
   r_dictionary_unref (ctx->options);
   r_free (ctx->appname);
@@ -115,6 +129,21 @@ struct _RArgOptionGroup
   RArgOptionEntry * entries;
   rsize count;
 };
+
+static void
+r_arg_parse_ctx_release_string_arrays_in_group (RArgParseCtx * ctx,
+    const RArgOptionGroup * group)
+{
+  rsize i;
+  for (i = 0; i < group->count; i++) {
+    if (group->entries[i].type == R_ARG_OPTION_TYPE_STRING_ARRAY) {
+      RPtrArray * arr = r_dictionary_lookup (ctx->options,
+          group->entries[i].longarg);
+      if (arr != NULL)
+        r_ptr_array_unref (arr);
+    }
+  }
+}
 
 
 static void
@@ -452,6 +481,9 @@ r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
       case R_ARG_OPTION_TYPE_STRING:
         spacing -= r_string_append (str, "=STRING");
         break;
+      case R_ARG_OPTION_TYPE_STRING_ARRAY:
+        spacing -= r_string_append (str, "=STRING...");
+        break;
       default:
         spacing -= r_string_append (str, "=VALUE");
         break;
@@ -764,6 +796,7 @@ r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
         break;
       case R_ARG_OPTION_TYPE_STRING:
       case R_ARG_OPTION_TYPE_FILENAME:
+      case R_ARG_OPTION_TYPE_STRING_ARRAY:
         ret = r_arg_option_parser_string (&end, NULL);
         break;
       default:
@@ -781,7 +814,16 @@ r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
     }
   }
 
-  r_dictionary_insert (ctx->options, entry->longarg, (rpointer)str);
+  if (entry->type == R_ARG_OPTION_TYPE_STRING_ARRAY) {
+    RPtrArray * arr = r_dictionary_lookup (ctx->options, entry->longarg);
+    if (arr == NULL) {
+      arr = r_ptr_array_new ();
+      r_dictionary_insert (ctx->options, entry->longarg, arr);
+    }
+    r_ptr_array_add (arr, (rpointer) str, NULL);
+  } else {
+    r_dictionary_insert (ctx->options, entry->longarg, (rpointer)str);
+  }
 
   return ret;
 }
@@ -1215,6 +1257,28 @@ r_arg_parse_ctx_get_option_string (RArgParseCtx * ctx, const rchar * longarg)
     r_arg_parse_ctx_get_option_entry_value (ctx, entry, &ret);
   }
 
+  return ret;
+}
+
+rchar **
+r_arg_parse_ctx_get_option_string_array (RArgParseCtx * ctx, const rchar * longarg)
+{
+  RArgOptionEntry * entry;
+  RPtrArray * arr;
+  rchar ** ret;
+  rsize i, n;
+
+  if ((entry = r_arg_parser_find_entry_by_longarg (ctx->parser, longarg)) == NULL ||
+      entry->type != R_ARG_OPTION_TYPE_STRING_ARRAY)
+    return NULL;
+  if ((arr = r_dictionary_lookup (ctx->options, longarg)) == NULL)
+    return NULL;
+
+  n = r_ptr_array_size (arr);
+  ret = r_mem_new_n (rchar *, n + 1);
+  for (i = 0; i < n; i++)
+    ret[i] = r_strdup (r_ptr_array_get_const (arr, i));
+  ret[n] = NULL;
   return ret;
 }
 

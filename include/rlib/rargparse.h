@@ -37,6 +37,7 @@ typedef enum {
   R_ARG_OPTION_TYPE_DOUBLE,
   R_ARG_OPTION_TYPE_STRING,
   R_ARG_OPTION_TYPE_FILENAME,
+  R_ARG_OPTION_TYPE_STRING_ARRAY,
   R_ARG_OPTION_TYPE_COUNT,
   R_ARG_OPTION_TYPE_ERROR = R_ARG_OPTION_TYPE_COUNT
 } RArgOptionType;
@@ -166,6 +167,7 @@ R_API rint64 r_arg_parse_ctx_get_option_int64 (RArgParseCtx * ctx, const rchar *
 R_API rdouble r_arg_parse_ctx_get_option_double (RArgParseCtx * ctx, const rchar * longarg);
 R_API rchar * r_arg_parse_ctx_get_option_string (RArgParseCtx * ctx, const rchar * longarg) R_ATTR_MALLOC;
 R_API rchar * r_arg_parse_ctx_get_option_filename (RArgParseCtx * ctx, const rchar * longarg) R_ATTR_MALLOC;
+R_API rchar ** r_arg_parse_ctx_get_option_string_array (RArgParseCtx * ctx, const rchar * longarg) R_ATTR_MALLOC;
 
 R_API const rchar * r_arg_parse_ctx_get_command (const RArgParseCtx * ctx);
 R_API RArgParseCtx * r_arg_parse_ctx_get_command_ctx (RArgParseCtx * ctx);
