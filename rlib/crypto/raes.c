@@ -67,6 +67,8 @@
 
 #define R_AES_PARALLEL_BLOCKS  4
 #define R_AES_PARALLEL_BYTES   (R_AES_PARALLEL_BLOCKS * R_AES_BLOCK_BYTES)
+#define R_AES_PARALLEL8_BLOCKS 8
+#define R_AES_PARALLEL8_BYTES  (R_AES_PARALLEL8_BLOCKS * R_AES_BLOCK_BYTES)
 
 typedef struct _RAesCipher RAesCipher;
 typedef rboolean (*RAesBlockFn) (const RAesCipher * aes,
@@ -98,12 +100,16 @@ struct _RAesCipher {
   RAesBlockFn encrypt_block;
   RAesBlockFn decrypt_block;
 
-  /* 4-way parallel kernels used by the parallelizable mode loops
-   * (ECB, CTR, CBC-decrypt, CFB-decrypt). NULL on the SW path -
-   * mode loops fall back to encrypt_block / decrypt_block in
-   * that case. */
+  /* 4-way and 8-way parallel kernels used by the parallelizable mode
+   * loops (ECB, CTR, CBC-decrypt, CFB-decrypt). NULL on the SW path -
+   * mode loops fall back to a narrower kernel or single-block. The
+   * 8-way kernel is preferred when the remaining run is >= 8 blocks;
+   * it amortises load/store and key-schedule pressure better at the
+   * cost of a larger register footprint. */
   RAesBlocksFn encrypt_blocks_x4;
   RAesBlocksFn decrypt_blocks_x4;
+  RAesBlocksFn encrypt_blocks_x8;
+  RAesBlocksFn decrypt_blocks_x8;
 
   /* GCM precomputed state - populated only when info->mode == GCM.
    * H = E_K(0^128), used by every GHASH multiplication; the 4-bit
@@ -159,6 +165,12 @@ R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_encrypt_blocks_aesni_256);
 R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks_aesni_128);
 R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks_aesni_192);
 R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks_aesni_256);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_encrypt_blocks8_aesni_128);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_encrypt_blocks8_aesni_192);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_encrypt_blocks8_aesni_256);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks8_aesni_128);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks8_aesni_192);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks8_aesni_256);
 #endif
 
 #ifdef HAVE_ARM_NEON_H
@@ -174,6 +186,12 @@ R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_encrypt_blocks_armv8_256);
 R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks_armv8_128);
 R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks_armv8_192);
 R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks_armv8_256);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_encrypt_blocks8_armv8_128);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_encrypt_blocks8_armv8_192);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_encrypt_blocks8_armv8_256);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks8_armv8_128);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks8_armv8_192);
+R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks8_armv8_256);
 #endif
 
 const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ecb =  { "AES-128-ECB",
@@ -419,18 +437,24 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
           ret->decrypt_block      = r_cipher_aes_ecb_decrypt_block_aesni_128;
           ret->encrypt_blocks_x4  = r_cipher_aes_ecb_encrypt_blocks_aesni_128;
           ret->decrypt_blocks_x4  = r_cipher_aes_ecb_decrypt_blocks_aesni_128;
+          ret->encrypt_blocks_x8  = r_cipher_aes_ecb_encrypt_blocks8_aesni_128;
+          ret->decrypt_blocks_x8  = r_cipher_aes_ecb_decrypt_blocks8_aesni_128;
           break;
         case 12:
           ret->encrypt_block      = r_cipher_aes_ecb_encrypt_block_aesni_192;
           ret->decrypt_block      = r_cipher_aes_ecb_decrypt_block_aesni_192;
           ret->encrypt_blocks_x4  = r_cipher_aes_ecb_encrypt_blocks_aesni_192;
           ret->decrypt_blocks_x4  = r_cipher_aes_ecb_decrypt_blocks_aesni_192;
+          ret->encrypt_blocks_x8  = r_cipher_aes_ecb_encrypt_blocks8_aesni_192;
+          ret->decrypt_blocks_x8  = r_cipher_aes_ecb_decrypt_blocks8_aesni_192;
           break;
         default: /* 14 = AES-256 */
           ret->encrypt_block      = r_cipher_aes_ecb_encrypt_block_aesni_256;
           ret->decrypt_block      = r_cipher_aes_ecb_decrypt_block_aesni_256;
           ret->encrypt_blocks_x4  = r_cipher_aes_ecb_encrypt_blocks_aesni_256;
           ret->decrypt_blocks_x4  = r_cipher_aes_ecb_decrypt_blocks_aesni_256;
+          ret->encrypt_blocks_x8  = r_cipher_aes_ecb_encrypt_blocks8_aesni_256;
+          ret->decrypt_blocks_x8  = r_cipher_aes_ecb_decrypt_blocks8_aesni_256;
           break;
       }
     } else
@@ -442,18 +466,24 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
           ret->decrypt_block      = r_cipher_aes_ecb_decrypt_block_armv8_128;
           ret->encrypt_blocks_x4  = r_cipher_aes_ecb_encrypt_blocks_armv8_128;
           ret->decrypt_blocks_x4  = r_cipher_aes_ecb_decrypt_blocks_armv8_128;
+          ret->encrypt_blocks_x8  = r_cipher_aes_ecb_encrypt_blocks8_armv8_128;
+          ret->decrypt_blocks_x8  = r_cipher_aes_ecb_decrypt_blocks8_armv8_128;
           break;
         case 12:
           ret->encrypt_block      = r_cipher_aes_ecb_encrypt_block_armv8_192;
           ret->decrypt_block      = r_cipher_aes_ecb_decrypt_block_armv8_192;
           ret->encrypt_blocks_x4  = r_cipher_aes_ecb_encrypt_blocks_armv8_192;
           ret->decrypt_blocks_x4  = r_cipher_aes_ecb_decrypt_blocks_armv8_192;
+          ret->encrypt_blocks_x8  = r_cipher_aes_ecb_encrypt_blocks8_armv8_192;
+          ret->decrypt_blocks_x8  = r_cipher_aes_ecb_decrypt_blocks8_armv8_192;
           break;
         default: /* 14 = AES-256 */
           ret->encrypt_block      = r_cipher_aes_ecb_encrypt_block_armv8_256;
           ret->decrypt_block      = r_cipher_aes_ecb_decrypt_block_armv8_256;
           ret->encrypt_blocks_x4  = r_cipher_aes_ecb_encrypt_blocks_armv8_256;
           ret->decrypt_blocks_x4  = r_cipher_aes_ecb_decrypt_blocks_armv8_256;
+          ret->encrypt_blocks_x8  = r_cipher_aes_ecb_encrypt_blocks8_armv8_256;
+          ret->decrypt_blocks_x8  = r_cipher_aes_ecb_decrypt_blocks8_armv8_256;
           break;
       }
     } else
@@ -463,6 +493,8 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
       ret->decrypt_block      = r_cipher_aes_ecb_decrypt_block_sw;
       ret->encrypt_blocks_x4  = NULL;  /* mode loops fall back to single-block */
       ret->decrypt_blocks_x4  = NULL;
+      ret->encrypt_blocks_x8  = NULL;
+      ret->decrypt_blocks_x8  = NULL;
     }
   }
 
@@ -829,6 +861,68 @@ R_AES_AESNI_BLOCKS_X4 (r_cipher_aes_ecb_decrypt_blocks_aesni_192, drk,
     _mm_aesdec_si128, _mm_aesdeclast_si128, 12)
 R_AES_AESNI_BLOCKS_X4 (r_cipher_aes_ecb_decrypt_blocks_aesni_256, drk,
     _mm_aesdec_si128, _mm_aesdeclast_si128, 14)
+
+/* 8-way variant: doubles the block count to better hide the AES
+ * round chain on cores where AESENC is dual-issue (Zen+ has 0.5-
+ * cycle throughput, so 4-way already saturates - but the wider
+ * window gives the compiler more scheduling room and amortises the
+ * load/store and key-broadcast pressure across more bytes per
+ * loop iteration. On older Intel (Westmere-Haswell, single-issue
+ * AESENC) it's a more direct ~2x. */
+# define R_AES_AESNI_BLOCKS_X8(name, key_arr, op_round, op_last, rounds)     \
+  R_AES_X86_TARGET                                                           \
+  static void                                                                \
+  name (const RAesCipher * aes, ruint8 * dst, const ruint8 * src)            \
+  {                                                                          \
+    __m128i b0 = _mm_loadu_si128 ((const __m128i *)(src      ));             \
+    __m128i b1 = _mm_loadu_si128 ((const __m128i *)(src +  16));             \
+    __m128i b2 = _mm_loadu_si128 ((const __m128i *)(src +  32));             \
+    __m128i b3 = _mm_loadu_si128 ((const __m128i *)(src +  48));             \
+    __m128i b4 = _mm_loadu_si128 ((const __m128i *)(src +  64));             \
+    __m128i b5 = _mm_loadu_si128 ((const __m128i *)(src +  80));             \
+    __m128i b6 = _mm_loadu_si128 ((const __m128i *)(src +  96));             \
+    __m128i b7 = _mm_loadu_si128 ((const __m128i *)(src + 112));             \
+    const __m128i * rk = (const __m128i *)aes->key_arr;                      \
+    __m128i k = _mm_loadu_si128 (rk++);                                      \
+    ruint8 i;                                                                \
+    b0 = _mm_xor_si128 (b0, k); b1 = _mm_xor_si128 (b1, k);                  \
+    b2 = _mm_xor_si128 (b2, k); b3 = _mm_xor_si128 (b3, k);                  \
+    b4 = _mm_xor_si128 (b4, k); b5 = _mm_xor_si128 (b5, k);                  \
+    b6 = _mm_xor_si128 (b6, k); b7 = _mm_xor_si128 (b7, k);                  \
+    for (i = 1; i < (rounds); i++, rk++) {                                   \
+      k = _mm_loadu_si128 (rk);                                              \
+      b0 = op_round (b0, k); b1 = op_round (b1, k);                          \
+      b2 = op_round (b2, k); b3 = op_round (b3, k);                          \
+      b4 = op_round (b4, k); b5 = op_round (b5, k);                          \
+      b6 = op_round (b6, k); b7 = op_round (b7, k);                          \
+    }                                                                        \
+    k = _mm_loadu_si128 (rk);                                                \
+    b0 = op_last (b0, k); b1 = op_last (b1, k);                              \
+    b2 = op_last (b2, k); b3 = op_last (b3, k);                              \
+    b4 = op_last (b4, k); b5 = op_last (b5, k);                              \
+    b6 = op_last (b6, k); b7 = op_last (b7, k);                              \
+    _mm_storeu_si128 ((__m128i *)(dst      ), b0);                           \
+    _mm_storeu_si128 ((__m128i *)(dst +  16), b1);                           \
+    _mm_storeu_si128 ((__m128i *)(dst +  32), b2);                           \
+    _mm_storeu_si128 ((__m128i *)(dst +  48), b3);                           \
+    _mm_storeu_si128 ((__m128i *)(dst +  64), b4);                           \
+    _mm_storeu_si128 ((__m128i *)(dst +  80), b5);                           \
+    _mm_storeu_si128 ((__m128i *)(dst +  96), b6);                           \
+    _mm_storeu_si128 ((__m128i *)(dst + 112), b7);                           \
+  }
+
+R_AES_AESNI_BLOCKS_X8 (r_cipher_aes_ecb_encrypt_blocks8_aesni_128, erk,
+    _mm_aesenc_si128, _mm_aesenclast_si128, 10)
+R_AES_AESNI_BLOCKS_X8 (r_cipher_aes_ecb_encrypt_blocks8_aesni_192, erk,
+    _mm_aesenc_si128, _mm_aesenclast_si128, 12)
+R_AES_AESNI_BLOCKS_X8 (r_cipher_aes_ecb_encrypt_blocks8_aesni_256, erk,
+    _mm_aesenc_si128, _mm_aesenclast_si128, 14)
+R_AES_AESNI_BLOCKS_X8 (r_cipher_aes_ecb_decrypt_blocks8_aesni_128, drk,
+    _mm_aesdec_si128, _mm_aesdeclast_si128, 10)
+R_AES_AESNI_BLOCKS_X8 (r_cipher_aes_ecb_decrypt_blocks8_aesni_192, drk,
+    _mm_aesdec_si128, _mm_aesdeclast_si128, 12)
+R_AES_AESNI_BLOCKS_X8 (r_cipher_aes_ecb_decrypt_blocks8_aesni_256, drk,
+    _mm_aesdec_si128, _mm_aesdeclast_si128, 14)
 #endif /* HAVE_WMMINTRIN_H (AES-NI block kernels) */
 
 /* PCLMUL GHASH kernel: needs PCLMULQDQ (wmmintrin.h) for the
@@ -1127,6 +1221,103 @@ R_AES_ARMV8_BLOCKS_X4_DECRYPT (r_cipher_aes_ecb_decrypt_blocks_armv8_128, 10)
 R_AES_ARMV8_BLOCKS_X4_DECRYPT (r_cipher_aes_ecb_decrypt_blocks_armv8_192, 12)
 R_AES_ARMV8_BLOCKS_X4_DECRYPT (r_cipher_aes_ecb_decrypt_blocks_armv8_256, 14)
 
+/* 8-way variant: same rationale as the AES-NI x8 - more independent
+ * blocks in flight to hide AESE/AESMC latency (Cortex-A class chips
+ * tend to have 1-cycle throughput / 3-cycle latency on AESE+AESMC
+ * pairs, so the wider window is meaningful here). */
+# define R_AES_ARMV8_BLOCKS_X8_ENCRYPT(name, rounds)                          \
+  R_AES_ARM_TARGET                                                            \
+  static void                                                                 \
+  name (const RAesCipher * aes, ruint8 * dst, const ruint8 * src)             \
+  {                                                                           \
+    uint8x16_t b0 = vld1q_u8 (src       );                                    \
+    uint8x16_t b1 = vld1q_u8 (src +  16);                                     \
+    uint8x16_t b2 = vld1q_u8 (src +  32);                                     \
+    uint8x16_t b3 = vld1q_u8 (src +  48);                                     \
+    uint8x16_t b4 = vld1q_u8 (src +  64);                                     \
+    uint8x16_t b5 = vld1q_u8 (src +  80);                                     \
+    uint8x16_t b6 = vld1q_u8 (src +  96);                                     \
+    uint8x16_t b7 = vld1q_u8 (src + 112);                                     \
+    const ruint8 * rk = (const ruint8 *)aes->erk;                             \
+    uint8x16_t k;                                                             \
+    ruint8 i;                                                                 \
+    for (i = 0; i < (rounds) - 1; i++, rk += 16) {                            \
+      k = vld1q_u8 (rk);                                                      \
+      b0 = vaeseq_u8 (b0, k); b0 = vaesmcq_u8 (b0);                           \
+      b1 = vaeseq_u8 (b1, k); b1 = vaesmcq_u8 (b1);                           \
+      b2 = vaeseq_u8 (b2, k); b2 = vaesmcq_u8 (b2);                           \
+      b3 = vaeseq_u8 (b3, k); b3 = vaesmcq_u8 (b3);                           \
+      b4 = vaeseq_u8 (b4, k); b4 = vaesmcq_u8 (b4);                           \
+      b5 = vaeseq_u8 (b5, k); b5 = vaesmcq_u8 (b5);                           \
+      b6 = vaeseq_u8 (b6, k); b6 = vaesmcq_u8 (b6);                           \
+      b7 = vaeseq_u8 (b7, k); b7 = vaesmcq_u8 (b7);                           \
+    }                                                                         \
+    k = vld1q_u8 (rk); rk += 16;                                              \
+    b0 = vaeseq_u8 (b0, k); b1 = vaeseq_u8 (b1, k);                           \
+    b2 = vaeseq_u8 (b2, k); b3 = vaeseq_u8 (b3, k);                           \
+    b4 = vaeseq_u8 (b4, k); b5 = vaeseq_u8 (b5, k);                           \
+    b6 = vaeseq_u8 (b6, k); b7 = vaeseq_u8 (b7, k);                           \
+    k = vld1q_u8 (rk);                                                        \
+    b0 = veorq_u8 (b0, k); b1 = veorq_u8 (b1, k);                             \
+    b2 = veorq_u8 (b2, k); b3 = veorq_u8 (b3, k);                             \
+    b4 = veorq_u8 (b4, k); b5 = veorq_u8 (b5, k);                             \
+    b6 = veorq_u8 (b6, k); b7 = veorq_u8 (b7, k);                             \
+    vst1q_u8 (dst       , b0); vst1q_u8 (dst +  16, b1);                      \
+    vst1q_u8 (dst +  32, b2); vst1q_u8 (dst +  48, b3);                       \
+    vst1q_u8 (dst +  64, b4); vst1q_u8 (dst +  80, b5);                       \
+    vst1q_u8 (dst +  96, b6); vst1q_u8 (dst + 112, b7);                       \
+  }
+
+# define R_AES_ARMV8_BLOCKS_X8_DECRYPT(name, rounds)                          \
+  R_AES_ARM_TARGET                                                            \
+  static void                                                                 \
+  name (const RAesCipher * aes, ruint8 * dst, const ruint8 * src)             \
+  {                                                                           \
+    uint8x16_t b0 = vld1q_u8 (src       );                                    \
+    uint8x16_t b1 = vld1q_u8 (src +  16);                                     \
+    uint8x16_t b2 = vld1q_u8 (src +  32);                                     \
+    uint8x16_t b3 = vld1q_u8 (src +  48);                                     \
+    uint8x16_t b4 = vld1q_u8 (src +  64);                                     \
+    uint8x16_t b5 = vld1q_u8 (src +  80);                                     \
+    uint8x16_t b6 = vld1q_u8 (src +  96);                                     \
+    uint8x16_t b7 = vld1q_u8 (src + 112);                                     \
+    const ruint8 * rk = (const ruint8 *)aes->drk;                             \
+    uint8x16_t k;                                                             \
+    ruint8 i;                                                                 \
+    for (i = 0; i < (rounds) - 1; i++, rk += 16) {                            \
+      k = vld1q_u8 (rk);                                                      \
+      b0 = vaesdq_u8 (b0, k); b0 = vaesimcq_u8 (b0);                          \
+      b1 = vaesdq_u8 (b1, k); b1 = vaesimcq_u8 (b1);                          \
+      b2 = vaesdq_u8 (b2, k); b2 = vaesimcq_u8 (b2);                          \
+      b3 = vaesdq_u8 (b3, k); b3 = vaesimcq_u8 (b3);                          \
+      b4 = vaesdq_u8 (b4, k); b4 = vaesimcq_u8 (b4);                          \
+      b5 = vaesdq_u8 (b5, k); b5 = vaesimcq_u8 (b5);                          \
+      b6 = vaesdq_u8 (b6, k); b6 = vaesimcq_u8 (b6);                          \
+      b7 = vaesdq_u8 (b7, k); b7 = vaesimcq_u8 (b7);                          \
+    }                                                                         \
+    k = vld1q_u8 (rk); rk += 16;                                              \
+    b0 = vaesdq_u8 (b0, k); b1 = vaesdq_u8 (b1, k);                           \
+    b2 = vaesdq_u8 (b2, k); b3 = vaesdq_u8 (b3, k);                           \
+    b4 = vaesdq_u8 (b4, k); b5 = vaesdq_u8 (b5, k);                           \
+    b6 = vaesdq_u8 (b6, k); b7 = vaesdq_u8 (b7, k);                           \
+    k = vld1q_u8 (rk);                                                        \
+    b0 = veorq_u8 (b0, k); b1 = veorq_u8 (b1, k);                             \
+    b2 = veorq_u8 (b2, k); b3 = veorq_u8 (b3, k);                             \
+    b4 = veorq_u8 (b4, k); b5 = veorq_u8 (b5, k);                             \
+    b6 = veorq_u8 (b6, k); b7 = veorq_u8 (b7, k);                             \
+    vst1q_u8 (dst       , b0); vst1q_u8 (dst +  16, b1);                      \
+    vst1q_u8 (dst +  32, b2); vst1q_u8 (dst +  48, b3);                       \
+    vst1q_u8 (dst +  64, b4); vst1q_u8 (dst +  80, b5);                       \
+    vst1q_u8 (dst +  96, b6); vst1q_u8 (dst + 112, b7);                       \
+  }
+
+R_AES_ARMV8_BLOCKS_X8_ENCRYPT (r_cipher_aes_ecb_encrypt_blocks8_armv8_128, 10)
+R_AES_ARMV8_BLOCKS_X8_ENCRYPT (r_cipher_aes_ecb_encrypt_blocks8_armv8_192, 12)
+R_AES_ARMV8_BLOCKS_X8_ENCRYPT (r_cipher_aes_ecb_encrypt_blocks8_armv8_256, 14)
+R_AES_ARMV8_BLOCKS_X8_DECRYPT (r_cipher_aes_ecb_decrypt_blocks8_armv8_128, 10)
+R_AES_ARMV8_BLOCKS_X8_DECRYPT (r_cipher_aes_ecb_decrypt_blocks8_armv8_192, 12)
+R_AES_ARMV8_BLOCKS_X8_DECRYPT (r_cipher_aes_ecb_decrypt_blocks8_armv8_256, 14)
+
 /* MSVC ARM64 declares vmull_p64 as taking __n64 (not poly64_t) and
  * returning __n128 (no poly128_t typedef), so a straight ACLE call
  * doesn't compile. Wrap the intrinsic once and return uint8x16_t -
@@ -1413,6 +1604,13 @@ r_cipher_aes_ecb_encrypt (const RCryptoCipher * cipher,
   aes = (const RAesCipher *)cipher;
   ptr = data;
   end = ptr + size;
+  if (aes->encrypt_blocks_x8 != NULL) {
+    while (ptr + R_AES_PARALLEL8_BYTES <= end) {
+      aes->encrypt_blocks_x8 (aes, dst, ptr);
+      ptr += R_AES_PARALLEL8_BYTES;
+      dst += R_AES_PARALLEL8_BYTES;
+    }
+  }
   if (aes->encrypt_blocks_x4 != NULL) {
     while (ptr + R_AES_PARALLEL_BYTES <= end) {
       aes->encrypt_blocks_x4 (aes, dst, ptr);
@@ -1448,6 +1646,13 @@ r_cipher_aes_ecb_decrypt (const RCryptoCipher * cipher,
   aes = (const RAesCipher *)cipher;
   ptr = data;
   end = ptr + size;
+  if (aes->decrypt_blocks_x8 != NULL) {
+    while (ptr + R_AES_PARALLEL8_BYTES <= end) {
+      aes->decrypt_blocks_x8 (aes, dst, ptr);
+      ptr += R_AES_PARALLEL8_BYTES;
+      dst += R_AES_PARALLEL8_BYTES;
+    }
+  }
   if (aes->decrypt_blocks_x4 != NULL) {
     while (ptr + R_AES_PARALLEL_BYTES <= end) {
       aes->decrypt_blocks_x4 (aes, dst, ptr);
@@ -1494,8 +1699,9 @@ r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
   const RAesCipher * aes;
   const ruint8 * ptr;
   const ruint8 * end;
-  ruint8 scratch[R_AES_PARALLEL_BYTES];
+  ruint8 scratch[R_AES_PARALLEL8_BYTES];
   int i;
+  rsize w;
 
   if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
   if (R_UNLIKELY (data == NULL)) return R_CRYPTO_CIPHER_INVAL;
@@ -1507,20 +1713,37 @@ r_cipher_aes_cbc_decrypt (const RCryptoCipher * cipher,
   ptr = data;
   end = ptr + size;
 
-  /* 4-way path: snapshot the 4-block ciphertext window (decryption
-   * can be in-place so the original ct must be saved before the
-   * dst write), decrypt all 4 in parallel, then XOR each plaintext
+  /* 8-way / 4-way path: snapshot the window's ciphertext (decryption
+   * can be in-place so the original ct must be saved before the dst
+   * write), decrypt N blocks in parallel, then XOR each plaintext
    * with its chain predecessor (iv for the first, ct[i-1] for the
    * rest). iv is updated to the last ciphertext of the window. */
+  if (aes->decrypt_blocks_x8 != NULL) {
+    while (ptr + R_AES_PARALLEL8_BYTES <= end) {
+      r_memcpy (scratch, ptr, R_AES_PARALLEL8_BYTES);
+      aes->decrypt_blocks_x8 (aes, dst, ptr);
+      for (i = 0; i < R_AES_BLOCK_BYTES; i++) dst[i] ^= iv[i];
+      for (w = 1; w < R_AES_PARALLEL8_BLOCKS; w++) {
+        for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+          dst[i + R_AES_BLOCK_BYTES * w] ^= scratch[i + R_AES_BLOCK_BYTES * (w - 1)];
+      }
+      r_memcpy (iv, scratch + R_AES_BLOCK_BYTES * (R_AES_PARALLEL8_BLOCKS - 1),
+          R_AES_BLOCK_BYTES);
+      ptr += R_AES_PARALLEL8_BYTES;
+      dst += R_AES_PARALLEL8_BYTES;
+    }
+  }
   if (aes->decrypt_blocks_x4 != NULL) {
     while (ptr + R_AES_PARALLEL_BYTES <= end) {
       r_memcpy (scratch, ptr, R_AES_PARALLEL_BYTES);
       aes->decrypt_blocks_x4 (aes, dst, ptr);
-      for (i = 0; i < R_AES_BLOCK_BYTES; i++) dst[i               ] ^= iv[i];
-      for (i = 0; i < R_AES_BLOCK_BYTES; i++) dst[i + R_AES_BLOCK_BYTES    ] ^= scratch[i                          ];
-      for (i = 0; i < R_AES_BLOCK_BYTES; i++) dst[i + R_AES_BLOCK_BYTES * 2] ^= scratch[i + R_AES_BLOCK_BYTES      ];
-      for (i = 0; i < R_AES_BLOCK_BYTES; i++) dst[i + R_AES_BLOCK_BYTES * 3] ^= scratch[i + R_AES_BLOCK_BYTES * 2  ];
-      r_memcpy (iv, scratch + R_AES_BLOCK_BYTES * 3, R_AES_BLOCK_BYTES);
+      for (i = 0; i < R_AES_BLOCK_BYTES; i++) dst[i] ^= iv[i];
+      for (w = 1; w < R_AES_PARALLEL_BLOCKS; w++) {
+        for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+          dst[i + R_AES_BLOCK_BYTES * w] ^= scratch[i + R_AES_BLOCK_BYTES * (w - 1)];
+      }
+      r_memcpy (iv, scratch + R_AES_BLOCK_BYTES * (R_AES_PARALLEL_BLOCKS - 1),
+          R_AES_BLOCK_BYTES);
       ptr += R_AES_PARALLEL_BYTES;
       dst += R_AES_PARALLEL_BYTES;
     }
@@ -1565,7 +1788,8 @@ r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
   const ruint8 * end;
   int i;
   rsize bsize = size;
-  ruint8 scratch[R_AES_PARALLEL_BYTES];
+  rsize w;
+  ruint8 scratch[R_AES_PARALLEL8_BYTES];
 
   if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
   if (R_UNLIKELY (data == NULL)) return R_CRYPTO_CIPHER_INVAL;
@@ -1579,18 +1803,29 @@ r_cipher_aes_ctr_encrypt (const RCryptoCipher * cipher,
   ptr = data;
   end = ptr + bsize;
 
-  /* 4-way path: build 4 consecutive counter blocks (iv, iv+1,
-   * iv+2, iv+3) in scratch, encrypt all 4 in parallel, XOR with
-   * the plaintext window, and advance iv by 4. */
+  /* 8-way / 4-way path: build N consecutive counter blocks (iv, iv+1,
+   * ..., iv+N-1) in scratch, encrypt all N in parallel, XOR with the
+   * plaintext window, and advance iv by N. */
+  if (aes->encrypt_blocks_x8 != NULL) {
+    while (ptr + R_AES_PARALLEL8_BYTES <= end) {
+      for (w = 0; w < R_AES_PARALLEL8_BLOCKS; w++)
+        r_memcpy (scratch + R_AES_BLOCK_BYTES * w, iv, R_AES_BLOCK_BYTES);
+      for (w = 1; w < R_AES_PARALLEL8_BLOCKS; w++)
+        r_aes_ctr_add (scratch + R_AES_BLOCK_BYTES * w, (ruint32) w);
+      aes->encrypt_blocks_x8 (aes, scratch, scratch);
+      for (i = 0; i < R_AES_PARALLEL8_BYTES; i++)
+        dst[i] = scratch[i] ^ ptr[i];
+      r_aes_ctr_add (iv, R_AES_PARALLEL8_BLOCKS);
+      ptr += R_AES_PARALLEL8_BYTES;
+      dst += R_AES_PARALLEL8_BYTES;
+    }
+  }
   if (aes->encrypt_blocks_x4 != NULL) {
     while (ptr + R_AES_PARALLEL_BYTES <= end) {
-      r_memcpy (scratch + R_AES_BLOCK_BYTES * 0, iv, R_AES_BLOCK_BYTES);
-      r_memcpy (scratch + R_AES_BLOCK_BYTES * 1, iv, R_AES_BLOCK_BYTES);
-      r_memcpy (scratch + R_AES_BLOCK_BYTES * 2, iv, R_AES_BLOCK_BYTES);
-      r_memcpy (scratch + R_AES_BLOCK_BYTES * 3, iv, R_AES_BLOCK_BYTES);
-      r_aes_ctr_add (scratch + R_AES_BLOCK_BYTES * 1, 1);
-      r_aes_ctr_add (scratch + R_AES_BLOCK_BYTES * 2, 2);
-      r_aes_ctr_add (scratch + R_AES_BLOCK_BYTES * 3, 3);
+      for (w = 0; w < R_AES_PARALLEL_BLOCKS; w++)
+        r_memcpy (scratch + R_AES_BLOCK_BYTES * w, iv, R_AES_BLOCK_BYTES);
+      for (w = 1; w < R_AES_PARALLEL_BLOCKS; w++)
+        r_aes_ctr_add (scratch + R_AES_BLOCK_BYTES * w, (ruint32) w);
       aes->encrypt_blocks_x4 (aes, scratch, scratch);
       for (i = 0; i < R_AES_PARALLEL_BYTES; i++)
         dst[i] = scratch[i] ^ ptr[i];
@@ -1665,8 +1900,9 @@ r_cipher_aes_cfb_decrypt (const RCryptoCipher * cipher,
   const ruint8 * end;
   int i;
   rsize bsize = size;
-  ruint8 scratch[R_AES_PARALLEL_BYTES];
-  ruint8 ctsave[R_AES_PARALLEL_BYTES];
+  rsize w;
+  ruint8 scratch[R_AES_PARALLEL8_BYTES];
+  ruint8 ctsave[R_AES_PARALLEL8_BYTES];
 
   if (R_UNLIKELY (cipher == NULL)) return R_CRYPTO_CIPHER_INVAL;
   if (R_UNLIKELY (data == NULL)) return R_CRYPTO_CIPHER_INVAL;
@@ -1680,20 +1916,37 @@ r_cipher_aes_cfb_decrypt (const RCryptoCipher * cipher,
   ptr = data;
   end = ptr + bsize;
 
-  /* 4-way path: encrypt the 4 chain inputs (iv, ct[0], ct[1], ct[2])
-   * in parallel into a keystream, then XOR with the ciphertext window.
-   * iv is updated to ct[3] for the next iteration. */
+  /* 8-way / 4-way path: encrypt the N chain inputs (iv, ct[0],
+   * ..., ct[N-2]) in parallel into a keystream, XOR with the
+   * ciphertext window. iv is updated to ct[N-1] for next iteration. */
+  if (aes->encrypt_blocks_x8 != NULL) {
+    while (ptr + R_AES_PARALLEL8_BYTES <= end) {
+      r_memcpy (ctsave, ptr, R_AES_PARALLEL8_BYTES);
+      r_memcpy (scratch, iv, R_AES_BLOCK_BYTES);
+      for (w = 1; w < R_AES_PARALLEL8_BLOCKS; w++)
+        r_memcpy (scratch + R_AES_BLOCK_BYTES * w,
+            ctsave + R_AES_BLOCK_BYTES * (w - 1), R_AES_BLOCK_BYTES);
+      aes->encrypt_blocks_x8 (aes, scratch, scratch);
+      for (i = 0; i < R_AES_PARALLEL8_BYTES; i++)
+        dst[i] = scratch[i] ^ ctsave[i];
+      r_memcpy (iv, ctsave + R_AES_BLOCK_BYTES * (R_AES_PARALLEL8_BLOCKS - 1),
+          R_AES_BLOCK_BYTES);
+      ptr += R_AES_PARALLEL8_BYTES;
+      dst += R_AES_PARALLEL8_BYTES;
+    }
+  }
   if (aes->encrypt_blocks_x4 != NULL) {
     while (ptr + R_AES_PARALLEL_BYTES <= end) {
       r_memcpy (ctsave, ptr, R_AES_PARALLEL_BYTES);
-      r_memcpy (scratch + R_AES_BLOCK_BYTES * 0, iv, R_AES_BLOCK_BYTES);
-      r_memcpy (scratch + R_AES_BLOCK_BYTES * 1, ctsave + R_AES_BLOCK_BYTES * 0, R_AES_BLOCK_BYTES);
-      r_memcpy (scratch + R_AES_BLOCK_BYTES * 2, ctsave + R_AES_BLOCK_BYTES * 1, R_AES_BLOCK_BYTES);
-      r_memcpy (scratch + R_AES_BLOCK_BYTES * 3, ctsave + R_AES_BLOCK_BYTES * 2, R_AES_BLOCK_BYTES);
+      r_memcpy (scratch, iv, R_AES_BLOCK_BYTES);
+      for (w = 1; w < R_AES_PARALLEL_BLOCKS; w++)
+        r_memcpy (scratch + R_AES_BLOCK_BYTES * w,
+            ctsave + R_AES_BLOCK_BYTES * (w - 1), R_AES_BLOCK_BYTES);
       aes->encrypt_blocks_x4 (aes, scratch, scratch);
       for (i = 0; i < R_AES_PARALLEL_BYTES; i++)
         dst[i] = scratch[i] ^ ctsave[i];
-      r_memcpy (iv, ctsave + R_AES_BLOCK_BYTES * 3, R_AES_BLOCK_BYTES);
+      r_memcpy (iv, ctsave + R_AES_BLOCK_BYTES * (R_AES_PARALLEL_BLOCKS - 1),
+          R_AES_BLOCK_BYTES);
       ptr += R_AES_PARALLEL_BYTES;
       dst += R_AES_PARALLEL_BYTES;
     }
@@ -2017,20 +2270,37 @@ r_aes_gcm_op (const RCryptoCipher * cipher,
   dstp = dst;
   remaining = size;
 
-  /* 4-way path: build (ctr, ctr+1, ctr+2, ctr+3) in scratch, encrypt
-   * the four blocks in parallel via the SIMD-interleaved kernel, XOR
-   * with the source window, and advance ctr by 4. Mirrors the shape
-   * of r_cipher_aes_ctr_encrypt; the only twist is GCM's inc_32. */
+  /* 8-way / 4-way path: stage N consecutive GCM counter blocks
+   * (ctr, ctr+1, ..., ctr+N-1) in scratch, encrypt all N in parallel
+   * via the SIMD-interleaved kernel, XOR with the source window, and
+   * advance ctr by N. Mirrors the shape of r_cipher_aes_ctr_encrypt;
+   * the only twist is GCM's inc_32 wrap behaviour. */
+  if (aes->encrypt_blocks_x8 != NULL) {
+    ruint8 ks8[R_AES_PARALLEL8_BYTES];
+    rsize w;
+    while (remaining >= R_AES_PARALLEL8_BYTES) {
+      for (w = 0; w < R_AES_PARALLEL8_BLOCKS; w++)
+        r_memcpy (ks8 + R_AES_BLOCK_BYTES * w, ctr, R_AES_BLOCK_BYTES);
+      for (w = 1; w < R_AES_PARALLEL8_BLOCKS; w++)
+        r_gcm_ctr_inc32_n (ks8 + R_AES_BLOCK_BYTES * w, (ruint32) w);
+      aes->encrypt_blocks_x8 (aes, ks8, ks8);
+      for (i = 0; i < R_AES_PARALLEL8_BYTES; i++)
+        dstp[i] = ks8[i] ^ srcp[i];
+      r_gcm_ctr_inc32_n (ctr, R_AES_PARALLEL8_BLOCKS);
+      srcp += R_AES_PARALLEL8_BYTES;
+      dstp += R_AES_PARALLEL8_BYTES;
+      remaining -= R_AES_PARALLEL8_BYTES;
+    }
+    r_memclear_secure (ks8, sizeof (ks8));
+  }
   if (aes->encrypt_blocks_x4 != NULL) {
     ruint8 ks4[R_AES_PARALLEL_BYTES];
+    rsize w;
     while (remaining >= R_AES_PARALLEL_BYTES) {
-      r_memcpy (ks4 + R_AES_BLOCK_BYTES * 0, ctr, R_AES_BLOCK_BYTES);
-      r_memcpy (ks4 + R_AES_BLOCK_BYTES * 1, ctr, R_AES_BLOCK_BYTES);
-      r_memcpy (ks4 + R_AES_BLOCK_BYTES * 2, ctr, R_AES_BLOCK_BYTES);
-      r_memcpy (ks4 + R_AES_BLOCK_BYTES * 3, ctr, R_AES_BLOCK_BYTES);
-      r_gcm_ctr_inc32_n (ks4 + R_AES_BLOCK_BYTES * 1, 1);
-      r_gcm_ctr_inc32_n (ks4 + R_AES_BLOCK_BYTES * 2, 2);
-      r_gcm_ctr_inc32_n (ks4 + R_AES_BLOCK_BYTES * 3, 3);
+      for (w = 0; w < R_AES_PARALLEL_BLOCKS; w++)
+        r_memcpy (ks4 + R_AES_BLOCK_BYTES * w, ctr, R_AES_BLOCK_BYTES);
+      for (w = 1; w < R_AES_PARALLEL_BLOCKS; w++)
+        r_gcm_ctr_inc32_n (ks4 + R_AES_BLOCK_BYTES * w, (ruint32) w);
       aes->encrypt_blocks_x4 (aes, ks4, ks4);
       for (i = 0; i < R_AES_PARALLEL_BYTES; i++)
         dstp[i] = ks4[i] ^ srcp[i];
