@@ -93,6 +93,9 @@ R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_256_cbc;
 R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ctr;
 R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_192_ctr;
 R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ctr;
+R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_128_gcm;
+R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_192_gcm;
+R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_256_gcm;
 
 R_END_DECLS
 

@@ -102,6 +102,9 @@ R_API RCryptoCipher * r_cipher_aes_256_cfb_new (const ruint8 * key) R_ATTR_MALLO
 R_API RCryptoCipher * r_cipher_aes_128_ofb_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_192_ofb_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_256_ofb_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_128_gcm_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_192_gcm_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_256_gcm_new (const ruint8 * key) R_ATTR_MALLOC;
 /** @} */
 
 
@@ -168,6 +171,37 @@ R_API RCryptoCipherResult r_cipher_aes_ofb_encrypt (const RCryptoCipher * cipher
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize);
 /** @brief OFB is self-inverse; decrypt resolves to encrypt. */
 #define r_cipher_aes_ofb_decrypt r_cipher_aes_ofb_encrypt
+
+/**
+ * @brief AES-GCM authenticated encrypt.
+ *
+ * GCM = CTR-mode encryption plus GHASH over AAD || ciphertext for the
+ * integrity tag. IV must be 12 bytes (96 bits, the recommended NIST
+ * size); other IV lengths return @c R_CRYPTO_CIPHER_INVAL. Tag length
+ * is 1..16 bytes; @c tagsize == 16 covers the full GMAC output.
+ *
+ * Buffers may alias for in-place operation. The @p iv is read-only
+ * (GCM's counter is internal); the parameter is kept read-write for
+ * signature symmetry with @c RCryptoCipherAeadOperation, but is not
+ * modified.
+ */
+R_API RCryptoCipherResult r_cipher_aes_gcm_encrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize);
+/**
+ * @brief AES-GCM authenticated decrypt with tag verification.
+ *
+ * Computes the expected tag over @p aad and @p data, then compares
+ * (constant time) against @p tag. On mismatch returns
+ * @c R_CRYPTO_CIPHER_AUTH_FAILED and leaves @p dst untouched.
+ */
+R_API RCryptoCipherResult r_cipher_aes_gcm_decrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize);
 /** @} */
 
 R_END_DECLS

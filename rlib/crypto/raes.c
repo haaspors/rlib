@@ -136,66 +136,97 @@ R_AES_BLOCKS_FN_DECL (r_cipher_aes_ecb_decrypt_blocks_armv8_256);
 
 const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ecb =  { "AES-128-ECB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 128, 16, 16,
-  r_cipher_aes_ecb_encrypt, r_cipher_aes_ecb_decrypt
+  r_cipher_aes_ecb_encrypt, r_cipher_aes_ecb_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_192_ecb = { "AES-192-ECB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 192, 16, 16,
-  r_cipher_aes_ecb_encrypt, r_cipher_aes_ecb_decrypt
+  r_cipher_aes_ecb_encrypt, r_cipher_aes_ecb_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ecb = { "AES-256-ECB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_ECB, 256, 16, 16,
-  r_cipher_aes_ecb_encrypt, r_cipher_aes_ecb_decrypt
+  r_cipher_aes_ecb_encrypt, r_cipher_aes_ecb_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_128_cbc = { "AES-128-CBC",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CBC, 128, 16, 16,
-  r_cipher_aes_cbc_encrypt, r_cipher_aes_cbc_decrypt
+  r_cipher_aes_cbc_encrypt, r_cipher_aes_cbc_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_192_cbc = { "AES-192-CBC",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CBC, 192, 16, 16,
-  r_cipher_aes_cbc_encrypt, r_cipher_aes_cbc_decrypt
+  r_cipher_aes_cbc_encrypt, r_cipher_aes_cbc_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_256_cbc = { "AES-256-CBC",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CBC, 256, 16, 16,
-  r_cipher_aes_cbc_encrypt, r_cipher_aes_cbc_decrypt
+  r_cipher_aes_cbc_encrypt, r_cipher_aes_cbc_decrypt,
+  NULL, NULL
 };
 
 const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ctr = { "AES-128-CTR",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CTR, 128, 16, 16,
-  r_cipher_aes_ctr_encrypt, r_cipher_aes_ctr_decrypt
+  r_cipher_aes_ctr_encrypt, r_cipher_aes_ctr_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_192_ctr = { "AES-192-CTR",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CTR, 192, 16, 16,
-  r_cipher_aes_ctr_encrypt, r_cipher_aes_ctr_decrypt
+  r_cipher_aes_ctr_encrypt, r_cipher_aes_ctr_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ctr = { "AES-256-CTR",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CTR, 256, 16, 16,
-  r_cipher_aes_ctr_encrypt, r_cipher_aes_ctr_decrypt
+  r_cipher_aes_ctr_encrypt, r_cipher_aes_ctr_decrypt,
+  NULL, NULL
 };
 
 const RCryptoCipherInfo g__r_crypto_cipher_aes_128_cfb = { "AES-128-CFB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CFB, 128, 16, 16,
-  r_cipher_aes_cfb_encrypt, r_cipher_aes_cfb_decrypt
+  r_cipher_aes_cfb_encrypt, r_cipher_aes_cfb_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_192_cfb = { "AES-192-CFB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CFB, 192, 16, 16,
-  r_cipher_aes_cfb_encrypt, r_cipher_aes_cfb_decrypt
+  r_cipher_aes_cfb_encrypt, r_cipher_aes_cfb_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_256_cfb = { "AES-256-CFB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CFB, 256, 16, 16,
-  r_cipher_aes_cfb_encrypt, r_cipher_aes_cfb_decrypt
+  r_cipher_aes_cfb_encrypt, r_cipher_aes_cfb_decrypt,
+  NULL, NULL
 };
 
 const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ofb = { "AES-128-OFB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_OFB, 128, 16, 16,
-  r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt
+  r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt,
+  NULL, NULL
 };
 const RCryptoCipherInfo g__r_crypto_cipher_aes_192_ofb = { "AES-192-OFB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_OFB, 192, 16, 16,
-  r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt
+  r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt,
+  NULL, NULL
 };
+const RCryptoCipherInfo g__r_crypto_cipher_aes_128_gcm = { "AES-128-GCM",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_GCM, 128, 12, 16,
+  NULL, NULL,
+  r_cipher_aes_gcm_encrypt, r_cipher_aes_gcm_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_192_gcm = { "AES-192-GCM",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_GCM, 192, 12, 16,
+  NULL, NULL,
+  r_cipher_aes_gcm_encrypt, r_cipher_aes_gcm_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_256_gcm = { "AES-256-GCM",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_GCM, 256, 12, 16,
+  NULL, NULL,
+  r_cipher_aes_gcm_encrypt, r_cipher_aes_gcm_decrypt
+};
+
 const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ofb = { "AES-256-OFB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_OFB, 256, 16, 16,
-  r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt
+  r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt,
+  NULL, NULL
 };
 
 static void
@@ -469,6 +500,24 @@ r_cipher_aes_256_ofb_new (const ruint8 * key)
 }
 
 RCryptoCipher *
+r_cipher_aes_128_gcm_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_128_gcm, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_192_gcm_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_192_gcm, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_256_gcm_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_256_gcm, key);
+}
+
+RCryptoCipher *
 r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
 {
   switch (bits) {
@@ -484,6 +533,8 @@ r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
           return r_cipher_aes_128_cfb_new (key);
         case R_CRYPTO_CIPHER_MODE_OFB:
           return r_cipher_aes_128_ofb_new (key);
+        case R_CRYPTO_CIPHER_MODE_GCM:
+          return r_cipher_aes_128_gcm_new (key);
         default:
           break;
       }
@@ -500,6 +551,8 @@ r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
           return r_cipher_aes_192_cfb_new (key);
         case R_CRYPTO_CIPHER_MODE_OFB:
           return r_cipher_aes_192_ofb_new (key);
+        case R_CRYPTO_CIPHER_MODE_GCM:
+          return r_cipher_aes_192_gcm_new (key);
         default:
           break;
       }
@@ -516,6 +569,8 @@ r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
           return r_cipher_aes_256_cfb_new (key);
         case R_CRYPTO_CIPHER_MODE_OFB:
           return r_cipher_aes_256_ofb_new (key);
+        case R_CRYPTO_CIPHER_MODE_GCM:
+          return r_cipher_aes_256_gcm_new (key);
         default:
           break;
       }
@@ -1248,5 +1303,243 @@ r_cipher_aes_ofb_encrypt (const RCryptoCipher * cipher,
   }
 
   return R_CRYPTO_CIPHER_OK;
+}
+
+/******************************************************************************/
+/*  AES-GCM (RFC 5288 / NIST SP 800-38D)                                      */
+/******************************************************************************/
+
+/* Multiply y by h in GF(2^128) with reducing polynomial
+ * x^128 + x^7 + x^2 + x + 1, bit-reversed representation per NIST
+ * SP 800-38D Section 6.3: byte[0] MSB carries the constant term x^0
+ * and byte[15] LSB carries x^127. y is updated in place.
+ *
+ * Shift-and-XOR implementation: O(128) iterations per multiply,
+ * not constant-time, slower than the 4-bit-table approach used in
+ * production GHASH. Adequate for correctness and a baseline tests
+ * can pin against; a faster implementation can land later without
+ * changing this primitive's contract. */
+static void
+r_ghash_mul (ruint8 y[R_AES_BLOCK_BYTES], const ruint8 h[R_AES_BLOCK_BYTES])
+{
+  ruint8 z[R_AES_BLOCK_BYTES] = { 0 };
+  ruint8 v[R_AES_BLOCK_BYTES];
+  rsize i, j, k;
+
+  r_memcpy (v, h, R_AES_BLOCK_BYTES);
+
+  for (i = 0; i < R_AES_BLOCK_BYTES; i++) {
+    for (j = 0; j < 8; j++) {
+      if (y[i] & (0x80 >> j)) {
+        for (k = 0; k < R_AES_BLOCK_BYTES; k++)
+          z[k] ^= v[k];
+      }
+      /* v = v * x mod poly: right-shift, conditionally XOR 0xe1 into
+       * v[0] (the bit-reversed reducing polynomial). */
+      {
+        ruint8 lsb = v[R_AES_BLOCK_BYTES - 1] & 1;
+        for (k = R_AES_BLOCK_BYTES - 1; k > 0; k--)
+          v[k] = (v[k] >> 1) | ((v[k - 1] & 1) << 7);
+        v[0] >>= 1;
+        if (lsb)
+          v[0] ^= 0xe1;
+      }
+    }
+  }
+
+  r_memcpy (y, z, R_AES_BLOCK_BYTES);
+}
+
+/* GCM-specific counter increment: only the low 32 bits advance; the
+ * high 96 bits stay fixed at the IV value. */
+static void
+r_gcm_ctr_inc32 (ruint8 ctr[R_AES_BLOCK_BYTES])
+{
+  ruint32 c = ((ruint32) ctr[12] << 24) | ((ruint32) ctr[13] << 16)
+            | ((ruint32) ctr[14] <<  8) |  (ruint32) ctr[15];
+  c++;
+  ctr[12] = (c >> 24) & 0xff;
+  ctr[13] = (c >> 16) & 0xff;
+  ctr[14] = (c >>  8) & 0xff;
+  ctr[15] =  c        & 0xff;
+}
+
+/* Fold @p data into the running GHASH state @p y, one 16-byte block
+ * at a time. The trailing partial block (if any) is zero-padded out
+ * to a full block before mixing. */
+static void
+r_gcm_ghash_update (ruint8 y[R_AES_BLOCK_BYTES],
+    const ruint8 h[R_AES_BLOCK_BYTES],
+    const ruint8 * data, rsize size)
+{
+  rsize k;
+
+  while (size >= R_AES_BLOCK_BYTES) {
+    for (k = 0; k < R_AES_BLOCK_BYTES; k++)
+      y[k] ^= data[k];
+    r_ghash_mul (y, h);
+    data += R_AES_BLOCK_BYTES;
+    size -= R_AES_BLOCK_BYTES;
+  }
+  if (size > 0) {
+    ruint8 block[R_AES_BLOCK_BYTES] = { 0 };
+    r_memcpy (block, data, size);
+    for (k = 0; k < R_AES_BLOCK_BYTES; k++)
+      y[k] ^= block[k];
+    r_ghash_mul (y, h);
+  }
+}
+
+/* Encode a 64-bit big-endian length-in-bits value into @p out. */
+static void
+r_gcm_be64 (ruint8 out[8], ruint64 v)
+{
+  rsize i;
+  for (i = 0; i < 8; i++)
+    out[i] = (ruint8) (v >> (56 - i * 8));
+}
+
+/* GHASH(H, AAD || pad || C || pad || [len(AAD)]_64 || [len(C)]_64),
+ * then XOR with E_K(J0) to form the GCM tag. */
+static void
+r_gcm_compute_tag (const RAesCipher * aes,
+    const ruint8 h[R_AES_BLOCK_BYTES],
+    const ruint8 j0[R_AES_BLOCK_BYTES],
+    rconstpointer aad, rsize aadsize,
+    const ruint8 * ciphertxt, rsize ctsize,
+    ruint8 tag[R_AES_BLOCK_BYTES])
+{
+  ruint8 y[R_AES_BLOCK_BYTES] = { 0 };
+  ruint8 lenblock[R_AES_BLOCK_BYTES];
+  ruint8 ek[R_AES_BLOCK_BYTES];
+  rsize i;
+
+  r_gcm_ghash_update (y, h, aad, aadsize);
+  r_gcm_ghash_update (y, h, ciphertxt, ctsize);
+
+  r_gcm_be64 (lenblock,     (ruint64) aadsize * 8);
+  r_gcm_be64 (lenblock + 8, (ruint64) ctsize * 8);
+  for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+    y[i] ^= lenblock[i];
+  r_ghash_mul (y, h);
+
+  aes->encrypt_block (aes, ek, j0);
+  for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+    tag[i] = ek[i] ^ y[i];
+}
+
+/* Shared encrypt/decrypt body. @p generate_tag controls whether the
+ * computed tag is written to @p tag (encrypt) or compared in constant
+ * time against the supplied @p tag (decrypt). */
+static RCryptoCipherResult
+r_aes_gcm_op (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    const ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize,
+    rboolean generate_tag)
+{
+  const RAesCipher * aes;
+  ruint8 zero[R_AES_BLOCK_BYTES] = { 0 };
+  ruint8 h[R_AES_BLOCK_BYTES];
+  ruint8 j0[R_AES_BLOCK_BYTES];
+  ruint8 ctr[R_AES_BLOCK_BYTES];
+  ruint8 ksblock[R_AES_BLOCK_BYTES];
+  ruint8 tagcomputed[R_AES_BLOCK_BYTES];
+  const ruint8 * srcp;
+  ruint8 * dstp;
+  rsize remaining, i;
+
+  if (R_UNLIKELY (cipher == NULL || iv == NULL || tag == NULL))
+    return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (size > 0 && (data == NULL || dst == NULL)))
+    return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (aadsize > 0 && aad == NULL))
+    return R_CRYPTO_CIPHER_INVAL;
+  /* Only the recommended 96-bit IV is supported; longer / shorter IVs
+   * need the alternate J0 construction (GHASH over IV). */
+  if (R_UNLIKELY (ivsize != 12))
+    return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (tagsize == 0 || tagsize > R_AES_BLOCK_BYTES))
+    return R_CRYPTO_CIPHER_INVAL;
+
+  aes = (const RAesCipher *) cipher;
+
+  /* H = E_K(0^128); J0 = IV || 0x00000001. */
+  aes->encrypt_block (aes, h, zero);
+  r_memcpy (j0, iv, 12);
+  j0[12] = 0; j0[13] = 0; j0[14] = 0; j0[15] = 1;
+
+  /* For decrypt, verify the tag against the ciphertext BEFORE
+   * touching @p dst. This way an auth failure leaves any previous
+   * @p dst contents intact; the caller never sees released plaintext
+   * from a forged input. */
+  if (!generate_tag) {
+    r_gcm_compute_tag (aes, h, j0, aad, aadsize, data, size, tagcomputed);
+    {
+      ruint8 diff = 0;
+      for (i = 0; i < tagsize; i++)
+        diff |= tagcomputed[i] ^ tag[i];
+      if (diff != 0) {
+        r_memclear_secure (h, sizeof (h));
+        r_memclear_secure (tagcomputed, sizeof (tagcomputed));
+        return R_CRYPTO_CIPHER_AUTH_FAILED;
+      }
+    }
+  }
+
+  /* CTR-mode encrypt / decrypt starting at inc_32(J0). */
+  r_memcpy (ctr, j0, R_AES_BLOCK_BYTES);
+  r_gcm_ctr_inc32 (ctr);
+  srcp = data;
+  dstp = dst;
+  remaining = size;
+  while (remaining >= R_AES_BLOCK_BYTES) {
+    aes->encrypt_block (aes, ksblock, ctr);
+    for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+      dstp[i] = ksblock[i] ^ srcp[i];
+    r_gcm_ctr_inc32 (ctr);
+    srcp += R_AES_BLOCK_BYTES;
+    dstp += R_AES_BLOCK_BYTES;
+    remaining -= R_AES_BLOCK_BYTES;
+  }
+  if (remaining > 0) {
+    aes->encrypt_block (aes, ksblock, ctr);
+    for (i = 0; i < remaining; i++)
+      dstp[i] = ksblock[i] ^ srcp[i];
+  }
+
+  if (generate_tag) {
+    r_gcm_compute_tag (aes, h, j0, aad, aadsize, dst, size, tagcomputed);
+    r_memcpy (tag, tagcomputed, tagsize);
+  }
+
+  r_memclear_secure (h, sizeof (h));
+  r_memclear_secure (ctr, sizeof (ctr));
+  r_memclear_secure (ksblock, sizeof (ksblock));
+  r_memclear_secure (tagcomputed, sizeof (tagcomputed));
+  return R_CRYPTO_CIPHER_OK;
+}
+
+RCryptoCipherResult
+r_cipher_aes_gcm_encrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize)
+{
+  return r_aes_gcm_op (cipher, dst, size, data, aad, aadsize,
+      iv, ivsize, tag, tagsize, TRUE);
+}
+
+RCryptoCipherResult
+r_cipher_aes_gcm_decrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize)
+{
+  return r_aes_gcm_op (cipher, dst, size, data, aad, aadsize,
+      iv, ivsize, tag, tagsize, FALSE);
 }
 
