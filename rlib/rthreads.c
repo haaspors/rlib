@@ -171,8 +171,17 @@ r_thread_win32_dll_thread_detach (void)
 rpointer
 r_call_once (ROnce * once, RThreadFunc f, rpointer a)
 {
-  ruint old = R_ONCE_STATE_INIT;
+  ruint old;
 
+  /* Double-checked locking: an atomic load up front lets every
+   * post-init call return immediately, skipping the CAS the slow
+   * path needs. The atomic store of DONE in the writer
+   * synchronises-with this load, so the plain write to once->ret
+   * before the store is visible after. */
+  if (R_LIKELY (r_atomic_uint_load (&once->state) == R_ONCE_STATE_DONE))
+    return once->ret;
+
+  old = R_ONCE_STATE_INIT;
   if (r_atomic_uint_cmp_xchg_strong (&once->state, &old, R_ONCE_STATE_RUNNING)) {
     once->ret = f (a);
     r_atomic_uint_store (&once->state, R_ONCE_STATE_DONE);

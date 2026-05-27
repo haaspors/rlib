@@ -29,18 +29,49 @@
 
 R_BEGIN_DECLS
 
+/**
+ * @defgroup r_once One-shot initialisation (ROnce)
+ * @brief Run an init function exactly once across all threads, with
+ * a cheap fast path on every subsequent call.
+ * @{
+ */
+
+/**
+ * @brief Lifecycle states of an @c ROnce.
+ *
+ * The states transition INIT -&gt; RUNNING -&gt; DONE exactly
+ * once per @c ROnce instance, driven by the first @c r_call_once
+ * caller. They are an implementation detail of @c r_call_once and
+ * not intended for external use.
+ */
 typedef enum
 {
-  R_ONCE_STATE_INIT,
-  R_ONCE_STATE_RUNNING,
-  R_ONCE_STATE_DONE
+  R_ONCE_STATE_INIT,    /**< Fresh, init function not yet started. */
+  R_ONCE_STATE_RUNNING, /**< Init function executing in some thread. */
+  R_ONCE_STATE_DONE     /**< Init function returned; @c ret is set. */
 } ROnceState;
 
+/**
+ * @brief Static initialiser for an @c ROnce in INIT state.
+ *
+ * Use as @c { static ROnce o = R_ONCE_INIT; } at file or block scope.
+ */
 #define R_ONCE_INIT { R_ONCE_STATE_INIT, NULL }
+/**
+ * @brief One-shot initialisation guard.
+ *
+ * Pass the same @c ROnce instance to every @c r_call_once call; the
+ * supplied init function is invoked at most once across all threads.
+ * Subsequent calls return the cached pointer the init function
+ * returned, on a fast path with no CAS.
+ *
+ * Storage must be either zero-initialised (static / global) or
+ * explicitly seeded with @c R_ONCE_INIT before first use.
+ */
 typedef struct
 {
-  rauint state;
-  rpointer ret;
+  rauint state;     /**< Current @c ROnceState (atomic). */
+  rpointer ret;     /**< Value returned by the init function. */
 } ROnce;
 
 #define R_TSS_INIT(notify) { (RDestroyNotify)(notify), { NULL } }
@@ -68,8 +99,28 @@ typedef rpointer (*RThreadFunc) (rpointer data);
 typedef struct _RThread RThread;
 
 
-/* Run once */
+/**
+ * @brief Run @p f exactly once across all threads, return its result.
+ *
+ * The first caller to win the state transition runs @p f with @p a
+ * and stores the returned pointer in @p once. All later callers,
+ * across all threads, get the cached pointer back without re-running
+ * @p f. Concurrent first-callers block until the running thread
+ * finishes.
+ *
+ * The hot path (after init has settled) is a single atomic load and
+ * a branch, so it is cheap enough to call on every entry to a
+ * frequently-invoked function.
+ *
+ * @param once  Persistent @c ROnce instance, seeded with
+ *              @c R_ONCE_INIT or zero-initialised.
+ * @param f     Init function; called at most once per @p once.
+ * @param a     Opaque argument forwarded to @p f.
+ * @return The pointer @p f returned (cached after the first call).
+ */
 R_API rpointer  r_call_once         (ROnce * once, RThreadFunc f, rpointer a);
+
+/** @} */ /* r_once group */
 
 /* Thread spesific storage */
 R_API rpointer r_tss_get            (RTss * tss);
