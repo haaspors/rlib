@@ -144,16 +144,6 @@
 #define R_UNLIKELY(expr)    (expr)
 #endif
 
-/* Inline byte-copy intrinsic intended for compile-time-sized copies that
- * the compiler can fold to a single load/store. Use this in inline helpers
- * where calling the out-of-line r_memcpy() would defeat the point. */
-#if defined(__GNUC__) || defined(__clang__)
-#define r_memcpy_inline(dst, src, n) __builtin_memcpy ((dst), (src), (n))
-#else
-#include <string.h>
-#define r_memcpy_inline(dst, src, n) memcpy ((dst), (src), (n))
-#endif
-
 #if defined(__GNUC__)
 #if __MACH__
 #define R_ATTR_DATA_SECTION(sec)   __attribute__((section("__DATA,"sec)))

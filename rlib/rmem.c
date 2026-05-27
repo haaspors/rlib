@@ -100,14 +100,6 @@ r_mem_using_system_default (void)
 }
 
 int
-r_memcmp (rconstpointer a, rconstpointer b, rsize size)
-{
-  if (R_UNLIKELY (a == NULL)) return -(a != b);
-  if (R_UNLIKELY (b == NULL)) return a != b;
-  return memcmp (a, b, size);
-}
-
-int
 r_memcmp_ct (rconstpointer a, rconstpointer b, rsize size)
 {
   const volatile ruint8 * pa = a;
@@ -127,14 +119,6 @@ r_memcmp_ct (rconstpointer a, rconstpointer b, rsize size)
     diff |= pa[i] ^ pb[i];
 
   return diff;
-}
-
-rpointer
-r_memset (rpointer a, int v, rsize size)
-{
-  if (a != NULL)
-    memset (a, v, size);
-  return a;
 }
 
 void
@@ -183,24 +167,6 @@ r_memclear_secure (rpointer ptr, rsize size)
       *pb++ = 0;
   }
 #endif
-}
-
-rpointer
-r_memcpy (void * dst, const void *src, rsize size)
-{
-  if (dst != NULL && src != NULL)
-    return memcpy (dst, src, size);
-
-  return NULL;
-}
-
-rpointer
-r_memmove (rpointer dst, rconstpointer src, rsize size)
-{
-  if (dst != NULL && src != NULL)
-    return memmove (dst, src, size);
-
-  return NULL;
 }
 
 rpointer

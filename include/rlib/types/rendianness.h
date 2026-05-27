@@ -210,68 +210,68 @@ R_BEGIN_DECLS
 static inline ruint16 r_load_be16 (const void * p)
 {
   ruint16 v;
-  r_memcpy_inline (&v, p, sizeof (v));
+  memcpy (&v, p, sizeof (v));
   return RUINT16_FROM_BE (v);
 }
 static inline ruint32 r_load_be32 (const void * p)
 {
   ruint32 v;
-  r_memcpy_inline (&v, p, sizeof (v));
+  memcpy (&v, p, sizeof (v));
   return RUINT32_FROM_BE (v);
 }
 static inline ruint64 r_load_be64 (const void * p)
 {
   ruint64 v;
-  r_memcpy_inline (&v, p, sizeof (v));
+  memcpy (&v, p, sizeof (v));
   return RUINT64_FROM_BE (v);
 }
 static inline ruint16 r_load_le16 (const void * p)
 {
   ruint16 v;
-  r_memcpy_inline (&v, p, sizeof (v));
+  memcpy (&v, p, sizeof (v));
   return RUINT16_FROM_LE (v);
 }
 static inline ruint32 r_load_le32 (const void * p)
 {
   ruint32 v;
-  r_memcpy_inline (&v, p, sizeof (v));
+  memcpy (&v, p, sizeof (v));
   return RUINT32_FROM_LE (v);
 }
 static inline ruint64 r_load_le64 (const void * p)
 {
   ruint64 v;
-  r_memcpy_inline (&v, p, sizeof (v));
+  memcpy (&v, p, sizeof (v));
   return RUINT64_FROM_LE (v);
 }
 static inline void r_store_be16 (void * p, ruint16 v)
 {
   ruint16 be = RUINT16_TO_BE (v);
-  r_memcpy_inline (p, &be, sizeof (be));
+  memcpy (p, &be, sizeof (be));
 }
 static inline void r_store_be32 (void * p, ruint32 v)
 {
   ruint32 be = RUINT32_TO_BE (v);
-  r_memcpy_inline (p, &be, sizeof (be));
+  memcpy (p, &be, sizeof (be));
 }
 static inline void r_store_be64 (void * p, ruint64 v)
 {
   ruint64 be = RUINT64_TO_BE (v);
-  r_memcpy_inline (p, &be, sizeof (be));
+  memcpy (p, &be, sizeof (be));
 }
 static inline void r_store_le16 (void * p, ruint16 v)
 {
   ruint16 le = RUINT16_TO_LE (v);
-  r_memcpy_inline (p, &le, sizeof (le));
+  memcpy (p, &le, sizeof (le));
 }
 static inline void r_store_le32 (void * p, ruint32 v)
 {
   ruint32 le = RUINT32_TO_LE (v);
-  r_memcpy_inline (p, &le, sizeof (le));
+  memcpy (p, &le, sizeof (le));
 }
 static inline void r_store_le64 (void * p, ruint64 v)
 {
   ruint64 le = RUINT64_TO_LE (v);
-  r_memcpy_inline (p, &le, sizeof (le));
+  memcpy (p, &le, sizeof (le));
 }
 
 R_END_DECLS
