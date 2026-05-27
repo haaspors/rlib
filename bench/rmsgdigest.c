@@ -107,3 +107,50 @@ RTEST_BENCH (rmsgdigest, sha384, RTEST_FAST | RTEST_SYSTEM)
   run_digest_bench (R_MSG_DIGEST_TYPE_SHA384, "SHA-384");
 }
 RTEST_END;
+
+/* SHAKE256 doesn't fit the fixed-output bench helper above (it uses
+ * r_msg_digest_squeeze, not _get_data, and the per-call output length
+ * is the caller's choice). Throughput is reported over the absorb +
+ * squeeze of a 16 KiB input and a 32-byte output to match the rest
+ * of the digest family on the absorb side. */
+static void
+run_shake256_bench (void)
+{
+  RMsgDigest * md;
+  ruint8 * input;
+  ruint8 out[32];
+  RClockTime start, end;
+  ruint i;
+
+  r_assert_cmpptr ((input = r_malloc (DIGEST_BENCH_BLOCKSIZE)), !=, NULL);
+  for (i = 0; i < DIGEST_BENCH_BLOCKSIZE; i++)
+    input[i] = (ruint8)i;
+
+  for (i = 0; i < 5; i++) {
+    r_assert_cmpptr ((md = r_msg_digest_new_shake256 ()), !=, NULL);
+    r_assert (r_msg_digest_update (md, input, DIGEST_BENCH_BLOCKSIZE));
+    r_assert (r_msg_digest_squeeze (md, out, sizeof (out)));
+    r_msg_digest_free (md);
+  }
+
+  start = r_time_get_ts_monotonic ();
+  for (i = 0; i < DIGEST_BENCH_ITERS; i++) {
+    r_assert_cmpptr ((md = r_msg_digest_new_shake256 ()), !=, NULL);
+    r_assert (r_msg_digest_update (md, input, DIGEST_BENCH_BLOCKSIZE));
+    r_assert (r_msg_digest_squeeze (md, out, sizeof (out)));
+    r_msg_digest_free (md);
+  }
+  end = r_time_get_ts_monotonic ();
+
+  bench_print_throughput ("SHAKE256 (32B squeeze)", DIGEST_BENCH_ITERS,
+      DIGEST_BENCH_BLOCKSIZE, end - start);
+
+  r_free (input);
+}
+
+RTEST_BENCH (rmsgdigest, shake256, RTEST_FAST | RTEST_SYSTEM)
+{
+  r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
+  run_shake256_bench ();
+}
+RTEST_END;
