@@ -105,6 +105,9 @@ R_API RCryptoCipher * r_cipher_aes_256_ofb_new (const ruint8 * key) R_ATTR_MALLO
 R_API RCryptoCipher * r_cipher_aes_128_gcm_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_192_gcm_new (const ruint8 * key) R_ATTR_MALLOC;
 R_API RCryptoCipher * r_cipher_aes_256_gcm_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_128_ccm_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_192_ccm_new (const ruint8 * key) R_ATTR_MALLOC;
+R_API RCryptoCipher * r_cipher_aes_256_ccm_new (const ruint8 * key) R_ATTR_MALLOC;
 /** @} */
 
 
@@ -198,6 +201,38 @@ R_API RCryptoCipherResult r_cipher_aes_gcm_encrypt (const RCryptoCipher * cipher
  * @c R_CRYPTO_CIPHER_AUTH_FAILED and leaves @p dst untouched.
  */
 R_API RCryptoCipherResult r_cipher_aes_gcm_decrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize);
+
+/**
+ * @brief AES-CCM authenticated encrypt (RFC 3610 / NIST SP 800-38C).
+ *
+ * CCM = CBC-MAC for integrity (over the formatted B0 / AAD / plaintext)
+ * plus CTR-mode encryption. The nonce length @p ivsize must be 7..13
+ * bytes; the resulting length-of-length field @c L = @c 15-ivsize
+ * bounds the plaintext to fewer than @c 2^(8L) bytes (e.g. 64 KiB
+ * at @c ivsize == 13, 16 MiB at @c ivsize == 12). Tag length must be
+ * an even number in @c [4, 16].
+ *
+ * Buffers may alias for in-place operation; @p iv is read-only.
+ */
+R_API RCryptoCipherResult r_cipher_aes_ccm_encrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize);
+/**
+ * @brief AES-CCM authenticated decrypt with tag verification.
+ *
+ * Unlike GCM (where the tag is over ciphertext), CCM's tag is over
+ * plaintext, so verification requires decrypting first. On a tag
+ * mismatch this function returns @c R_CRYPTO_CIPHER_AUTH_FAILED and
+ * @p dst already contains the decrypted bytes; the caller must
+ * discard @p dst on auth failure.
+ */
+R_API RCryptoCipherResult r_cipher_aes_ccm_decrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data,
     rconstpointer aad, rsize aadsize,
     ruint8 * iv, rsize ivsize,

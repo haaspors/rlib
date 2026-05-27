@@ -223,6 +223,24 @@ const RCryptoCipherInfo g__r_crypto_cipher_aes_256_gcm = { "AES-256-GCM",
   r_cipher_aes_gcm_encrypt, r_cipher_aes_gcm_decrypt
 };
 
+/* CCM advertises ivsize == 0 because the nonce length is caller-
+ * chosen per call within 7..13; the AEAD ops validate it themselves. */
+const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ccm = { "AES-128-CCM",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CCM, 128, 0, 16,
+  NULL, NULL,
+  r_cipher_aes_ccm_encrypt, r_cipher_aes_ccm_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_192_ccm = { "AES-192-CCM",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CCM, 192, 0, 16,
+  NULL, NULL,
+  r_cipher_aes_ccm_encrypt, r_cipher_aes_ccm_decrypt
+};
+const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ccm = { "AES-256-CCM",
+  R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_CCM, 256, 0, 16,
+  NULL, NULL,
+  r_cipher_aes_ccm_encrypt, r_cipher_aes_ccm_decrypt
+};
+
 const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ofb = { "AES-256-OFB",
   R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_OFB, 256, 16, 16,
   r_cipher_aes_ofb_encrypt, r_cipher_aes_ofb_decrypt,
@@ -518,6 +536,24 @@ r_cipher_aes_256_gcm_new (const ruint8 * key)
 }
 
 RCryptoCipher *
+r_cipher_aes_128_ccm_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_128_ccm, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_192_ccm_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_192_ccm, key);
+}
+
+RCryptoCipher *
+r_cipher_aes_256_ccm_new (const ruint8 * key)
+{
+  return r_cipher_aes_new_with_info (&g__r_crypto_cipher_aes_256_ccm, key);
+}
+
+RCryptoCipher *
 r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
 {
   switch (bits) {
@@ -535,6 +571,8 @@ r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
           return r_cipher_aes_128_ofb_new (key);
         case R_CRYPTO_CIPHER_MODE_GCM:
           return r_cipher_aes_128_gcm_new (key);
+        case R_CRYPTO_CIPHER_MODE_CCM:
+          return r_cipher_aes_128_ccm_new (key);
         default:
           break;
       }
@@ -553,6 +591,8 @@ r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
           return r_cipher_aes_192_ofb_new (key);
         case R_CRYPTO_CIPHER_MODE_GCM:
           return r_cipher_aes_192_gcm_new (key);
+        case R_CRYPTO_CIPHER_MODE_CCM:
+          return r_cipher_aes_192_ccm_new (key);
         default:
           break;
       }
@@ -571,6 +611,8 @@ r_cipher_aes_new (RCryptoCipherMode mode, ruint bits, const ruint8 * key)
           return r_cipher_aes_256_ofb_new (key);
         case R_CRYPTO_CIPHER_MODE_GCM:
           return r_cipher_aes_256_gcm_new (key);
+        case R_CRYPTO_CIPHER_MODE_CCM:
+          return r_cipher_aes_256_ccm_new (key);
         default:
           break;
       }
@@ -1540,6 +1582,263 @@ r_cipher_aes_gcm_decrypt (const RCryptoCipher * cipher,
     ruint8 * tag, rsize tagsize)
 {
   return r_aes_gcm_op (cipher, dst, size, data, aad, aadsize,
+      iv, ivsize, tag, tagsize, FALSE);
+}
+
+/******************************************************************************/
+/*  AES-CCM (RFC 3610 / NIST SP 800-38C)                                      */
+/******************************************************************************/
+
+/* CBC-MAC: x = E_K(x XOR block). */
+static inline void
+r_ccm_mac_block (const RAesCipher * aes, ruint8 x[R_AES_BLOCK_BYTES],
+    const ruint8 block[R_AES_BLOCK_BYTES])
+{
+  rsize i;
+  for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+    x[i] ^= block[i];
+  aes->encrypt_block (aes, x, x);
+}
+
+/* Feed @p size bytes through CBC-MAC, zero-padding the trailing
+ * partial block (per RFC 3610 / SP 800-38C). */
+static void
+r_ccm_mac_feed (const RAesCipher * aes, ruint8 x[R_AES_BLOCK_BYTES],
+    const ruint8 * data, rsize size)
+{
+  ruint8 block[R_AES_BLOCK_BYTES];
+  while (size >= R_AES_BLOCK_BYTES) {
+    r_ccm_mac_block (aes, x, data);
+    data += R_AES_BLOCK_BYTES;
+    size -= R_AES_BLOCK_BYTES;
+  }
+  if (size > 0) {
+    r_memset (block, 0, R_AES_BLOCK_BYTES);
+    r_memcpy (block, data, size);
+    r_ccm_mac_block (aes, x, block);
+  }
+}
+
+/* CCM counter increment: only the trailing L bytes carry the
+ * counter; the leading flags + nonce stay fixed. */
+static void
+r_ccm_ctr_inc (ruint8 ctr[R_AES_BLOCK_BYTES], rsize L)
+{
+  rsize i;
+  for (i = 0; i < L; i++) {
+    if (++ctr[R_AES_BLOCK_BYTES - 1 - i] != 0)
+      break;
+  }
+}
+
+/* Build B0: flags || N || [size]_L. */
+static void
+r_ccm_build_b0 (ruint8 b0[R_AES_BLOCK_BYTES],
+    const ruint8 * nonce, rsize nonce_len, rsize L,
+    rboolean has_aad, rsize tag_len, rsize size)
+{
+  rsize i;
+  b0[0] = (has_aad ? 0x40 : 0)
+        | (ruint8) (((tag_len - 2) / 2) << 3)
+        | (ruint8) (L - 1);
+  r_memcpy (&b0[1], nonce, nonce_len);
+  for (i = 0; i < L; i++) {
+    rsize shift = 8 * (L - 1 - i);
+    b0[1 + nonce_len + i] = (shift >= 8 * sizeof (rsize))
+        ? 0
+        : (ruint8) ((size >> shift) & 0xff);
+  }
+}
+
+/* Build A0 (CTR starting block): flags = L-1, N, [0]_L. */
+static void
+r_ccm_build_a0 (ruint8 a0[R_AES_BLOCK_BYTES],
+    const ruint8 * nonce, rsize nonce_len, rsize L)
+{
+  a0[0] = (ruint8) (L - 1);
+  r_memcpy (&a0[1], nonce, nonce_len);
+  r_memset (&a0[1 + nonce_len], 0, L);
+}
+
+/* CTR-encrypt or -decrypt @p src into @p dst using @p ctr, advancing
+ * counter per block. The counter's L parameter is fixed by the
+ * caller's nonce length. */
+static void
+r_ccm_ctr_xor (const RAesCipher * aes, ruint8 ctr[R_AES_BLOCK_BYTES], rsize L,
+    ruint8 * dst, const ruint8 * src, rsize size)
+{
+  ruint8 ks[R_AES_BLOCK_BYTES];
+  rsize i;
+  while (size >= R_AES_BLOCK_BYTES) {
+    aes->encrypt_block (aes, ks, ctr);
+    for (i = 0; i < R_AES_BLOCK_BYTES; i++)
+      dst[i] = ks[i] ^ src[i];
+    r_ccm_ctr_inc (ctr, L);
+    dst += R_AES_BLOCK_BYTES;
+    src += R_AES_BLOCK_BYTES;
+    size -= R_AES_BLOCK_BYTES;
+  }
+  if (size > 0) {
+    aes->encrypt_block (aes, ks, ctr);
+    for (i = 0; i < size; i++)
+      dst[i] = ks[i] ^ src[i];
+  }
+  r_memclear_secure (ks, sizeof (ks));
+}
+
+/* Compute the CCM tag (full 16-byte CBC-MAC result, before truncation
+ * and XOR with S_0). Operates on a plaintext buffer so it works for
+ * both encrypt (input plaintext) and decrypt (recovered plaintext). */
+static void
+r_ccm_compute_mac (const RAesCipher * aes,
+    const ruint8 * nonce, rsize nonce_len, rsize L,
+    rconstpointer aad, rsize aadsize,
+    const ruint8 * plain, rsize size, rsize tag_len,
+    ruint8 x[R_AES_BLOCK_BYTES])
+{
+  ruint8 b0[R_AES_BLOCK_BYTES];
+
+  r_ccm_build_b0 (b0, nonce, nonce_len, L, aadsize > 0, tag_len, size);
+  aes->encrypt_block (aes, x, b0);
+
+  if (aadsize > 0) {
+    ruint8 block[R_AES_BLOCK_BYTES];
+    rsize prefix_len, block_off, i;
+    const ruint8 * aadp = aad;
+    rsize aadrem = aadsize;
+
+    /* Length-prefix the AAD per SP 800-38C A.2. */
+    if (aadsize < (rsize) ((1u << 16) - (1u << 8))) {
+      block[0] = (ruint8) ((aadsize >> 8) & 0xff);
+      block[1] = (ruint8) (aadsize & 0xff);
+      prefix_len = 2;
+    } else if (sizeof (rsize) <= 4 || aadsize < ((ruint64) 1 << 32)) {
+      block[0] = 0xff; block[1] = 0xfe;
+      block[2] = (ruint8) ((aadsize >> 24) & 0xff);
+      block[3] = (ruint8) ((aadsize >> 16) & 0xff);
+      block[4] = (ruint8) ((aadsize >>  8) & 0xff);
+      block[5] = (ruint8) (aadsize & 0xff);
+      prefix_len = 6;
+    } else {
+      block[0] = 0xff; block[1] = 0xff;
+      for (i = 0; i < 8; i++)
+        block[2 + i] = (ruint8) ((((ruint64) aadsize) >> (56 - i * 8)) & 0xff);
+      prefix_len = 10;
+    }
+
+    /* Fill the rest of the first block with AAD bytes, zero-pad if
+     * the AAD is short. */
+    block_off = prefix_len;
+    while (block_off < R_AES_BLOCK_BYTES && aadrem > 0) {
+      block[block_off++] = *aadp++;
+      aadrem--;
+    }
+    while (block_off < R_AES_BLOCK_BYTES)
+      block[block_off++] = 0;
+    r_ccm_mac_block (aes, x, block);
+
+    r_ccm_mac_feed (aes, x, aadp, aadrem);
+  }
+
+  r_ccm_mac_feed (aes, x, plain, size);
+}
+
+/* Shared encrypt/decrypt body, branched on @p generate_tag.
+ * encrypt: MAC over plaintext, then CTR-encrypt to dst, then tag.
+ * decrypt: CTR-decrypt into dst, then MAC over dst, then verify.
+ * On auth failure the decrypted bytes remain in @p dst per CCM's
+ * decrypt-then-verify shape; caller must discard. */
+static RCryptoCipherResult
+r_aes_ccm_op (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    const ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize,
+    rboolean generate_tag)
+{
+  const RAesCipher * aes;
+  ruint8 a0[R_AES_BLOCK_BYTES];
+  ruint8 s0[R_AES_BLOCK_BYTES];
+  ruint8 ctr[R_AES_BLOCK_BYTES];
+  ruint8 x[R_AES_BLOCK_BYTES];
+  rsize L;
+  rsize i;
+
+  if (R_UNLIKELY (cipher == NULL || iv == NULL || tag == NULL))
+    return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (size > 0 && (data == NULL || dst == NULL)))
+    return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (aadsize > 0 && aad == NULL))
+    return R_CRYPTO_CIPHER_INVAL;
+  if (R_UNLIKELY (ivsize < 7 || ivsize > 13))
+    return R_CRYPTO_CIPHER_INVAL;
+  /* CCM tag lengths: even, in [4, 16]. */
+  if (R_UNLIKELY (tagsize < 4 || tagsize > R_AES_BLOCK_BYTES || (tagsize & 1) != 0))
+    return R_CRYPTO_CIPHER_INVAL;
+
+  L = 15 - ivsize;
+  /* size < 2^(8L) when L < sizeof(rsize). */
+  if (L < sizeof (rsize) && size >= ((rsize) 1 << (8 * L)))
+    return R_CRYPTO_CIPHER_INVAL;
+
+  aes = (const RAesCipher *) cipher;
+
+  r_ccm_build_a0 (a0, iv, ivsize, L);
+  aes->encrypt_block (aes, s0, a0);
+  r_memcpy (ctr, a0, R_AES_BLOCK_BYTES);
+  r_ccm_ctr_inc (ctr, L);
+
+  if (generate_tag) {
+    /* Encrypt: MAC over plaintext, then CTR-encrypt to dst, then
+     * truncate-and-mask the tag. */
+    r_ccm_compute_mac (aes, iv, ivsize, L, aad, aadsize, data, size, tagsize, x);
+    r_ccm_ctr_xor (aes, ctr, L, dst, data, size);
+    for (i = 0; i < tagsize; i++)
+      tag[i] = x[i] ^ s0[i];
+  } else {
+    /* Decrypt: CTR into dst (recovers plaintext), MAC over dst,
+     * truncate-and-mask, constant-time compare against received tag. */
+    ruint8 tagcomputed[R_AES_BLOCK_BYTES];
+    ruint8 diff = 0;
+    r_ccm_ctr_xor (aes, ctr, L, dst, data, size);
+    r_ccm_compute_mac (aes, iv, ivsize, L, aad, aadsize, dst, size, tagsize, x);
+    for (i = 0; i < tagsize; i++)
+      tagcomputed[i] = x[i] ^ s0[i];
+    for (i = 0; i < tagsize; i++)
+      diff |= tagcomputed[i] ^ tag[i];
+    r_memclear_secure (tagcomputed, sizeof (tagcomputed));
+    if (diff != 0) {
+      r_memclear_secure (s0, sizeof (s0));
+      r_memclear_secure (x, sizeof (x));
+      return R_CRYPTO_CIPHER_AUTH_FAILED;
+    }
+  }
+
+  r_memclear_secure (s0, sizeof (s0));
+  r_memclear_secure (ctr, sizeof (ctr));
+  r_memclear_secure (x, sizeof (x));
+  return R_CRYPTO_CIPHER_OK;
+}
+
+RCryptoCipherResult
+r_cipher_aes_ccm_encrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize)
+{
+  return r_aes_ccm_op (cipher, dst, size, data, aad, aadsize,
+      iv, ivsize, tag, tagsize, TRUE);
+}
+
+RCryptoCipherResult
+r_cipher_aes_ccm_decrypt (const RCryptoCipher * cipher,
+    ruint8 * dst, rsize size, rconstpointer data,
+    rconstpointer aad, rsize aadsize,
+    ruint8 * iv, rsize ivsize,
+    ruint8 * tag, rsize tagsize)
+{
+  return r_aes_ccm_op (cipher, dst, size, data, aad, aadsize,
       iv, ivsize, tag, tagsize, FALSE);
 }
 
