@@ -160,6 +160,9 @@ typedef struct {
    * subcounts for HEAVY_RTEST_* and BROKEN_RTEST_*; the temporarily-
    * disabled SKIP_RTEST_* count is skip - skip_heavy - skip_broken. */
   rsize skip_heavy, skip_broken;
+  /* Tests excluded by -f / type mask that aren't already counted in
+   * skip (i.e. tests with R_TEST_NO_SKIP that the filter rejected). */
+  rsize filtered;
   rsize success, fail, error;
 
   RClockTime start;
