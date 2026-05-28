@@ -19,7 +19,7 @@
 #include "config.h"
 #include <rlib/file/rfs.h>
 
-#include <rlib/renv.h>
+#include <rlib/os/renv.h>
 #include <rlib/rstr.h>
 #include <rlib/rrand.h>
 #include <rlib/rthreads.h>

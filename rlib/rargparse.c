@@ -32,7 +32,7 @@
 #include <rlib/rmem.h>
 #include <rlib/os/rproc.h>
 #include <rlib/rstr.h>
-#include <rlib/rtty.h>
+#include <rlib/os/rtty.h>
 
 /* TODO: Add API to customize options usage string + (get|set)ters appname++ */
 

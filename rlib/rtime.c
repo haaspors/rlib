@@ -20,7 +20,7 @@
 #include <rlib/rtime.h>
 #include <rlib/file/rfile.h>
 #include <rlib/rmath.h>
-#include <rlib/rmodule.h>
+#include <rlib/os/rmodule.h>
 #include <stdlib.h>
 #include <stdio.h>
 

@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/renv.h>
+#include <rlib/os/renv.h>
 
 #include <stdlib.h>
 

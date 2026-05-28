@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include "rlib-private.h"
-#include <rlib/rmodule.h>
+#include <rlib/os/rmodule.h>
 
 #include <rlib/binfmt/relfparser.h>
 #include <rlib/binfmt/rmachoparser.h>

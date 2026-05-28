@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/rtty.h>
+#include <rlib/os/rtty.h>
 #include <rlib/rstr.h>
 
 static RPrintFunc printfunc         = NULL;

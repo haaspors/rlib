@@ -26,13 +26,13 @@
 
 #include <rlib/ratomic.h>
 #include <rlib/rassert.h>
-#include <rlib/renv.h>
+#include <rlib/os/renv.h>
 #include <rlib/rlog.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 #include <rlib/rthreads.h>
 #include <rlib/rtime.h>
-#include <rlib/rtty.h>
+#include <rlib/os/rtty.h>
 
 #include <setjmp.h>
 #ifdef HAVE_SIGNAL_H
