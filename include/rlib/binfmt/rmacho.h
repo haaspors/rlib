@@ -22,12 +22,38 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/**
+ * @file rlib/binfmt/rmacho.h
+ * @ingroup r_binfmt_macho
+ * @brief Mach-O format spec: on-disk constants and packed @c struct
+ * layouts for the 32 / 64-bit file headers and the load-command
+ * sequence (segments, sections, dylib references, symbol tables,
+ * code-signature payloads, ...).
+ *
+ * Mach-O encodes the file as a header followed by a flat list of
+ * load commands; each command is one of the many `RMacho*Cmd`
+ * structs in this header, identified by the @c cmd field on
+ * @ref RMachoLoadCmd. The parser in @c rmachoparser.h wraps these
+ * with bounds-checked accessors; this header is meant to be cast
+ * through directly after @c mmap.
+ *
+ * The CPU type, file type and load-command `#define` constants
+ * follow the names in Apple's @c mach-o headers and are not
+ * individually Doxygen-annotated; the stringification helpers
+ * @ref r_macho_cpu_str, @ref r_macho_file_str and
+ * @ref r_macho_lc_str convert them to human-readable names.
+ */
+
 #include <rlib/rtypes.h>
 
 R_BEGIN_DECLS
 
+/** @addtogroup r_binfmt_macho
+ *  @{ */
+
 #pragma pack(push, 1)
 
+/** @brief Offset (in bytes) into a Mach-O string table. */
 typedef ruint32 RMachoStrOffset;
 
 #define R_MACHO_MAGIC_32              0xfeedface
@@ -99,6 +125,11 @@ typedef ruint32 RMachoStrOffset;
 #define R_MACH_CPU_SUBTYPE_ARM64_ALL      0
 #define R_MACH_CPU_SUBTYPE_ARM64_V8       1
 
+/**
+ * @brief Render a @c cputype + @c cpusubtype pair as a
+ * freshly-allocated human-readable string (e.g. @c "x86_64",
+ * @c "arm64 v8"). Caller frees with @c r_free.
+ */
 R_API rchar * r_macho_cpu_str (ruint32 cputype, ruint32 cpusubtype);
 
 /* Mach-o filetypes */
@@ -111,6 +142,10 @@ R_API rchar * r_macho_cpu_str (ruint32 cputype, ruint32 cpusubtype);
 #define R_MACHO_FT_DYLINKER       0x07
 #define R_MACHO_FT_BUNDLE         0x08
 
+/**
+ * @brief Return a short ASCII name for a Mach-O @c filetype value
+ * (@c "object", @c "execute", @c "dylib", @c "core", ...).
+ */
 R_API const rchar * r_macho_file_str (ruint32 filetype);
 
 /* Mach-o files */
@@ -120,6 +155,7 @@ R_API const rchar * r_macho_file_str (ruint32 filetype);
 #define R_MACHO_FLAG_BINDATLOAD   0x08
 #define R_MACHO_FLAG_PREBOUND     0x10
 
+/** @brief Mach-O 32-bit file header. */
 typedef struct {
   ruint32 magic;
   ruint32 cputype;
@@ -130,6 +166,7 @@ typedef struct {
   ruint32 flags;
 } RMacho32Hdr;
 
+/** @brief Mach-O 64-bit file header. */
 typedef struct {
   ruint32 magic;
   ruint32 cputype;
@@ -192,11 +229,16 @@ typedef struct {
 #define R_MACHO_LC_LINKER_OPTION      0x2d /* linker options in MH_OBJECT files */
 #define R_MACHO_LC_LINKER_OPTIMIZATION_HINT 0x2e /* optimization hints in MH_OBJECT files */
 
+/** @brief Common load-command header (cmd + cmdsize). */
 typedef struct {
   ruint32 cmd;
   ruint32 cmdsize;
 } RMachoLoadCmd;
 
+/**
+ * @brief Return the short ASCII name of a Mach-O load command
+ * (@c "LC_SEGMENT", @c "LC_DYSYMTAB", @c "LC_UUID", ...).
+ */
 R_API const rchar * r_macho_lc_str (ruint32 cmd);
 
 #define R_MACHO_SEG_FLAG_HIGHVM   0x1
@@ -213,6 +255,7 @@ R_API const rchar * r_macho_lc_str (ruint32 cmd);
 #define R_MACHO_SEG_IMPORT        "__IMPORT"
 
 /* R_MACHO_LC_SEGMENT */
+/** @brief @c LC_SEGMENT: a 32-bit segment with its section list. */
 typedef struct {
   RMachoLoadCmd lc;
   rchar   segname[16];
@@ -227,6 +270,7 @@ typedef struct {
 } RMachoSegment32Cmd;
 
 /* R_MACHO_LC_SEGMENT_64 */
+/** @brief @c LC_SEGMENT_64: a 64-bit segment with its section list. */
 typedef struct {
   RMachoLoadCmd lc;
   rchar   segname[16];
@@ -277,6 +321,7 @@ typedef struct {
 #define R_MACHO_SECTION_ATTR_EXT_RELOC                  0x00000200
 #define R_MACHO_SECTION_ATTR_LOC_RELOC                  0x00000100
 
+/** @brief Section descriptor inside a 32-bit segment. */
 typedef struct {
   rchar   sectname[16];
   rchar   segname[16];
@@ -291,6 +336,7 @@ typedef struct {
   ruint32 reserved2;
 } RMachoSection32;
 
+/** @brief Section descriptor inside a 64-bit segment. */
 typedef struct {
   rchar   sectname[16];
   rchar   segname[16];
@@ -308,6 +354,7 @@ typedef struct {
 
 /* R_MACHO_LC_IDFVMLIB, R_MACHO_LC_LOADFVMLIB */
 /* Obsolete */
+/** @brief @c LC_IDFVMLIB / @c LC_LOADFVMLIB (fixed VM library). */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset name;
@@ -317,6 +364,7 @@ typedef struct {
 
 /* R_MACHO_LC_ID_DYLIB, R_MACHO_LC_LOAD_DYLIB, R_MACHO_LC_LOAD_WEAK_DYLIB,
  * R_MACHO_LC_REEXPORT_DYLIB */
+/** @brief @c LC_LOAD_DYLIB / @c LC_ID_DYLIB / @c LC_*_WEAK_DYLIB. */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset name;
@@ -326,30 +374,35 @@ typedef struct {
 } RMachoDyLibCmd;
 
 /* R_MACHO_LC_SUB_FRAMEWORK */
+/** @brief @c LC_SUB_FRAMEWORK. */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset umbrella;
 } RMachoSubFrameworkCmd;
 
 /* R_MACHO_LC_SUB_CLIENT */
+/** @brief @c LC_SUB_CLIENT. */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset client;
 } RMachoSubClientCmd;
 
 /* R_MACHO_LC_SUB_UMBRELLA */
+/** @brief @c LC_SUB_UMBRELLA. */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset sub_umbrella;
 } RMachoSubUmbrellaCmd;
 
 /* R_MACHO_LC_SUB_LIBRARY */
+/** @brief @c LC_SUB_LIBRARY. */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset sub_library;
 } RMachoSubLibraryCmd;
 
 /* R_MACHO_LC_PREBOUND_DYLIB */
+/** @brief @c LC_PREBOUND_DYLIB. */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset name;
@@ -358,12 +411,14 @@ typedef struct {
 } RMachoPreboundDylibCmd;
 
 /* R_MACHO_LC_ID_DYLINKER, R_MACHO_LC_LOAD_DYLINKER, R_MACHO_LC_DYLD_ENVIRONMENT */
+/** @brief @c LC_LOAD_DYLINKER / @c LC_ID_DYLINKER. */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset name;
 } RMachoDylinkerCmd;
 
 /* R_MACHO_LC_UNIXTHREAD, R_MACHO_LC_THREAD */
+/** @brief @c LC_THREAD / @c LC_UNIXTHREAD: initial register state. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 flavor;
@@ -372,6 +427,7 @@ typedef struct {
 } RMachoThreadCmd;
 
 /* R_MACHO_LC_ROUTINES */
+/** @brief @c LC_ROUTINES (32-bit). */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 init_addr;
@@ -385,6 +441,7 @@ typedef struct {
 } RMachoRoutines32Cmd;
 
 /* R_MACHO_LC_ROUTINES_64 */
+/** @brief @c LC_ROUTINES_64. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint64 init_addr;
@@ -398,6 +455,7 @@ typedef struct {
 } RMachoRoutines64Cmd;
 
 /* R_MACHO_LC_SYMTAB */
+/** @brief @c LC_SYMTAB: classic symbol-table descriptor. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 symoff;
@@ -407,6 +465,7 @@ typedef struct {
 } RMachoSymTabCmd;
 
 /* R_MACHO_LC_DYSYMTAB */
+/** @brief @c LC_DYSYMTAB: dynamic-linker symbol-table partitioning. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 ilocalsym;  /* index to local symbols */
@@ -432,12 +491,14 @@ typedef struct {
 #define R_MACHO_INDIRECT_SYMBOL_LOCAL   0x80000000
 #define R_MACHO_INDIRECT_SYMBOL_ABS     0x40000000
 
+/** @brief Dynamic-library table-of-contents entry. */
 typedef struct {
   ruint32 symbol_index;
   ruint32 module_index;
 } RMachoDylibTOC;
 
 
+/** @brief 32-bit dynamic-library module descriptor. */
 typedef struct {
   ruint32 module_name;  /* the module name (index into string table) */
   ruint32 iextdefsym;   /* index into externally defined symbols */
@@ -454,6 +515,7 @@ typedef struct {
   ruint32 objc_module_info_size;
 } RMachoDylibModule32;
 
+/** @brief 64-bit dynamic-library module descriptor. */
 typedef struct {
   ruint32 module_name;  /* the module name (index into string table) */
   ruint32 iextdefsym;   /* index into externally defined symbols */
@@ -470,36 +532,42 @@ typedef struct {
   ruint64 objc_module_info_size;
 } RMachoDylibModule64;
 
+/** @brief Dynamic-library reference entry. */
 typedef struct {
   ruint32 isym:24,  /* index into the symbol table */
           flags:8;  /* flags to indicate the type of reference */
 } RMachoDylibReference;
 
 /* R_MACHO_LC_TWOLEVEL_HINTS */
+/** @brief @c LC_TWOLEVEL_HINTS. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 offset;
   ruint32 nhints;
 } RMachoTwoLevelHintsCmd;
 
+/** @brief Two-level-namespace hint entry. */
 typedef struct {
   ruint32 isub_image:8, /* index into the sub images */
           itoc:24;      /* index into the table of contents */
 } RMachoTwoLevelHint;
 
 /* R_MACHO_LC_PREBIND_CKSUM */
+/** @brief @c LC_PREBIND_CKSUM. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 cksum;
 } RMachoPrebindCksumCmd;
 
 /* R_MACHO_LC_UUID */
+/** @brief @c LC_UUID: build-identity 128-bit UUID. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint8 uuid[16];
 } RMachoUUIDCmd;
 
 /* R_MACHO_LC_RPATH */
+/** @brief @c LC_RPATH: runtime search path entry. */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset path;
@@ -508,6 +576,7 @@ typedef struct {
 /* R_MACHO_LC_CODE_SIGNATURE, R_MACHO_LC_SEGMENT_SPLIT_INFO,
  * R_MACHO_LC_FUNCTION_STARTS, R_MACHO_LC_DATA_IN_CODE,
  * R_MACHO_LC_DYLIB_CODE_SIGN_DRS, R_MACHO_LC_LINKER_OPTIMIZATION_HINT */
+/** @brief @c LC_CODE_SIGNATURE / @c LC_FUNCTION_STARTS / etc.: offset + size into the @c __LINKEDIT segment. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 dataoff;
@@ -515,6 +584,7 @@ typedef struct {
 } RMachoLinkeditDataCmd;
 
 /* R_MACHO_LC_ENCRYPTION_INFO */
+/** @brief LC_ENCRYPTION_INFO: range of the 32-bit image that is encrypted at rest. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 cryptoff;
@@ -523,6 +593,7 @@ typedef struct {
 } RMachoEncryptionInfo32Cmd;
 
 /* R_MACHO_LC_ENCRYPTION_INFO_64 */
+/** @brief LC_ENCRYPTION_INFO_64: encrypted-range descriptor for 64-bit images. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 cryptoff;
@@ -532,6 +603,7 @@ typedef struct {
 } RMachoEncryptionInfo64Cmd;
 
 /* R_MACHO_LC_VERSION_MIN_MACOSX, R_MACHO_LC_VERSION_MIN_IPHONEOS */
+/** @brief LC_VERSION_MIN_MACOSX / LC_VERSION_MIN_IPHONEOS / etc.: minimum OS version the image targets. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 version;
@@ -539,6 +611,7 @@ typedef struct {
 } RMachoVersionMinCmd;
 
 /* R_MACHO_LC_DYLD_INFO, R_MACHO_LC_DYLD_INFO_ONLY */
+/** @brief LC_DYLD_INFO / LC_DYLD_INFO_ONLY: offsets to the rebase, bind, weak-bind, lazy-bind and export streams. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 rebase_off;     /* file offset to rebase info */
@@ -606,12 +679,14 @@ typedef struct {
 #define R_MACHO_EXPORT_SYMBOL_FLAGS_STUB_AND_RESOLVER             0x10
 
 /* R_MACHO_LC_LINKER_OPTION */
+/** @brief LC_LINKER_OPTION: per-object linker options embedded in MH_OBJECT files. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 count;
 } RMachoLinkerOptionCmd;
 
 /* R_MACHO_LC_SYMSEG */
+/** @brief LC_SYMSEG: legacy stab symbol-segment descriptor (obsolete). */
 typedef struct {
   RMachoLoadCmd lc;
   ruint32 offset;
@@ -619,11 +694,13 @@ typedef struct {
 } RMachoSymSegCmd;
 
 /* R_MACHO_LC_IDENT */
+/** @brief LC_IDENT: object identification info (obsolete). */
 typedef struct {
   RMachoLoadCmd lc;
 } RMachoIdentCmd;
 
 /* R_MACHO_LC_FVMFILE */
+/** @brief LC_FVMFILE: fixed-VM file inclusion (obsolete). */
 typedef struct {
   RMachoLoadCmd lc;
   RMachoStrOffset name;
@@ -631,6 +708,7 @@ typedef struct {
 } RMachoFVMFileCmd;
 
 /* R_MACHO_LC_MAIN */
+/** @brief LC_MAIN: entry-point file offset and initial stack size. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint64 entryoff;
@@ -638,17 +716,26 @@ typedef struct {
 } RMachoEntryPointCmd;
 
 /* R_MACHO_LC_SOURCE_VERSION */
+/** @brief LC_SOURCE_VERSION: source-tree version this image was built from. */
 typedef struct {
   RMachoLoadCmd lc;
   ruint64 version;
 } RMachoSourceVersionCmd;
 
 
+/**
+ * @brief Data-in-Code (DICE) range entry.
+ *
+ * Marks an interval inside the @c __text section that is *not*
+ * executable code (a constant pool, a jump table, etc.). The
+ * @c kind field is one of the @c R_MACHO_DICE_KIND_* values.
+ * Referenced by @c LC_DATA_IN_CODE.
+ */
 typedef struct {
   ruint32 offset;  /* from mach_header to start of data range*/
   ruint16 length;  /* number of bytes in data range */
   ruint16 kind;    /* a DICE_KIND_* value  */
-} RDataInCodeEntry;
+} RMachoDataInCodeEntry;
 
 #define R_MACHO_DICE_KIND_DATA              0x0001
 #define R_MACHO_DICE_KIND_JUMP_TABLE8       0x0002
@@ -657,6 +744,8 @@ typedef struct {
 #define R_MACHO_DICE_KIND_ABS_JUMP_TABLE32  0x0005
 
 #pragma pack(pop)
+
+/** @} */
 
 R_END_DECLS
 
