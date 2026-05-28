@@ -114,6 +114,15 @@ FULL_SIDEBAR            = NO
 HTML_COLORSTYLE         = LIGHT
 HTML_EXTRA_STYLESHEET   = docs/doxygen-awesome-css/doxygen-awesome.css
 
+# Custom navtree layout: lift Globals out from under Files to a
+# top-level entry. For rlib (a C library with no classes), Globals
+# is effectively "all functions, macros, typedefs, enums" and
+# burying it one level deep makes it harder to reach than the more
+# specialised Data Structures tab next door. The XML mirrors
+# `doxygen -l DoxygenLayout.xml`'s default with just the navindex
+# tweaked.
+LAYOUT_FILE             = docs/DoxygenLayout.xml
+
 # Stdout stays quiet so CI logs don't drown in progress trivia.
 # WARN_IF_UNDOCUMENTED stays off until per-domain documentation lands
 # - flipping it on now would spam every declaration in the repo, none
