@@ -43,6 +43,14 @@ OPTIMIZE_OUTPUT_FOR_C   = YES
 # annotated index and any cross-reference resolves to one entity.
 TYPEDEF_HIDES_STRUCT    = YES
 
+# Every rlib symbol starts with R or r (types) or R_ / r_ (macros
+# and functions). Without these prefixes stripped, the alphabetical
+# indices collapse onto a single bucket and stop being useful.
+# Doxygen picks the longest matching prefix, so listing R_ before R
+# (and r_ before r) lets R_AES_BLOCK_BYTES strip down to
+# AES_BLOCK_BYTES while RArgParser strips just R to ArgParser.
+IGNORE_PREFIX           = R_ R r_ r
+
 # Don't pull Markdown headings into the navigation tree. Without this,
 # the README's Setext-style H1 / H2 headings get auto-nested under
 # the "Data Structures" navtree node (a known Doxygen quirk when the
