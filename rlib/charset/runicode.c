@@ -33,6 +33,11 @@
 #define R_UTF16_BOM       0xFEFFu
 #define R_UTF16_BOM_SWAP  0xFFFEu
 
+/* RFC 3629 caps Unicode codepoints at U+10FFFF, which encodes in
+ * at most 4 UTF-8 bytes. All callers in this file pass codepoints
+ * they have already validated against that bound; an out-of-range
+ * value here returns -1 rather than falling back to pre-RFC-3629
+ * 5- or 6-byte encodings. */
 static inline rssize
 r_unichar_to_utf8 (runichar c, rchar * str, rsize size)
 {
@@ -54,7 +59,7 @@ r_unichar_to_utf8 (runichar c, rchar * str, rsize size)
     str[1] = ((c >>  6) & 0x3f) | 0x80;
     str[0] = ((c >> 12)         | 0xe0);
     return 3;
-  } else if (c < 0x200000) {
+  } else if (c < 0x110000) {
     if (size < 4)
       return -1;
     str[3] = ((c      ) & 0x3f) | 0x80;
@@ -62,26 +67,9 @@ r_unichar_to_utf8 (runichar c, rchar * str, rsize size)
     str[1] = ((c >> 12) & 0x3f) | 0x80;
     str[0] = ((c >> 18)         | 0xf0);
     return 4;
-  } else if (c < 0x4000000) {
-    if (size < 5)
-      return -1;
-    str[4] = ((c      ) & 0x3f) | 0x80;
-    str[3] = ((c >>  6) & 0x3f) | 0x80;
-    str[2] = ((c >> 12) & 0x3f) | 0x80;
-    str[1] = ((c >> 18) & 0x3f) | 0x80;
-    str[0] = ((c >> 24)         | 0xf8);
-    return 5;
   }
 
-  if (size < 6)
-    return -1;
-  str[5] = ((c      ) & 0x3f) | 0x80;
-  str[4] = ((c >>  6) & 0x3f) | 0x80;
-  str[3] = ((c >> 12) & 0x3f) | 0x80;
-  str[2] = ((c >> 18) & 0x3f) | 0x80;
-  str[1] = ((c >> 24) & 0x3f) | 0x80;
-  str[0] = ((c >> 30)         | 0xfc);
-  return 6;
+  return -1;
 }
 
 /* Sentinel returned by r_utf8_to_unichar for sequences that decode
@@ -131,38 +119,13 @@ r_utf8_to_unichar (const rchar * utf8, rsize size, runichar * uc)
     if (*uc < 0x10000)
       return R_UTF8_OVERLONG;
     return 4;
-  } else if ((utf8[0] & 0xfc) == 0xf8) {
-    if (size < 5 || (utf8[1] & 0xc0) != 0x80 || (utf8[2] & 0xc0) != 0x80 ||
-        (utf8[3] & 0xc0) != 0x80 || (utf8[4] & 0xc0) != 0x80)
-      return -1;
-    *uc  = (utf8[0] & 0x03) << 24;
-    *uc |= (utf8[1] & 0x3f) << 18;
-    *uc |= (utf8[2] & 0x3f) << 12;
-    *uc |= (utf8[3] & 0x3f) <<  6;
-    *uc |= (utf8[4] & 0x3f);
-    if (*uc < 0x200000)
-      return R_UTF8_OVERLONG;
-    return 5;
   }
 
-  /* Pre-RFC-3629 legacy 6-byte sequence. RFC 3629 forbids these,
-   * but the rest of the decoder accepts them and lets the caller
-   * reject via the canonical >= 0x110000 check. Stay backwards-
-   * compatible here; the overlong-vs-canonical distinction still
-   * applies. */
-  if (size < 6 || (utf8[1] & 0xc0) != 0x80 || (utf8[2] & 0xc0) != 0x80 ||
-      (utf8[3] & 0xc0) != 0x80 || (utf8[4] & 0xc0) != 0x80 ||
-      (utf8[5] & 0xc0) != 0x80)
-    return -1;
-  *uc  = (utf8[0] & 0x01) << 30;
-  *uc |= (utf8[1] & 0x3f) << 24;
-  *uc |= (utf8[2] & 0x3f) << 18;
-  *uc |= (utf8[3] & 0x3f) << 12;
-  *uc |= (utf8[4] & 0x3f) <<  6;
-  *uc |= (utf8[5] & 0x3f);
-  if (*uc < 0x4000000)
-    return R_UTF8_OVERLONG;
-  return 6;
+  /* Lead bytes 0xF8..0xFF are forbidden by RFC 3629 §3: 5- and
+   * 6-byte sequences only existed in pre-3629 UTF-8 and can only
+   * encode codepoints >= U+200000, well outside the Unicode range.
+   * Reject up-front. */
+  return -1;
 }
 
 
