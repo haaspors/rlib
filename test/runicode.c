@@ -1633,3 +1633,145 @@ RTEST (runicode, utf16_strlen_codepoints, RTEST_FAST)
   r_assert_cmpint (r, ==, R_UNICODE_INVAL);
 }
 RTEST_END;
+
+/* ---- Explicit-endianness UTF-16 / UTF-32 -> UTF-8 ------------------ */
+
+RTEST (runicode, utf16be_to_utf8_basic, RTEST_FAST)
+{
+  /* "hello" = each char zero-extended; 5 BMP code units = 10 bytes BE. */
+  static const ruint8 src[10] = {
+    0x00, 'h', 0x00, 'e', 0x00, 'l', 0x00, 'l', 0x00, 'o'
+  };
+  rchar dst[16];
+  ruint8 * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf16be_to_utf8 (dst, sizeof (dst), src, sizeof (src),
+        &n, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 5);
+  r_assert_cmpstr (dst, ==, "hello");
+}
+RTEST_END;
+
+RTEST (runicode, utf16le_to_utf8_basic, RTEST_FAST)
+{
+  static const ruint8 src[10] = {
+    'h', 0x00, 'e', 0x00, 'l', 0x00, 'l', 0x00, 'o', 0x00
+  };
+  rchar dst[16];
+  ruint8 * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf16le_to_utf8 (dst, sizeof (dst), src, sizeof (src),
+        &n, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 5);
+  r_assert_cmpstr (dst, ==, "hello");
+}
+RTEST_END;
+
+RTEST (runicode, utf16be_to_utf8_surrogate_pair, RTEST_FAST)
+{
+  /* U+10000 = D800 DC00 (BE). */
+  static const ruint8 src[4] = { 0xD8, 0x00, 0xDC, 0x00 };
+  rchar dst[8];
+  ruint8 * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf16be_to_utf8 (dst, sizeof (dst), src, sizeof (src),
+        &n, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 4);
+  r_assert_cmpmem (dst, ==, "\xF0\x90\x80\x80", 4);
+}
+RTEST_END;
+
+RTEST (runicode, utf16be_to_utf8_rejects_odd_length, RTEST_FAST)
+{
+  static const ruint8 src[3] = { 0x00, 'h', 0x00 };
+  rchar dst[8];
+
+  r_assert_cmpint (r_utf16be_to_utf8 (dst, sizeof (dst), src, sizeof (src),
+        NULL, NULL), ==, R_UNICODE_INVAL);
+}
+RTEST_END;
+
+RTEST (runicode, utf32be_to_utf8_basic, RTEST_FAST)
+{
+  /* "hi" + α (U+03B1) + 😀 (U+1F600). */
+  static const ruint8 src[16] = {
+    0x00, 0x00, 0x00, 'h',
+    0x00, 0x00, 0x00, 'i',
+    0x00, 0x00, 0x03, 0xb1,
+    0x00, 0x01, 0xf6, 0x00,
+  };
+  rchar dst[16];
+  ruint8 * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf32be_to_utf8 (dst, sizeof (dst), src, sizeof (src),
+        &n, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 8);   /* 1 + 1 + 2 + 4 */
+  r_assert_cmpmem (dst, ==, "hi\xCE\xB1\xF0\x9F\x98\x80", 8);
+}
+RTEST_END;
+
+RTEST (runicode, utf32le_to_utf8_basic, RTEST_FAST)
+{
+  static const ruint8 src[8] = {
+    'h', 0x00, 0x00, 0x00,
+    'i', 0x00, 0x00, 0x00,
+  };
+  rchar dst[8];
+  ruint8 * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf32le_to_utf8 (dst, sizeof (dst), src, sizeof (src),
+        &n, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpstr (dst, ==, "hi");
+  r_assert_cmpuint (n, ==, 2);
+}
+RTEST_END;
+
+RTEST (runicode, utf32be_to_utf8_rejects_invalid, RTEST_FAST)
+{
+  /* U+D800 (surrogate codepoint). */
+  static const ruint8 src_surr[4] = { 0x00, 0x00, 0xD8, 0x00 };
+  /* U+110000. */
+  static const ruint8 src_oor[4]  = { 0x00, 0x11, 0x00, 0x00 };
+  /* Length not multiple of 4. */
+  static const ruint8 src_odd[3]  = { 0x00, 0x00, 0x00 };
+  rchar dst[8];
+
+  r_assert_cmpint (r_utf32be_to_utf8 (dst, sizeof (dst), src_surr,
+        sizeof (src_surr), NULL, NULL), ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpint (r_utf32be_to_utf8 (dst, sizeof (dst), src_oor,
+        sizeof (src_oor), NULL, NULL), ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpint (r_utf32be_to_utf8 (dst, sizeof (dst), src_odd,
+        sizeof (src_odd), NULL, NULL), ==, R_UNICODE_INVAL);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_wire_dup_roundtrip, RTEST_FAST)
+{
+  static const ruint8 be[10] = {
+    0x00, 'h', 0x00, 'e', 0x00, 'l', 0x00, 'l', 0x00, 'o'
+  };
+  static const ruint8 le[10] = {
+    'h', 0x00, 'e', 0x00, 'l', 0x00, 'l', 0x00, 'o', 0x00
+  };
+  rchar * out_be, * out_le;
+  RUnicodeResult r;
+  ruint8 * end;
+
+  out_be = r_utf16be_to_utf8_dup (be, sizeof (be), &r, NULL, &end);
+  r_assert_cmpptr (out_be, !=, NULL);
+  r_assert_cmpint (r, ==, R_UNICODE_OK);
+  r_assert_cmpstr (out_be, ==, "hello");
+
+  out_le = r_utf16le_to_utf8_dup (le, sizeof (le), &r, NULL, &end);
+  r_assert_cmpptr (out_le, !=, NULL);
+  r_assert_cmpstr (out_le, ==, "hello");
+
+  r_free (out_be);
+  r_free (out_le);
+}
+RTEST_END;
