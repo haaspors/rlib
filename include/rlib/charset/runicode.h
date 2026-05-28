@@ -219,6 +219,66 @@ R_API runichar2 * r_utf32_to_utf16_dup (const runichar4 * src, rsize srcsize,
 
 /** @} */
 
+/**
+ * @name Encoding validation
+ *
+ * Scan-only counterparts to the conversion functions. They apply the
+ * same rejection rules - RFC 3629 §3 for UTF-8 (overlong / surrogate-
+ * codepoint / out-of-range), surrogate-pairing for UTF-16, codepoint
+ * range and surrogate-half for UTF-32 - but allocate nothing and
+ * write no output. Useful when a caller already has the bytes in
+ * their target encoding and only needs to confirm they are
+ * well-formed before storing or forwarding them.
+ *
+ * On success returns @c R_UNICODE_OK and @c *endptr (when non-NULL)
+ * points to the byte / code unit one past the input. On
+ * @c R_UNICODE_INCOMPLETE_CODE_POINT @c *endptr points at the start
+ * of the truncated sequence (resumable). On
+ * @c R_UNICODE_INVALID_CODE_POINT @c *endptr points at the byte /
+ * unit that triggered the rejection.
+ * @{
+ */
+
+/**
+ * @brief Validate a UTF-8 byte sequence per RFC 3629.
+ *
+ * @param src     UTF-8 bytes.
+ * @param size    Bytes in @p src, or -1 to fall back to @c r_strlen.
+ * @param endptr  Optional out-pointer; receives the consumed-source
+ *                position per the rules above.
+ */
+R_API RUnicodeResult r_utf8_validate (const rchar * src, rssize size,
+    rchar ** endptr);
+
+/**
+ * @brief Validate a UTF-16 code-unit sequence.
+ *
+ * Rejects lone high surrogates as @c R_UNICODE_INCOMPLETE_CODE_POINT
+ * and lone low surrogates as @c R_UNICODE_INVALID_CODE_POINT, same
+ * as @c r_utf16_to_utf8.
+ *
+ * @param src     UTF-16 code units.
+ * @param size    Code units in @p src.
+ * @param endptr  Optional out-pointer.
+ */
+R_API RUnicodeResult r_utf16_validate (const runichar2 * src, rsize size,
+    runichar2 ** endptr);
+
+/**
+ * @brief Validate a UTF-32 code-point sequence.
+ *
+ * Rejects values >= 0x110000 and surrogate-half codepoints
+ * (@c U+D800..U+DFFF) as @c R_UNICODE_INVALID_CODE_POINT.
+ *
+ * @param src     UTF-32 code points.
+ * @param size    Code points in @p src.
+ * @param endptr  Optional out-pointer.
+ */
+R_API RUnicodeResult r_utf32_validate (const runichar4 * src, rsize size,
+    runichar4 ** endptr);
+
+/** @} */
+
 R_END_DECLS
 
 /** @} */ /* r_unicode group */

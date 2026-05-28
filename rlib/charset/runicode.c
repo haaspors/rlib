@@ -720,3 +720,122 @@ r_utf32_to_utf16_dup (const runichar4 * src, rsize srcsize,
     *res = r;
   return ret;
 }
+
+/* ---- Validation entry points ---------------------------------------
+ * Scan-only counterparts to the conversion functions. The byte- /
+ * code-unit-level scan is the same in either case; the converters
+ * have an extra "encode into destination" step that the validators
+ * skip. Implemented standalone here (rather than calling the
+ * conversion functions with a sink destination) to avoid the
+ * destination-buffer threading and to make the streaming srcendptr
+ * semantics explicit. */
+
+RUnicodeResult
+r_utf8_validate (const rchar * src, rssize size, rchar ** endptr)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  rssize i, r;
+  runichar uc;
+
+  if (R_UNLIKELY (src == NULL))
+    return R_UNICODE_INVAL;
+  if (size < 0)
+    size = r_strlen (src);
+
+  /* Strip a leading UTF-8 BOM (matches r_utf8_to_utf16's behaviour). */
+  if (size >= 3 &&
+      (ruint8) src[0] == 0xef &&
+      (ruint8) src[1] == 0xbb &&
+      (ruint8) src[2] == 0xbf) {
+    src += 3;
+    size -= 3;
+  }
+
+  for (i = 0; i < size && src[i] != 0; i += r) {
+    r = r_utf8_to_unichar (&src[i], size - i, &uc);
+    if (r > 0) {
+      if ((uc >= 0xd800 && uc < 0xe000) || uc >= 0x110000) {
+        ret = R_UNICODE_INVALID_CODE_POINT;
+        break;
+      }
+    } else if (r == 0) {
+      break;
+    } else if (r == R_UTF8_OVERLONG) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    } else {
+      ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+      break;
+    }
+  }
+
+  if (endptr != NULL)
+    *endptr = (rchar *)&src[i];
+  return ret;
+}
+
+RUnicodeResult
+r_utf16_validate (const runichar2 * src, rsize size, runichar2 ** endptr)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  rsize i = 0;
+
+  if (R_UNLIKELY (src == NULL))
+    return R_UNICODE_INVAL;
+
+  if (size > 0) {
+    if (src[0] == R_UTF16_BOM_SWAP)
+      return R_UNICODE_INVAL;
+    if (src[0] == R_UTF16_BOM) {
+      src++;
+      size--;
+    }
+  }
+
+  while (i < size && src[i] != 0) {
+    if (src[i] < 0xd800 || src[i] >= 0xe000) {
+      i++;
+    } else if (src[i] < 0xdc00) {
+      if (i + 1 < size && src[i + 1] >= 0xdc00 && src[i + 1] < 0xe000) {
+        i += 2;
+      } else {
+        ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+        break;
+      }
+    } else {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    }
+  }
+
+  if (endptr != NULL)
+    *endptr = (runichar2 *)&src[i];
+  return ret;
+}
+
+RUnicodeResult
+r_utf32_validate (const runichar4 * src, rsize size, runichar4 ** endptr)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  rsize i = 0;
+
+  if (R_UNLIKELY (src == NULL))
+    return R_UNICODE_INVAL;
+
+  /* UTF-32 BOM is a single 0xFEFF code unit at the start. */
+  if (size > 0 && src[0] == R_UTF16_BOM) {
+    src++;
+    size--;
+  }
+
+  for (; i < size && src[i] != 0; i++) {
+    if (src[i] >= 0x110000 || (src[i] >= 0xd800 && src[i] < 0xe000)) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    }
+  }
+
+  if (endptr != NULL)
+    *endptr = (runichar4 *)&src[i];
+  return ret;
+}

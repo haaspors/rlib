@@ -1158,3 +1158,191 @@ RTEST (runicode, null_out_params_utf32_to_utf16, RTEST_FAST)
   r_assert_cmpuint (dst[0], ==, 'a');
 }
 RTEST_END;
+
+/* ---- Encoding-validation entry points ------------------------------
+ * Scan-only counterparts to the conversion functions. Each validator
+ * applies the same rejection rules as its conversion sibling but
+ * allocates no destination buffer. */
+
+RTEST (runicode, utf8_validate_ok, RTEST_FAST)
+{
+  rchar * endptr;
+  r_assert_cmpint (r_utf8_validate ("abc", 3, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpptr (endptr, ==, (rchar *)"abc" + 3);
+
+  r_assert_cmpint (r_utf8_validate ("\xCE\xB1\xCE\xB2", 4, NULL),
+      ==, R_UNICODE_OK);
+
+  /* Length via r_strlen. */
+  r_assert_cmpint (r_utf8_validate ("abc", -1, NULL), ==, R_UNICODE_OK);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, utf8_validate_rejects_overlong, RTEST_FAST,
+    0, R_N_ELEMENTS (overlong_vectors))
+{
+  const RUnicodeBadUtf8 * v = &overlong_vectors[__i];
+  r_assert_cmpint (r_utf8_validate ((const rchar *)v->bytes, v->len, NULL),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, utf8_validate_rejects_surrogate_in_utf8, RTEST_FAST,
+    0, R_N_ELEMENTS (surrogate_in_utf8_vectors))
+{
+  const RUnicodeBadUtf8 * v = &surrogate_in_utf8_vectors[__i];
+  r_assert_cmpint (r_utf8_validate ((const rchar *)v->bytes, v->len, NULL),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, utf8_validate_rejects_malformed, RTEST_FAST,
+    0, R_N_ELEMENTS (malformed_utf8_vectors))
+{
+  const RUnicodeBadUtf8 * v = &malformed_utf8_vectors[__i];
+  RUnicodeResult r = r_utf8_validate ((const rchar *)v->bytes, v->len, NULL);
+  r_assert (r == R_UNICODE_INVALID_CODE_POINT ||
+            r == R_UNICODE_INCOMPLETE_CODE_POINT);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_validate_endptr_on_failure, RTEST_FAST)
+{
+  /* "ab" + overlong "/" (\xC0\xAF). endptr should point at the start
+   * of the overlong sequence. */
+  static const ruint8 src[4] = { 'a', 'b', 0xc0, 0xaf };
+  rchar * endptr;
+
+  r_assert_cmpint (r_utf8_validate ((const rchar *)src, sizeof (src),
+        &endptr), ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpptr (endptr, ==, (rchar *)src + 2);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_validate_endptr_on_incomplete, RTEST_FAST)
+{
+  /* Resumable position: "a" + half of α. */
+  static const ruint8 src[2] = { 'a', 0xce };
+  rchar * endptr;
+
+  r_assert_cmpint (r_utf8_validate ((const rchar *)src, sizeof (src),
+        &endptr), ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+  r_assert_cmpptr (endptr, ==, (rchar *)src + 1);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_validate_strips_bom, RTEST_FAST)
+{
+  static const ruint8 src[6] = { 0xef, 0xbb, 0xbf, 'a', 'b', 'c' };
+  r_assert_cmpint (r_utf8_validate ((const rchar *)src, sizeof (src), NULL),
+      ==, R_UNICODE_OK);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_validate_null_src, RTEST_FAST)
+{
+  r_assert_cmpint (r_utf8_validate (NULL, 0, NULL), ==, R_UNICODE_INVAL);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_validate_ok, RTEST_FAST)
+{
+  runichar2 src[] = { 'a', 'b', 'c' };
+  runichar2 * endptr;
+
+  r_assert_cmpint (r_utf16_validate (src, 3, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpptr (endptr, ==, src + 3);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_validate_surrogate_pair, RTEST_FAST)
+{
+  runichar2 src[] = { 'a', 0xD800, 0xDC00, 'z' };
+  r_assert_cmpint (r_utf16_validate (src, 4, NULL), ==, R_UNICODE_OK);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_validate_incomplete, RTEST_FAST)
+{
+  runichar2 src[] = { 'a', 0xD800 };
+  runichar2 * endptr;
+
+  r_assert_cmpint (r_utf16_validate (src, 2, &endptr),
+      ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+  r_assert_cmpptr (endptr, ==, src + 1);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_validate_invalid_lone_low, RTEST_FAST)
+{
+  runichar2 src[] = { 'a', 0xDC00, 'z' };
+  runichar2 * endptr;
+
+  r_assert_cmpint (r_utf16_validate (src, 3, &endptr),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpptr (endptr, ==, src + 1);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_validate_strips_bom_rejects_swap, RTEST_FAST)
+{
+  runichar2 with_bom[] = { 0xFEFF, 'a', 'b' };
+  runichar2 with_swap[] = { 0xFFFE, 'a', 'b' };
+
+  r_assert_cmpint (r_utf16_validate (with_bom, 3, NULL), ==, R_UNICODE_OK);
+  r_assert_cmpint (r_utf16_validate (with_swap, 3, NULL),
+      ==, R_UNICODE_INVAL);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_validate_null_src, RTEST_FAST)
+{
+  r_assert_cmpint (r_utf16_validate (NULL, 0, NULL), ==, R_UNICODE_INVAL);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_validate_ok, RTEST_FAST)
+{
+  runichar4 src[] = { 'a', 0x10FFFF, 'z' };
+  runichar4 * endptr;
+
+  r_assert_cmpint (r_utf32_validate (src, 3, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpptr (endptr, ==, src + 3);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_validate_rejects_out_of_range, RTEST_FAST)
+{
+  runichar4 src[] = { 'a', 0x110000, 'z' };
+  runichar4 * endptr;
+
+  r_assert_cmpint (r_utf32_validate (src, 3, &endptr),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpptr (endptr, ==, src + 1);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_validate_rejects_surrogate, RTEST_FAST)
+{
+  runichar4 src_high[] = { 'a', 0xD800 };
+  runichar4 src_low[] = { 'a', 0xDFFF };
+
+  r_assert_cmpint (r_utf32_validate (src_high, 2, NULL),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpint (r_utf32_validate (src_low, 2, NULL),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_validate_strips_bom, RTEST_FAST)
+{
+  runichar4 src[] = { 0xFEFF, 'a', 'b' };
+  r_assert_cmpint (r_utf32_validate (src, 3, NULL), ==, R_UNICODE_OK);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_validate_null_src, RTEST_FAST)
+{
+  r_assert_cmpint (r_utf32_validate (NULL, 0, NULL), ==, R_UNICODE_INVAL);
+}
+RTEST_END;
