@@ -36,6 +36,7 @@
 
 /**
  * @defgroup r_assert Assertions
+ * @ingroup r_test
  *
  * @brief Compile-on / compile-off assertion macros plus typed
  * comparison helpers that print the actual operand values on
