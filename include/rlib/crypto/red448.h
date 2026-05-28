@@ -28,6 +28,7 @@
 
 /**
  * @defgroup r_ed448 Ed448 EdDSA
+ * @ingroup r_crypto_ec
  * @brief Ed448 sign / verify per RFC 8032 §5.2.
  * @{
  */

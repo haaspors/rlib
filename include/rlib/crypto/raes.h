@@ -27,6 +27,7 @@
 
 /**
  * @defgroup r_crypto_aes AES (FIPS 197)
+ * @ingroup r_crypto_symmetric
  * @brief AES cipher (128 / 192 / 256-bit keys) across ECB, CBC, CTR,
  * CFB, OFB modes; built on the @c RCryptoCipher base.
  * @{

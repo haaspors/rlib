@@ -26,6 +26,7 @@
 
 /**
  * @defgroup r_msg_digest Cryptographic message digests
+ * @ingroup r_crypto_hash
  * @brief MD2 / MD4 / MD5 / SHA-1 / SHA-2 family hashes plus the
  * SHAKE256 extendable-output function (XOF).
  * @{

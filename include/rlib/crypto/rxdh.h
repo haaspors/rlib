@@ -30,6 +30,7 @@
 
 /**
  * @defgroup r_xdh X25519 / X448 key exchange
+ * @ingroup r_crypto_ec
  * @brief Diffie-Hellman key exchange over the Montgomery curves
  * Curve25519 and Curve448 (RFC 7748).
  * @{

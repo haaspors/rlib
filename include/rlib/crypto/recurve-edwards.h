@@ -28,6 +28,7 @@
 
 /**
  * @defgroup r_ecurve_edwards Twisted Edwards curves (edwards25519 / edwards448)
+ * @ingroup r_crypto_ec
  * @brief Twisted Edwards point arithmetic on the curves underlying
  * the RFC 8032 EdDSA signature schemes.
  * @{
