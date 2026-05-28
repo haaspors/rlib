@@ -73,6 +73,10 @@ TOC_INCLUDE_HEADINGS    = 0
 ENABLE_PREPROCESSING    = YES
 MACRO_EXPANSION         = YES
 EXPAND_ONLY_PREDEF      = YES
+# RLIB_DOXYGEN is defined only here, never by a compiler, so headers
+# can expose Doxygen-only declarations for typedefs whose real
+# definitions live in the build-generated rlib/rconfig.h (which is
+# outside INPUT) - e.g. the fixed-width rint8 / ruint8 / ... types.
 PREDEFINED              = R_API= \
                           R_API_HIDDEN= \
                           R_BEGIN_DECLS= \
@@ -82,7 +86,8 @@ PREDEFINED              = R_API= \
                           R_ATTR_PRINTF(x,y)= \
                           R_ATTR_WARN_UNUSED= \
                           R_UNLIKELY(x)=x \
-                          R_LIKELY(x)=x
+                          R_LIKELY(x)=x \
+                          RLIB_DOXYGEN
 
 # Paths shown in the generated docs are stripped of the build-system
 # prefix so file titles and breadcrumbs read as `crypto/rcipher.h`,

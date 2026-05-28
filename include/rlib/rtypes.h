@@ -170,12 +170,38 @@ typedef unsigned int            ruint;
 /** @} */
 
 /**
+ * @name Fixed-width integer types
+ *
+ * Exact-width signed and unsigned integers. The typedefs themselves
+ * are emitted into the build-generated @c rlib/rconfig.h (the host's
+ * @c short / @c int / @c long widths are probed at configure time so
+ * the sizes are guaranteed); they are documented here, where every
+ * caller already includes them via @c rlib/rtypes.h.
+ * @{
+ */
+#ifdef RLIB_DOXYGEN
+/* Doxygen-only mirror of the typedefs emitted into rlib/rconfig.h.
+ * Never compiled (RLIB_DOXYGEN is defined only by the Doxyfile). */
+typedef signed char    rint8;    /**< @brief Signed 8-bit integer. */
+typedef signed short   rint16;   /**< @brief Signed 16-bit integer. */
+typedef signed int     rint32;   /**< @brief Signed 32-bit integer. */
+typedef signed long    rint64;   /**< @brief Signed 64-bit integer. */
+typedef signed long    rintmax;  /**< @brief Widest signed integer the host supports. */
+typedef unsigned char  ruint8;   /**< @brief Unsigned 8-bit integer. */
+typedef unsigned short ruint16;  /**< @brief Unsigned 16-bit integer. */
+typedef unsigned int   ruint32;  /**< @brief Unsigned 32-bit integer. */
+typedef unsigned long  ruint64;  /**< @brief Unsigned 64-bit integer. */
+typedef unsigned long  ruintmax; /**< @brief Widest unsigned integer the host supports. */
+#endif
+/** @} */
+
+/**
  * @name Fixed-width integer limits
  *
- * The actual @c rint8 / @c ruint8 / ... typedefs live in
- * @c rlib/rconfig.h (chosen per host so the sizes are guaranteed);
- * the @c MIN / @c MAX constants live here so a single include of
- * @c rlib/rtypes.h covers both.
+ * The @c MIN / @c MAX constants for the @ref rint8 / @ref ruint8 /
+ * ... types. The typedefs live in @c rlib/rconfig.h (chosen per host
+ * so the sizes are guaranteed); the constants live here so a single
+ * include of @c rlib/rtypes.h covers both.
  * @{
  */
 /** @brief Minimum value of @c rint8. */
@@ -213,6 +239,10 @@ typedef unsigned int            ruint;
  * past the 32-bit boundary on platforms that need it.
  * @{
  */
+#ifdef RLIB_DOXYGEN
+typedef unsigned long           rsize;  /**< @brief Unsigned pointer-sized size type (like @c size_t). */
+typedef signed long             rssize; /**< @brief Signed pointer-sized size type (like @c ssize_t). */
+#endif
 /** @brief 64-bit signed file / stream offset. */
 typedef rint64                  roffset;
 /** @brief Minimum value of @c roffset. */
@@ -236,8 +266,16 @@ typedef rint64                  roffset;
  * @c ruintptr / @c rsize to silence pedantic warnings about
  * pointer / integer conversions on platforms where the widths
  * happen to mismatch.
+ *
+ * @c rintptr / @c ruintptr (signed / unsigned integers wide enough
+ * to hold a pointer, like @c intptr_t / @c uintptr_t) are typedef'd
+ * in @c rlib/rconfig.h.
  * @{
  */
+#ifdef RLIB_DOXYGEN
+typedef signed long             rintptr;  /**< @brief Signed integer wide enough to hold a pointer (like @c intptr_t). */
+typedef unsigned long           ruintptr; /**< @brief Unsigned integer wide enough to hold a pointer (like @c uintptr_t). */
+#endif
 /** @brief Generic pointer (alias for @c void @c *). */
 typedef void*                   rpointer;
 /** @brief Generic const pointer (alias for @c const @c void @c *). */
