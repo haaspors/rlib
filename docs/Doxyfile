@@ -23,9 +23,13 @@ PROJECT_BRIEF           = "Convenience library for useful things"
 # headers shared across the implementation) don't leak through
 # TYPEDEF_HIDES_STRUCT into the public Data Structures listing.
 # README.md at the repo root anchors the main page.
-INPUT                   = include/rlib README.md
+# docs/topics-order.dox is listed first so its @defgroup
+# declarations register the desired top-level Topic order before any
+# header is processed. SORT_GROUP_NAMES below stays at the default
+# (NO), so encounter order is preserved.
+INPUT                   = docs/topics-order.dox include/rlib README.md
 RECURSIVE               = YES
-FILE_PATTERNS           = *.h *.md
+FILE_PATTERNS           = *.h *.md *.dox
 USE_MDFILE_AS_MAINPAGE  = README.md
 
 # Output lands under docs/output/html; .gitignore drops the tree.

@@ -1,0 +1,52 @@
+/* RLIB - Convenience library for useful things
+ * Copyright (C) 2015-2026 Haakon Sporsheim <haakon.sporsheim@gmail.com>
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3.0 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.
+ * See the COPYING file at the root of the source repository.
+ */
+
+/*
+ * Doxygen processes this file before the headers in INPUT, locking
+ * in the order of the top-level Topics. Each @defgroup here is a
+ * forward-declaration: the title and body live in the headers via
+ * @addtogroup. Reorder lines below to reorder the navtree.
+ *
+ * Reading order: foundations -> diagnostics -> system / runtime ->
+ * I/O -> networking -> formats / encodings -> crypto ->
+ * binary tools -> misc utilities.
+ */
+
+/** @defgroup r_types        Foundational types */
+/** @defgroup r_mem          Memory */
+/** @defgroup r_data         Data structures */
+/** @defgroup r_str          Strings */
+/** @defgroup r_charset      Character sets */
+/** @defgroup r_time         Time */
+/** @defgroup r_math         Math */
+/** @defgroup r_rand         Random and pseudo-random */
+/** @defgroup r_log          Logging */
+/** @defgroup r_test         Unit testing */
+/** @defgroup r_os           Operating system */
+/** @defgroup r_cpufeatures  CPU feature detection */
+/** @defgroup r_concurrency  Concurrency */
+/** @defgroup r_io           Generic I/O */
+/** @defgroup r_ev           Event loop and async I/O */
+/** @defgroup r_net          Networking */
+/** @defgroup r_rtc          Real-Time Communications (WebRTC) */
+/** @defgroup r_format       File formats */
+/** @defgroup r_base64       Base64 (RFC 4648) */
+/** @defgroup r_crc          CRC32 */
+/** @defgroup r_crypto       Cryptography */
+/** @defgroup r_binfmt       Binary executable formats */
+/** @defgroup r_argparse     Command-line argument parsing */
