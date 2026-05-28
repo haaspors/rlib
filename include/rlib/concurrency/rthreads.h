@@ -36,7 +36,7 @@
 R_BEGIN_DECLS
 
 /**
- * @defgroup r_once One-shot initialisation (ROnce)
+ * @defgroup r_once One-shot initialisation
  * @ingroup r_concurrency
  * @brief Run an init function exactly once across all threads, with
  * a cheap fast path on every subsequent call.

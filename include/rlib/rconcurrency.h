@@ -19,7 +19,7 @@
 #define __R_CONCURRENCY_H__
 
 /**
- * @defgroup r_concurrency Concurrency primitives
+ * @defgroup r_concurrency Concurrency
  *
  * @brief Atomics, threads, threadpools and task queues - the
  * concurrency-flavoured building blocks the rest of rlib uses for

@@ -19,7 +19,7 @@
 #define __R_DATA_H__
 
 /**
- * @defgroup r_data Data structures and primitives
+ * @defgroup r_data Data structures
  *
  * @brief Containers, strings, multi-precision integers and the
  * supporting primitives (hash functions, hazard pointers, callback

@@ -35,7 +35,7 @@
 R_BEGIN_DECLS
 
 /**
- * @defgroup r_socketaddress Socket addresses (RSocketAddress)
+ * @defgroup r_socketaddress Socket addresses
  * @ingroup r_net
  *
  * @brief Refcounted, family-tagged wrapper around a native socket

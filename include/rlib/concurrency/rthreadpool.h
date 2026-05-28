@@ -38,7 +38,7 @@
 R_BEGIN_DECLS
 
 /**
- * @defgroup r_threadpool Thread pool (RThreadPool)
+ * @defgroup r_threadpool Thread pool
  * @ingroup r_concurrency
  *
  * @brief Worker pool where every thread runs the same entry function

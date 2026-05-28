@@ -35,7 +35,7 @@
 #include <stdarg.h>
 
 /**
- * @defgroup r_buffer Buffers (RBuffer)
+ * @defgroup r_buffer Buffers
  * @ingroup r_mem
  *
  * @brief Refcounted byte container that holds an ordered list of

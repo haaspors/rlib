@@ -37,7 +37,7 @@
 R_BEGIN_DECLS
 
 /**
- * @defgroup r_iosocket Low-level socket operations on RIOHandle
+ * @defgroup r_iosocket Low-level socket operations
  * @ingroup r_socket
  *
  * @brief BSD-socket-style operations that take a bare @c RIOHandle.
