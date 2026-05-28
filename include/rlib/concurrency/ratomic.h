@@ -22,6 +22,34 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/**
+ * @defgroup r_atomic Atomic operations
+ * @ingroup r_concurrency
+ *
+ * @brief Sequentially-consistent load / store / exchange / CAS /
+ * fetch-modify operations on three atomic-friendly types
+ * (@c raint, @c rauint, @c raptr), plus a @c raboolean alias for
+ * the int variant.
+ *
+ * The declared @c R_API entry points act as the specification;
+ * each compiler family (Clang @c __c11_atomic_*, GCC
+ * @c __atomic_*, legacy @c __sync_*, MSVC @c _Interlocked*) gets
+ * substituted in by macros further down the header.
+ *
+ * All operations are @c memory_order_seq_cst — the strongest
+ * ordering — to keep call sites simple. Lock-free retry loops
+ * built on @ref r_atomic_int_cmp_xchg_weak therefore see updated
+ * values on every spurious failure without extra barriers.
+ *
+ * @{
+ */
+
+/**
+ * @file rlib/concurrency/ratomic.h
+ * @brief Atomic load / store / exchange / CAS / fetch-modify
+ * operations on integer, unsigned-integer and pointer types.
+ */
+
 #include <rlib/rtypes.h>
 
 /* Pick an atomics backend.  USE_CLANG_ATOMICS uses __c11_atomic_*
@@ -44,8 +72,11 @@
 R_BEGIN_DECLS
 
 #if defined(USE_CLANG_ATOMICS) || defined(USE_GNUC_ATOMICS)
+/** @brief Atomic-friendly storage for @c int (compiler-selected). */
 typedef _Atomic(int)        raint;
+/** @brief Atomic-friendly storage for @c ruint (compiler-selected). */
 typedef _Atomic(ruint)      rauint;
+/** @brief Atomic-friendly storage for a pointer (compiler-selected). */
 typedef _Atomic(ruintptr)   raptr;
 #elif defined(USE_MSC_ATOMICS)
 typedef int volatile        raint;
@@ -57,55 +88,118 @@ typedef ruint               rauint;
 typedef rpointer            raptr;
 #endif
 
-/* rboolean is just int (see rtypes.h), so raboolean shares the same
- * storage as raint and reuses the int atomic accessors. */
+/**
+ * @brief Atomic-friendly boolean; thin alias over @c raint so the
+ * boolean accessors funnel through @c r_atomic_int_* with
+ * @c rboolean casts.
+ */
 typedef raint               raboolean;
 
+/** @name Atomic int (raint) operations
+ *  @{ */
+/** @brief Atomically read @p a's value. */
 R_API int       r_atomic_int_load             (raint * a);
+/** @brief Atomically store @p val into @p a. */
 R_API void      r_atomic_int_store            (raint * a, int val);
+/** @brief Atomically write @p val and return the previous value. */
 R_API int       r_atomic_int_exchange         (raint * a, int val);
+/**
+ * @brief Weak compare-and-swap: if @c *a equals @c *old, store
+ * @p val and return @c TRUE; otherwise write the current @c *a back
+ * into @c *old and return @c FALSE.
+ *
+ * @c weak is allowed to fail spuriously; retry loops are expected.
+ */
 R_API rboolean  r_atomic_int_cmp_xchg_weak    (raint * a, int * old, int val);
+/** @brief Strong compare-and-swap: as @ref r_atomic_int_cmp_xchg_weak but no spurious failure. */
 R_API rboolean  r_atomic_int_cmp_xchg_strong  (raint * a, int * old, int val);
+/** @brief Atomically compute @c *a += val and return the previous @c *a. */
 R_API int       r_atomic_int_fetch_add        (raint * a, int val);
+/** @brief Atomically compute @c *a -= val and return the previous @c *a. */
 R_API int       r_atomic_int_fetch_sub        (raint * a, int val);
+/** @brief Atomically compute @c *a &= val and return the previous @c *a. */
 R_API int       r_atomic_int_fetch_and        (raint * a, int val);
+/** @brief Atomically compute @c *a |= val and return the previous @c *a. */
 R_API int       r_atomic_int_fetch_or         (raint * a, int val);
+/** @brief Atomically compute @c *a ^= val and return the previous @c *a. */
 R_API int       r_atomic_int_fetch_xor        (raint * a, int val);
+/** @} */
 
-/* raboolean is a thin alias over raint; the bool accessors funnel
- * through r_atomic_int_* with explicit rboolean casts so callers get
- * the right type without spelling out "(rboolean) (TRUE != 0)" each
- * time.  _set / _unset are sugar over _store for the common TRUE /
- * FALSE assignments. */
+/** @name Atomic boolean (raboolean) sugar
+ *
+ * Convenience macros over the @c r_atomic_int_* primitives that
+ * cast @c rboolean values through. @c _set / @c _unset are sugar
+ * for the common @c TRUE / @c FALSE assignments.
+ *  @{ */
+/** @brief Atomically read an @ref raboolean. */
 #define r_atomic_bool_load(a)                   ((rboolean) r_atomic_int_load (a))
+/** @brief Atomically store @p v into an @ref raboolean. */
 #define r_atomic_bool_store(a, v)               r_atomic_int_store (a, (int) (v))
+/** @brief Atomically write @p v and return the previous value. */
 #define r_atomic_bool_exchange(a, v)            ((rboolean) r_atomic_int_exchange (a, (int) (v)))
+/** @brief Convenience: atomically store @c TRUE. */
 #define r_atomic_bool_set(a)                    r_atomic_bool_store (a, TRUE)
+/** @brief Convenience: atomically store @c FALSE. */
 #define r_atomic_bool_unset(a)                  r_atomic_bool_store (a, FALSE)
+/** @} */
 
+/** @name Atomic unsigned int (rauint) operations
+ *  @{ */
+/** @brief Atomically read @p a's value. */
 R_API ruint     r_atomic_uint_load            (rauint * a);
+/** @brief Atomically store @p val into @p a. */
 R_API void      r_atomic_uint_store           (rauint * a, ruint val);
+/** @brief Atomically write @p val and return the previous value. */
 R_API ruint     r_atomic_uint_exchange        (rauint * a, ruint val);
+/** @brief Weak CAS; see @ref r_atomic_int_cmp_xchg_weak for semantics. */
 R_API rboolean  r_atomic_uint_cmp_xchg_weak   (rauint * a, ruint * old, ruint val);
+/** @brief Strong CAS; no spurious failures. */
 R_API rboolean  r_atomic_uint_cmp_xchg_strong (rauint * a, ruint * old, ruint val);
+/** @brief Atomically compute @c *a += val and return the previous @c *a. */
 R_API ruint     r_atomic_uint_fetch_add       (rauint * a, ruint val);
+/** @brief Atomically compute @c *a -= val and return the previous @c *a. */
 R_API ruint     r_atomic_uint_fetch_sub       (rauint * a, ruint val);
+/** @brief Atomically compute @c *a &= val and return the previous @c *a. */
 R_API ruint     r_atomic_uint_fetch_and       (rauint * a, ruint val);
+/** @brief Atomically compute @c *a |= val and return the previous @c *a. */
 R_API ruint     r_atomic_uint_fetch_or        (rauint * a, ruint val);
+/** @brief Atomically compute @c *a ^= val and return the previous @c *a. */
 R_API ruint     r_atomic_uint_fetch_xor       (rauint * a, ruint val);
+/** @} */
 
+/** @name Atomic pointer (raptr) operations
+ *  @{ */
+/** @brief Atomically read @p a's pointer value. */
 R_API rpointer  r_atomic_ptr_load             (raptr * a);
+/** @brief Atomically store @p val into @p a. */
 R_API void      r_atomic_ptr_store            (raptr * a, rpointer val);
+/** @brief Atomically write @p val and return the previous value. */
 R_API rpointer  r_atomic_ptr_exchange         (raptr * a, rpointer val);
+/** @brief Weak CAS on pointer storage; see @ref r_atomic_int_cmp_xchg_weak for semantics. */
 R_API rboolean  r_atomic_ptr_cmp_xchg_weak    (raptr * a, rpointer * old, rpointer val);
+/** @brief Strong CAS on pointer storage; no spurious failures. */
 R_API rboolean  r_atomic_ptr_cmp_xchg_strong  (raptr * a, rpointer * old, rpointer val);
+/**
+ * @brief Pointer-arithmetic fetch-add: atomically @c *a += val and
+ * return the previous pointer.
+ *
+ * @c val is byte-distance, not element count. Callers doing
+ * element-stride moves must multiply by the element size first.
+ */
 R_API rpointer  r_atomic_ptr_fetch_add        (raptr * a, rpointer val);
+/** @brief Pointer-arithmetic fetch-sub; semantics mirror @ref r_atomic_ptr_fetch_add. */
 R_API rpointer  r_atomic_ptr_fetch_sub        (raptr * a, rpointer val);
+/** @brief Bitwise @c &= over pointer storage (treat as integer width). */
 R_API rpointer  r_atomic_ptr_fetch_and        (raptr * a, rpointer val);
+/** @brief Bitwise @c |= over pointer storage. */
 R_API rpointer  r_atomic_ptr_fetch_or         (raptr * a, rpointer val);
+/** @brief Bitwise @c ^= over pointer storage. */
 R_API rpointer  r_atomic_ptr_fetch_xor        (raptr * a, rpointer val);
+/** @} */
 
 R_END_DECLS
+
+/** @} */
 
 #if defined(USE_CLANG_ATOMICS)
 #define r_atomic_int_load(a)                    __c11_atomic_load (a,     __ATOMIC_SEQ_CST)
