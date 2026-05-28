@@ -31,6 +31,14 @@ EXTRACT_STATIC          = YES
 
 OPTIMIZE_OUTPUT_FOR_C   = YES
 
+# rlib's pervasive `typedef struct RFoo RFoo;` pattern means the
+# documentation brief is written on the typedef line. Without this,
+# Doxygen indexes the struct tag separately and the typedef's brief
+# never reaches the Data Structures listing. Setting this hides the
+# struct in favour of the typedef so the brief surfaces in the
+# annotated index and any cross-reference resolves to one entity.
+TYPEDEF_HIDES_STRUCT    = YES
+
 # Don't pull Markdown headings into the navigation tree. Without this,
 # the README's Setext-style H1 / H2 headings get auto-nested under
 # the "Data Structures" navtree node (a known Doxygen quirk when the
