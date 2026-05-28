@@ -33,7 +33,7 @@
 #include <rlib/rclr.h>
 #include <rlib/rcpufeatures.h>
 #include <rlib/rcrc.h>
-#include <rlib/renv.h>
+#include <rlib/os/renv.h>
 #include <rlib/rio.h>
 #include <rlib/net/riosocket.h>
 #include <rlib/rjson.h>
@@ -43,7 +43,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rmemallocator.h>
 #include <rlib/rmemfile.h>
-#include <rlib/rmodule.h>
+#include <rlib/os/rmodule.h>
 #include <rlib/crypto/rmsgdigest.h>
 #include <rlib/rpoll.h>
 #include <rlib/rrand.h>
@@ -56,7 +56,7 @@
 #include <rlib/rthreads.h>
 #include <rlib/rthreadpool.h>
 #include <rlib/rtime.h>
-#include <rlib/rtty.h>
+#include <rlib/os/rtty.h>
 #include <rlib/ruri.h>
 
 /* CHARACTER SET */

@@ -24,7 +24,7 @@
 
 #ifdef R_OS_WIN32
 #include <rlib/charset/runicode.h>
-#include <rlib/rmodule.h>
+#include <rlib/os/rmodule.h>
 
 static int __stdcall r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst);
 static const rchar * __stdcall r_win32_sim_inet_ntop (int family, rconstpointer src,

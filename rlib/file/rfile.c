@@ -22,7 +22,7 @@
 
 #include <rlib/file/rfs.h>
 #include <rlib/rmem.h>
-#include <rlib/rtty.h>
+#include <rlib/os/rtty.h>
 
 #include <stdio.h>
 #include <errno.h>

@@ -19,7 +19,7 @@
 #include "config.h"
 #include <rlib/rbase64.h>
 #include <rlib/rstr.h>
-#include <rlib/rtty.h>
+#include <rlib/os/rtty.h>
 
 static const rchar base64_enc_table[] =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

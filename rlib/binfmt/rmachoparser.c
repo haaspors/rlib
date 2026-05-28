@@ -23,7 +23,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rmemfile.h>
 #include <rlib/rstr.h>
-#include <rlib/rtty.h>
+#include <rlib/os/rtty.h>
 
 #define RMACHO32_IDX  0
 #define RMACHO64_IDX  1
