@@ -22,6 +22,34 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/**
+ * @defgroup r_crypto_tls_ciphersuite TLS / DTLS ciphersuites
+ * @ingroup r_crypto_ciphersuite
+ *
+ * @brief Lookup table mapping IANA TLS ciphersuite identifiers to
+ * the concrete key-exchange / cipher / MAC parameters needed to
+ * negotiate and instantiate the suite.
+ *
+ * Each suite is named by its 16-bit IANA identifier (`R_TLS_CS_*`)
+ * and carries an @ref RTLSCipherSuiteInfo entry with:
+ *
+ *   - the key-exchange family (@ref RKeyExchangeType),
+ *   - the payload cipher,
+ *   - the record-MAC digest.
+ *
+ * The full IANA registry, including which suites apply to TLS only
+ * vs. TLS + DTLS, lives at
+ * <https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-parameters-4>.
+ *
+ * @{
+ */
+
+/**
+ * @file rlib/crypto/rtlsciphersuite.h
+ * @brief TLS / DTLS ciphersuite enumeration and parameter-table
+ * lookup.
+ */
+
 #include <rlib/rtypes.h>
 
 #include <rlib/crypto/rcipher.h>
@@ -29,7 +57,14 @@
 
 R_BEGIN_DECLS
 
-/* http://www.iana.org/assignments/tls-parameters/#tls-parameters-4 */
+/**
+ * @brief IANA-registered TLS / DTLS ciphersuites.
+ *
+ * Values are the 16-bit IANA identifiers. Comments after each
+ * value note the applicable transport (TLS only vs. TLS + DTLS)
+ * and the defining RFC. @c R_TLS_CS_NONE is the sentinel returned
+ * by negotiation helpers when no suite matches.
+ */
 typedef enum {
   R_TLS_CS_NONE                                           = -1,
   R_TLS_CS_NULL_WITH_NULL_NULL                            = 0x0000, /* TLS & DTLS [RFC5247] */
@@ -362,6 +397,9 @@ typedef enum {
   R_TLS_CS_RSA_PSK_WITH_CHACHA20_POLY1305_SHA256          = 0xccae, /* TLS & DTLS [RFC7905] */
 } RTLSCipherSuite;
 
+/**
+ * @brief TLS key-exchange family used by a ciphersuite.
+ */
 typedef enum {
   R_KEY_EXCHANGE_NULL = 0,
   R_KEY_EXCHANGE_RSA,
@@ -384,24 +422,46 @@ typedef enum {
   R_KEY_EXCHANGE_KRB5,
 } RKeyExchangeType;
 
+/**
+ * @brief Parameter table for one TLS ciphersuite.
+ *
+ * Returned by @ref r_tls_cipher_suite_get_info.
+ */
 typedef struct {
-  RTLSCipherSuite suite;
-  const rchar * str;
+  RTLSCipherSuite suite;              /**< IANA identifier. */
+  const rchar * str;                  /**< Short ASCII name. */
 
-  RKeyExchangeType key_exchange;
-  const RCryptoCipherInfo * cipher;
-  RMsgDigestType mac;
+  RKeyExchangeType key_exchange;      /**< Key-exchange family. */
+  const RCryptoCipherInfo * cipher;   /**< Payload cipher. */
+  RMsgDigestType mac;                 /**< Record-MAC digest. */
 } RTLSCipherSuiteInfo;
 
+/** @brief True iff rlib has an implementation for @p suite. */
 R_API rboolean r_tls_cipher_suite_is_supported (RTLSCipherSuite suite);
+/**
+ * @brief Pick the most-preferred suite in @p preferred that also
+ * appears in @p incoming.
+ *
+ * Used by ServerHello-style negotiation. Returns @c R_TLS_CS_NONE
+ * if the intersection is empty.
+ *
+ * @param incoming   Peer-offered suites in their order.
+ * @param ilen       Length of @p incoming.
+ * @param preferred  Local preference order (most preferred first).
+ * @param plen       Length of @p preferred.
+ */
 R_API RTLSCipherSuite r_tls_cipher_suite_filter (
     const RTLSCipherSuite * incoming, ruint ilen,
     const RTLSCipherSuite * preferred, ruint plen);
 
+/** @brief Look up the parameter table for @p suite, or @c NULL. */
 R_API const RTLSCipherSuiteInfo * r_tls_cipher_suite_get_info (RTLSCipherSuite suite);
+/** @brief Look up the parameter table by short ASCII name, or @c NULL. */
 R_API const RTLSCipherSuiteInfo * r_tls_cipher_suite_get_info_from_str (const rchar * str);
 
 R_END_DECLS
+
+/** @} */
 
 #endif /* __R_CRYPTO_CIPHER_SUITE_H__ */
 
