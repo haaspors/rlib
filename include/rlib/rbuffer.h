@@ -36,6 +36,7 @@
 
 /**
  * @defgroup r_buffer Buffers (RBuffer)
+ * @ingroup r_mem
  *
  * @brief Refcounted byte container that holds an ordered list of
  * @c RMem chunks.
