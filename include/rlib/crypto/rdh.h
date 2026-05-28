@@ -22,6 +22,34 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/**
+ * @defgroup r_crypto_dh Diffie-Hellman (finite-field)
+ * @ingroup r_crypto_key
+ *
+ * @brief Classic finite-field Diffie-Hellman key exchange over a
+ * prime-modulus group: keypair construction, the standard named
+ * MODP / FFDHE groups, and the shared-secret derivation.
+ *
+ * The keys here are @ref RCryptoKey handles wrapping @c (p, g, y)
+ * for the public side and @c (p, g, y, x) for the private side.
+ * Most callers want to use the named groups via
+ * @ref r_dh_priv_key_new_gen_named, which pulls @c (p, g) from the
+ * RFC tables; @ref r_dh_priv_key_new_gen takes caller-supplied
+ * domain parameters for nonstandard groups.
+ *
+ * For modern elliptic-curve Diffie-Hellman use @ref r_xdh
+ * (Curve25519 / Curve448); this module covers the finite-field
+ * variant that legacy IKE, SSH and TLS still negotiate.
+ *
+ * @{
+ */
+
+/**
+ * @file rlib/crypto/rdh.h
+ * @brief Finite-field Diffie-Hellman: keypair construction, named
+ * MODP / FFDHE groups and shared-secret derivation.
+ */
+
 #include <rlib/rtypes.h>
 #include <rlib/asn1/rasn1.h>
 #include <rlib/crypto/rkey.h>
@@ -30,66 +58,132 @@
 
 R_BEGIN_DECLS
 
+/** @brief Algorithm-name string used in @c RCryptoKey introspection. */
 #define R_DH_STR     "DH"
 
-/* Standard named DH groups. All use g = 2. The R_DH_GROUP_MODP_* values
- * come from RFC 3526 (general-purpose DH used by IKE/SSH); the
- * R_DH_GROUP_FFDHE_* values come from RFC 7919 (designed for TLS). */
+/**
+ * @brief Named DH groups with standardised @c (p, g) parameters.
+ *
+ * All groups use @c g = 2. The @c MODP_* values come from RFC 3526
+ * (general-purpose DH used by IKE and SSH); the @c FFDHE_* values
+ * come from RFC 7919 (designed for TLS, with primes resistant to
+ * Logjam-style precomputation).
+ */
 typedef enum {
   R_DH_GROUP_UNKNOWN = -1,
-  R_DH_GROUP_MODP_2048 = 0,   /* RFC 3526 group 14 */
-  R_DH_GROUP_MODP_3072,       /* RFC 3526 group 15 */
-  R_DH_GROUP_MODP_4096,       /* RFC 3526 group 16 */
-  R_DH_GROUP_MODP_6144,       /* RFC 3526 group 17 */
-  R_DH_GROUP_MODP_8192,       /* RFC 3526 group 18 */
-  R_DH_GROUP_FFDHE_2048,      /* RFC 7919 */
-  R_DH_GROUP_FFDHE_3072,
-  R_DH_GROUP_FFDHE_4096,
-  R_DH_GROUP_FFDHE_6144,
-  R_DH_GROUP_FFDHE_8192,
+  R_DH_GROUP_MODP_2048 = 0,   /**< RFC 3526 group 14. */
+  R_DH_GROUP_MODP_3072,       /**< RFC 3526 group 15. */
+  R_DH_GROUP_MODP_4096,       /**< RFC 3526 group 16. */
+  R_DH_GROUP_MODP_6144,       /**< RFC 3526 group 17. */
+  R_DH_GROUP_MODP_8192,       /**< RFC 3526 group 18. */
+  R_DH_GROUP_FFDHE_2048,      /**< RFC 7919. */
+  R_DH_GROUP_FFDHE_3072,      /**< RFC 7919. */
+  R_DH_GROUP_FFDHE_4096,      /**< RFC 7919. */
+  R_DH_GROUP_FFDHE_6144,      /**< RFC 7919. */
+  R_DH_GROUP_FFDHE_8192,      /**< RFC 7919. */
   R_DH_GROUP_COUNT
 } RDhNamedGroup;
 
-/* Initialise (p, g) with the parameters of the named group. The caller
- * is responsible for clearing both mpints. */
+/**
+ * @brief Initialise @p p and @p g with the parameters of a named group.
+ *
+ * The caller is responsible for clearing both @c rmpints. Returns
+ * @c FALSE if @p group is @c R_DH_GROUP_UNKNOWN or out of range.
+ */
 R_API rboolean r_dh_named_group_get_params (RDhNamedGroup group,
     rmpint * p, rmpint * g);
 
+/**
+ * @brief Build a DH public key from @c rmpint components @c (p, g, y).
+ */
 R_API RCryptoKey * r_dh_pub_key_new (const rmpint * p, const rmpint * g,
     const rmpint * y) R_ATTR_MALLOC;
+
+/**
+ * @brief Build a DH public key from raw big-endian byte buffers.
+ *
+ * Convenience wrapper around @ref r_dh_pub_key_new.
+ */
 R_API RCryptoKey * r_dh_pub_key_new_binary (rconstpointer p, rsize psize,
     rconstpointer g, rsize gsize,
     rconstpointer y, rsize ysize) R_ATTR_MALLOC;
 
+/**
+ * @brief Build a DH private key from @c rmpint components @c (p, g, y, x).
+ */
 R_API RCryptoKey * r_dh_priv_key_new (const rmpint * p, const rmpint * g,
     const rmpint * y, const rmpint * x) R_ATTR_MALLOC;
+
+/**
+ * @brief Build a DH private key from raw big-endian byte buffers.
+ *
+ * Convenience wrapper around @ref r_dh_priv_key_new.
+ */
 R_API RCryptoKey * r_dh_priv_key_new_binary (rconstpointer p, rsize psize,
     rconstpointer g, rsize gsize,
     rconstpointer y, rsize ysize,
     rconstpointer x, rsize xsize) R_ATTR_MALLOC;
+
+/**
+ * @brief Decode a DH private key from an ASN.1 PKCS#3 / PKCS#8 TLV.
+ *
+ * Used by the PEM and X.509 import paths to materialise an
+ * @ref RCryptoKey from a DER blob.
+ */
 R_API RCryptoKey * r_dh_priv_key_new_from_asn1 (RAsn1BinDecoder * dec,
     RAsn1BinTLV * tlv) R_ATTR_MALLOC;
 
-/* Pick a random x in [2, p-2] and derive y = g^x mod p. Caller owns the
- * returned key. */
+/**
+ * @brief Generate a fresh DH keypair in a caller-supplied group.
+ *
+ * Picks a random @c x in @c [2, p-2] and derives @c y = g^x mod p.
+ *
+ * @param p     Prime modulus.
+ * @param g     Generator.
+ * @param prng  Randomness source for sampling @c x.
+ */
 R_API RCryptoKey * r_dh_priv_key_new_gen (const rmpint * p, const rmpint * g,
     RPrng * prng) R_ATTR_MALLOC;
+
+/**
+ * @brief Generate a fresh DH keypair in a standard named group.
+ *
+ * Convenience wrapper that loads @c (p, g) for @p group from the
+ * RFC tables before calling @ref r_dh_priv_key_new_gen.
+ */
 R_API RCryptoKey * r_dh_priv_key_new_gen_named (RDhNamedGroup group,
     RPrng * prng) R_ATTR_MALLOC;
 
+/** @brief Copy the prime modulus @c p into @p p. */
 R_API rboolean r_dh_pub_key_get_p (const RCryptoKey * key, rmpint * p);
+/** @brief Copy the generator @c g into @p g. */
 R_API rboolean r_dh_pub_key_get_g (const RCryptoKey * key, rmpint * g);
+/** @brief Copy the public value @c y = g^x mod p into @p y. */
 R_API rboolean r_dh_pub_key_get_y (const RCryptoKey * key, rmpint * y);
+/** @brief Copy the private value @c x into @p x. */
 R_API rboolean r_dh_priv_key_get_x (const RCryptoKey * key, rmpint * x);
 
-/* Compute the shared secret peer_pub.y ^ priv.x mod priv.p and write it
- * to out as a left-zero-padded big-endian byte string sized to match p.
- * The two keys must share the same (p, g) group; the peer's y is also
- * range-checked to be in (1, p-1). On entry *outsize is the capacity of
- * out; on success it is updated to the number of bytes written. */
+/**
+ * @brief Compute the shared DH secret.
+ *
+ * Computes @c peer_pub.y ^ priv.x mod priv.p and writes it to @p out
+ * as a left-zero-padded big-endian byte string sized to match @c p.
+ *
+ * The two keys must share the same @c (p, g) group; the peer's @c y
+ * is range-checked to be in @c (1, p-1) before the exponentiation
+ * so that small-subgroup attacks fail with @c R_CRYPTO_INVAL.
+ *
+ * @param priv      Local private key.
+ * @param peer_pub  Peer's public key.
+ * @param out       Output buffer.
+ * @param outsize   On entry, capacity of @p out; on success, updated
+ *                  to the number of bytes written.
+ */
 R_API RCryptoResult r_dh_compute_shared (const RCryptoKey * priv,
     const RCryptoKey * peer_pub, ruint8 * out, rsize * outsize);
 
 R_END_DECLS
+
+/** @} */
 
 #endif /* __R_CRYPTO_DH_H__ */
