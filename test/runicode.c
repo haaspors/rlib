@@ -35,12 +35,14 @@ RTEST (runicode, utf16_to_utf8, RTEST_FAST)
   r_assert_cmpptr (utf16end, ==, utf16 + 2);
   r_free (utf8);
 
-  /* Partial UTF-16, missing low surrogate */
+  /* Partial UTF-16, missing low surrogate. srcendptr points AT the
+   * unconsumed high surrogate so the caller can resume from there
+   * once more units arrive. */
   utf16[0] = 0x78; utf16[1] = 0x79; utf16[2] = 0xd801; utf16[3] = 0;
   r_assert_cmpptr ((utf8 = r_utf16_to_utf8_dup (utf16, 3, &res, &u8len, &utf16end)), ==, NULL);
   r_assert_cmpint (res, ==, R_UNICODE_INCOMPLETE_CODE_POINT);
   r_assert_cmpuint (u8len, ==, 2);
-  r_assert_cmpptr (utf16end, ==, utf16 + 3);
+  r_assert_cmpptr (utf16end, ==, utf16 + 2);
 
   /* Invalid UTF-16, missing high surrogate */
   utf16[0] = 0x79; utf16[1] = 0x7A; utf16[2] = 0xdc01; utf16[3] = 0;
@@ -890,5 +892,269 @@ RTEST (runicode, utf8_codepoint_out_of_range_to_utf32, RTEST_FAST)
         (const rchar *)src, 4, &n, &endptr),
       ==, R_UNICODE_INVALID_CODE_POINT);
   r_assert_cmpuint (n, ==, 0);
+}
+RTEST_END;
+
+/* ---- UTF-32 BOM stripping ------------------------------------------
+ * UTF-8 ↔ UTF-16 BOM behaviour is covered by the legacy
+ * `utf*_bom` tests above. The new UTF-32 paths strip a leading
+ * 0xFEFF code point from any input where it could occur. */
+
+RTEST (runicode, utf8_bom_to_utf32, RTEST_FAST)
+{
+  static const ruint8 src[] = { 0xef, 0xbb, 0xbf, 'a', 'b', 'c' };
+  runichar4 dst[8];
+  rchar * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf32 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)src, sizeof (src), &n, &endptr),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 3);
+  r_assert_cmpuint (dst[0], ==, 'a');
+}
+RTEST_END;
+
+RTEST (runicode, utf16_bom_to_utf32, RTEST_FAST)
+{
+  runichar2 src[] = { 0xFEFF, 'a', 'b', 'c' };
+  runichar4 dst[8];
+  runichar2 * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf16_to_utf32 (dst, R_N_ELEMENTS (dst),
+        src, R_N_ELEMENTS (src), &n, &endptr),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 3);
+  r_assert_cmpuint (dst[0], ==, 'a');
+}
+RTEST_END;
+
+RTEST (runicode, utf32_bom_to_utf8, RTEST_FAST)
+{
+  runichar4 src[] = { 0xFEFF, 'a', 'b', 'c' };
+  runichar4 * endptr;
+  rchar dst[16];
+  rsize n;
+
+  r_assert_cmpint (r_utf32_to_utf8 (dst, sizeof (dst),
+        src, R_N_ELEMENTS (src), &n, &endptr),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 3);
+  r_assert_cmpstr (dst, ==, "abc");
+}
+RTEST_END;
+
+RTEST (runicode, utf32_bom_to_utf16, RTEST_FAST)
+{
+  runichar4 src[] = { 0xFEFF, 'a', 'b', 'c' };
+  runichar4 * endptr;
+  runichar2 dst[8];
+  rsize n;
+
+  r_assert_cmpint (r_utf32_to_utf16 (dst, R_N_ELEMENTS (dst),
+        src, R_N_ELEMENTS (src), &n, &endptr),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 3);
+  r_assert_cmpuint (dst[0], ==, 'a');
+}
+RTEST_END;
+
+/* ---- Streaming resume via srcendptr --------------------------------
+ * `R_UNICODE_INCOMPLETE_CODE_POINT` is the explicit signal that the
+ * source ended mid-codepoint and the caller should resume from
+ * `srcendptr` once more bytes arrive. Verify that a concatenated
+ * (first-chunk-truncated, then-rest) pass produces the same result
+ * as a single-shot conversion. */
+
+RTEST (runicode, utf8_streaming_resume_to_utf16, RTEST_FAST)
+{
+  /* "α" = U+03B1 = 0xCE 0xB1 (2-byte UTF-8). Feed just 0xCE first. */
+  static const ruint8 chunk1[] = { 'a', 0xce };           /* 'a' + half α */
+  static const ruint8 chunk2[] = { 0xb1, 'b' };            /* tail of α + 'b' */
+  runichar2 dst[8];
+  rchar * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf16 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)chunk1, sizeof (chunk1), &n, &endptr),
+      ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint (dst[0], ==, 'a');
+  /* srcendptr points at the start of the incomplete sequence (0xCE). */
+  r_assert_cmpptr (endptr, ==, (rchar *)chunk1 + 1);
+
+  /* Concatenate the unconsumed tail with chunk2 and convert again. */
+  {
+    ruint8 joined[8];
+    runichar2 dst2[8];
+    rchar * endptr2;
+    rsize joined_len = sizeof (chunk1) - (rsize)(endptr - (rchar *)chunk1);
+
+    r_memcpy (joined, endptr, joined_len);
+    r_memcpy (joined + joined_len, chunk2, sizeof (chunk2));
+    r_assert_cmpint (r_utf8_to_utf16 (dst2, R_N_ELEMENTS (dst2),
+          (const rchar *)joined, joined_len + sizeof (chunk2),
+          &n, &endptr2), ==, R_UNICODE_OK);
+    r_assert_cmpuint (n, ==, 2);
+    r_assert_cmpuint (dst2[0], ==, 0x3B1);
+    r_assert_cmpuint (dst2[1], ==, 'b');
+  }
+}
+RTEST_END;
+
+RTEST (runicode, utf8_streaming_resume_to_utf32, RTEST_FAST)
+{
+  /* "𐀀" = U+10000 = F0 90 80 80 (4-byte UTF-8). Truncate after 2. */
+  static const ruint8 chunk1[] = { 'x', 0xf0, 0x90 };
+  static const ruint8 chunk2[] = { 0x80, 0x80, 'y' };
+  runichar4 dst[8];
+  rchar * endptr;
+  rsize n;
+  ruint8 joined[8];
+  runichar4 dst2[8];
+  rchar * endptr2;
+  rsize joined_len;
+
+  r_assert_cmpint (r_utf8_to_utf32 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)chunk1, sizeof (chunk1), &n, &endptr),
+      ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint (dst[0], ==, 'x');
+  r_assert_cmpptr (endptr, ==, (rchar *)chunk1 + 1);
+
+  joined_len = sizeof (chunk1) - (rsize)(endptr - (rchar *)chunk1);
+  r_memcpy (joined, endptr, joined_len);
+  r_memcpy (joined + joined_len, chunk2, sizeof (chunk2));
+  r_assert_cmpint (r_utf8_to_utf32 (dst2, R_N_ELEMENTS (dst2),
+        (const rchar *)joined, joined_len + sizeof (chunk2),
+        &n, &endptr2), ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 2);
+  r_assert_cmpuint (dst2[0], ==, 0x10000);
+  r_assert_cmpuint (dst2[1], ==, 'y');
+}
+RTEST_END;
+
+RTEST (runicode, utf16_streaming_resume_to_utf8, RTEST_FAST)
+{
+  /* Surrogate pair for U+10000 split across chunks. */
+  runichar2 chunk1[] = { 'x', 0xD800 };
+  runichar2 chunk2[] = { 0xDC00, 'y' };
+  rchar dst[16];
+  runichar2 * endptr;
+  rsize n;
+  runichar2 joined[8];
+  rchar dst2[16];
+  runichar2 * endptr2;
+  rsize joined_len;
+
+  r_assert_cmpint (r_utf16_to_utf8 (dst, sizeof (dst),
+        chunk1, R_N_ELEMENTS (chunk1), &n, &endptr),
+      ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint ((ruint8)dst[0], ==, 'x');
+
+  joined_len = R_N_ELEMENTS (chunk1) - (rsize)(endptr - chunk1);
+  r_memcpy (joined, endptr, joined_len * sizeof (runichar2));
+  r_memcpy (joined + joined_len, chunk2, sizeof (chunk2));
+  r_assert_cmpint (r_utf16_to_utf8 (dst2, sizeof (dst2),
+        joined, joined_len + R_N_ELEMENTS (chunk2), &n, &endptr2),
+      ==, R_UNICODE_OK);
+  /* "𐀀" + "y" = 4 + 1 UTF-8 bytes. */
+  r_assert_cmpuint (n, ==, 5);
+  r_assert_cmpmem (dst2, ==, "\xF0\x90\x80\x80y", 5);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_streaming_resume_to_utf32, RTEST_FAST)
+{
+  runichar2 chunk1[] = { 'x', 0xD800 };
+  runichar2 chunk2[] = { 0xDC00, 'y' };
+  runichar4 dst[8];
+  runichar2 * endptr;
+  rsize n;
+  runichar2 joined[8];
+  runichar4 dst2[8];
+  runichar2 * endptr2;
+  rsize joined_len;
+
+  r_assert_cmpint (r_utf16_to_utf32 (dst, R_N_ELEMENTS (dst),
+        chunk1, R_N_ELEMENTS (chunk1), &n, &endptr),
+      ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint (dst[0], ==, 'x');
+
+  joined_len = R_N_ELEMENTS (chunk1) - (rsize)(endptr - chunk1);
+  r_memcpy (joined, endptr, joined_len * sizeof (runichar2));
+  r_memcpy (joined + joined_len, chunk2, sizeof (chunk2));
+  r_assert_cmpint (r_utf16_to_utf32 (dst2, R_N_ELEMENTS (dst2),
+        joined, joined_len + R_N_ELEMENTS (chunk2), &n, &endptr2),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 2);
+  r_assert_cmpuint (dst2[0], ==, 0x10000);
+  r_assert_cmpuint (dst2[1], ==, 'y');
+}
+RTEST_END;
+
+/* ---- NULL out-pointer robustness -----------------------------------
+ * The impl docstrings say `dstoutsize` and `srcendptr` are optional.
+ * Confirm that passing NULL for either works and the conversion
+ * still produces correct output. */
+
+RTEST (runicode, null_out_params_utf8_to_utf16, RTEST_FAST)
+{
+  runichar2 dst[8];
+  r_assert_cmpint (r_utf8_to_utf16 (dst, R_N_ELEMENTS (dst), "abc", 3,
+        NULL, NULL), ==, R_UNICODE_OK);
+  r_assert_cmpuint (dst[0], ==, 'a');
+}
+RTEST_END;
+
+RTEST (runicode, null_out_params_utf16_to_utf8, RTEST_FAST)
+{
+  runichar2 src[] = { 'a', 'b', 'c' };
+  rchar dst[8];
+  r_assert_cmpint (r_utf16_to_utf8 (dst, sizeof (dst), src, 3,
+        NULL, NULL), ==, R_UNICODE_OK);
+  r_assert_cmpstr (dst, ==, "abc");
+}
+RTEST_END;
+
+RTEST (runicode, null_out_params_utf8_to_utf32, RTEST_FAST)
+{
+  runichar4 dst[8];
+  r_assert_cmpint (r_utf8_to_utf32 (dst, R_N_ELEMENTS (dst), "abc", 3,
+        NULL, NULL), ==, R_UNICODE_OK);
+  r_assert_cmpuint (dst[0], ==, 'a');
+}
+RTEST_END;
+
+RTEST (runicode, null_out_params_utf32_to_utf8, RTEST_FAST)
+{
+  runichar4 src[] = { 'a', 'b', 'c' };
+  rchar dst[8];
+  r_assert_cmpint (r_utf32_to_utf8 (dst, sizeof (dst), src, 3,
+        NULL, NULL), ==, R_UNICODE_OK);
+  r_assert_cmpstr (dst, ==, "abc");
+}
+RTEST_END;
+
+RTEST (runicode, null_out_params_utf16_to_utf32, RTEST_FAST)
+{
+  runichar2 src[] = { 'a', 'b', 'c' };
+  runichar4 dst[8];
+  r_assert_cmpint (r_utf16_to_utf32 (dst, R_N_ELEMENTS (dst), src, 3,
+        NULL, NULL), ==, R_UNICODE_OK);
+  r_assert_cmpuint (dst[0], ==, 'a');
+}
+RTEST_END;
+
+RTEST (runicode, null_out_params_utf32_to_utf16, RTEST_FAST)
+{
+  runichar4 src[] = { 'a', 'b', 'c' };
+  runichar2 dst[8];
+  r_assert_cmpint (r_utf32_to_utf16 (dst, R_N_ELEMENTS (dst), src, 3,
+        NULL, NULL), ==, R_UNICODE_OK);
+  r_assert_cmpuint (dst[0], ==, 'a');
 }
 RTEST_END;
