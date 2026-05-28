@@ -28,7 +28,7 @@
 #define RMACHO32_IDX  0
 #define RMACHO64_IDX  1
 
-struct _RMachoParser {
+struct RMachoParser {
   RRef ref;
   RMemFile * file;
   rpointer mem;

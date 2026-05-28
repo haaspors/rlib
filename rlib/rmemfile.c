@@ -35,7 +35,7 @@
 #include <unistd.h>
 #endif
 
-struct _RMemFile {
+struct RMemFile {
   RRef ref;
   rpointer mem;
   rsize size;

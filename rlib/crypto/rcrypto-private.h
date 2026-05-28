@@ -52,7 +52,7 @@ typedef struct {
   RCryptoKeyExportAsn1 export;
 } RCryptoAlgoInfo;
 
-struct _RCryptoKey {
+struct RCryptoKey {
   RRef ref;
   RCryptoKeyType type;
   ruint bits;
@@ -60,7 +60,7 @@ struct _RCryptoKey {
   const RCryptoAlgoInfo * algo;
 };
 
-struct _RCryptoCert {
+struct RCryptoCert {
   RRef ref;
   RCryptoCertType type;
   const rchar * strtype;

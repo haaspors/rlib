@@ -25,7 +25,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rmemfile.h>
 
-struct _RJsonParser {
+struct RJsonParser {
   RRef ref;
 
   RMemMapInfo info;

@@ -28,7 +28,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RPeParser RPeParser;
+typedef struct RPeParser RPeParser;
 
 R_API RPeParser * r_pe_parser_new (const rchar * filename);
 R_API RPeParser * r_pe_parser_new_from_handle (RIOHandle handle);

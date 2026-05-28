@@ -66,7 +66,7 @@ static RSList * g__r_tss_win32_dtors = NULL;
 
 static RTss g__r_thread_self = R_TSS_INIT ((RDestroyNotify)r_thread_unref);
 
-struct _RThread
+struct RThread
 {
   RRef ref;
   ruint thread_id;

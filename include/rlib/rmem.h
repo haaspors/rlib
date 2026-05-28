@@ -455,7 +455,7 @@ typedef enum {
  * pattern string for the token's text; @c chunk locates the matching
  * bytes inside the haystack once the scan succeeds.
  */
-typedef struct _RMemScanToken {
+typedef struct RMemScanToken {
   RMemTokenType type;               /**< Token class. */
   const rchar * pattern;            /**< Borrowed pointer into the original pattern string. */
   RMemChunk chunk;                  /**< Matched bytes inside the haystack. */
@@ -472,7 +472,7 @@ typedef struct _RMemScanToken {
  * @c ptr / @c end span the full match inside the haystack (closed-
  * open interval).
  */
-typedef struct _RMemScanResult {
+typedef struct RMemScanResult {
   rpointer ptr;                     /**< First byte of the overall match. */
   rpointer end;                     /**< One past the last byte of the overall match. */
   rsize tokens;                     /**< Number of entries in @c token[]. */

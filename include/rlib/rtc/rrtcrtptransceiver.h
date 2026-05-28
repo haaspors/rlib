@@ -33,7 +33,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RRtcRtpTransceiver RRtcRtpTransceiver;
+typedef struct RRtcRtpTransceiver RRtcRtpTransceiver;
 
 #define r_rtc_rtp_transceiver_ref     r_ref_ref
 #define r_rtc_rtp_transceiver_unref   r_ref_unref

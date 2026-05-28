@@ -30,7 +30,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _REvResolve REvResolve;
+typedef struct REvResolve REvResolve;
 typedef void (*REvResolveFunc) (rpointer data, RResolvedAddr * addr, RResolveResult res);
 
 R_API REvResolve * r_ev_resolve_addr_new (const rchar * host, const rchar * service,

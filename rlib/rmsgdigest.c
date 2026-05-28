@@ -108,7 +108,7 @@ static rboolean r_sha512_get (const RMsgDigest * md, ruint8 * data, rsize size, 
  * sibling to the Merkle-Damgård digest sizes above. */
 #define R_SHAKE256_RATE         (1088 / 8)
 
-struct _RMsgDigest {
+struct RMsgDigest {
   RMsgDigestType type;
   rboolean is_final;
 

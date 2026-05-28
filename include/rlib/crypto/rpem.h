@@ -32,8 +32,8 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RPemParser RPemParser;
-typedef struct _RPemBlock RPemBlock;
+typedef struct RPemParser RPemParser;
+typedef struct RPemBlock RPemBlock;
 
 /* Convenience API */
 R_API RCryptoKey * r_pem_parse_key_from_data (const rchar * data, rssize size,

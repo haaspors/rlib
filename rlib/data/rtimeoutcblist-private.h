@@ -17,7 +17,7 @@
  */
 #include <rlib/data/rtimeoutcblist.h>
 
-struct _RToCB {
+struct RToCB {
   RRef ref;
   RTimeoutCBList * lst;
   RToCB * next;

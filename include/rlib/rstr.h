@@ -782,7 +782,7 @@ typedef enum {
 /**
  * @brief One token of a parsed pattern, paired with the matched span.
  */
-typedef struct _RStrMatchToken {
+typedef struct RStrMatchToken {
   RStrTokenType type;     /**< Kind of token this entry came from. */
   const rchar * pattern;  /**< Pointer into the original pattern at this token's start. */
   RStrChunk chunk;        /**< Span of the input that this token matched. */
@@ -794,7 +794,7 @@ typedef struct _RStrMatchToken {
  * Variable-length: the @c token array is a flexible member sized to
  * @c tokens entries. Allocated by the matcher; caller @c r_free's.
  */
-typedef struct _RStrMatchResult {
+typedef struct RStrMatchResult {
   rchar * ptr;            /**< Pointer into the input where the match starts. */
   rchar * end;            /**< Pointer one past the last matched byte. */
   rsize tokens;           /**< Number of entries in @c token. */

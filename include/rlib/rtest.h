@@ -102,7 +102,7 @@ R_BEGIN_DECLS
 #endif
 
 /** @brief Opaque descriptor for a registered test. */
-typedef struct _RTest RTest;
+typedef struct RTest RTest;
 /**
  * @brief Test body signature.
  *
@@ -150,7 +150,7 @@ typedef enum {
 /** @brief Wire size of @c RTest; used by the registration linker section. */
 #define RLIB_SIZEOF_RTEST   128
 
-struct R_ATTR_ALIGN (RLIB_SIZEOF_RTEST) _RTest {
+struct R_ATTR_ALIGN (RLIB_SIZEOF_RTEST) RTest {
     ruint32 magic;
     ruint32 skip;
     const rchar * suite;

@@ -28,7 +28,7 @@
 typedef RClockTime (*RClockGetTimeFunc) (const RClock * clock);
 typedef RClockTime (*RClockWaitFunc) (RClock * clock, RClockTime ts);
 
-struct _RClock {
+struct RClock {
   RRef ref;
   RClockGetTimeFunc get_time;
   RClockWaitFunc wait;
@@ -48,7 +48,7 @@ typedef struct {
 #define R_CLOCK_IS_SYSTEM_CLOCK(clock) ((clock)->get_time == r_time_get_ts_monotonic)
 #define R_CLOCK_IS_TEST_CLOCK(clock) ((clock)->get_time == r_test_clock_get_time)
 
-struct _RClockEntry {
+struct RClockEntry {
   RToCB tocb;
 };
 

@@ -30,8 +30,8 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RDirTree RDirTree;
-typedef struct _RDirTreeNode RDirTreeNode;
+typedef struct RDirTree RDirTree;
+typedef struct RDirTreeNode RDirTreeNode;
 
 R_API RDirTree * r_dir_tree_new (void) R_ATTR_MALLOC;
 #define r_dir_tree_ref    r_ref_ref

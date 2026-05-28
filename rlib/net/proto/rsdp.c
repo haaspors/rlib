@@ -48,7 +48,7 @@ typedef struct {
   rchar data[0];
 } RSdpAttrib;
 
-struct _RSdpMedia {
+struct RSdpMedia {
   RRef ref;
 
   rchar * type;
@@ -65,7 +65,7 @@ struct _RSdpMedia {
   RPtrArray * attrib;
 };
 
-struct _RSdpMsg {
+struct RSdpMsg {
   RRef ref;
 
   rboolean jsep;

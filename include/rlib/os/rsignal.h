@@ -28,7 +28,7 @@
 R_BEGIN_DECLS
 
 typedef void (*RSignalFunc) (int sig);
-typedef struct _RSigAlrmTimer RSigAlrmTimer;
+typedef struct RSigAlrmTimer RSigAlrmTimer;
 
 R_API RSigAlrmTimer * r_sig_alrm_timer_new_oneshot (RClockTime timeout,
     RSignalFunc func);

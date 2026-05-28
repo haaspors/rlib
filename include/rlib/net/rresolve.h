@@ -57,8 +57,8 @@ typedef struct {
   RSocketProtocol protocol;
 } RResolveHints;
 
-typedef struct _RResolvedAddr RResolvedAddr;
-struct _RResolvedAddr {
+typedef struct RResolvedAddr RResolvedAddr;
+struct RResolvedAddr {
   RResolveHints hints;
   RSocketAddress * addr;
   RResolvedAddr * next;

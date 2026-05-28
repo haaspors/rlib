@@ -118,7 +118,7 @@ R_API const rchar * r_msg_digest_type_string (RMsgDigestType type);
 R_API RMsgDigestType r_msg_digest_type_from_str (const rchar * str, rssize size);
 
 /** @brief Opaque message-digest state handle. */
-typedef struct _RMsgDigest RMsgDigest;
+typedef struct RMsgDigest RMsgDigest;
 
 /**
  * @brief Allocate a fresh digest for the given algorithm.

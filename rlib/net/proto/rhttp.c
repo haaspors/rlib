@@ -113,7 +113,7 @@ static const rchar * r_http_status_phrase[][99] = {
   },
 };
 
-struct _RHttpMsg {
+struct RHttpMsg {
   RRef ref;
 
   RBuffer * start;
@@ -122,14 +122,14 @@ struct _RHttpMsg {
 };
 
 
-struct _RHttpRequest {
+struct RHttpRequest {
   RHttpMsg msg;
 
   RHttpMethod method;
   RUri * uri;
 };
 
-struct _RHttpResponse {
+struct RHttpResponse {
   RHttpMsg msg;
 
   RHttpStatus status;

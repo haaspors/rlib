@@ -38,7 +38,7 @@ typedef struct {
   RRtcBufferCb      rtcp;  /* Optional: incoming RTCP about our sent stream */
 } RRtcRtpSenderCallbacks;
 
-typedef struct _RRtcRtpSender RRtcRtpSender;
+typedef struct RRtcRtpSender RRtcRtpSender;
 
 #define r_rtc_rtp_sender_ref        r_ref_ref
 #define r_rtc_rtp_sender_unref      r_ref_unref

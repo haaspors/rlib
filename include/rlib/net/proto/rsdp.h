@@ -82,11 +82,11 @@ typedef enum {
 } RSdpBandwidthModifier;
 
 
-typedef struct _RSdpBuf RSdpBuf; /* Fwd decl because of RSdpMsg API */
+typedef struct RSdpBuf RSdpBuf; /* Fwd decl because of RSdpMsg API */
 
 /* RSdpMsg API */
-typedef struct _RSdpMsg RSdpMsg;
-typedef struct _RSdpMedia RSdpMedia;
+typedef struct RSdpMsg RSdpMsg;
+typedef struct RSdpMedia RSdpMedia;
 
 R_API RSdpMsg * r_sdp_msg_new (void) R_ATTR_MALLOC;
 R_API RSdpMsg * r_sdp_msg_new_jsep (ruint64 sessid, ruint sessver) R_ATTR_MALLOC;
@@ -338,7 +338,7 @@ R_API RSdpResult r_sdp_media_buf_ssrc_group_attrib (const RSdpMediaBuf * media,
 R_API RSdpResult r_sdp_media_buf_extmap_attrib (const RSdpMediaBuf * media,
     ruint16 * id, RStrChunk * attrib, rsize * start);
 
-struct _RSdpBuf {
+struct RSdpBuf {
   RMemMapInfo info;
 
   RStrChunk ver;

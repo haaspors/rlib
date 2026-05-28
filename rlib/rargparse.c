@@ -36,7 +36,7 @@
 
 /* TODO: Add API to customize options usage string + (get|set)ters appname++ */
 
-struct _RArgParser
+struct RArgParser
 {
   RRef ref;
 
@@ -57,7 +57,7 @@ r_arg_parser_parse_internal (RArgParser * parser, RArgParseFlags flags,
     const rchar * appname, int * argc, const rchar *** argv,
     RArgParseResult * res);
 
-struct _RArgParseCtx
+struct RArgParseCtx
 {
   RRef ref;
 
@@ -116,7 +116,7 @@ r_arg_parse_ctx_new (RArgParser * parser, RArgParseFlags flags,
   return ret;
 }
 
-struct _RArgOptionGroup
+struct RArgOptionGroup
 {
   RRef ref;
 

@@ -53,7 +53,7 @@ typedef struct {
   ruint16 msgseq;
 } RTLSConnectionState;
 
-struct _RTLSServer {
+struct RTLSServer {
   RRef ref;
   RTLSServerState state;
 

@@ -183,8 +183,8 @@ typedef struct {
 } RRTCPBuffer;
 #define R_RTCP_BUFFER_INIT   { NULL, R_MEM_MAP_INFO_INIT }
 
-typedef struct _RRTCPPacket RRTCPPacket;
-typedef struct _RRTCPSDESChunk RRTCPSDESChunk;
+typedef struct RRTCPPacket RRTCPPacket;
+typedef struct RRTCPSDESChunk RRTCPSDESChunk;
 
 typedef struct {
   ruint32 ssrc;

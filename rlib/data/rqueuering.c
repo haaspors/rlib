@@ -19,7 +19,7 @@
 #include "config.h"
 #include <rlib/data/rqueue.h>
 
-struct _RQueueRing {
+struct RQueueRing {
   RRef ref;
 
   rpointer * buffer;

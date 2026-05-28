@@ -85,7 +85,7 @@ typedef struct {
   /* FIXME: extended header crypto */
 } RSRTPStream;
 
-struct _RSRTPCtx {
+struct RSRTPCtx {
   RRef ref;
 
   RList * crypto_filter;

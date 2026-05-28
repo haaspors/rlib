@@ -31,7 +31,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _REvUDP REvUDP;
+typedef struct REvUDP REvUDP;
 typedef RBuffer * (*REvUDPBufferAllocFunc) (rpointer data, REvUDP * evudp);
 typedef void (*REvUDPBufferFunc) (rpointer data, RBuffer * buf, RSocketAddress * addr, REvUDP * evudp);
 

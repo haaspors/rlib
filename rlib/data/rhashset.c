@@ -28,7 +28,7 @@ typedef struct {
   rsize hash;
 } RHashSetBucket;
 
-struct _RHashSet {
+struct RHashSet {
   RRef ref;
 
   rsize size;

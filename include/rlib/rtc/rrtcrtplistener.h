@@ -32,7 +32,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RRtcRtpListener RRtcRtpListener;
+typedef struct RRtcRtpListener RRtcRtpListener;
 
 #define r_rtc_rtp_listener_ref      r_ref_ref
 #define r_rtc_rtp_listener_unref    r_ref_unref

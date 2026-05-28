@@ -51,7 +51,7 @@ R_LOG_CATEGORY_DEFINE_EXTERN (rtccat);
 typedef RRtcError (*RRtcBufferSend) (rpointer rtc, RBuffer * buf);
 typedef RRtcError (*RRtcStart) (rpointer rtc, REvLoop * loop);
 
-struct _RRtcSession {
+struct RRtcSession {
   RRef ref;
   rchar * id;
 
@@ -67,7 +67,7 @@ struct _RRtcSession {
 };
 
 
-struct _RRtcRtpTransceiver {
+struct RRtcRtpTransceiver {
   RRef ref;
 
   RRtcRtpReceiver * recv;
@@ -79,7 +79,7 @@ struct _RRtcRtpTransceiver {
 R_API_HIDDEN RRtcRtpTransceiver * r_rtc_rtp_transceiver_new (RPrng * prng) R_ATTR_MALLOC;
 
 
-struct _RRtcRtpReceiver {
+struct RRtcRtpReceiver {
   RRef ref;
   rchar * mid;
 
@@ -101,7 +101,7 @@ R_API_HIDDEN RRtcRtpReceiver * r_rtc_rtp_receiver_new (RPrng * prng,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 
 
-struct _RRtcRtpSender {
+struct RRtcRtpSender {
   RRef ref;
   rchar * mid;
 
@@ -122,7 +122,7 @@ R_API_HIDDEN RRtcRtpSender * r_rtc_rtp_sender_new (RPrng * prng,
     const RRtcRtpSenderCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 
-struct _RRtcRtpListener {
+struct RRtcRtpListener {
   RRef ref;
 
   RPtrArray * recv;
@@ -145,7 +145,7 @@ R_API_HIDDEN RRtcError r_rtc_rtp_listener_notify_close (RRtcRtpListener * l,
     RRtcCryptoTransport * t);
 
 
-struct _RRtcCryptoTransport {
+struct RRtcCryptoTransport {
   RRef ref;
 
   RRtcRtpListener * listener;
@@ -190,7 +190,7 @@ R_API_HIDDEN RRtcError r_rtc_crypto_transport_send (RRtcCryptoTransport * crypto
   r_rtc_rtp_listener_update_sender ((t)->listener, s, p)
 
 
-struct _RRtcIceCandidate {
+struct RRtcIceCandidate {
   RRef ref;
 
   rchar * foundation;
@@ -207,7 +207,7 @@ struct _RRtcIceCandidate {
 };
 
 
-struct _RRtcIceTransport {
+struct RRtcIceTransport {
   RRef ref;
 
   RRtcEventCb     ready;

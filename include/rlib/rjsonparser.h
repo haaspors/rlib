@@ -25,7 +25,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RJsonParser RJsonParser;
+typedef struct RJsonParser RJsonParser;
 
 R_API RJsonParser * r_json_parser_new (rconstpointer mem, rsize size);
 R_API RJsonParser * r_json_parser_new_file (const rchar * file);

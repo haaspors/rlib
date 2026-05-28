@@ -516,7 +516,7 @@ r_sys_nodeset_for_cpuset (RBitset * nodeset, const RBitset * cpuset)
 
 
 
-struct _RSysTopology {
+struct RSysTopology {
   RRef ref;
 
 #if defined (HAVE_SYSCTLBYNAME)
@@ -528,7 +528,7 @@ struct _RSysTopology {
   rsize nodecount;
   RSysNode ** nodes;
 };
-struct _RSysNode {
+struct RSysNode {
   RRef ref;
 
   rsize idx;
@@ -538,7 +538,7 @@ struct _RSysNode {
   rsize cpucount;
   RSysCpu ** cpus;
 };
-struct _RSysCpu {
+struct RSysCpu {
   RRef ref;
   rsize idx;
 

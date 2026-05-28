@@ -37,7 +37,7 @@ typedef enum {
   R_CRYPTO_CERT_OPENPGP,
 } RCryptoCertType;
 
-typedef struct _RCryptoCert RCryptoCert;
+typedef struct RCryptoCert RCryptoCert;
 
 #define r_crypto_cert_ref r_ref_ref
 #define r_crypto_cert_unref r_ref_unref

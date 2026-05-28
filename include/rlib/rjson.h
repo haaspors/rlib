@@ -79,13 +79,13 @@ R_API RBuffer * r_json_value_to_buffer (const RJsonValue * value,
 
 
 /* RJsonValue API */
-typedef struct _RJsonObject RJsonObject;
-typedef struct _RJsonArray  RJsonArray;
-typedef struct _RJsonNumber RJsonNumber;
-typedef struct _RJsonString RJsonString;
-typedef struct _RJsonTrue   RJsonTrue;
-typedef struct _RJsonFalse  RJsonFalse;
-typedef struct _RJsonNull   RJsonNull;
+typedef struct RJsonObject RJsonObject;
+typedef struct RJsonArray  RJsonArray;
+typedef struct RJsonNumber RJsonNumber;
+typedef struct RJsonString RJsonString;
+typedef struct RJsonTrue   RJsonTrue;
+typedef struct RJsonFalse  RJsonFalse;
+typedef struct RJsonNull   RJsonNull;
 
 R_API RJsonValue * r_json_object_new (void);
 R_API RJsonValue * r_json_array_new (void);

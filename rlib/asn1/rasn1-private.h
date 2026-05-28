@@ -34,7 +34,7 @@ R_BEGIN_DECLS
 
 typedef RAsn1DecoderStatus (*RAsn1BinDecoderOperation) (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 
-struct _RAsn1BinDecoder
+struct RAsn1BinDecoder
 {
   RRef ref;
 
@@ -57,7 +57,7 @@ R_API_HIDDEN RAsn1DecoderStatus r_asn1_der_decoder_next (RAsn1BinDecoder * dec, 
 R_API_HIDDEN RAsn1DecoderStatus r_asn1_der_decoder_into (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 R_API_HIDDEN RAsn1DecoderStatus r_asn1_der_decoder_out (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv);
 
-struct _RAsn1BinEncoder
+struct RAsn1BinEncoder
 {
   RRef ref;
   RAsn1EncodingRules enc;

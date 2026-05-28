@@ -41,8 +41,8 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RRtcSession RRtcSession;
-typedef struct _RRtcTransportController RRtcTransportController;
+typedef struct RRtcSession RRtcSession;
+typedef struct RRtcTransportController RRtcTransportController;
 
 R_API RRtcSession * r_rtc_session_new_full (const rchar * id, rssize size,
     RPrng * prng) R_ATTR_MALLOC;

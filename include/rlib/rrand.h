@@ -34,7 +34,7 @@ R_API ruint32 r_rand_entropy_u32 (void);
 #define r_rand_std_srand(seed)    srand (seed)
 #define r_rand_std_rand()         rand ()
 
-typedef struct _RPrng RPrng;
+typedef struct RPrng RPrng;
 
 #define r_rand_prng_new           r_prng_new_kiss
 #define r_prng_ref                r_ref_ref

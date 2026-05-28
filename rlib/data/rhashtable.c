@@ -29,7 +29,7 @@ typedef struct {
   rsize hash;
 } RHashTableBucket;
 
-struct _RHashTable {
+struct RHashTable {
   RRef ref;
 
   rsize size;

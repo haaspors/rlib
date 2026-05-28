@@ -30,7 +30,7 @@ R_BEGIN_DECLS
 
 #define R_PTR_ARRAY_INVALID_IDX               RSIZE_MAX
 
-typedef struct _RPtrArray RPtrArray;
+typedef struct RPtrArray RPtrArray;
 
 /* Create using stack/static/embedded initialization */
 #define R_PTR_ARRAY_INIT                      { R_REF_STATIC_INIT (NULL), 0, 0, NULL }
@@ -96,7 +96,7 @@ R_API rsize r_ptr_array_foreach_range (RPtrArray * array, rsize idx, rssize size
 
 R_API void r_ptr_array_sort (RPtrArray * array, RCmpFunc cmp);
 
-struct _RPtrArray {
+struct RPtrArray {
   RRef ref;
 
   rsize nalloc, nsize;

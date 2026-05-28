@@ -32,7 +32,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RHttpServer RHttpServer;
+typedef struct RHttpServer RHttpServer;
 typedef RHttpResponse * (*RHttpRequestHandler) (rpointer data,
     RHttpRequest * req, RSocketAddress * addr, RHttpServer * server);
 typedef void (*RHttpResponseReady) (rpointer data,

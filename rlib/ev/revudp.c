@@ -41,7 +41,7 @@ typedef struct {
   } R_STMT_END
 
 
-struct _REvUDP {
+struct REvUDP {
   REvIO evio;
 
   RSocketFamily family;

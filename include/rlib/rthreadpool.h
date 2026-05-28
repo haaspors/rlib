@@ -31,7 +31,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RThreadPool RThreadPool;
+typedef struct RThreadPool RThreadPool;
 typedef rpointer (*RThreadPoolFunc) (rpointer common, rpointer specific);
 
 R_API RThreadPool * r_thread_pool_new (const rchar * prefix,

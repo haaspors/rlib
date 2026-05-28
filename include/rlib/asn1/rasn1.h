@@ -121,7 +121,7 @@ typedef enum {
 #define R_ASN1_BIN_TLV_IS_ID(tlv, tag)(*(tlv)->start == (tag))
 #define R_ASN1_BIN_TLV_ID_IS_TAG(tlv, tag)  (R_ASN1_BIN_TLV_ID_TAG (tlv) == (tag))
 
-typedef struct _RAsn1BinTLV {
+typedef struct RAsn1BinTLV {
   const ruint8 *  start;  /* Type   (first octet of tlv) */
   rsize           len;    /* Length (parsed) */
   const ruint8 *  value;  /* Value  (pointer to first value octet) */
@@ -158,7 +158,7 @@ typedef enum {
   R_ASN1_ENCODING_RULES_COUNT
 } RAsn1EncodingRules;
 
-typedef struct _RAsn1BinDecoder RAsn1BinDecoder;
+typedef struct RAsn1BinDecoder RAsn1BinDecoder;
 
 R_API RAsn1BinDecoder * r_asn1_bin_decoder_new_file (RAsn1EncodingRules enc,
     const rchar * file);
@@ -181,7 +181,7 @@ R_API RAsn1DecoderStatus r_asn1_bin_tlv_parse_distinguished_name (RAsn1BinDecode
     /*RFunc primary, RFunc start, RFunc end);*/
 
 
-typedef struct _RAsn1BinEncoder RAsn1BinEncoder;
+typedef struct RAsn1BinEncoder RAsn1BinEncoder;
 
 R_API RAsn1BinEncoder * r_asn1_bin_encoder_new (RAsn1EncodingRules enc);
 #define r_asn1_bin_encoder_ref r_ref_ref

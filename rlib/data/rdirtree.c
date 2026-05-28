@@ -25,7 +25,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-struct _RDirTreeNode {
+struct RDirTreeNode {
   RDirTreeNode * parent;
 
   rsize chcount;
@@ -40,7 +40,7 @@ struct _RDirTreeNode {
   rchar name[0];   /* directory name */
 };
 
-struct _RDirTree {
+struct RDirTree {
   RRef ref;
 
   rsize nodes;

@@ -29,7 +29,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RHashSet RHashSet;
+typedef struct RHashSet RHashSet;
 
 #define r_hash_set_new(hash, equal) r_hash_set_new_full (hash, equal, NULL)
 R_API RHashSet * r_hash_set_new_full (RHashFunc hash, REqualFunc equal,

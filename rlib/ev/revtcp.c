@@ -41,7 +41,7 @@ typedef struct {
   } R_STMT_END
 
 
-struct _REvTCP {
+struct REvTCP {
   REvIO evio;
 
   RSocket * socket;

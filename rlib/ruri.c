@@ -113,7 +113,7 @@ typedef struct {
 } RUriComponent;
 #define r_uri_component_clear(seg, start) (seg)->ptr = (start), (seg)->size = 0
 
-struct _RUri {
+struct RUri {
   RRef ref;
 
   RUriComponent scheme;
