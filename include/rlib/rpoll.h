@@ -52,10 +52,27 @@
 
 R_BEGIN_DECLS
 
+/** @name Poll event flags
+ *
+ * Bits for @ref RPoll::events (requested) and @ref RPoll::revents
+ * (returned). Platform-mapped onto the host's @c POLL* constants in
+ * @c rlib/rconfig.h.
+ *  @{ */
+#ifdef RLIB_DOXYGEN
+/* Doxygen-only mirror; real values are host-resolved in rconfig.h. */
+#define R_IO_IN   0x001 /**< @brief Data available to read. */
+#define R_IO_OUT  0x004 /**< @brief Writable without blocking. */
+#define R_IO_PRI  0x002 /**< @brief Urgent / priority data available. */
+#define R_IO_ERR  0x008 /**< @brief Error condition (output only). */
+#define R_IO_HUP  0x010 /**< @brief Hang-up / peer closed (output only). */
+#define R_IO_NVAL 0x020 /**< @brief Invalid handle (output only). */
+#endif
+/** @} */
+
 /** @brief Single poll descriptor; mirrors @c struct @c pollfd. */
 typedef struct {
   RIOHandle handle;   /**< Handle to poll. */
-  rushort events;     /**< Requested events bitmask (@c POLL* constants). */
+  rushort events;     /**< Requested events bitmask (@c R_IO_* flags). */
   rushort revents;    /**< Returned events, filled by @ref r_poll. */
 } RPoll;
 

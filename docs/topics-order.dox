@@ -28,6 +28,7 @@
  */
 
 /** @defgroup r_types        Foundational types */
+/** @defgroup r_config       Build configuration and platform */
 /** @defgroup r_mem          Memory */
 /** @defgroup r_data         Data structures */
 /** @defgroup r_str          Strings */

@@ -231,6 +231,53 @@ typedef unsigned long  ruintmax; /**< @brief Widest unsigned integer the host su
 /** @} */
 
 /**
+ * @name Fixed-width integer printf macros and constants
+ *
+ * @c printf / @c scanf length modifiers and conversion specifiers for
+ * each width, plus literal-suffix helpers and the wide-type limits.
+ * These are emitted into @c rlib/rconfig.h with the host-correct
+ * spellings; use them as @c printf ("value=%" RINT64_FMT "\n", v).
+ * The values shown here are illustrative — the real ones are resolved
+ * per host at configure time.
+ * @{
+ */
+#ifdef RLIB_DOXYGEN
+/* Doxygen-only mirror; real definitions are host-resolved in rconfig.h. */
+#define RINT8_MODIFIER   "hh" /**< @brief @c printf length modifier for @ref rint8 / @ref ruint8. */
+#define RINT8_FMT        "hhi" /**< @brief @c printf conversion for @ref rint8. */
+#define RUINT8_FMT       "hhu" /**< @brief @c printf conversion for @ref ruint8. */
+#define RINT16_MODIFIER  "h"  /**< @brief @c printf length modifier for @ref rint16 / @ref ruint16. */
+#define RINT16_FMT       "hi" /**< @brief @c printf conversion for @ref rint16. */
+#define RUINT16_FMT      "hu" /**< @brief @c printf conversion for @ref ruint16. */
+#define RINT32_MODIFIER  ""   /**< @brief @c printf length modifier for @ref rint32 / @ref ruint32. */
+#define RINT32_FMT       "i"  /**< @brief @c printf conversion for @ref rint32. */
+#define RUINT32_FMT      "u"  /**< @brief @c printf conversion for @ref ruint32. */
+#define RINT64_MODIFIER  "ll" /**< @brief @c printf length modifier for @ref rint64 / @ref ruint64. */
+#define RINT64_FMT       "lli" /**< @brief @c printf conversion for @ref rint64. */
+#define RUINT64_FMT      "llu" /**< @brief @c printf conversion for @ref ruint64. */
+#define RINTMAX_MODIFIER "j"  /**< @brief @c printf length modifier for @ref rintmax / @ref ruintmax. */
+#define RINTMAX_FMT      "ji" /**< @brief @c printf conversion for @ref rintmax. */
+#define RUINTMAX_FMT     "ju" /**< @brief @c printf conversion for @ref ruintmax. */
+#define RSIZE_MODIFIER   "z"  /**< @brief @c printf length modifier for @ref rsize. */
+#define RSSIZE_MODIFIER  "z"  /**< @brief @c printf length modifier for @ref rssize. */
+#define RSIZE_FMT        "zu" /**< @brief @c printf conversion for @ref rsize. */
+#define RSSIZE_FMT       "zi" /**< @brief @c printf conversion for @ref rssize. */
+#define RINTPTR_MODIFIER "t"  /**< @brief @c printf length modifier for @ref rintptr / @ref ruintptr. */
+#define RINTPTR_FMT      "ti" /**< @brief @c printf conversion for @ref rintptr. */
+#define RUINTPTR_FMT     "tu" /**< @brief @c printf conversion for @ref ruintptr. */
+
+#define RINT64_CONSTANT(val)  val          /**< @brief Suffix an integer literal as a 64-bit signed (@ref rint64) constant. */
+#define RUINT64_CONSTANT(val) val          /**< @brief Suffix an integer literal as a 64-bit unsigned (@ref ruint64) constant. */
+#define RUINTMAX_MAX  ((ruintmax) -1)      /**< @brief Maximum value of @ref ruintmax. */
+#define RINTMAX_MIN   (-RINTMAX_MAX - 1)   /**< @brief Minimum value of @ref rintmax. */
+#define RINTMAX_MAX   ((rintmax) (RUINTMAX_MAX >> 1)) /**< @brief Maximum value of @ref rintmax. */
+#define RSIZE_MAX     ((rsize) -1)         /**< @brief Maximum value of @ref rsize. */
+#define RSSIZE_MIN    (-RSSIZE_MAX - 1)    /**< @brief Minimum value of @ref rssize. */
+#define RSSIZE_MAX    ((rssize) (RSIZE_MAX >> 1)) /**< @brief Maximum value of @ref rssize. */
+#endif
+/** @} */
+
+/**
  * @name Size and file-offset types
  *
  * @c rsize / @c rssize (unsigned and signed pointer-sized) are
@@ -385,6 +432,85 @@ typedef rpointer (*RFuncUniversalReturn) ();
 R_END_DECLS
 
 /** @} */ /* r_types group */
+
+/**
+ * @defgroup r_config Build configuration and platform
+ *
+ * @brief Compile-time feature, architecture, OS and ABI macros
+ * resolved at configure time and emitted into the build-generated
+ * @c rlib/rconfig.h.
+ *
+ * The @c R_OS_* / @c R_ARCH_* macros are defined only for the target
+ * being built (test with @c \#ifdef); the @c RLIB_HAVE_* flags report
+ * which optional subsystems were compiled in; the @c RLIB_SIZEOF_*
+ * macros give the host's type widths in bytes; and the @c R_AI_*
+ * macros mirror the platform's @c getaddrinfo hint flags.
+ *
+ * @{
+ */
+#ifdef RLIB_DOXYGEN
+/* Doxygen-only mirror; the real macros are host-resolved in rconfig.h.
+ * R_OS_* / R_ARCH_* are #mesondefine'd (present only for the target);
+ * shown here as plain defines so they appear in the docs. */
+
+/** @name Optional subsystems
+ *  Defined when the corresponding subsystem was compiled in.
+ *  @{ */
+#define RLIB_HAVE_THREADS  /**< @brief Threads, mutexes and TLS are available. */
+#define RLIB_HAVE_MODULES  /**< @brief Dynamic module loading is available. */
+#define RLIB_HAVE_SIGNALS  /**< @brief Signal timers are available. */
+#define RLIB_HAVE_FILES    /**< @brief File and filesystem APIs are available. */
+#define RLIB_HAVE_SOCKETS  /**< @brief Socket and networking APIs are available. */
+#define RLIB_HAVE_ALLOCA_H /**< @brief @c <alloca.h> is present on the host. */
+/** @} */
+
+/** @name Target architecture
+ *  Exactly one is defined, for the architecture being built.
+ *  @{ */
+#define R_ARCH_X86      /**< @brief Targeting 32-bit x86. */
+#define R_ARCH_X86_64   /**< @brief Targeting 64-bit x86-64. */
+#define R_ARCH_IA64     /**< @brief Targeting Itanium (IA-64). */
+#define R_ARCH_ARM      /**< @brief Targeting 32-bit ARM. */
+#define R_ARCH_THUMB    /**< @brief Targeting ARM Thumb. */
+#define R_ARCH_AARCH64  /**< @brief Targeting 64-bit ARM (AArch64). */
+#define R_ARCH_SPARC    /**< @brief Targeting SPARC. */
+#define R_ARCH_XTENSA   /**< @brief Targeting Xtensa. */
+/** @} */
+
+/** @name Target operating system
+ *  Defined for the OS being built; @c R_OS_UNIX also covers the
+ *  Unix-like family (Linux / BSD / Darwin).
+ *  @{ */
+#define R_OS_BARE_METAL /**< @brief Targeting a bare-metal / no-OS environment. */
+#define R_OS_WIN32      /**< @brief Targeting Windows. */
+#define R_OS_UNIX       /**< @brief Targeting a Unix-like OS. */
+#define R_OS_LINUX      /**< @brief Targeting Linux. */
+#define R_OS_BSD        /**< @brief Targeting a BSD. */
+#define R_OS_DARWIN     /**< @brief Targeting macOS / Darwin. */
+#define R_OS_RTEMS      /**< @brief Targeting RTEMS. */
+/** @} */
+
+/** @name Type sizes (bytes)
+ *  @{ */
+#define RLIB_SIZEOF_VOID_P 8 /**< @brief @c sizeof(void*) on the host. */
+#define RLIB_SIZEOF_INT    4 /**< @brief @c sizeof(int) on the host. */
+#define RLIB_SIZEOF_LONG   8 /**< @brief @c sizeof(long) on the host. */
+#define RLIB_SIZEOF_INTMAX 8 /**< @brief @c sizeof(rintmax) on the host. */
+#define RLIB_SIZEOF_SIZE_T 8 /**< @brief @c sizeof(rsize) on the host. */
+/** @} */
+
+/** @name getaddrinfo hint flags
+ *  Mirror the platform's @c AI_* constants for DNS resolution.
+ *  @{ */
+#define R_AI_PASSIVE      /**< @brief Address is intended for @c bind (passive socket). */
+#define R_AI_CANONNAME    /**< @brief Request the canonical host name. */
+#define R_AI_NUMERICHOST  /**< @brief Treat the host string as a numeric address only. */
+#define R_AI_V4MAPPED     /**< @brief Return IPv4-mapped IPv6 addresses if no IPv6 found. */
+#define R_AI_ALL          /**< @brief Return both IPv6 and IPv4-mapped addresses. */
+#define R_AI_ADDRCONFIG   /**< @brief Only return families configured on the host. */
+/** @} */
+#endif /* RLIB_DOXYGEN */
+/** @} */ /* r_config group */
 
 #include <rlib/types/rmemops.h>
 #include <rlib/types/rendianness.h>
