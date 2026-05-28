@@ -22,12 +22,23 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/**
+ * @file rlib/format/roid.h
+ * @ingroup r_asn1
+ * @brief ASN.1 object-identifier (OID) registry: constants for the
+ * standard X.500 / PKCS / OCSP / TLS OIDs plus binary OID
+ * comparison and name-from-OID lookup helpers.
+ */
+
 #include <rlib/rtypes.h>
 
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
 R_BEGIN_DECLS
+
+/** @addtogroup r_asn1
+ *  @{ */
 
 #define r_asn1_oid_bin_cmp_full(buf, bufsize, oid, oidsize) (bufsize == oidsize ?  \
     r_memcmp (buf, oid, bufsize) : ((int)bufsize - (int)oidsize))
@@ -292,6 +303,8 @@ R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
 #define R_ECDSA_OID_SHA256                      R_X9_62_OID_SIG"\x03\x02"
 #define R_ECDSA_OID_SHA384                      R_X9_62_OID_SIG"\x03\x03"
 #define R_ECDSA_OID_SHA512                      R_X9_62_OID_SIG"\x03\x04"
+
+/** @} */
 
 R_END_DECLS
 

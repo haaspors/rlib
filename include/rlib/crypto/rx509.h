@@ -52,7 +52,7 @@
 
 #include <rlib/rtypes.h>
 
-#include <rlib/asn1/rasn1.h>
+#include <rlib/format/rasn1.h>
 #include <rlib/crypto/rcert.h>
 
 R_BEGIN_DECLS

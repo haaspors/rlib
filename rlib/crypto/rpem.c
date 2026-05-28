@@ -26,7 +26,7 @@
 #include <rlib/crypto/rrsa.h>
 #include <rlib/crypto/rx509.h>
 
-#include <rlib/asn1/roid.h>
+#include <rlib/format/roid.h>
 
 #include <rlib/charset/rascii.h>
 

@@ -36,8 +36,10 @@
 #include <rlib/os/renv.h>
 #include <rlib/rio.h>
 #include <rlib/net/riosocket.h>
-#include <rlib/rjson.h>
-#include <rlib/rjsonparser.h>
+#include <rlib/format/rasn1.h>
+#include <rlib/format/rjson.h>
+#include <rlib/format/rjsonparser.h>
+#include <rlib/format/roid.h>
 #include <rlib/rlog.h>
 #include <rlib/rmath.h>
 #include <rlib/rmem.h>

@@ -21,7 +21,7 @@
 
 #include <rlib/crypto/rdh.h>
 
-#include <rlib/asn1/roid.h>
+#include <rlib/format/roid.h>
 #include <rlib/rmem.h>
 
 #include "rdh-groups.inc"

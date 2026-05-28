@@ -19,7 +19,7 @@
 #define __R_JSON_PARSER_H__
 
 /**
- * @file rlib/rjsonparser.h
+ * @file rlib/format/rjsonparser.h
  * @brief Streaming JSON parser: cursor-style scanning of objects,
  * arrays, numbers and strings without building a full value tree.
  */
@@ -27,7 +27,7 @@
 #include <rlib/rtypes.h>
 #include <rlib/rref.h>
 
-#include <rlib/rjson.h>
+#include <rlib/format/rjson.h>
 
 /**
  * @defgroup r_jsonparser Streaming JSON parser

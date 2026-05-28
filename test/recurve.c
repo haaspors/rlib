@@ -1,7 +1,5 @@
 #include <rlib/rcrypto.h>
 
-#include <rlib/asn1/roid.h>
-
 static const REcurveID all_curves[] = {
   R_ECURVE_ID_SECP192R1,
   R_ECURVE_ID_SECP224R1,

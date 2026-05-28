@@ -1,4 +1,4 @@
-#include <rlib/rasn1.h>
+#include <rlib/rlib.h>
 
 static const ruint32 asn1[] = { 1, 2, 840, 113549, 1, 1, 1 };
 

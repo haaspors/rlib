@@ -21,8 +21,8 @@
 
 #include <rlib/crypto/recc.h>
 
-#include <rlib/asn1/rasn1.h>
-#include <rlib/asn1/roid.h>
+#include <rlib/format/rasn1.h>
+#include <rlib/format/roid.h>
 #include <rlib/rmem.h>
 #include <rlib/rrand.h>
 

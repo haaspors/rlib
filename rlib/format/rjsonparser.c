@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include "rjson-private.h"
-#include <rlib/rjsonparser.h>
+#include <rlib/format/rjsonparser.h>
 
 #include <rlib/charset/rascii.h>
 #include <rlib/rassert.h>

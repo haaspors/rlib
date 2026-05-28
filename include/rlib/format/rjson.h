@@ -19,7 +19,7 @@
 #define __R_JSON_H__
 
 /**
- * @file rlib/rjson.h
+ * @file rlib/format/rjson.h
  * @brief In-memory JSON value tree: parse, build and serialise.
  */
 

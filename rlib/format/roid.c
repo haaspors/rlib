@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/asn1/roid.h>
+#include <rlib/format/roid.h>
 
 #include <rlib/charset/rascii.h>
 

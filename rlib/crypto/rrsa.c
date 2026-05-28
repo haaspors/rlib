@@ -23,8 +23,8 @@
 
 #include <rlib/crypto/rhmac.h>
 
-#include <rlib/asn1/rasn1.h>
-#include <rlib/asn1/roid.h>
+#include <rlib/format/rasn1.h>
+#include <rlib/format/roid.h>
 #include <rlib/rmem.h>
 
 #define R_RSA_EMSA_PKCS1        0x01

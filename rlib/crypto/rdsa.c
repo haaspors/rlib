@@ -23,7 +23,7 @@
 
 #include "../data/rmpint-private.h"
 
-#include <rlib/asn1/roid.h>
+#include <rlib/format/roid.h>
 #include <rlib/rmem.h>
 
 typedef struct {
