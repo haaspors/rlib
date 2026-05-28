@@ -22,6 +22,12 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/**
+ * @file rlib/format/rasn1.h
+ * @brief ASN.1 BER / DER encoder and decoder; consumed by the X.509,
+ * PKCS and other crypto-side parsers.
+ */
+
 #include <rlib/rtypes.h>
 #include <rlib/rref.h>
 
@@ -30,6 +36,21 @@
 
 #include <rlib/rbuffer.h>
 #include <rlib/crypto/rmsgdigest.h>
+
+/**
+ * @defgroup r_asn1 ASN.1 BER / DER
+ *
+ * @brief Encoder and decoder for ASN.1 in Basic and Distinguished
+ * Encoding Rules, plus the object-identifier (OID) registry that
+ * goes with them.
+ *
+ * Consumed heavily by @c r_crypto (X.509 certificates, PKCS#1 / #8
+ * key formats, PEM bodies) but the encoding itself is general -
+ * SNMP, LDAP, OCSP and many other on-disk and on-wire formats use
+ * the same primitives.
+ *
+ * @{
+ */
 
 R_BEGIN_DECLS
 
@@ -222,6 +243,8 @@ const rchar * r_asn1_x500_name_from_oid (rconstpointer p, rsize size);
 const rchar * r_asn1_x500_name_to_oid (const rchar * name, rsize size);
 
 R_END_DECLS
+
+/** @} */
 
 #endif /* __R_ASN1_ASN1_H__ */
 

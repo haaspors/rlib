@@ -22,7 +22,7 @@
 #error "rjson-private.h should only be used internally in rlib!"
 #endif
 
-#include <rlib/rjson.h>
+#include <rlib/format/rjson.h>
 
 #include <rlib/data/rkvptrarray.h>
 #include <rlib/data/rptrarray.h>

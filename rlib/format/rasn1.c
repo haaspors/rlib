@@ -19,7 +19,7 @@
 #include "config.h"
 #include "rasn1-private.h"
 
-#include <rlib/asn1/roid.h>
+#include <rlib/format/roid.h>
 #include <rlib/rstr.h>
 
 static const struct x500attrtype {

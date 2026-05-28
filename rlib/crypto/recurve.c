@@ -22,7 +22,7 @@
 
 #include <rlib/crypto/recurve.h>
 
-#include <rlib/asn1/roid.h>
+#include <rlib/format/roid.h>
 #include <rlib/rmem.h>
 
 typedef struct {

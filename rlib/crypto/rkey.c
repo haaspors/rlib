@@ -25,7 +25,7 @@
 #include <rlib/crypto/recurve.h>
 #include <rlib/crypto/rrsa.h>
 
-#include <rlib/asn1/roid.h>
+#include <rlib/format/roid.h>
 #include <rlib/rbase64.h>
 #include <rlib/rmem.h>
 #include <rlib/rmemfile.h>

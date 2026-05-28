@@ -51,7 +51,7 @@
  */
 
 #include <rlib/rtypes.h>
-#include <rlib/asn1/rasn1.h>
+#include <rlib/format/rasn1.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/data/rmpint.h>
 #include <rlib/rrand.h>
