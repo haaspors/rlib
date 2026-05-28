@@ -802,3 +802,117 @@ r_utf32_validate (const runichar4 * src, rsize size, runichar4 ** endptr)
     *endptr = (runichar4 *)&src[i];
   return ret;
 }
+
+/* ---- Single-codepoint encode / decode ------------------------------
+ * Public wrappers around the file-private r_utf8_to_unichar /
+ * r_unichar_to_utf8. The wrappers translate the int32 -1 / -2
+ * sentinels into RUnicodeResult, validate the codepoint against the
+ * surrogate / range exclusions on the encode side, and provide UTF-16
+ * pair-aware siblings so callers can drive their own iteration. */
+
+RUnicodeResult
+r_utf8_decode_codepoint (const rchar * src, rsize size, runichar4 * uc,
+    rsize * consumed)
+{
+  rssize r;
+  runichar tmp;
+
+  if (R_UNLIKELY (src == NULL || uc == NULL || size == 0))
+    return R_UNICODE_INVAL;
+
+  r = r_utf8_to_unichar (src, size, &tmp);
+  if (r > 0) {
+    if ((tmp >= 0xd800 && tmp < 0xe000) || tmp >= 0x110000) {
+      if (consumed != NULL) *consumed = 0;
+      return R_UNICODE_INVALID_CODE_POINT;
+    }
+    *uc = tmp;
+    if (consumed != NULL) *consumed = (rsize)r;
+    return R_UNICODE_OK;
+  }
+
+  if (consumed != NULL) *consumed = 0;
+  if (r == R_UTF8_OVERLONG)
+    return R_UNICODE_INVALID_CODE_POINT;
+  return R_UNICODE_INCOMPLETE_CODE_POINT;
+}
+
+RUnicodeResult
+r_utf8_encode_codepoint (runichar4 uc, rchar * dst, rsize size,
+    rsize * written)
+{
+  rssize r;
+
+  if (R_UNLIKELY (dst == NULL || size == 0))
+    return R_UNICODE_INVAL;
+  if ((uc >= 0xd800 && uc < 0xe000) || uc >= 0x110000) {
+    if (written != NULL) *written = 0;
+    return R_UNICODE_INVALID_CODE_POINT;
+  }
+
+  r = r_unichar_to_utf8 ((runichar)uc, dst, size);
+  if (r > 0) {
+    if (written != NULL) *written = (rsize)r;
+    return R_UNICODE_OK;
+  }
+  if (written != NULL) *written = 0;
+  return R_UNICODE_OVERFLOW;
+}
+
+RUnicodeResult
+r_utf16_decode_codepoint (const runichar2 * src, rsize size, runichar4 * uc,
+    rsize * consumed)
+{
+  if (R_UNLIKELY (src == NULL || uc == NULL || size == 0))
+    return R_UNICODE_INVAL;
+
+  if (src[0] < 0xd800 || src[0] >= 0xe000) {
+    *uc = (runichar4)src[0];
+    if (consumed != NULL) *consumed = 1;
+    return R_UNICODE_OK;
+  }
+  if (src[0] >= 0xdc00) {
+    /* Lone low surrogate. */
+    if (consumed != NULL) *consumed = 0;
+    return R_UNICODE_INVALID_CODE_POINT;
+  }
+  /* High surrogate; need a low surrogate to follow. */
+  if (size < 2) {
+    if (consumed != NULL) *consumed = 0;
+    return R_UNICODE_INCOMPLETE_CODE_POINT;
+  }
+  if (src[1] < 0xdc00 || src[1] >= 0xe000) {
+    if (consumed != NULL) *consumed = 0;
+    return R_UNICODE_INVALID_CODE_POINT;
+  }
+  *uc = 0x10000 + (((runichar4)(src[0] - 0xd800)) << 10) +
+      ((runichar4)(src[1] - 0xdc00));
+  if (consumed != NULL) *consumed = 2;
+  return R_UNICODE_OK;
+}
+
+RUnicodeResult
+r_utf16_encode_codepoint (runichar4 uc, runichar2 * dst, rsize size,
+    rsize * written)
+{
+  if (R_UNLIKELY (dst == NULL || size == 0))
+    return R_UNICODE_INVAL;
+  if ((uc >= 0xd800 && uc < 0xe000) || uc >= 0x110000) {
+    if (written != NULL) *written = 0;
+    return R_UNICODE_INVALID_CODE_POINT;
+  }
+
+  if (uc < 0x10000) {
+    dst[0] = (runichar2)uc;
+    if (written != NULL) *written = 1;
+    return R_UNICODE_OK;
+  }
+  if (size < 2) {
+    if (written != NULL) *written = 0;
+    return R_UNICODE_OVERFLOW;
+  }
+  dst[0] = ((uc - 0x10000) / 0x400) | 0xd800;
+  dst[1] = ((uc - 0x10000) % 0x400) | 0xdc00;
+  if (written != NULL) *written = 2;
+  return R_UNICODE_OK;
+}

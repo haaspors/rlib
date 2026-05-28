@@ -290,6 +290,92 @@ R_API RUnicodeResult r_utf32_validate (const runichar4 * src, rsize size,
 
 /** @} */
 
+/**
+ * @name Single-codepoint encode / decode
+ *
+ * Process exactly one codepoint at a time. Useful when the caller
+ * is driving its own iteration loop (tokeniser, JSON unescape, etc.)
+ * and doesn't want to allocate a converted copy of the whole input.
+ * The same RFC 3629 / Unicode-Standard rejection rules apply:
+ * overlong UTF-8, surrogate codepoints in UTF-8, and codepoints
+ * @c >= 0x110000 are rejected as @c R_UNICODE_INVALID_CODE_POINT.
+ *
+ * @c R_UNICODE_INCOMPLETE_CODE_POINT signals a truncated source
+ * sequence; @p *consumed (when non-NULL) is set to @c 0 so the
+ * caller knows it must not advance past the partial bytes.
+ * @{
+ */
+
+/**
+ * @brief Decode one UTF-8 codepoint from @p src.
+ *
+ * @param src        UTF-8 bytes.
+ * @param size       Bytes available in @p src.
+ * @param uc         Out-pointer for the decoded codepoint; required.
+ * @param consumed   Optional out-pointer for the number of bytes
+ *                   consumed (1..4 on success; 0 on error).
+ * @return @c R_UNICODE_OK on success.
+ *         @c R_UNICODE_INVAL for NULL inputs / @p size == 0.
+ *         @c R_UNICODE_INCOMPLETE_CODE_POINT if @p src ends mid-sequence.
+ *         @c R_UNICODE_INVALID_CODE_POINT on malformed bytes,
+ *         overlong forms, surrogate codepoints, or out-of-range
+ *         codepoints.
+ */
+R_API RUnicodeResult r_utf8_decode_codepoint (const rchar * src, rsize size,
+    runichar4 * uc, rsize * consumed);
+
+/**
+ * @brief Encode codepoint @p uc into UTF-8 at @p dst.
+ *
+ * @param uc       Unicode codepoint in @c [0, 0x110000).
+ * @param dst      Destination byte buffer.
+ * @param size     Capacity of @p dst.
+ * @param written  Optional out-pointer for the number of bytes
+ *                 emitted (1..4 on success).
+ * @return @c R_UNICODE_OK on success.
+ *         @c R_UNICODE_INVAL on NULL @p dst or @p size == 0.
+ *         @c R_UNICODE_OVERFLOW if @p size is too small for the
+ *         canonical encoding of @p uc.
+ *         @c R_UNICODE_INVALID_CODE_POINT if @p uc is a surrogate
+ *         or @c >= 0x110000.
+ */
+R_API RUnicodeResult r_utf8_encode_codepoint (runichar4 uc,
+    rchar * dst, rsize size, rsize * written);
+
+/**
+ * @brief Decode one codepoint from UTF-16 @p src.
+ *
+ * @param src        UTF-16 code units.
+ * @param size       Code units available in @p src.
+ * @param uc         Out-pointer for the decoded codepoint; required.
+ * @param consumed   Optional out-pointer for the number of code
+ *                   units consumed (1 for BMP / 2 for surrogate
+ *                   pair).
+ * @return Same semantics as @c r_utf8_decode_codepoint, with
+ *         @c R_UNICODE_INVALID_CODE_POINT for a lone low surrogate
+ *         and @c R_UNICODE_INCOMPLETE_CODE_POINT for a high
+ *         surrogate with no following low surrogate.
+ */
+R_API RUnicodeResult r_utf16_decode_codepoint (const runichar2 * src,
+    rsize size, runichar4 * uc, rsize * consumed);
+
+/**
+ * @brief Encode codepoint @p uc into UTF-16 at @p dst.
+ *
+ * BMP codepoints write one code unit; supplementary codepoints
+ * write a surrogate pair (two units).
+ *
+ * @param uc       Unicode codepoint in @c [0, 0x110000).
+ * @param dst      Destination UTF-16 buffer.
+ * @param size     Capacity of @p dst in code units.
+ * @param written  Optional out-pointer for the number of code
+ *                 units emitted (1 or 2).
+ */
+R_API RUnicodeResult r_utf16_encode_codepoint (runichar4 uc,
+    runichar2 * dst, rsize size, rsize * written);
+
+/** @} */
+
 R_END_DECLS
 
 /** @} */ /* r_unicode group */
