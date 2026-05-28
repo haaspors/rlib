@@ -84,6 +84,12 @@ r_unichar_to_utf8 (runichar c, rchar * str, rsize size)
   return 6;
 }
 
+/* Sentinel returned by r_utf8_to_unichar for sequences that decode
+ * to a valid bit pattern but whose canonical form would be shorter
+ * (RFC 3629 §3 overlong forms). Caller flags as
+ * R_UNICODE_INVALID_CODE_POINT. */
+#define R_UTF8_OVERLONG  (-2)
+
 static inline rssize
 r_utf8_to_unichar (const rchar * utf8, rsize size, runichar * uc)
 {
@@ -101,6 +107,9 @@ r_utf8_to_unichar (const rchar * utf8, rsize size, runichar * uc)
       return -1;
     *uc  = (utf8[0] & 0x1f) << 6;
     *uc |= (utf8[1] & 0x3f);
+    /* Overlong: a 2-byte encoding of U+0000..U+007F (RFC 3629 §3). */
+    if (*uc < 0x80)
+      return R_UTF8_OVERLONG;
     return 2;
   } else if ((utf8[0] & 0xf0) == 0xe0) {
     if (size < 3 || (utf8[1] & 0xc0) != 0x80 || (utf8[2] & 0xc0) != 0x80)
@@ -108,6 +117,8 @@ r_utf8_to_unichar (const rchar * utf8, rsize size, runichar * uc)
     *uc  = (utf8[0] & 0x0f) << 12;
     *uc |= (utf8[1] & 0x3f) <<  6;
     *uc |= (utf8[2] & 0x3f);
+    if (*uc < 0x800)
+      return R_UTF8_OVERLONG;
     return 3;
   } else if ((utf8[0] & 0xf8) == 0xf0) {
     if (size < 4 || (utf8[1] & 0xc0) != 0x80 || (utf8[2] & 0xc0) != 0x80 ||
@@ -117,6 +128,8 @@ r_utf8_to_unichar (const rchar * utf8, rsize size, runichar * uc)
     *uc |= (utf8[1] & 0x3f) << 12;
     *uc |= (utf8[2] & 0x3f) <<  6;
     *uc |= (utf8[3] & 0x3f);
+    if (*uc < 0x10000)
+      return R_UTF8_OVERLONG;
     return 4;
   } else if ((utf8[0] & 0xfc) == 0xf8) {
     if (size < 5 || (utf8[1] & 0xc0) != 0x80 || (utf8[2] & 0xc0) != 0x80 ||
@@ -127,9 +140,16 @@ r_utf8_to_unichar (const rchar * utf8, rsize size, runichar * uc)
     *uc |= (utf8[2] & 0x3f) << 12;
     *uc |= (utf8[3] & 0x3f) <<  6;
     *uc |= (utf8[4] & 0x3f);
+    if (*uc < 0x200000)
+      return R_UTF8_OVERLONG;
     return 5;
   }
 
+  /* Pre-RFC-3629 legacy 6-byte sequence. RFC 3629 forbids these,
+   * but the rest of the decoder accepts them and lets the caller
+   * reject via the canonical >= 0x110000 check. Stay backwards-
+   * compatible here; the overlong-vs-canonical distinction still
+   * applies. */
   if (size < 6 || (utf8[1] & 0xc0) != 0x80 || (utf8[2] & 0xc0) != 0x80 ||
       (utf8[3] & 0xc0) != 0x80 || (utf8[4] & 0xc0) != 0x80 ||
       (utf8[5] & 0xc0) != 0x80)
@@ -140,7 +160,9 @@ r_utf8_to_unichar (const rchar * utf8, rsize size, runichar * uc)
   *uc |= (utf8[3] & 0x3f) << 12;
   *uc |= (utf8[4] & 0x3f) <<  6;
   *uc |= (utf8[5] & 0x3f);
-  return 5;
+  if (*uc < 0x4000000)
+    return R_UTF8_OVERLONG;
+  return 6;
 }
 
 
@@ -177,24 +199,30 @@ r_utf8_to_utf16 (runichar2 * dst, rsize dstsize, const rchar * src, rssize srcsi
     runichar uc;
 
     if ((r = r_utf8_to_unichar (&src[i], srcsize - i, &uc)) > 0) {
+      /* Reject UTF-8-encoded UTF-16 surrogates and non-Unicode
+       * codepoints (RFC 3629 §3 / Unicode Standard §3.9). */
+      if ((uc >= 0xd800 && uc < 0xe000) || uc >= 0x110000) {
+        ret = R_UNICODE_INVALID_CODE_POINT;
+        break;
+      }
       if (uc <= 0xffff) {
         if (dstptr + 1 > dstend) {
           ret = R_UNICODE_OVERFLOW;
           break;
         }
         *dstptr++ = (runichar2)uc & 0xffff;
-      } else if (uc < 0x110000) {
+      } else {
         if (dstptr + 2 > dstend) {
           ret = R_UNICODE_OVERFLOW;
           break;
         }
         *dstptr++ = ((uc - 0x10000) / 0x400) | 0xd800;
         *dstptr++ = ((uc - 0x10000) % 0x400) | 0xdc00;
-      } else {
-        ret = R_UNICODE_INVALID_CODE_POINT;
-        break;
       }
     } else if (r == 0) {
+      break;
+    } else if (r == R_UTF8_OVERLONG) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
       break;
     } else {
       ret = R_UNICODE_INCOMPLETE_CODE_POINT;
@@ -382,6 +410,9 @@ r_utf8_to_utf32 (runichar4 * dst, rsize dstsize, const rchar * src,
       }
       *dstptr++ = (runichar4)uc;
     } else if (r == 0) {
+      break;
+    } else if (r == R_UTF8_OVERLONG) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
       break;
     } else {
       ret = R_UNICODE_INCOMPLETE_CODE_POINT;
