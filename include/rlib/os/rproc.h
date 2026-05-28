@@ -18,17 +18,39 @@
 #ifndef __R_PROC_H__
 #define __R_PROC_H__
 
+/**
+ * @file rlib/os/rproc.h
+ * @brief Current-process introspection: debugger detection, executable
+ * path / name, and process ID.
+ */
+
 #include <rlib/rtypes.h>
+
+/**
+ * @defgroup r_proc Process introspection
+ * @ingroup r_os
+ *
+ * @brief Queries about the running process — whether a debugger is
+ * attached, the executable's path and name, and the process ID.
+ *
+ * @{
+ */
 
 R_BEGIN_DECLS
 
+/** @brief @c TRUE if a debugger is currently attached to this process. */
 R_API rboolean r_proc_is_debugger_attached (void);
+/** @brief Return the absolute path of the running executable (newly allocated). */
 R_API rchar * r_proc_get_exe_path (void) R_ATTR_MALLOC;
+/** @brief Return the filename of the running executable (newly allocated). */
 R_API rchar * r_proc_get_exe_name (void) R_ATTR_MALLOC;
 
+/** @brief Return the current process ID. */
 R_API int r_proc_get_id (void);
 
 R_END_DECLS
+
+/** @} */
 
 #endif /* __R_PROC_H__ */
 
