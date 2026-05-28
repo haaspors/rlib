@@ -50,6 +50,7 @@ rlib_sources = [
   'binfmt/rpecoff.c',
   'binfmt/rpeparser.c',
   'charset/runicode.c',
+  'charset/runicode-props.c',
   'crypto/raes.c',
   'crypto/rcert.c',
   'crypto/rcipher.c',
