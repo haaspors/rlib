@@ -41,6 +41,7 @@
 /** @defgroup r_cpufeatures  CPU feature detection */
 /** @defgroup r_concurrency  Concurrency */
 /** @defgroup r_io           Generic I/O */
+/** @defgroup r_file         Files and filesystem */
 /** @defgroup r_ev           Event loop and async I/O */
 /** @defgroup r_net          Networking */
 /** @defgroup r_rtc          Real-Time Communications (WebRTC) */
