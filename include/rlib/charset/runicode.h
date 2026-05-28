@@ -549,6 +549,61 @@ static inline rboolean r_unichar_is_ascii_punct (runichar4 uc)
 
 /** @} */
 
+/**
+ * @name WTF-8 conversion (UTF-8 + unpaired surrogates)
+ *
+ * WTF-8 ("Wobbly Transformation Format - 8") is the strict UTF-8
+ * encoding extended to allow codepoints in @c [0xD800, 0xDFFF] -
+ * unpaired UTF-16 surrogates - to be encoded as their natural
+ * 3-byte UTF-8 forms (the @c ED @c A0-BF @c 80-BF range). This is
+ * how the JVM serialises lone surrogates inside strings, how Wine
+ * round-trips Windows filenames that contain malformed UTF-16, and
+ * how some legacy MySQL @c utf8mb3 deployments store text.
+ *
+ * Strict UTF-8 per RFC 3629 §3 rejects these sequences (see
+ * @c r_utf8_to_utf16 / @c r_utf8_validate). WTF-8 mode is opt-in
+ * via this separate function family.
+ *
+ * Codepoints @c >= 0x110000 remain forbidden in WTF-8 - it is
+ * still a valid-Unicode-scalars-only encoding, just with the
+ * surrogate exclusion lifted. CESU-8 (which additionally encodes
+ * supplementary codepoints as surrogate pairs of 3-byte sequences)
+ * is not provided.
+ * @{
+ */
+
+/**
+ * @brief Decode a UTF-16 code-unit sequence into WTF-8.
+ *
+ * Lone surrogates are emitted as 3-byte UTF-8 sequences (their
+ * canonical encoding ignoring the RFC 3629 prohibition). Properly
+ * paired surrogates round-trip to a single 4-byte supplementary
+ * UTF-8 sequence as usual.
+ */
+R_API RUnicodeResult r_utf16_to_wtf8 (rchar * dst, rsize dstsize,
+    const runichar2 * src, rsize srcsize, rsize * dstoutsize,
+    runichar2 ** srcendptr);
+
+/**
+ * @brief Decode a WTF-8 byte sequence into UTF-16.
+ *
+ * Surrogate codepoints encoded as 3-byte UTF-8 are passed through
+ * to the UTF-16 output as their corresponding code units. Strict
+ * UTF-8 input round-trips through this function unchanged.
+ */
+R_API RUnicodeResult r_wtf8_to_utf16 (runichar2 * dst, rsize dstsize,
+    const rchar * src, rssize srcsize, rsize * dstoutsize,
+    rchar ** srcendptr);
+
+/** @brief Allocating UTF-16 -> WTF-8 sibling. */
+R_API rchar * r_utf16_to_wtf8_dup (const runichar2 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, runichar2 ** endptr) R_ATTR_MALLOC;
+/** @brief Allocating WTF-8 -> UTF-16 sibling. */
+R_API runichar2 * r_wtf8_to_utf16_dup (const rchar * src, rssize srcsize,
+    RUnicodeResult * res, rsize * retsize, rchar ** endptr) R_ATTR_MALLOC;
+
+/** @} */
+
 R_END_DECLS
 
 /** @} */ /* r_unicode group */
