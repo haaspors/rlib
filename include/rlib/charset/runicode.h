@@ -376,6 +376,61 @@ R_API RUnicodeResult r_utf16_encode_codepoint (runichar4 uc,
 
 /** @} */
 
+/**
+ * @name Codepoint counting and advance
+ *
+ * Byte-/unit-oriented strings need codepoint-aware accessors when
+ * callers care about user-visible character counts: column widths,
+ * "first @c N characters", truncating without breaking a sequence.
+ * These helpers walk the input one codepoint at a time using the
+ * standard decoder, applying the same RFC 3629 rejection rules.
+ * @{
+ */
+
+/**
+ * @brief Count codepoints in a UTF-8 byte sequence.
+ *
+ * @param src     UTF-8 bytes.
+ * @param size    Bytes in @p src, or @c -1 to fall back to
+ *                @c r_strlen.
+ * @param result  Optional out-pointer for the decode status. @c OK
+ *                when every codepoint in @p src parsed; @c INVALID
+ *                / @c INCOMPLETE on the first malformed sequence
+ *                (the return value still reflects the number of
+ *                codepoints successfully decoded before the error).
+ * @return Number of codepoints decoded.
+ */
+R_API rsize r_utf8_strlen_codepoints (const rchar * src, rssize size,
+    RUnicodeResult * result);
+
+/**
+ * @brief Advance past @p n codepoints in a UTF-8 byte sequence and
+ * return the resulting position.
+ *
+ * @param src     UTF-8 bytes.
+ * @param size    Bytes in @p src, or @c -1 to fall back to
+ *                @c r_strlen.
+ * @param n       Number of codepoints to advance.
+ * @param result  Optional out-pointer for the decode status. @c OK
+ *                when @p n codepoints were skipped; @c INVALID /
+ *                @c INCOMPLETE on a malformed sequence;
+ *                @c OVERFLOW if @p src ran out of bytes before
+ *                @p n codepoints were reached.
+ * @return Pointer one past the last codepoint skipped (or the byte
+ *         that triggered the error / end-of-input).
+ */
+R_API const rchar * r_utf8_advance (const rchar * src, rssize size,
+    rsize n, RUnicodeResult * result);
+
+/**
+ * @brief Count codepoints in a UTF-16 code-unit sequence. Surrogate
+ * pairs count as one codepoint.
+ */
+R_API rsize r_utf16_strlen_codepoints (const runichar2 * src, rsize size,
+    RUnicodeResult * result);
+
+/** @} */
+
 R_END_DECLS
 
 /** @} */ /* r_unicode group */

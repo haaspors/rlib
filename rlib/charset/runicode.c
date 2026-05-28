@@ -916,3 +916,121 @@ r_utf16_encode_codepoint (runichar4 uc, runichar2 * dst, rsize size,
   if (written != NULL) *written = 2;
   return R_UNICODE_OK;
 }
+
+/* ---- Codepoint counting and advance --------------------------------
+ * Single-pass decoders that walk one codepoint at a time. The
+ * counter stops on error and reports the partial count; the
+ * advance helper stops either when it has skipped @n codepoints
+ * or when it runs out of input / hits a bad sequence. */
+
+rsize
+r_utf8_strlen_codepoints (const rchar * src, rssize size,
+    RUnicodeResult * result)
+{
+  rsize count = 0;
+  rssize i, r;
+  runichar uc;
+  RUnicodeResult ret = R_UNICODE_OK;
+
+  if (R_UNLIKELY (src == NULL)) {
+    if (result != NULL) *result = R_UNICODE_INVAL;
+    return 0;
+  }
+  if (size < 0) size = r_strlen (src);
+
+  for (i = 0; i < size && src[i] != 0; i += r) {
+    r = r_utf8_to_unichar (&src[i], size - i, &uc);
+    if (r > 0) {
+      if ((uc >= 0xd800 && uc < 0xe000) || uc >= 0x110000) {
+        ret = R_UNICODE_INVALID_CODE_POINT;
+        break;
+      }
+      count++;
+    } else if (r == 0) {
+      break;
+    } else if (r == R_UTF8_OVERLONG) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    } else {
+      ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+      break;
+    }
+  }
+
+  if (result != NULL) *result = ret;
+  return count;
+}
+
+const rchar *
+r_utf8_advance (const rchar * src, rssize size, rsize n,
+    RUnicodeResult * result)
+{
+  rssize i, r;
+  rsize skipped = 0;
+  runichar uc;
+  RUnicodeResult ret = R_UNICODE_OK;
+
+  if (R_UNLIKELY (src == NULL)) {
+    if (result != NULL) *result = R_UNICODE_INVAL;
+    return NULL;
+  }
+  if (size < 0) size = r_strlen (src);
+
+  for (i = 0; skipped < n && i < size && src[i] != 0; i += r) {
+    r = r_utf8_to_unichar (&src[i], size - i, &uc);
+    if (r > 0) {
+      if ((uc >= 0xd800 && uc < 0xe000) || uc >= 0x110000) {
+        ret = R_UNICODE_INVALID_CODE_POINT;
+        break;
+      }
+      skipped++;
+    } else if (r == 0) {
+      break;
+    } else if (r == R_UTF8_OVERLONG) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    } else {
+      ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+      break;
+    }
+  }
+
+  if (skipped < n && ret == R_UNICODE_OK)
+    ret = R_UNICODE_OVERFLOW;
+  if (result != NULL) *result = ret;
+  return &src[i];
+}
+
+rsize
+r_utf16_strlen_codepoints (const runichar2 * src, rsize size,
+    RUnicodeResult * result)
+{
+  rsize count = 0, i = 0;
+  RUnicodeResult ret = R_UNICODE_OK;
+
+  if (R_UNLIKELY (src == NULL)) {
+    if (result != NULL) *result = R_UNICODE_INVAL;
+    return 0;
+  }
+
+  while (i < size && src[i] != 0) {
+    if (src[i] < 0xd800 || src[i] >= 0xe000) {
+      i++;
+      count++;
+    } else if (src[i] < 0xdc00) {
+      if (i + 1 < size && src[i + 1] >= 0xdc00 && src[i + 1] < 0xe000) {
+        i += 2;
+        count++;
+      } else {
+        ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+        break;
+      }
+    } else {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    }
+  }
+
+  if (result != NULL) *result = ret;
+  return count;
+}
