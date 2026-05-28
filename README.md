@@ -1,7 +1,12 @@
-rlib [![CI](https://github.com/haaspors/rlib/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/haaspors/rlib/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-LGPL-blue.svg)](https://github.com/haaspors/rlib/blob/master/LICENSE)
-========
+rlib
+====
+
+[![CI](https://github.com/haaspors/rlib/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/haaspors/rlib/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-LGPL-blue.svg)](https://github.com/haaspors/rlib/blob/master/LICENSE)
+
 rlib is a c library which contains abstractions for OS, platform and CPU architecture.
 It's a convenience library for useful things. :-)
+
+API documentation is published at <https://haaspors.github.io/rlib/>.
 
 **Note:**
 *rlib is under active development.
