@@ -41,10 +41,10 @@
  * @ref RPeDataDirectory array indexes into well-known directories
  * (export, import, resources, ...) named by @c RPeDataDirEntry.
  *
- * Constants for machine types, section flags and characteristics
- * follow the Microsoft PE / COFF specification and are not
- * individually Doxygen-annotated; the stringification helper
- * @c r_pe_machine_str converts @c machine values to ASCII names.
+ * Constants for machine types, file / section / DLL characteristics
+ * and subsystems are organised into @c @ \@name blocks below; the
+ * stringification helper @c r_pe_machine_str converts @c machine
+ * values to ASCII names.
  */
 
 #include <rlib/rtypes.h>
@@ -56,10 +56,22 @@ R_BEGIN_DECLS
 
 #pragma pack(push, 1)
 
+/**
+ * @name PE magic numbers
+ *
+ * Sentinel values at fixed offsets in the file. @c R_PE_DOS_MAGIC
+ * (@c "MZ") sits at offset 0 in the DOS stub; @c R_PE_IMAGE_MAGIC
+ * (@c "PE\\0\\0") sits at the offset indicated by
+ * @c RPeDosHdr::lfanew; @c R_PE_PE32_MAGIC / @c R_PE_PE32PLUS_MAGIC
+ * appear in the @c magic field of the optional header and select
+ * between the 32-bit and 64-bit image-header layouts.
+ * @{
+ */
 #define R_PE_DOS_MAGIC                      0x5a4d
 #define R_PE_IMAGE_MAGIC                    0x00004550
 #define R_PE_PE32_MAGIC                     0x010b
 #define R_PE_PE32PLUS_MAGIC                 0x020b
+/** @} */
 
 /** @brief MS-DOS MZ stub header; e_lfanew points at the PE header. */
 typedef struct {
@@ -85,6 +97,15 @@ typedef struct {
 } RPeDosHdr;
 
 
+/**
+ * @name PE machine types (@c IMAGE_FILE_MACHINE_* values)
+ *
+ * Architecture identifier in the COFF file header's @c machine
+ * field. Pick the value matching the target CPU;
+ * @c R_PE_MACHINE_UNKNOWN means "applicable to any machine".
+ * @ref r_pe_machine_str renders these as short ASCII names.
+ * @{
+ */
 #define R_PE_MACHINE_UNKNOWN                0x0000 /**< The contents of this field are assumed to be applicable to any machine type */
 #define R_PE_MACHINE_AM33                   0x01d3 /**< Matsushita AM33 */
 #define R_PE_MACHINE_AMD64                  0x8664 /**< x64 */
@@ -110,12 +131,23 @@ typedef struct {
 #define R_PE_MACHINE_SH5                    0x01a8 /**< Hitachi SH5 */
 #define R_PE_MACHINE_THUMB                  0x01c2 /**< Thumb */
 #define R_PE_MACHINE_WCEMIPSV2              0x0169 /**< MIPS little-endian WCE v2 */
+/** @} */
+
 /**
  * @brief Return a short ASCII name for a PE @c machine value (e.g.
  * @c "AMD64", @c "ARM64", @c "I386").
  */
 R_API const rchar * r_pe_machine_str (ruint16 machine);
 
+/**
+ * @name COFF file characteristics
+ *
+ * Bitmask carried in @c RPeCoffImageHdr::characteristics. Describes
+ * whether relocations / debug info have been stripped, whether the
+ * file is an executable / DLL / system file, and other build-time
+ * properties.
+ * @{
+ */
 #define R_PE_FILE_RELOCS_STRIPPED           0x0001
 #define R_PE_FILE_EXECUTABLE_IMAGE          0x0002
 #define R_PE_FILE_LINE_NUMS_STRIPPED        0x0004
@@ -131,6 +163,7 @@ R_API const rchar * r_pe_machine_str (ruint16 machine);
 #define R_PE_FILE_DLL                       0x2000
 #define R_PE_FILE_UP_SYSTEM_ONLY            0x4000
 #define R_PE_FILE_BYTES_REVERSED_HI         0x8000
+/** @} */
 
 /** @brief COFF file header. */
 typedef struct {
@@ -170,6 +203,15 @@ R_API rsize r_pe_image_size (rconstpointer mem);
 R_API rsize r_pe_image_calc_size (rconstpointer mem);
 
 
+/**
+ * @name PE subsystem
+ *
+ * Required runtime environment, carried in
+ * @c RPe32WinOptHdr::subsystem / @c RPe32PlusWinOptHdr::subsystem.
+ * Drives whether the loader allocates a console, a GUI message
+ * pump, an EFI environment, etc.
+ * @{
+ */
 #define R_PE_SUBSYSTEM_UNKNOWN                   0 /**< An unknown subsystem */
 #define R_PE_SUBSYSTEM_NATIVE                    1 /**< Device drivers and native Windows processes */
 #define R_PE_SUBSYSTEM_WINDOWS_GUI               2 /**< The Windows graphical user interface (GUI) subsystem */
@@ -184,6 +226,7 @@ R_API rsize r_pe_image_calc_size (rconstpointer mem);
 #define R_PE_SUBSYSTEM_EFI_ROM                  13 /**< An EFI ROM image */
 #define R_PE_SUBSYSTEM_XBOX                     14 /**< XBOX */
 #define R_PE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION 16 /**< Windows boot application. */
+/** @} */
 
 /** @brief Common prefix shared by the PE32 and PE32+ optional headers. */
 typedef struct {
@@ -197,6 +240,15 @@ typedef struct {
   ruint32 base_code;
 } RPeOptHdr;
 
+/**
+ * @name DLL characteristics
+ *
+ * Bitmask in @c RPe32WinOptHdr::dll_characteristics /
+ * @c RPe32PlusWinOptHdr::dll_characteristics declaring loader-time
+ * mitigations and policy flags (ASLR, NX, CFG, App Container,
+ * terminal-server awareness, ...).
+ * @{
+ */
 #define R_PE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA         0x0020
 #define R_PE_DLLCHARACTERISTICS_DYNAMIC_BASE            0x0040
 #define R_PE_DLLCHARACTERISTICS_FORCE_INTEGRITY         0x0080
@@ -208,6 +260,7 @@ typedef struct {
 #define R_PE_DLLCHARACTERISTICS_WDM_DRIVER              0x2000
 #define R_PE_DLLCHARACTERISTICS_GUARD_CF                0x4000
 #define R_PE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE   0x8000
+/** @} */
 
 /** @brief Windows-specific portion of the PE32 optional header. */
 typedef struct {
@@ -308,6 +361,15 @@ typedef struct {
 } RPe32PlusImageHdr;
 
 
+/**
+ * @name Section characteristics
+ *
+ * Bitmask in @c RPeSectionHdr::characteristics. Encodes both the
+ * section's content kind (code / initialised data / uninitialised
+ * data), its memory permissions (read / write / execute) and its
+ * alignment (one of the @c R_PE_SCN_ALIGN_* values).
+ * @{
+ */
 #define R_PE_SCN_TYPE_NO_PAD               0x00000008
 #define R_PE_SCN_CNT_CODE                  0x00000020
 #define R_PE_SCN_CNT_INITIALIZED_DATA      0x00000040
@@ -343,6 +405,7 @@ typedef struct {
 #define R_PE_SCN_MEM_EXECUTE               0x20000000
 #define R_PE_SCN_MEM_READ                  0x40000000
 #define R_PE_SCN_MEM_WRITE                 0x80000000
+/** @} */
 
 
 /** @brief Section-table entry (name, RVA, raw-data offset, characteristics). */
