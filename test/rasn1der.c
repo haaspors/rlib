@@ -611,6 +611,48 @@ RTEST (rasn1der, parse_string, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_string_rejects_malformed_utf8, RTEST_FAST)
+{
+  /* UTF8String with a 2-byte lead byte followed by no continuation -
+   * malformed UTF-8 per RFC 3629 §3. X.680 requires UTF8String values
+   * to be valid UTF-8; parse_string surfaces the rejection via
+   * R_ASN1_DECODER_PARSE_ERROR. */
+  static const ruint8 utf8_bad_incomplete[] = { 0x0c, 0x01, 0xc2 };
+  /* UTF8String containing an overlong "/" (\xC0\xAF) - RFC 3629 §3. */
+  static const ruint8 utf8_bad_overlong[]   = { 0x0c, 0x02, 0xc0, 0xaf };
+  /* UTF8String containing a 3-byte UTF-8 sequence that decodes to
+   * U+D800 - bit-valid but a surrogate codepoint, RFC 3629 §3. */
+  static const ruint8 utf8_bad_surrogate[]  = { 0x0c, 0x03, 0xed, 0xa0, 0x80 };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv;
+  rchar * str;
+
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+        utf8_bad_incomplete, sizeof (utf8_bad_incomplete))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str),
+      ==, R_ASN1_DECODER_PARSE_ERROR);
+  r_asn1_bin_decoder_unref (dec);
+
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+        utf8_bad_overlong, sizeof (utf8_bad_overlong))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str),
+      ==, R_ASN1_DECODER_PARSE_ERROR);
+  r_asn1_bin_decoder_unref (dec);
+
+  tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+        utf8_bad_surrogate, sizeof (utf8_bad_surrogate))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+  r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str),
+      ==, R_ASN1_DECODER_PARSE_ERROR);
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
 RTEST (rasn1der, parse_string_bmp_universal, RTEST_FAST)
 {
   /* BMPString is UTF-16BE.  "hello" + U+00E5 ('å'): ASCII chars expand

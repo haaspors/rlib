@@ -366,11 +366,16 @@ r_asn1_bin_tlv_parse_string (const RAsn1BinTLV * tlv, rchar ** str)
     return R_ASN1_DECODER_INVALID_ARG;
 
   switch (R_ASN1_BIN_TLV_ID_TAG (tlv)) {
-    /* Byte-encoded string types pass through verbatim.  Callers that
-     * care about the restricted character sets (e.g. PrintableString,
-     * NumericString) have to validate themselves -- see the TODO
-     * below. */
+    /* UTF8String: X.680 requires the encoded value to be valid UTF-8.
+     * Validate the bytes before strdup'ing them. The other byte-
+     * encoded string types pass through verbatim - their character-
+     * set restrictions are still TODO (see below). */
     case R_ASN1_ID_UTF8_STRING:
+      if (r_utf8_validate ((const rchar *)tlv->value, (rssize)tlv->len,
+            NULL) != R_UNICODE_OK)
+        return R_ASN1_DECODER_PARSE_ERROR;
+      *str = r_strdup_size ((const rchar *) tlv->value, (rssize) tlv->len);
+      break;
     case R_ASN1_ID_NUMERIC_STRING:
     case R_ASN1_ID_PRINTABLE_STRING:
     case R_ASN1_ID_T61_STRING:
