@@ -165,3 +165,370 @@ RTEST (runicode, utf8_to_utf16_bom, RTEST_FAST)
   r_free (ptr);
 }
 RTEST_END;
+
+/* ---- UTF-32 conversions ------------------------------------------ */
+
+RTEST (runicode, utf8_to_utf32, RTEST_FAST)
+{
+  runichar4 utf32[16];
+  rchar * utf8end;
+  rsize n;
+  RUnicodeResult res;
+
+  /* ASCII round-trip. */
+  res = r_utf8_to_utf32 (utf32, R_N_ELEMENTS (utf32), "abc123!\"#", 9,
+      &n, &utf8end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 9);
+  r_assert_cmpuint (utf32[0], ==, 'a');
+  r_assert_cmpuint (utf32[8], ==, '#');
+  r_assert_cmpuint (utf32[9], ==, 0);
+  r_assert_cmpptr (utf8end, ==, (rchar *)"abc123!\"#" + 9);
+
+  /* 2-byte UTF-8: U+03B1, U+03B2, U+03B3. */
+  res = r_utf8_to_utf32 (utf32, R_N_ELEMENTS (utf32),
+      "\xCE\xB1\xCE\xB2\xCE\xB3", 6, &n, &utf8end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 3);
+  r_assert_cmpuint (utf32[0], ==, 0x3b1);
+  r_assert_cmpuint (utf32[1], ==, 0x3b2);
+  r_assert_cmpuint (utf32[2], ==, 0x3b3);
+
+  /* 4-byte UTF-8: U+10FFFF (max codepoint). */
+  res = r_utf8_to_utf32 (utf32, R_N_ELEMENTS (utf32),
+      "\xF4\x8F\xBF\xBF", 4, &n, &utf8end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint (utf32[0], ==, 0x10FFFF);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_to_utf32_overflow, RTEST_FAST)
+{
+  runichar4 utf32[4];   /* Capacity 3 + NUL. */
+  rchar * utf8end;
+  rsize n;
+  RUnicodeResult res;
+
+  res = r_utf8_to_utf32 (utf32, R_N_ELEMENTS (utf32), "abcdef", 6,
+      &n, &utf8end);
+  r_assert_cmpint (res, ==, R_UNICODE_OVERFLOW);
+  r_assert_cmpuint (n, ==, 3);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_to_utf32_incomplete, RTEST_FAST)
+{
+  runichar4 utf32[8];
+  rchar * utf8end;
+  rsize n;
+  RUnicodeResult res;
+
+  /* "ab" + truncated 2-byte sequence (0xCE without continuation). */
+  res = r_utf8_to_utf32 (utf32, R_N_ELEMENTS (utf32), "ab\xCE", 3,
+      &n, &utf8end);
+  r_assert_cmpint (res, ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+  r_assert_cmpuint (n, ==, 2);
+  r_assert_cmpuint (utf32[0], ==, 'a');
+  r_assert_cmpuint (utf32[1], ==, 'b');
+}
+RTEST_END;
+
+RTEST (runicode, utf8_to_utf32_invalid, RTEST_FAST)
+{
+  runichar4 utf32[8];
+  rchar * utf8end;
+  rsize n;
+  RUnicodeResult res;
+
+  /* UTF-8 encoding of U+D800 (high surrogate) - valid bit pattern
+   * but the codepoint is invalid. */
+  res = r_utf8_to_utf32 (utf32, R_N_ELEMENTS (utf32), "a\xED\xA0\x80", 4,
+      &n, &utf8end);
+  r_assert_cmpint (res, ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint (utf32[0], ==, 'a');
+}
+RTEST_END;
+
+RTEST (runicode, utf32_to_utf8, RTEST_FAST)
+{
+  runichar4 utf32[16];
+  runichar4 * utf32end;
+  rchar utf8[64];
+  rsize n;
+  RUnicodeResult res;
+
+  utf32[0] = 'a'; utf32[1] = 'b'; utf32[2] = 'c'; utf32[3] = 0;
+  res = r_utf32_to_utf8 (utf8, sizeof (utf8), utf32, 3, &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 3);
+  r_assert_cmpstr (utf8, ==, "abc");
+
+  /* 2-byte UTF-8 outputs. */
+  utf32[0] = 0x3b1; utf32[1] = 0x3b2; utf32[2] = 0x3b3; utf32[3] = 0;
+  res = r_utf32_to_utf8 (utf8, sizeof (utf8), utf32, 3, &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 6);
+  r_assert_cmpmem (utf8, ==, "\xCE\xB1\xCE\xB2\xCE\xB3", 6);
+
+  /* Max codepoint -> 4-byte UTF-8. */
+  utf32[0] = 0x10FFFF; utf32[1] = 0;
+  res = r_utf32_to_utf8 (utf8, sizeof (utf8), utf32, 1, &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 4);
+  r_assert_cmpmem (utf8, ==, "\xF4\x8F\xBF\xBF", 4);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_to_utf8_overflow, RTEST_FAST)
+{
+  runichar4 utf32[4];
+  runichar4 * utf32end;
+  rchar utf8[4];   /* Capacity 3 + NUL; "abcdef" needs 6 + 1. */
+  rsize n;
+  RUnicodeResult res;
+
+  utf32[0] = 'a'; utf32[1] = 'b'; utf32[2] = 'c'; utf32[3] = 'd';
+  res = r_utf32_to_utf8 (utf8, sizeof (utf8), utf32, 4, &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_OVERFLOW);
+  r_assert_cmpuint (n, ==, 3);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_to_utf8_invalid, RTEST_FAST)
+{
+  runichar4 utf32[4];
+  runichar4 * utf32end;
+  rchar utf8[16];
+  rsize n;
+  RUnicodeResult res;
+
+  /* Out-of-range codepoint. */
+  utf32[0] = 'a'; utf32[1] = 0x110000;
+  res = r_utf32_to_utf8 (utf8, sizeof (utf8), utf32, 2, &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 1);
+
+  /* Surrogate-half codepoint. */
+  utf32[0] = 'a'; utf32[1] = 0xd800;
+  res = r_utf32_to_utf8 (utf8, sizeof (utf8), utf32, 2, &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 1);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_to_utf32, RTEST_FAST)
+{
+  runichar4 utf32[16];
+  runichar2 utf16[16];
+  runichar2 * utf16end;
+  rsize n;
+  RUnicodeResult res;
+
+  utf16[0] = 'a'; utf16[1] = 'b'; utf16[2] = 'c'; utf16[3] = 0;
+  res = r_utf16_to_utf32 (utf32, R_N_ELEMENTS (utf32), utf16, 3,
+      &n, &utf16end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 3);
+  r_assert_cmpuint (utf32[0], ==, 'a');
+
+  /* Surrogate pair: U+10000. */
+  utf16[0] = 0xD800; utf16[1] = 0xDC00;
+  res = r_utf16_to_utf32 (utf32, R_N_ELEMENTS (utf32), utf16, 2,
+      &n, &utf16end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint (utf32[0], ==, 0x10000);
+
+  /* Surrogate pair: U+10FFFF. */
+  utf16[0] = 0xDBFF; utf16[1] = 0xDFFF;
+  res = r_utf16_to_utf32 (utf32, R_N_ELEMENTS (utf32), utf16, 2,
+      &n, &utf16end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint (utf32[0], ==, 0x10FFFF);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_to_utf32_overflow, RTEST_FAST)
+{
+  runichar4 utf32[4];
+  runichar2 utf16[8];
+  runichar2 * utf16end;
+  rsize n;
+  RUnicodeResult res;
+
+  utf16[0] = 'a'; utf16[1] = 'b'; utf16[2] = 'c';
+  utf16[3] = 'd'; utf16[4] = 'e'; utf16[5] = 'f';
+  res = r_utf16_to_utf32 (utf32, R_N_ELEMENTS (utf32), utf16, 6,
+      &n, &utf16end);
+  r_assert_cmpint (res, ==, R_UNICODE_OVERFLOW);
+  r_assert_cmpuint (n, ==, 3);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_to_utf32_incomplete, RTEST_FAST)
+{
+  runichar4 utf32[8];
+  runichar2 utf16[4];
+  runichar2 * utf16end;
+  rsize n;
+  RUnicodeResult res;
+
+  /* High surrogate with no following low surrogate. */
+  utf16[0] = 'x'; utf16[1] = 'y'; utf16[2] = 0xD801;
+  res = r_utf16_to_utf32 (utf32, R_N_ELEMENTS (utf32), utf16, 3,
+      &n, &utf16end);
+  r_assert_cmpint (res, ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+  r_assert_cmpuint (n, ==, 2);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_to_utf32_invalid, RTEST_FAST)
+{
+  runichar4 utf32[8];
+  runichar2 utf16[4];
+  runichar2 * utf16end;
+  rsize n;
+  RUnicodeResult res;
+
+  /* Low surrogate with no preceding high surrogate. */
+  utf16[0] = 'y'; utf16[1] = 'z'; utf16[2] = 0xDC01;
+  res = r_utf16_to_utf32 (utf32, R_N_ELEMENTS (utf32), utf16, 3,
+      &n, &utf16end);
+  r_assert_cmpint (res, ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 2);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_to_utf16, RTEST_FAST)
+{
+  runichar4 utf32[16];
+  runichar4 * utf32end;
+  runichar2 utf16[16];
+  rsize n;
+  RUnicodeResult res;
+
+  utf32[0] = 'a'; utf32[1] = 'b'; utf32[2] = 'c';
+  res = r_utf32_to_utf16 (utf16, R_N_ELEMENTS (utf16), utf32, 3,
+      &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 3);
+  r_assert_cmpuint (utf16[0], ==, 'a');
+
+  /* Beyond-BMP codepoint emits surrogate pair. */
+  utf32[0] = 0x10000;
+  res = r_utf32_to_utf16 (utf16, R_N_ELEMENTS (utf16), utf32, 1,
+      &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 2);
+  r_assert_cmpuint (utf16[0], ==, 0xD800);
+  r_assert_cmpuint (utf16[1], ==, 0xDC00);
+
+  utf32[0] = 0x10FFFF;
+  res = r_utf32_to_utf16 (utf16, R_N_ELEMENTS (utf16), utf32, 1,
+      &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 2);
+  r_assert_cmpuint (utf16[0], ==, 0xDBFF);
+  r_assert_cmpuint (utf16[1], ==, 0xDFFF);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_to_utf16_overflow, RTEST_FAST)
+{
+  runichar4 utf32[4];
+  runichar4 * utf32end;
+  runichar2 utf16[3];   /* Capacity 2 + NUL. */
+  rsize n;
+  RUnicodeResult res;
+
+  utf32[0] = 'a'; utf32[1] = 'b'; utf32[2] = 'c';
+  res = r_utf32_to_utf16 (utf16, R_N_ELEMENTS (utf16), utf32, 3,
+      &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_OVERFLOW);
+  r_assert_cmpuint (n, ==, 2);
+}
+RTEST_END;
+
+RTEST (runicode, utf32_to_utf16_invalid, RTEST_FAST)
+{
+  runichar4 utf32[4];
+  runichar4 * utf32end;
+  runichar2 utf16[16];
+  rsize n;
+  RUnicodeResult res;
+
+  /* Out-of-range. */
+  utf32[0] = 'a'; utf32[1] = 0x110000;
+  res = r_utf32_to_utf16 (utf16, R_N_ELEMENTS (utf16), utf32, 2,
+      &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 1);
+
+  /* Surrogate-half. */
+  utf32[0] = 'a'; utf32[1] = 0xDC00;
+  res = r_utf32_to_utf16 (utf16, R_N_ELEMENTS (utf16), utf32, 2,
+      &n, &utf32end);
+  r_assert_cmpint (res, ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 1);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_to_utf32_dup_roundtrip, RTEST_FAST)
+{
+  const rchar * input = "abc\xCE\xB1\xCE\xB2\xCE\xB3\xF4\x8F\xBF\xBF";
+  runichar4 * utf32;
+  rchar * back;
+  rchar * end;
+  runichar4 * end32;
+  RUnicodeResult res;
+  rsize len;
+
+  utf32 = r_utf8_to_utf32_dup (input, -1, &res, &len, &end);
+  r_assert_cmpptr (utf32, !=, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (len, ==, 7);  /* 3 ASCII + 3 Greek + 1 supplementary */
+
+  back = r_utf32_to_utf8_dup (utf32, len, &res, &len, &end32);
+  r_assert_cmpptr (back, !=, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpstr (back, ==, input);
+
+  r_free (utf32);
+  r_free (back);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_to_utf32_dup_roundtrip, RTEST_FAST)
+{
+  runichar2 utf16[6];
+  runichar4 * utf32;
+  runichar2 * back;
+  runichar2 * end16;
+  runichar4 * end32;
+  RUnicodeResult res;
+  rsize len;
+
+  utf16[0] = 'a'; utf16[1] = 'b'; utf16[2] = 0x3B1;
+  utf16[3] = 0xD800; utf16[4] = 0xDC00;     /* U+10000 surrogate pair */
+  utf16[5] = 'z';
+
+  utf32 = r_utf16_to_utf32_dup (utf16, 6, &res, &len, &end16);
+  r_assert_cmpptr (utf32, !=, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (len, ==, 5);
+  r_assert_cmpuint (utf32[3], ==, 0x10000);
+
+  back = r_utf32_to_utf16_dup (utf32, len, &res, &len, &end32);
+  r_assert_cmpptr (back, !=, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpuint (len, ==, 6);
+  r_assert_cmpuint (back[3], ==, 0xD800);
+  r_assert_cmpuint (back[4], ==, 0xDC00);
+
+  r_free (utf32);
+  r_free (back);
+}
+RTEST_END;

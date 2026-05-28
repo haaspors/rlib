@@ -26,13 +26,13 @@
 
 /**
  * @defgroup r_unicode Unicode conversion
- * @brief UTF-8 / UTF-16 encoding conversions.
+ * @brief UTF-8 / UTF-16 / UTF-32 encoding conversions.
  * @{
  */
 
 /**
  * @file rlib/charset/runicode.h
- * @brief UTF-8 / UTF-16 conversions.
+ * @brief UTF-8 / UTF-16 / UTF-32 conversions.
  *
  * Two flavours of conversion: an in-buffer pair (caller supplies
  * the destination) and an allocating pair (returns a fresh buffer
@@ -42,7 +42,8 @@
  * from the last @c srcendptr.
  *
  * Code units are counted in their respective natural element type:
- * UTF-8 in @c rchar bytes, UTF-16 in @c runichar2 code units.
+ * UTF-8 in @c rchar bytes, UTF-16 in @c runichar2 code units, and
+ * UTF-32 in @c runichar4 code units.
  */
 
 R_BEGIN_DECLS
@@ -107,6 +108,64 @@ R_API RUnicodeResult r_utf8_to_utf16 (runichar2 * dst, rsize dstsize,
 R_API RUnicodeResult r_utf16_to_utf8 (rchar * dst, rsize dstsize,
     const runichar2 * src, rsize srcsize, rsize * dstoutsize, runichar2 ** srcendptr);
 
+/**
+ * @brief Encode UTF-8 @p src into UTF-32 @p dst.
+ *
+ * @param dst        Destination UTF-32 buffer.
+ * @param dstsize    Capacity of @p dst in @c runichar4 code units
+ *                   (one codepoint per unit, plus one for the
+ *                   trailing NUL terminator).
+ * @param src        UTF-8 source bytes.
+ * @param srcsize    Bytes in @p src, or -1 to fall back to @c r_strlen.
+ * @param dstoutsize Receives the number of code units written
+ *                   (excluding the trailing NUL).
+ * @param srcendptr  Receives a pointer one past the last consumed byte.
+ */
+R_API RUnicodeResult r_utf8_to_utf32 (runichar4 * dst, rsize dstsize,
+    const rchar * src, rssize srcsize, rsize * dstoutsize, rchar ** srcendptr);
+/**
+ * @brief Decode UTF-32 @p src into UTF-8 @p dst.
+ *
+ * @param dst        Destination UTF-8 buffer.
+ * @param dstsize    Capacity of @p dst in bytes (room for up to 4
+ *                   bytes per codepoint plus the trailing NUL).
+ * @param src        UTF-32 source code units.
+ * @param srcsize    Code units in @p src.
+ * @param dstoutsize Receives the number of bytes written.
+ * @param srcendptr  Receives a pointer one past the last consumed code unit.
+ */
+R_API RUnicodeResult r_utf32_to_utf8 (rchar * dst, rsize dstsize,
+    const runichar4 * src, rsize srcsize, rsize * dstoutsize, runichar4 ** srcendptr);
+/**
+ * @brief Encode UTF-16 @p src into UTF-32 @p dst.
+ *
+ * @param dst        Destination UTF-32 buffer.
+ * @param dstsize    Capacity of @p dst in @c runichar4 code units
+ *                   (plus one for the trailing NUL).
+ * @param src        UTF-16 source code units.
+ * @param srcsize    Code units in @p src.
+ * @param dstoutsize Receives the number of code units written.
+ * @param srcendptr  Receives a pointer one past the last consumed code unit.
+ */
+R_API RUnicodeResult r_utf16_to_utf32 (runichar4 * dst, rsize dstsize,
+    const runichar2 * src, rsize srcsize, rsize * dstoutsize, runichar2 ** srcendptr);
+/**
+ * @brief Decode UTF-32 @p src into UTF-16 @p dst.
+ *
+ * Codepoints outside the BMP produce a surrogate pair.
+ *
+ * @param dst        Destination UTF-16 buffer.
+ * @param dstsize    Capacity of @p dst in @c runichar2 code units
+ *                   (room for up to 2 units per codepoint plus the
+ *                   trailing NUL).
+ * @param src        UTF-32 source code units.
+ * @param srcsize    Code units in @p src.
+ * @param dstoutsize Receives the number of code units written.
+ * @param srcendptr  Receives a pointer one past the last consumed code unit.
+ */
+R_API RUnicodeResult r_utf32_to_utf16 (runichar2 * dst, rsize dstsize,
+    const runichar4 * src, rsize srcsize, rsize * dstoutsize, runichar4 ** srcendptr);
+
 /** @} */
 
 /**
@@ -133,22 +192,32 @@ R_API runichar2 * r_utf8_to_utf16_dup (const rchar * src, rssize srcsize,
 R_API rchar * r_utf16_to_utf8_dup (const runichar2 * src, rsize srcsize,
     RUnicodeResult * res, rsize * retsize, runichar2 ** endptr) R_ATTR_MALLOC;
 
+/**
+ * @brief Allocate and encode UTF-8 @p src as UTF-32.
+ * @return Freshly allocated UTF-32 buffer, or NULL on failure.
+ */
+R_API runichar4 * r_utf8_to_utf32_dup (const rchar * src, rssize srcsize,
+    RUnicodeResult * res, rsize * retsize, rchar ** endptr) R_ATTR_MALLOC;
+/**
+ * @brief Allocate and decode UTF-32 @p src as UTF-8.
+ * @return Freshly allocated UTF-8 buffer, or NULL on failure.
+ */
+R_API rchar * r_utf32_to_utf8_dup (const runichar4 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, runichar4 ** endptr) R_ATTR_MALLOC;
+/**
+ * @brief Allocate and encode UTF-16 @p src as UTF-32.
+ * @return Freshly allocated UTF-32 buffer, or NULL on failure.
+ */
+R_API runichar4 * r_utf16_to_utf32_dup (const runichar2 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, runichar2 ** endptr) R_ATTR_MALLOC;
+/**
+ * @brief Allocate and decode UTF-32 @p src as UTF-16.
+ * @return Freshly allocated UTF-16 buffer, or NULL on failure.
+ */
+R_API runichar2 * r_utf32_to_utf16_dup (const runichar4 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, runichar4 ** endptr) R_ATTR_MALLOC;
+
 /** @} */
-
-#if 0
-/* TODO: UTF-32 conversions - prototypes sketched but not yet
- * implemented. Left as a placeholder so the namespace shape stays
- * visible. */
-R_API runichar * r_utf8_to_uft32 (const rchar * str, rlong len,
-    rboolean * error, rlong * inlen, rlong * retlen) R_ATTR_MALLOC;
-R_API rchar * r_utf32_to_uft8 (const runichar *, rlong len,
-    rboolean * error, rlong * inlen, rlong * retlen) R_ATTR_MALLOC;
-
-R_API runichar * r_utf16_to_uft32 (const runichar2 * str, rlong len,
-    rboolean * error, rlong * inlen, rlong * retlen) R_ATTR_MALLOC;
-R_API runichar2 * r_utf32_to_uft16 (const runichar *, rlong len,
-    rboolean * error, rlong * inlen, rlong * retlen) R_ATTR_MALLOC;
-#endif
 
 R_END_DECLS
 
