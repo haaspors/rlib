@@ -35,7 +35,7 @@
 #include <rlib/rcrc.h>
 #include <rlib/renv.h>
 #include <rlib/rio.h>
-#include <rlib/riosocket.h>
+#include <rlib/net/riosocket.h>
 #include <rlib/rjson.h>
 #include <rlib/rjsonparser.h>
 #include <rlib/rlog.h>
@@ -48,8 +48,8 @@
 #include <rlib/rpoll.h>
 #include <rlib/rrand.h>
 #include <rlib/rref.h>
-#include <rlib/rsocket.h>
-#include <rlib/rsocketaddress.h>
+#include <rlib/net/rsocket.h>
+#include <rlib/net/rsocketaddress.h>
 #include <rlib/rstr.h>
 #include <rlib/rtaskqueue.h>
 #include <rlib/rtest.h>

@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include "../rsocket-private.h"
+#include "rsocket-private.h"
 #include "rnet-private.h"
 
 #include <rlib/rstr.h>

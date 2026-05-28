@@ -29,7 +29,7 @@
 #include <rlib/rbuffer.h>
 #include <rlib/crypto/rmsgdigest.h>
 #include <rlib/rrand.h>
-#include <rlib/rsocketaddress.h>
+#include <rlib/net/rsocketaddress.h>
 
 #include <rlib/rtc/rrtcrtpparameters.h>
 
