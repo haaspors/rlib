@@ -44,6 +44,17 @@
  * Code units are counted in their respective natural element type:
  * UTF-8 in @c rchar bytes, UTF-16 in @c runichar2 code units, and
  * UTF-32 in @c runichar4 code units.
+ *
+ * @note The in-buffer converters stop scanning the source when
+ * they encounter an embedded zero code unit (@c '\0' for UTF-8 /
+ * @c U+0000 for UTF-16 / UTF-32), even though @c U+0000 is a
+ * valid Unicode scalar. This matches the C-string convention the
+ * caller-supplied destination buffers are sized against: the
+ * output is always NUL-terminated, and asking the converter to
+ * pass through embedded @c U+0000 would make that contract
+ * ambiguous. Callers that need to encode a literal @c U+0000
+ * inside a string must split the input around the NUL and
+ * convert each segment.
  */
 
 R_BEGIN_DECLS
