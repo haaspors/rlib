@@ -27,9 +27,9 @@
 
 #include <rlib/rbuffer.h>
 
-#include <rlib/rsocketaddress.h>
+#include <rlib/net/rsocketaddress.h>
 /* RSocket enums */
-#include <rlib/riosocket.h>
+#include <rlib/net/riosocket.h>
 
 R_BEGIN_DECLS
 

@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include "rsocket-private.h"
-#include <rlib/riosocket.h>
+#include <rlib/net/riosocket.h>
 
 #include <rlib/rio.h>
 

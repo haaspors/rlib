@@ -26,7 +26,7 @@
 #include <rlib/rtypes.h>
 #include <rlib/rref.h>
 
-#include <rlib/rsocket.h>
+#include <rlib/net/rsocket.h>
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>

@@ -28,7 +28,7 @@
 #include <rlib/net/proto/rhttp.h>
 #include <rlib/ev/revloop.h>
 
-#include <rlib/rsocketaddress.h>
+#include <rlib/net/rsocketaddress.h>
 
 R_BEGIN_DECLS
 

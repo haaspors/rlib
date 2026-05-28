@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/rsocketaddress.h>
+#include <rlib/net/rsocketaddress.h>
 #include "rsocket-private.h"
 #include "net/rnet-private.h"
 

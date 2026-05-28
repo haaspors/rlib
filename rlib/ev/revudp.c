@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include "rev-private.h"
-#include "../rsocket-private.h"
+#include "../net/rsocket-private.h"
 #include "../net/rnet-private.h"
 #include <rlib/ev/revudp.h>
 
