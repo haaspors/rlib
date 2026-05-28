@@ -1876,3 +1876,141 @@ RTEST (runicode, ascii_classifiers, RTEST_FAST)
   }
 }
 RTEST_END;
+
+/* ---- WTF-8 round-trip --------------------------------------------- */
+
+RTEST (runicode, wtf8_strict_utf8_unchanged, RTEST_FAST)
+{
+  /* WTF-8 of a fully valid UTF-16 string is byte-identical to
+   * strict UTF-8. */
+  runichar2 src[] = { 'a', 0x3B1, 0xD83D, 0xDE00 };  /* a + α + 😀 */
+  rchar wtf[16], strict[16];
+  rsize wn, sn;
+  runichar2 * end1;
+  runichar2 * end2;
+
+  r_assert_cmpint (r_utf16_to_wtf8 (wtf, sizeof (wtf), src, 4, &wn, &end1),
+      ==, R_UNICODE_OK);
+  r_assert_cmpint (r_utf16_to_utf8 (strict, sizeof (strict), src, 4,
+        &sn, &end2), ==, R_UNICODE_OK);
+  r_assert_cmpuint (wn, ==, sn);
+  r_assert_cmpmem (wtf, ==, strict, wn);
+}
+RTEST_END;
+
+RTEST (runicode, wtf8_lone_high_surrogate_round_trip, RTEST_FAST)
+{
+  /* Lone high surrogate D801 -> WTF-8 ED A0 81 -> back to UTF-16. */
+  runichar2 src[] = { 'a', 0xD801, 'z' };
+  rchar wtf[16];
+  runichar2 back[8];
+  rsize wn, bn;
+  runichar2 * end16;
+  rchar * end8;
+
+  r_assert_cmpint (r_utf16_to_wtf8 (wtf, sizeof (wtf), src, 3, &wn, &end16),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (wn, ==, 5);  /* 1 + 3 + 1 */
+  r_assert_cmpmem (wtf, ==, "a\xED\xA0\x81z", 5);
+
+  r_assert_cmpint (r_wtf8_to_utf16 (back, R_N_ELEMENTS (back), wtf, wn,
+        &bn, &end8), ==, R_UNICODE_OK);
+  r_assert_cmpuint (bn, ==, 3);
+  r_assert_cmpuint (back[0], ==, 'a');
+  r_assert_cmpuint (back[1], ==, 0xD801);
+  r_assert_cmpuint (back[2], ==, 'z');
+}
+RTEST_END;
+
+RTEST (runicode, wtf8_lone_low_surrogate_round_trip, RTEST_FAST)
+{
+  runichar2 src[] = { 0xDC01 };
+  rchar wtf[8];
+  runichar2 back[4];
+  rsize wn, bn;
+  runichar2 * end16;
+  rchar * end8;
+
+  r_assert_cmpint (r_utf16_to_wtf8 (wtf, sizeof (wtf), src, 1, &wn, &end16),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (wn, ==, 3);
+  r_assert_cmpmem (wtf, ==, "\xED\xB0\x81", 3);
+
+  r_assert_cmpint (r_wtf8_to_utf16 (back, R_N_ELEMENTS (back), wtf, wn,
+        &bn, &end8), ==, R_UNICODE_OK);
+  r_assert_cmpuint (bn, ==, 1);
+  r_assert_cmpuint (back[0], ==, 0xDC01);
+}
+RTEST_END;
+
+RTEST (runicode, wtf8_supplementary_unchanged, RTEST_FAST)
+{
+  /* Properly paired surrogates still produce the canonical 4-byte
+   * UTF-8 in WTF-8 mode (unlike CESU-8, which would emit 6 bytes). */
+  runichar2 src[] = { 0xD83D, 0xDE00 };       /* 😀 */
+  rchar wtf[8];
+  rsize wn;
+  runichar2 * end;
+
+  r_assert_cmpint (r_utf16_to_wtf8 (wtf, sizeof (wtf), src, 2, &wn, &end),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (wn, ==, 4);
+  r_assert_cmpmem (wtf, ==, "\xF0\x9F\x98\x80", 4);
+}
+RTEST_END;
+
+RTEST (runicode, wtf8_dup_round_trip, RTEST_FAST)
+{
+  runichar2 src[] = { 'x', 0xD800, 'y' };
+  rchar * wtf;
+  runichar2 * back;
+  RUnicodeResult r;
+  runichar2 * end16;
+  rchar * end8;
+  rsize wn, bn;
+
+  wtf = r_utf16_to_wtf8_dup (src, 3, &r, &wn, &end16);
+  r_assert_cmpptr (wtf, !=, NULL);
+  r_assert_cmpint (r, ==, R_UNICODE_OK);
+
+  back = r_wtf8_to_utf16_dup (wtf, wn, &r, &bn, &end8);
+  r_assert_cmpptr (back, !=, NULL);
+  r_assert_cmpuint (bn, ==, 3);
+  r_assert_cmpuint (back[0], ==, 'x');
+  r_assert_cmpuint (back[1], ==, 0xD800);
+  r_assert_cmpuint (back[2], ==, 'y');
+
+  r_free (wtf);
+  r_free (back);
+}
+RTEST_END;
+
+RTEST (runicode, wtf8_rejects_overlong_and_oor, RTEST_FAST)
+{
+  /* Overlong + codepoint > U+10FFFF still rejected in WTF-8 mode -
+   * the only thing relaxed is the surrogate exclusion. */
+  runichar2 dst[8];
+  rchar * end;
+  rsize n;
+
+  r_assert_cmpint (r_wtf8_to_utf16 (dst, R_N_ELEMENTS (dst), "\xC0\xAF",
+        2, &n, &end), ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpint (r_wtf8_to_utf16 (dst, R_N_ELEMENTS (dst),
+        "\xF4\x90\x80\x80", 4, &n, &end),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+}
+RTEST_END;
+
+RTEST (runicode, strict_utf8_rejects_what_wtf8_accepts, RTEST_FAST)
+{
+  /* The 3-byte surrogate sequence ED A0 81 is the whole point of
+   * WTF-8 mode; r_utf8_to_utf16 must still reject it as INVALID. */
+  runichar2 dst[8];
+  rchar * end;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf16 (dst, R_N_ELEMENTS (dst),
+        "\xED\xA0\x81", 3, &n, &end),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+}
+RTEST_END;

@@ -1279,3 +1279,191 @@ r_utf32le_to_utf8_dup (const ruint8 * src, rsize srcsize, RUnicodeResult * res,
   return r_utfXX_to_utf8_dup_common (src, srcsize, res, retsize, endptr,
       4, 4, r_utf32le_to_utf8);
 }
+
+/* ---- WTF-8 (UTF-8 + unpaired surrogates) ---------------------------
+ * Same byte / surrogate plumbing as the strict converters, just
+ * with the "is this a surrogate codepoint?" rejection lifted on
+ * both decode (UTF-8 byte pattern -> surrogate code unit) and
+ * encode (lone surrogate -> 3-byte UTF-8). Overlong sequences and
+ * codepoints >= 0x110000 stay rejected. */
+
+RUnicodeResult
+r_utf16_to_wtf8 (rchar * dst, rsize dstsize, const runichar2 * src,
+    rsize srcsize, rsize * dstoutsize, runichar2 ** srcendptr)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  rchar * dstptr, * dstend;
+  rsize i;
+  rssize r;
+
+  if (R_UNLIKELY (dst == NULL || dstsize == 0 || src == NULL))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY (dstsize == 1)) {
+    dst[0] = 0;
+    return R_UNICODE_OVERFLOW;
+  }
+
+  if (srcsize > 0) {
+    if (src[0] == R_UTF16_BOM_SWAP)
+      return R_UNICODE_INVAL;
+    if (src[0] == R_UTF16_BOM) {
+      src++;
+      srcsize--;
+    }
+  }
+
+  for (i = 0, dstptr = dst, dstend = dst + dstsize - 1;
+      i < srcsize && src[i] > 0;
+      i++, dstptr += r) {
+    runichar uc;
+
+    if (src[i] < 0xd800 || src[i] >= 0xe000) {
+      uc = (runichar)src[i];
+    } else if (src[i] < 0xdc00) {
+      /* High surrogate; try to pair. WTF-8 only emits the surrogate
+       * directly if the pair is malformed - paired surrogates still
+       * produce the canonical 4-byte UTF-8. */
+      if (i + 1 < srcsize && src[i + 1] >= 0xdc00 && src[i + 1] < 0xe000) {
+        uc = 0x10000 + (((runichar)(src[i] - 0xd800)) << 10) +
+            ((runichar)(src[i + 1] - 0xdc00));
+        i++;
+      } else {
+        /* Lone high surrogate -> emit as 3-byte WTF-8. */
+        uc = (runichar)src[i];
+      }
+    } else {
+      /* Lone low surrogate -> emit as 3-byte WTF-8. */
+      uc = (runichar)src[i];
+    }
+
+    /* The strict r_unichar_to_utf8 emits the canonical 3-byte
+     * sequence for any codepoint in [0x800, 0x10000) - which
+     * includes the surrogate range. WTF-8 wants exactly those
+     * bytes for a lone surrogate, so we can call it directly. */
+    r = r_unichar_to_utf8 (uc, dstptr, dstend - dstptr);
+    if (r <= 0) {
+      ret = R_UNICODE_OVERFLOW;
+      break;
+    }
+  }
+
+  *dstptr = 0;
+  if (dstoutsize != NULL) *dstoutsize = dstptr - dst;
+  if (srcendptr != NULL) *srcendptr = (runichar2 *)&src[i];
+  return ret;
+}
+
+RUnicodeResult
+r_wtf8_to_utf16 (runichar2 * dst, rsize dstsize, const rchar * src,
+    rssize srcsize, rsize * dstoutsize, rchar ** srcendptr)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  runichar2 * dstptr, * dstend;
+  rssize i, r;
+
+  if (R_UNLIKELY (dst == NULL || dstsize == 0 || src == NULL))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY (dstsize == 1)) {
+    dst[0] = 0;
+    return R_UNICODE_OVERFLOW;
+  }
+
+  if (srcsize < 0) srcsize = r_strlen (src);
+
+  /* Strip leading UTF-8 BOM. */
+  if (srcsize >= 3 &&
+      (ruint8)src[0] == 0xef && (ruint8)src[1] == 0xbb &&
+      (ruint8)src[2] == 0xbf) {
+    src += 3; srcsize -= 3;
+  }
+
+  for (i = 0, dstptr = dst, dstend = dst + dstsize - 1;
+      i < srcsize && src[i] != 0;
+      i += r) {
+    runichar uc;
+
+    r = r_utf8_to_unichar (&src[i], srcsize - i, &uc);
+    if (r > 0) {
+      /* Reject only out-of-range codepoints. Surrogates are
+       * *allowed* in WTF-8. */
+      if (uc >= 0x110000) {
+        ret = R_UNICODE_INVALID_CODE_POINT;
+        break;
+      }
+      if (uc <= 0xffff) {
+        if (dstptr + 1 > dstend) {
+          ret = R_UNICODE_OVERFLOW;
+          break;
+        }
+        *dstptr++ = (runichar2)uc;
+      } else {
+        if (dstptr + 2 > dstend) {
+          ret = R_UNICODE_OVERFLOW;
+          break;
+        }
+        *dstptr++ = ((uc - 0x10000) / 0x400) | 0xd800;
+        *dstptr++ = ((uc - 0x10000) % 0x400) | 0xdc00;
+      }
+    } else if (r == 0) {
+      break;
+    } else if (r == R_UTF8_OVERLONG) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    } else {
+      ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+      break;
+    }
+  }
+
+  *dstptr = 0;
+  if (dstoutsize != NULL) *dstoutsize = dstptr - dst;
+  if (srcendptr != NULL) *srcendptr = (rchar *)&src[i];
+  return ret;
+}
+
+rchar *
+r_utf16_to_wtf8_dup (const runichar2 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, runichar2 ** endptr)
+{
+  rchar * ret;
+  RUnicodeResult r;
+  rsize dstsize;
+
+  if (R_UNLIKELY (src == NULL || srcsize == 0)) {
+    if (res != NULL) *res = R_UNICODE_INVAL;
+    return NULL;
+  }
+  dstsize = srcsize * 3 + 1;
+  if ((ret = r_mem_new_n (rchar, dstsize)) != NULL) {
+    if ((r = r_utf16_to_wtf8 (ret, dstsize, src, srcsize, retsize, endptr))
+        != R_UNICODE_OK) {
+      r_free (ret);
+      ret = NULL;
+    }
+  } else {
+    r = R_UNICODE_OOM;
+  }
+  if (res != NULL) *res = r;
+  return ret;
+}
+
+runichar2 *
+r_wtf8_to_utf16_dup (const rchar * src, rssize srcsize,
+    RUnicodeResult * res, rsize * retsize, rchar ** endptr)
+{
+  runichar2 * ret;
+  RUnicodeResult r;
+
+  if (srcsize < 0) srcsize = r_strlen (src);
+  if ((ret = r_mem_new_n (runichar2, srcsize + 1)) != NULL) {
+    if ((r = r_wtf8_to_utf16 (ret, srcsize + 1, src, srcsize, retsize, endptr))
+        != R_UNICODE_OK) {
+      r_free (ret);
+      ret = NULL;
+    }
+  } else {
+    r = R_UNICODE_OOM;
+  }
+  if (res != NULL) *res = r;
+  return ret;
+}
