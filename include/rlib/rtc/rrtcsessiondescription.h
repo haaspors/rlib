@@ -27,7 +27,7 @@
 #include <rlib/rref.h>
 
 #include <rlib/rbuffer.h>
-#include <rlib/rmsgdigest.h>
+#include <rlib/crypto/rmsgdigest.h>
 #include <rlib/rrand.h>
 #include <rlib/rsocketaddress.h>
 

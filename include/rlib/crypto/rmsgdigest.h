@@ -33,7 +33,7 @@
  */
 
 /**
- * @file rlib/rmsgdigest.h
+ * @file rlib/crypto/rmsgdigest.h
  * @brief Cryptographic message digests with a uniform absorb /
  * finalise / extract interface.
  *

@@ -29,7 +29,7 @@
 #include <rlib/data/rmpint.h>
 
 #include <rlib/rbuffer.h>
-#include <rlib/rmsgdigest.h>
+#include <rlib/crypto/rmsgdigest.h>
 
 R_BEGIN_DECLS
 

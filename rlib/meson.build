@@ -21,7 +21,7 @@ rlib_sources = [
   'rmemfile.c',
   'rmemscan.c',
   'rmodule.c',
-  'rmsgdigest.c',
+  'crypto/rmsgdigest.c',
   'rpoll.c',
   'rprng-kiss.c',
   'rprng-mt.c',

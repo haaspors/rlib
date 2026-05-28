@@ -23,7 +23,7 @@
 
 #include <rlib/crypto/recurve-edwards.h>
 #include <rlib/rmem.h>
-#include <rlib/rmsgdigest.h>
+#include <rlib/crypto/rmsgdigest.h>
 #include <rlib/rrand.h>
 
 /* L (the prime-order subgroup of edwards448) as BE bytes for use
