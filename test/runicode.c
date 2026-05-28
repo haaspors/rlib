@@ -1775,3 +1775,104 @@ RTEST (runicode, utf16_wire_dup_roundtrip, RTEST_FAST)
   r_free (out_le);
 }
 RTEST_END;
+
+/* ---- ASCII classification ----------------------------------------- */
+
+RTEST (runicode, ascii_classifiers, RTEST_FAST)
+{
+  /* Exhaustive over [0, 0x100) plus a couple of non-ASCII spot checks
+   * to confirm everything outside the ASCII range answers FALSE. */
+  runichar4 i;
+
+  /* is_ascii. */
+  r_assert (r_unichar_is_ascii ('a'));
+  r_assert (r_unichar_is_ascii (0x7F));
+  r_assert (!r_unichar_is_ascii (0x80));
+  r_assert (!r_unichar_is_ascii (0x3B1));     /* α */
+  r_assert (!r_unichar_is_ascii (0x10000));
+
+  /* letter. */
+  r_assert (r_unichar_is_ascii_letter ('A'));
+  r_assert (r_unichar_is_ascii_letter ('Z'));
+  r_assert (r_unichar_is_ascii_letter ('a'));
+  r_assert (r_unichar_is_ascii_letter ('z'));
+  r_assert (!r_unichar_is_ascii_letter ('@'));
+  r_assert (!r_unichar_is_ascii_letter ('['));
+  r_assert (!r_unichar_is_ascii_letter ('`'));
+  r_assert (!r_unichar_is_ascii_letter ('{'));
+  r_assert (!r_unichar_is_ascii_letter (0x3B1));
+
+  /* digit. */
+  r_assert (r_unichar_is_ascii_digit ('0'));
+  r_assert (r_unichar_is_ascii_digit ('9'));
+  r_assert (!r_unichar_is_ascii_digit ('/'));
+  r_assert (!r_unichar_is_ascii_digit (':'));
+  /* U+0660 = Arabic-Indic 0 -- a digit per UCD but not ASCII. */
+  r_assert (!r_unichar_is_ascii_digit (0x0660));
+
+  /* alnum. */
+  r_assert (r_unichar_is_ascii_alnum ('A'));
+  r_assert (r_unichar_is_ascii_alnum ('5'));
+  r_assert (!r_unichar_is_ascii_alnum ('-'));
+
+  /* hex_digit. */
+  r_assert (r_unichar_is_ascii_hex_digit ('0'));
+  r_assert (r_unichar_is_ascii_hex_digit ('9'));
+  r_assert (r_unichar_is_ascii_hex_digit ('A'));
+  r_assert (r_unichar_is_ascii_hex_digit ('F'));
+  r_assert (r_unichar_is_ascii_hex_digit ('a'));
+  r_assert (r_unichar_is_ascii_hex_digit ('f'));
+  r_assert (!r_unichar_is_ascii_hex_digit ('G'));
+  r_assert (!r_unichar_is_ascii_hex_digit ('g'));
+
+  /* space. */
+  r_assert (r_unichar_is_ascii_space (' '));
+  r_assert (r_unichar_is_ascii_space ('\t'));
+  r_assert (r_unichar_is_ascii_space ('\n'));
+  r_assert (r_unichar_is_ascii_space ('\v'));
+  r_assert (r_unichar_is_ascii_space ('\f'));
+  r_assert (r_unichar_is_ascii_space ('\r'));
+  r_assert (!r_unichar_is_ascii_space ('a'));
+  r_assert (!r_unichar_is_ascii_space (0x00A0));  /* NBSP, not ASCII. */
+
+  /* control. */
+  r_assert (r_unichar_is_ascii_control (0));
+  r_assert (r_unichar_is_ascii_control (0x1F));
+  r_assert (r_unichar_is_ascii_control (0x7F));
+  r_assert (!r_unichar_is_ascii_control (' '));
+  r_assert (!r_unichar_is_ascii_control ('a'));
+
+  /* print. */
+  r_assert (r_unichar_is_ascii_print (' '));
+  r_assert (r_unichar_is_ascii_print ('a'));
+  r_assert (r_unichar_is_ascii_print ('~'));
+  r_assert (!r_unichar_is_ascii_print (0x7F));
+  r_assert (!r_unichar_is_ascii_print (0x1F));
+  r_assert (!r_unichar_is_ascii_print (0x80));
+
+  /* punct. */
+  r_assert (r_unichar_is_ascii_punct ('!'));
+  r_assert (r_unichar_is_ascii_punct ('/'));
+  r_assert (r_unichar_is_ascii_punct (':'));
+  r_assert (r_unichar_is_ascii_punct ('~'));
+  r_assert (!r_unichar_is_ascii_punct ('a'));
+  r_assert (!r_unichar_is_ascii_punct ('0'));
+  r_assert (!r_unichar_is_ascii_punct (' '));
+  r_assert (!r_unichar_is_ascii_punct (0x7F));
+
+  /* Every non-ASCII codepoint must answer FALSE to every class
+   * except is_ascii itself (which it already fails). Spot-check
+   * around the boundary. */
+  for (i = 0x80; i <= 0x100; i++) {
+    r_assert (!r_unichar_is_ascii (i));
+    r_assert (!r_unichar_is_ascii_letter (i));
+    r_assert (!r_unichar_is_ascii_digit (i));
+    r_assert (!r_unichar_is_ascii_alnum (i));
+    r_assert (!r_unichar_is_ascii_hex_digit (i));
+    r_assert (!r_unichar_is_ascii_space (i));
+    r_assert (!r_unichar_is_ascii_control (i));
+    r_assert (!r_unichar_is_ascii_print (i));
+    r_assert (!r_unichar_is_ascii_punct (i));
+  }
+}
+RTEST_END;
