@@ -22,34 +22,61 @@ Platforms
 
 Features
 --------
-* Threads
-* Atomic operations
-* Clock/Timestamp
-* Socket/Networking
-* Buffers/Memory chunks abstraction through RMemAllocator
-* Log framework
-  * Nice colors in supported text terminals (not on windows (cmd.exe))
-* Test framework
-  * Nice assert framework
-  * Easy test declaration
-  * Detects crashes (`SIGSEGV ++`)
-  * Detects timeouts
-  * Forks tests on platforms where `fork()` is supported
-* Command line option parser
-* Multiple/Arbitrary precision integer (bignum, BIGINT, big integer) math
-* ASN.1
-  * BER and DER decoder
-* Cryptography
-  * Private/Public keys
-  * Ciphers
-* Threadpool
-  * Taskqueue
-* Event loop - using edge triggered IO events
-  * KQueue on BSD/Darwin
-  * Epoll on Linux
-  * IOCP on Windows
-* ELF parser
-* more to come ...
+
+### Foundations
+* Strict primitive types, refcounting (`RRef`), atomic operations
+* High-resolution clock and timing helpers
+* CPU feature detection driving runtime SIMD dispatch
+
+### Memory and buffers
+* Refcounted memory chunks with pluggable allocators (`RMem`, `RMemAllocator`)
+* Buffer abstraction, memory-mapped file regions, secure-clear helpers
+* Inline byte-buffer primitives
+
+### Data structures
+* Hashtable, hashset, dictionary, ptr arrays, lists, queues, bitsets
+* Mutable strings (`RString`)
+* Multi-precision integer math (`rmpint`)
+* Hazard-pointer reclamation, timeout callback lists
+
+### Text and encoding
+* ASCII classification and case helpers
+* Unicode 16 — UTF-8 / UTF-16 / UTF-32 / WTF-8 with UCD-backed properties and simple case mapping
+* Base64 (RFC 4648), JSON parser, CRC32 / CRC32C with HW dispatch
+
+### Threads and tasks
+* Threads, locks, atomics
+* Threadpool with a task-queue front-end
+* One-shot initialisation (`ROnce`)
+
+### Event loop and I/O
+* Edge-triggered event loop on `epoll` (Linux), `kqueue` (BSD / Darwin), IOCP (Windows)
+* TCP, UDP, DNS-resolve and wakeup event sources
+* Files, filesystem traversal, polling primitives
+
+### Networking
+* Sockets and socket addresses
+* HTTP client and server, URI parser
+* TLS client and server
+* STUN, RTP / RTCP, SDP, SRTP
+* WebRTC session, ICE transports, RTP listener / sender / receiver
+
+### Cryptography
+* AES (FIPS 197) with AES-NI, ARMv8-AES and PCLMULQDQ paths
+* HMAC and message digests (MD5, SHA-1, SHA-2 family, SHAKE-256)
+* Asymmetric keys: RSA, DSA, EC
+* Elliptic curves — short-Weierstrass, twisted Edwards (Ed25519, Ed448), Montgomery (X25519, X448)
+* EdDSA and XDH key exchange
+* PEM, ASN.1 BER / DER, X.509 certificates
+* SRTP and TLS ciphersuite tables
+
+### Binary formats
+* ELF, Mach-O, and PE / COFF parsers
+
+### Tooling
+* Test framework — asserts, fixtures, loop / stress / fuzzy / bench tiers, timeout detection, fork isolation
+* Command-line argument parser with grouped options and sub-commands
+* Logging framework with colour-aware terminals
 
 Getting the code
 --------
