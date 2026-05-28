@@ -22,9 +22,30 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/**
+ * @file rlib/binfmt/relf.h
+ * @ingroup r_binfmt_elf
+ * @brief ELF format spec: on-disk constants and packed @c struct
+ * layouts for the ELF32 / ELF64 file header, program / section /
+ * symbol / relocation / dynamic / note entries.
+ *
+ * Designed to be cast through directly after @c mmap; the parser
+ * in @c relfparser.h wraps these with bounds-checked accessors.
+ *
+ * For each ELF data structure rlib carries both the 32-bit and
+ * 64-bit variant - the parser picks at runtime based on
+ * @c ident[R_ELF_IDX_CLASS]. The hundreds of `#define` constants
+ * (machine types, section types, dynamic tags, ...) follow the
+ * names in the canonical ELF specification and are not individually
+ * Doxygen-annotated.
+ */
+
 #include <rlib/rtypes.h>
 
 R_BEGIN_DECLS
+
+/** @addtogroup r_binfmt_elf
+ *  @{ */
 
 #pragma pack(push, 1)
 
@@ -182,6 +203,7 @@ R_BEGIN_DECLS
 #define R_ELF_MACHINE_AVR32           0x18ad
 
 
+/** @brief ELF32 file header. */
 typedef struct {
   ruint8  ident[R_ELF_NIDENT];
   ruint16 type;
@@ -199,6 +221,7 @@ typedef struct {
   ruint16 shstrndx;
 } RElf32EHdr;
 
+/** @brief ELF64 file header. */
 typedef struct {
   ruint8  ident[R_ELF_NIDENT];
   ruint16 type;
@@ -245,6 +268,7 @@ typedef struct {
 #define R_ELF_PFLAGS_MASKPROC         0xf0000000
 #define R_ELF_PFLAGS_SUNW_FAILURE     0x00100000
 
+/** @brief ELF32 program-header entry (load-time segment descriptor). */
 typedef struct {
   ruint32 type;
   ruint32 offset;
@@ -256,6 +280,7 @@ typedef struct {
   ruint32 align;
 } RElf32PHdr;
 
+/** @brief ELF64 program-header entry. */
 typedef struct {
   ruint32 type;
   ruint32 flags;
@@ -339,6 +364,7 @@ typedef struct {
 #define R_ELF_SFLAGS_MASKOS           0x0ff00000
 #define R_ELF_SFLAGS_MASKPROC         0xf0000000
 
+/** @brief ELF32 section-header entry (link-time section descriptor). */
 typedef struct {
   ruint32 name;
   ruint32 type;
@@ -352,6 +378,7 @@ typedef struct {
   ruint32 entsize;
 } RElf32SHdr;
 
+/** @brief ELF64 section-header entry. */
 typedef struct {
   ruint32 name;
   ruint32 type;
@@ -366,6 +393,7 @@ typedef struct {
 } RElf64SHdr;
 
 /* Dynamic symbol */
+/** @brief ELF32 dynamic-table entry (tag + value pair). */
 typedef struct {
   rint32    tag;
   union {
@@ -374,6 +402,7 @@ typedef struct {
   } un;
 } RElf32Dyn;
 
+/** @brief ELF64 dynamic-table entry. */
 typedef struct {
   rint64    tag;
   union {
@@ -603,22 +632,26 @@ typedef struct {
 #define R_ELF_RELTYPE_ARM_THM_TLS_DESCSEQ32       0x82
 #define R_ELF_RELTYPE_ARM_IRELATIVE               0xa0
 
+/** @brief ELF32 relocation entry without explicit addend. */
 typedef struct {
   ruint32 offset;
   ruint32 info;
 } RElf32Rel;
 
+/** @brief ELF64 relocation entry without explicit addend. */
 typedef struct {
   ruint64 offset;
   ruint64 info;
 } RElf64Rel;
 
+/** @brief ELF32 relocation entry with explicit addend. */
 typedef struct {
   ruint32 offset;
   ruint32 info;
   rint32  addend;
 } RElf32Rela;
 
+/** @brief ELF64 relocation entry with explicit addend. */
 typedef struct {
   ruint64 offset;
   ruint64 info;
@@ -650,6 +683,7 @@ typedef struct {
 #define R_ELF_SYMOTHER_PROTECTED          3
 #define R_ELF_SYMOTHER_OPTIONAL           4
 
+/** @brief ELF32 symbol-table entry. */
 typedef struct {
   ruint32 name;
   ruint32 value;
@@ -659,6 +693,7 @@ typedef struct {
   ruint16 shndx;
 } RElf32Sym;
 
+/** @brief ELF64 symbol-table entry. */
 typedef struct {
   ruint32 name;
   ruint8  info;
@@ -703,12 +738,14 @@ typedef struct {
 #define R_ELF_NTYPE_METAG_RPIPE       0x501
 #define R_ELF_NTYPE_METAG_TLS         0x502
 
+/** @brief ELF32 note-section entry header (followed by name + descriptor payload). */
 typedef struct {
   ruint32 namesz;
   ruint32 descsz;
   ruint32 type;
 } RElf32NHdr;
 
+/** @brief ELF64 note-section entry header. */
 typedef struct {
   ruint32 namesz;
   ruint32 descsz;
@@ -716,6 +753,8 @@ typedef struct {
 } RElf64NHdr;
 
 #pragma pack(pop)
+
+/** @} */
 
 R_END_DECLS
 
