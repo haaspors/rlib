@@ -13,13 +13,17 @@
 PROJECT_NAME            = "rlib"
 PROJECT_BRIEF           = "Convenience library for useful things"
 
-# Source layout: public API headers under include/. Implementations
+# Source layout: public API headers under include/rlib. Pointing
+# INPUT at include/rlib (rather than include/) anchors the navtree
+# at the first level a user actually cares about - everyone reaches
+# rlib via <rlib/foo.h>, so the include/ wrapper is build-system
+# bookkeeping that doesn't belong in the docs tree. Implementations
 # under rlib/ are deliberately out of INPUT so that opaque-handle
 # struct bodies defined in `.c` files (and the `*-private.h`
 # headers shared across the implementation) don't leak through
 # TYPEDEF_HIDES_STRUCT into the public Data Structures listing.
 # README.md at the repo root anchors the main page.
-INPUT                   = include README.md
+INPUT                   = include/rlib README.md
 RECURSIVE               = YES
 FILE_PATTERNS           = *.h *.md
 USE_MDFILE_AS_MAINPAGE  = README.md
@@ -76,11 +80,13 @@ PREDEFINED              = R_API= \
                           R_UNLIKELY(x)=x \
                           R_LIKELY(x)=x
 
-# Paths shown in the generated docs are repo-relative ("include/rlib/...")
-# rather than absolute, so the output is reproducible regardless of where
-# CI checks the source out.
+# Paths shown in the generated docs are stripped of the build-system
+# prefix so file titles and breadcrumbs read as `crypto/rcipher.h`,
+# `rbuffer.h`, etc. - matching the navtree rooted at INPUT. The
+# STRIP_FROM_INC_PATH covers `#include` rendering, which retains
+# the `<rlib/...>` form users actually type.
 FULL_PATH_NAMES         = YES
-STRIP_FROM_PATH         = .
+STRIP_FROM_PATH         = include/rlib
 STRIP_FROM_INC_PATH     = include
 
 # Output formats: HTML only. LaTeX / man / RTF / XML are all switched
