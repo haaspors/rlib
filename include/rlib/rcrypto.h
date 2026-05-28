@@ -34,9 +34,9 @@
  *   - @ref r_crypto_ec — elliptic-curve arithmetic and the EdDSA /
  *     X25519 / X448 primitives layered on top.
  *   - @ref r_crypto_cert — generic certificate handle plus X.509.
- *   - @ref r_crypto_encoding — PEM container framing (BER / DER lives
- *     alongside the other binary-format parsers under
- *     @c include/rlib/asn1).
+ *   - @ref r_crypto_encoding — PEM container framing. ASN.1 BER / DER
+ *     lives under @ref r_format alongside the other structured-data
+ *     codecs; the crypto headers consume it heavily.
  *   - @ref r_crypto_ciphersuite — SRTP and TLS ciphersuite tables.
  */
 
@@ -71,8 +71,8 @@
  * @ingroup r_crypto
  *
  * @brief PEM container parsing / emission. ASN.1 BER and DER live
- * alongside the other binary-format parsers under @c include/rlib/asn1,
- * but the crypto headers consume them heavily so they are listed here
+ * under @ref r_format alongside the other structured-data codecs;
+ * the crypto headers consume them heavily, so they are listed here
  * as adjacent reading.
  */
 
