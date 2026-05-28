@@ -26,7 +26,7 @@
 
 #include <rlib/rclock.h>
 #include <rlib/rref.h>
-#include <rlib/rtaskqueue.h>
+#include <rlib/concurrency/rtaskqueue.h>
 
 #include <stdarg.h>
 

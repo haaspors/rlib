@@ -23,7 +23,7 @@
 #endif
 
 #include <rlib/rtypes.h>
-#include <rlib/ratomic.h>
+#include <rlib/concurrency/ratomic.h>
 #include <rlib/rbuffer.h>
 #include <rlib/rclr.h>
 #include <stdarg.h>

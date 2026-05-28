@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/ratomic.h>
+#include <rlib/concurrency/ratomic.h>
 
 #if !defined(USE_CLANG_ATOMICS) && !defined(USE_GNUC_ATOMICS) && \
     !defined(USE_SYNC_ATOMICS) && !defined(USE_MSC_ATOMICS)

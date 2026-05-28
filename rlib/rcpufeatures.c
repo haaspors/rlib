@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include <rlib/rcpufeatures.h>
-#include <rlib/rthreads.h>            /* ROnce */
+#include <rlib/concurrency/rthreads.h>            /* ROnce */
 
 #if defined(R_ARCH_X86_64) || defined(R_ARCH_X86)
 # if defined(_MSC_VER)

@@ -22,7 +22,7 @@
 #include <rlib/data/rlist.h>
 
 #include <rlib/rassert.h>
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 
 #define R_HZR_PTR_R g__r_hzrptr_count
 

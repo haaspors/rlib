@@ -26,7 +26,7 @@
 
 #include <rlib/rargparse.h>
 #include <rlib/rassert.h>
-#include <rlib/ratomic.h>
+#include <rlib/concurrency/ratomic.h>
 #include <rlib/rbase64.h>
 #include <rlib/rbuffer.h>
 #include <rlib/rclock.h>
@@ -51,10 +51,10 @@
 #include <rlib/net/rsocket.h>
 #include <rlib/net/rsocketaddress.h>
 #include <rlib/rstr.h>
-#include <rlib/rtaskqueue.h>
+#include <rlib/concurrency/rtaskqueue.h>
 #include <rlib/rtest.h>
-#include <rlib/rthreads.h>
-#include <rlib/rthreadpool.h>
+#include <rlib/concurrency/rthreads.h>
+#include <rlib/concurrency/rthreadpool.h>
 #include <rlib/rtime.h>
 #include <rlib/os/rtty.h>
 #include <rlib/ruri.h>

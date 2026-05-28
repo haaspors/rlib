@@ -43,7 +43,7 @@
 #define R_SYSFS_NODE                  "/sys/devices/system/node"
 #define R_SYSFS_NODE_FMT              "/sys/devices/system/node/node%u"
 
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 #endif
 
 #define R_LOG_CAT_DEFAULT &rlib_logcat

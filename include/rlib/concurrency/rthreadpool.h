@@ -27,7 +27,7 @@
 
 #include <rlib/data/rbitset.h>
 
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 
 R_BEGIN_DECLS
 

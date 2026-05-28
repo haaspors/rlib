@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include "rlib-private.h"
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 
 #include <rlib/os/rsys.h>
 

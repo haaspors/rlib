@@ -23,7 +23,7 @@
 
 #include <rlib/rassert.h>
 #include <rlib/rmem.h>
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 
 typedef RClockTime (*RClockGetTimeFunc) (const RClock * clock);
 typedef RClockTime (*RClockWaitFunc) (RClock * clock, RClockTime ts);

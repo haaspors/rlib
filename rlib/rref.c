@@ -20,7 +20,7 @@
 #include "rlib-private.h"
 #include <rlib/rref.h>
 
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 #include <rlib/data/rlist.h>
 
 static RRWMutex r_ref_weak_mutex = NULL;
