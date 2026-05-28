@@ -75,6 +75,22 @@ R_BEGIN_DECLS
 /** @brief Static initialiser for IPv6 @c in6addr_loopback (::1). */
 #define R_SOCKET_ADDRESS_IPV6_LOOPBACK_INIT   { { { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1 } } }
 
+/** @name Address-family constants
+ *
+ * Platform @c AF_* values mapped in @c rlib/rconfig.h. Used to seed
+ * @ref RSocketFamily; prefer the @c R_SOCKET_FAMILY_* enumerators in
+ * application code.
+ *  @{ */
+#ifdef RLIB_DOXYGEN
+/* Doxygen-only mirror; real values are host-resolved in rconfig.h. */
+#define R_AF_UNIX       1  /**< @brief Unix-domain address family (@c AF_UNIX). */
+#define R_AF_INET       2  /**< @brief IPv4 address family (@c AF_INET). */
+#define R_AF_INET6     10  /**< @brief IPv6 address family (@c AF_INET6). */
+#define R_AF_IRDA      23  /**< @brief IrDA address family (@c AF_IRDA). */
+#define R_AF_BLUETOOTH 31  /**< @brief Bluetooth address family (@c AF_BLUETOOTH). */
+#endif
+/** @} */
+
 /** @brief Address family discriminator. */
 typedef enum {
   R_SOCKET_FAMILY_NONE = 0,                       /**< Uninitialised / unknown. */
