@@ -24,6 +24,41 @@
 
 /* This header is included by rtypes.h (@ bottom of file) */
 
+/**
+ * @defgroup r_bitops Bit operations
+ * @ingroup r_types
+ *
+ * @brief Width-specific bit-twiddling macros: count-leading / trailing
+ * zeros, population count, parity, and masked shift / rotate.
+ *
+ * Every macro follows the @c R<WIDTH>_<OP> naming convention, where
+ * @c WIDTH is one of @c UINT8 / @c UINT16 / @c UINT32 / @c UINT64 /
+ * @c SIZE (plus the native-width @c UINT / @c ULONG / @c ULONGLONG
+ * helpers the fixed-width ones are built on), and @c OP is one of:
+ *
+ *   - @c _CLZ — count leading zero bits (width for a zero input).
+ *   - @c _CTZ — count trailing zero bits (width for a zero input).
+ *   - @c _POPCOUNT — number of set bits.
+ *   - @c _PARITY — 1 if an odd number of bits are set, else 0.
+ *   - @c _SHL / @c _SHR — shift left / right, masking the operand to
+ *     its width and the shift count to @c [0, width).
+ *   - @c _ROTL / @c _ROTR — rotate left / right within the width.
+ *
+ * CLZ / CTZ / POPCOUNT / PARITY compile down to the compiler's
+ * intrinsics (GCC/Clang @c __builtin_*, MSVC @c _BitScan* /
+ * @c __popcnt); the rest are plain macros. The @c RUINT32_CLZ
+ * family below is documented as the canonical example — the same
+ * eight operations exist for every listed width.
+ *
+ * @{
+ */
+
+/**
+ * @file rlib/types/rbitops.h
+ * @brief Width-specific count-zeros / popcount / parity / shift /
+ * rotate macros.
+ */
+
 R_BEGIN_DECLS
 
 #if defined(_MSC_VER)
@@ -136,9 +171,13 @@ rboolean __inline RULONGLONG_PARITY (ruint64 x)
 
 
 #if RLIB_SIZEOF_INT == 4
+/** @brief Count leading zero bits of a 32-bit @p x (32 if @p x is 0). */
 #define RUINT32_CLZ(x)          RUINT_CLZ (x)
+/** @brief Count trailing zero bits of a 32-bit @p x (32 if @p x is 0). */
 #define RUINT32_CTZ(x)          RUINT_CTZ (x)
+/** @brief Number of set bits in a 32-bit @p x. */
 #define RUINT32_POPCOUNT(x)     RUINT_POPCOUNT (x)
+/** @brief 1 if a 32-bit @p x has an odd number of set bits, else 0. */
 #define RUINT32_PARITY(x)       RUINT_PARITY (x)
 #elif RLIB_SIZEOF_LONG == 4
 #define RUINT32_CLZ(x)          RULONG_CLZ (x)
@@ -151,9 +190,13 @@ rboolean __inline RULONGLONG_PARITY (ruint64 x)
 #define RUINT32_POPCOUNT(x)     RUINT64_POPCOUNT (x & RUINT32_MAX)
 #define RUINT32_PARITY(x)       RUINT64_PARITY (x & RUINT32_MAX)
 #endif
+/** @brief Shift a 32-bit @p x left by @p n (operand and count masked to width). */
 #define RUINT32_SHL(x, n)       (((x) & RUINT32_MAX) << ((n) & 31))
+/** @brief Shift a 32-bit @p x right by @p n (operand and count masked to width). */
 #define RUINT32_SHR(x, n)       (((x) & RUINT32_MAX) >> ((n) & 31))
+/** @brief Rotate a 32-bit @p x left by @p n bits. */
 #define RUINT32_ROTL(x, n)      (RUINT32_SHL (x, n) | RUINT32_SHR (x, 32-(n)))
+/** @brief Rotate a 32-bit @p x right by @p n bits. */
 #define RUINT32_ROTR(x, n)      (RUINT32_SHR (x, n) | RUINT32_SHL (x, 32-(n)))
 
 #if RLIB_SIZEOF_INT == 2
@@ -216,5 +259,7 @@ rboolean __inline RULONGLONG_PARITY (ruint64 x)
 #endif
 
 R_END_DECLS
+
+/** @} */ /* r_bitops */
 
 #endif /* __R_BITOPS_H__ */

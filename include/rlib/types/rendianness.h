@@ -24,19 +24,53 @@
 
 /* This header is included by rtypes.h (@ bottom of file) */
 
+/**
+ * @defgroup r_endian Endianness
+ * @ingroup r_types
+ *
+ * @brief Byte-order detection, byte-swapping, host/network conversion
+ * and alignment-safe load / store of multi-byte integers.
+ *
+ * @ref R_BYTE_ORDER resolves to @ref R_LITTLE_ENDIAN or
+ * @ref R_BIG_ENDIAN for the target. The conversion macros follow the
+ * @c R<TYPE>_TO_<ORDER> / @c R<TYPE>_FROM_<ORDER> convention (for
+ * each integer type and @c LE / @c BE order) and are no-ops when the
+ * host order already matches, a byte swap otherwise. The @c RUINT16_BSWAP
+ * family below is the unconditional swap the conversions build on.
+ *
+ * For reading or writing integers out of arbitrary (possibly
+ * unaligned) byte pointers — network buffers, packed structs — use
+ * the @ref r_load_be32 / @ref r_store_le32 inline helpers, which go
+ * through @c memcpy to avoid undefined behaviour.
+ *
+ * @{
+ */
+
+/**
+ * @file rlib/types/rendianness.h
+ * @brief Byte-order detection, byte swapping, and host/network
+ * integer conversion.
+ */
+
 R_BEGIN_DECLS
 
+/** @brief @ref R_BYTE_ORDER value for little-endian targets. */
 #define R_LITTLE_ENDIAN         1234
+/** @brief @ref R_BYTE_ORDER value for big-endian targets. */
 #define R_BIG_ENDIAN            4321
 
 #if R_GNUC_PREREQ(4, 2)
 /* Appearantly 16bit byteswap is missing from some versions of GCC on x86?? */
 #if !defined(__clang__) && !R_GNUC_PREREQ(4, 8)
+/** @brief Reverse the bytes of a 16-bit value. */
 #define RUINT16_BSWAP(val) ((ruint16) (((ruint16)(val) >> 8) | ((ruint16)(val) << 8)))
 #else
+/** @brief Reverse the bytes of a 16-bit value. */
 #define RUINT16_BSWAP(val) ((ruint16) __builtin_bswap16 ((rint16) (val)))
 #endif
+/** @brief Reverse the bytes of a 32-bit value. */
 #define RUINT32_BSWAP(val) ((ruint32) __builtin_bswap32 ((rint32) (val)))
+/** @brief Reverse the bytes of a 64-bit value. */
 #define RUINT64_BSWAP(val) ((ruint64) __builtin_bswap64 ((rint64) (val)))
 #elif defined(_MSC_VER)
 #define RUINT16_BSWAP(val) (_byteswap_ushort ((unsigned short)(val)))
@@ -60,6 +94,7 @@ R_BEGIN_DECLS
       (((ruint64)(val) & RUINT64_CONSTANT (0xFF00000000000000)) >> 56)))
 #endif
 
+/** @brief Target byte order: @ref R_LITTLE_ENDIAN or @ref R_BIG_ENDIAN. */
 #if defined(_MSC_VER)
 #define R_BYTE_ORDER R_LITTLE_ENDIAN
 #elif  __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -195,85 +230,108 @@ R_BEGIN_DECLS
 #define RSSIZE_FROM_BE(val)   (RSSIZE_TO_BE   (val))
 
 
+/** @name Network/host byte-order aliases (BSD @c ntoh / @c hton names)
+ *  @{ */
+/** @brief Network-to-host, 32-bit (alias for @c RUINT32_FROM_BE). */
 #define r_ntohl(val)          (RUINT32_FROM_BE  (val))
+/** @brief Network-to-host, 16-bit (alias for @c RUINT16_FROM_BE). */
 #define r_ntohs(val)          (RUINT16_FROM_BE  (val))
+/** @brief Host-to-network, 32-bit (alias for @c RUINT32_TO_BE). */
 #define r_htonl(val)          (RUINT32_TO_BE    (val))
+/** @brief Host-to-network, 16-bit (alias for @c RUINT16_TO_BE). */
 #define r_htons(val)          (RUINT16_TO_BE    (val))
+/** @} */
 
-/* Alignment-safe load/store helpers for reading multi-byte integers
- * out of arbitrary byte pointers (network buffers, packed structs).
- * Casting a ruint8 * to ruint{16,32,64} * and dereferencing is UB
- * when the pointer doesn't meet the wider type's alignment, even on
- * architectures where it happens to work; modern compilers fold the
- * memcpy below into the same single load/store on x86/x86-64 and
- * emit safe unaligned access on ARM. */
+/** @name Alignment-safe load / store
+ *
+ * Read or write a multi-byte integer through an arbitrary, possibly
+ * unaligned byte pointer (network buffers, packed structs). Casting
+ * a @c ruint8* to a wider pointer and dereferencing is undefined
+ * behaviour when alignment isn't met; these helpers go through
+ * @c memcpy, which compilers fold into a single (un)aligned access.
+ *  @{ */
+/** @brief Load a big-endian 16-bit integer from @p p. */
 static inline ruint16 r_load_be16 (const void * p)
 {
   ruint16 v;
   memcpy (&v, p, sizeof (v));
   return RUINT16_FROM_BE (v);
 }
+/** @brief Load a big-endian 32-bit integer from @p p. */
 static inline ruint32 r_load_be32 (const void * p)
 {
   ruint32 v;
   memcpy (&v, p, sizeof (v));
   return RUINT32_FROM_BE (v);
 }
+/** @brief Load a big-endian 64-bit integer from @p p. */
 static inline ruint64 r_load_be64 (const void * p)
 {
   ruint64 v;
   memcpy (&v, p, sizeof (v));
   return RUINT64_FROM_BE (v);
 }
+/** @brief Load a little-endian 16-bit integer from @p p. */
 static inline ruint16 r_load_le16 (const void * p)
 {
   ruint16 v;
   memcpy (&v, p, sizeof (v));
   return RUINT16_FROM_LE (v);
 }
+/** @brief Load a little-endian 32-bit integer from @p p. */
 static inline ruint32 r_load_le32 (const void * p)
 {
   ruint32 v;
   memcpy (&v, p, sizeof (v));
   return RUINT32_FROM_LE (v);
 }
+/** @brief Load a little-endian 64-bit integer from @p p. */
 static inline ruint64 r_load_le64 (const void * p)
 {
   ruint64 v;
   memcpy (&v, p, sizeof (v));
   return RUINT64_FROM_LE (v);
 }
+/** @brief Store @p v as a big-endian 16-bit integer at @p p. */
 static inline void r_store_be16 (void * p, ruint16 v)
 {
   ruint16 be = RUINT16_TO_BE (v);
   memcpy (p, &be, sizeof (be));
 }
+/** @brief Store @p v as a big-endian 32-bit integer at @p p. */
 static inline void r_store_be32 (void * p, ruint32 v)
 {
   ruint32 be = RUINT32_TO_BE (v);
   memcpy (p, &be, sizeof (be));
 }
+/** @brief Store @p v as a big-endian 64-bit integer at @p p. */
 static inline void r_store_be64 (void * p, ruint64 v)
 {
   ruint64 be = RUINT64_TO_BE (v);
   memcpy (p, &be, sizeof (be));
 }
+/** @brief Store @p v as a little-endian 16-bit integer at @p p. */
 static inline void r_store_le16 (void * p, ruint16 v)
 {
   ruint16 le = RUINT16_TO_LE (v);
   memcpy (p, &le, sizeof (le));
 }
+/** @brief Store @p v as a little-endian 32-bit integer at @p p. */
 static inline void r_store_le32 (void * p, ruint32 v)
 {
   ruint32 le = RUINT32_TO_LE (v);
   memcpy (p, &le, sizeof (le));
 }
+/** @brief Store @p v as a little-endian 64-bit integer at @p p. */
 static inline void r_store_le64 (void * p, ruint64 v)
 {
   ruint64 le = RUINT64_TO_LE (v);
   memcpy (p, &le, sizeof (le));
 }
+/** @} */
 
 R_END_DECLS
+
+/** @} */ /* r_endian */
 
 #endif /* __R_ENDIANNESS_H__ */
