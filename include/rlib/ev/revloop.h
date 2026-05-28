@@ -38,7 +38,7 @@ typedef enum {
   R_EV_LOOP_RUN_NOWAIT,
 } REvLoopRunMode;
 
-typedef struct _REvLoop REvLoop;
+typedef struct REvLoop REvLoop;
 typedef void (*REvFunc) (rpointer data, REvLoop * loop);
 typedef rboolean (*REvFuncReturn) (rpointer data, REvLoop * loop);
 

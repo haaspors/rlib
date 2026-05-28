@@ -39,7 +39,7 @@ typedef struct {
   RRtcBufferCb      rtcp;
 } RRtcRtpReceiverCallbacks;
 
-typedef struct _RRtcRtpReceiver RRtcRtpReceiver;
+typedef struct RRtcRtpReceiver RRtcRtpReceiver;
 
 #define r_rtc_rtp_receiver_ref      r_ref_ref
 #define r_rtc_rtp_receiver_unref    r_ref_unref

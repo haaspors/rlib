@@ -22,7 +22,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-struct _RHmac {
+struct RHmac {
   RMsgDigest * inner;
   RMsgDigest * outer;
   ruint32 * keyblock;

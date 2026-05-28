@@ -113,7 +113,7 @@ typedef enum {
 } RCryptoResult;
 
 /** @brief Opaque polymorphic asymmetric-key handle. */
-typedef struct _RCryptoKey RCryptoKey;
+typedef struct RCryptoKey RCryptoKey;
 
 /** @brief Increment the reference count on @p key. */
 #define r_crypto_key_ref r_ref_ref

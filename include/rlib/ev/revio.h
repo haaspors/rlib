@@ -37,8 +37,8 @@ typedef enum {
 } REvIOEvent;
 typedef ruint REvIOEvents;
 
-typedef struct _REvLoop REvLoop;
-typedef struct _REvIO REvIO;
+typedef struct REvLoop REvLoop;
+typedef struct REvIO REvIO;
 typedef void (*REvIOFunc) (rpointer data, REvIO * evio);
 typedef void (*REvIOCB) (rpointer data, REvIOEvents events, REvIO * evio);
 

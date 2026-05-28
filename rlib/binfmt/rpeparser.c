@@ -23,7 +23,7 @@
 #include <rlib/rmemfile.h>
 #include <rlib/rstr.h>
 
-struct _RPeParser {
+struct RPeParser {
   RRef ref;
   RMemFile * file;
   rpointer mem;

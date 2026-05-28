@@ -64,11 +64,11 @@
 R_BEGIN_DECLS
 
 /** @brief Opaque parser handle. */
-typedef struct _RArgParser RArgParser;
+typedef struct RArgParser RArgParser;
 /** @brief Opaque option-group handle (named subset of options). */
-typedef struct _RArgOptionGroup RArgOptionGroup;
+typedef struct RArgOptionGroup RArgOptionGroup;
 /** @brief Opaque parse-result context returned by @c r_arg_parser_parse. */
-typedef struct _RArgParseCtx RArgParseCtx;
+typedef struct RArgParseCtx RArgParseCtx;
 
 /**
  * @brief Value type carried by an @c RArgOptionEntry.

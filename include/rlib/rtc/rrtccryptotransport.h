@@ -36,7 +36,7 @@ typedef enum {
   R_RTC_CRYPTO_ROLE_CLIENT,
 } RRtcCryptoRole;
 
-typedef struct _RRtcCryptoTransport RRtcCryptoTransport;
+typedef struct RRtcCryptoTransport RRtcCryptoTransport;
 
 #define r_rtc_crypto_transport_ref    r_ref_ref
 #define r_rtc_crypto_transport_unref  r_ref_unref

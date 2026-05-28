@@ -70,7 +70,7 @@
 #define R_AES_PARALLEL8_BLOCKS 8
 #define R_AES_PARALLEL8_BYTES  (R_AES_PARALLEL8_BLOCKS * R_AES_BLOCK_BYTES)
 
-typedef struct _RAesCipher RAesCipher;
+typedef struct RAesCipher RAesCipher;
 typedef rboolean (*RAesBlockFn) (const RAesCipher * aes,
     ruint8 dst[R_AES_BLOCK_BYTES], const ruint8 src[R_AES_BLOCK_BYTES]);
 typedef void (*RAesBlocksFn) (const RAesCipher * aes,
@@ -108,7 +108,7 @@ r_aes_ctr_add (ruint8 iv[R_AES_BLOCK_BYTES], ruint32 n)
   r_store_be64 (iv + 8, new_lo);
 }
 
-struct _RAesCipher {
+struct RAesCipher {
   RCryptoCipher cipher;
 
   ruint8 key[R_AES_MAX_KEY_BYTES];

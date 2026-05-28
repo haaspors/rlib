@@ -38,7 +38,7 @@ R_API rboolean r_file_write_all (const rchar * filename, rconstpointer data, rsi
 R_API ruint r_file_read_uint (const rchar * filename, ruint def);
 R_API int   r_file_read_int (const rchar * filename, int def);
 
-typedef struct _RFile RFile;
+typedef struct RFile RFile;
 
 R_API RFile * r_file_open (const rchar * file, const rchar * mode);
 #define r_file_new_tmp(dir, pre, path) r_file_new_tmp_full (dir, pre, "w", path)

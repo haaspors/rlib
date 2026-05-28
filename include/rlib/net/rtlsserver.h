@@ -34,7 +34,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RTLSServer RTLSServer;
+typedef struct RTLSServer RTLSServer;
 
 typedef rboolean (*RTLSServerBufferCb) (rpointer ctx, RBuffer * buf, RTLSServer * server);
 typedef void (*RTLSServerHandshakeDoneCb) (rpointer ctx, RTLSServer * server);

@@ -49,7 +49,7 @@ typedef enum {
   R_SOCKET_FAMILY_BLUETOOTH = R_AF_BLUETOOTH,
 } RSocketFamily;
 
-typedef struct _RSocketAddress  RSocketAddress;
+typedef struct RSocketAddress  RSocketAddress;
 
 R_API RSocketAddress * r_socket_address_new (void) R_ATTR_MALLOC;
 R_API RSocketAddress * r_socket_address_new_from_native (rconstpointer addr, rsize addrsize) R_ATTR_MALLOC;

@@ -28,7 +28,7 @@ R_BEGIN_DECLS
 
 typedef ruint64 (*RPrngGetFunc) (RPrng * prng);
 
-struct _RPrng {
+struct RPrng {
   RRef ref;
   RPrngGetFunc get;
   ruint64 data[0];

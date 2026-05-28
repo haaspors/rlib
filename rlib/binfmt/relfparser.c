@@ -27,7 +27,7 @@
 #define RELF32_IDX  0
 #define RELF64_IDX  1
 
-struct _RElfParser {
+struct RElfParser {
   rauint refcount;
   RMemFile * file;
   rpointer mem;

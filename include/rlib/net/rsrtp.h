@@ -51,7 +51,7 @@ typedef enum {
   R_SRTP_ERROR_E_BIT_MISMATCH,
 } RSRTPError;
 
-typedef struct _RSRTPCtx RSRTPCtx;
+typedef struct RSRTPCtx RSRTPCtx;
 
 R_API RSRTPCtx * r_srtp_ctx_new (void) R_ATTR_MALLOC;
 #define r_srtp_ctx_ref      r_ref_ref

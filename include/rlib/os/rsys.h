@@ -58,9 +58,9 @@ R_API rboolean r_sys_nodeset_with_allowed_cpus (RBitset * nodeset);
 R_API rboolean r_sys_nodeset_for_cpuset (RBitset * nodeset, const RBitset * cpuset);
 
 /* Topology API */
-typedef struct _RSysTopology  RSysTopology;
-typedef struct _RSysNode      RSysNode;
-typedef struct _RSysCpu       RSysCpu;
+typedef struct RSysTopology  RSysTopology;
+typedef struct RSysNode      RSysNode;
+typedef struct RSysCpu       RSysCpu;
 
 R_API RSysTopology * r_sys_topology_discover (void);
 

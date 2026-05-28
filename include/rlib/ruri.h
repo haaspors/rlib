@@ -34,7 +34,7 @@ R_BEGIN_DECLS
 R_API rchar * r_uri_escape_str (const rchar * str, rssize size, rsize * out) R_ATTR_MALLOC;
 R_API rchar * r_uri_unescape_str (const rchar * str, rssize size, rsize * out) R_ATTR_MALLOC;
 
-typedef struct _RUri RUri;
+typedef struct RUri RUri;
 #define r_uri_ref r_ref_ref
 #define r_uri_unref r_ref_unref
 

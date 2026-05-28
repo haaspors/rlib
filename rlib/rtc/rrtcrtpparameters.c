@@ -24,7 +24,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-static const struct _RRtcCodecInfo {
+static const struct RRtcCodecInfo {
   const rchar *   name;
   RRTPPayloadType pt;
   RRtcMediaType   media;

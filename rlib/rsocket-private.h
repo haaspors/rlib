@@ -110,7 +110,7 @@ typedef int socklen_t;
 #endif
 #endif
 
-struct _RSocket {
+struct RSocket {
   RRef ref;
 
   RIOHandle       handle;
@@ -120,7 +120,7 @@ struct _RSocket {
   RSocketFlags    flags;
 };
 
-struct _RSocketAddress {
+struct RSocketAddress {
   RRef ref;
 
   struct sockaddr_storage addr;

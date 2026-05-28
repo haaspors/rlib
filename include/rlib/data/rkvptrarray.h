@@ -27,7 +27,7 @@ R_BEGIN_DECLS
 
 #define R_KV_PTR_ARRAY_INVALID_IDX  RSIZE_MAX
 
-typedef struct _RKVPtrArray RKVPtrArray;
+typedef struct RKVPtrArray RKVPtrArray;
 
 /* Create using stack/static/embedded initialization */
 #define R_KV_PTR_ARRAY_INIT_WITH_FUNC(eqfunc) { R_REF_STATIC_INIT (NULL), eqfunc, 0, 0, NULL }
@@ -70,7 +70,7 @@ R_API rsize r_kv_ptr_array_foreach_range (RKVPtrArray * array,
   r_kv_ptr_array_foreach_range (array, 0, -1, func, user)
 
 
-struct _RKVPtrArray {
+struct RKVPtrArray {
   RRef ref;
 
   REqualFunc eqfunc;

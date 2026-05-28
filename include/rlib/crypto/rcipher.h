@@ -113,7 +113,7 @@ typedef enum {
 } RCryptoCipherResult;
 
 /** @brief Opaque cipher handle. */
-typedef struct _RCryptoCipher RCryptoCipher;
+typedef struct RCryptoCipher RCryptoCipher;
 
 /**
  * @brief Operation function signature for one-shot encrypt / decrypt.
@@ -209,7 +209,7 @@ typedef struct {
  * into the family's static info array while the surrounding bytes
  * carry the family-specific state (key schedule, etc.).
  */
-struct _RCryptoCipher {
+struct RCryptoCipher {
   RRef ref;                            /**< Reference counter. */
   const RCryptoCipherInfo * info;      /**< Borrowed descriptor for this instance. */
 };

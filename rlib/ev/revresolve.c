@@ -22,7 +22,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-struct _REvResolve {
+struct REvResolve {
   RRef ref;
 
   rchar * host;

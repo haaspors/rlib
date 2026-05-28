@@ -33,7 +33,7 @@ typedef struct {
   raptr ptr;
   RDestroyNotify notify;
 } rhzrptr;
-typedef struct _RHzrPtrRec RHzrPtrRec;
+typedef struct RHzrPtrRec RHzrPtrRec;
 
 /* Access to the hzr pointer should be guarded with aqcuire/release pattern */
 R_API rpointer r_hzr_ptr_aqcuire (rhzrptr * hzrptr, RHzrPtrRec * rec);

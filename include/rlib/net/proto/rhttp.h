@@ -132,7 +132,7 @@ typedef enum {
   R_HTTP_STATUS_MAX                                   = 999,
 } RHttpStatus;
 
-typedef struct _RHttpMsg RHttpMsg;
+typedef struct RHttpMsg RHttpMsg;
 R_API RBuffer * r_http_msg_get_buffer (RHttpMsg * msg) R_ATTR_WARN_UNUSED_RESULT;
 R_API rchar * r_http_msg_get_body (RHttpMsg * msg, rsize * size) R_ATTR_MALLOC;
 R_API RBuffer * r_http_msg_get_body_buffer (RHttpMsg * msg) R_ATTR_WARN_UNUSED_RESULT;
@@ -144,7 +144,7 @@ R_API rchar * r_http_msg_get_header (RHttpMsg * msg, const rchar * field, rssize
 R_API rboolean r_http_msg_add_header (RHttpMsg * msg,
     const rchar * field, rssize fsize, const rchar * value, rssize vsize);
 
-typedef struct _RHttpRequest RHttpRequest;
+typedef struct RHttpRequest RHttpRequest;
 #define r_http_request_ref    r_ref_ref
 #define r_http_request_unref  r_ref_unref
 
@@ -169,7 +169,7 @@ R_API RHttpBodyParseType r_http_request_get_body_parse_type (RHttpRequest * req)
 R_API rssize r_http_request_calc_body_size (RHttpRequest * req, RHttpBodyParseType * type);
 
 
-typedef struct _RHttpResponse RHttpResponse;
+typedef struct RHttpResponse RHttpResponse;
 #define r_http_response_ref   r_ref_ref
 #define r_http_response_unref r_ref_unref
 

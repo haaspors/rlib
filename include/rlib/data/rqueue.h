@@ -92,7 +92,7 @@ static inline void        r_cbqueue_merge (RCBQueue * dst, RCBQueue * src);
 /******************************************************************************/
 /* Queue implemented with a circular ring buffer                              */
 /******************************************************************************/
-typedef struct _RQueueRing RQueueRing;
+typedef struct RQueueRing RQueueRing;
 R_API RQueueRing * r_queue_ring_new (rsize size) R_ATTR_MALLOC;
 #define r_queue_ring_ref    r_ref_ref
 #define r_queue_ring_unref  r_ref_unref

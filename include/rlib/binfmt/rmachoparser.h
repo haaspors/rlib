@@ -31,7 +31,7 @@ R_BEGIN_DECLS
 R_API rboolean r_macho_is_valid (rconstpointer mem);
 R_API rsize r_macho_calc_size (rconstpointer mem);
 
-typedef struct _RMachoParser RMachoParser;
+typedef struct RMachoParser RMachoParser;
 
 R_API RMachoParser * r_macho_parser_new (const rchar * filename);
 R_API RMachoParser * r_macho_parser_new_from_handle (RIOHandle handle);

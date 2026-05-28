@@ -105,9 +105,9 @@ typedef ruint32 RMemMapFlags;
 #define R_MEM_ALLOCATOR_SYSTEM        "system"
 
 /** @brief Opaque handle to an allocator backend. */
-typedef struct _RMemAllocator         RMemAllocator;
+typedef struct RMemAllocator         RMemAllocator;
 /** @brief Opaque handle to a refcounted memory chunk. */
-typedef struct _RMem                  RMem;
+typedef struct RMem                  RMem;
 
 /**
  * @brief Allocation-time constraints passed to @c r_mem_allocator_alloc
@@ -337,7 +337,7 @@ R_API RMem *    r_mem_take_array (const RMemAllocationParams * params,
  * them in; client code should treat the struct as opaque and use the
  * accessor macros (@c r_mem_is_*).
  */
-struct _RMem {
+struct RMem {
   RRef            ref;              /**< Refcount base (handled by @c r_ref_ref / @c r_ref_unref). */
   RMemFlags       flags;            /**< @c RMemFlag bitmask. */
   RMemAllocator * allocator;        /**< Backend that produced this chunk. */
@@ -456,7 +456,7 @@ r_mem_allocator_alloc (RMemAllocator * allocator, RMemFlags flags, rsize size,
  * fields and the seven vtable slots. Client code treats the struct
  * as opaque and goes through the helpers above.
  */
-struct _RMemAllocator {
+struct RMemAllocator {
   RRef            ref;              /**< Refcount base. */
   const rchar *   mem_type;         /**< Registry name (e.g. @c R_MEM_ALLOCATOR_SYSTEM). */
   rsize           alignmask;        /**< Native alignment guarantee of this allocator. */

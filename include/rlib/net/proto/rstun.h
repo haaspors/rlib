@@ -105,7 +105,7 @@ typedef enum {
 
 #define r_stun_attr_type_is_optional(type)  ((type) & 0x8000)
 
-typedef struct _RStunAttrTLV {
+typedef struct RStunAttrTLV {
   const ruint8 *  start;  /* (first octet of tlv) */
   ruint16         type;   /* Type (parsed) */
   ruint16         len;    /* Length (parsed) */

@@ -36,7 +36,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RBuffer RBuffer;
+typedef struct RBuffer RBuffer;
 #define r_buffer_ref    r_ref_ref
 #define r_buffer_unref  r_ref_unref
 

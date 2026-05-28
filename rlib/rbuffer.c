@@ -25,7 +25,7 @@
 
 #define R_BUFFER_MAX_MEM    32
 
-struct _RBuffer {
+struct RBuffer {
   RRef ref;
 
   RMem * mem[R_BUFFER_MAX_MEM];

@@ -47,7 +47,7 @@ typedef enum {
   R_RTC_ICE_STATE_CLOSED,
 } RRtcIceState;
 
-typedef struct _RRtcIceTransport RRtcIceTransport;
+typedef struct RRtcIceTransport RRtcIceTransport;
 
 #define r_rtc_ice_transport_ref       r_ref_ref
 #define r_rtc_ice_transport_unref     r_ref_unref

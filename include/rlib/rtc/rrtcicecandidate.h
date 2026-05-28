@@ -53,7 +53,7 @@ typedef enum {
   R_RTC_ICE_PROTO_LAST  = R_RTC_ICE_PROTO_TCP,
 } RRtcIceProtocol;
 
-typedef struct _RRtcIceCandidate RRtcIceCandidate;
+typedef struct RRtcIceCandidate RRtcIceCandidate;
 
 R_API RRtcIceCandidate * r_rtc_ice_candidate_new_full (
     const rchar * foundation, rssize fsize, ruint64 pri, RRtcIceComponent component,

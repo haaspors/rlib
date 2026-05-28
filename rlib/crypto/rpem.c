@@ -161,7 +161,7 @@ r_pem_encode_priv_key (const RCryptoKey * key, rsize * outsize)
   return buf;
 }
 
-struct _RPemParser {
+struct RPemParser {
   RRef ref;
 
   RMemFile * file;
@@ -178,7 +178,7 @@ typedef enum {
   R_PEM_LEGACY_CIPHER_AES_256_CBC
 } RPemLegacyCipher;
 
-struct _RPemBlock {
+struct RPemBlock {
   RRef ref;
 
   RPemParser * parser;

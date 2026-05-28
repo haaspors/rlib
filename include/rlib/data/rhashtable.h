@@ -29,7 +29,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RHashTable RHashTable;
+typedef struct RHashTable RHashTable;
 
 typedef enum {
   R_HASH_TABLE_REPLACE = -1,

@@ -42,7 +42,7 @@
 #endif
 
 
-struct _RSigAlrmTimer {
+struct RSigAlrmTimer {
   RSignalFunc ofunc;
 #if defined (R_OS_WIN32)
   HANDLE timer;

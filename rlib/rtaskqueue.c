@@ -43,7 +43,7 @@ typedef enum {
   R_TASK_CANCELED = 0xf1,
 } RTaskState;
 
-struct _RTask {
+struct RTask {
   RRef ref;
   rauint state;
 
@@ -64,7 +64,7 @@ typedef struct {
   ruint     threads;
 } RTQCtx;
 
-struct _RTaskQueue {
+struct RTaskQueue {
   RRef ref;
 
   RThreadPool * pool;

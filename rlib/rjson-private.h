@@ -29,36 +29,36 @@
 
 R_BEGIN_DECLS
 
-struct _RJsonObject {
+struct RJsonObject {
   RJsonValue value;
   RKVPtrArray array;
 };
 
-struct _RJsonArray  {
+struct RJsonArray  {
   RJsonValue value;
   RPtrArray array;
 };
 
-struct _RJsonNumber {
+struct RJsonNumber {
   RJsonValue value;
   rdouble v;
 };
 
-struct _RJsonString {
+struct RJsonString {
   RJsonValue value;
   const rchar * v;
   rsize len;
 };
 
-struct _RJsonTrue {
+struct RJsonTrue {
   RJsonValue value;
 };
 
-struct _RJsonFalse {
+struct RJsonFalse {
   RJsonValue value;
 };
 
-struct _RJsonNull {
+struct RJsonNull {
   RJsonValue value;
 };
 

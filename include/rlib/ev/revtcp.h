@@ -32,7 +32,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _REvTCP REvTCP;
+typedef struct REvTCP REvTCP;
 typedef RBuffer * (*REvTCPBufferAllocFunc) (rpointer data, REvTCP * evtcp);
 typedef void (*REvTCPBufferFunc) (rpointer data, RBuffer * buf, REvTCP * evtcp);
 typedef void (*REvTCPConnectedFunc) (rpointer data, REvTCP * evtcp, int status);

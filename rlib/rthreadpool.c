@@ -27,7 +27,7 @@
 #include <rlib/rstr.h>
 
 
-struct _RThreadPool
+struct RThreadPool
 {
   RRef ref;
   rchar * prefix;

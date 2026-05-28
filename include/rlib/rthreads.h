@@ -96,7 +96,7 @@ typedef rpointer RRWMutex;
 typedef rpointer RCond;
 
 typedef rpointer (*RThreadFunc) (rpointer data);
-typedef struct _RThread RThread;
+typedef struct RThread RThread;
 
 
 /**

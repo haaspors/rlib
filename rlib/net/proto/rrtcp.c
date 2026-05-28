@@ -22,7 +22,7 @@
 #define R_RTCP_MINSIZE                (2 * sizeof (ruint32))
 #define r_rtcp_packet_end(packet) (((const ruint8 *)packet) + r_rtcp_packet_get_length (packet))
 
-struct _RRTCPPacket {
+struct RRTCPPacket {
 #if R_BYTE_ORDER == R_LITTLE_ENDIAN
   ruint c:5;    /* count */
   ruint p:1;    /* padding */

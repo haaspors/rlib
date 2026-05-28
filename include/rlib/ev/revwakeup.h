@@ -29,7 +29,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _REvWakeup REvWakeup;
+typedef struct REvWakeup REvWakeup;
 
 R_API REvWakeup * r_ev_wakeup_new (REvLoop * loop);
 #define r_ev_resolve_ref r_ref_ref

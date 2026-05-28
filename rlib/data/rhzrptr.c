@@ -30,7 +30,7 @@ static raptr        g__r_hzrptr; /* (RHzrPtrRec *) */
 static ruint        g__r_hzrptr_count;
 static RTss         g__r_hzrptr_tss = R_TSS_INIT (r_hzr_ptr_rec_free);
 
-struct _RHzrPtrRec {
+struct RHzrPtrRec {
   rpointer ptr;
   raboolean active;
 

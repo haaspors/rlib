@@ -54,7 +54,7 @@ typedef enum {
 
 #define R_SOCKET_DEFAULT_BACKLOG          16
 
-typedef struct _RSocket         RSocket;
+typedef struct RSocket         RSocket;
 
 R_API RSocket * r_socket_new (RSocketFamily family, RSocketType type, RSocketProtocol proto);
 #define r_socket_ref    r_ref_ref

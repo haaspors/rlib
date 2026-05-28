@@ -28,7 +28,7 @@
 #include <errno.h>
 
 
-struct _RFile {
+struct RFile {
   RRef ref;
   FILE * file;
 };

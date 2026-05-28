@@ -40,11 +40,11 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RClock RClock;
+typedef struct RClock RClock;
 #define r_clock_ref    r_ref_ref
 #define r_clock_unref  r_ref_unref
 
-typedef struct _RClockEntry RClockEntry;
+typedef struct RClockEntry RClockEntry;
 #define r_clock_entry_ref   r_ref_ref
 #define r_clock_entry_unref r_ref_unref
 

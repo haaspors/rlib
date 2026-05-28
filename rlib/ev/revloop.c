@@ -78,7 +78,7 @@ static void r_ev_loop_wakeup_cb (rpointer data, REvIOEvents events, REvIO * evio
 #endif
 
 
-struct _REvLoop {
+struct REvLoop {
   RRef ref;
 
   rsize iterations;

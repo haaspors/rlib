@@ -27,7 +27,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RToCB RToCB;
+typedef struct RToCB RToCB;
 #define r_to_cb_ref r_ref_ref
 #define r_to_cb_unref r_ref_unref
 

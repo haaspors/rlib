@@ -31,8 +31,8 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RTask RTask;
-typedef struct _RTaskQueue RTaskQueue;
+typedef struct RTask RTask;
+typedef struct RTaskQueue RTaskQueue;
 typedef void (*RTaskFunc) (rpointer data, RTaskQueue * queue, RTask * task);
 
 #define r_task_ref    r_ref_ref

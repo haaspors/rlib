@@ -49,8 +49,8 @@ typedef enum {
 } REvIOFlag;
 typedef ruint32 REvIOFlags;
 
-typedef struct _REvIOCBNode REvIOCBNode;
-struct _REvIOCBNode {
+typedef struct REvIOCBNode REvIOCBNode;
+struct REvIOCBNode {
   REvIOCBNode * next;
   REvIOCBNode * prev;
   REvIOCB cb;
@@ -113,7 +113,7 @@ static inline void r_ev_iocb_queue_clear (REvIOCBQueue * q)
   q->size = 0;
 }
 
-struct _REvIO {
+struct REvIO {
   RRef ref;
 
   REvLoop * loop;
@@ -151,7 +151,7 @@ R_API_HIDDEN rboolean r_ev_io_validate_taskgroup (REvIO * evio, ruint taskgroup)
   } R_STMT_END
 
 
-struct _REvWakeup {
+struct REvWakeup {
   REvIO evio;
   RIOHandle close_handle;
   RIOHandle signal_handle;

@@ -27,7 +27,7 @@
 
 R_BEGIN_DECLS
 
-typedef struct _RHmac       RHmac;
+typedef struct RHmac       RHmac;
 
 R_API RHmac * r_hmac_new (RMsgDigestType type, rconstpointer key, rsize keysize) R_ATTR_MALLOC;
 R_API void r_hmac_free (RHmac * hmac);

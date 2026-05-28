@@ -54,7 +54,7 @@ R_BEGIN_DECLS
  * with @c r_mem_file_unref. The underlying mapping is torn down when
  * the last reference drops.
  */
-typedef struct _RMemFile RMemFile;
+typedef struct RMemFile RMemFile;
 
 /**
  * @brief Page-level protection flags for the mapping.

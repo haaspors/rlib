@@ -28,7 +28,7 @@
 
 #include <rlib/rmem.h>
 
-struct _RHttpServer {
+struct RHttpServer {
   RRef ref;
 
   REvLoop * loop;
