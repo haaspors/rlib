@@ -329,3 +329,359 @@ r_utf16_to_utf8_dup (const runichar2 * src, rsize srcsize,
   return ret;
 }
 
+
+/* ---- UTF-32 conversions -------------------------------------------- */
+
+/* UTF-32 is one codepoint per code unit, so the conversions are
+ * straightforward: pair (decode-from-N, encode-as-32) or (decode-
+ * from-32, encode-as-N). The only validation specific to the UTF-32
+ * side is rejecting out-of-range (>= 0x110000) and surrogate-half
+ * (0xD800..0xDFFF) values - both flagged as
+ * R_UNICODE_INVALID_CODE_POINT. */
+
+RUnicodeResult
+r_utf8_to_utf32 (runichar4 * dst, rsize dstsize, const rchar * src,
+    rssize srcsize, rsize * dstoutsize, rchar ** srcendptr)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  runichar4 * dstptr, * dstend;
+  rssize i, r;
+
+  if (R_UNLIKELY (dst == NULL || dstsize == 0 || src == NULL))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY (dstsize == 1)) {
+    dst[0] = 0;
+    return R_UNICODE_OVERFLOW;
+  }
+
+  if (srcsize < 0)
+    srcsize = r_strlen (src);
+
+  /* Strip a leading UTF-8 BOM (EF BB BF). */
+  if (srcsize >= 3 &&
+      (ruint8) src[0] == 0xef &&
+      (ruint8) src[1] == 0xbb &&
+      (ruint8) src[2] == 0xbf) {
+    src += 3;
+    srcsize -= 3;
+  }
+
+  for (i = 0, dstptr = dst, dstend = dst + dstsize - 1;
+      i < srcsize && src[i] != 0;
+      i += r) {
+    runichar uc;
+
+    if ((r = r_utf8_to_unichar (&src[i], srcsize - i, &uc)) > 0) {
+      if (uc >= 0x110000 || (uc >= 0xd800 && uc < 0xe000)) {
+        ret = R_UNICODE_INVALID_CODE_POINT;
+        break;
+      }
+      if (dstptr >= dstend) {
+        ret = R_UNICODE_OVERFLOW;
+        break;
+      }
+      *dstptr++ = (runichar4)uc;
+    } else if (r == 0) {
+      break;
+    } else {
+      ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+      break;
+    }
+  }
+
+  *dstptr = 0;
+
+  if (dstoutsize != NULL)
+    *dstoutsize = dstptr - dst;
+  if (srcendptr != NULL)
+    *srcendptr = (rchar *)&src[i];
+
+  return ret;
+}
+
+RUnicodeResult
+r_utf32_to_utf8 (rchar * dst, rsize dstsize, const runichar4 * src,
+    rsize srcsize, rsize * dstoutsize, runichar4 ** srcendptr)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  rchar * dstptr, * dstend;
+  rsize i;
+  rssize r = 0;
+
+  if (R_UNLIKELY (dst == NULL || dstsize == 0 || src == NULL))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY (dstsize == 1)) {
+    dst[0] = 0;
+    return R_UNICODE_OVERFLOW;
+  }
+
+  /* Optional UTF-32 BOM at the start (single 0xFEFF code unit). */
+  if (srcsize > 0 && src[0] == R_UTF16_BOM) {
+    src++;
+    srcsize--;
+  }
+
+  for (i = 0, dstptr = dst, dstend = dst + dstsize - 1;
+      i < srcsize && src[i] != 0;
+      i++, dstptr += r) {
+    runichar uc = (runichar)src[i];
+
+    if (uc >= 0x110000 || (uc >= 0xd800 && uc < 0xe000)) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    }
+    r = r_unichar_to_utf8 (uc, dstptr, dstend - dstptr);
+    if (r <= 0) {
+      ret = R_UNICODE_OVERFLOW;
+      break;
+    }
+  }
+
+  *dstptr = 0;
+
+  if (dstoutsize != NULL)
+    *dstoutsize = dstptr - dst;
+  if (srcendptr != NULL)
+    *srcendptr = (runichar4 *)&src[i];
+
+  return ret;
+}
+
+RUnicodeResult
+r_utf16_to_utf32 (runichar4 * dst, rsize dstsize, const runichar2 * src,
+    rsize srcsize, rsize * dstoutsize, runichar2 ** srcendptr)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  runichar4 * dstptr, * dstend;
+  rsize i;
+
+  if (R_UNLIKELY (dst == NULL || dstsize == 0 || src == NULL))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY (dstsize == 1)) {
+    dst[0] = 0;
+    return R_UNICODE_OVERFLOW;
+  }
+
+  if (srcsize > 0) {
+    if (src[0] == R_UTF16_BOM_SWAP)
+      return R_UNICODE_INVAL;
+    if (src[0] == R_UTF16_BOM) {
+      src++;
+      srcsize--;
+    }
+  }
+
+  for (i = 0, dstptr = dst, dstend = dst + dstsize - 1;
+      i < srcsize && src[i] > 0;
+      ) {
+    runichar uc;
+
+    if (src[i] < 0xd800 || src[i] >= 0xe000) {
+      uc = (runichar)src[i];
+      i++;
+    } else if (src[i] < 0xdc00) {
+      runichar2 hc = src[i] - 0xd800;
+      if (i + 1 < srcsize && src[i + 1] >= 0xdc00 && src[i + 1] < 0xe000) {
+        uc = (runichar)src[i + 1] - 0xdc00 + 0x10000 + ((runichar)hc << 10);
+        i += 2;
+      } else {
+        ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+        break;
+      }
+    } else {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    }
+
+    if (dstptr >= dstend) {
+      ret = R_UNICODE_OVERFLOW;
+      break;
+    }
+    *dstptr++ = (runichar4)uc;
+  }
+
+  *dstptr = 0;
+
+  if (dstoutsize != NULL)
+    *dstoutsize = dstptr - dst;
+  if (srcendptr != NULL)
+    *srcendptr = (runichar2 *)&src[i];
+
+  return ret;
+}
+
+RUnicodeResult
+r_utf32_to_utf16 (runichar2 * dst, rsize dstsize, const runichar4 * src,
+    rsize srcsize, rsize * dstoutsize, runichar4 ** srcendptr)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  runichar2 * dstptr, * dstend;
+  rsize i;
+
+  if (R_UNLIKELY (dst == NULL || dstsize == 0 || src == NULL))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY (dstsize == 1)) {
+    dst[0] = 0;
+    return R_UNICODE_OVERFLOW;
+  }
+
+  if (srcsize > 0 && src[0] == R_UTF16_BOM) {
+    src++;
+    srcsize--;
+  }
+
+  for (i = 0, dstptr = dst, dstend = dst + dstsize - 1;
+      i < srcsize && src[i] != 0;
+      i++) {
+    runichar uc = (runichar)src[i];
+
+    if (uc >= 0x110000 || (uc >= 0xd800 && uc < 0xe000)) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    }
+
+    if (uc < 0x10000) {
+      if (dstptr >= dstend) {
+        ret = R_UNICODE_OVERFLOW;
+        break;
+      }
+      *dstptr++ = (runichar2)uc;
+    } else {
+      if (dstptr + 1 >= dstend) {
+        ret = R_UNICODE_OVERFLOW;
+        break;
+      }
+      *dstptr++ = ((uc - 0x10000) / 0x400) | 0xd800;
+      *dstptr++ = ((uc - 0x10000) % 0x400) | 0xdc00;
+    }
+  }
+
+  *dstptr = 0;
+
+  if (dstoutsize != NULL)
+    *dstoutsize = dstptr - dst;
+  if (srcendptr != NULL)
+    *srcendptr = (runichar4 *)&src[i];
+
+  return ret;
+}
+
+runichar4 *
+r_utf8_to_utf32_dup (const rchar * src, rssize srcsize, RUnicodeResult * res,
+    rsize * retsize, rchar ** endptr)
+{
+  runichar4 * ret;
+  RUnicodeResult r;
+
+  if (srcsize < 0)
+    srcsize = r_strlen (src);
+
+  /* Worst case: one UTF-32 unit per source byte (ASCII fast path),
+   * plus the NUL terminator. */
+  if ((ret = r_mem_new_n (runichar4, srcsize + 1)) != NULL) {
+    if ((r = r_utf8_to_utf32 (ret, srcsize + 1, src, srcsize, retsize, endptr))
+        != R_UNICODE_OK) {
+      r_free (ret);
+      ret = NULL;
+    }
+  } else {
+    r = R_UNICODE_OOM;
+  }
+
+  if (res != NULL)
+    *res = r;
+  return ret;
+}
+
+rchar *
+r_utf32_to_utf8_dup (const runichar4 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, runichar4 ** endptr)
+{
+  rchar * ret;
+  RUnicodeResult r;
+  rsize dstsize;
+
+  if (R_UNLIKELY (src == NULL || srcsize == 0)) {
+    if (res != NULL) *res = R_UNICODE_INVAL;
+    return NULL;
+  }
+
+  /* Codepoints in [0, 0x10FFFF] encode to at most 4 UTF-8 bytes,
+   * plus the trailing NUL. */
+  dstsize = srcsize * 4 + 1;
+
+  if ((ret = r_mem_new_n (rchar, dstsize)) != NULL) {
+    if ((r = r_utf32_to_utf8 (ret, dstsize, src, srcsize, retsize, endptr))
+        != R_UNICODE_OK) {
+      r_free (ret);
+      ret = NULL;
+    }
+  } else {
+    r = R_UNICODE_OOM;
+  }
+
+  if (res != NULL)
+    *res = r;
+  return ret;
+}
+
+runichar4 *
+r_utf16_to_utf32_dup (const runichar2 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, runichar2 ** endptr)
+{
+  runichar4 * ret;
+  RUnicodeResult r;
+
+  if (R_UNLIKELY (src == NULL || srcsize == 0)) {
+    if (res != NULL) *res = R_UNICODE_INVAL;
+    return NULL;
+  }
+
+  /* Worst case: one UTF-32 unit per UTF-16 unit (no surrogate
+   * pairs), plus the NUL terminator. */
+  if ((ret = r_mem_new_n (runichar4, srcsize + 1)) != NULL) {
+    if ((r = r_utf16_to_utf32 (ret, srcsize + 1, src, srcsize, retsize, endptr))
+        != R_UNICODE_OK) {
+      r_free (ret);
+      ret = NULL;
+    }
+  } else {
+    r = R_UNICODE_OOM;
+  }
+
+  if (res != NULL)
+    *res = r;
+  return ret;
+}
+
+runichar2 *
+r_utf32_to_utf16_dup (const runichar4 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, runichar4 ** endptr)
+{
+  runichar2 * ret;
+  RUnicodeResult r;
+  rsize dstsize;
+
+  if (R_UNLIKELY (src == NULL || srcsize == 0)) {
+    if (res != NULL) *res = R_UNICODE_INVAL;
+    return NULL;
+  }
+
+  /* Codepoints outside the BMP encode to a surrogate pair (2 units),
+   * plus the trailing NUL. */
+  dstsize = srcsize * 2 + 1;
+
+  if ((ret = r_mem_new_n (runichar2, dstsize)) != NULL) {
+    if ((r = r_utf32_to_utf16 (ret, dstsize, src, srcsize, retsize, endptr))
+        != R_UNICODE_OK) {
+      r_free (ret);
+      ret = NULL;
+    }
+  } else {
+    r = R_UNICODE_OOM;
+  }
+
+  if (res != NULL)
+    *res = r;
+  return ret;
+}
