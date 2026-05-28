@@ -19,7 +19,7 @@
 #include "config.h"
 #include <rlib/binfmt/relfparser.h>
 
-#include <rlib/ratomic.h>
+#include <rlib/concurrency/ratomic.h>
 #include <rlib/rmem.h>
 #include <rlib/rmemfile.h>
 #include <rlib/rstr.h>

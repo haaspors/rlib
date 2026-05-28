@@ -27,7 +27,7 @@
 #include <rlib/os/renv.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 #include <rlib/rtime.h>
 #include <rlib/os/rtty.h>
 

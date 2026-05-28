@@ -2,7 +2,7 @@ pkg = import('pkgconfig')
 
 rlib_sources = [
   'rargparse.c',
-  'ratomic.c',
+  'concurrency/ratomic.c',
   'rbase64.c',
   'rbuffer.c',
   'rclock.c',
@@ -31,10 +31,10 @@ rlib_sources = [
   'net/rsocket.c',
   'rstr.c',
   'rstrmatch.c',
-  'rtaskqueue.c',
+  'concurrency/rtaskqueue.c',
   'rtest.c',
-  'rthreadpool.c',
-  'rthreads.c',
+  'concurrency/rthreadpool.c',
+  'concurrency/rthreads.c',
   'rtime.c',
   'os/rtty.c',
   'ruri.c',

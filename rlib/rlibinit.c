@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include "rlib-private.h"
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 
 #ifdef R_OS_WIN32
 #include <windows.h>

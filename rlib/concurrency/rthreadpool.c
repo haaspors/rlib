@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/rthreadpool.h>
+#include <rlib/concurrency/rthreadpool.h>
 
 #include <rlib/data/rlist.h>
 #include <rlib/os/rsys.h>

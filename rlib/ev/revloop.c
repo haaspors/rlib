@@ -21,11 +21,11 @@
 #include "rev-private.h"
 
 #include <rlib/rassert.h>
-#include <rlib/ratomic.h>
+#include <rlib/concurrency/ratomic.h>
 #include <rlib/rio.h>
 #include <rlib/rmem.h>
 #include <rlib/rpoll.h>
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>

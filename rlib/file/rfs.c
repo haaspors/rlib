@@ -22,7 +22,7 @@
 #include <rlib/os/renv.h>
 #include <rlib/rstr.h>
 #include <rlib/rrand.h>
-#include <rlib/rthreads.h>
+#include <rlib/concurrency/rthreads.h>
 
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>

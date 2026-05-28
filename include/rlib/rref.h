@@ -45,7 +45,7 @@
  */
 
 #include <rlib/rtypes.h>
-#include <rlib/ratomic.h>
+#include <rlib/concurrency/ratomic.h>
 
 R_BEGIN_DECLS
 
