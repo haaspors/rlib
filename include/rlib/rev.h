@@ -18,6 +18,20 @@
 #ifndef __R_EV_H__
 #define __R_EV_H__
 
+/**
+ * @defgroup r_ev Event loop and async I/O
+ *
+ * @brief Edge-triggered event loop with TCP / UDP / DNS-resolve /
+ * wakeup sources, layered on top of @c epoll (Linux), @c kqueue
+ * (BSD / Darwin) and IOCP (Windows).
+ *
+ * @c r_evloop is the loop object; @c r_evtcp / @c r_evudp /
+ * @c r_evresolve / @c r_evwakeup register sources that produce
+ * I/O-ready, datagram or wakeup events. Callbacks fire on the
+ * loop thread; long-running work belongs in @c r_taskqueue or
+ * @c r_threadpool consumers.
+ */
+
 #include <rlib/rlib.h>
 
 #include <rlib/ev/revloop.h>

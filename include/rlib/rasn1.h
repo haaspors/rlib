@@ -18,6 +18,19 @@
 #ifndef __R_ASN1_H__
 #define __R_ASN1_H__
 
+/**
+ * @defgroup r_asn1 ASN.1 BER / DER
+ *
+ * @brief Encoder and decoder for ASN.1 in Basic and Distinguished
+ * Encoding Rules, plus the object-identifier (OID) registry that
+ * goes with them.
+ *
+ * Consumed heavily by @c r_crypto (X.509 certificates, PKCS#1 / #8
+ * key formats, PEM bodies) but the encoding itself is general -
+ * SNMP, LDAP, OCSP and many other on-disk and on-wire formats use
+ * the same primitives.
+ */
+
 #include <rlib/rlib.h>
 
 #include <rlib/asn1/rasn1.h>
