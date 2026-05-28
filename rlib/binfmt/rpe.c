@@ -17,7 +17,7 @@
  */
 
 #include "config.h"
-#include <rlib/binfmt/rpecoff.h>
+#include <rlib/binfmt/rpe.h>
 
 
 RPeImageHdr *

@@ -22,7 +22,7 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
-#include <rlib/binfmt/rpecoff.h>
+#include <rlib/binfmt/rpe.h>
 
 #include <rlib/rref.h>
 

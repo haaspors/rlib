@@ -24,7 +24,7 @@
 #include <rlib/binfmt/relfparser.h>
 #include <rlib/binfmt/rmacho.h>
 #include <rlib/binfmt/rmachoparser.h>
-#include <rlib/binfmt/rpecoff.h>
+#include <rlib/binfmt/rpe.h>
 #include <rlib/binfmt/rpeparser.h>
 
 #endif /* __R_BINFMT_H__ */
