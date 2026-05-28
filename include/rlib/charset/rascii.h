@@ -26,6 +26,7 @@
 
 /**
  * @defgroup r_ascii ASCII
+ * @ingroup r_charset
  * @brief Locale-independent ASCII character classification and case
  * conversion. Counterparts to the standard @c <ctype.h> predicates.
  * @{

@@ -38,7 +38,22 @@
 #include <rlib/crypto/rmsgdigest.h>
 
 /**
+ * @defgroup r_format File formats
+ *
+ * @brief Structured-data encoding formats: ASN.1 (BER / DER) and
+ * JSON, today; XML / YAML / MessagePack / CBOR codecs would slot in
+ * here as they land.
+ *
+ * Two children:
+ *
+ *   - @ref r_asn1 — ASN.1 binary encoder / decoder and the OID
+ *     registry, used heavily by the crypto subsystem.
+ *   - @ref r_json — JSON value tree plus streaming parser.
+ */
+
+/**
  * @defgroup r_asn1 ASN.1 BER / DER
+ * @ingroup r_format
  *
  * @brief Encoder and decoder for ASN.1 in Basic and Distinguished
  * Encoding Rules, plus the object-identifier (OID) registry that

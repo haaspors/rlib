@@ -31,6 +31,7 @@
 
 /**
  * @defgroup r_json JSON
+ * @ingroup r_format
  *
  * @brief In-memory JSON value tree plus a streaming parser.
  *

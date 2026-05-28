@@ -25,7 +25,22 @@
 #include <rlib/rtypes.h>
 
 /**
+ * @defgroup r_charset Character sets
+ *
+ * @brief ASCII and Unicode helpers: classification predicates,
+ * case conversion, UTF-8 / UTF-16 / UTF-32 encoding conversions.
+ *
+ * Two complementary subgroups:
+ *
+ *   - @ref r_ascii — locale-independent ASCII classification and
+ *     case conversion (counterparts to @c <ctype.h>).
+ *   - @ref r_unicode — UTF transcoding between the three Unicode
+ *     encodings.
+ */
+
+/**
  * @defgroup r_unicode Unicode conversion
+ * @ingroup r_charset
  * @brief UTF-8 / UTF-16 / UTF-32 encoding conversions.
  * @{
  */
