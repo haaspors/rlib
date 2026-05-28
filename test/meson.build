@@ -61,7 +61,7 @@ rlibtest_sources = [
   'rmpint.c',
   'rmpint_fe.c',
   'rmsgdigest.c',
-  'rpecoff.c',
+  'rpe.c',
   'rpoll.c',
   'rprng-kiss.c',
   'rprng-mt.c',

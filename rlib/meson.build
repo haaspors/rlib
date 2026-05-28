@@ -47,7 +47,7 @@ rlib_sources = [
   'binfmt/relfparser.c',
   'binfmt/rmacho.c',
   'binfmt/rmachoparser.c',
-  'binfmt/rpecoff.c',
+  'binfmt/rpe.c',
   'binfmt/rpeparser.c',
   'charset/runicode.c',
   'charset/runicode-props.c',
