@@ -828,6 +828,13 @@ static const RUnicodeBadUtf8 malformed_utf8_vectors[] = {
   /* Kuhn §3.5: impossible bytes (RFC 3629 forbids 0xFE / 0xFF). */
   { "impossible byte 0xFE", { 0xfe }, 1 },
   { "impossible byte 0xFF", { 0xff }, 1 },
+  /* Pre-RFC-3629 5-byte and 6-byte lead bytes (0xF8..0xFD). These
+   * could only encode codepoints >= U+200000, never assignable;
+   * RFC 3629 §3 forbids them outright. */
+  { "5-byte lead 0xF8", { 0xf8, 0x88, 0x80, 0x80, 0x80 }, 5 },
+  { "5-byte lead 0xFB", { 0xfb, 0xbf, 0xbf, 0xbf, 0xbf }, 5 },
+  { "6-byte lead 0xFC", { 0xfc, 0x84, 0x80, 0x80, 0x80, 0x80 }, 6 },
+  { "6-byte lead 0xFD", { 0xfd, 0xbf, 0xbf, 0xbf, 0xbf, 0xbf }, 6 },
 };
 
 RTEST_LOOP (runicode, malformed_utf8_rejected_to_utf16, RTEST_FAST,
