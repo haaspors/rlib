@@ -28,6 +28,7 @@
 
 /**
  * @defgroup r_clr Terminal colour flags
+ * @ingroup r_tty
  *
  * @brief Packed foreground / background / attribute bits for terminal
  * styling.
