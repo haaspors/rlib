@@ -35,7 +35,7 @@
 R_BEGIN_DECLS
 
 /**
- * @defgroup r_clock Clocks (RClock)
+ * @defgroup r_clock Clocks
  * @ingroup r_time
  *
  * @brief Refcounted monotonic-clock object with one-shot timeout

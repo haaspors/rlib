@@ -38,7 +38,7 @@
 R_BEGIN_DECLS
 
 /**
- * @defgroup r_taskqueue Task queue (RTaskQueue)
+ * @defgroup r_taskqueue Task queue
  * @ingroup r_concurrency
  *
  * @brief Deferred-work queue: callers enqueue @ref RTask objects

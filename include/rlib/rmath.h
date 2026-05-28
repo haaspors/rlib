@@ -30,7 +30,7 @@
 #include <rlib/rtypes.h>
 
 /**
- * @defgroup r_math Math helpers
+ * @defgroup r_math Math
  *
  * @brief A small collection of math utilities that aren't covered by
  * @c <math.h>: integer greatest-common-divisor across the standard

@@ -40,7 +40,7 @@
 R_BEGIN_DECLS
 
 /**
- * @defgroup r_socket Sockets (RSocket)
+ * @defgroup r_socket Sockets
  * @ingroup r_net
  *
  * @brief Refcounted wrapper around @ref r_iosocket with lifecycle

@@ -28,7 +28,7 @@
 #include <stdio.h>
 
 /**
- * @defgroup r_str String utilities
+ * @defgroup r_str Strings
  * @brief NUL-terminated string utilities (immutable @c rchar @c *
  * operations, search, comparison, parsing, formatting, ...).
  * @{

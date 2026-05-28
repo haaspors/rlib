@@ -23,7 +23,7 @@
 #endif
 
 /**
- * @defgroup r_ref Refcounting (RRef)
+ * @defgroup r_ref Refcounting
  * @ingroup r_data
  *
  * @brief @ref RRef is the refcount base struct that every

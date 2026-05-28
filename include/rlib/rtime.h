@@ -31,7 +31,7 @@
 #include <rlib/rtypes.h>
 
 /**
- * @defgroup r_time Time and clocks
+ * @defgroup r_time Time
  *
  * @brief Sub-nanosecond integer time arithmetic, monotonic and
  * wall-clock timestamps, calendar conversions and timespec /

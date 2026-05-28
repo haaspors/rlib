@@ -16,7 +16,7 @@
  * See the COPYING file at the root of the source repository.
  */
 /**
- * @defgroup r_mem Memory allocation and operations
+ * @defgroup r_mem Memory
  * @brief Heap / stack allocators, byte-buffer operations, and
  * pattern-based memory scanning.
  * @{
