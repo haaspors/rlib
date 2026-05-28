@@ -57,60 +57,50 @@ Currently you'll find the code @ [github](https://github.com/haaspors/rlib) (htt
 
 Dependencies
 --------
-You'll obviously need your development environment including a c compiler.
-* clang
-* gcc
-* msc
-* icc (not tested)
-* ...
-
-Also you'll need [python](https://www.python.org) for running the build system.
+* A C compiler — gcc, clang or MSVC. Other C99-capable compilers should work but aren't routinely tested.
+* [meson](https://mesonbuild.com) and a backend — typically [ninja](https://ninja-build.org).
 
 Building
 --------
-rlib uses [meson](https://mesonbuild.com) as build system.
-Meson supports multiple backends, but you'll most likely use `ninja`.
-You can also make meson generate Visual Studio or XCode project files if you like.
-See more on that on the meson build system project website!
+rlib uses [meson](https://mesonbuild.com). Configure, build, test and install:
 
-To configure and build run (`_build_` is output build directory):
-```
-meson setup _build_
-ninja -C _build_
-```
-To run unit tests:
-```
-ninja -C _build_ test
-```
-To install rlib to prefix (E.g. ):
-```
-ninja -C _build_ install
+```sh
+meson setup build
+meson compile -C build
+meson test -C build
+meson install -C build
 ```
 
-### Build step by step
+`build` is the conventional name for the build directory — any name works, and you can keep several side-by-side build directories with different options.
 
-#### Configure
-The configure step is only needed to run once, to generate the appropriate build environment.
-This is basically a step to detect what and how to build stuff for your os/platform/cpu.
-```
-meson _build_
-```
+### Build types
 
-#### Build
-There are multiple defined build types.
-* debugoptimized - (default) debug symbols and some optimizations (`-g -O2`)
-* debug - includes debug symbols and no optimization (`-g`)
-* release - no debug symbols and some optimizations (`-O2`)
-* ...
+Pass `--buildtype=<type>` to `meson setup`:
 
-So to configure and build release:
-```
-meson --buildtype release _build_
+| Build type        | Flags          | Notes      |
+| ----------------- | -------------- | ---------- |
+| `debugoptimized`  | `-g -O2`       | default    |
+| `debug`           | `-g`           | no opt     |
+| `release`         | `-O3`          | no debug   |
+| `plain`           | (none)         | you supply `CFLAGS` |
+
+```sh
+meson setup build-release --buildtype=release
+meson compile -C build-release
 ```
 
-#### Test
-rlib has a testsuite obviously. After configuring, just run:
+### Build options
+
+rlib exposes feature toggles in [`meson_options.txt`](meson_options.txt) (threads, modules, signals, files, sockets). Set them at configure time with `-D<option>=<value>`, or change them later with `meson configure`:
+
+```sh
+meson setup build -Denable_sockets=false
+meson configure build -Denable_threads=false   # reconfigure existing build dir
 ```
-ninja -C _build_ test
-```
+
+`meson configure build` with no arguments lists every option and its current value.
+
+### IDE project files
+
+Meson can generate Visual Studio or Xcode project files via `--backend=vs` / `--backend=xcode`. See the [meson docs](https://mesonbuild.com/Running-Meson.html#backend-options) for the full set.
 
