@@ -47,6 +47,7 @@
 /** @defgroup r_format       File formats */
 /** @defgroup r_base64       Base64 (RFC 4648) */
 /** @defgroup r_crc          CRC32 */
+/** @defgroup r_uri          URIs */
 /** @defgroup r_crypto       Cryptography */
 /** @defgroup r_binfmt       Binary executable formats */
 /** @defgroup r_argparse     Command-line argument parsing */
