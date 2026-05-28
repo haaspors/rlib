@@ -13,11 +13,15 @@
 PROJECT_NAME            = "rlib"
 PROJECT_BRIEF           = "Convenience library for useful things"
 
-# Source layout: public API headers under include/, implementations
-# under rlib/. README.md at the repo root anchors the main page.
-INPUT                   = include rlib README.md
+# Source layout: public API headers under include/. Implementations
+# under rlib/ are deliberately out of INPUT so that opaque-handle
+# struct bodies defined in `.c` files (and the `*-private.h`
+# headers shared across the implementation) don't leak through
+# TYPEDEF_HIDES_STRUCT into the public Data Structures listing.
+# README.md at the repo root anchors the main page.
+INPUT                   = include README.md
 RECURSIVE               = YES
-FILE_PATTERNS           = *.h *.c *.md
+FILE_PATTERNS           = *.h *.md
 USE_MDFILE_AS_MAINPAGE  = README.md
 
 # Output lands under docs/output/html; .gitignore drops the tree.
