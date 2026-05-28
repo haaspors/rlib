@@ -1529,3 +1529,107 @@ RTEST (runicode, utf16_encode_codepoint, RTEST_FAST)
       ==, R_UNICODE_OVERFLOW);
 }
 RTEST_END;
+
+/* ---- Codepoint counting and advance -------------------------------- */
+
+RTEST (runicode, utf8_strlen_codepoints_basic, RTEST_FAST)
+{
+  RUnicodeResult r;
+
+  /* ASCII: 1 byte = 1 codepoint. */
+  r_assert_cmpuint (r_utf8_strlen_codepoints ("abc", 3, &r), ==, 3);
+  r_assert_cmpint (r, ==, R_UNICODE_OK);
+
+  /* Mixed ASCII + 2-byte + 4-byte. */
+  r_assert_cmpuint (r_utf8_strlen_codepoints (
+        "a\xCE\xB1\xF0\x9F\x98\x80", 7, &r), ==, 3);
+  r_assert_cmpint (r, ==, R_UNICODE_OK);
+
+  /* -1 size falls back to r_strlen. */
+  r_assert_cmpuint (r_utf8_strlen_codepoints ("hello", -1, NULL), ==, 5);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_strlen_codepoints_rejects, RTEST_FAST)
+{
+  RUnicodeResult r;
+
+  /* Stops at the first malformed sequence; reports partial count. */
+  r_assert_cmpuint (r_utf8_strlen_codepoints ("ab\xC0\xAF", 4, &r),
+      ==, 2);
+  r_assert_cmpint (r, ==, R_UNICODE_INVALID_CODE_POINT);
+
+  /* Truncated. */
+  r_assert_cmpuint (r_utf8_strlen_codepoints ("a\xCE", 2, &r), ==, 1);
+  r_assert_cmpint (r, ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+
+  r_assert_cmpuint (r_utf8_strlen_codepoints (NULL, 0, &r), ==, 0);
+  r_assert_cmpint (r, ==, R_UNICODE_INVAL);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_advance_basic, RTEST_FAST)
+{
+  static const rchar * input = "a\xCE\xB1\xF0\x9F\x98\x80z";
+  RUnicodeResult r;
+  const rchar * p;
+
+  /* 0 advance: same pointer. */
+  p = r_utf8_advance (input, -1, 0, &r);
+  r_assert_cmpptr (p, ==, input);
+  r_assert_cmpint (r, ==, R_UNICODE_OK);
+
+  /* Past the ASCII 'a': second byte ('\xCE'). */
+  p = r_utf8_advance (input, -1, 1, &r);
+  r_assert_cmpptr (p, ==, input + 1);
+  r_assert_cmpint (r, ==, R_UNICODE_OK);
+
+  /* Past 'a' + 'α': index 3 (start of 4-byte 😀). */
+  p = r_utf8_advance (input, -1, 2, &r);
+  r_assert_cmpptr (p, ==, input + 3);
+
+  /* Past all 4 codepoints: end of string. */
+  p = r_utf8_advance (input, -1, 4, &r);
+  r_assert_cmpint (r, ==, R_UNICODE_OK);
+  r_assert_cmpuint ((rsize)(p - input), ==, 8);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_advance_overflow, RTEST_FAST)
+{
+  RUnicodeResult r;
+  const rchar * p;
+
+  /* "abc" has 3 codepoints; ask for 5. */
+  p = r_utf8_advance ("abc", 3, 5, &r);
+  r_assert_cmpint (r, ==, R_UNICODE_OVERFLOW);
+  r_assert_cmpptr (p, ==, (rchar *)"abc" + 3);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_strlen_codepoints, RTEST_FAST)
+{
+  runichar2 src[] = { 'a', 0x3B1, 0xD800, 0xDC00, 'z' };
+  RUnicodeResult r;
+
+  /* 5 code units = 4 codepoints (surrogate pair counts as one). */
+  r_assert_cmpuint (r_utf16_strlen_codepoints (src, 5, &r), ==, 4);
+  r_assert_cmpint (r, ==, R_UNICODE_OK);
+
+  /* High surrogate not followed by a low surrogate -> INCOMPLETE,
+   * matching the convention r_utf16_to_utf8 / _to_utf32 / _validate
+   * all use (high without a proper low = pair incomplete, whether
+   * truncated or followed by garbage). */
+  src[2] = 0xD800; src[3] = 'x';
+  r_assert_cmpuint (r_utf16_strlen_codepoints (src, 4, &r), ==, 2);
+  r_assert_cmpint (r, ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+
+  /* Lone low surrogate -> INVALID. */
+  src[0] = 'a'; src[1] = 0xDC00;
+  r_assert_cmpuint (r_utf16_strlen_codepoints (src, 2, &r), ==, 1);
+  r_assert_cmpint (r, ==, R_UNICODE_INVALID_CODE_POINT);
+
+  r_assert_cmpuint (r_utf16_strlen_codepoints (NULL, 0, &r), ==, 0);
+  r_assert_cmpint (r, ==, R_UNICODE_INVAL);
+}
+RTEST_END;
