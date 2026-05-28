@@ -1353,3 +1353,179 @@ RTEST (runicode, utf32_validate_null_src, RTEST_FAST)
   r_assert_cmpint (r_utf32_validate (NULL, 0, NULL), ==, R_UNICODE_INVAL);
 }
 RTEST_END;
+
+/* ---- Single-codepoint encode / decode ------------------------------ */
+
+RTEST (runicode, utf8_decode_codepoint_ascii, RTEST_FAST)
+{
+  runichar4 uc;
+  rsize consumed;
+
+  r_assert_cmpint (r_utf8_decode_codepoint ("abc", 3, &uc, &consumed),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (uc, ==, 'a');
+  r_assert_cmpuint (consumed, ==, 1);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_decode_codepoint_multibyte, RTEST_FAST)
+{
+  runichar4 uc;
+  rsize consumed;
+
+  /* α = U+03B1 = CE B1. */
+  r_assert_cmpint (r_utf8_decode_codepoint ("\xCE\xB1", 2, &uc, &consumed),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (uc, ==, 0x3B1);
+  r_assert_cmpuint (consumed, ==, 2);
+
+  /* U+10FFFF = F4 8F BF BF. */
+  r_assert_cmpint (r_utf8_decode_codepoint ("\xF4\x8F\xBF\xBF", 4, &uc,
+        &consumed), ==, R_UNICODE_OK);
+  r_assert_cmpuint (uc, ==, 0x10FFFF);
+  r_assert_cmpuint (consumed, ==, 4);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_decode_codepoint_rejects_bad, RTEST_FAST)
+{
+  runichar4 uc;
+  rsize consumed;
+
+  /* Overlong. */
+  r_assert_cmpint (r_utf8_decode_codepoint ("\xC0\xAF", 2, &uc, &consumed),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (consumed, ==, 0);
+
+  /* UTF-8-encoded surrogate. */
+  r_assert_cmpint (r_utf8_decode_codepoint ("\xED\xA0\x80", 3, &uc,
+        &consumed), ==, R_UNICODE_INVALID_CODE_POINT);
+
+  /* Truncated. */
+  r_assert_cmpint (r_utf8_decode_codepoint ("\xCE", 1, &uc, &consumed),
+      ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+
+  /* NULL / zero-size. */
+  r_assert_cmpint (r_utf8_decode_codepoint (NULL, 0, &uc, &consumed),
+      ==, R_UNICODE_INVAL);
+  r_assert_cmpint (r_utf8_decode_codepoint ("a", 0, &uc, &consumed),
+      ==, R_UNICODE_INVAL);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_encode_codepoint, RTEST_FAST)
+{
+  rchar dst[8];
+  rsize written;
+
+  r_assert_cmpint (r_utf8_encode_codepoint ('a', dst, sizeof (dst),
+        &written), ==, R_UNICODE_OK);
+  r_assert_cmpuint (written, ==, 1);
+  r_assert_cmpuint ((ruint8)dst[0], ==, 'a');
+
+  r_assert_cmpint (r_utf8_encode_codepoint (0x3B1, dst, sizeof (dst),
+        &written), ==, R_UNICODE_OK);
+  r_assert_cmpuint (written, ==, 2);
+  r_assert_cmpmem (dst, ==, "\xCE\xB1", 2);
+
+  r_assert_cmpint (r_utf8_encode_codepoint (0x10FFFF, dst, sizeof (dst),
+        &written), ==, R_UNICODE_OK);
+  r_assert_cmpuint (written, ==, 4);
+  r_assert_cmpmem (dst, ==, "\xF4\x8F\xBF\xBF", 4);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_encode_codepoint_rejects_bad, RTEST_FAST)
+{
+  rchar dst[8];
+  rsize written;
+
+  /* Surrogate codepoint. */
+  r_assert_cmpint (r_utf8_encode_codepoint (0xD800, dst, sizeof (dst),
+        &written), ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpint (r_utf8_encode_codepoint (0xDFFF, dst, sizeof (dst),
+        &written), ==, R_UNICODE_INVALID_CODE_POINT);
+
+  /* Out of range. */
+  r_assert_cmpint (r_utf8_encode_codepoint (0x110000, dst, sizeof (dst),
+        &written), ==, R_UNICODE_INVALID_CODE_POINT);
+
+  /* Buffer too small. */
+  r_assert_cmpint (r_utf8_encode_codepoint (0x3B1, dst, 1, &written),
+      ==, R_UNICODE_OVERFLOW);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_decode_codepoint, RTEST_FAST)
+{
+  runichar2 src[2];
+  runichar4 uc;
+  rsize consumed;
+
+  /* BMP. */
+  src[0] = 'a';
+  r_assert_cmpint (r_utf16_decode_codepoint (src, 1, &uc, &consumed),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (uc, ==, 'a');
+  r_assert_cmpuint (consumed, ==, 1);
+
+  /* Surrogate pair. */
+  src[0] = 0xD800; src[1] = 0xDC00;
+  r_assert_cmpint (r_utf16_decode_codepoint (src, 2, &uc, &consumed),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (uc, ==, 0x10000);
+  r_assert_cmpuint (consumed, ==, 2);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_decode_codepoint_rejects_bad, RTEST_FAST)
+{
+  runichar2 src[2];
+  runichar4 uc;
+  rsize consumed;
+
+  /* High surrogate alone -> INCOMPLETE. */
+  src[0] = 0xD801;
+  r_assert_cmpint (r_utf16_decode_codepoint (src, 1, &uc, &consumed),
+      ==, R_UNICODE_INCOMPLETE_CODE_POINT);
+  r_assert_cmpuint (consumed, ==, 0);
+
+  /* High surrogate followed by non-low -> INVALID. */
+  src[0] = 0xD801; src[1] = 'a';
+  r_assert_cmpint (r_utf16_decode_codepoint (src, 2, &uc, &consumed),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+
+  /* Lone low surrogate. */
+  src[0] = 0xDC01;
+  r_assert_cmpint (r_utf16_decode_codepoint (src, 1, &uc, &consumed),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+}
+RTEST_END;
+
+RTEST (runicode, utf16_encode_codepoint, RTEST_FAST)
+{
+  runichar2 dst[2];
+  rsize written;
+
+  r_assert_cmpint (r_utf16_encode_codepoint ('a', dst, 2, &written),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (written, ==, 1);
+  r_assert_cmpuint (dst[0], ==, 'a');
+
+  r_assert_cmpint (r_utf16_encode_codepoint (0x10000, dst, 2, &written),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (written, ==, 2);
+  r_assert_cmpuint (dst[0], ==, 0xD800);
+  r_assert_cmpuint (dst[1], ==, 0xDC00);
+
+  /* Out of range + surrogate. */
+  r_assert_cmpint (r_utf16_encode_codepoint (0xD800, dst, 2, &written),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpint (r_utf16_encode_codepoint (0x110000, dst, 2, &written),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+
+  /* Single-unit buffer too small for surrogate pair. */
+  r_assert_cmpint (r_utf16_encode_codepoint (0x10000, dst, 1, &written),
+      ==, R_UNICODE_OVERFLOW);
+}
+RTEST_END;
