@@ -532,3 +532,363 @@ RTEST (runicode, utf16_to_utf32_dup_roundtrip, RTEST_FAST)
   r_free (back);
 }
 RTEST_END;
+
+/* ========================================================================
+ * Canonical Unicode-conversion stress vectors.
+ *
+ * Sourced from:
+ *  - Unicode Standard Table 3-7 (well-formed UTF-8 byte sequences).
+ *  - Markus Kuhn's "UTF-8 decoder capability and stress test"
+ *    (https://www.cl.cam.ac.uk/~mgk25/ucs/examples/UTF-8-test.txt) -
+ *    the de-facto Unicode-encoding conformance suite.
+ *  - RFC 3629 §3 (forbidden UTF-8 sequences).
+ *
+ * Layout: a single positive table of boundary codepoints round-tripped
+ * across all four conversion pairs, plus per-direction negative tests
+ * exercising each rejection path the spec defines.
+ * ======================================================================= */
+
+typedef struct {
+  const rchar * name;
+  runichar4 codepoint;
+  /* UTF-8 canonical encoding. */
+  const ruint8 * utf8;
+  rsize utf8_len;
+  /* UTF-16 canonical encoding (1 unit for BMP, 2 for supplementary). */
+  runichar2 utf16_a;
+  runichar2 utf16_b;        /* 0 when single-unit. */
+} RUnicodeBoundary;
+
+#define BOUNDARY_U8(...) ((const ruint8 []){__VA_ARGS__})
+#define BOUNDARY_U8_LEN(...) (sizeof ((const ruint8 []){__VA_ARGS__}))
+
+/* Note: U+0000 is excluded - the in-buffer functions stop the loop on
+ * `src[i] != 0`, so an embedded NUL terminates input early. The
+ * Unicode Standard considers U+0000 valid; the rlib API simply
+ * treats it as the C string terminator. */
+static const RUnicodeBoundary boundaries[] = {
+  /* Unicode Standard §3.9 boundary codepoints (Kuhn §2.1 / §2.3). */
+  { "U+007F (max 1-byte)",   0x007F,
+      BOUNDARY_U8 (0x7f), 1,
+      0x007F, 0 },
+  { "U+0080 (min 2-byte)",   0x0080,
+      BOUNDARY_U8 (0xc2, 0x80), 2,
+      0x0080, 0 },
+  { "U+07FF (max 2-byte)",   0x07FF,
+      BOUNDARY_U8 (0xdf, 0xbf), 2,
+      0x07FF, 0 },
+  { "U+0800 (min 3-byte)",   0x0800,
+      BOUNDARY_U8 (0xe0, 0xa0, 0x80), 3,
+      0x0800, 0 },
+  { "U+D7FF (last before surrogates)", 0xD7FF,
+      BOUNDARY_U8 (0xed, 0x9f, 0xbf), 3,
+      0xD7FF, 0 },
+  { "U+E000 (first after surrogates)", 0xE000,
+      BOUNDARY_U8 (0xee, 0x80, 0x80), 3,
+      0xE000, 0 },
+  { "U+FFFD (replacement char)", 0xFFFD,
+      BOUNDARY_U8 (0xef, 0xbf, 0xbd), 3,
+      0xFFFD, 0 },
+  { "U+FFFF (max 3-byte / max BMP)", 0xFFFF,
+      BOUNDARY_U8 (0xef, 0xbf, 0xbf), 3,
+      0xFFFF, 0 },
+  { "U+10000 (min 4-byte / first supplementary)", 0x10000,
+      BOUNDARY_U8 (0xf0, 0x90, 0x80, 0x80), 4,
+      0xD800, 0xDC00 },
+  { "U+10FFFF (max Unicode)", 0x10FFFF,
+      BOUNDARY_U8 (0xf4, 0x8f, 0xbf, 0xbf), 4,
+      0xDBFF, 0xDFFF },
+};
+
+RTEST_LOOP (runicode, boundary_utf8_to_utf16, RTEST_FAST,
+    0, R_N_ELEMENTS (boundaries))
+{
+  const RUnicodeBoundary * b = &boundaries[__i];
+  runichar2 dst[8];
+  rchar * endptr;
+  rsize n;
+  rsize expected_units = (b->utf16_b != 0) ? 2 : 1;
+
+  r_assert_cmpint (r_utf8_to_utf16 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)b->utf8, b->utf8_len, &n, &endptr),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, expected_units);
+  r_assert_cmpuint (dst[0], ==, b->utf16_a);
+  if (b->utf16_b != 0)
+    r_assert_cmpuint (dst[1], ==, b->utf16_b);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, boundary_utf16_to_utf8, RTEST_FAST,
+    0, R_N_ELEMENTS (boundaries))
+{
+  const RUnicodeBoundary * b = &boundaries[__i];
+  runichar2 src[2];
+  runichar2 * endptr;
+  rchar dst[8];
+  rsize n;
+  rsize srclen = (b->utf16_b != 0) ? 2 : 1;
+
+  src[0] = b->utf16_a;
+  src[1] = b->utf16_b;
+  r_assert_cmpint (r_utf16_to_utf8 (dst, sizeof (dst), src, srclen,
+        &n, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, b->utf8_len);
+  r_assert_cmpmem (dst, ==, b->utf8, b->utf8_len);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, boundary_utf8_to_utf32, RTEST_FAST,
+    0, R_N_ELEMENTS (boundaries))
+{
+  const RUnicodeBoundary * b = &boundaries[__i];
+  runichar4 dst[4];
+  rchar * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf32 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)b->utf8, b->utf8_len, &n, &endptr),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint (dst[0], ==, b->codepoint);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, boundary_utf32_to_utf8, RTEST_FAST,
+    0, R_N_ELEMENTS (boundaries))
+{
+  const RUnicodeBoundary * b = &boundaries[__i];
+  runichar4 src[1];
+  runichar4 * endptr;
+  rchar dst[8];
+  rsize n;
+
+  src[0] = b->codepoint;
+  r_assert_cmpint (r_utf32_to_utf8 (dst, sizeof (dst), src, 1, &n, &endptr),
+      ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, b->utf8_len);
+  r_assert_cmpmem (dst, ==, b->utf8, b->utf8_len);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, boundary_utf16_to_utf32, RTEST_FAST,
+    0, R_N_ELEMENTS (boundaries))
+{
+  const RUnicodeBoundary * b = &boundaries[__i];
+  runichar2 src[2];
+  runichar2 * endptr;
+  runichar4 dst[4];
+  rsize n;
+  rsize srclen = (b->utf16_b != 0) ? 2 : 1;
+
+  src[0] = b->utf16_a;
+  src[1] = b->utf16_b;
+  r_assert_cmpint (r_utf16_to_utf32 (dst, R_N_ELEMENTS (dst), src, srclen,
+        &n, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, 1);
+  r_assert_cmpuint (dst[0], ==, b->codepoint);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, boundary_utf32_to_utf16, RTEST_FAST,
+    0, R_N_ELEMENTS (boundaries))
+{
+  const RUnicodeBoundary * b = &boundaries[__i];
+  runichar4 src[1];
+  runichar4 * endptr;
+  runichar2 dst[4];
+  rsize n;
+  rsize expected_units = (b->utf16_b != 0) ? 2 : 1;
+
+  src[0] = b->codepoint;
+  r_assert_cmpint (r_utf32_to_utf16 (dst, R_N_ELEMENTS (dst), src, 1,
+        &n, &endptr), ==, R_UNICODE_OK);
+  r_assert_cmpuint (n, ==, expected_units);
+  r_assert_cmpuint (dst[0], ==, b->utf16_a);
+  if (b->utf16_b != 0)
+    r_assert_cmpuint (dst[1], ==, b->utf16_b);
+}
+RTEST_END;
+
+/* ---- Kuhn §4: overlong UTF-8 sequences -------------------------------
+ * RFC 3629 §3 forbids encoding a codepoint in more bytes than the
+ * canonical form requires. r_utf8_to_unichar flags these with the
+ * internal R_UTF8_OVERLONG sentinel; both the UTF-16 and UTF-32
+ * paths surface them as R_UNICODE_INVALID_CODE_POINT. */
+
+typedef struct {
+  const rchar * name;
+  const ruint8 bytes[8];
+  rsize len;
+} RUnicodeBadUtf8;
+
+static const RUnicodeBadUtf8 overlong_vectors[] = {
+  /* Kuhn §4.1 - overlong "/". */
+  { "overlong 2B '/'", { 0xc0, 0xaf }, 2 },
+  { "overlong 3B '/'", { 0xe0, 0x80, 0xaf }, 3 },
+  { "overlong 4B '/'", { 0xf0, 0x80, 0x80, 0xaf }, 4 },
+  /* Kuhn §4.2 - maximum overlong at each length. */
+  { "max overlong 2B (U+007F as 2B)", { 0xc1, 0xbf }, 2 },
+  { "max overlong 3B (U+07FF as 3B)", { 0xe0, 0x9f, 0xbf }, 3 },
+  { "max overlong 4B (U+FFFF as 4B)", { 0xf0, 0x8f, 0xbf, 0xbf }, 4 },
+  /* Kuhn §4.3 - overlong NUL. */
+  { "overlong 2B NUL", { 0xc0, 0x80 }, 2 },
+  { "overlong 3B NUL", { 0xe0, 0x80, 0x80 }, 3 },
+  { "overlong 4B NUL", { 0xf0, 0x80, 0x80, 0x80 }, 4 },
+};
+
+RTEST_LOOP (runicode, overlong_utf8_rejected_to_utf16, RTEST_FAST,
+    0, R_N_ELEMENTS (overlong_vectors))
+{
+  const RUnicodeBadUtf8 * v = &overlong_vectors[__i];
+  runichar2 dst[8];
+  rchar * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf16 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)v->bytes, v->len, &n, &endptr),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 0);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, overlong_utf8_rejected_to_utf32, RTEST_FAST,
+    0, R_N_ELEMENTS (overlong_vectors))
+{
+  const RUnicodeBadUtf8 * v = &overlong_vectors[__i];
+  runichar4 dst[8];
+  rchar * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf32 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)v->bytes, v->len, &n, &endptr),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 0);
+}
+RTEST_END;
+
+/* ---- Kuhn §5.1 / §5.2: surrogate codepoints in UTF-8 ------------------
+ * The byte pattern is bit-valid 3-byte UTF-8 but the decoded value is
+ * a surrogate half (U+D800..U+DFFF). RFC 3629 §3 requires rejection. */
+static const RUnicodeBadUtf8 surrogate_in_utf8_vectors[] = {
+  { "U+D800 as UTF-8 (high surrogate)", { 0xed, 0xa0, 0x80 }, 3 },
+  { "U+DBFF as UTF-8 (last high surrogate)", { 0xed, 0xaf, 0xbf }, 3 },
+  { "U+DC00 as UTF-8 (low surrogate)", { 0xed, 0xb0, 0x80 }, 3 },
+  { "U+DFFF as UTF-8 (last low surrogate)", { 0xed, 0xbf, 0xbf }, 3 },
+  /* Kuhn §5.2 - paired surrogates encoded as two 3-byte sequences. */
+  { "paired surrogates as UTF-8",
+      { 0xed, 0xa0, 0x80, 0xed, 0xb0, 0x80 }, 6 },
+};
+
+RTEST_LOOP (runicode, surrogate_in_utf8_rejected_to_utf16, RTEST_FAST,
+    0, R_N_ELEMENTS (surrogate_in_utf8_vectors))
+{
+  const RUnicodeBadUtf8 * v = &surrogate_in_utf8_vectors[__i];
+  runichar2 dst[8];
+  rchar * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf16 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)v->bytes, v->len, &n, &endptr),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 0);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, surrogate_in_utf8_rejected_to_utf32, RTEST_FAST,
+    0, R_N_ELEMENTS (surrogate_in_utf8_vectors))
+{
+  const RUnicodeBadUtf8 * v = &surrogate_in_utf8_vectors[__i];
+  runichar4 dst[8];
+  rchar * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf32 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)v->bytes, v->len, &n, &endptr),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 0);
+}
+RTEST_END;
+
+/* ---- Kuhn §3: malformed UTF-8 ----------------------------------------
+ * Sequences that don't even form a valid bit pattern - lone
+ * continuation bytes, impossible 0xFE / 0xFF, and truncated
+ * multi-byte sequences. */
+static const RUnicodeBadUtf8 malformed_utf8_vectors[] = {
+  /* Kuhn §3.1: lone continuation bytes. */
+  { "lone 0x80", { 0x80 }, 1 },
+  { "lone 0xBF", { 0xbf }, 1 },
+  /* Kuhn §3.3: missing continuation. */
+  { "2-byte start missing continuation", { 0xc2 }, 1 },
+  { "3-byte start missing 1 of 2 continuations", { 0xe0, 0xa0 }, 2 },
+  { "4-byte start missing 1 of 3 continuations",
+      { 0xf0, 0x90, 0x80 }, 3 },
+  /* Kuhn §3.5: impossible bytes (RFC 3629 forbids 0xFE / 0xFF). */
+  { "impossible byte 0xFE", { 0xfe }, 1 },
+  { "impossible byte 0xFF", { 0xff }, 1 },
+};
+
+RTEST_LOOP (runicode, malformed_utf8_rejected_to_utf16, RTEST_FAST,
+    0, R_N_ELEMENTS (malformed_utf8_vectors))
+{
+  const RUnicodeBadUtf8 * v = &malformed_utf8_vectors[__i];
+  runichar2 dst[8];
+  rchar * endptr;
+  rsize n;
+  RUnicodeResult r;
+
+  r = r_utf8_to_utf16 (dst, R_N_ELEMENTS (dst),
+      (const rchar *)v->bytes, v->len, &n, &endptr);
+  r_assert (r == R_UNICODE_INCOMPLETE_CODE_POINT ||
+            r == R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 0);
+}
+RTEST_END;
+
+RTEST_LOOP (runicode, malformed_utf8_rejected_to_utf32, RTEST_FAST,
+    0, R_N_ELEMENTS (malformed_utf8_vectors))
+{
+  const RUnicodeBadUtf8 * v = &malformed_utf8_vectors[__i];
+  runichar4 dst[8];
+  rchar * endptr;
+  rsize n;
+  RUnicodeResult r;
+
+  r = r_utf8_to_utf32 (dst, R_N_ELEMENTS (dst),
+      (const rchar *)v->bytes, v->len, &n, &endptr);
+  r_assert (r == R_UNICODE_INCOMPLETE_CODE_POINT ||
+            r == R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 0);
+}
+RTEST_END;
+
+/* ---- UTF-8 codepoint out of Unicode range ----------------------------
+ * Bit pattern is valid 4-byte UTF-8 but decodes to a codepoint
+ * > U+10FFFF (RFC 3629 §3). */
+RTEST (runicode, utf8_codepoint_out_of_range_to_utf16, RTEST_FAST)
+{
+  static const ruint8 src[4] = { 0xf4, 0x90, 0x80, 0x80 };  /* U+110000 */
+  runichar2 dst[8];
+  rchar * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf16 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)src, 4, &n, &endptr),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 0);
+}
+RTEST_END;
+
+RTEST (runicode, utf8_codepoint_out_of_range_to_utf32, RTEST_FAST)
+{
+  static const ruint8 src[4] = { 0xf4, 0x90, 0x80, 0x80 };  /* U+110000 */
+  runichar4 dst[8];
+  rchar * endptr;
+  rsize n;
+
+  r_assert_cmpint (r_utf8_to_utf32 (dst, R_N_ELEMENTS (dst),
+        (const rchar *)src, 4, &n, &endptr),
+      ==, R_UNICODE_INVALID_CODE_POINT);
+  r_assert_cmpuint (n, ==, 0);
+}
+RTEST_END;
