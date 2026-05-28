@@ -73,8 +73,8 @@ typedef ruint32 RMachoStrOffset;
 #define R_MACH_CPU_TYPE_ARM           12
 #define R_MACH_CPU_TYPE_MC88000       13
 #define R_MACH_CPU_TYPE_SPARC         14
-#define R_MACH_CPU_TYPE_I860          15 /* big-endian */
-#define R_MACH_CPU_TYPE_I860_LITTLE   16 /* little-endian */
+#define R_MACH_CPU_TYPE_I860          15 /**< big-endian */
+#define R_MACH_CPU_TYPE_I860_LITTLE   16 /**< little-endian */
 #define R_MACH_CPU_TYPE_RS6000        17
 #define R_MACH_CPU_TYPE_MC98000       18
 #define R_MACH_CPU_TYPE_POWERPC       R_MACH_CPU_TYPE_MC98000
@@ -97,7 +97,7 @@ typedef ruint32 RMachoStrOffset;
 #define R_MACH_CPU_SUBTYPE_486          4
 #define R_MACH_CPU_SUBTYPE_486SX        4 + 128
 #define R_MACH_CPU_SUBTYPE_586          5
-#define R_MACH_CPU_SUBTYPE_X86_64_H     8 /* Haswell and compatible */
+#define R_MACH_CPU_SUBTYPE_X86_64_H     8 /**< Haswell and compatible */
 #define R_MACH_CPU_SUBTYPE_PENT         CPU_SUBTYPE_INTEL (5, 0)
 #define R_MACH_CPU_SUBTYPE_PENTPRO      CPU_SUBTYPE_INTEL (6, 1)
 #define R_MACH_CPU_SUBTYPE_PENTII_M3    CPU_SUBTYPE_INTEL (6, 3)
@@ -114,12 +114,12 @@ typedef ruint32 RMachoStrOffset;
 #define R_MACH_CPU_SUBTYPE_ARM_V5TEJ      7
 #define R_MACH_CPU_SUBTYPE_ARM_XSCALE     8
 #define R_MACH_CPU_SUBTYPE_ARM_V7         9
-#define R_MACH_CPU_SUBTYPE_ARM_V7F        10 /* Cortex A9 */
-#define R_MACH_CPU_SUBTYPE_ARM_V7S        11 /* Swift */
-#define R_MACH_CPU_SUBTYPE_ARM_V7K        12 /* Kirkwood40 */
-#define R_MACH_CPU_SUBTYPE_ARM_V6M        14 /* Not meant to be run under xnu */
-#define R_MACH_CPU_SUBTYPE_ARM_V7M        15 /* Not meant to be run under xnu */
-#define R_MACH_CPU_SUBTYPE_ARM_V7EM       16 /* Not meant to be run under xnu */
+#define R_MACH_CPU_SUBTYPE_ARM_V7F        10 /**< Cortex A9 */
+#define R_MACH_CPU_SUBTYPE_ARM_V7S        11 /**< Swift */
+#define R_MACH_CPU_SUBTYPE_ARM_V7K        12 /**< Kirkwood40 */
+#define R_MACH_CPU_SUBTYPE_ARM_V6M        14 /**< Not meant to be run under xnu */
+#define R_MACH_CPU_SUBTYPE_ARM_V7M        15 /**< Not meant to be run under xnu */
+#define R_MACH_CPU_SUBTYPE_ARM_V7EM       16 /**< Not meant to be run under xnu */
 #define R_MACH_CPU_SUBTYPE_ARM_V8         13
 
 #define R_MACH_CPU_SUBTYPE_ARM64_ALL      0
@@ -181,53 +181,53 @@ typedef struct {
 /* Mach-O load commands */
 #define R_MACHO_LC_REQ_DYLD           0x80000000
 
-#define R_MACHO_LC_SEGMENT            0x01  /* segment of this file to be mapped */
-#define R_MACHO_LC_SYMTAB             0x02  /* link-edit stab symbol table info */
-#define R_MACHO_LC_SYMSEG             0x03  /* link-edit gdb symbol table info (obsolete) */
-#define R_MACHO_LC_THREAD             0x04  /* thread */
-#define R_MACHO_LC_UNIXTHREAD         0x05  /* unix thread (includes a stack) */
-#define R_MACHO_LC_LOADFVMLIB         0x06  /* load a specified fixed VM shared library */
-#define R_MACHO_LC_IDFVMLIB           0x07  /* fixed VM shared library identification */
-#define R_MACHO_LC_IDENT              0x08  /* object identification info (obsolete) */
-#define R_MACHO_LC_FVMFILE            0x09  /* fixed VM file inclusion (internal use) */
-#define R_MACHO_LC_PREPAGE            0x0a  /* prepage command (internal use) */
-#define R_MACHO_LC_DYSYMTAB           0x0b  /* dynamic link-edit symbol table info */
-#define R_MACHO_LC_LOAD_DYLIB         0x0c  /* load a dynamicly linked shared library */
-#define R_MACHO_LC_ID_DYLIB           0x0d  /* dynamicly linked shared lib identification */
-#define R_MACHO_LC_LOAD_DYLINKER      0x0e  /* load a dynamic linker */
-#define R_MACHO_LC_ID_DYLINKER        0x0f  /* dynamic linker identification */
-#define R_MACHO_LC_PREBOUND_DYLIB     0x10  /* modules prebound for a dynamicly */
-#define R_MACHO_LC_ROUTINES           0x11  /* image routines */
-#define R_MACHO_LC_SUB_FRAMEWORK      0x12  /* sub framework */
-#define R_MACHO_LC_SUB_UMBRELLA       0x13  /* sub umbrella */
-#define R_MACHO_LC_SUB_CLIENT         0x14  /* sub client */
-#define R_MACHO_LC_SUB_LIBRARY        0x15  /* sub library */
-#define R_MACHO_LC_TWOLEVEL_HINTS     0x16  /* two-level namespace lookup hints */
-#define R_MACHO_LC_PREBIND_CKSUM      0x17  /* prebind checksum */
+#define R_MACHO_LC_SEGMENT            0x01  /**< segment of this file to be mapped */
+#define R_MACHO_LC_SYMTAB             0x02  /**< link-edit stab symbol table info */
+#define R_MACHO_LC_SYMSEG             0x03  /**< link-edit gdb symbol table info (obsolete) */
+#define R_MACHO_LC_THREAD             0x04  /**< thread */
+#define R_MACHO_LC_UNIXTHREAD         0x05  /**< unix thread (includes a stack) */
+#define R_MACHO_LC_LOADFVMLIB         0x06  /**< load a specified fixed VM shared library */
+#define R_MACHO_LC_IDFVMLIB           0x07  /**< fixed VM shared library identification */
+#define R_MACHO_LC_IDENT              0x08  /**< object identification info (obsolete) */
+#define R_MACHO_LC_FVMFILE            0x09  /**< fixed VM file inclusion (internal use) */
+#define R_MACHO_LC_PREPAGE            0x0a  /**< prepage command (internal use) */
+#define R_MACHO_LC_DYSYMTAB           0x0b  /**< dynamic link-edit symbol table info */
+#define R_MACHO_LC_LOAD_DYLIB         0x0c  /**< load a dynamicly linked shared library */
+#define R_MACHO_LC_ID_DYLIB           0x0d  /**< dynamicly linked shared lib identification */
+#define R_MACHO_LC_LOAD_DYLINKER      0x0e  /**< load a dynamic linker */
+#define R_MACHO_LC_ID_DYLINKER        0x0f  /**< dynamic linker identification */
+#define R_MACHO_LC_PREBOUND_DYLIB     0x10  /**< modules prebound for a dynamicly */
+#define R_MACHO_LC_ROUTINES           0x11  /**< image routines */
+#define R_MACHO_LC_SUB_FRAMEWORK      0x12  /**< sub framework */
+#define R_MACHO_LC_SUB_UMBRELLA       0x13  /**< sub umbrella */
+#define R_MACHO_LC_SUB_CLIENT         0x14  /**< sub client */
+#define R_MACHO_LC_SUB_LIBRARY        0x15  /**< sub library */
+#define R_MACHO_LC_TWOLEVEL_HINTS     0x16  /**< two-level namespace lookup hints */
+#define R_MACHO_LC_PREBIND_CKSUM      0x17  /**< prebind checksum */
 #define R_MACHO_LC_LOAD_WEAK_DYLIB   (0x18 | R_MACHO_LC_REQ_DYLD)
-#define R_MACHO_LC_SEGMENT_64         0x19  /* 64-bit segment of this file to be mapped */
-#define R_MACHO_LC_ROUTINES_64        0x1a  /* 64-bit image routines */
-#define R_MACHO_LC_UUID               0x1b  /* the uuid */
-#define R_MACHO_LC_RPATH             (0x1c | R_MACHO_LC_REQ_DYLD)    /* runpath additions */
-#define R_MACHO_LC_CODE_SIGNATURE     0x1d /* local of code signature */
-#define R_MACHO_LC_SEGMENT_SPLIT_INFO 0x1e /* local of info to split segments */
-#define R_MACHO_LC_REEXPORT_DYLIB    (0x1f | R_MACHO_LC_REQ_DYLD) /* load and re-export dylib */
-#define R_MACHO_LC_LAZY_LOAD_DYLIB    0x20 /* delay load of dylib until first use */
-#define R_MACHO_LC_ENCRYPTION_INFO    0x21 /* encrypted segment information */
-#define R_MACHO_LC_DYLD_INFO          0x22 /* compressed dyld information */
-#define R_MACHO_LC_DYLD_INFO_ONLY    (0x22 | R_MACHO_LC_REQ_DYLD) /* compressed dyld information only */
-#define R_MACHO_LC_LOAD_UPWARD_DYLIB (0x23 | R_MACHO_LC_REQ_DYLD) /* load upward dylib */
-#define R_MACHO_LC_VERSION_MIN_MACOSX 0x24 /* build for MacOSX min OS version */
-#define R_MACHO_LC_VERSION_MIN_IPHONEOS 0x25 /* build for iPhoneOS min OS version */
-#define R_MACHO_LC_FUNCTION_STARTS    0x26 /* compressed table of function start addresses */
-#define R_MACHO_LC_DYLD_ENVIRONMENT   0x27 /* string for dyld to treat like environment variable */
-#define R_MACHO_LC_MAIN              (0x28 | R_MACHO_LC_REQ_DYLD) /* replacement for LC_UNIXTHREAD */
-#define R_MACHO_LC_DATA_IN_CODE       0x29 /* table of non-instructions in __text */
-#define R_MACHO_LC_SOURCE_VERSION     0x2a /* source version used to build binary */
-#define R_MACHO_LC_DYLIB_CODE_SIGN_DRS 0x2b /* Code signing DRs copied from linked dylibs */
-#define R_MACHO_LC_ENCRYPTION_INFO_64 0x2c /* 64-bit encrypted segment information */
-#define R_MACHO_LC_LINKER_OPTION      0x2d /* linker options in MH_OBJECT files */
-#define R_MACHO_LC_LINKER_OPTIMIZATION_HINT 0x2e /* optimization hints in MH_OBJECT files */
+#define R_MACHO_LC_SEGMENT_64         0x19  /**< 64-bit segment of this file to be mapped */
+#define R_MACHO_LC_ROUTINES_64        0x1a  /**< 64-bit image routines */
+#define R_MACHO_LC_UUID               0x1b  /**< the uuid */
+#define R_MACHO_LC_RPATH             (0x1c | R_MACHO_LC_REQ_DYLD)    /**< runpath additions */
+#define R_MACHO_LC_CODE_SIGNATURE     0x1d /**< local of code signature */
+#define R_MACHO_LC_SEGMENT_SPLIT_INFO 0x1e /**< local of info to split segments */
+#define R_MACHO_LC_REEXPORT_DYLIB    (0x1f | R_MACHO_LC_REQ_DYLD) /**< load and re-export dylib */
+#define R_MACHO_LC_LAZY_LOAD_DYLIB    0x20 /**< delay load of dylib until first use */
+#define R_MACHO_LC_ENCRYPTION_INFO    0x21 /**< encrypted segment information */
+#define R_MACHO_LC_DYLD_INFO          0x22 /**< compressed dyld information */
+#define R_MACHO_LC_DYLD_INFO_ONLY    (0x22 | R_MACHO_LC_REQ_DYLD) /**< compressed dyld information only */
+#define R_MACHO_LC_LOAD_UPWARD_DYLIB (0x23 | R_MACHO_LC_REQ_DYLD) /**< load upward dylib */
+#define R_MACHO_LC_VERSION_MIN_MACOSX 0x24 /**< build for MacOSX min OS version */
+#define R_MACHO_LC_VERSION_MIN_IPHONEOS 0x25 /**< build for iPhoneOS min OS version */
+#define R_MACHO_LC_FUNCTION_STARTS    0x26 /**< compressed table of function start addresses */
+#define R_MACHO_LC_DYLD_ENVIRONMENT   0x27 /**< string for dyld to treat like environment variable */
+#define R_MACHO_LC_MAIN              (0x28 | R_MACHO_LC_REQ_DYLD) /**< replacement for LC_UNIXTHREAD */
+#define R_MACHO_LC_DATA_IN_CODE       0x29 /**< table of non-instructions in __text */
+#define R_MACHO_LC_SOURCE_VERSION     0x2a /**< source version used to build binary */
+#define R_MACHO_LC_DYLIB_CODE_SIGN_DRS 0x2b /**< Code signing DRs copied from linked dylibs */
+#define R_MACHO_LC_ENCRYPTION_INFO_64 0x2c /**< 64-bit encrypted segment information */
+#define R_MACHO_LC_LINKER_OPTION      0x2d /**< linker options in MH_OBJECT files */
+#define R_MACHO_LC_LINKER_OPTIMIZATION_HINT 0x2e /**< optimization hints in MH_OBJECT files */
 
 /** @brief Common load-command header (cmd + cmdsize). */
 typedef struct {

@@ -85,31 +85,31 @@ typedef struct {
 } RPeDosHdr;
 
 
-#define R_PE_MACHINE_UNKNOWN                0x0000 /* The contents of this field are assumed to be applicable to any machine type */
-#define R_PE_MACHINE_AM33                   0x01d3 /* Matsushita AM33 */
-#define R_PE_MACHINE_AMD64                  0x8664 /* x64 */
-#define R_PE_MACHINE_ARM                    0x01c0 /* ARM little endian */
-#define R_PE_MACHINE_ARM64                  0xaa64 /* ARM64 little endian */
-#define R_PE_MACHINE_ARMNT                  0x01c4 /* ARM Thumb-2 little endian */
-#define R_PE_MACHINE_EBC                    0x0ebc /* EFI byte code */
-#define R_PE_MACHINE_I386                   0x014c /* Intel 386 or later processors and compatible processors */
-#define R_PE_MACHINE_IA64                   0x0200 /* Intel Itanium processor family */
-#define R_PE_MACHINE_M32R                   0x9041 /* Mitsubishi M32R little endian */
-#define R_PE_MACHINE_MIPS16                 0x0266 /* MIPS16 */
-#define R_PE_MACHINE_MIPSFPU                0x0366 /* MIPS with FPU */
-#define R_PE_MACHINE_MIPSFPU16              0x0466 /* MIPS16 with FPU */
-#define R_PE_MACHINE_POWERPC                0x01f0 /* Power PC little endian */
-#define R_PE_MACHINE_POWERPCFP              0x01f1 /* Power PC with floating point support */
-#define R_PE_MACHINE_R4000                  0x0166 /* MIPS little endian */
-#define R_PE_MACHINE_RISCV32                0x5032 /* RISC-V 32-bit address space */
-#define R_PE_MACHINE_RISCV64                0x5064 /* RISC-V 64-bit address space */
-#define R_PE_MACHINE_RISCV128               0x5128 /* RISC-V 128-bit address space */
-#define R_PE_MACHINE_SH3                    0x01a2 /* Hitachi SH3 */
-#define R_PE_MACHINE_SH3DSP                 0x01a3 /* Hitachi SH3 DSP */
-#define R_PE_MACHINE_SH4                    0x01a6 /* Hitachi SH4 */
-#define R_PE_MACHINE_SH5                    0x01a8 /* Hitachi SH5 */
-#define R_PE_MACHINE_THUMB                  0x01c2 /* Thumb */
-#define R_PE_MACHINE_WCEMIPSV2              0x0169 /* MIPS little-endian WCE v2 */
+#define R_PE_MACHINE_UNKNOWN                0x0000 /**< The contents of this field are assumed to be applicable to any machine type */
+#define R_PE_MACHINE_AM33                   0x01d3 /**< Matsushita AM33 */
+#define R_PE_MACHINE_AMD64                  0x8664 /**< x64 */
+#define R_PE_MACHINE_ARM                    0x01c0 /**< ARM little endian */
+#define R_PE_MACHINE_ARM64                  0xaa64 /**< ARM64 little endian */
+#define R_PE_MACHINE_ARMNT                  0x01c4 /**< ARM Thumb-2 little endian */
+#define R_PE_MACHINE_EBC                    0x0ebc /**< EFI byte code */
+#define R_PE_MACHINE_I386                   0x014c /**< Intel 386 or later processors and compatible processors */
+#define R_PE_MACHINE_IA64                   0x0200 /**< Intel Itanium processor family */
+#define R_PE_MACHINE_M32R                   0x9041 /**< Mitsubishi M32R little endian */
+#define R_PE_MACHINE_MIPS16                 0x0266 /**< MIPS16 */
+#define R_PE_MACHINE_MIPSFPU                0x0366 /**< MIPS with FPU */
+#define R_PE_MACHINE_MIPSFPU16              0x0466 /**< MIPS16 with FPU */
+#define R_PE_MACHINE_POWERPC                0x01f0 /**< Power PC little endian */
+#define R_PE_MACHINE_POWERPCFP              0x01f1 /**< Power PC with floating point support */
+#define R_PE_MACHINE_R4000                  0x0166 /**< MIPS little endian */
+#define R_PE_MACHINE_RISCV32                0x5032 /**< RISC-V 32-bit address space */
+#define R_PE_MACHINE_RISCV64                0x5064 /**< RISC-V 64-bit address space */
+#define R_PE_MACHINE_RISCV128               0x5128 /**< RISC-V 128-bit address space */
+#define R_PE_MACHINE_SH3                    0x01a2 /**< Hitachi SH3 */
+#define R_PE_MACHINE_SH3DSP                 0x01a3 /**< Hitachi SH3 DSP */
+#define R_PE_MACHINE_SH4                    0x01a6 /**< Hitachi SH4 */
+#define R_PE_MACHINE_SH5                    0x01a8 /**< Hitachi SH5 */
+#define R_PE_MACHINE_THUMB                  0x01c2 /**< Thumb */
+#define R_PE_MACHINE_WCEMIPSV2              0x0169 /**< MIPS little-endian WCE v2 */
 /**
  * @brief Return a short ASCII name for a PE @c machine value (e.g.
  * @c "AMD64", @c "ARM64", @c "I386").
@@ -170,20 +170,20 @@ R_API rsize r_pe_image_size (rconstpointer mem);
 R_API rsize r_pe_image_calc_size (rconstpointer mem);
 
 
-#define R_PE_SUBSYSTEM_UNKNOWN                   0 /* An unknown subsystem */
-#define R_PE_SUBSYSTEM_NATIVE                    1 /* Device drivers and native Windows processes */
-#define R_PE_SUBSYSTEM_WINDOWS_GUI               2 /* The Windows graphical user interface (GUI) subsystem */
-#define R_PE_SUBSYSTEM_WINDOWS_CUI               3 /* The Windows character subsystem */
-#define R_PE_SUBSYSTEM_OS2_CUI                   5 /* The OS/2 character subsystem */
-#define R_PE_SUBSYSTEM_POSIX_CUI                 7 /* The Posix character subsystem */
-#define R_PE_SUBSYSTEM_NATIVE_WINDOWS            8 /* Native Win9x driver */
-#define R_PE_SUBSYSTEM_WINDOWS_CE_GUI            9 /* Windows CE */
-#define R_PE_SUBSYSTEM_EFI_APPLICATION          10 /* An Extensible Firmware Interface (EFI) application */
-#define R_PE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER  11 /* An EFI driver with boot services */
-#define R_PE_SUBSYSTEM_EFI_RUNTIME_DRIVER       12 /* An EFI driver with run-time services */
-#define R_PE_SUBSYSTEM_EFI_ROM                  13 /* An EFI ROM image */
-#define R_PE_SUBSYSTEM_XBOX                     14 /* XBOX */
-#define R_PE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION 16 /* Windows boot application. */
+#define R_PE_SUBSYSTEM_UNKNOWN                   0 /**< An unknown subsystem */
+#define R_PE_SUBSYSTEM_NATIVE                    1 /**< Device drivers and native Windows processes */
+#define R_PE_SUBSYSTEM_WINDOWS_GUI               2 /**< The Windows graphical user interface (GUI) subsystem */
+#define R_PE_SUBSYSTEM_WINDOWS_CUI               3 /**< The Windows character subsystem */
+#define R_PE_SUBSYSTEM_OS2_CUI                   5 /**< The OS/2 character subsystem */
+#define R_PE_SUBSYSTEM_POSIX_CUI                 7 /**< The Posix character subsystem */
+#define R_PE_SUBSYSTEM_NATIVE_WINDOWS            8 /**< Native Win9x driver */
+#define R_PE_SUBSYSTEM_WINDOWS_CE_GUI            9 /**< Windows CE */
+#define R_PE_SUBSYSTEM_EFI_APPLICATION          10 /**< An Extensible Firmware Interface (EFI) application */
+#define R_PE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER  11 /**< An EFI driver with boot services */
+#define R_PE_SUBSYSTEM_EFI_RUNTIME_DRIVER       12 /**< An EFI driver with run-time services */
+#define R_PE_SUBSYSTEM_EFI_ROM                  13 /**< An EFI ROM image */
+#define R_PE_SUBSYSTEM_XBOX                     14 /**< XBOX */
+#define R_PE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION 16 /**< Windows boot application. */
 
 /** @brief Common prefix shared by the PE32 and PE32+ optional headers. */
 typedef struct {

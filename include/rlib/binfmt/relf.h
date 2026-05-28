@@ -95,7 +95,7 @@ R_BEGIN_DECLS
 #define R_ELF_OSABI_NSK               14
 #define R_ELF_OSABI_AROS              15
 #define R_ELF_OSABI_ARM               97
-#define R_ELF_OSABI_STANDALONE        255 /* embedded */
+#define R_ELF_OSABI_STANDALONE        255 /**< embedded */
 
 
 #define R_ELF_ETYPE_NONE              0
