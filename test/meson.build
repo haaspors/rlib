@@ -96,6 +96,7 @@ rlibtest_sources = [
   'rtls.c',
   'rtlsserver.c',
   'runicode.c',
+  'runicode-props.c',
   'ruri.c',
 ]
 

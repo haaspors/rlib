@@ -604,6 +604,86 @@ R_API runichar2 * r_wtf8_to_utf16_dup (const rchar * src, rssize srcsize,
 
 /** @} */
 
+/**
+ * @name UCD-backed codepoint properties and simple case mapping
+ *
+ * Full-range counterparts to the ASCII-fast classifiers, plus the
+ * simple-case-mapping accessors from UAX #44. Driven by a packed
+ * lookup of the Unicode Character Database (General_Category column
+ * plus the White_Space derived property) emitted by
+ * @c tools/gen_unicode_props.py.
+ *
+ * "Simple" here is the 1:1 case mapping from
+ * @c UnicodeData.txt columns 12 / 13 / 14: every input codepoint
+ * maps to exactly one output codepoint. Full case mapping per
+ * Unicode Standard §3.13 (Greek small final sigma, Turkic dotted
+ * I, the @c ss / @c SS family from
+ * @c SpecialCasing.txt) is a separate concern - it can change
+ * string length and is locale-sensitive, so needs a different API
+ * shape. Filed as a follow-up.
+ *
+ * Codepoints not present in the UCD (the @c Cn / unassigned range,
+ * the surrogate halves @c U+D800 - @c U+DFFF) get @c General_Category
+ * = @c Cn and return @c FALSE for every @c r_unichar_is_* classifier
+ * except @c r_unichar_is_ascii. Simple case mapping returns the
+ * input codepoint unchanged for any codepoint with no UCD entry.
+ *
+ * The classifiers below behave like their @c r_unichar_is_ascii_*
+ * cousins but cover the full @c [0, 0x110000) range.
+ * @{
+ */
+
+/** @brief @c TRUE iff @p uc is a letter (UAX #44 @c L* category). */
+R_API rboolean r_unichar_is_letter (runichar4 uc);
+/** @brief @c TRUE iff @p uc is a decimal digit (UAX #44 @c Nd). */
+R_API rboolean r_unichar_is_digit (runichar4 uc);
+/** @brief @c TRUE iff @p uc is a letter or decimal digit. */
+R_API rboolean r_unichar_is_alnum (runichar4 uc);
+/** @brief @c TRUE iff @p uc has the @c White_Space derived property
+ *  per @c PropList.txt - covers @c [Z]* General_Category plus
+ *  @c U+0009..U+000D, @c U+0085, etc. */
+R_API rboolean r_unichar_is_space (runichar4 uc);
+/** @brief @c TRUE iff @p uc is a control character (@c Cc). */
+R_API rboolean r_unichar_is_control (runichar4 uc);
+/** @brief @c TRUE iff @p uc is printable - any codepoint outside
+ *  @c Cc, @c Cf, @c Cs, @c Co, @c Cn per the Unicode Standard
+ *  recommendation. */
+R_API rboolean r_unichar_is_print (runichar4 uc);
+/** @brief @c TRUE iff @p uc is punctuation (UAX #44 @c P*). */
+R_API rboolean r_unichar_is_punct (runichar4 uc);
+/** @brief @c TRUE iff @p uc is a combining mark (UAX #44 @c M*). */
+R_API rboolean r_unichar_is_mark (runichar4 uc);
+/** @brief @c TRUE iff @p uc is a symbol (UAX #44 @c S*). */
+R_API rboolean r_unichar_is_symbol (runichar4 uc);
+
+/**
+ * @brief Simple uppercase mapping per @c UnicodeData.txt column 12.
+ *
+ * @return @p uc with its @c Simple_Uppercase_Mapping applied, or
+ *         @p uc unchanged if no mapping is defined.
+ */
+R_API runichar4 r_unichar_to_upper (runichar4 uc);
+/**
+ * @brief Simple lowercase mapping per @c UnicodeData.txt column 13.
+ *
+ * @return @p uc with its @c Simple_Lowercase_Mapping applied, or
+ *         @p uc unchanged if no mapping is defined.
+ */
+R_API runichar4 r_unichar_to_lower (runichar4 uc);
+/**
+ * @brief Simple titlecase mapping per @c UnicodeData.txt column 14.
+ *
+ * @return @p uc with its @c Simple_Titlecase_Mapping applied, or
+ *         @p uc unchanged if no mapping is defined. For most
+ *         codepoints this equals the uppercase mapping; a small
+ *         number of digraph-like characters have a distinct
+ *         titlecase form (e.g. @c U+01F1 @c "DZ" -> @c U+01F2
+ *         @c "Dz").
+ */
+R_API runichar4 r_unichar_to_title (runichar4 uc);
+
+/** @} */
+
 R_END_DECLS
 
 /** @} */ /* r_unicode group */
