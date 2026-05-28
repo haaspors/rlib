@@ -27,7 +27,7 @@
 
 /**
  * @defgroup r_string Mutable strings (RString)
- * @ingroup r_data
+ * @ingroup r_str
  * @brief Heap-allocated mutable string-builder type, complement to
  * the immutable @c rchar @c * helpers in @c rlib/rstr.h.
  * @{
