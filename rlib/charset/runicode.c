@@ -1034,3 +1034,248 @@ r_utf16_strlen_codepoints (const runichar2 * src, rsize size,
   if (result != NULL) *result = ret;
   return count;
 }
+
+/* ---- Explicit-endianness UTF-16/32 -> UTF-8 ----------------------
+ * Internal: load a UTF-16 code unit from the source buffer at byte
+ * offset @i in the given endianness. The helpers below decode unit-
+ * by-unit into the host-order surrogate-pair logic. */
+
+static inline runichar2
+r_load_utf16_be (const ruint8 * p)
+{
+  return ((runichar2)p[0] << 8) | (runichar2)p[1];
+}
+
+static inline runichar2
+r_load_utf16_le (const ruint8 * p)
+{
+  return ((runichar2)p[1] << 8) | (runichar2)p[0];
+}
+
+static inline runichar4
+r_load_utf32_be (const ruint8 * p)
+{
+  return ((runichar4)p[0] << 24) | ((runichar4)p[1] << 16) |
+         ((runichar4)p[2] <<  8) |  (runichar4)p[3];
+}
+
+static inline runichar4
+r_load_utf32_le (const ruint8 * p)
+{
+  return ((runichar4)p[3] << 24) | ((runichar4)p[2] << 16) |
+         ((runichar4)p[1] <<  8) |  (runichar4)p[0];
+}
+
+typedef runichar2 (*RUtf16LoadFn) (const ruint8 *);
+typedef runichar4 (*RUtf32LoadFn) (const ruint8 *);
+
+/* UTF-16 wire-format decode: srcsize is bytes; reject odd-length
+ * input; dispatch through @load to get host-order code units. */
+static RUnicodeResult
+r_utf16_wire_to_utf8 (rchar * dst, rsize dstsize, const ruint8 * src,
+    rsize srcsize, rsize * dstoutsize, ruint8 ** srcendptr,
+    RUtf16LoadFn load)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  rchar * dstptr, * dstend;
+  rsize i;
+  rssize r;
+
+  if (R_UNLIKELY (dst == NULL || dstsize == 0 || src == NULL))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY ((srcsize & 1u) != 0))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY (dstsize == 1)) {
+    dst[0] = 0;
+    return R_UNICODE_OVERFLOW;
+  }
+
+  for (i = 0, dstptr = dst, dstend = dst + dstsize - 1; i + 1 < srcsize; ) {
+    runichar2 u = load (&src[i]);
+    if (u == 0) break;
+    if (u < 0xd800 || u >= 0xe000) {
+      r = r_unichar_to_utf8 ((runichar)u, dstptr, dstend - dstptr);
+      i += 2;
+    } else if (u < 0xdc00) {
+      /* High surrogate; peek at next unit without consuming. */
+      if (i + 3 < srcsize) {
+        runichar2 u2 = load (&src[i + 2]);
+        if (u2 >= 0xdc00 && u2 < 0xe000) {
+          runichar uc = 0x10000 +
+              (((runichar)(u - 0xd800)) << 10) +
+              ((runichar)(u2 - 0xdc00));
+          r = r_unichar_to_utf8 (uc, dstptr, dstend - dstptr);
+          i += 4;
+        } else {
+          ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+          break;
+        }
+      } else {
+        ret = R_UNICODE_INCOMPLETE_CODE_POINT;
+        break;
+      }
+    } else {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    }
+    if (r <= 0) {
+      ret = R_UNICODE_OVERFLOW;
+      break;
+    }
+    dstptr += r;
+  }
+
+  *dstptr = 0;
+  if (dstoutsize != NULL) *dstoutsize = dstptr - dst;
+  if (srcendptr != NULL) *srcendptr = (ruint8 *)&src[i];
+  return ret;
+}
+
+static RUnicodeResult
+r_utf32_wire_to_utf8 (rchar * dst, rsize dstsize, const ruint8 * src,
+    rsize srcsize, rsize * dstoutsize, ruint8 ** srcendptr,
+    RUtf32LoadFn load)
+{
+  RUnicodeResult ret = R_UNICODE_OK;
+  rchar * dstptr, * dstend;
+  rsize i;
+  rssize r = 0;
+
+  if (R_UNLIKELY (dst == NULL || dstsize == 0 || src == NULL))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY ((srcsize & 3u) != 0))
+    return R_UNICODE_INVAL;
+  if (R_UNLIKELY (dstsize == 1)) {
+    dst[0] = 0;
+    return R_UNICODE_OVERFLOW;
+  }
+
+  for (i = 0, dstptr = dst, dstend = dst + dstsize - 1; i + 3 < srcsize;
+      i += 4, dstptr += r) {
+    runichar4 cp = load (&src[i]);
+    if (cp == 0) break;
+    if (cp >= 0x110000 || (cp >= 0xd800 && cp < 0xe000)) {
+      ret = R_UNICODE_INVALID_CODE_POINT;
+      break;
+    }
+    r = r_unichar_to_utf8 ((runichar)cp, dstptr, dstend - dstptr);
+    if (r <= 0) {
+      ret = R_UNICODE_OVERFLOW;
+      break;
+    }
+  }
+
+  *dstptr = 0;
+  if (dstoutsize != NULL) *dstoutsize = dstptr - dst;
+  if (srcendptr != NULL) *srcendptr = (ruint8 *)&src[i];
+  return ret;
+}
+
+RUnicodeResult
+r_utf16be_to_utf8 (rchar * dst, rsize dstsize, const ruint8 * src,
+    rsize srcsize, rsize * dstoutsize, ruint8 ** srcendptr)
+{
+  return r_utf16_wire_to_utf8 (dst, dstsize, src, srcsize, dstoutsize,
+      srcendptr, r_load_utf16_be);
+}
+
+RUnicodeResult
+r_utf16le_to_utf8 (rchar * dst, rsize dstsize, const ruint8 * src,
+    rsize srcsize, rsize * dstoutsize, ruint8 ** srcendptr)
+{
+  return r_utf16_wire_to_utf8 (dst, dstsize, src, srcsize, dstoutsize,
+      srcendptr, r_load_utf16_le);
+}
+
+RUnicodeResult
+r_utf32be_to_utf8 (rchar * dst, rsize dstsize, const ruint8 * src,
+    rsize srcsize, rsize * dstoutsize, ruint8 ** srcendptr)
+{
+  return r_utf32_wire_to_utf8 (dst, dstsize, src, srcsize, dstoutsize,
+      srcendptr, r_load_utf32_be);
+}
+
+RUnicodeResult
+r_utf32le_to_utf8 (rchar * dst, rsize dstsize, const ruint8 * src,
+    rsize srcsize, rsize * dstoutsize, ruint8 ** srcendptr)
+{
+  return r_utf32_wire_to_utf8 (dst, dstsize, src, srcsize, dstoutsize,
+      srcendptr, r_load_utf32_le);
+}
+
+/* _dup variants: allocate worst-case output and run the in-buffer
+ * conversion. Worst case for UTF-16 -> UTF-8 is 3 bytes per BMP code
+ * unit (since a surrogate pair encodes one 4-byte UTF-8 codepoint
+ * from 4 input bytes, so 2 input bytes per output byte is the
+ * worst-case ratio). For UTF-32 -> UTF-8 it's 1 byte UTF-8 per 4
+ * bytes UTF-32 minimum to 4:4 maximum. */
+
+static rchar *
+r_utfXX_to_utf8_dup_common (const ruint8 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, ruint8 ** endptr,
+    rsize per_unit_bytes, rsize worst_utf8_per_unit,
+    RUnicodeResult (*conv) (rchar *, rsize, const ruint8 *, rsize,
+        rsize *, ruint8 **))
+{
+  rchar * ret;
+  RUnicodeResult r;
+  rsize dstsize;
+  rsize units;
+
+  if (R_UNLIKELY (src == NULL || srcsize == 0)) {
+    if (res != NULL) *res = R_UNICODE_INVAL;
+    return NULL;
+  }
+  if (R_UNLIKELY ((srcsize % per_unit_bytes) != 0)) {
+    if (res != NULL) *res = R_UNICODE_INVAL;
+    return NULL;
+  }
+
+  units = srcsize / per_unit_bytes;
+  dstsize = units * worst_utf8_per_unit + 1;
+
+  if ((ret = r_mem_new_n (rchar, dstsize)) != NULL) {
+    if ((r = conv (ret, dstsize, src, srcsize, retsize, endptr))
+        != R_UNICODE_OK) {
+      r_free (ret);
+      ret = NULL;
+    }
+  } else {
+    r = R_UNICODE_OOM;
+  }
+
+  if (res != NULL) *res = r;
+  return ret;
+}
+
+rchar *
+r_utf16be_to_utf8_dup (const ruint8 * src, rsize srcsize, RUnicodeResult * res,
+    rsize * retsize, ruint8 ** endptr)
+{
+  return r_utfXX_to_utf8_dup_common (src, srcsize, res, retsize, endptr,
+      2, 3, r_utf16be_to_utf8);
+}
+
+rchar *
+r_utf16le_to_utf8_dup (const ruint8 * src, rsize srcsize, RUnicodeResult * res,
+    rsize * retsize, ruint8 ** endptr)
+{
+  return r_utfXX_to_utf8_dup_common (src, srcsize, res, retsize, endptr,
+      2, 3, r_utf16le_to_utf8);
+}
+
+rchar *
+r_utf32be_to_utf8_dup (const ruint8 * src, rsize srcsize, RUnicodeResult * res,
+    rsize * retsize, ruint8 ** endptr)
+{
+  return r_utfXX_to_utf8_dup_common (src, srcsize, res, retsize, endptr,
+      4, 4, r_utf32be_to_utf8);
+}
+
+rchar *
+r_utf32le_to_utf8_dup (const ruint8 * src, rsize srcsize, RUnicodeResult * res,
+    rsize * retsize, ruint8 ** endptr)
+{
+  return r_utfXX_to_utf8_dup_common (src, srcsize, res, retsize, endptr,
+      4, 4, r_utf32le_to_utf8);
+}

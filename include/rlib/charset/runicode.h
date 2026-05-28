@@ -431,6 +431,56 @@ R_API rsize r_utf16_strlen_codepoints (const runichar2 * src, rsize size,
 
 /** @} */
 
+/**
+ * @name Explicit-endianness UTF-16 / UTF-32 to UTF-8
+ *
+ * Wire-format text (ASN.1 @c BMPString, ASN.1 @c UniversalString,
+ * XML / HTML preambles, anything serialised across a network) often
+ * specifies UTF-16 or UTF-32 in a fixed byte order rather than
+ * host order. These helpers take raw byte buffers, decode them in
+ * the specified endianness, and emit canonical UTF-8 with the same
+ * validation the @c r_utf16_to_utf8 / @c r_utf32_to_utf8 pair
+ * applies. The conversion result is the standard
+ * @c RUnicodeResult; failure modes match the host-order siblings.
+ *
+ * @c srcsize is measured in bytes for all four helpers; lengths that
+ * aren't a multiple of the code-unit size (2 for UTF-16, 4 for
+ * UTF-32) yield @c R_UNICODE_INVAL.
+ * @{
+ */
+
+/** @brief Decode a UTF-16BE byte sequence into UTF-8. */
+R_API RUnicodeResult r_utf16be_to_utf8 (rchar * dst, rsize dstsize,
+    const ruint8 * src, rsize srcsize, rsize * dstoutsize,
+    ruint8 ** srcendptr);
+/** @brief Decode a UTF-16LE byte sequence into UTF-8. */
+R_API RUnicodeResult r_utf16le_to_utf8 (rchar * dst, rsize dstsize,
+    const ruint8 * src, rsize srcsize, rsize * dstoutsize,
+    ruint8 ** srcendptr);
+/** @brief Decode a UTF-32BE byte sequence into UTF-8. */
+R_API RUnicodeResult r_utf32be_to_utf8 (rchar * dst, rsize dstsize,
+    const ruint8 * src, rsize srcsize, rsize * dstoutsize,
+    ruint8 ** srcendptr);
+/** @brief Decode a UTF-32LE byte sequence into UTF-8. */
+R_API RUnicodeResult r_utf32le_to_utf8 (rchar * dst, rsize dstsize,
+    const ruint8 * src, rsize srcsize, rsize * dstoutsize,
+    ruint8 ** srcendptr);
+
+/** @brief Allocating UTF-16BE decode; caller frees with @c r_free. */
+R_API rchar * r_utf16be_to_utf8_dup (const ruint8 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, ruint8 ** endptr) R_ATTR_MALLOC;
+/** @brief Allocating UTF-16LE decode; caller frees with @c r_free. */
+R_API rchar * r_utf16le_to_utf8_dup (const ruint8 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, ruint8 ** endptr) R_ATTR_MALLOC;
+/** @brief Allocating UTF-32BE decode; caller frees with @c r_free. */
+R_API rchar * r_utf32be_to_utf8_dup (const ruint8 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, ruint8 ** endptr) R_ATTR_MALLOC;
+/** @brief Allocating UTF-32LE decode; caller frees with @c r_free. */
+R_API rchar * r_utf32le_to_utf8_dup (const ruint8 * src, rsize srcsize,
+    RUnicodeResult * res, rsize * retsize, ruint8 ** endptr) R_ATTR_MALLOC;
+
+/** @} */
+
 R_END_DECLS
 
 /** @} */ /* r_unicode group */

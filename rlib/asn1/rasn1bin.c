@@ -26,73 +26,28 @@
 #include <rlib/data/rstring.h>
 #include <rlib/rtime.h>
 
-/* BMPString is UCS-2 / UTF-16BE.  Byte-swap the input into host order
- * once, then let the existing UTF-16 -> UTF-8 path do surrogate
- * handling and validation. */
+/* BMPString is UCS-2 / UTF-16BE. Decode directly via the wire-
+ * endian helper - no intermediate host-order copy needed. */
 static rchar *
 r_asn1_bmp_string_to_utf8 (const ruint8 * src, rsize len)
 {
-  runichar2 * tmp;
-  rchar * ret;
-  rsize n, i;
-
   if (R_UNLIKELY ((len & 1u) != 0)) return NULL;
-  n = len / 2;
-  if (n == 0) return r_strdup ("");
-
-  if ((tmp = r_mem_new_n (runichar2, n)) == NULL) return NULL;
-  for (i = 0; i < n; i++)
-    tmp[i] = ((runichar2) src[2 * i] << 8) | (runichar2) src[2 * i + 1];
-
-  ret = r_utf16_to_utf8_dup (tmp, n, NULL, NULL, NULL);
-  r_free (tmp);
-  return ret;
+  if (len == 0) return r_strdup ("");
+  return r_utf16be_to_utf8_dup (src, len, NULL, NULL, NULL);
 }
 
 /* UniversalString is UCS-4 / UTF-32BE.  Encode each codepoint as UTF-8
  * directly; reject lengths that aren't a multiple of 4, codepoints in
  * the surrogate range D800..DFFF, and anything past U+10FFFF. */
+/* UniversalString is UCS-4 / UTF-32BE. Decode via the wire-endian
+ * helper, which applies the same surrogate / out-of-range
+ * validation the previous hand-rolled implementation did. */
 static rchar *
 r_asn1_universal_string_to_utf8 (const ruint8 * src, rsize len)
 {
-  rchar * dst, * out;
-  rsize n, i;
-
   if (R_UNLIKELY ((len & 3u) != 0)) return NULL;
-  n = len / 4;
-  if (n == 0) return r_strdup ("");
-
-  /* Max 4 UTF-8 bytes per codepoint (since U+10FFFF is the limit). */
-  if ((dst = r_mem_new_n (rchar, n * 4 + 1)) == NULL) return NULL;
-
-  out = dst;
-  for (i = 0; i < n; i++) {
-    ruint32 cp = ((ruint32) src[4 * i]     << 24) |
-                 ((ruint32) src[4 * i + 1] << 16) |
-                 ((ruint32) src[4 * i + 2] <<  8) |
-                 ((ruint32) src[4 * i + 3]);
-    if ((cp >= 0xd800 && cp <= 0xdfff) || cp > 0x10ffff) {
-      r_free (dst);
-      return NULL;
-    }
-    if (cp < 0x80) {
-      *out++ = (rchar) cp;
-    } else if (cp < 0x800) {
-      *out++ = (rchar) (0xc0 |  (cp >>  6));
-      *out++ = (rchar) (0x80 |  (cp        & 0x3f));
-    } else if (cp < 0x10000) {
-      *out++ = (rchar) (0xe0 |  (cp >> 12));
-      *out++ = (rchar) (0x80 | ((cp >>  6) & 0x3f));
-      *out++ = (rchar) (0x80 |  (cp        & 0x3f));
-    } else {
-      *out++ = (rchar) (0xf0 |  (cp >> 18));
-      *out++ = (rchar) (0x80 | ((cp >> 12) & 0x3f));
-      *out++ = (rchar) (0x80 | ((cp >>  6) & 0x3f));
-      *out++ = (rchar) (0x80 |  (cp        & 0x3f));
-    }
-  }
-  *out = 0;
-  return dst;
+  if (len == 0) return r_strdup ("");
+  return r_utf32be_to_utf8_dup (src, len, NULL, NULL, NULL);
 }
 
 RAsn1DecoderStatus
