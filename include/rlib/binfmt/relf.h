@@ -34,10 +34,11 @@
  *
  * For each ELF data structure rlib carries both the 32-bit and
  * 64-bit variant - the parser picks at runtime based on
- * @c ident[R_ELF_IDX_CLASS]. The hundreds of `#define` constants
- * (machine types, section types, dynamic tags, ...) follow the
- * names in the canonical ELF specification and are not individually
- * Doxygen-annotated.
+ * @c ident[R_ELF_IDX_CLASS]. The `#define` constants are organised
+ * into @c @ \@name blocks below (identifier bytes, file / machine
+ * types, program-header / section-header / relocation / symbol /
+ * note tables); names match the canonical ELF specification so
+ * lookups against external references work directly.
  */
 
 #include <rlib/rtypes.h>
@@ -49,7 +50,15 @@ R_BEGIN_DECLS
 
 #pragma pack(push, 1)
 
-/* ELF header */
+/**
+ * @name ELF identifier bytes (e_ident[])
+ *
+ * Layout of the 16-byte identifier at the very start of an ELF
+ * file. The @c IDX_* values name the byte positions; @c MAG*,
+ * @c CLASS*, @c DATA*, @c VER_*, @c OSABI_* are the well-known
+ * values that go in those positions.
+ * @{
+ */
 #define R_ELF_IDX_MAG0                0
 #define R_ELF_IDX_MAG1                1
 #define R_ELF_IDX_MAG2                2
@@ -96,8 +105,17 @@ R_BEGIN_DECLS
 #define R_ELF_OSABI_AROS              15
 #define R_ELF_OSABI_ARM               97
 #define R_ELF_OSABI_STANDALONE        255 /**< embedded */
+/** @} */
 
 
+/**
+ * @name ELF file types (e_type)
+ *
+ * Role of the file - relocatable object, executable, shared
+ * object, core dump, or an OS / processor-specific extension in
+ * the @c LOOS .. @c HIOS / @c LOPROC .. @c HIPROC reserved ranges.
+ * @{
+ */
 #define R_ELF_ETYPE_NONE              0
 #define R_ELF_ETYPE_REL               1
 #define R_ELF_ETYPE_EXEC              2
@@ -111,8 +129,17 @@ R_BEGIN_DECLS
 #define R_ELF_ETYPE_HIOS              0xfeff
 #define R_ELF_ETYPE_LOPROC            0xff00
 #define R_ELF_ETYPE_HIPROC            0xffff
+/** @} */
 
 
+/**
+ * @name ELF machine types (e_machine)
+ *
+ * Target architecture identifier. Spec-wide list of CPU families;
+ * pick the value matching the build target. @c R_ELF_MACHINE_NONE
+ * means "no machine specified".
+ * @{
+ */
 #define R_ELF_MACHINE_NONE            0
 #define R_ELF_MACHINE_M32             1
 #define R_ELF_MACHINE_SPARC           2
@@ -201,6 +228,7 @@ R_BEGIN_DECLS
 #define R_ELF_MACHINE_TILEGX          191
 #define R_ELF_MACHINE_FRV             0x5441
 #define R_ELF_MACHINE_AVR32           0x18ad
+/** @} */
 
 
 /** @brief ELF32 file header. */
@@ -239,7 +267,16 @@ typedef struct {
   ruint16 shstrndx;
 } RElf64EHdr;
 
-/* Program header */
+/**
+ * @name Program-header types and flags
+ *
+ * @c PTYPE_* values name segment kinds (LOAD, DYNAMIC, INTERP,
+ * NOTE, TLS, ...) and OS / processor-specific extensions
+ * (@c GNU_EH_FRAME, @c GNU_STACK, @c SUNW_*, etc.). @c PFLAGS_*
+ * carries the segment's @c R / @c W / @c X permission bits in
+ * @ref RElf32PHdr / @ref RElf64PHdr.
+ * @{
+ */
 #define R_ELF_PTYPE_NULL              0
 #define R_ELF_PTYPE_LOAD              1
 #define R_ELF_PTYPE_DYNAMIC           2
@@ -267,6 +304,7 @@ typedef struct {
 #define R_ELF_PFLAGS_MASKOS           0x0ff00000
 #define R_ELF_PFLAGS_MASKPROC         0xf0000000
 #define R_ELF_PFLAGS_SUNW_FAILURE     0x00100000
+/** @} */
 
 /** @brief ELF32 program-header entry (load-time segment descriptor). */
 typedef struct {
@@ -292,7 +330,20 @@ typedef struct {
   ruint64 align;
 } RElf64PHdr;
 
-/* Section header indices */
+/**
+ * @name Section-header indices, types and flags
+ *
+ * Decomposition of the section-header fields:
+ *
+ *   - @c SHN_* — reserved section-table indices (@c UNDEF,
+ *     @c ABS, @c COMMON, processor-specific @c LOPROC .. @c HIPROC,
+ *     OS-specific @c LOOS .. @c HIOS).
+ *   - @c STYPE_* — section kinds (@c PROGBITS, @c SYMTAB,
+ *     @c STRTAB, @c RELA, @c DYNAMIC, @c NOTE, ...).
+ *   - @c SFLAGS_* — write / alloc / exec / merge / strings /
+ *     info-link / link-order / TLS / compressed flags.
+ * @{
+ */
 #define R_ELF_SHN_UNDEF               0
 #define R_ELF_SHN_LORESERVE           0xff00
 #define R_ELF_SHN_LOPROC              0xff00
@@ -363,6 +414,7 @@ typedef struct {
 #define R_ELF_SFLAGS_TLS              0x400
 #define R_ELF_SFLAGS_MASKOS           0x0ff00000
 #define R_ELF_SFLAGS_MASKPROC         0xf0000000
+/** @} */
 
 /** @brief ELF32 section-header entry (link-time section descriptor). */
 typedef struct {
@@ -411,7 +463,17 @@ typedef struct {
   } un;
 } RElf64Dyn;
 
-/* Relocations */
+/**
+ * @name Relocation info accessors and per-architecture types
+ *
+ *   - @c RELINFO_SYM / @c RELINFO_TYPE / @c RELINFO_CREATE — split
+ *     and pack the @c r_info field of @ref RElf32Rel / @ref RElf64Rel
+ *     into the symbol index plus relocation type halves.
+ *   - @c RELTYPE_* — architecture-specific relocation kinds
+ *     (i386, x86-64, ARM, AArch64, MIPS, RISC-V, ...). The set
+ *     applicable to a given file is determined by @c e_machine.
+ * @{
+ */
 #define R_ELF32_RELINFO_SYM(info)         ((info) >> 8)
 #define R_ELF32_RELINFO_TYPE(info)        ((info) & 0xFF)
 #define R_ELF32_RELINFO_CREATE(sym, type) (((sym) << 8) + ((type) & 0xFF))
@@ -631,6 +693,7 @@ typedef struct {
 #define R_ELF_RELTYPE_ARM_THM_TLS_DESCSEQ16       0x81
 #define R_ELF_RELTYPE_ARM_THM_TLS_DESCSEQ32       0x82
 #define R_ELF_RELTYPE_ARM_IRELATIVE               0xa0
+/** @} */
 
 /** @brief ELF32 relocation entry without explicit addend. */
 typedef struct {
@@ -658,7 +721,18 @@ typedef struct {
   rint64  addend;
 } RElf64Rela;
 
-/* Symbol table entries */
+/**
+ * @name Symbol-table entry decomposition
+ *
+ *   - @c SYMINFO_BIND / @c SYMINFO_TYPE — split the @c st_info
+ *     byte into binding (LOCAL / GLOBAL / WEAK) and type
+ *     (NOTYPE / OBJECT / FUNC / SECTION / FILE / TLS / ...).
+ *   - @c SYMTYPE_* and @c SYMBIND_* — concrete values for those
+ *     halves.
+ *   - @c SYMOTHER_* — visibility encoded in @c st_other
+ *     (default, internal, hidden, protected).
+ * @{
+ */
 #define R_ELF_SYMINFO_BIND(info)          ((info) >> 4)
 #define R_ELF_SYMINFO_TYPE(info)          ((info) & 0xF)
 #define R_ELF_SYMINFO_CREATE(bind, type)  (((bind) << 4) + ((type) & 0xF))
@@ -682,6 +756,7 @@ typedef struct {
 #define R_ELF_SYMOTHER_HIDDEN             2
 #define R_ELF_SYMOTHER_PROTECTED          3
 #define R_ELF_SYMOTHER_OPTIONAL           4
+/** @} */
 
 /** @brief ELF32 symbol-table entry. */
 typedef struct {
@@ -703,7 +778,14 @@ typedef struct {
   ruint64 size;
 } RElf64Sym;
 
-/* Notes header */
+/**
+ * @name Note types
+ *
+ * Values of @c n_type in a SHT_NOTE / PT_NOTE entry. Identify the
+ * payload (process status, FP registers, AUXV, build IDs, per-arch
+ * register state, ...).
+ * @{
+ */
 #define R_ELF_NTYPE_PRSTATUS          1
 #define R_ELF_NTYPE_PRFPREG           2
 #define R_ELF_NTYPE_PRPSINFO          3
@@ -737,6 +819,7 @@ typedef struct {
 #define R_ELF_NTYPE_METAG_CBUF        0x500
 #define R_ELF_NTYPE_METAG_RPIPE       0x501
 #define R_ELF_NTYPE_METAG_TLS         0x502
+/** @} */
 
 /** @brief ELF32 note-section entry header (followed by name + descriptor payload). */
 typedef struct {
