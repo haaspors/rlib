@@ -40,12 +40,16 @@ R_BEGIN_DECLS
 /** @addtogroup r_asn1
  *  @{ */
 
+/** @brief @c memcmp-style compare of two binary OIDs with explicit sizes. */
 #define r_asn1_oid_bin_cmp_full(buf, bufsize, oid, oidsize) (bufsize == oidsize ?  \
     r_memcmp (buf, oid, bufsize) : ((int)bufsize - (int)oidsize))
+/** @brief @c memcmp-style compare against an OID literal (sized via @c R_STR_SIZEOF). */
 #define r_asn1_oid_bin_cmp(buf, bufsize, oid) (bufsize == R_STR_SIZEOF(oid) ?  \
     r_memcmp (buf, oid, bufsize) : ((int)bufsize - (int)R_STR_SIZEOF(oid)))
+/** @brief Equality test variant of @ref r_asn1_oid_bin_cmp_full. */
 #define r_asn1_oid_bin_equals_full(buf, bufsize, oid, oidsize)                \
     (r_asn1_oid_bin_cmp_full (buf, bufsize, oid, oidsize) == 0)
+/** @brief Equality test variant of @ref r_asn1_oid_bin_cmp. */
 #define r_asn1_oid_bin_equals(buf, bufsize, oid)                              \
     (r_asn1_oid_bin_cmp (buf, bufsize, oid) == 0)
 
@@ -130,12 +134,36 @@ R_BEGIN_DECLS
 #define R_ASN1_OID_ISO_UZ                       R_ASN1_OID_ISO_MEMBER_BODY"\x86\x5c"  /* 860 */
 #define R_ASN1_OID_ISO_VE                       R_ASN1_OID_ISO_MEMBER_BODY"\x86\x5e"  /* 862 */
 
+/**
+ * @brief Render an OID component array as a dotted-decimal string
+ * (e.g. @c "1.2.840.113549.1.1.1") in a newly-allocated buffer.
+ */
 R_API rchar * r_asn1_oid_to_dot (const ruint32 * oid, rsize oidlen) R_ATTR_MALLOC;
+/**
+ * @brief Parse a dotted-decimal OID string into a component array.
+ * @param oid     Dotted-decimal source (e.g. @c "1.2.840").
+ * @param oidsize Length of @p oid in bytes, or @c -1 for @c strlen.
+ * @param outlen  Out-pointer: number of components in the result.
+ * @return Newly-allocated component array, or @c NULL on parse error.
+ */
 R_API ruint32 * r_asn1_oid_from_dot (const rchar * oid, rssize oidsize,
     rsize * outlen) R_ATTR_MALLOC;
 
+/**
+ * @brief @c TRUE iff @p oid equals the dotted-decimal @p dot.
+ * @param oid      Component array.
+ * @param oidlen   Number of components in @p oid.
+ * @param dot      Dotted-decimal candidate.
+ * @param dotsize  Length of @p dot, or @c -1 for @c strlen.
+ */
 R_API rboolean r_asn1_oid_is_dot (const ruint32 * oid, rsize oidlen,
     const rchar * dot, rssize dotsize);
+/**
+ * @brief @c TRUE iff the components of @p dot are a prefix of @p oid.
+ *
+ * Useful for matching OID arcs (e.g. is this OID under the
+ * @c 2.5.29 X.509 extension arc?).
+ */
 R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
     const rchar * dot, rssize dotsize);
 
