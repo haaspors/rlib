@@ -271,11 +271,15 @@ r_utf16_to_utf8 (rchar * dst, rsize dstsize, const runichar2 * src, rsize srcsiz
     if (src[i] < 0xd800) {
       r = r_unichar_to_utf8 ((runichar)src[i], dstptr, dstend - dstptr);
     } else if (src[i] < 0xdc00) {
-      runichar2 hc = src[i] - 0xd800;
-
-      if (++i < srcsize && src[i] >= 0xdc00 && src[i] < 0xe000) {
-        runichar uc = (runichar)src[i] - 0xdc00 + 0x10000 + (hc << 10);
+      /* High surrogate. Peek at the next unit without consuming - if
+       * the pair is incomplete we want srcendptr to point at this
+       * high surrogate so the caller can resume from here once more
+       * UTF-16 units arrive. */
+      if (i + 1 < srcsize && src[i + 1] >= 0xdc00 && src[i + 1] < 0xe000) {
+        runichar2 hc = src[i] - 0xd800;
+        runichar uc = (runichar)src[i + 1] - 0xdc00 + 0x10000 + (hc << 10);
         r = r_unichar_to_utf8 (uc, dstptr, dstend - dstptr);
+        i++;            /* consume the low surrogate; outer loop bumps for the high */
       } else {
         ret = R_UNICODE_INCOMPLETE_CODE_POINT;
         break;
