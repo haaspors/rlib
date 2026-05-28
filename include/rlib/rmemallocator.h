@@ -17,6 +17,7 @@
  */
 /**
  * @defgroup r_mem_allocator Refcounted memory chunks and pluggable allocators
+ * @ingroup r_mem
  * @brief Abstract memory-chunk type (@c RMem) with a pluggable
  * backend (@c RMemAllocator). Inspired by GStreamer's @c GstMemory /
  * @c GstAllocator design.

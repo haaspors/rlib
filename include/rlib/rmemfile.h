@@ -17,6 +17,7 @@
  */
 /**
  * @defgroup r_mem_file Memory-mapped file regions
+ * @ingroup r_mem
  * @brief Map a whole file (or an open file handle) into the process
  * address space as a single contiguous byte buffer.
  * @{
