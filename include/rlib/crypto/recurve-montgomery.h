@@ -28,6 +28,7 @@
 
 /**
  * @defgroup r_ecurve_montgomery Montgomery curves (Curve25519 / Curve448)
+ * @ingroup r_crypto_ec
  * @brief u-coordinate Montgomery ladder for the RFC 7748 curves.
  * @{
  */

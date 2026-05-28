@@ -27,6 +27,7 @@
 
 /**
  * @defgroup r_crypto_cipher Block / stream cipher base
+ * @ingroup r_crypto_symmetric
  * @brief Algorithm-agnostic block / stream cipher interface; concrete
  * cipher families (AES, ARC4, ...) plug into it via @c RCryptoCipherInfo.
  * @{

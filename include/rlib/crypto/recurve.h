@@ -27,6 +27,7 @@
 
 /**
  * @defgroup r_ecurve Short-Weierstrass elliptic curves
+ * @ingroup r_crypto_ec
  * @brief Named prime curves and affine point arithmetic for the
  * short-Weierstrass form y^2 = x^3 + ax + b over GF(p).
  * @{

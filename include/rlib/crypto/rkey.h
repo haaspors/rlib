@@ -31,6 +31,7 @@
 
 /**
  * @defgroup r_crypto_key Asymmetric cryptographic keys
+ * @ingroup r_crypto
  * @brief Generic @c RCryptoKey handle plus the metadata enums it
  * carries (key type, algorithm, error code) and the dispatched
  * encrypt / decrypt / sign / verify / export entry points.

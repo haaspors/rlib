@@ -28,6 +28,7 @@
 
 /**
  * @defgroup r_ed25519 Ed25519 EdDSA
+ * @ingroup r_crypto_ec
  * @brief Ed25519 sign / verify per RFC 8032 §5.1.
  * @{
  */
