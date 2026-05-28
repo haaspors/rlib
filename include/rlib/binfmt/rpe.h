@@ -22,9 +22,37 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/**
+ * @file rlib/binfmt/rpe.h
+ * @ingroup r_binfmt_pe
+ * @brief PE / COFF format spec: on-disk constants and packed
+ * @c struct layouts for the DOS stub, COFF file header, PE32 /
+ * PE32+ optional headers, section table, data directories, and
+ * the embedded structures inside them (debug, load-config, ...).
+ *
+ * Designed to be cast through directly after @c mmap; the parser
+ * in @c rpeparser.h wraps these with bounds-checked accessors.
+ *
+ * A PE file starts with the DOS stub @ref RPeDosHdr (carrying the
+ * @c e_lfanew offset to the PE header), followed by the COFF file
+ * header @ref RPeCoffImageHdr plus the optional header (PE32:
+ * @ref RPe32ImageHdr / PE32+: @ref RPe32PlusImageHdr) and the
+ * section table @ref RPeSectionHdr. The optional header's
+ * @ref RPeDataDirectory array indexes into well-known directories
+ * (export, import, resources, ...) named by @c RPeDataDirEntry.
+ *
+ * Constants for machine types, section flags and characteristics
+ * follow the Microsoft PE / COFF specification and are not
+ * individually Doxygen-annotated; the stringification helper
+ * @c r_pe_machine_str converts @c machine values to ASCII names.
+ */
+
 #include <rlib/rtypes.h>
 
 R_BEGIN_DECLS
+
+/** @addtogroup r_binfmt_pe
+ *  @{ */
 
 #pragma pack(push, 1)
 
@@ -33,6 +61,7 @@ R_BEGIN_DECLS
 #define R_PE_PE32_MAGIC                     0x010b
 #define R_PE_PE32PLUS_MAGIC                 0x020b
 
+/** @brief MS-DOS MZ stub header; e_lfanew points at the PE header. */
 typedef struct {
   ruint16 magic;
   ruint16 cblp;
@@ -81,6 +110,10 @@ typedef struct {
 #define R_PE_MACHINE_SH5                    0x01a8 /* Hitachi SH5 */
 #define R_PE_MACHINE_THUMB                  0x01c2 /* Thumb */
 #define R_PE_MACHINE_WCEMIPSV2              0x0169 /* MIPS little-endian WCE v2 */
+/**
+ * @brief Return a short ASCII name for a PE @c machine value (e.g.
+ * @c "AMD64", @c "ARM64", @c "I386").
+ */
 R_API const rchar * r_pe_machine_str (ruint16 machine);
 
 #define R_PE_FILE_RELOCS_STRIPPED           0x0001
@@ -99,6 +132,7 @@ R_API const rchar * r_pe_machine_str (ruint16 machine);
 #define R_PE_FILE_UP_SYSTEM_ONLY            0x4000
 #define R_PE_FILE_BYTES_REVERSED_HI         0x8000
 
+/** @brief COFF file header. */
 typedef struct {
   ruint16 machine;
   ruint16 nsect;
@@ -109,17 +143,30 @@ typedef struct {
   ruint16 characteristics;
 } RPeCoffImageHdr;
 
+/** @brief PE image header: PE signature + COFF header. */
 typedef struct {
   ruint32 magic;
   RPeCoffImageHdr coff;
 } RPeImageHdr;
 
+/**
+ * @brief Follow @c dos->lfanew to the PE image header.
+ * @return Pointer to the PE image header inside the same buffer, or
+ *         @c NULL if @p dos doesn't look like a valid DOS stub.
+ */
 R_API RPeImageHdr * r_pe_image_from_dos_header (const RPeDosHdr * dos);
+/** @brief @c TRUE iff @p mem starts with a valid PE image. */
 static inline rboolean r_pe_image_is_valid (rconstpointer mem) {
   return r_pe_image_from_dos_header (mem) != NULL;
 }
+/** @brief PE32 optional-header magic (@c R_PE_PE32_MAGIC / @c R_PE_PE32PLUS_MAGIC) from @p mem. */
 R_API ruint16 r_pe_image_pe32_magic (rconstpointer mem);
+/** @brief Image size encoded in the optional header's @c SizeOfImage field. */
 R_API rsize r_pe_image_size (rconstpointer mem);
+/**
+ * @brief Compute the on-disk image size by scanning the section
+ * table (extent of the last raw-data block).
+ */
 R_API rsize r_pe_image_calc_size (rconstpointer mem);
 
 
@@ -138,6 +185,7 @@ R_API rsize r_pe_image_calc_size (rconstpointer mem);
 #define R_PE_SUBSYSTEM_XBOX                     14 /* XBOX */
 #define R_PE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION 16 /* Windows boot application. */
 
+/** @brief Common prefix shared by the PE32 and PE32+ optional headers. */
 typedef struct {
   ruint16 magic;
   ruint8 major_linker_ver;
@@ -161,6 +209,7 @@ typedef struct {
 #define R_PE_DLLCHARACTERISTICS_GUARD_CF                0x4000
 #define R_PE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE   0x8000
 
+/** @brief Windows-specific portion of the PE32 optional header. */
 typedef struct {
   ruint32 base_data;
   ruint32 image_base;
@@ -186,6 +235,7 @@ typedef struct {
   ruint32 number_rva_and_sizes;
 } RPe32WinOptHdr;
 
+/** @brief Windows-specific portion of the PE32+ optional header. */
 typedef struct {
   ruint64 image_base;
   ruint32 section_alignment;
@@ -210,11 +260,18 @@ typedef struct {
   ruint32 number_rva_and_sizes;
 } RPe32PlusWinOptHdr;
 
+/** @brief Data-directory entry: (RVA, size) pair. */
+/** @brief Named indices into the optional headers data-directory array (export, import, resources, ...). */
 typedef struct {
   ruint32 vmaddr;
   ruint32 size;
 } RPeDataDirectory;
 
+/**
+ * @brief Named indices into the optional header's data-directory
+ * array (export, import, resources, exception handlers, base
+ * relocations, debug, TLS, load config, IAT, ...).
+ */
 typedef enum {
   R_PE_DATA_DIR_EXPORT = 0,
   R_PE_DATA_DIR_IMPORT,
@@ -234,6 +291,7 @@ typedef enum {
   R_PE_DATA_DIR_ZERO
 } RPeDataDirEntry;
 
+/** @brief PE32 image header: optional header + data directories. */
 typedef struct {
   RPeImageHdr image;
   RPeOptHdr opt;
@@ -241,6 +299,7 @@ typedef struct {
   RPeDataDirectory datadir[16];
 } RPe32ImageHdr;
 
+/** @brief PE32+ image header (64-bit Windows). */
 typedef struct {
   RPeImageHdr image;
   RPeOptHdr opt;
@@ -286,6 +345,7 @@ typedef struct {
 #define R_PE_SCN_MEM_WRITE                 0x80000000
 
 
+/** @brief Section-table entry (name, RVA, raw-data offset, characteristics). */
 typedef struct {
   rchar name[8];
   ruint32 vmsize;
@@ -300,6 +360,7 @@ typedef struct {
 } RPeSectionHdr;
 
 
+/** @brief Classic COFF symbol-table entry. */
 typedef struct {
   ruint32 nsyms;
   ruint32 lva_first_symbol;
@@ -311,6 +372,7 @@ typedef struct {
   ruint32 rva_last_byte_data;
 } RCoffSymbolsHdr;
 
+/** @brief Entry in the IMAGE_DEBUG_DIRECTORY (PDB pointer, build-id, ...). */
 typedef struct {
   ruint32 characteristics;
   ruint32 ts;
@@ -322,12 +384,14 @@ typedef struct {
   ruint32 ptr_raw_data;
 } RPeDebugDirectory;
 
+/** @brief Function-table entry used by .pdata exception-handling tables. */
 typedef struct {
   ruint32 starting_address;
   ruint32 ending_address;
   ruint32 end_prologue;
 } RPeFuncEntry;
 
+/** @brief 64-bit Load Config directory: security cookies, CFG metadata, etc. */
 typedef struct {
   ruint32 size;
   ruint32 ts;
@@ -352,6 +416,8 @@ typedef struct {
 } RPeLoadConfigDirectory64;
 
 #pragma pack(pop)
+
+/** @} */
 
 R_END_DECLS
 
