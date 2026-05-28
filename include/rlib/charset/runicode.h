@@ -481,6 +481,74 @@ R_API rchar * r_utf32le_to_utf8_dup (const ruint8 * src, rsize srcsize,
 
 /** @} */
 
+/**
+ * @name ASCII codepoint classification
+ *
+ * Inline predicates that ask "is this codepoint @c < 0x80 and in
+ * the named ASCII class?" - the C @c <ctype.h> contract without
+ * the locale baggage. Anything outside the ASCII range returns
+ * @c FALSE without consulting UCD tables, which keeps these usable
+ * by parsers (JSON, ASN.1, HTTP, URL) that intentionally restrict
+ * a token grammar to ASCII even when the surrounding text is
+ * full Unicode.
+ *
+ * For real codepoint classification (Greek letters, Cyrillic digits,
+ * fullwidth forms, ...) a future UCD-backed @c r_unichar_is_* family
+ * would be the right layer. This module sticks to ASCII so callers
+ * can pick their level of strictness explicitly.
+ * @{
+ */
+
+/** @brief @c TRUE iff @p uc is in the 7-bit ASCII range @c [0, 0x80). */
+static inline rboolean r_unichar_is_ascii (runichar4 uc)
+{ return uc < 0x80u; }
+
+/** @brief @c TRUE iff @p uc is an ASCII letter @c [A-Za-z]. */
+static inline rboolean r_unichar_is_ascii_letter (runichar4 uc)
+{ return ((uc | 0x20u) - 'a') < 26u; }
+
+/** @brief @c TRUE iff @p uc is an ASCII decimal digit @c [0-9]. */
+static inline rboolean r_unichar_is_ascii_digit (runichar4 uc)
+{ return (uc - '0') < 10u; }
+
+/** @brief @c TRUE iff @p uc is an ASCII letter or decimal digit. */
+static inline rboolean r_unichar_is_ascii_alnum (runichar4 uc)
+{ return r_unichar_is_ascii_letter (uc) || r_unichar_is_ascii_digit (uc); }
+
+/** @brief @c TRUE iff @p uc is an ASCII hex digit @c [0-9A-Fa-f]. */
+static inline rboolean r_unichar_is_ascii_hex_digit (runichar4 uc)
+{
+  return r_unichar_is_ascii_digit (uc) ||
+      (((uc | 0x20u) - 'a') < 6u);
+}
+
+/** @brief @c TRUE iff @p uc is an ASCII whitespace character
+ *  (@c '\\t' / @c '\\n' / @c '\\v' / @c '\\f' / @c '\\r' / @c ' '). */
+static inline rboolean r_unichar_is_ascii_space (runichar4 uc)
+{
+  return uc == ' ' || (uc >= 0x09u && uc <= 0x0Du);
+}
+
+/** @brief @c TRUE iff @p uc is an ASCII control character
+ *  (@c [0, 0x20) or @c 0x7F). */
+static inline rboolean r_unichar_is_ascii_control (runichar4 uc)
+{ return uc < 0x20u || uc == 0x7Fu; }
+
+/** @brief @c TRUE iff @p uc is an ASCII printable character
+ *  (@c [0x20, 0x7F), i.e. visible glyph plus space). */
+static inline rboolean r_unichar_is_ascii_print (runichar4 uc)
+{ return uc >= 0x20u && uc < 0x7Fu; }
+
+/** @brief @c TRUE iff @p uc is ASCII punctuation - any ASCII
+ *  printable that isn't a letter, digit, or space. */
+static inline rboolean r_unichar_is_ascii_punct (runichar4 uc)
+{
+  return r_unichar_is_ascii_print (uc) && uc != ' ' &&
+      !r_unichar_is_ascii_alnum (uc);
+}
+
+/** @} */
+
 R_END_DECLS
 
 /** @} */ /* r_unicode group */
