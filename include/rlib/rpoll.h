@@ -34,6 +34,7 @@
 
 /**
  * @defgroup r_poll Polling and poll sets
+ * @ingroup r_io
  *
  * @brief Synchronous IO-readiness multiplexer.
  *
