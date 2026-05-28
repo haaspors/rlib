@@ -37,11 +37,11 @@
  * with bounds-checked accessors; this header is meant to be cast
  * through directly after @c mmap.
  *
- * The CPU type, file type and load-command `#define` constants
- * follow the names in Apple's @c mach-o headers and are not
- * individually Doxygen-annotated; the stringification helpers
- * @ref r_macho_cpu_str, @ref r_macho_file_str and
- * @ref r_macho_lc_str convert them to human-readable names.
+ * Constants for CPU types, file types, load commands, segment /
+ * section flags and the dyld trie opcodes are organised into
+ * `@name` blocks below; the stringification helpers
+ * @c r_macho_cpu_str, @c r_macho_file_str and @c r_macho_lc_str
+ * convert their numeric forms to human-readable names.
  */
 
 #include <rlib/rtypes.h>
@@ -56,10 +56,30 @@ R_BEGIN_DECLS
 /** @brief Offset (in bytes) into a Mach-O string table. */
 typedef ruint32 RMachoStrOffset;
 
+/**
+ * @name Mach-O magic numbers
+ *
+ * Sentinel at offset 0 of the file header
+ * (@c magic field on @ref RMacho32Hdr / @ref RMacho64Hdr). Encodes both
+ * the bitness and the host endianness of the writer; rlib's parser
+ * accepts both byte orderings.
+ * @{
+ */
 #define R_MACHO_MAGIC_32              0xfeedface
 #define R_MACHO_MAGIC_64              0xfeedfacf
+/** @} */
 
-/* Mach CPU types */
+/**
+ * @name CPU types and subtypes
+ *
+ * Architecture identifiers carried in
+ * the @c cputype / @c cpusubtype fields on @ref RMacho32Hdr. The @c CPU_TYPE_*
+ * values pick the architecture family; the @c CPU_SUBTYPE_* values
+ * narrow it to a specific model. @c R_MACH_CPU_ARCH_ABI64 is the
+ * 64-bit bit that distinguishes e.g. @c CPU_TYPE_X86_64 from
+ * @c CPU_TYPE_I386.
+ * @{
+ */
 #define R_MACH_CPU_ARCH_ABI64         0x1000000
 #define R_MACH_CPU_TYPE_VAX           1
 #define R_MACH_CPU_TYPE_ROMP          2
@@ -124,6 +144,7 @@ typedef ruint32 RMachoStrOffset;
 
 #define R_MACH_CPU_SUBTYPE_ARM64_ALL      0
 #define R_MACH_CPU_SUBTYPE_ARM64_V8       1
+/** @} */
 
 /**
  * @brief Render a @c cputype + @c cpusubtype pair as a
@@ -132,7 +153,14 @@ typedef ruint32 RMachoStrOffset;
  */
 R_API rchar * r_macho_cpu_str (ruint32 cputype, ruint32 cpusubtype);
 
-/* Mach-o filetypes */
+/**
+ * @name Mach-O file types
+ *
+ * Value of the @c filetype field on @ref RMacho32Hdr indicating the file's role:
+ * relocatable object, executable, dylib, core dump, etc.
+ * @ref r_macho_file_str renders these as short ASCII names.
+ * @{
+ */
 #define R_MACHO_FT_OBJECT         0x01
 #define R_MACHO_FT_EXECUTE        0x02
 #define R_MACHO_FT_FVMLIB         0x03
@@ -141,6 +169,7 @@ R_API rchar * r_macho_cpu_str (ruint32 cputype, ruint32 cpusubtype);
 #define R_MACHO_FT_DYLIB          0x06
 #define R_MACHO_FT_DYLINKER       0x07
 #define R_MACHO_FT_BUNDLE         0x08
+/** @} */
 
 /**
  * @brief Return a short ASCII name for a Mach-O @c filetype value
@@ -148,12 +177,20 @@ R_API rchar * r_macho_cpu_str (ruint32 cputype, ruint32 cpusubtype);
  */
 R_API const rchar * r_macho_file_str (ruint32 filetype);
 
-/* Mach-o files */
+/**
+ * @name File flags
+ *
+ * Bitmask in the @c flags field of @ref RMacho32Hdr / @ref RMacho64Hdr
+ * describing static properties of the image: whether dyld bound
+ * everything at load, whether split-segment layout is in use, etc.
+ * @{
+ */
 #define R_MACHO_FLAG_NOUNDEFS     0x01
 #define R_MACHO_FLAG_INCRLINK     0x02
 #define R_MACHO_FLAG_DYLDLINK     0x04
 #define R_MACHO_FLAG_BINDATLOAD   0x08
 #define R_MACHO_FLAG_PREBOUND     0x10
+/** @} */
 
 /** @brief Mach-O 32-bit file header. */
 typedef struct {
@@ -178,7 +215,16 @@ typedef struct {
   ruint32 reserved;
 } RMacho64Hdr;
 
-/* Mach-O load commands */
+/**
+ * @name Load command kinds
+ *
+ * Values of the @c cmd field on @ref RMachoLoadCmd. Drives the cast to the
+ * concrete @c RMacho*Cmd struct that follows. @c R_MACHO_LC_REQ_DYLD
+ * is the high bit that marks a command as required for dyld to
+ * understand. @ref r_macho_lc_str renders each as its short ASCII
+ * name.
+ * @{
+ */
 #define R_MACHO_LC_REQ_DYLD           0x80000000
 
 #define R_MACHO_LC_SEGMENT            0x01  /**< segment of this file to be mapped */
@@ -228,6 +274,7 @@ typedef struct {
 #define R_MACHO_LC_ENCRYPTION_INFO_64 0x2c /**< 64-bit encrypted segment information */
 #define R_MACHO_LC_LINKER_OPTION      0x2d /**< linker options in MH_OBJECT files */
 #define R_MACHO_LC_LINKER_OPTIMIZATION_HINT 0x2e /**< optimization hints in MH_OBJECT files */
+/** @} */
 
 /** @brief Common load-command header (cmd + cmdsize). */
 typedef struct {
@@ -241,6 +288,14 @@ typedef struct {
  */
 R_API const rchar * r_macho_lc_str (ruint32 cmd);
 
+/**
+ * @name Segment flags and well-known segment names
+ *
+ * Flags carried in @c LC_SEGMENT / @c LC_SEGMENT_64 commands plus
+ * the canonical segment names baked into every Mach-O image
+ * (`__TEXT`, `__DATA`, ...).
+ * @{
+ */
 #define R_MACHO_SEG_FLAG_HIGHVM   0x1
 #define R_MACHO_SEG_FLAG_FVMLIB   0x2
 #define R_MACHO_SEG_FLAG_NORELOC  0x4
@@ -253,6 +308,7 @@ R_API const rchar * r_macho_lc_str (ruint32 cmd);
 #define R_MACHO_SEG_PAGEZERO      "__PAGEZERO"
 #define R_MACHO_SEG_UNIXSTACK     "__UNIXSTACK"
 #define R_MACHO_SEG_IMPORT        "__IMPORT"
+/** @} */
 
 /* R_MACHO_LC_SEGMENT */
 /** @brief @c LC_SEGMENT: a 32-bit segment with its section list. */
@@ -284,7 +340,19 @@ typedef struct {
   ruint32 flags;
 } RMachoSegment64Cmd;
 
-/* Section types (Least significant byte of flags) */
+/**
+ * @name Section types and attributes
+ *
+ * Decomposition of the section header's @c flags field:
+ *
+ *   - @c R_MACHO_SECTION_TYPE_* — section content kind (regular,
+ *     zerofill, cstring-literal pool, lazy / non-lazy symbol stubs,
+ *     ...). Occupies the low byte.
+ *   - @c R_MACHO_S_ATTR_* — usage flags (loc reloc, ext reloc,
+ *     strip-static-syms, ...). Occupy the upper 24 bits.
+ *
+ * @{
+ */
 #define R_MACHO_SECTION_TYPE_REGULAR                              0x00
 #define R_MACHO_SECTION_TYPE_ZEROFILL                             0x01
 #define R_MACHO_SECTION_TYPE_CSTRING_LITERALS                     0x02
@@ -320,6 +388,7 @@ typedef struct {
 #define R_MACHO_SECTION_ATTR_SOME_INSTRUCTIONS          0x00000400
 #define R_MACHO_SECTION_ATTR_EXT_RELOC                  0x00000200
 #define R_MACHO_SECTION_ATTR_LOC_RELOC                  0x00000100
+/** @} */
 
 /** @brief Section descriptor inside a 32-bit segment. */
 typedef struct {
@@ -488,8 +557,17 @@ typedef struct {
   ruint32 nlocrel;        /* number of local relocation entries */
 } RMachoDySymTabCmd;
 
+/**
+ * @name Indirect-symbol markers
+ *
+ * Sentinels written into entries of the indirect symbol table
+ * (pointed at by @c indirectsymoff on @ref RMachoDySymTabCmd) when the
+ * slot doesn't reference an external symbol.
+ * @{
+ */
 #define R_MACHO_INDIRECT_SYMBOL_LOCAL   0x80000000
 #define R_MACHO_INDIRECT_SYMBOL_ABS     0x40000000
+/** @} */
 
 /** @brief Dynamic-library table-of-contents entry. */
 typedef struct {
@@ -626,6 +704,15 @@ typedef struct {
   ruint32 export_size;    /* size of lazy binding infs */
 } RMachoDyldInfoCmd;
 
+/**
+ * @name Rebase opcodes
+ *
+ * Bytecode interpreted by dyld over the rebase stream pointed at by
+ * @c LC_DYLD_INFO. Each byte splits into an @c OPCODE (high nibble)
+ * and an @c IMMEDIATE (low nibble); the @c REBASE_TYPE_* values
+ * describe what kind of fixup to apply once the slot is reached.
+ * @{
+ */
 #define R_MACHO_REBASE_TYPE_POINTER                               1
 #define R_MACHO_REBASE_TYPE_TEXT_ABSOLUTE32                       2
 #define R_MACHO_REBASE_TYPE_TEXT_PCREL32                          3
@@ -641,8 +728,20 @@ typedef struct {
 #define R_MACHO_REBASE_OPCODE_DO_REBASE_ULEB_TIMES                0x60
 #define R_MACHO_REBASE_OPCODE_DO_REBASE_ADD_ADDR_ULEB             0x70
 #define R_MACHO_REBASE_OPCODE_DO_REBASE_ULEB_TIMES_SKIPPING_ULEB  0x80
+/** @} */
 
 
+/**
+ * @name Bind opcodes
+ *
+ * Bytecode interpreted by dyld over the bind / weak-bind / lazy-bind
+ * streams pointed at by @c LC_DYLD_INFO. Same opcode + immediate
+ * split as the rebase stream. The @c BIND_TYPE_* values describe
+ * the fixup kind; @c BIND_SPECIAL_DYLIB_* are sentinel library
+ * ordinals (self, main exec, flat lookup); @c BIND_SYMBOL_FLAGS_*
+ * carry per-symbol weak / non-weak markers.
+ * @{
+ */
 #define R_MACHO_BIND_TYPE_POINTER                                 1
 #define R_MACHO_BIND_TYPE_TEXT_ABSOLUTE32                         2
 #define R_MACHO_BIND_TYPE_TEXT_PCREL32                            3
@@ -669,14 +768,24 @@ typedef struct {
 #define R_MACHO_BIND_OPCODE_DO_BIND_ADD_ADDR_ULEB                 0xa0
 #define R_MACHO_BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED           0xb0
 #define R_MACHO_BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB      0xc0
+/** @} */
 
 
+/**
+ * @name Export-trie symbol flags
+ *
+ * Per-symbol flags inside the export trie pointed at by @c LC_DYLD_INFO.
+ * The low two bits pick the kind (regular vs thread-local); higher
+ * bits flag weak / re-export / stub-and-resolver entries.
+ * @{
+ */
 #define R_MACHO_EXPORT_SYMBOL_FLAGS_KIND_MASK                     0x03
 #define R_MACHO_EXPORT_SYMBOL_FLAGS_KIND_REGULAR                  0x00
 #define R_MACHO_EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL             0x01
 #define R_MACHO_EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION               0x04
 #define R_MACHO_EXPORT_SYMBOL_FLAGS_REEXPORT                      0x08
 #define R_MACHO_EXPORT_SYMBOL_FLAGS_STUB_AND_RESOLVER             0x10
+/** @} */
 
 /* R_MACHO_LC_LINKER_OPTION */
 /** @brief LC_LINKER_OPTION: per-object linker options embedded in MH_OBJECT files. */
@@ -737,11 +846,20 @@ typedef struct {
   ruint16 kind;    /* a DICE_KIND_* value  */
 } RMachoDataInCodeEntry;
 
+/**
+ * @name Data-in-Code (DICE) kinds
+ *
+ * Identifies what an interval inside @c __text actually contains
+ * when it isn't executable code: literal pool, jump table, etc.
+ * Used by @c LC_DATA_IN_CODE.
+ * @{
+ */
 #define R_MACHO_DICE_KIND_DATA              0x0001
 #define R_MACHO_DICE_KIND_JUMP_TABLE8       0x0002
 #define R_MACHO_DICE_KIND_JUMP_TABLE16      0x0003
 #define R_MACHO_DICE_KIND_JUMP_TABLE32      0x0004
 #define R_MACHO_DICE_KIND_ABS_JUMP_TABLE32  0x0005
+/** @} */
 
 #pragma pack(pop)
 
