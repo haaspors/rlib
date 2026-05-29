@@ -192,15 +192,18 @@ R_API RJsonResult r_json_array_add_value (RJsonValue * array, RJsonValue * value
 R_API rsize r_json_value_get_object_field_count (const RJsonValue * value);
 /** @brief Return the @p idx-th field name (NUL-terminated, borrowed). */
 R_API const rchar * r_json_value_get_object_field_name (RJsonValue * value, rsize idx);
-/** @brief Return the @p idx-th field value (borrowed reference). */
+/** @brief Return the @p idx-th field value (owned reference; @ref
+ *  r_json_value_unref when done). */
 R_API RJsonValue * r_json_value_get_object_field_value (RJsonValue * value, rsize idx);
-/** @brief Look up a field by name (borrowed reference, @c NULL if absent). */
+/** @brief Look up a field by name (owned reference, @c NULL if absent;
+ *  @ref r_json_value_unref when done). */
 R_API RJsonValue * r_json_value_get_object_field (RJsonValue * value, const rchar * key);
 /** @brief Iterate every field, calling @p func with the key and value. */
 R_API void r_json_value_foreach_object_field (RJsonValue * value, RKeyValueFunc func, rpointer user);
 /** @brief Number of values in an array. */
 R_API rsize r_json_value_get_array_size (const RJsonValue * value);
-/** @brief Return the @p idx-th array entry (borrowed reference). */
+/** @brief Return the @p idx-th array entry (owned reference; @ref
+ *  r_json_value_unref when done). */
 R_API RJsonValue * r_json_value_get_array_value (RJsonValue * value, rsize idx);
 /** @brief Iterate every array entry, calling @p func with the value. */
 R_API void r_json_value_foreach_array_value (RJsonValue * value, RFunc func, rpointer user);
