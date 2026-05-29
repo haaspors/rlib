@@ -36,12 +36,9 @@ r_asn1_bmp_string_to_utf8 (const ruint8 * src, rsize len)
   return r_utf16be_to_utf8_dup (src, len, NULL, NULL, NULL);
 }
 
-/* UniversalString is UCS-4 / UTF-32BE.  Encode each codepoint as UTF-8
- * directly; reject lengths that aren't a multiple of 4, codepoints in
- * the surrogate range D800..DFFF, and anything past U+10FFFF. */
 /* UniversalString is UCS-4 / UTF-32BE. Decode via the wire-endian
- * helper, which applies the same surrogate / out-of-range
- * validation the previous hand-rolled implementation did. */
+ * helper, which rejects lengths that aren't a multiple of 4, the
+ * surrogate range D800..DFFF, and anything past U+10FFFF. */
 static rchar *
 r_asn1_universal_string_to_utf8 (const ruint8 * src, rsize len)
 {
@@ -727,7 +724,10 @@ r_asn1_bin_decoder_new_file (RAsn1EncodingRules enc, const rchar * file)
   if ((memfile = r_mem_file_new (file, R_MEM_PROT_READ, FALSE)) != NULL) {
     ret = r_asn1_bin_decoder_new (enc, r_mem_file_get_mem (memfile),
         r_mem_file_get_size (memfile));
-    ret->file = memfile;
+    if (ret != NULL)
+      ret->file = memfile;
+    else
+      r_mem_file_unref (memfile);
   } else {
     ret = NULL;
   }

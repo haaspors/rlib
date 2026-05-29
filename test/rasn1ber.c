@@ -13,6 +13,32 @@ RTEST (rasn1ber, new, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1ber, oversized_length_rejected, RTEST_FAST)
+{
+  /* Long-form length (8 octets, all 0xff) declares ~2^64 bytes of
+   * content in a 10-byte buffer -- the pointer math for value+len wraps,
+   * so this must be rejected rather than parsed into an OOB read. */
+  static ruint8 huge_len[] = {
+    0x04, 0x88, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+  /* Length-of-length count that can't fit in an rsize (9 octets). */
+  static ruint8 toobig_nlen[] = {
+    0x04, 0x89, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  RAsn1BinDecoder * dec;
+  RAsn1BinTLV tlv = R_ASN1_BIN_TLV_INIT;
+  RAsn1BinTLV tlv2 = R_ASN1_BIN_TLV_INIT;
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER,
+          huge_len, sizeof (huge_len))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OVERFLOW);
+  r_asn1_bin_decoder_unref (dec);
+
+  r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_BER,
+          toobig_nlen, sizeof (toobig_nlen))), !=, NULL);
+  r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv2), ==, R_ASN1_DECODER_OVERFLOW);
+  r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
 RTEST (rasn1ber, sequence_primitives, RTEST_FAST)
 {
   static ruint8 ber_encoded[] = { 0x30, 0x80,
