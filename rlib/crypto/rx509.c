@@ -167,6 +167,10 @@ r_crypto_x509_key_usage (RCryptoX509Cert * cert,
    * encodings before they could shift past the int width. */
   if (R_UNLIKELY (bits > sizeof (RX509KeyUsage) * 8))
     return FALSE;
+  /* Only nine KeyUsage bits are defined (0..8); ignore any reserved
+   * high bits so the shift below can't reach the int sign bit. */
+  if (bits > 9)
+    bits = 9;
 
   /* RFC 5280 / X.690: BIT STRING bit N is the (N % 8)th bit from
    * the MSB of content byte (N / 8). Map each set BIT STRING bit N
@@ -404,8 +408,10 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
 
     /* signature */
     if (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_BIT_STRING) &&
-        r_asn1_bin_tlv_parse_bit_string_bits (&tlv, &cert->cert.signbits) == R_ASN1_DECODER_OK) {
+        r_asn1_bin_tlv_parse_bit_string_bits (&tlv, &cert->cert.signbits) == R_ASN1_DECODER_OK &&
+        cert->cert.signbits >= 8) {
       cert->cert.sign = r_memdup (r_asn1_bin_tlv_bit_string_value (&tlv), cert->cert.signbits / 8);
+      if (R_UNLIKELY (cert->cert.sign == NULL)) goto beach;
     } else goto beach;
 
     return TRUE;
