@@ -22,22 +22,50 @@
 #error "#include <rlib.h> only pelase."
 #endif
 
+/**
+ * @file rlib/ev/revwakeup.h
+ * @brief Event-loop wakeup source for waking a blocked loop from
+ * another thread.
+ */
+
 #include <rlib/rtypes.h>
 
 #include <rlib/ev/revloop.h>
 #include <rlib/rref.h>
 
+/**
+ * @defgroup r_evwakeup Event-loop wakeup
+ * @ingroup r_ev
+ *
+ * @brief A thread-safe nudge that wakes an @ref REvLoop blocked in
+ * its poll.
+ *
+ * Create an @ref REvWakeup on the loop, then call
+ * @ref r_ev_wakeup_signal from any thread to make the loop return
+ * promptly from its current wait — the standard way to hand control
+ * back to the loop thread after producing work elsewhere.
+ *
+ * @{
+ */
+
 R_BEGIN_DECLS
 
+/** @brief Opaque, refcounted event-loop wakeup source. */
 typedef struct REvWakeup REvWakeup;
 
+/** @brief Create a wakeup source on @p loop. */
 R_API REvWakeup * r_ev_wakeup_new (REvLoop * loop);
+/** @brief Take a reference (alias for @ref r_ref_ref). */
 #define r_ev_resolve_ref r_ref_ref
+/** @brief Drop a reference (alias for @ref r_ref_unref). */
 #define r_ev_resolve_unref r_ref_unref
 
+/** @brief Wake the loop from another thread; safe to call concurrently. */
 R_API rboolean r_ev_wakeup_signal (REvWakeup * wakeup);
 
 R_END_DECLS
+
+/** @} */
 
 #endif /* __R_EV_WAKEUP_H__ */
 
