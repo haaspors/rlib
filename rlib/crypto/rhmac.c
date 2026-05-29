@@ -34,6 +34,9 @@ r_hmac_new (RMsgDigestType type, rconstpointer key, rsize keysize)
 {
   RHmac * hmac;
 
+  if (R_UNLIKELY (key == NULL && keysize > 0))
+    return NULL;
+
   if ((hmac = r_mem_new0 (RHmac)) != NULL) {
     hmac->inner = r_msg_digest_new (type);
     hmac->outer = r_msg_digest_new (type);

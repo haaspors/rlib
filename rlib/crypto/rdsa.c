@@ -717,10 +717,12 @@ r_dsa_priv_key_new_gen (rsize L, rsize N, RPrng * prng)
   r_mpint_init (&ret->pub.y);
   r_mpint_init_secure (&ret->x);
 
-  if (prng != NULL)
+  if (prng != NULL) {
     r_prng_ref (prng);
-  else
-    prng = r_rand_prng_new ();
+  } else if ((prng = r_rand_prng_new ()) == NULL) {
+    r_crypto_key_unref ((RCryptoKey *) ret);
+    return NULL;
+  }
 
   /* gen_prime uses the lenient small-witness sieve only; re-test with
    * random witnesses to catch the rare crafted-or-unlucky composite. */
@@ -791,7 +793,7 @@ r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
     r_mpint_init (&ret->pub.q);
     r_mpint_init (&ret->pub.g);
     r_mpint_init (&ret->pub.y);
-    r_mpint_init (&ret->x);
+    r_mpint_init_secure (&ret->x);
 
     if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK ||
         r_asn1_bin_tlv_parse_integer_i32 (tlv, &ret->ver) != R_ASN1_DECODER_OK ||

@@ -313,7 +313,9 @@ r_ed448_sign (const RCryptoKey * key, rconstpointer msg, rsize msgsize,
   r_mpint_init_binary (&L, ed448_L_be, sizeof (ed448_L_be));
   r_mpint_init (&r_mp);
   r_mpint_init (&k_mp);
-  r_mpint_init (&s_mp);
+  /* s_mp is initialised by r_ed448_le_to_mpint below; just keep it
+   * clear-safe here so an early error path can r_mpint_clear it. */
+  r_memclear (&s_mp, sizeof (s_mp));
   r_mpint_init (&S_mp);
 
   /* r = SHAKE256(dom4(0,"") || prefix || msg, 114) mod L. */

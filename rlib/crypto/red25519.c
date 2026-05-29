@@ -301,7 +301,9 @@ r_ed25519_sign (const RCryptoKey * key, rconstpointer msg, rsize msgsize,
   r_mpint_init_binary (&L, ed25519_L_be, sizeof (ed25519_L_be));
   r_mpint_init (&r_mp);
   r_mpint_init (&k_mp);
-  r_mpint_init (&s_mp);
+  /* s_mp is initialised by r_ed25519_le_to_mpint below; just keep it
+   * clear-safe here so an early error path can r_mpint_clear it. */
+  r_memclear (&s_mp, sizeof (s_mp));
   r_mpint_init (&S_mp);
 
   /* r = SHA-512(prefix || msg) mod L. */

@@ -524,7 +524,7 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
   /* GCM-specific setup: derive H = E_K(0^128) and pick a GHASH kernel.
    * Done once per cipher so the per-op fast path is just a function-
    * pointer dispatch. */
-  if (info->mode == R_CRYPTO_CIPHER_MODE_GCM) {
+  if (ret != NULL && info->mode == R_CRYPTO_CIPHER_MODE_GCM) {
     ruint8 zero[R_AES_BLOCK_BYTES] = { 0 };
     ret->encrypt_block (ret, ret->ghash_h, zero);
     ret->ghash_mul = NULL;
@@ -2295,6 +2295,12 @@ r_gcm_compute_tag (const RAesCipher * aes,
   aes->encrypt_block (aes, ek, j0);
   for (i = 0; i < R_AES_BLOCK_BYTES; i++)
     tag[i] = ek[i] ^ y[i];
+
+  /* ek is the tag-encryption mask and y the GHASH accumulator; wipe
+   * both, matching the secret-scrubbing the mode ops do. */
+  r_memclear_secure (ek, sizeof (ek));
+  r_memclear_secure (y, sizeof (y));
+  r_memclear_secure (lenblock, sizeof (lenblock));
 }
 
 /* Shared encrypt/decrypt body. @p generate_tag controls whether the
