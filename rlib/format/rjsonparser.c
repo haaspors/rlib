@@ -350,8 +350,14 @@ r_json_parser_scan_init_at (const RJsonParser * parser, RJsonScanCtx * ctx, rcha
       break;
     default:
       if (r_ascii_isdigit (ctx->data.str[0]) || ctx->data.str[0] == '-') {
+        /* Probe a bounded window so the NUL-seeking scan can't read past
+         * the input; strtod stops at the first non-numeric byte anyway. */
+        rchar tmp[128];
+        rsize n = ctx->data.size < sizeof (tmp) - 1 ? ctx->data.size : sizeof (tmp) - 1;
         RStrParse res;
-        r_str_to_double (ctx->data.str, NULL, &res);
+        r_memcpy (tmp, ctx->data.str, n);
+        tmp[n] = 0;
+        r_str_to_double (tmp, NULL, &res);
         if (res == R_STR_PARSE_OK) {
           ctx->type = R_JSON_TYPE_NUMBER;
         } else {
@@ -736,8 +742,16 @@ r_json_scan_ctx_parse_number_int (const RJsonScanCtx * ctx, int * number, rchar 
 
   if ((ret = r_json_scan_ctx_parse_number (ctx, &str, endptr)) == R_JSON_OK &&
       number != NULL) {
+    /* r_str_to_int scans a NUL-terminated string, but str.str points
+     * into the (possibly non-NUL-terminated) input; copy the bounded
+     * token out first so the scan can't run off the buffer. */
+    rchar tmp[128];
     RStrParse res;
-    *number = r_str_to_int (str.str, NULL, 10, &res);
+    if (str.size >= sizeof (tmp))
+      return R_JSON_NUMBER_NOT_PARSED;
+    r_memcpy (tmp, str.str, str.size);
+    tmp[str.size] = 0;
+    *number = r_str_to_int (tmp, NULL, 10, &res);
     if (R_UNLIKELY (res != R_STR_PARSE_OK))
       ret = R_JSON_NUMBER_NOT_PARSED;
   }
@@ -753,8 +767,15 @@ r_json_scan_ctx_parse_number_double (const RJsonScanCtx * ctx, rdouble * number,
 
   if ((ret = r_json_scan_ctx_parse_number (ctx, &str, endptr)) == R_JSON_OK &&
       number != NULL) {
+    /* See r_json_scan_ctx_parse_number_int: copy the bounded token to a
+     * NUL-terminated buffer before the (unbounded) string scan. */
+    rchar tmp[128];
     RStrParse res;
-    *number = r_str_to_double (str.str, NULL, &res);
+    if (str.size >= sizeof (tmp))
+      return R_JSON_NUMBER_NOT_PARSED;
+    r_memcpy (tmp, str.str, str.size);
+    tmp[str.size] = 0;
+    *number = r_str_to_double (tmp, NULL, &res);
     if (R_UNLIKELY (res != R_STR_PARSE_OK))
       ret = R_JSON_NUMBER_NOT_PARSED;
   }
@@ -765,28 +786,28 @@ r_json_scan_ctx_parse_number_double (const RJsonScanCtx * ctx, rdouble * number,
 RJsonResult
 r_json_scan_ctx_parse_string (const RJsonScanCtx * ctx, RStrChunk * str, rchar ** endptr)
 {
-  rssize cur;
-  rsize idx = 0;
+  rsize idx;
 
   if (R_UNLIKELY (ctx == NULL || ctx->type != R_JSON_TYPE_STRING || str == NULL))
     return R_JSON_INVAL;
 
   str->str = (rchar *)ctx->data.str + 1;
   str->size = ctx->data.size - 1;
-  if ((cur = r_str_idx_of_c (str->str + idx, str->size - idx, '"')) >= 0) {
-    do {
-      idx += cur;
-      /* idx == 0 means the closing quote is at offset 0 -- an empty
-       * string ("").  There's no preceding character to inspect, so
-       * the quote can't be escaped. */
-      if (idx == 0 || str->str[idx - 1] != '\\') {
-        str->size = idx;
-        if (endptr != NULL)
-          *endptr = r_str_chunk_end (str) + 1;
-        return R_JSON_OK;
-      }
-      idx++;
-    } while ((cur = r_str_idx_of_c (str->str + idx, str->size - idx, '"')) > 0);
+  /* Walk to the first unescaped closing quote, tracking backslash
+   * escapes properly. A simple "find a quote, peek one char back" scan
+   * mishandles an escaped backslash before the quote (\\") and a string
+   * ending in an escaped quote (\"). */
+  for (idx = 0; idx < str->size; idx++) {
+    if (str->str[idx] == '\\') {
+      idx++;                     /* skip the escaped char */
+      continue;
+    }
+    if (str->str[idx] == '"') {
+      str->size = idx;
+      if (endptr != NULL)
+        *endptr = r_str_chunk_end (str) + 1;
+      return R_JSON_OK;
+    }
   }
 
   return R_JSON_STRING_NOT_TERMINATED;

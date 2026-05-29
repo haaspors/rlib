@@ -207,6 +207,41 @@ RTEST (rjson_parser, string, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rjson_parser, string_escapes, RTEST_FAST)
+{
+  RJsonParser * parser;
+  RJsonScanCtx ctx = R_JSON_SCAN_CTX_INIT;
+  RStrChunk str = R_STR_CHUNK_INIT;
+  rchar * endptr;
+
+  /* "\"" -- a string whose content is a single escaped quote, so the
+   * closing quote immediately follows the escape. Must parse; the raw
+   * (still-escaped) content is the two bytes \" */
+  r_assert_cmpptr ((parser = r_json_parser_new (R_STR_WITH_SIZE_ARGS ("\"\\\"\""))), !=, NULL);
+  r_assert_cmpint (r_json_parser_scan_start (parser, &ctx), ==, R_JSON_OK);
+  r_assert_cmpint (ctx.type, ==, R_JSON_TYPE_STRING);
+  r_assert_cmpint (r_json_scan_ctx_parse_string (&ctx, &str, &endptr), ==, R_JSON_OK);
+  r_assert_cmpint (r_str_chunk_cmp (&str, R_STR_WITH_SIZE_ARGS ("\\\"")), ==, 0);
+  r_assert_cmpptr (endptr, ==, str.str + 3);
+  r_json_parser_unref (parser);
+
+  /* "\\" -- an escaped backslash directly before the closing quote.
+   * The closing quote must NOT be treated as escaped. Raw content \\ */
+  r_assert_cmpptr ((parser = r_json_parser_new (R_STR_WITH_SIZE_ARGS ("\"\\\\\""))), !=, NULL);
+  r_assert_cmpint (r_json_parser_scan_start (parser, &ctx), ==, R_JSON_OK);
+  r_assert_cmpint (r_json_scan_ctx_parse_string (&ctx, &str, &endptr), ==, R_JSON_OK);
+  r_assert_cmpint (r_str_chunk_cmp (&str, R_STR_WITH_SIZE_ARGS ("\\\\")), ==, 0);
+  r_json_parser_unref (parser);
+
+  /* "\" -- the final quote is escaped, so the string is unterminated. */
+  r_assert_cmpptr ((parser = r_json_parser_new (R_STR_WITH_SIZE_ARGS ("\"\\\""))), !=, NULL);
+  r_assert_cmpint (r_json_parser_scan_start (parser, &ctx), ==, R_JSON_OK);
+  r_assert_cmpint (r_json_scan_ctx_parse_string (&ctx, &str, &endptr), ==,
+      R_JSON_STRING_NOT_TERMINATED);
+  r_json_parser_unref (parser);
+}
+RTEST_END;
+
 static const rchar json_array_strings[] = "[ \"foo\", \"bar\" ]";
 
 RTEST (rjson_parser, to_value, RTEST_FAST)
