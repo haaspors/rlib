@@ -121,7 +121,9 @@ R_API RCryptoKey * r_ed448_priv_key_new (rconstpointer seed,
  * @p prng is @c NULL) and feeds them through
  * @c r_ed448_priv_key_new.
  *
- * @param prng  PRNG to draw from; @c NULL to use the system PRNG.
+ * @param prng  PRNG to draw from; @c NULL to use the system PRNG. Any
+ *              PRNG you supply must be cryptographically secure
+ *              (@ref r_prng_new_crypto).
  * @return Owning reference to a new private key, or @c NULL on
  *         PRNG or allocation failure.
  */

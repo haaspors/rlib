@@ -27,7 +27,7 @@
  *
  * The crypto API breaks into the following sub-areas:
  *
- *   - @ref r_crypto_symmetric — block / stream cipher base and AES.
+ *   - @ref r_crypto_symmetric — block / stream cipher base, AES and ChaCha20.
  *   - @ref r_crypto_hash — message digests and HMAC.
  *   - @ref r_crypto_key — polymorphic asymmetric-key handle plus the
  *     concrete key kinds (RSA, DSA, DH) that plug into it.
@@ -95,6 +95,7 @@
 #include <rlib/rlib.h>
 
 #include <rlib/crypto/raes.h>
+#include <rlib/crypto/rchacha20.h>
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rcipher.h>
 #include <rlib/crypto/rdh.h>

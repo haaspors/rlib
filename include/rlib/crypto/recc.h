@@ -130,7 +130,8 @@ R_API rboolean r_ecc_priv_key_get_scalar (const RCryptoKey * key,
  *
  * @param curve  The curve.
  * @param prng   Randomness source. Pass @c NULL to use a fresh
- *               system PRNG.
+ *               system PRNG; any PRNG you supply must be
+ *               cryptographically secure (@ref r_prng_new_crypto).
  */
 R_API RCryptoKey * r_ecdh_priv_key_new_gen (REcurveID curve,
     RPrng * prng) R_ATTR_MALLOC;

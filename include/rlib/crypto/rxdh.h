@@ -108,7 +108,9 @@ R_API RCryptoKey * r_xdh_priv_key_new (REcurveID curve,
  * derives the public u-coordinate as @c ladder(scalar, basepoint).
  *
  * @param curve  Either @c R_ECURVE_ID_X25519 or @c R_ECURVE_ID_X448.
- * @param prng   PRNG to draw from; @c NULL to use the system PRNG.
+ * @param prng   PRNG to draw from; @c NULL to use the system PRNG. Any
+ *               PRNG you supply must be cryptographically secure
+ *               (@ref r_prng_new_crypto).
  * @return Owning reference to a new private key, or @c NULL on
  *         unsupported curve / PRNG failure / allocation failure.
  */

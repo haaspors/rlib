@@ -167,6 +167,10 @@ R_API RCryptoResult r_crypto_key_decrypt (const RCryptoKey * key, RPrng * prng,
  * folded into the signature where the algorithm needs it (e.g.
  * RSA-PKCS#1 v1.5). EdDSA is "pure" and treats @p hash as the
  * full message regardless of @p mdtype.
+ *
+ * @note For DSA / ECDSA, @p prng supplies the per-signature secret
+ * nonce; a predictable nonce leaks the private key, so it must be
+ * cryptographically secure (@ref r_prng_new_crypto).
  */
 R_API RCryptoResult r_crypto_key_sign (const RCryptoKey * key, RPrng * prng,
     RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
