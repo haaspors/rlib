@@ -78,6 +78,8 @@
 #mesondefine HAVE_CLOCK_GETTIME
 #mesondefine HAVE_SETITIMER
 #mesondefine HAVE_GETTID
+#mesondefine HAVE_GETRANDOM
+#mesondefine HAVE_GETENTROPY
 #mesondefine HAVE_SIGNAL_H
 #mesondefine HAVE_SIGINFO_T_SI_STATUS
 #mesondefine HAVE_SIGACTION

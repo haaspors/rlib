@@ -23,39 +23,116 @@
 #include <rlib/rmem.h>
 #include <rlib/rtime.h>
 
-#if defined (R_OS_WIN32)
+#if defined (HAVE_GETRANDOM) || defined (HAVE_GETENTROPY)
+#include <sys/random.h>
+#include <errno.h>
+#elif defined (R_OS_WIN32)
 #include <wincrypt.h>
 #elif defined (R_OS_UNIX)
 #include <rlib/file/rfile.h>
 #endif
 
-ruint64
-r_rand_entropy_u64 (void)
+/* Read exactly @size bytes from the OS entropy source into @buf.
+ * Returns TRUE only on a full read; makes no fallback - callers that
+ * need a guaranteed value (the statistical seed helpers) layer their
+ * own fallback on top.
+ *
+ * Prefers the kernel syscalls (getrandom / getentropy) over opening
+ * /dev/urandom: they need no file descriptor and, unlike /dev/urandom,
+ * block until the entropy pool is first seeded rather than returning
+ * possibly-unseeded bytes early in boot. */
+static rboolean
+r_rand_entropy_read (ruint8 * buf, rsize size)
 {
-  ruint64 ret;
-#if defined (R_OS_WIN32)
+#if defined (HAVE_GETRANDOM)
+  rsize total = 0;
+
+  while (total < size) {
+    rssize res = getrandom (buf + total, size - total, 0);
+    if (res < 0) {
+      if (errno == EINTR) continue;
+      break;
+    }
+    if (res == 0) break;
+    total += (rsize)res;
+  }
+
+  return total == size;
+#elif defined (HAVE_GETENTROPY)
+  rsize total = 0;
+
+  /* getentropy caps each call at 256 bytes and is all-or-nothing. */
+  while (total < size) {
+    rsize chunk = size - total < 256 ? size - total : 256;
+    if (getentropy (buf + total, chunk) != 0) {
+      if (errno == EINTR) continue;
+      return FALSE;
+    }
+    total += chunk;
+  }
+
+  return TRUE;
+#elif defined (R_OS_WIN32)
   HCRYPTPROV hCryptProv = (HCRYPTPROV)NULL;
 
-  if (CryptAcquireContext (&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0)) {
-    BOOL res = CryptGenRandom (hCryptProv, sizeof (ret), (BYTE *)&ret);
+  /* CRYPT_VERIFYCONTEXT: we only need CryptGenRandom, not a key
+   * container - without it acquisition fails for accounts that have no
+   * default keyset (e.g. service accounts with no user profile). */
+  if (CryptAcquireContext (&hCryptProv, NULL, NULL, PROV_RSA_FULL,
+        CRYPT_VERIFYCONTEXT)) {
+    rsize total = 0;
+    BOOL res = TRUE;
 
+    /* Chunk so a >4 GiB request can't be truncated by the DWORD count. */
+    while (res && total < size) {
+      DWORD chunk = size - total > MAXDWORD ? MAXDWORD : (DWORD)(size - total);
+      res = CryptGenRandom (hCryptProv, chunk, (BYTE *)buf + total);
+      total += chunk;
+    }
     CryptReleaseContext (hCryptProv, 0);
-    if (res)
-      return ret;
+    return (res && total == size) ? TRUE : FALSE;
   }
 #elif defined (R_OS_UNIX)
   RFile * devurand;
 
   if ((devurand = r_file_open ("/dev/urandom", "rb")) != NULL) {
-    rsize res = 0;
+    rsize total = 0;
 
-    r_file_read (devurand, &ret, sizeof (ruint64), &res);
+    while (total < size) {
+      rsize res = 0;
+      if (r_file_read (devurand, buf + total, size - total, &res) != R_FILE_ERROR_OK ||
+          res == 0)
+        break;
+      total += res;
+    }
     r_file_unref (devurand);
 
-    if (res == sizeof (ruint64))
-      return ret;
+    return total == size;
   }
+#else
+  (void) buf;
+  (void) size;
 #endif
+
+  return FALSE;
+}
+
+rboolean
+r_rand_entropy_fill (ruint8 * buf, rsize size)
+{
+  if (R_UNLIKELY (buf == NULL)) return FALSE;
+  if (R_UNLIKELY (size == 0)) return FALSE;
+
+  return r_rand_entropy_read (buf, size);
+}
+
+ruint64
+r_rand_entropy_u64 (void)
+{
+  ruint64 ret;
+
+  if (r_rand_entropy_read ((ruint8 *)&ret, sizeof (ret)))
+    return ret;
 
   return r_time_get_ts_monotonic ();
 }
@@ -64,29 +141,9 @@ ruint32
 r_rand_entropy_u32 (void)
 {
   ruint32 ret;
-#if defined (R_OS_WIN32)
-  HCRYPTPROV hCryptProv = (HCRYPTPROV)NULL;
 
-  if (CryptAcquireContext (&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0)) {
-    BOOL res = CryptGenRandom (hCryptProv, sizeof (ret), (BYTE *)&ret);
-
-    CryptReleaseContext (hCryptProv, 0);
-    if (res)
-      return ret;
-  }
-#elif defined (R_OS_UNIX)
-  RFile * devurand;
-
-  if ((devurand = r_file_open ("/dev/urandom", "rb")) != NULL) {
-    rsize res = 0;
-
-    r_file_read (devurand, &ret, sizeof (ruint32), &res);
-    r_file_unref (devurand);
-
-    if (res == sizeof (ruint32))
-      return ret;
-  }
-#endif
+  if (r_rand_entropy_read ((ruint8 *)&ret, sizeof (ret)))
+    return ret;
 
   return (ruint32)(r_time_get_ts_monotonic () & RUINT32_MAX);
 }

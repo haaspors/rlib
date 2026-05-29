@@ -354,6 +354,9 @@ check_funcs = [
   [ 'sigaction', 'signal.h' ],
   [ 'sigaltstack', 'signal.h' ],
   [ 'explicit_bzero', 'string.h' ],
+  # entropy
+  [ 'getrandom', 'sys/random.h' ],
+  [ 'getentropy', 'sys/random.h' ],
 ]
 if host_machine.system() == 'windows'
   check_funcs += [

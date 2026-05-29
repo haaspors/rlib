@@ -140,7 +140,9 @@ R_API RCryptoKey * r_dh_priv_key_new_from_asn1 (RAsn1BinDecoder * dec,
  *
  * @param p     Prime modulus.
  * @param g     Generator.
- * @param prng  Randomness source for sampling @c x.
+ * @param prng  Randomness source for sampling @c x; must be
+ *              cryptographically secure — use @ref r_prng_new_crypto,
+ *              not @ref r_prng_new_kiss / @ref r_prng_new_mt.
  */
 R_API RCryptoKey * r_dh_priv_key_new_gen (const rmpint * p, const rmpint * g,
     RPrng * prng) R_ATTR_MALLOC;

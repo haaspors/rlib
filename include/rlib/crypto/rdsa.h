@@ -118,7 +118,9 @@ R_API RCryptoKey * r_dsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1Bin
  *
  * @param L     Modulus size in bits.
  * @param N     Subgroup-order size in bits.
- * @param prng  Randomness source.
+ * @param prng  Randomness source; must be cryptographically secure —
+ *              use @ref r_prng_new_crypto, not @ref r_prng_new_kiss /
+ *              @ref r_prng_new_mt.
  *
  * @c (L, N) must be one of the FIPS-approved size combinations:
  * @c (1024, 160), @c (2048, 224), @c (2048, 256) or @c (3072, 256).
@@ -143,6 +145,10 @@ R_API rboolean r_dsa_priv_key_get_x (const RCryptoKey * key, rmpint * x);
  * Hashes @p msg with @p mdtype, then signs the resulting digest per
  * FIPS 186-4 §4.6. The signature is encoded as an ASN.1 DER
  * SEQUENCE OF @c (r, s) integers.
+ *
+ * @note @p prng supplies the per-signature secret nonce; a predictable
+ * nonce leaks the private key, so it must be cryptographically secure
+ * (@ref r_prng_new_crypto).
  */
 R_API RCryptoResult r_dsa_sign_msg (const RCryptoKey * key, RPrng * prng,
     RMsgDigestType mdtype, rconstpointer msg, rsize msgsize,

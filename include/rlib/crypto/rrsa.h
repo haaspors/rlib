@@ -153,7 +153,9 @@ R_API RCryptoKey * r_rsa_priv_key_new_from_asn1 (RAsn1BinDecoder * dec, RAsn1Bin
  *
  * @param bits  Modulus size in bits.
  * @param e     Public exponent (typically 65537).
- * @param prng  Randomness source used for prime sampling.
+ * @param prng  Randomness source used for prime sampling; must be
+ *              cryptographically secure — use @ref r_prng_new_crypto,
+ *              not @ref r_prng_new_kiss / @ref r_prng_new_mt.
  * @return New @ref RCryptoKey carrying the full CRT representation,
  *         or @c NULL on failure.
  */
