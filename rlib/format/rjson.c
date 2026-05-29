@@ -128,7 +128,12 @@ r_json_str_escape (RString * dst, const rchar * src, rssize size)
       case '\t': r_string_append (dst, "\\t");    break;
       default:
         if ((ruint8)src[i] < 0x80) {
-          r_string_append_c (dst, src[i]);
+          /* JSON requires every control char below 0x20 to be escaped;
+           * the common ones are handled above, the rest go as \u00xx. */
+          if ((ruint8)src[i] < 0x20)
+            r_string_append_printf (dst, "\\u%.4x", (ruint8)src[i]);
+          else
+            r_string_append_c (dst, src[i]);
         } else {
           runichar2 * uc2;
           rssize j;
@@ -226,7 +231,12 @@ r_json_append_ctx_newline (RJsonAppendCtx * ctx)
     if (ctx->indent == 0) {
       r_string_append_c (ctx->str, '\n');
     } else if ((ctx->flags & R_JSON_USE_TABS) == R_JSON_USE_TABS) {
-      r_string_append_printf (ctx->str, "\n%*c", ctx->indent, '\t');
+      int i;
+      /* "%*c" pads with spaces, so it can't emit a run of tabs - write
+       * one tab per indent level explicitly. */
+      r_string_append_c (ctx->str, '\n');
+      for (i = 0; i < ctx->indent; i++)
+        r_string_append_c (ctx->str, '\t');
     } else {
       r_string_append_printf (ctx->str, "\n%*c", ctx->indent * 2, ' ');
     }
@@ -290,8 +300,9 @@ r_json_append_ctx_number (RJsonAppendCtx * ctx, const RJsonValue * value)
   const RJsonNumber * num = (const RJsonNumber *)value;
   rdouble intpart;
 
-  if (modf (num->v, &intpart) == 0.0)
-    r_string_append_printf (ctx->str, "%d", (int)num->v);
+  if (modf (num->v, &intpart) == 0.0 &&
+      num->v >= (rdouble)RINT64_MIN && num->v <= (rdouble)RINT64_MAX)
+    r_string_append_printf (ctx->str, "%"RINT64_FMT, (rint64)num->v);
   else
     r_string_append_printf (ctx->str, "%f", num->v);
 }

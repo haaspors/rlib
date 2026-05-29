@@ -338,3 +338,55 @@ RTEST (rjson, string_escape, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rjson, serialize_control_chars, RTEST_FAST)
+{
+  RJsonValue * v;
+  rchar * str;
+
+  /* Control chars below 0x20 that lack a short escape must come out as
+   * \u00xx; emitting them raw would produce invalid JSON. */
+  r_assert_cmpptr ((v = r_json_string_new_static_unescaped ("a\x01\x1f" "b")), !=, NULL);
+  r_assert_cmpstr ((str = r_json_value_get_string_quoted (v)), ==, "\"a\\u0001\\u001fb\"");
+  r_free (str);
+  r_json_value_unref (v);
+}
+RTEST_END;
+
+RTEST (rjson, serialize_large_integer, RTEST_FAST)
+{
+  RJsonValue * v;
+  RBuffer * buf;
+  RJsonResult res;
+
+  /* Integral value past INT_MAX must not be truncated by an int cast. */
+  r_assert_cmpptr ((v = r_json_parse (R_STR_WITH_SIZE_ARGS ("2147483648"), NULL)), !=, NULL);
+  r_assert_cmpptr ((buf = r_json_value_to_buffer (v, R_JSON_COMPACT, &res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "2147483648");
+  r_buffer_unref (buf);
+  r_json_value_unref (v);
+}
+RTEST_END;
+
+RTEST (rjson, serialize_nested_tabs, RTEST_FAST)
+{
+  RJsonValue * outer, * inner, * s;
+  RBuffer * buf;
+  RJsonResult res;
+
+  /* At depth 2 the inner element needs two tabs; the old "%*c" form
+   * emitted spaces plus a single tab. */
+  r_assert_cmpptr ((outer = r_json_array_new ()), !=, NULL);
+  r_assert_cmpptr ((inner = r_json_array_new ()), !=, NULL);
+  r_assert_cmpptr ((s = r_json_string_new_static_unescaped ("x")), !=, NULL);
+  r_assert_cmpint (r_json_array_add_value (inner, s), ==, R_JSON_OK);
+  r_json_value_unref (s);
+  r_assert_cmpint (r_json_array_add_value (outer, inner), ==, R_JSON_OK);
+  r_json_value_unref (inner);
+
+  r_assert_cmpptr ((buf = r_json_value_to_buffer (outer, R_JSON_USE_TABS, &res)), !=, NULL);
+  r_assert_cmpbufsstr (buf, 0, -1, ==, "[\n\t[\n\t\t\"x\"\n\t]\n]");
+  r_buffer_unref (buf);
+  r_json_value_unref (outer);
+}
+RTEST_END;
+
