@@ -130,7 +130,7 @@ R_API RSRTPCipherSuite r_srtp_cipher_suite_filter (
 R_API const RSRTPCipherSuiteInfo * r_srtp_cipher_suite_get_info (RSRTPCipherSuite suite);
 /**
  * @brief Look up the parameter table by short ASCII name (e.g.
- * @c "AES_CM_128_HMAC_SHA1_80"), or @c NULL.
+ * @c "SRTP-AES-128-CM-HMAC-SHA1-80"), or @c NULL.
  */
 R_API const RSRTPCipherSuiteInfo * r_srtp_cipher_suite_get_info_from_str (const rchar * str);
 

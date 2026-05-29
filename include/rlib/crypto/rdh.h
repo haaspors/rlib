@@ -125,7 +125,8 @@ R_API RCryptoKey * r_dh_priv_key_new_binary (rconstpointer p, rsize psize,
     rconstpointer x, rsize xsize) R_ATTR_MALLOC;
 
 /**
- * @brief Decode a DH private key from an ASN.1 PKCS#3 / PKCS#8 TLV.
+ * @brief Decode a DH private key from an ASN.1 @c SEQUENCE
+ * (version, p, g, x).
  *
  * Used by the PEM and X.509 import paths to materialise an
  * @ref RCryptoKey from a DER blob.

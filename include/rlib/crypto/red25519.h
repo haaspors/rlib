@@ -53,9 +53,8 @@
  * rejected when it is not in the canonical range @c [0, L); the
  * public key is rejected on a non-canonical encoding.
  *
- * Ed448 sign / verify lives under a separate module (when SHAKE256
- * lands - see issue #179); the shared twisted-Edwards math is in
- * @c rlib/crypto/recurve-edwards.h.
+ * Ed448 sign / verify lives in @c rlib/crypto/red448.h; the shared
+ * twisted-Edwards math is in @c rlib/crypto/recurve-edwards.h.
  */
 
 R_BEGIN_DECLS

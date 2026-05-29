@@ -181,8 +181,13 @@ R_API rboolean r_crypto_x509_cert_is_ca (const RCryptoCert * cert);
 /** @brief True iff issuer DN equals subject DN. */
 R_API rboolean r_crypto_x509_cert_is_self_issued (const RCryptoCert * cert);
 /**
- * @brief True iff @p cert is self-signed: self-issued AND the
- * signature verifies under @p cert's own public key.
+ * @brief Heuristic self-signed check based on key identifiers: returns
+ * @c TRUE when the AuthorityKeyIdentifier is absent, or when it matches
+ * the SubjectKeyIdentifier.
+ *
+ * This does @b not verify the signature or compare issuer/subject DNs;
+ * use @ref r_crypto_x509_cert_verify_signature and
+ * @ref r_crypto_x509_cert_is_self_issued for those.
  */
 R_API rboolean r_crypto_x509_cert_is_self_signed (const RCryptoCert * cert);
 

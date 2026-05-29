@@ -91,7 +91,8 @@ typedef struct RCryptoCert RCryptoCert;
  *
  * Use when memory is tight and the caller is done re-exporting the
  * certificate. Subsequent calls to @ref r_crypto_cert_get_data_buffer
- * / @ref r_crypto_cert_dup_data will return @c NULL.
+ * / @ref r_crypto_cert_dup_data re-encode the certificate from its
+ * parsed fields instead of returning the cached bytes.
  */
 R_API void r_crypto_cert_clear_data (RCryptoCert * cert);
 
