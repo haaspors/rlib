@@ -56,9 +56,9 @@ typedef struct REvWakeup REvWakeup;
 /** @brief Create a wakeup source on @p loop. */
 R_API REvWakeup * r_ev_wakeup_new (REvLoop * loop);
 /** @brief Take a reference (alias for @ref r_ref_ref). */
-#define r_ev_resolve_ref r_ref_ref
+#define r_ev_wakeup_ref r_ref_ref
 /** @brief Drop a reference (alias for @ref r_ref_unref). */
-#define r_ev_resolve_unref r_ref_unref
+#define r_ev_wakeup_unref r_ref_unref
 
 /** @brief Wake the loop from another thread; safe to call concurrently. */
 R_API rboolean r_ev_wakeup_signal (REvWakeup * wakeup);

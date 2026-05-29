@@ -38,6 +38,7 @@
 #include <rlib/ev/revresolve.h>
 #include <rlib/ev/revtcp.h>
 #include <rlib/ev/revudp.h>
+#include <rlib/ev/revwakeup.h>
 
 #endif /* __R_EV_H__ */
 
