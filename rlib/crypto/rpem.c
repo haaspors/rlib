@@ -641,6 +641,14 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
     decrypted_size = decoded_size;
     if ((dec = r_asn1_bin_decoder_new (R_ASN1_BER, decoded, plain_size)) == NULL)
       goto out_wipe;
+  } else if (r_pem_block_get_type (block) >= R_PEM_TYPE_RSA_PRIVATE_KEY) {
+    /* Unencrypted private-key DER is still secret material; decode it
+     * into a buffer we own (so out_wipe scrubs it) and hand the decoder
+     * a borrowed reference, as the legacy path above does. */
+    if ((decrypted = r_pem_block_decode_base64 (block, &decrypted_size)) == NULL)
+      return NULL;
+    if ((dec = r_asn1_bin_decoder_new (R_ASN1_BER, decrypted, decrypted_size)) == NULL)
+      goto out_wipe;
   } else if ((dec = r_pem_block_get_asn1_decoder (block)) == NULL) {
     return NULL;
   }
