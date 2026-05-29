@@ -212,7 +212,7 @@ RRtcError
 r_rtc_rtp_listener_update_receiver (RRtcRtpListener * l,
     RRtcRtpReceiver * r, RRtcRtpParameters * params)
 {
-  rsize i, c, ssrcs = 0;
+  rsize i, c;
 
   if (R_UNLIKELY (r == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (params == NULL)) return R_RTC_INVAL;
@@ -224,11 +224,11 @@ r_rtc_rtp_listener_update_receiver (RRtcRtpListener * l,
   for (i = 0, c = r_ptr_array_size (&params->encodings); i < c; i++) {
     RRtcRtpEncodingParameters * encp = r_ptr_array_get (&params->encodings, i);
     if (encp->ssrc != 0)
-      r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (encp->ssrc), r), ssrcs++;
+      r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (encp->ssrc), r);
     if (encp->rtx.ssrc != 0)
-      r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (encp->rtx.ssrc), r), ssrcs++;
+      r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (encp->rtx.ssrc), r);
     if (encp->fec.ssrc != 0)
-      r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (encp->fec.ssrc), r), ssrcs++;
+      r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (encp->fec.ssrc), r);
   }
   /* FIXME: update mid against mux table */
   for (i = 0, c = r_ptr_array_size (&params->codecs); i < c; i++) {
