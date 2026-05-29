@@ -39,7 +39,9 @@ r_asn1_ber_parse_length (const ruint8 * ptr, rsize * lensize, rsize * ret)
       /* definite long form */
       rsize i;
 
-      if ((*ptr & 0x7f) >= *lensize)
+      /* Bound the length-of-length: it must fit in the remaining bytes
+       * and in an rsize, else the accumulation below overflows. */
+      if ((*ptr & 0x7f) >= *lensize || (*ptr & 0x7f) > sizeof (rsize))
         return R_ASN1_DECODER_OVERFLOW;
 
       *lensize = *ptr++ & 0x7f;
@@ -70,6 +72,12 @@ r_asn1_ber_tlv_init (RAsn1BinTLV * tlv, const ruint8 * start, rsize size)
   lensize = size - 1;
   if ((ret = r_asn1_ber_parse_length (start + 1, &lensize, &tlv->len)) ==
       R_ASN1_DECODER_OK) {
+    /* The declared content length must fit in the surrounding buffer.
+     * Compare via subtraction so the pointer/size math can't overflow
+     * on a fabricated long-form length. An indefinite or definite-zero
+     * encoding has len == 0 and passes trivially. */
+    if (1 + lensize > size || tlv->len > size - 1 - lensize)
+      return R_ASN1_DECODER_OVERFLOW;
     tlv->start = start;
     tlv->value = start + 1 + lensize;
   }
