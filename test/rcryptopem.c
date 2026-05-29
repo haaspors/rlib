@@ -782,6 +782,46 @@ RTEST (rcryptopem, legacy_decrypted_plaintext_wiped, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rcryptopem, unencrypted_privkey_der_wiped, RTEST_FAST)
+{
+  /* The unencrypted private-key path decodes its DER into a buffer that
+   * r_pem_block_get_key must wipe before freeing, just like the legacy
+   * decrypt path above. Same modulus byte-run needle (big-endian, so it
+   * lives only in the DER, not in the parsed n's word storage). */
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  rmpint n;
+  ruint8 modulus[128];
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_legacy_unenc, sizeof (pem_legacy_unenc))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_mpint_init (&n);
+  r_assert (r_rsa_pub_key_get_n (key, &n));
+  r_assert (r_mpint_to_binary_with_size (&n, modulus, sizeof (modulus)));
+  r_mpint_clear (&n);
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+
+  r_wipe_witness_install ();
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_legacy_unenc, sizeof (pem_legacy_unenc))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+  r_wipe_witness_uninstall ();
+
+  r_assert (!r_wipe_witness_freed_contains (modulus + 16, 32));
+}
+RTEST_END;
+
 /* PKCS#8 EC private key (P-256), generated with:
  *   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
  *     | openssl pkcs8 -topk8 -nocrypt
