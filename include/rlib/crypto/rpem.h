@@ -79,9 +79,10 @@ typedef struct RPemBlock RPemBlock;
  *
  * @param data        PEM-formatted bytes.
  * @param size        Length of @p data, or @c -1 if NUL-terminated.
- * @param passphrase  Optional passphrase for encrypted private keys
- *                    (PKCS#8 EncryptedPrivateKeyInfo). Pass @c NULL
- *                    for unencrypted blocks.
+ * @param passphrase  Optional passphrase for legacy RFC 1421
+ *                    (Proc-Type / DEK-Info) encrypted keys. Pass
+ *                    @c NULL for unencrypted blocks. PKCS#8
+ *                    EncryptedPrivateKeyInfo is not yet supported.
  * @param ppsize      Length of @p passphrase.
  * @return Parsed @ref RCryptoKey, or @c NULL if the buffer does not
  *         contain a key block or the passphrase is wrong.
@@ -195,8 +196,10 @@ R_API RAsn1BinDecoder * r_pem_block_get_asn1_decoder (RPemBlock * block);
  * @brief Materialise a key block as an @ref RCryptoKey.
  *
  * @param block       The PEM block. Must satisfy @ref r_pem_block_is_key.
- * @param passphrase  Required for encrypted PKCS#8 blocks; ignored
- *                    otherwise. Pass @c NULL when not applicable.
+ * @param passphrase  Required for legacy RFC 1421 (Proc-Type /
+ *                    DEK-Info) encrypted keys; ignored otherwise. Pass
+ *                    @c NULL when not applicable. PKCS#8
+ *                    EncryptedPrivateKeyInfo is not yet supported.
  * @param ppsize      Length of @p passphrase.
  */
 R_API RCryptoKey * r_pem_block_get_key (RPemBlock * block,

@@ -103,7 +103,8 @@ R_API RCryptoKey * r_dsa_priv_key_new_binary (rconstpointer p, rsize psize,
     rconstpointer y, rsize ysize, rconstpointer x, rsize xsize) R_ATTR_MALLOC;
 
 /**
- * @brief Decode a DSA private key from an ASN.1 PKCS#8 TLV.
+ * @brief Decode a DSA private key from a traditional DSAPrivateKey
+ * ASN.1 @c SEQUENCE (version, p, q, g, y, x).
  *
  * Used by the PEM and X.509 import paths (see @c rpem.h and
  * @c rx509.h) to materialise an @ref RCryptoKey from a DER blob.
