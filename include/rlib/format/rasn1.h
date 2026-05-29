@@ -378,8 +378,10 @@ R_API RAsn1EncoderStatus r_asn1_bin_encoder_add_distinguished_name (RAsn1BinEnco
 /** @name Encoder output extraction
  *  @{ */
 /**
- * @brief Take ownership of the encoded bytes; the encoder is left
- * empty and can be reused.
+ * @brief Return a freshly-allocated copy of the encoded bytes.
+ *
+ * Non-destructive: the encoder retains its contents, so a subsequent
+ * encode appends to the existing buffer rather than starting fresh.
  */
 R_API ruint8 * r_asn1_bin_encoder_get_data (RAsn1BinEncoder * enc, rsize * size) R_ATTR_MALLOC;
 /** @brief Same as @ref r_asn1_bin_encoder_get_data but returns an @ref RBuffer. */
