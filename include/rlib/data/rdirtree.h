@@ -19,7 +19,7 @@
 #define __R_DIR_TREE_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -109,7 +109,7 @@ R_API RDirTreeNode * r_dir_tree_create (RDirTree * tree, const rchar * path, rss
 R_API RDirTreeNode * r_dir_tree_set_full (RDirTree * tree, const rchar * path, rssize size,
     rpointer data, RDestroyNotify notify, RFunc func) R_ATTR_WARN_UNUSED_RESULT;
 /** @brief Convenience: drop the data at @p path (destroy notifier runs). */
-#define r_dir_tree_clear_node(tree, path) r_dir_tree_set (tree, path, NULL, NULL)
+#define r_dir_tree_clear_node(tree, path) r_dir_tree_set (tree, path, -1, NULL, NULL)
 
 /**
  * @brief Remove @p node and every descendant; destroy notifiers run.
