@@ -143,6 +143,25 @@ RTEST (rargparse, version_custom_appname, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rargparse, set_version, RTEST_FAST)
+{
+  rchar * verstr;
+  RArgParser * parser = r_arg_parser_new ("app", "1.0");
+
+  r_arg_parser_set_version (parser, "2.5-rc1");
+  r_assert_cmpptr ((verstr = r_arg_parser_get_version (parser)), !=, NULL);
+  r_assert_cmpstr (verstr, ==, "app version 2.5-rc1\n");
+  r_free (verstr);
+
+  r_arg_parser_set_version (parser, NULL);
+  r_assert_cmpptr ((verstr = r_arg_parser_get_version (parser)), !=, NULL);
+  r_assert_cmpstr (verstr, ==, "app (\"version not specified\")\n");
+  r_free (verstr);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (rargparse, group, RTEST_FAST)
 {
   RArgOptionGroup * group;

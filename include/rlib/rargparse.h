@@ -204,6 +204,14 @@ R_API void r_arg_parser_set_appname (RArgParser * parser, const rchar * appname)
  * the token entirely.
  */
 R_API void r_arg_parser_set_options (RArgParser * parser, const rchar * options);
+/**
+ * @brief Replace the version string reported by @c --version and
+ * @c r_arg_parser_get_version (overriding the @p version passed to
+ * @c r_arg_parser_new).
+ *
+ * Pass @c NULL to report "version not specified".
+ */
+R_API void r_arg_parser_set_version (RArgParser * parser, const rchar * version);
 /** @brief Set the prologue paragraph shown above option help. */
 R_API void r_arg_parser_set_summary (RArgParser * parser, const rchar * summary);
 /** @brief Set the epilogue paragraph shown below option help. */
