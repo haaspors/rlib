@@ -19,7 +19,7 @@
 #define __R_SYS_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -116,8 +116,9 @@ R_API rboolean r_sys_nodeset_for_cpuset (RBitset * nodeset, const RBitset * cpus
 /** @name Topology objects
  *
  * @ref RSysTopology / @ref RSysNode / @ref RSysCpu are refcounted;
- * use the @c _ref / @c _unref aliases. Nodes and CPUs are owned by
- * their parent topology.
+ * use the @c _ref / @c _unref aliases. The @c r_sys_topology_node /
+ * @c r_sys_topology_node_cpu accessors return a @b new reference that
+ * the caller must @c _unref.
  *  @{ */
 /** @brief Opaque, refcounted hardware-topology snapshot. */
 typedef struct RSysTopology  RSysTopology;
@@ -131,14 +132,16 @@ R_API RSysTopology * r_sys_topology_discover (void);
 
 /** @brief Number of NUMA nodes in @p topo. */
 R_API rsize r_sys_topology_node_count (const RSysTopology * topo);
-/** @brief Return the @p idx-th node of @p topo (borrowed). */
+/** @brief Return the @p idx-th node of @p topo as a new reference
+ *  (caller @c r_sys_node_unref's), or @c NULL if out of range. */
 R_API RSysNode * r_sys_topology_node (RSysTopology * topo, rsize idx);
 
 /** @brief Fill @p cpuset with the CPUs belonging to @p node. */
 R_API rboolean r_sys_topology_node_cpuset (const RSysNode * node, RBitset * cpuset);
 /** @brief Number of CPUs in @p node. */
 R_API rsize r_sys_topology_node_cpu_count (const RSysNode * node);
-/** @brief Return the @p idx-th CPU of @p node (borrowed). */
+/** @brief Return the @p idx-th CPU of @p node as a new reference
+ *  (caller @c r_sys_cpu_unref's), or @c NULL if out of range. */
 R_API RSysCpu * r_sys_topology_node_cpu (RSysNode * node, rsize idx);
 /** @brief Bytes of memory local to @p node. */
 R_API rsize r_sys_topology_node_available_memory (const RSysNode * node);

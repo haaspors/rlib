@@ -19,7 +19,7 @@
 #define __R_DICTIONARY_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -66,7 +66,9 @@ static inline rsize r_dictionary_size (RDictionary * dict);
 /** @brief Allocated bucket count. */
 static inline rsize r_dictionary_current_alloc_size (RDictionary * dict);
 
-/** @brief Insert @c (key, value); returns @c FALSE on internal failure. */
+/** @brief Insert @c (key, value). @return @c TRUE only on a fresh
+ *  insert; @c FALSE if the key already existed (its value is replaced)
+ *  or on internal failure. */
 static inline rboolean r_dictionary_insert (RDictionary * dict, const rchar * key, rpointer value);
 /** @brief Return the value associated with @p key, or @c NULL. */
 static inline rpointer r_dictionary_lookup (RDictionary * dict, const rchar * key);

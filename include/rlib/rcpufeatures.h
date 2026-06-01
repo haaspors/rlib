@@ -19,7 +19,7 @@
 #define __R_CPUFEATURES_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 #include <rlib/rtypes.h>
@@ -56,20 +56,20 @@
  * and every @c r_cpu_has call returns @c FALSE; callers that dispatch
  * on a feature flag transparently fall back to their software path.
  *
- * **Bit layout** (32 bits total, x86 in 0-23, AArch64 in 24-47):
+ * **Bit layout** (x86 in bits 0-23, AArch64 in bits 24-39):
  *  - x86 base SSE family: bits 0-7
  *  - x86 AVX / AVX-512 family: bits 8-15
  *  - x86 misc (SHA-NI, BMI, POPCNT, F16C, RDRAND): bits 16-23
- *  - AArch64 base + crypto: bits 24-39
- *  - AArch64 misc (atomics, dotprod, SVE): bits 40-47
+ *  - AArch64 base + crypto: bits 24-31
+ *  - AArch64 misc (atomics, dotprod, SVE): bits 32-39
  */
 
 /**
  * @brief Bitmask of CPU extension flags.
  *
  * Treat as an opaque bitfield - combine with bitwise-OR, query with
- * bitwise-AND or @c r_cpu_has. Underlying type is @c ruint64 to leave
- * headroom for future flags beyond the 32-bit cutoff.
+ * bitwise-AND or @c r_cpu_has. Underlying type is @c ruint64 so the
+ * AArch64 flags (which already run past bit 31) fit with room to spare.
  */
 typedef ruint64 RCpuFeature;
 
@@ -148,7 +148,7 @@ typedef ruint64 RCpuFeature;
  * conditioned stream. */
 #define R_CPU_FEATURE_RDSEED            R_CPU_BIT_(22)
 
-/* AArch64 base + crypto (bits 24-39) */
+/* AArch64 base + crypto (bits 24-31) */
 
 /** @brief AArch64 NEON / Advanced SIMD; 128-bit integer + FP vector
  * ops. Architecturally mandatory on AArch64 so this is always set on
@@ -172,7 +172,7 @@ typedef ruint64 RCpuFeature;
  * instructions for hardware Castagnoli CRC32C. */
 #define R_CPU_FEATURE_ARM_CRC32         R_CPU_BIT_(31)
 
-/* AArch64 misc (bits 32-47) */
+/* AArch64 misc (bits 32-39) */
 
 /** @brief ARMv8.1 LSE atomics; @c LDADD / @c CAS / @c SWP exclusive-
  * monitor-free atomics. */

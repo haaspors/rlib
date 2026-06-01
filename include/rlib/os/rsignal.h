@@ -19,7 +19,7 @@
 #define __R_SIGNAL_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -66,9 +66,9 @@ R_API RSigAlrmTimer * r_sig_alrm_timer_new_interval (RClockTime interval,
 R_API RSigAlrmTimer * r_sig_alrm_timer_new_interval_delayed (RClockTime timeout,
     RClockTime interval, RSignalFunc func);
 
-/** @brief Stop @p timer without freeing it. */
+/** @brief Disarm and free @p timer (frees via @ref r_sig_alrm_timer_delete). */
 R_API void r_sig_alrm_timer_cancel (RSigAlrmTimer * timer);
-/** @brief Cancel and free @p timer. */
+/** @brief Free @p timer, restoring the previous @c SIGALRM handler. */
 R_API void r_sig_alrm_timer_delete (RSigAlrmTimer * timer);
 
 R_END_DECLS

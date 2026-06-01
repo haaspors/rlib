@@ -19,7 +19,7 @@
 #define __R_RTC_SESSION_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -79,9 +79,11 @@ R_API RRtcSession * r_rtc_session_new_full (const rchar * id, rssize size,
 
 /** @brief Return the session's id string. */
 R_API const rchar * r_rtc_session_get_id (const RRtcSession * s);
-/** @brief Look up a transceiver by @p id (of @p size bytes); @c NULL if absent. */
+/** @brief Look up a transceiver by media id @p mid (of @p size bytes).
+ *  @return A new reference (caller @c r_rtc_rtp_transceiver_unref's), or
+ *  @c NULL if absent. */
 R_API RRtcRtpTransceiver * r_rtc_session_lookup_rtp_transceiver (RRtcSession * s,
-    const rchar * id, rssize size);
+    const rchar * mid, rssize size);
 
 /**
  * @brief Create an ICE transport seeded with the local @p ufrag (of
@@ -91,8 +93,8 @@ R_API RRtcIceTransport * r_rtc_session_create_ice_transport (RRtcSession * s,
     const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize);
 /**
  * @brief Create a DTLS transport over @p ice with the given DTLS
- * @p role (see @ref RRtcRole), local certificate @p cert and private
- * key @p privkey.
+ * @p role (see @ref RRtcCryptoRole), local certificate @p cert and
+ * private key @p privkey.
  */
 R_API RRtcCryptoTransport * r_rtc_session_create_dtls_transport (RRtcSession * s,
     RRtcIceTransport * ice,
@@ -101,28 +103,28 @@ R_API RRtcCryptoTransport * r_rtc_session_create_dtls_transport (RRtcSession * s
 R_API RRtcCryptoTransport * r_rtc_session_create_raw_transport (RRtcSession * s,
     RRtcIceTransport * ice);
 /**
- * @brief Create an RTP sender with @p id (of @p size bytes), the
- * callback set @p cbs, and the @p rtp / @p rtcp transports it sends on.
+ * @brief Create an RTP sender with media id @p mid (of @p size bytes),
+ * the callback set @p cbs, and the @p rtp / @p rtcp transports it sends on.
  */
 R_API RRtcRtpSender * r_rtc_session_create_rtp_sender (RRtcSession * s,
-    const rchar * id, rssize size,
+    const rchar * mid, rssize size,
     const RRtcRtpSenderCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 /**
- * @brief Create an RTP receiver with @p id (of @p size bytes), the
- * callback set @p cbs, and the @p rtp / @p rtcp transports it receives on.
+ * @brief Create an RTP receiver with media id @p mid (of @p size bytes),
+ * the callback set @p cbs, and the @p rtp / @p rtcp transports it receives on.
  */
 R_API RRtcRtpReceiver * r_rtc_session_create_rtp_receiver (RRtcSession * s,
-    const rchar * id, rssize size,
+    const rchar * mid, rssize size,
     const RRtcRtpReceiverCallbacks * cbs, rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;
 /**
  * @brief Create an RTP transceiver (paired sender + receiver) with
- * @p id (of @p size bytes), the receiver callbacks @p rcbs and sender
- * callbacks @p scbs, over the @p rtp / @p rtcp transports.
+ * media id @p mid (of @p size bytes), the receiver callbacks @p rcbs and
+ * sender callbacks @p scbs, over the @p rtp / @p rtcp transports.
  */
 R_API RRtcRtpTransceiver * r_rtc_session_create_rtp_transceiver (RRtcSession * s,
-    const rchar * id, rssize size,
+    const rchar * mid, rssize size,
     const RRtcRtpReceiverCallbacks * rcbs, const RRtcRtpSenderCallbacks * scbs,
     rpointer data, RDestroyNotify notify,
     RRtcCryptoTransport * rtp, RRtcCryptoTransport * rtcp) R_ATTR_MALLOC;

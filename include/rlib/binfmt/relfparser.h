@@ -19,7 +19,7 @@
 #define __R_ELF_PARSER_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -76,9 +76,9 @@ R_BEGIN_DECLS
  * @brief Return the on-disk size of the ELF image at @p mem, or @c 0
  * if @p mem doesn't carry a valid ELF.
  *
- * Computed from the section table extent; useful for slicing a
- * blob known to contain one ELF before passing it to
- * @ref r_elf_parser_new_from_mem.
+ * Computed as the larger of the program-header and section-header
+ * table extents; useful for slicing a blob known to contain one ELF
+ * before passing it to @ref r_elf_parser_new_from_mem.
  */
 R_API rsize r_elf_calc_size (rpointer mem);
 
