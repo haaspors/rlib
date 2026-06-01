@@ -753,7 +753,6 @@ r_pem_write_public_key (const RCryptoKey * key,
     ruint8 * asn1buf;
     rsize asn1bufsize;
 
-    /* FIXME: Use RBuffer instead!!! */
     if ((asn1buf = r_asn1_bin_encoder_get_data (enc, &asn1bufsize)) != NULL) {
       rchar * b64;
       rsize b64size;

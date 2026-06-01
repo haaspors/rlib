@@ -1405,7 +1405,6 @@ r_rsa_pkcs1v1_5_verify_msg (const RCryptoKey * key,
         rsize hashsize;
 
         if ((md = r_msg_digest_new (mdtype)) == NULL) {
-          /* FIXME: Support all hash types! */
           ret = R_CRYPTO_NOT_AVAILABLE;
         } else if ((hashsize = r_msg_digest_size (md)) == tlv.len) {
           ruint8 * hash = r_alloca (hashsize);
