@@ -682,7 +682,7 @@ R_API RTLSError r_dtls_update_handshake_len (rpointer data, rsize size, ruint16 
     ruint32 foff, ruint32 flen);
 
 /** @brief Generate a Hello @c random field using @c RPrng @p prng. */
-R_API RTLSError r_tls_generate_hello_random (ruint8 randrom[R_TLS_HELLO_RANDOM_BYTES], RPrng * prng);
+R_API RTLSError r_tls_generate_hello_random (ruint8 random[R_TLS_HELLO_RANDOM_BYTES], RPrng * prng);
 /**
  * @brief Write a ServerHello handshake message into @p data.
  * @param data Destination buffer.
