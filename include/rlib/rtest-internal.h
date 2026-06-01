@@ -19,7 +19,7 @@
 #define __R_TEST_INTERNAL_H__
 
 #ifndef __R_TEST_H__
-#error "#include <rlib.h> pelase."
+#error "#include <rlib.h> please."
 #endif
 
 #define RTEST_SECTION                         ".rtest"
