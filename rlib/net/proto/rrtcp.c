@@ -155,6 +155,8 @@ ruint32
 r_rtcp_packet_get_ssrc (const RRTCPPacket * packet)
 {
   const ruint8 * ptr = packet->data;
+  if (r_rtcp_packet_get_length (packet) < 2 * sizeof (ruint32))
+    return 0;
   return RUINT32_TO_BE (*(const ruint32 *)&ptr[0]);
 }
 
@@ -222,7 +224,8 @@ r_rtcp_packet_rr_get_ssrc (const RRTCPPacket * packet)
 {
   const ruint8 * ptr = packet->data;
 
-  if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_RR)
+  if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_RR &&
+      r_rtcp_packet_get_length (packet) >= 2 * sizeof (ruint32))
     return RUINT32_TO_BE (*(const ruint32 *)&ptr[0]);
 
   return 0;
@@ -326,6 +329,11 @@ r_rtcp_packet_bye_get_reason (const RRTCPPacket * packet,
     if (RUINT16_FROM_BE (packet->len) > packet->c) { /* quick check */
       const ruint8 * ptr = packet->data + packet->c * sizeof (ruint32);
 
+      /* The reason-length byte must itself lie within the packet before
+       * we dereference it. */
+      if (ptr >= r_rtcp_packet_end (packet))
+        return R_RTCP_PARSE_OVERFLOW;
+
       if (out != NULL)
         *out = *ptr;
 
@@ -353,7 +361,8 @@ r_rtcp_packet_app_get_ssrc (const RRTCPPacket * packet)
 {
   const ruint8 * ptr = packet->data;
 
-  if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_APP)
+  if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_APP &&
+      r_rtcp_packet_get_length (packet) >= 2 * sizeof (ruint32))
     return RUINT32_TO_BE (*(const ruint32 *)&ptr[0]);
 
   return 0;
@@ -364,7 +373,8 @@ r_rtcp_packet_app_get_name (const RRTCPPacket * packet)
 {
   const ruint8 * ptr = packet->data;
 
-  if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_APP)
+  if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_APP &&
+      r_rtcp_packet_get_length (packet) >= 3 * sizeof (ruint32))
     return (const rchar *)&ptr[4];
 
   return NULL;
@@ -376,6 +386,10 @@ r_rtcp_packet_app_get_data (const RRTCPPacket * packet, ruint16 * size)
   const ruint8 * ptr = packet->data;
 
   if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_APP) {
+    /* APP = 2 header words + SSRC + name = 3 words before the data;
+     * a shorter (malformed) packet would underflow the size. */
+    if (r_rtcp_packet_get_length (packet) < 3 * sizeof (ruint32))
+      return NULL;
     if (size != NULL)
       *size = (ruint16)(r_rtcp_packet_get_length (packet) - 3 * sizeof (ruint32));
     return &ptr[8];
