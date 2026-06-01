@@ -214,10 +214,14 @@ r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx)
 
     ret->ssrc = ssrc;
     ret->cctx = cctx;
-    r_bitset_init_heap (ret->rtp.window, R_SRTP_WINDOW_SIZE);
-    r_bitset_init_heap (ret->rtcp.window, R_SRTP_WINDOW_SIZE);
-
-    if (R_UNLIKELY ((res = r_srtp_state_init (&ret->rtp,
+    if (R_UNLIKELY (!r_bitset_init_heap (ret->rtp.window, R_SRTP_WINDOW_SIZE) ||
+          !r_bitset_init_heap (ret->rtcp.window, R_SRTP_WINDOW_SIZE))) {
+      /* Without the replay window, r_srtp_stream_replay_check would later
+       * dereference a NULL bitset. */
+      R_LOG_WARNING ("stream: 0x%.8x - replay window alloc failed", ssrc);
+      r_srtp_stream_free (ret);
+      ret = NULL;
+    } else if (R_UNLIKELY ((res = r_srtp_state_init (&ret->rtp,
               R_SRTP_KDPRF_LABEL_RTP_ENCRYPTION, kdcipher, 0, cctx->csinfo,
               cctx->key + keysize, saltsize)) != R_CRYPTO_CIPHER_OK)) {
       R_LOG_WARNING ("stream: 0x%.8x - RTP crypto init failed %d", ssrc, res);
@@ -668,8 +672,8 @@ r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
       }
 
       if ((idx = (ruint32)++stream->rtcp.index) >= R_SRTCP_E_BIT) {
-        R_LOG_INFO ("ssrc (0x%.8x) collision?", stream->ssrc);
-        err = R_SRTP_ERROR_WRONG_DIRECTION;
+        R_LOG_INFO ("ssrc (0x%.8x) SRTCP index space exhausted", stream->ssrc);
+        err = R_SRTP_ERROR_INTERNAL;
         goto beach_map;
       }
 

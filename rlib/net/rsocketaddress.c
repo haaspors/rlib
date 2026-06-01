@@ -241,7 +241,8 @@ ruint16
 r_socket_address_ipv4_get_port (const RSocketAddress * addr)
 {
   if (R_UNLIKELY (addr == NULL)) return RUINT16_MAX;
-
+  if (r_socket_address_get_family (addr) != R_SOCKET_FAMILY_IPV4)
+    return RUINT16_MAX;
   return r_ntohs (R_SOCKET_ADDRESS_IPV4_PORT (addr));
 }
 
@@ -249,7 +250,8 @@ ruint32
 r_socket_address_ipv4_get_ip (const RSocketAddress * addr)
 {
   if (R_UNLIKELY (addr == NULL)) return RUINT32_MAX; /* INADDR_NONE */
-
+  if (r_socket_address_get_family (addr) != R_SOCKET_FAMILY_IPV4)
+    return RUINT32_MAX;
   return r_ntohl (R_SOCKET_ADDRESS_IPV4_ADDR (addr));
 }
 
