@@ -251,7 +251,8 @@ r_tls_parser_decrypt (RTLSParser * parser,
   }
 
   if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_CBC) {
-    ruint8 padding;
+    rsize padding;   /* 1 + pad-length byte; widened so a 0xff trailing
+                      * byte (256) can't truncate to 0 in ruint8 */
     rsize macsize = (mac != NULL) ? r_hmac_size (mac) : 0;
 
     if (info.size < macsize + 1) {
@@ -291,6 +292,7 @@ r_tls_parser_decrypt (RTLSParser * parser,
 
         if (!r_hmac_verify (mac, &info.data[contentsize], macsize)) {
           r_buffer_unmap (buf, &info);
+          r_buffer_unref (buf);
           return R_TLS_ERROR_INVALID_MAC;
         }
       }
@@ -463,6 +465,8 @@ r_tls_parser_parse_handshake_internal (const RTLSParser * parser,
 {
   if (R_UNLIKELY (parser->content != R_TLS_CONTENT_TYPE_HANDSHAKE))
     return R_TLS_ERROR_WRONG_TYPE;
+  if (R_UNLIKELY (parser->fragment.size < 1))
+    return R_TLS_ERROR_CORRUPT_RECORD;
   *type = (RTLSHandshakeType)parser->fragment.data[0];
 
   *end = parser->fragment.data + parser->fragment.size;
@@ -567,7 +571,8 @@ r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg)
     }
     /* Cipher suites */
     msg->cslen = r_load_be16 (ptr);
-    if (ptr + msg->cslen + 1 > end) return R_TLS_ERROR_CORRUPT_RECORD;
+    if (ptr + msg->cslen + sizeof (ruint16) + sizeof (ruint8) > end)
+      return R_TLS_ERROR_CORRUPT_RECORD;
     msg->cs = &ptr[sizeof (ruint16)];
     ptr += msg->cslen + sizeof (ruint16);
     /* Compression methods */
@@ -622,7 +627,7 @@ r_tls_parser_parse_certificate_next (const RTLSParser * parser,
 
   if ((totallen = _r_parse_u24 (ptr)) > 0) {
     ptr = (cert->start != NULL) ? cert->cert + cert->len : ptr + (24 / 8);
-    if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + (24 / 8)) < RPOINTER_TO_SIZE (end))) {
+    if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + (24 / 8)) <= RPOINTER_TO_SIZE (end))) {
       cert->start = ptr;
       cert->len = _r_parse_u24 (cert->start);
       cert->cert = cert->start + (24 / 8);
@@ -697,6 +702,10 @@ r_tls_parser_parse_new_session_ticket (const RTLSParser * parser,
   if (lifetime != NULL)
     *lifetime = r_load_be32 (ptr);
   ptr += sizeof (ruint32);
+  /* The ticket bytes themselves must fit, not just the length field. */
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint16) + r_load_be16 (ptr)) >
+        RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
   if (ticketsize != NULL)
     *ticketsize = r_load_be16 (ptr);
   if (ticket != NULL)
@@ -826,6 +835,10 @@ r_tls_hello_msg_extension_first (const RTLSHelloMsg * msg, RTLSHelloExt * ext)
   ext->type = r_load_be16 (&ext->start[0]);
   ext->len = r_load_be16 (&ext->start[2]);
   ext->data = ext->start + R_TLS_HELLO_EXT_HDR_SIZE;
+  /* The extension body must fit within the declared extensions length. */
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ext->data + ext->len) >
+        RPOINTER_TO_SIZE (msg->ext + msg->extlen)))
+    return R_TLS_ERROR_EOB;
 
   return R_TLS_ERROR_OK;
 }
