@@ -197,6 +197,26 @@ r_http_client_ctx_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
         R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request created %p [%s] waiting for body size %"RSSIZE_FMT,
             ctx->server, R_EV_IO_ARGS (evtcp), ctx->req, ctx->keepalive ? "keepalive" : "close", ctx->bodysize);
       } else if (err == R_HTTP_BUF_TOO_SMALL) {
+        /* Cap the unparsed request-header bytes so a client that never
+         * sends the terminating CRLFCRLF can't grow inbuf without bound. */
+        if (r_buffer_get_size (ctx->inbuf) > (64 * 1024)) {
+          RHttpResponse * res;
+          ctx->keepalive = FALSE;
+          if ((res = r_http_response_new (NULL,
+                  R_HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE,
+                  NULL, NULL, NULL)) != NULL) {
+            r_http_client_ctx_tcp_response_ready (ctx, res, ctx->server);
+            r_http_response_unref (res);
+          } else {
+            r_http_client_ctx_close (ctx, NULL, NULL);
+          }
+          /* On R_HTTP_BUF_TOO_SMALL the parser handed back a ref to the
+           * pending data in buf; release it (the normal path below does
+           * this via ctx->inbuf = buf). */
+          if (buf != NULL)
+            r_buffer_unref (buf);
+          return;
+        }
         R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" waiting for more data (%"RSIZE_FMT")",
             ctx->server, R_EV_IO_ARGS (evtcp), r_buffer_get_size (ctx->inbuf));
       } else {
@@ -254,7 +274,17 @@ r_http_client_ctx_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
         r_http_client_ctx_process (ctx);
       }
     } else if (ctx->bodysize < 0) {
-      /* TODO: chunked */
+      /* Chunked / unknown-length request bodies aren't implemented; tell
+       * the client rather than holding the connection open forever. */
+      RHttpResponse * res;
+      ctx->keepalive = FALSE;
+      if ((res = r_http_response_new (NULL, R_HTTP_STATUS_NOT_IMPLEMENTED,
+              NULL, NULL, NULL)) != NULL) {
+        r_http_client_ctx_tcp_response_ready (ctx, res, ctx->server);
+        r_http_response_unref (res);
+      } else {
+        r_http_client_ctx_close (ctx, NULL, NULL);
+      }
       return;
     }
   } while (ctx->req == NULL && ctx->inbuf != NULL);
@@ -407,6 +437,11 @@ r_http_server_process_request (RHttpServer * server,
     rsize size = 0;
     RDirTreeNode * node;
     RHttpServerHandlerCtx * ctx = r_mem_new0 (RHttpServerHandlerCtx);
+
+    if (R_UNLIKELY (ctx == NULL)) {
+      r_uri_unref (uri);
+      return FALSE;
+    }
 
     ctx->server = server;
     ctx->req = r_http_request_ref (req);

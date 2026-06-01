@@ -120,6 +120,26 @@ RTEST (rhttp, new_request_from_buffer, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rhttp, negative_content_length, RTEST_FAST)
+{
+  static const rchar req_str[] =
+      "GET / HTTP/1.1\r\nHost: x\r\nContent-Length: -1\r\n\r\n";
+  RHttpRequest * req;
+  RHttpError err;
+  RBuffer * buf;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (req_str))), !=, NULL);
+  r_assert_cmpptr ((req = r_http_request_new_from_buffer (buf, &err, NULL)), !=, NULL);
+  r_buffer_unref (buf);
+
+  /* A negative Content-Length must not be taken as a (negative) body
+   * size -- it is rejected, leaving no body. */
+  r_assert_cmpint (r_http_request_calc_body_size (req, NULL), ==, 0);
+
+  r_http_request_unref (req);
+}
+RTEST_END;
+
 RTEST (rhttp, request_get_buffer, RTEST_FAST)
 {
   RBuffer * orig, * buf;

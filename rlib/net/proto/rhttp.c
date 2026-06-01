@@ -205,15 +205,11 @@ r_http_msg_get_body (RHttpMsg * msg, rsize * size)
   rsize real;
   rchar * ret;
 
-  if (msg->body != NULL) {
-    if ((real = r_buffer_get_size (msg->body)) > 0) {
-      ret = r_malloc (real + 1);
-    } else {
-      ret = NULL;
+  if (msg->body != NULL && (real = r_buffer_get_size (msg->body)) > 0) {
+    if ((ret = r_malloc (real + 1)) != NULL) {
+      r_buffer_extract (msg->body, 0, ret, real);
+      ret[real] = 0;
     }
-
-    r_buffer_extract (msg->body, 0, ret, real);
-    ret[real] = 0;
   } else {
     real = 0;
     ret = NULL;
@@ -633,8 +629,8 @@ r_http_request_calc_body_size (RHttpRequest * req, RHttpBodyParseType * type)
     } else if ((val = r_http_get_header ((const rchar *)info.data, info.size,
             R_STR_WITH_SIZE_ARGS ("Content-Length"), &size)) != NULL) {
       RStrParse p;
-      int s = r_str_to_int (val, NULL, 10, &p);
-      if (p == R_STR_PARSE_OK)
+      rint64 s = r_str_to_int64 (val, NULL, 10, &p);
+      if (p == R_STR_PARSE_OK && s >= 0)
         ret = (rssize)s;
     }
 
@@ -893,8 +889,8 @@ r_http_response_calc_body_size (RHttpResponse * res, RHttpBodyParseType * type)
     } else if ((val = r_http_get_header ((const rchar *)info.data, info.size,
             R_STR_WITH_SIZE_ARGS ("Content-Length"), &size)) != NULL) {
       RStrParse p;
-      int s = r_str_to_int (val, NULL, 10, &p);
-      if (p == R_STR_PARSE_OK)
+      rint64 s = r_str_to_int64 (val, NULL, 10, &p);
+      if (p == R_STR_PARSE_OK && s >= 0)
         ret = (rssize)s;
       pt = R_HTTP_BODY_PARSE_SIZED;
     }
