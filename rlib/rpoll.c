@@ -131,10 +131,10 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
     } else if (res == WAIT_TIMEOUT) {
       break;
     } else if (res == WAIT_IO_COMPLETION) {
-      // FIXME: WAIT_IO_COMPLETION
+      /* FIXME: WAIT_IO_COMPLETION */
       r_assert_not_reached ();
     } else {
-      // FIXME: What to do when we get WAIT_ABANDONED_0
+      /* FIXME: What to do when we get WAIT_ABANDONED_0 */
       r_assert_not_reached ();
     }
   }
