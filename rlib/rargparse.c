@@ -404,6 +404,13 @@ r_arg_parser_set_options (RArgParser * parser, const rchar * options)
   parser->options = r_strdup (options);
 }
 
+void
+r_arg_parser_set_version (RArgParser * parser, const rchar * version)
+{
+  r_free (parser->version);
+  parser->version = r_strdup (version);
+}
+
 const rchar *
 r_arg_parser_get_appname (RArgParser * parser)
 {
