@@ -1406,6 +1406,17 @@ r_sdp_message_line_parse_value (RStrChunk * value, const RStrChunk * line, rchar
   return R_SDP_MISSING_REQUIRED_LINE;
 }
 
+/* Bounded whitespace skip. The SDP buffer is not NUL-terminated, so the
+ * unbounded r_str_lwstrip can read past the end when a field runs to the
+ * buffer boundary (e.g. trailing spaces on the last line). */
+static rchar *
+r_sdp_skip_ws (rchar * p, const rchar * end)
+{
+  while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n'))
+    p++;
+  return p;
+}
+
 static RSdpResult
 r_sdp_originator_parse (RSdpOriginatorBuf * orig, rchar * str, rsize size)
 {
@@ -1417,31 +1428,31 @@ r_sdp_originator_parse (RSdpOriginatorBuf * orig, rchar * str, rsize size)
     return R_SDP_BAD_DATA;
   orig->username.size = (rsize)s;
 
-  p = (rchar *)r_str_lwstrip (p + s);
+  p = r_sdp_skip_ws (p + s, str + size);
   if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), ' ')) < 0)
     return R_SDP_BAD_DATA;
   orig->sess_id.str = p;
   orig->sess_id.size = (rsize)s;
 
-  p = (rchar *)r_str_lwstrip (p + s);
+  p = r_sdp_skip_ws (p + s, str + size);
   if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), ' ')) < 0)
     return R_SDP_BAD_DATA;
   orig->sess_version.str = p;
   orig->sess_version.size = (rsize)s;
 
-  p = (rchar *)r_str_lwstrip (p + s);
+  p = r_sdp_skip_ws (p + s, str + size);
   if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), ' ')) < 0)
     return R_SDP_BAD_DATA;
   orig->nettype.str = p;
   orig->nettype.size = (rsize)s;
 
-  p = (rchar *)r_str_lwstrip (p + s);
+  p = r_sdp_skip_ws (p + s, str + size);
   if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), ' ')) < 0)
     return R_SDP_BAD_DATA;
   orig->addrtype.str = p;
   orig->addrtype.size = (rsize)s;
 
-  p = (rchar *)r_str_lwstrip (p + s);
+  p = r_sdp_skip_ws (p + s, str + size);
   orig->addr.str = p;
   orig->addr.size = size - RPOINTER_TO_SIZE (p - str);
 
@@ -1459,13 +1470,13 @@ r_sdp_connection_parse (RSdpConnectionBuf * conn, rchar * str, rsize size)
     return R_SDP_BAD_DATA;
   conn->nettype.size = (rsize)s;
 
-  p = (rchar *)r_str_lwstrip (p + s);
+  p = r_sdp_skip_ws (p + s, str + size);
   if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), ' ')) < 0)
     return R_SDP_BAD_DATA;
   conn->addrtype.str = p;
   conn->addrtype.size = (rsize)s;
 
-  p = (rchar *)r_str_lwstrip (p + s);
+  p = r_sdp_skip_ws (p + s, str + size);
   conn->addr.str = p;
   if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), '/')) < 0) {
     conn->addr.size = size - RPOINTER_TO_SIZE (p - str);
@@ -1474,12 +1485,12 @@ r_sdp_connection_parse (RSdpConnectionBuf * conn, rchar * str, rsize size)
   } else {
     conn->addr.size = (rsize)s;
 
-    p = (rchar *)r_str_lwstrip (p + s + 1);
+    p = r_sdp_skip_ws (p + s + 1, str + size);
     conn->ttl = r_str_to_int (p, NULL, 10, NULL);
     if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), '/')) < 0) {
       conn->addrcount = 1;
     } else {
-      p = (rchar *)r_str_lwstrip (p + s + 1);
+      p = r_sdp_skip_ws (p + s + 1, str + size);
       conn->addrcount = r_str_to_int (p, NULL, 10, NULL);
     }
   }
@@ -1508,7 +1519,7 @@ r_sdp_time_parse (RSdpTimeBuf * time, rchar * str, rsize size)
   time->start.str = p;
   time->start.size = (rsize)s;
 
-  p = (rchar *)r_str_lwstrip (p + s);
+  p = r_sdp_skip_ws (p + s, str + size);
   time->stop.str = p;
   time->stop.size = size - RPOINTER_TO_SIZE (p - str);
 
@@ -1546,7 +1557,7 @@ r_sdp_media_desc_parse (RSdpMediaBuf * media, rchar * str, rsize size)
   media->type.str = p;
   media->type.size = (rsize)s;
 
-  port = (rchar *)r_str_lwstrip (p + s);
+  port = r_sdp_skip_ws (p + s, str + size);
   if ((p = r_str_ptr_of_c (port, size - RPOINTER_TO_SIZE (port - str), ' ')) == NULL)
     return R_SDP_BAD_DATA;
 
@@ -1562,16 +1573,16 @@ r_sdp_media_desc_parse (RSdpMediaBuf * media, rchar * str, rsize size)
   }
 
   /* proto */
-  p = (rchar *)r_str_lwstrip (p);
+  p = r_sdp_skip_ws (p, str + size);
   if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), ' ')) < 0)
     return R_SDP_BAD_DATA;
   media->proto.str = p;
   media->proto.size = (rsize)s;
 
   /* fmt */
-  for (p = (rchar *)r_str_lwstrip (p + s);
+  for (p = r_sdp_skip_ws (p + s, str + size);
       RPOINTER_TO_SIZE (p - str) < size;
-      p = (rchar *)r_str_lwstrip (p + s)) {
+      p = r_sdp_skip_ws (p + s, str + size)) {
     if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), ' ')) < 0)
       s = (rssize)size - RPOINTER_TO_SIZE (p - str);
 
@@ -1752,7 +1763,7 @@ r_sdp_buffer_map (RSdpBuf * sdp, RBuffer * buf)
     if ((ret = r_sdp_parse_next_valid_line (&chunk, &line)) > R_SDP_OK)
       goto error;
     while (ret == R_SDP_OK &&
-        r_sdp_message_line_parse_value (&tmp, &line, 't') == R_SDP_OK) {
+        r_sdp_message_line_parse_value (&tmp, &line, 'r') == R_SDP_OK) {
       time->rcount++;
       time->repeat = r_realloc (time->repeat, time->rcount * sizeof (RStrChunk));
       time->repeat[time->rcount - 1] = tmp;
@@ -1768,7 +1779,7 @@ r_sdp_buffer_map (RSdpBuf * sdp, RBuffer * buf)
       RStrKV * z;
       sdp->zone = r_realloc (sdp->zone, ++sdp->zcount * sizeof (RStrKV));
       z = &sdp->zone[sdp->zcount - 1];
-      if (r_str_chunk_split (&tmp, " ", &z->key, z->val, NULL) != 2) {
+      if (r_str_chunk_split (&tmp, " ", &z->key, &z->val, NULL) != 2) {
         ret = R_SDP_BAD_DATA;
         goto error;
       }
@@ -2011,7 +2022,8 @@ r_sdp_media_buf_fmtidx_specific_attrib (const RSdpMediaBuf * media,
     if (r_str_kv_is_key (&media->attrib[i], field, fsize)) {
       if (media->attrib[i].val.size > media->fmt[fmtidx].size &&
           r_strncmp (media->attrib[i].val.str, media->fmt[fmtidx].str, media->fmt[fmtidx].size) == 0) {
-        attrib->str = (rchar *)r_str_lwstrip (media->attrib[i].val.str + media->fmt[fmtidx].size);
+        attrib->str = r_sdp_skip_ws ((rchar *)media->attrib[i].val.str + media->fmt[fmtidx].size,
+            media->attrib[i].val.str + media->attrib[i].val.size);
         attrib->size = media->attrib[i].val.size -
           RPOINTER_TO_SIZE (attrib->str - media->attrib[i].val.str);
         if (start != NULL) *start = i;
@@ -2186,7 +2198,7 @@ r_sdp_media_buf_extmap_attrib (const RSdpMediaBuf * media,
       return R_SDP_BAD_DATA;
 
     attrib->str = (rchar *)end;
-    attrib->size = res->size + RPOINTER_TO_SIZE (end - res->str);
+    attrib->size = res->size - RPOINTER_TO_SIZE (end - res->str);
     r_str_chunk_wstrip (attrib);
     return R_SDP_OK;
   }

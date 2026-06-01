@@ -418,6 +418,66 @@ RTEST (rsdp, source_specific, RTEST_FAST)
 }
 RTEST_END;
 
+static const rchar sdp_timing_zone[] =
+  "v=0\r\n"
+  "o=- 1 1 IN IP4 127.0.0.1\r\n"
+  "s=-\r\n"
+  "t=2873397496 2873404696\r\n"
+  "r=604800 3600 0 90000\r\n"
+  "z=2882844526 -1h 2898848070 0\r\n"
+  "m=audio 49170 RTP/AVP 0\r\n";
+
+RTEST (rsdp, timing_repeat_and_zone, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+  rchar * tmp;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (sdp_timing_zone))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+
+  r_assert_cmpuint (r_sdp_buf_time_count (&sdp), ==, 1);
+  /* The r= line must be collected as a repeat of the t= entry (the loop
+   * used to match 't' and never picked it up). */
+  r_assert_cmpuint (r_sdp_buf_time_repeat_count (&sdp, 0), ==, 1);
+  r_assert_cmpstr ((tmp = r_sdp_buf_time_repeat (&sdp, 0, 0)), ==,
+      "604800 3600 0 90000"); r_free (tmp);
+
+  /* Parsing z= exercises the split that previously passed a chunk by
+   * value where a pointer was expected (a wild write, caught by ASan). */
+  r_assert_cmpuint (r_sdp_buf_time_zone_count (&sdp), >, 0);
+  r_assert_cmpstr ((tmp = r_sdp_buf_zone_time_str (&sdp, 0)), ==, "2882844526");
+  r_free (tmp);
+
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+/* Final line has no trailing CRLF, so the last sub-parser reads right up
+ * to the buffer boundary -- the bounded whitespace skip must not read
+ * past it (regression for the r_str_lwstrip over-read; caught by ASan). */
+static const rchar sdp_no_trailing_newline[] =
+  "v=0\r\n"
+  "o=- 1 1 IN IP4 127.0.0.1\r\n"
+  "s=-\r\n"
+  "t=0 0\r\n"
+  "m=audio 49170 RTP/AVP 0";
+
+RTEST (rsdp, last_line_no_newline, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (
+          R_STR_WITH_SIZE_ARGS (sdp_no_trailing_newline))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+  r_assert_cmpuint (r_sdp_buf_media_count (&sdp), ==, 1);
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rsdp, extmap, RTEST_FAST)
 {
   RBuffer * buf;
