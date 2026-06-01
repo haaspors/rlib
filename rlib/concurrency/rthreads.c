@@ -58,8 +58,6 @@
 #include <signal.h>
 #endif
 
-/* TODO: Implement support for RCond on Windows XP! */
-
 #if defined (R_OS_WIN32)
 static RSList * g__r_tss_win32_dtors = NULL;
 #endif
