@@ -21,8 +21,6 @@
 
 #include <rlib/rmem.h>
 
-/* FIXME: Add logging??? */
-
 #define R_BUFFER_MAX_MEM    32
 
 struct RBuffer {
