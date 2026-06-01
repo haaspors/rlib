@@ -1417,19 +1417,6 @@ r_sdp_skip_ws (rchar * p, const rchar * end)
   return p;
 }
 
-/* Parse a base-10 int from a bounded region of the (non-NUL-terminated)
- * buffer. r_str_to_int scans to a NUL, so copy a bounded window first. */
-static int
-r_sdp_parse_int (const rchar * p, const rchar * end)
-{
-  rchar tmp[24];
-  rsize n = (end > p) ? RPOINTER_TO_SIZE (end - p) : 0;
-  if (n >= sizeof (tmp)) n = sizeof (tmp) - 1;
-  r_memcpy (tmp, p, n);
-  tmp[n] = 0;
-  return r_str_to_int (tmp, NULL, 10, NULL);
-}
-
 static RSdpResult
 r_sdp_originator_parse (RSdpOriginatorBuf * orig, rchar * str, rsize size)
 {
@@ -1499,12 +1486,14 @@ r_sdp_connection_parse (RSdpConnectionBuf * conn, rchar * str, rsize size)
     conn->addr.size = (rsize)s;
 
     p = r_sdp_skip_ws (p + s + 1, str + size);
-    conn->ttl = r_sdp_parse_int (p, str + size);
+    conn->ttl = r_str_to_int_size (p,
+        (rssize)(size - RPOINTER_TO_SIZE (p - str)), NULL, 10, NULL);
     if ((s = r_str_idx_of_c (p, size - RPOINTER_TO_SIZE (p - str), '/')) < 0) {
       conn->addrcount = 1;
     } else {
       p = r_sdp_skip_ws (p + s + 1, str + size);
-      conn->addrcount = r_sdp_parse_int (p, str + size);
+      conn->addrcount = r_str_to_int_size (p,
+          (rssize)(size - RPOINTER_TO_SIZE (p - str)), NULL, 10, NULL);
     }
   }
 
@@ -2206,17 +2195,9 @@ r_sdp_media_buf_extmap_attrib (const RSdpMediaBuf * media,
 
   if ((res = r_sdp_media_buf_attrib_find (media, "extmap", 6, start)) != NULL) {
     const rchar * end;
-    rchar tmp[24];
-    const rchar * tend;
-    rsize n = res->size < sizeof (tmp) ? res->size : sizeof (tmp) - 1;
 
-    /* res->str is bounded by res->size but not NUL-terminated; parse the
-     * id from a bounded copy and map the end pointer back into res. */
-    r_memcpy (tmp, res->str, n);
-    tmp[n] = 0;
-    if ((*id = r_str_to_uint16 (tmp, &tend, 10, NULL)) == 0)
+    if ((*id = r_str_to_uint16_size (res->str, (rssize)res->size, &end, 10, NULL)) == 0)
       return R_SDP_BAD_DATA;
-    end = res->str + RPOINTER_TO_SIZE (tend - tmp);
 
     attrib->str = (rchar *)end;
     attrib->size = res->size - RPOINTER_TO_SIZE (end - res->str);
