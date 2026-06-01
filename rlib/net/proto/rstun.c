@@ -205,12 +205,16 @@ r_stun_msg_attribute_count (rconstpointer buf)
 rboolean
 r_stun_attr_tlv_first (rconstpointer buf, RStunAttrTLV * tlv)
 {
-  if (r_stun_msg_len (buf) < 8) return FALSE;
+  rsize msglen = r_stun_msg_len (buf);
+  if (msglen < 8) return FALSE;
 
   tlv->start  = &((const ruint8 *)buf)[R_STUN_HEADER_SIZE];
   tlv->type   = RUINT16_FROM_BE (*(ruint16 *)tlv->start);
   tlv->len    = RUINT16_FROM_BE (*((ruint16 *)(tlv->start + 2)));
   tlv->value  = tlv->start + R_STUN_ATTR_TLV_HEADER_SIZE;
+  /* The value (tlv->len bytes) must fit within the message, not just the
+   * header - the parse_* helpers below read up to tlv->len. */
+  if ((rsize)R_STUN_ATTR_TLV_HEADER_SIZE + tlv->len > msglen) return FALSE;
   return TRUE;
 }
 
@@ -229,6 +233,10 @@ r_stun_attr_tlv_next (rconstpointer buf, RStunAttrTLV * tlv)
     tlv->type   = RUINT16_FROM_BE (*(ruint16 *)tlv->start);
     tlv->len    = RUINT16_FROM_BE (*((ruint16 *)(tlv->start + 2)));
     tlv->value  = tlv->start + R_STUN_ATTR_TLV_HEADER_SIZE;
+    /* As in _first: the value must also fit within the message. */
+    if (RPOINTER_TO_SIZE (tlv->value) - RPOINTER_TO_SIZE (ptr) + tlv->len >
+        (rsize)r_stun_msg_len (buf))
+      ret = FALSE;
   }
 
   return ret;
@@ -244,9 +252,12 @@ r_stun_attr_tlv_parse_xor_address (rconstpointer buf, const RStunAttrTLV * tlv)
   switch (tlv->value[1]) {
     case 1: /* IPv4 */
       {
-        ruint32 magic = r_stun_msg_magic_cookie (buf);
-        ruint16 port = RUINT16_FROM_BE (*(ruint16 *)(&tlv->value[2]) ^ (ruint16)(magic & 0xffff));
-        ruint32 ip   = RUINT32_FROM_BE (*(ruint32 *)(&tlv->value[4]) ^ magic);
+        ruint32 magic, ip;
+        ruint16 port;
+        if (tlv->len < 4 + 4) return NULL;
+        magic = r_stun_msg_magic_cookie (buf);
+        port = RUINT16_FROM_BE (*(ruint16 *)(&tlv->value[2]) ^ (ruint16)(magic & 0xffff));
+        ip   = RUINT32_FROM_BE (*(ruint32 *)(&tlv->value[4]) ^ magic);
         ret = r_socket_address_ipv4_new_uint32 (ip, port);
       }
       break;
@@ -283,8 +294,11 @@ r_stun_attr_tlv_parse_address (rconstpointer buf, const RStunAttrTLV * tlv)
   switch (tlv->value[1]) {
     case 1: /* IPv4 */
       {
-        ruint16 port = RUINT16_FROM_BE (*(ruint16 *)(&tlv->value[2]));
-        ruint32 ip   = RUINT32_FROM_BE (*(ruint32 *)(&tlv->value[4]));
+        ruint16 port;
+        ruint32 ip;
+        if (tlv->len < 4 + 4) return NULL;
+        port = RUINT16_FROM_BE (*(ruint16 *)(&tlv->value[2]));
+        ip   = RUINT32_FROM_BE (*(ruint32 *)(&tlv->value[4]));
         ret = r_socket_address_ipv4_new_uint32 (ip, port);
       }
       break;
@@ -308,6 +322,7 @@ r_stun_attr_tlv_parse_reqested_transport_protocol (rconstpointer buf, const RStu
 {
   (void) buf;
 
+  if (R_UNLIKELY (tlv->len < 1)) return 0;
   return *tlv->value;
 }
 
@@ -316,6 +331,7 @@ r_stun_attr_tlv_parse_error_code (rconstpointer buf, const RStunAttrTLV * tlv)
 {
   (void) buf;
 
+  if (R_UNLIKELY (tlv->len < 4)) return 0;
   return (tlv->value[2] & 0x7) * 100 + MIN (tlv->value[3], 99);
 }
 
