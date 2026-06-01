@@ -170,8 +170,10 @@ typedef enum {
  *
  * @param app      Program name shown in @c --help and the Usage line;
  *                 @c NULL falls back to @c argv[0] at parse time.
- * @param version  Version string returned by @c --version; @c NULL
- *                 omits the auto-registered @c --version option.
+ * @param version  Version string reported by @c --version; @c NULL
+ *                 reports "version not specified". The @c --version
+ *                 option is auto-registered either way (override the
+ *                 string later with @c r_arg_parser_set_version).
  * @return Newly-allocated parser; release with @c r_arg_parser_unref.
  */
 R_API RArgParser * r_arg_parser_new (const rchar * app, const rchar * version) R_ATTR_MALLOC;
