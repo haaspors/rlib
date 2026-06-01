@@ -209,7 +209,8 @@ R_API RHttpRequest * r_http_request_new_from_buffer (RBuffer * buf,
 #define r_http_request_get_buffer(req) r_http_msg_get_buffer ((RHttpMsg *)req)
 /** @brief Return the request method. */
 R_API RHttpMethod r_http_request_get_method (const RHttpRequest * req);
-/** @brief Return the request target as a parsed @ref RUri. */
+/** @brief Return the request target as a parsed @ref RUri (caller owns
+ *  the reference; @ref r_uri_unref when done). */
 R_API RUri * r_http_request_get_uri (RHttpRequest * req);
 /** @brief @ref r_http_msg_has_header on a request. */
 #define r_http_request_has_header(req, field, size) r_http_msg_has_header ((RHttpMsg *)req, field, size)
@@ -255,7 +256,8 @@ R_API RHttpStatus r_http_response_get_status (const RHttpResponse * res);
 #define r_http_response_get_buffer(res) r_http_msg_get_buffer ((RHttpMsg *)res)
 /** @brief Return the response reason phrase (newly allocated). */
 R_API rchar * r_http_response_get_phrase (const RHttpResponse * res) R_ATTR_MALLOC;
-/** @brief Return the request this response was built for. */
+/** @brief Return the request this response was built for (caller owns the
+ *  reference; @ref r_http_request_unref when done), or @c NULL if none. */
 R_API RHttpRequest * r_http_response_get_request (RHttpResponse * res);
 /** @brief @ref r_http_msg_has_header on a response. */
 #define r_http_response_has_header(res, field, size) r_http_msg_has_header ((RHttpMsg *)res, field, size)

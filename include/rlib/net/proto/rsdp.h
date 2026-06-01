@@ -723,8 +723,8 @@ R_API RSdpResult r_sdp_buffer_unmap (RSdpBuf * sdp, RBuffer * buf);
 /** @brief @c TRUE if attribute @p f is present in media section @p idx. */
 #define r_sdp_buf_media_has_attrib(buf, idx, f, fsize)  r_sdp_media_buf_has_attrib (&(buf)->media[idx], f, fsize)
 /** @brief Duplicate the value of attribute @p f from cursor @p s in media section @p idx. */
-#define r_sdp_buf_media_attrib_dup_value(buf, idx, s, f, fsize) \
-  r_sdp_media_buf_attrib_dup_value (&(buf)->media[idx], s, f, fsize)
+#define r_sdp_buf_media_attrib_dup_value(buf, idx, f, fsize, s) \
+  r_sdp_media_buf_attrib_dup_value (&(buf)->media[idx], f, fsize, s)
 /** @brief Find the "rtpmap" attribute for format @p fmt in media section @p idx. */
 #define r_sdp_buf_media_rtpmap_for_fmt(buf, idx, fmt, fsize, attrib) \
   r_sdp_media_buf_rtpmap_for_fmt (&(buf)->media[idx], fmt, fsize, attrib)
