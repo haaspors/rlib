@@ -19,7 +19,7 @@
 #define __R_HZR_PTR_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -36,7 +36,7 @@
  *     @ref r_hzr_ptr_rec_new, freed at thread exit with
  *     @ref r_hzr_ptr_rec_free).
  *   - Accesses to a hazard pointer happen between
- *     @ref r_hzr_ptr_aqcuire and @ref r_hzr_ptr_release.
+ *     @ref r_hzr_ptr_acquire and @ref r_hzr_ptr_release.
  *   - Writers swap pointers via @ref r_hzr_ptr_replace, which
  *     defers freeing the displaced value until no
  *     @ref RHzrPtrRec still references it. The per-pointer destroy
@@ -81,8 +81,8 @@ typedef struct RHzrPtrRec RHzrPtrRec;
  * the returned pointer; while a hazard is active on the value,
  * writers will defer freeing it.
  */
-R_API rpointer r_hzr_ptr_aqcuire (rhzrptr * hzrptr, RHzrPtrRec * rec);
-/** @brief Drop the hazard published by a previous @ref r_hzr_ptr_aqcuire. */
+R_API rpointer r_hzr_ptr_acquire (rhzrptr * hzrptr, RHzrPtrRec * rec);
+/** @brief Drop the hazard published by a previous @ref r_hzr_ptr_acquire. */
 R_API void     r_hzr_ptr_release (rhzrptr * hzrptr, RHzrPtrRec * rec);
 /**
  * @brief Atomically replace @p hzrptr's value with @p ptr and

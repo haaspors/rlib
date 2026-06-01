@@ -19,7 +19,7 @@
 #define __R_TTY_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -95,8 +95,8 @@ R_BEGIN_DECLS
 #define R_TTY_SGR_NOBLINK_ARG     "25"  /**< Cancel @c BLINK. */
 #define R_TTY_SGR_INVERSE_ARG     "7"   /**< Swap foreground / background. */
 #define R_TTY_SGR_NOINVERSE_ARG   "27"  /**< Cancel @c INVERSE. */
-#define R_TTY_SGR_CONSEAL_ARG     "8"   /**< Conceal. */
-#define R_TTY_SGR_REVEAL_ARG      "28"  /**< Cancel @c CONSEAL. */
+#define R_TTY_SGR_CONCEAL_ARG     "8"   /**< Conceal. */
+#define R_TTY_SGR_REVEAL_ARG      "28"  /**< Cancel @c CONCEAL. */
 /** @brief Build a foreground colour token (30-39). */
 #define R_TTY_SGR_FG_ARG(CLR)     "3"R_STRINGIFY (CLR)
 /** @brief Build a background colour token (40-49). */
@@ -109,7 +109,7 @@ R_BEGIN_DECLS
  * @param str Caller-provided buffer of at least @ref R_TTY_MAX_CC bytes.
  * @return @p str, populated with a null-terminated escape sequence.
  */
-rchar * r_tty_clr_to_str (RColorFlags clr, rchar str[R_TTY_MAX_CC]);
+R_API rchar * r_tty_clr_to_str (RColorFlags clr, rchar str[R_TTY_MAX_CC]);
 
 #ifdef R_OS_WIN32
 /** @brief Portable wrapper around C-library @c isatty. */

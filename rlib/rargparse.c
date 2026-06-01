@@ -570,7 +570,7 @@ r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
   r_string_append_printf (str, "\n%s:\n", parser->main->desc);
 
   i = 0;
-  if ((flags & R_ARG_PARSE_FLAG_DISALE_HELP) == R_ARG_PARSE_FLAG_DISALE_HELP)
+  if ((flags & R_ARG_PARSE_FLAG_DISABLE_HELP) == R_ARG_PARSE_FLAG_DISABLE_HELP)
     i += R_N_ELEMENTS (r_arg_version_args) + R_N_ELEMENTS (r_arg_help_args);
   for (; i < parser->main->count; i++)
     r_arg_option_entry_append_help (&parser->main->entries[i], str);
@@ -917,7 +917,7 @@ r_arg_parser_parse_options (RArgParser * parser, RArgParseCtx * ctx,
   }
 
   /* Check help */
-  if ((ctx->flags & R_ARG_PARSE_FLAG_DISALE_HELP) == 0) {
+  if ((ctx->flags & R_ARG_PARSE_FLAG_DISABLE_HELP) == 0) {
     if (r_arg_parse_ctx_get_option_bool (ctx, "help") ||
         r_arg_parse_ctx_get_option_bool (ctx, "")) {
       r_arg_parser_print_help (ctx->parser, ctx->flags, ctx->appname, 0);
