@@ -412,13 +412,13 @@ r_arg_parser_set_version (RArgParser * parser, const rchar * version)
 }
 
 const rchar *
-r_arg_parser_get_appname (RArgParser * parser)
+r_arg_parser_get_appname (const RArgParser * parser)
 {
   return parser->appname;
 }
 
 const rchar *
-r_arg_parser_get_options (RArgParser * parser)
+r_arg_parser_get_options (const RArgParser * parser)
 {
   return parser->options;
 }
@@ -438,13 +438,13 @@ r_arg_parser_set_epilog (RArgParser * parser, const rchar * epilog)
 }
 
 const rchar *
-r_arg_parser_get_summary (RArgParser * parser)
+r_arg_parser_get_summary (const RArgParser * parser)
 {
   return parser->summary;
 }
 
 const rchar *
-r_arg_parser_get_epilog (RArgParser * parser)
+r_arg_parser_get_epilog (const RArgParser * parser)
 {
   return parser->epilog;
 }
@@ -564,7 +564,7 @@ r_arg_command_append_help (rpointer key, rpointer val, rpointer user)
 }
 
 rchar *
-r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
+r_arg_parser_get_help (const RArgParser * parser, RArgParseFlags flags,
     const rchar * appname)
 {
   RString * str;
@@ -630,7 +630,9 @@ r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
 
   if (r_kv_ptr_array_size (&parser->commands) > 0) {
     r_string_append (str, "\nCommands:\n");
-    r_kv_ptr_array_foreach (&parser->commands, r_arg_command_append_help, str);
+    /* foreach only reads; cast off the const this read-only getter added. */
+    r_kv_ptr_array_foreach ((RKVPtrArray *) &parser->commands,
+        r_arg_command_append_help, str);
   }
 
   if (parser->epilog != NULL)
@@ -640,7 +642,7 @@ r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
 }
 
 rchar *
-r_arg_parser_get_version (RArgParser * parser)
+r_arg_parser_get_version (const RArgParser * parser)
 {
   const rchar * prefix, * real;
 

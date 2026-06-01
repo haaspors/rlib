@@ -185,6 +185,10 @@ R_API RArgParser * r_arg_parser_new (const rchar * app, const rchar * version) R
 
 /**
  * @name Parser configuration
+ *
+ * The @c _get_ accessors below return a borrowed pointer owned by the
+ * parser (or @c NULL); it stays valid only until the matching @c _set_
+ * call or @c r_arg_parser_unref. Do not free it.
  * @{
  */
 /**
@@ -218,14 +222,14 @@ R_API void r_arg_parser_set_version (RArgParser * parser, const rchar * version)
 R_API void r_arg_parser_set_summary (RArgParser * parser, const rchar * summary);
 /** @brief Set the epilogue paragraph shown below option help. */
 R_API void r_arg_parser_set_epilog (RArgParser * parser, const rchar * epilog);
-/** @brief Return the program name, or @c NULL. */
-R_API const rchar * r_arg_parser_get_appname (RArgParser * parser);
-/** @brief Return the Usage-line options-summary token, or @c NULL. */
-R_API const rchar * r_arg_parser_get_options (RArgParser * parser);
-/** @brief Return the previously-set summary, or @c NULL. */
-R_API const rchar * r_arg_parser_get_summary (RArgParser * parser);
-/** @brief Return the previously-set epilog, or @c NULL. */
-R_API const rchar * r_arg_parser_get_epilog (RArgParser * parser);
+/** @brief Return the program name, or @c NULL (borrowed). */
+R_API const rchar * r_arg_parser_get_appname (const RArgParser * parser);
+/** @brief Return the Usage-line options-summary token, or @c NULL (borrowed). */
+R_API const rchar * r_arg_parser_get_options (const RArgParser * parser);
+/** @brief Return the previously-set summary, or @c NULL (borrowed). */
+R_API const rchar * r_arg_parser_get_summary (const RArgParser * parser);
+/** @brief Return the previously-set epilog, or @c NULL (borrowed). */
+R_API const rchar * r_arg_parser_get_epilog (const RArgParser * parser);
 /** @} */
 
 /**
@@ -281,13 +285,15 @@ R_API RArgParser * r_arg_parser_add_command (RArgParser * parser,
  * @name Help and version output
  * @{
  */
-/** @brief Render the help text as a newly-allocated string. */
+/** @brief Render the help text as a newly-allocated string; caller
+ *  frees with @c r_free. */
 R_ATTR_WARN_UNUSED_RESULT
-R_API rchar * r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
+R_API rchar * r_arg_parser_get_help (const RArgParser * parser, RArgParseFlags flags,
     const rchar * appname) R_ATTR_MALLOC;
-/** @brief Render the version line as a newly-allocated string. */
+/** @brief Render the version line as a newly-allocated string; caller
+ *  frees with @c r_free. */
 R_ATTR_WARN_UNUSED_RESULT
-R_API rchar * r_arg_parser_get_version (RArgParser * parser) R_ATTR_MALLOC;
+R_API rchar * r_arg_parser_get_version (const RArgParser * parser) R_ATTR_MALLOC;
 /**
  * @brief Print the version line to stdout.
  *
