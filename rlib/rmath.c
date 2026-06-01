@@ -21,8 +21,6 @@
 #include <rlib/rassert.h>
 #include <math.h>
 
-/* FIXME: Fix float/double classify/signbit if not C99 compiler */
-
 #define GCD_DEFINE(func, type)      \
   type func (type a, type b) {      \
     type c;                         \
