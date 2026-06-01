@@ -464,6 +464,30 @@ static const rchar sdp_no_trailing_newline[] =
   "t=0 0\r\n"
   "m=audio 49170 RTP/AVP 0";
 
+/* Final line is a c= whose trailing addrcount digit sits at the exact
+ * buffer end (no CRLF); the bounded int parse must not scan past it. */
+static const rchar sdp_conn_count_at_eob[] =
+  "v=0\r\n"
+  "o=- 1 1 IN IP4 127.0.0.1\r\n"
+  "s=-\r\n"
+  "t=0 0\r\n"
+  "m=audio 49170 RTP/AVP 0\r\n"
+  "c=IN IP4 224.2.1.1/127/3";
+
+RTEST (rsdp, connection_count_at_eob, RTEST_FAST)
+{
+  RBuffer * buf;
+  RSdpBuf sdp;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (
+          R_STR_WITH_SIZE_ARGS (sdp_conn_count_at_eob))), !=, NULL);
+  r_assert_cmpint (r_sdp_buffer_map (&sdp, buf), ==, R_SDP_OK);
+  r_assert_cmpuint (r_sdp_buf_media_count (&sdp), ==, 1);
+  r_assert_cmpint (r_sdp_buffer_unmap (&sdp, buf), ==, R_SDP_OK);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rsdp, last_line_no_newline, RTEST_FAST)
 {
   RBuffer * buf;
