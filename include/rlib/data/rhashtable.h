@@ -19,7 +19,7 @@
 #define __R_HASH_TABLE_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -132,15 +132,22 @@ R_API void r_hash_table_remove_all (RHashTable * ht);
 /** @brief Remove the entry for @p key; destroy notifiers run. */
 R_API RHashTableError r_hash_table_remove (RHashTable * ht, rconstpointer key);
 /**
- * @brief Remove an entry and hand the destroy responsibility back
- * to the caller.
+ * @brief Remove the entry for @p key, running its destroy notifiers
+ * (as @ref r_hash_table_remove), and also report the removed key /
+ * value via @p keyout / @p valueout.
  *
- * Same as @ref r_hash_table_remove but returns the stored key /
- * value rather than running them through the destroy notifiers.
+ * @note If destroy notifiers are registered they have already freed
+ * the key / value by the time this returns, so the out-params are only
+ * safe to dereference when no notifier is set. To take ownership
+ * without running the notifiers, use @ref r_hash_table_steal.
  */
 R_API RHashTableError r_hash_table_remove_full (RHashTable * ht, rconstpointer key,
     rpointer * keyout, rpointer * valueout);
-/** @brief Alias for @ref r_hash_table_remove_full reflecting the "take ownership" semantics. */
+/**
+ * @brief Remove the entry for @p key @b without running its destroy
+ * notifiers, handing ownership of the key / value to the caller via
+ * @p keyout / @p valueout (the caller must free them).
+ */
 R_API RHashTableError r_hash_table_steal (RHashTable * ht, rconstpointer key,
     rpointer * keyout, rpointer * valueout);
 

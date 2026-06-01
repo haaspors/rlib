@@ -19,7 +19,7 @@
 #define __R_EV_LOOP_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -85,7 +85,8 @@ R_API REvLoop * r_ev_loop_current (void);
 
 /**
  * @brief Run the loop in @p mode.
- * @return Number of events / callbacks processed.
+ * @return Number of events still outstanding when the loop returned
+ *         (0 once it has fully drained).
  */
 R_API ruint r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode);
 /** @brief Ask a running loop to stop (it returns from @ref r_ev_loop_run). */

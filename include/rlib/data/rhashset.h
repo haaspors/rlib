@@ -19,7 +19,7 @@
 #define __R_HASH_SET_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -76,8 +76,9 @@ R_API rsize r_hash_set_current_alloc_size (RHashSet * ht);
 /**
  * @brief Add @p item to the set.
  *
- * @return @c TRUE if @p item was newly added, @c FALSE if it was
- * already present.
+ * @return @c TRUE on success (@c FALSE only when @p ht is @c NULL). If
+ * an equal item is already present it is replaced and its destroy
+ * notifier runs.
  */
 R_API rboolean r_hash_set_insert (RHashSet * ht, rpointer item);
 

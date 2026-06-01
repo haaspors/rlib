@@ -19,7 +19,7 @@
 #define __R_STR_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 #include <rlib/rtypes.h>
@@ -491,12 +491,14 @@ R_API int     r_strvscanf (const rchar * str, const rchar * fmt, va_list args) R
  * @name String-to-number parsing
  *
  * Each function parses an integer from @p str using base @p base
- * (2 through 36; 0 means autodetect via the standard 0 / 0x / 0b
- * prefixes). On success the parsed value is returned and, if
- * @p endptr is non-NULL, *@p endptr is set to one past the last
- * consumed character. On failure the return value is 0 (signed)
- * or 0 (unsigned), *@p endptr equals @p str, and *@p res (if
- * non-NULL) carries @c R_STR_PARSE_INVAL or @c R_STR_PARSE_RANGE.
+ * (2 through 36; 0 means autodetect: a @c 0x / @c 0X prefix selects
+ * base 16 and a leading @c 0 selects base 8, otherwise base 10). On
+ * success the parsed value is returned and, if @p endptr is non-NULL,
+ * *@p endptr is set to one past the last consumed character. On
+ * failure the return value is 0 and *@p res (if non-NULL) carries
+ * @c R_STR_PARSE_INVAL or @c R_STR_PARSE_RANGE; *@p endptr then points
+ * at the first character that could not be consumed (equal to @p str
+ * only for a NULL / empty / bad-base input).
  *
  * The fixed-width spellings are the source of truth; @c r_str_to_int
  * / @c r_str_to_uint and the @c r_strto* shortcut macros below
@@ -666,10 +668,12 @@ R_API void r_str_chunk_lwstrip (RStrChunk * buf);
 /**
  * @brief Consume one line from @p buf into @p line.
  *
- * Updates @p buf->str / @p buf->size in place so successive calls
- * iterate the lines of the original chunk. Line terminators are not
- * included in @p line. Returns @c R_STR_PARSE_OK on success or
- * @c R_STR_PARSE_INVAL when @p buf is empty.
+ * Iteration state lives in @p line, not @p buf (which is never
+ * modified): zero-initialise @p line for the first call and pass the
+ * same @p line back on each subsequent call to advance through @p buf.
+ * Line terminators are not included in @p line. Returns
+ * @c R_STR_PARSE_OK per line, @c R_STR_PARSE_RANGE when the input is
+ * exhausted, or @c R_STR_PARSE_INVAL on bad arguments / empty @p buf.
  */
 R_API RStrParse r_str_chunk_next_line (const RStrChunk * buf, RStrChunk * line);
 /** @brief Convenience: r_str_ptr_of_c on the chunk's bytes. */
@@ -877,11 +881,13 @@ R_API RStrMatchResultType r_str_match_pattern (const rchar * str, rssize size,
 #define R_STR_MEM_DUMP_SIZE(align) \
   ((align * 4) + (align / 4) + (RLIB_SIZEOF_VOID_P * 2) + 8)
 /**
- * @brief Render @p src (@p size bytes) into the caller-supplied @p dst
- * as a hex+ASCII dump line.
+ * @brief Render the pointer of @p src followed by the printable-ASCII
+ * rendering of its @p size bytes (non-printable bytes shown as @c '.')
+ * into @p dst, NUL-terminated.
  *
- * @p dst must be at least @c R_STR_MEM_DUMP_SIZE(align) bytes for
- * each line of @p align input bytes the caller wants emitted.
+ * @p dst must hold the pointer text plus @p size bytes plus the NUL.
+ * Unlike @ref r_str_mem_dump this is ASCII-only (no hex columns) and
+ * takes no @c align argument.
  */
 R_API void r_str_dump (rchar * dst, const rchar * src, rsize size);
 /**

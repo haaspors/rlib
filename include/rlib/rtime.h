@@ -19,7 +19,7 @@
 #define __R_TIME_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -106,7 +106,13 @@ R_STMT_START {                                                              \
 #define R_TIME_TIMEVAL_INIT(t)  { (rlong) ( (t) / R_SECOND),                \
                                   (rlong) (((t) % R_SECOND) / R_USECOND) }
 
-/** @brief @c printf format string matching @ref R_TIME_ARGS, e.g. @c "0:01:23.456789012". */
+/**
+ * @brief @c printf conversion fragment matching @ref R_TIME_ARGS.
+ *
+ * The leading @c '%' is omitted so the macro can be string-pasted
+ * after one, i.e. use it as @c "%" @c R_TIME_FORMAT to render a time
+ * like @c "0:01:23.456789012".
+ */
 #define R_TIME_FORMAT                 "u:%02u:%02u.%09u"
 /** @brief Expand to the @c printf arguments for @ref R_TIME_FORMAT. */
 #define R_TIME_ARGS(t)                                                      \
@@ -135,14 +141,17 @@ R_API RClockTime r_time_get_ts_monotonic (void);
  */
 R_API RClockTime r_time_get_ts_raw (void);
 
-/** @brief Return system uptime in nanoseconds. */
+/** @brief Return system uptime in seconds. */
 R_API ruint64 r_time_get_uptime (void);
 
-/** @brief @c TRUE if @p year is a Gregorian leap year. */
+/** @brief @c TRUE if @p year is a Gregorian leap year. Years before
+ *  1753 always return @c FALSE. */
 R_API rboolean r_time_is_leap_year (ruint16 year);
-/** @brief Count leap years in the half-open range [@p from, @p to). */
+/** @brief Count leap years in the half-open range [@p from, @p to),
+ *  with @p from clamped up to 1753. */
 R_API ruint16 r_time_leap_years (ruint16 from, ruint16 to);
-/** @brief Days in @p month of @p year (1-12), accounting for leap years. */
+/** @brief Days in @p month (1-12) of @p year, accounting for leap
+ *  years; @c -1 if @p month is out of range or @p year is before 1753. */
 R_API rint8 r_time_days_in_month (ruint16 year, ruint8 month);
 /**
  * @brief Convert a broken-down date to a Unix timestamp (seconds since

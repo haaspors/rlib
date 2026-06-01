@@ -19,7 +19,7 @@
 #define __R_PECOFF_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -314,7 +314,6 @@ typedef struct {
 } RPe32PlusWinOptHdr;
 
 /** @brief Data-directory entry: (RVA, size) pair. */
-/** @brief Named indices into the optional headers data-directory array (export, import, resources, ...). */
 typedef struct {
   ruint32 vmaddr;
   ruint32 size;

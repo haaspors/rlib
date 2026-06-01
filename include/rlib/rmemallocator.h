@@ -409,9 +409,10 @@ R_API RMemAllocator * r_mem_allocator_find            (const rchar * name) R_ATT
 /**
  * @brief Register an allocator so it can be looked up by name.
  *
- * Adds @p allocator to the process-wide registry under @p allocator->mem_type.
- * The registry takes a reference; the caller may safely drop its
- * own reference afterwards.
+ * Adds @p allocator to the process-wide registry, looked up by its
+ * @c mem_type. The registry stores the pointer but does @b not take a
+ * reference, so the caller must keep @p allocator alive for as long as
+ * it may be looked up (do not drop the last reference).
  *
  * @param allocator Allocator to register (must have a non-NULL
  *                  @c mem_type).

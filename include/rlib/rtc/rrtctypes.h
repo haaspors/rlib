@@ -19,7 +19,7 @@
 #define __R_RTC_TYPES_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -97,7 +97,8 @@ typedef enum {
 } RRtcMediaType;
 /** @brief Parse a media-kind string (e.g. @c "audio") into an @ref RRtcMediaType. */
 R_API RRtcMediaType r_rtc_media_type_from_string (const rchar * type, rssize size);
-/** @brief Return the SDP string for @p type (e.g. @c "video"). */
+/** @brief Return the SDP string for @p type (e.g. @c "video"), or
+ *  @c NULL for any type other than audio / video. */
 R_API const rchar * r_rtc_media_type_to_string (RRtcMediaType type);
 
 /** @brief Role a codec plays in a media stream. */

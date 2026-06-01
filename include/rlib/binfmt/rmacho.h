@@ -19,7 +19,7 @@
 #define __R_MACHO_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -60,9 +60,10 @@ typedef ruint32 RMachoStrOffset;
  * @name Mach-O magic numbers
  *
  * Sentinel at offset 0 of the file header
- * (@c magic field on @ref RMacho32Hdr / @ref RMacho64Hdr). Encodes both
- * the bitness and the host endianness of the writer; rlib's parser
- * accepts both byte orderings.
+ * (@c magic field on @ref RMacho32Hdr / @ref RMacho64Hdr). The value
+ * encodes both the bitness and the writer's byte order; rlib's parser
+ * matches only these two host-native magics and does not byte-swap
+ * reversed-endian images.
  * @{
  */
 #define R_MACHO_MAGIC_32              0xfeedface
@@ -118,11 +119,11 @@ typedef ruint32 RMachoStrOffset;
 #define R_MACH_CPU_SUBTYPE_486SX        4 + 128
 #define R_MACH_CPU_SUBTYPE_586          5
 #define R_MACH_CPU_SUBTYPE_X86_64_H     8 /**< Haswell and compatible */
-#define R_MACH_CPU_SUBTYPE_PENT         CPU_SUBTYPE_INTEL (5, 0)
-#define R_MACH_CPU_SUBTYPE_PENTPRO      CPU_SUBTYPE_INTEL (6, 1)
-#define R_MACH_CPU_SUBTYPE_PENTII_M3    CPU_SUBTYPE_INTEL (6, 3)
-#define R_MACH_CPU_SUBTYPE_PENTII_M5    CPU_SUBTYPE_INTEL (6, 5)
-#define R_MACH_CPU_SUBTYPE_PENTIUM_4    CPU_SUBTYPE_INTEL (10, 0)
+#define R_MACH_CPU_SUBTYPE_PENT         R_MACH_CPU_SUBTYPE_INTEL (5, 0)
+#define R_MACH_CPU_SUBTYPE_PENTPRO      R_MACH_CPU_SUBTYPE_INTEL (6, 1)
+#define R_MACH_CPU_SUBTYPE_PENTII_M3    R_MACH_CPU_SUBTYPE_INTEL (6, 3)
+#define R_MACH_CPU_SUBTYPE_PENTII_M5    R_MACH_CPU_SUBTYPE_INTEL (6, 5)
+#define R_MACH_CPU_SUBTYPE_PENTIUM_4    R_MACH_CPU_SUBTYPE_INTEL (10, 0)
 
 #define R_MACH_CPU_SUBTYPE_ARM_ALL        0
 #define R_MACH_CPU_SUBTYPE_ARM_A500_ARCH  1
@@ -238,11 +239,11 @@ typedef struct {
 #define R_MACHO_LC_FVMFILE            0x09  /**< fixed VM file inclusion (internal use) */
 #define R_MACHO_LC_PREPAGE            0x0a  /**< prepage command (internal use) */
 #define R_MACHO_LC_DYSYMTAB           0x0b  /**< dynamic link-edit symbol table info */
-#define R_MACHO_LC_LOAD_DYLIB         0x0c  /**< load a dynamicly linked shared library */
-#define R_MACHO_LC_ID_DYLIB           0x0d  /**< dynamicly linked shared lib identification */
+#define R_MACHO_LC_LOAD_DYLIB         0x0c  /**< load a dynamically linked shared library */
+#define R_MACHO_LC_ID_DYLIB           0x0d  /**< dynamically linked shared lib identification */
 #define R_MACHO_LC_LOAD_DYLINKER      0x0e  /**< load a dynamic linker */
 #define R_MACHO_LC_ID_DYLINKER        0x0f  /**< dynamic linker identification */
-#define R_MACHO_LC_PREBOUND_DYLIB     0x10  /**< modules prebound for a dynamicly */
+#define R_MACHO_LC_PREBOUND_DYLIB     0x10  /**< modules prebound for a dynamically */
 #define R_MACHO_LC_ROUTINES           0x11  /**< image routines */
 #define R_MACHO_LC_SUB_FRAMEWORK      0x12  /**< sub framework */
 #define R_MACHO_LC_SUB_UMBRELLA       0x13  /**< sub umbrella */
@@ -699,9 +700,9 @@ typedef struct {
   ruint32 weak_bind_off;  /* file offset to weak binding info */
   ruint32 weak_bind_size; /* size of weak binding info */
   ruint32 lazy_bind_off;  /* file offset to lazy binding info */
-  ruint32 lazy_bind_size; /* size of lazy binding infs */
-  ruint32 export_off;     /* file offset to lazy binding info */
-  ruint32 export_size;    /* size of lazy binding infs */
+  ruint32 lazy_bind_size; /* size of lazy binding info */
+  ruint32 export_off;     /* file offset to export info */
+  ruint32 export_size;    /* size of export info */
 } RMachoDyldInfoCmd;
 
 /**
