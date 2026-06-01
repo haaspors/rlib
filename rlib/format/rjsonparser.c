@@ -350,14 +350,9 @@ r_json_parser_scan_init_at (const RJsonParser * parser, RJsonScanCtx * ctx, rcha
       break;
     default:
       if (r_ascii_isdigit (ctx->data.str[0]) || ctx->data.str[0] == '-') {
-        /* Probe a bounded window so the NUL-seeking scan can't read past
-         * the input; strtod stops at the first non-numeric byte anyway. */
-        rchar tmp[128];
-        rsize n = ctx->data.size < sizeof (tmp) - 1 ? ctx->data.size : sizeof (tmp) - 1;
+        /* Bounded so the scan can't run past a non-NUL-terminated input. */
         RStrParse res;
-        r_memcpy (tmp, ctx->data.str, n);
-        tmp[n] = 0;
-        r_str_to_double (tmp, NULL, &res);
+        r_str_to_double_size (ctx->data.str, (rssize)ctx->data.size, NULL, &res);
         if (res == R_STR_PARSE_OK) {
           ctx->type = R_JSON_TYPE_NUMBER;
         } else {
@@ -742,16 +737,8 @@ r_json_scan_ctx_parse_number_int (const RJsonScanCtx * ctx, int * number, rchar 
 
   if ((ret = r_json_scan_ctx_parse_number (ctx, &str, endptr)) == R_JSON_OK &&
       number != NULL) {
-    /* r_str_to_int scans a NUL-terminated string, but str.str points
-     * into the (possibly non-NUL-terminated) input; copy the bounded
-     * token out first so the scan can't run off the buffer. */
-    rchar tmp[128];
     RStrParse res;
-    if (str.size >= sizeof (tmp))
-      return R_JSON_NUMBER_NOT_PARSED;
-    r_memcpy (tmp, str.str, str.size);
-    tmp[str.size] = 0;
-    *number = r_str_to_int (tmp, NULL, 10, &res);
+    *number = r_str_to_int_size (str.str, (rssize)str.size, NULL, 10, &res);
     if (R_UNLIKELY (res != R_STR_PARSE_OK))
       ret = R_JSON_NUMBER_NOT_PARSED;
   }
@@ -767,15 +754,8 @@ r_json_scan_ctx_parse_number_double (const RJsonScanCtx * ctx, rdouble * number,
 
   if ((ret = r_json_scan_ctx_parse_number (ctx, &str, endptr)) == R_JSON_OK &&
       number != NULL) {
-    /* See r_json_scan_ctx_parse_number_int: copy the bounded token to a
-     * NUL-terminated buffer before the (unbounded) string scan. */
-    rchar tmp[128];
     RStrParse res;
-    if (str.size >= sizeof (tmp))
-      return R_JSON_NUMBER_NOT_PARSED;
-    r_memcpy (tmp, str.str, str.size);
-    tmp[str.size] = 0;
-    *number = r_str_to_double (tmp, NULL, &res);
+    *number = r_str_to_double_size (str.str, (rssize)str.size, NULL, &res);
     if (R_UNLIKELY (res != R_STR_PARSE_OK))
       ret = R_JSON_NUMBER_NOT_PARSED;
   }
