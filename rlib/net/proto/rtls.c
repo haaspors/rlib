@@ -1125,7 +1125,7 @@ RTLSError
 r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
     RTLSVersion ver, const ruint8 srvrand[R_TLS_HELLO_RANDOM_BYTES],
     const ruint8 * sid, ruint8 sidsize,
-    RTLSCipherSuite cs, RTLSCompresssionMethod comp)
+    RTLSCipherSuite cs, RTLSCompressionMethod comp)
 {
   ruint8 * p;
 

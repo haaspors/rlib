@@ -352,7 +352,7 @@ typedef enum {
 /** @brief TLS record compression method (only @c NULL is supported / non-deprecated). */
 typedef enum {
   R_TLS_COMPRESSION_NULL                                =  0,
-} RTLSCompresssionMethod;
+} RTLSCompressionMethod;
 
 
 /** @name Hello message layout
@@ -527,8 +527,8 @@ R_API RTLSError r_tls_parser_parse_alert (const RTLSParser * parser,
 static inline RTLSCipherSuite r_tls_hello_msg_cipher_suite (const RTLSHelloMsg * msg, int n)
 { return (RTLSCipherSuite) r_load_be16 (msg->cs + n * sizeof (ruint16)); }
 /** @brief Return the @p n th compression method in @p msg. */
-static inline RTLSCompresssionMethod r_tls_hello_msg_compression_method (const RTLSHelloMsg * msg, int n)
-{ return (RTLSCompresssionMethod)msg->compression[n]; }
+static inline RTLSCompressionMethod r_tls_hello_msg_compression_method (const RTLSHelloMsg * msg, int n)
+{ return (RTLSCompressionMethod)msg->compression[n]; }
 /** @brief @c TRUE if @p msg advertises cipher suite @p cs. */
 R_API rboolean r_tls_hello_msg_has_cipher_suite (const RTLSHelloMsg * msg, RTLSCipherSuite cs);
 /** @brief Position @p ext on the first extension of @p msg. */
@@ -698,7 +698,7 @@ R_API RTLSError r_tls_generate_hello_random (ruint8 random[R_TLS_HELLO_RANDOM_BY
 R_API RTLSError r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
     RTLSVersion ver, const ruint8 srvrand[R_TLS_HELLO_RANDOM_BYTES],
     const ruint8 * sid, ruint8 sidsize,
-    RTLSCipherSuite cs, RTLSCompresssionMethod comp);
+    RTLSCipherSuite cs, RTLSCompressionMethod comp);
 /** @brief DTLS alias for @ref r_tls_write_hs_server_hello. */
 #define r_dtls_write_hs_server_hello r_tls_write_hs_server_hello
 /**

@@ -59,7 +59,7 @@ r_rtc_dtls_srv_hs_done (rpointer data, RTLSServer * srv)
 
   msize = 2 * ((csinfo->cipher->keybits + csinfo->saltbits) / 8);
   material = r_alloca (msize);
-  if ((tlserr = r_tls_server_export_keying_matierial (srv, material, msize,
+  if ((tlserr = r_tls_server_export_keying_material (srv, material, msize,
       R_STR_WITH_SIZE_ARGS ("EXTRACTOR-dtls_srtp"), NULL, 0)) == R_TLS_ERROR_OK) {
     ruint8 * clikey = r_alloca (msize / 2);
     ruint8 * srvkey = r_alloca (msize / 2);

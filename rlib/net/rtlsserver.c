@@ -70,7 +70,7 @@ struct RTLSServer {
   rboolean servrandompinned;
 
   RTLSVersion version;
-  RTLSCompresssionMethod comp;
+  RTLSCompressionMethod comp;
   const RTLSCipherSuiteInfo * csinfo;
   rboolean support_renego;
   rboolean support_new_session_ticket;
@@ -1360,7 +1360,7 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
 }
 
 RTLSError
-r_tls_server_export_keying_matierial (const RTLSServer * server,
+r_tls_server_export_keying_material (const RTLSServer * server,
     ruint8 * material, rsize size, const rchar * label, rsize len,
     const ruint8 * ctx, rsize ctxsize)
 {

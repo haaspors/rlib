@@ -318,7 +318,7 @@ r_stun_attr_tlv_parse_address (rconstpointer buf, const RStunAttrTLV * tlv)
 }
 
 ruint8
-r_stun_attr_tlv_parse_reqested_transport_protocol (rconstpointer buf, const RStunAttrTLV * tlv)
+r_stun_attr_tlv_parse_requested_transport_protocol (rconstpointer buf, const RStunAttrTLV * tlv)
 {
   (void) buf;
 
