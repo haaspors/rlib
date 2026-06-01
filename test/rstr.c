@@ -287,6 +287,32 @@ RTEST (rstr, strnstr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, to_number_size, RTEST_FAST)
+{
+  static const rchar digits[] = "123456789";
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  /* Parse only the first 3 bytes even though more digits follow -- the
+   * bound is respected and the scan never looks past it. */
+  r_assert_cmpint (r_str_to_int32_size (digits, 3, &e, 10, &res), ==, 123);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpptr (e, ==, digits + 3);
+
+  r_assert_cmpuint (r_str_to_uint16_size ("65535/x", 5, &e, 10, &res), ==, 65535);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+
+  r_assert_cmpint ((int)(r_str_to_double_size ("3.5xxx", 3, &e, &res) * 10), ==, 35);
+  r_assert_cmpint (res, ==, R_STR_PARSE_OK);
+
+  /* NULL / zero-length -> invalid. */
+  r_assert_cmpint (r_str_to_int32_size (NULL, 5, &e, 10, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+  r_assert_cmpint (r_str_to_int32_size (digits, 0, &e, 10, &res), ==, 0);
+  r_assert_cmpint (res, ==, R_STR_PARSE_INVAL);
+}
+RTEST_END;
+
 RTEST (rstr, to_int8_base0, RTEST_FAST)
 {
   RStrParse res = R_STR_PARSE_OK;

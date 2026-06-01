@@ -539,18 +539,47 @@ R_API ruint32 r_str_to_uint32 (const rchar * str, const rchar ** endptr,
 R_API ruint64 r_str_to_uint64 (const rchar * str, const rchar ** endptr,
     ruint base, RStrParse * res);
 
+/**
+ * @name Length-bounded numeric parsers
+ *
+ * Each @c _size variant behaves like its unbounded sibling but parses
+ * only the first @p size bytes of @p str, so it is safe on a region that
+ * is not NUL-terminated (e.g. a slice of a memory-mapped buffer). The
+ * returned @p endptr points into @p str.
+ * @{
+ */
+R_API rdouble r_str_to_double_size (const rchar * str, rssize size, const rchar ** endptr, RStrParse * res);
+R_API rfloat  r_str_to_float_size  (const rchar * str, rssize size, const rchar ** endptr, RStrParse * res);
+R_API rint8   r_str_to_int8_size   (const rchar * str, rssize size, const rchar ** endptr, ruint base, RStrParse * res);
+R_API rint16  r_str_to_int16_size  (const rchar * str, rssize size, const rchar ** endptr, ruint base, RStrParse * res);
+R_API rint32  r_str_to_int32_size  (const rchar * str, rssize size, const rchar ** endptr, ruint base, RStrParse * res);
+R_API rint64  r_str_to_int64_size  (const rchar * str, rssize size, const rchar ** endptr, ruint base, RStrParse * res);
+R_API ruint8  r_str_to_uint8_size  (const rchar * str, rssize size, const rchar ** endptr, ruint base, RStrParse * res);
+R_API ruint16 r_str_to_uint16_size (const rchar * str, rssize size, const rchar ** endptr, ruint base, RStrParse * res);
+R_API ruint32 r_str_to_uint32_size (const rchar * str, rssize size, const rchar ** endptr, ruint base, RStrParse * res);
+R_API ruint64 r_str_to_uint64_size (const rchar * str, rssize size, const rchar ** endptr, ruint base, RStrParse * res);
+/** @} */
+
 #if RLIB_SIZEOF_INT == 8
 #define r_str_to_int   r_str_to_int64    /**< Parse an @c int (host-width). */
 #define r_str_to_uint  r_str_to_uint64   /**< Parse an @c unsigned (host-width). */
+#define r_str_to_int_size   r_str_to_int64_size  /**< Length-bounded @ref r_str_to_int. */
+#define r_str_to_uint_size  r_str_to_uint64_size /**< Length-bounded @ref r_str_to_uint. */
 #elif RLIB_SIZEOF_INT == 4
 #define r_str_to_int   r_str_to_int32
 #define r_str_to_uint  r_str_to_uint32
+#define r_str_to_int_size   r_str_to_int32_size
+#define r_str_to_uint_size  r_str_to_uint32_size
 #elif RLIB_SIZEOF_INT == 2
 #define r_str_to_int   r_str_to_int16
 #define r_str_to_uint  r_str_to_uint16
+#define r_str_to_int_size   r_str_to_int16_size
+#define r_str_to_uint_size  r_str_to_uint16_size
 #elif RLIB_SIZEOF_INT == 1
 #define r_str_to_int   r_str_to_int8
 #define r_str_to_uint  r_str_to_uint8
+#define r_str_to_int_size   r_str_to_int8_size
+#define r_str_to_uint_size  r_str_to_uint8_size
 #endif
 
 /** @brief @c strtod equivalent; drops the optional res argument. */

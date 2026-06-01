@@ -890,6 +890,75 @@ r_str_to_double (const rchar * str, const rchar ** endptr, RStrParse * res)
   return ret;
 }
 
+/* The r_str_to_* parsers above scan to a NUL. The _size variants take an
+ * explicit length so they are safe on a non-NUL-terminated region (e.g.
+ * a slice of a mmap'd buffer): copy the bounded token into a small
+ * NUL-terminated buffer and delegate. A numeric token longer than the
+ * buffer can't be one we'd accept. The end pointer is mapped back into
+ * the caller's buffer. */
+#define R_STR_TO_NUM_MAX 47
+
+static rboolean
+r_str_num_copy (rchar dst[R_STR_TO_NUM_MAX + 1], const rchar * str, rssize size)
+{
+  rsize n;
+
+  if (R_UNLIKELY (str == NULL || size <= 0))
+    return FALSE;
+  n = ((rsize) size > R_STR_TO_NUM_MAX) ? R_STR_TO_NUM_MAX : (rsize) size;
+  r_memcpy (dst, str, n);
+  dst[n] = 0;
+  return TRUE;
+}
+
+#define R_STR_DEFINE_TO_INT_SIZE(name, type)                                  \
+type                                                                          \
+name##_size (const rchar * str, rssize size, const rchar ** endptr,           \
+    ruint base, RStrParse * res)                                              \
+{                                                                             \
+  rchar tmp[R_STR_TO_NUM_MAX + 1];                                            \
+  const rchar * tend;                                                         \
+  type ret;                                                                   \
+  if (!r_str_num_copy (tmp, str, size)) {                                     \
+    if (res != NULL) *res = R_STR_PARSE_INVAL;                                \
+    if (endptr != NULL) *endptr = str;                                        \
+    return 0;                                                                 \
+  }                                                                           \
+  ret = name (tmp, &tend, base, res);                                         \
+  if (endptr != NULL) *endptr = str + (tend - tmp);                           \
+  return ret;                                                                 \
+}
+
+R_STR_DEFINE_TO_INT_SIZE (r_str_to_int8,   rint8)
+R_STR_DEFINE_TO_INT_SIZE (r_str_to_int16,  rint16)
+R_STR_DEFINE_TO_INT_SIZE (r_str_to_int32,  rint32)
+R_STR_DEFINE_TO_INT_SIZE (r_str_to_int64,  rint64)
+R_STR_DEFINE_TO_INT_SIZE (r_str_to_uint8,  ruint8)
+R_STR_DEFINE_TO_INT_SIZE (r_str_to_uint16, ruint16)
+R_STR_DEFINE_TO_INT_SIZE (r_str_to_uint32, ruint32)
+R_STR_DEFINE_TO_INT_SIZE (r_str_to_uint64, ruint64)
+
+#define R_STR_DEFINE_TO_FLOAT_SIZE(name, type)                                \
+type                                                                          \
+name##_size (const rchar * str, rssize size, const rchar ** endptr,           \
+    RStrParse * res)                                                          \
+{                                                                             \
+  rchar tmp[R_STR_TO_NUM_MAX + 1];                                            \
+  const rchar * tend;                                                         \
+  type ret;                                                                   \
+  if (!r_str_num_copy (tmp, str, size)) {                                     \
+    if (res != NULL) *res = R_STR_PARSE_INVAL;                                \
+    if (endptr != NULL) *endptr = str;                                        \
+    return 0;                                                                 \
+  }                                                                           \
+  ret = name (tmp, &tend, res);                                               \
+  if (endptr != NULL) *endptr = str + (tend - tmp);                           \
+  return ret;                                                                 \
+}
+
+R_STR_DEFINE_TO_FLOAT_SIZE (r_str_to_float,  rfloat)
+R_STR_DEFINE_TO_FLOAT_SIZE (r_str_to_double, rdouble)
+
 rchar *
 r_strdup (const rchar * str)
 {
