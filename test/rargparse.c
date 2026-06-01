@@ -33,7 +33,7 @@ RTEST (rargparse, help_help_options, RTEST_FAST)
   r_free (help);
 
   expected = r_strprintf (rargparse_help_tmpl, exe, "", "", "");
-  r_assert_cmpstr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_DISALE_HELP, NULL)), ==, expected);
+  r_assert_cmpstr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_DISABLE_HELP, NULL)), ==, expected);
   r_free (expected);
   r_free (help);
   r_free (exe);

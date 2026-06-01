@@ -19,7 +19,7 @@
 #define __R_NET_PROTO_TLS_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -242,7 +242,7 @@ typedef enum {
   R_TLS_SUPPORTED_GROUP_SECP384R1                       = 0x0018, /* [RFC4492] */
   R_TLS_SUPPORTED_GROUP_SECP521R1                       = 0x0019, /* [RFC4492] */
   R_TLS_SUPPORTED_GROUP_BRAINPOOLP256R1                 = 0x001a, /* [RFC7027] */
-  R_TLS_SUPPORTED_GROUP_BRAINPOOLP348R1                 = 0x001b, /* [RFC7027] */
+  R_TLS_SUPPORTED_GROUP_BRAINPOOLP384R1                 = 0x001b, /* [RFC7027] */
   R_TLS_SUPPORTED_GROUP_BRAINPOOLP512R1                 = 0x001c, /* [RFC7027] */
   R_TLS_SUPPORTED_GROUP_X25519                          = 0x001d, /* [TLS1.3] */
   R_TLS_SUPPORTED_GROUP_X448                            = 0x001e, /* [TLS1.3] */

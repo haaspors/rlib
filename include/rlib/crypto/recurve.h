@@ -19,7 +19,7 @@
 #define __R_CRYPTO_ECURVE_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 #include <rlib/rtypes.h>
@@ -106,7 +106,7 @@ typedef enum {
   R_ECURVE_ID_SECP384R1                        = 0x0018,  /**< @brief Prime curve secp384r1 / NIST P-384 (RFC 4492). */
   R_ECURVE_ID_SECP521R1                        = 0x0019,  /**< @brief Prime curve secp521r1 / NIST P-521 (RFC 4492). */
   R_ECURVE_ID_BRAINPOOLP256R1                  = 0x001a,  /**< @brief Brainpool brainpoolP256r1 (RFC 7027; not initialised by the math layer). */
-  R_ECURVE_ID_BRAINPOOLP348R1                  = 0x001b,  /**< @brief Brainpool brainpoolP384r1 (RFC 7027; not initialised by the math layer). */
+  R_ECURVE_ID_BRAINPOOLP384R1                  = 0x001b,  /**< @brief Brainpool brainpoolP384r1 (RFC 7027; not initialised by the math layer). */
   R_ECURVE_ID_BRAINPOOLP512R1                  = 0x001c,  /**< @brief Brainpool brainpoolP512r1 (RFC 7027; not initialised by the math layer). */
   R_ECURVE_ID_X25519                           = 0x001d,  /**< @brief Curve25519, handled by @c rlib/crypto/recurve-montgomery.h. */
   R_ECURVE_ID_X448                             = 0x001e,  /**< @brief Curve448, handled by @c rlib/crypto/recurve-montgomery.h. */

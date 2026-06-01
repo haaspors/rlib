@@ -39,7 +39,7 @@ RTEST (rhzrptr, read, RTEST_FAST)
   rhzrptr hp = R_HZR_PTR_INIT (NULL);
   rpointer ptr;
 
-  ptr = r_hzr_ptr_aqcuire (&hp, NULL);
+  ptr = r_hzr_ptr_acquire (&hp, NULL);
   r_assert_cmpptr (ptr, ==, NULL);
   r_hzr_ptr_release (&hp, NULL);
 }
@@ -50,13 +50,13 @@ RTEST (rhzrptr, replace, RTEST_FAST)
   rhzrptr hp = R_HZR_PTR_INIT (NULL);
   rpointer ptr;
 
-  ptr = r_hzr_ptr_aqcuire (&hp, NULL);
+  ptr = r_hzr_ptr_acquire (&hp, NULL);
   r_assert_cmpptr (ptr, ==, NULL);
   r_hzr_ptr_release (&hp, NULL);
 
   r_hzr_ptr_replace (&hp, RUINT_TO_POINTER (0xCAFEBABE));
 
-  ptr = r_hzr_ptr_aqcuire (&hp, NULL);
+  ptr = r_hzr_ptr_acquire (&hp, NULL);
   r_assert_cmpptr (ptr, ==, RUINT_TO_POINTER (0xCAFEBABE));
   r_hzr_ptr_release (&hp, NULL);
 }
@@ -74,7 +74,7 @@ RTEST (rhzrptr, read_replace, RTEST_FAST)
 
   r_hzr_ptr_replace (&hp, r_mem_new0 (TestHP));
 
-  ptr = r_hzr_ptr_aqcuire (&hp, NULL);
+  ptr = r_hzr_ptr_acquire (&hp, NULL);
   r_assert_cmpptr (ptr, !=, NULL);
   r_hzr_ptr_replace (&hp, NULL);
 
@@ -84,7 +84,7 @@ RTEST (rhzrptr, read_replace, RTEST_FAST)
 
   r_hzr_ptr_release (&hp, NULL);
 
-  ptr = r_hzr_ptr_aqcuire (&hp, NULL);
+  ptr = r_hzr_ptr_acquire (&hp, NULL);
   r_assert_cmpptr (ptr, ==, NULL);
   r_hzr_ptr_release (&hp, NULL);
 }

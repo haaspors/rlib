@@ -19,7 +19,7 @@
 #define __R_RTC_ICE_CANDIDATE_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -153,7 +153,7 @@ R_API const RStrKV * r_rtc_ice_candidate_get_ext (RRtcIceCandidate * candidate, 
 R_API RRtcError r_rtc_ice_candidate_add_ext (RRtcIceCandidate * candidate,
     const rchar * key, rssize ksize, const rchar * val, rssize vsize);
 /** @brief Append an extension pair from an @ref RStrKV (wraps @ref r_rtc_ice_candidate_add_ext). */
-#define r_rtc_ice_candidate_add_ext_kv(canidate, kv) \
+#define r_rtc_ice_candidate_add_ext_kv(candidate, kv) \
   r_rtc_ice_candidate_add_ext(candidate, kv->key.str, kv->key.size, kv->val.str, kv->val.size)
 
 /** @brief Serialise the candidate to its SDP @c candidate attribute string. */

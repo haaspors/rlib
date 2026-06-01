@@ -19,7 +19,7 @@
 #define __R_ARGPARSE_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 #include <rlib/rtypes.h>
@@ -58,7 +58,7 @@
  * values, required options, positional arguments, and an inverse
  * (no-foo) flag form. @c -h, @c --help, and @c --version are
  * registered for free unless suppressed by
- * @c R_ARG_PARSE_FLAG_DISALE_HELP.
+ * @c R_ARG_PARSE_FLAG_DISABLE_HELP.
  */
 
 R_BEGIN_DECLS
@@ -142,7 +142,7 @@ typedef enum {
   R_ARG_PARSE_FLAG_NONE               = 0,
   R_ARG_PARSE_FLAG_DONT_EXIT          = 1 << 0, /**< Return errors instead of calling @c exit. */
   R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT  = 1 << 1, /**< Suppress automatic help / version output. */
-  R_ARG_PARSE_FLAG_DISALE_HELP        = 1 << 2, /**< Don't auto-register @c --help / @c -h. */
+  R_ARG_PARSE_FLAG_DISABLE_HELP        = 1 << 2, /**< Don't auto-register @c --help / @c -h. */
   R_ARG_PARSE_FLAG_ALLOW_UNKNOWN      = 1 << 3, /**< Pass unknown options through instead of failing. */
 } RArgParseFlags;
 

@@ -42,7 +42,7 @@ struct RHzrPtrRec {
 
 
 rpointer
-r_hzr_ptr_aqcuire (rhzrptr * hzrptr, RHzrPtrRec * rec)
+r_hzr_ptr_acquire (rhzrptr * hzrptr, RHzrPtrRec * rec)
 {
   rpointer ret;
 
