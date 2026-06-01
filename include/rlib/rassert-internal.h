@@ -19,7 +19,7 @@
 #define __R_ASSERT_INTERNAL_H__
 
 #ifndef __R_ASSERT_H__
-#error "#include <rlib.h> pelase."
+#error "#include <rlib.h> please."
 #endif
 
 #include <rlib/rlog.h>

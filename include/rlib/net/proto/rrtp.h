@@ -19,7 +19,7 @@
 #define __R_NET_PROTO_RTP_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -213,7 +213,7 @@ typedef enum {
   R_RTCP_PT_RSI             = 209, /* Receiver Summary Information  [RFC5760] */
   R_RTCP_PT_TOKEN           = 210, /* Port Mapping                  [RFC6284] */
   R_RTCP_PT_IDMS            = 211, /* DMS Settings                  [RFC7272] */
-  R_RTCP_PT_RGRS            = 212, /* eporting Group Reporting Sources [RFC-ietf-avtcore-rtp-multi-stream-optimisation-12] */
+  R_RTCP_PT_RGRS            = 212, /* Reporting Group Reporting Sources [RFC-ietf-avtcore-rtp-multi-stream-optimisation-12] */
   R_RTCP_PT_SNM             = 213, /* Splicing Notification Message [RFC-ietf-ietf-avtext-splicing-notification-09] */
 } RRTCPPacketType;
 

@@ -19,7 +19,7 @@
 #define __R_ENDIANNESS_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /* This header is included by rtypes.h (@ bottom of file) */
@@ -60,7 +60,7 @@ R_BEGIN_DECLS
 #define R_BIG_ENDIAN            4321
 
 #if R_GNUC_PREREQ(4, 2)
-/* Appearantly 16bit byteswap is missing from some versions of GCC on x86?? */
+/* Apparently 16bit byteswap is missing from some versions of GCC on x86?? */
 #if !defined(__clang__) && !R_GNUC_PREREQ(4, 8)
 /** @brief Reverse the bytes of a 16-bit value. */
 #define RUINT16_BSWAP(val) ((ruint16) (((ruint16)(val) >> 8) | ((ruint16)(val) << 8)))
