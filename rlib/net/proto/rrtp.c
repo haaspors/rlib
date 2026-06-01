@@ -207,7 +207,11 @@ r_rtp_buffer_map (RRTPBuffer * rtp, RBuffer * buf, RMemMapFlags flags)
         goto beach;
 
       if ((flags & R_RTP_BUFFER_MAP_FLAG_SKIP_PADDING) == 0) {
-        if (hdr->p)
+        /* The padding-count byte is attacker-controlled; ignore it unless
+         * there is a payload and the count fits, so pay.size (unsigned)
+         * can't wrap into a huge value. */
+        if (hdr->p && rtp->pay.size > 0 &&
+            rtp->pay.data[rtp->pay.size - 1] <= rtp->pay.size)
           rtp->pay.size -= rtp->pay.data[rtp->pay.size - 1];
       }
       rtp->buffer = r_buffer_ref (buf);
@@ -301,6 +305,8 @@ ruint32
 r_rtp_buffer_get_csrc (const RRTPBuffer * rtp, ruint8 n)
 {
   const RRTPHdr * hdr = (const RRTPHdr *)rtp->hdr.data;
+  if (R_UNLIKELY (n >= hdr->cc))
+    return 0;
   return RUINT32_FROM_BE (hdr->csrclist[n]);
 }
 

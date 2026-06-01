@@ -119,6 +119,26 @@ RTEST (rrtp, read_plain_hdr_pcmu_payload, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtp, padding_underflow, RTEST_FAST)
+{
+  /* P bit set but the trailing pad-count byte (0xff) exceeds the 2-byte
+   * payload -- pay.size (unsigned) must not underflow into a huge value. */
+  static const ruint8 pkt[] = {
+    0xa0, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    0x42, 0xff
+  };
+  RBuffer * buf;
+  RRTPBuffer rtp = R_RTP_BUFFER_INIT;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt, sizeof (pkt))), !=, NULL);
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
+  r_assert (r_rtp_buffer_has_padding (&rtp));
+  r_assert_cmpuint (rtp.pay.size, <=, 2);
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtp, write_plain_hdr_pcmu_payload, RTEST_FAST)
 {
   RBuffer * buf, * payload;
