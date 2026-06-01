@@ -93,7 +93,7 @@ typedef enum {
 static inline ruint16 r_stun_msg_type (rconstpointer buf) { return RUINT16_FROM_BE (*(const ruint16 *)buf); }
 /** @brief Return the message-length field from @p buf. */
 static inline ruint16 r_stun_msg_len  (rconstpointer buf) { return RUINT16_FROM_BE (*(const ruint16 *)&((const ruint8 *)(buf))[R_STUN_MSGLEN_OFFSET]); }
-/** @brief Pointer to the magic-cookie field in @p buf. */
+/** @brief The magic-cookie field value from @p buf (network byte order). */
 #define r_stun_msg_magic_cookie(buf)      (*(const ruint32 *)&((const ruint8 *)(buf))[R_STUN_MAGIC_COOKIE_OFFSET])
 /** @brief Pointer to the transaction-ID field in @p buf. */
 #define r_stun_msg_transaction_id(buf)    (&((const ruint8 *)(buf))[R_STUN_TRANSACTION_ID_OFFSET])

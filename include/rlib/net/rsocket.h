@@ -117,9 +117,11 @@ R_API RSocketType r_socket_get_socket_type (const RSocket * socket);
 /** @brief Return the transport protocol (TCP / UDP / ...). */
 R_API RSocketProtocol r_socket_get_protocol (const RSocket * socket);
 
-/** @brief Look up the local address; caller takes a reference. */
+/** @brief Return the local address as a newly-allocated @ref RSocketAddress
+ *  (caller owns the reference), or @c NULL on failure. */
 R_API RSocketAddress * r_socket_get_local_address (RSocket * socket);
-/** @brief Look up the remote address; caller takes a reference. */
+/** @brief Return the peer address as a newly-allocated @ref RSocketAddress
+ *  (caller owns the reference), or @c NULL on failure. */
 R_API RSocketAddress * r_socket_get_remote_address (RSocket * socket);
 /** @} */
 
@@ -169,7 +171,8 @@ R_API RSocketStatus r_socket_close (RSocket * socket);
  * @brief Bind @p socket to @p address.
  * @param socket  Socket to bind.
  * @param address Address to bind to.
- * @param reuse   @c TRUE sets @c SO_REUSEADDR before bind.
+ * @param reuse   @c TRUE sets @c SO_REUSEADDR (and @c SO_REUSEPORT for
+ *                datagram sockets) before bind.
  */
 R_API RSocketStatus r_socket_bind (RSocket * socket, const RSocketAddress * address, rboolean reuse);
 /** @brief Convenience: listen with the default backlog. */

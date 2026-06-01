@@ -98,7 +98,7 @@ R_API rboolean r_http_server_set_handler (RHttpServer * server,
 R_API rboolean r_http_server_listen (RHttpServer * server, RSocketAddress * addr);
 /**
  * @brief Stop the server; @p func fires once shutdown completes.
- * @return Number of in-flight requests still draining.
+ * @return Number of sockets (listeners + client connections) being closed.
  */
 R_API rsize r_http_server_stop (RHttpServer * server, RHttpServerStop func,
     rpointer data, RDestroyNotify notify);
