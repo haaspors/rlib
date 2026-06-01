@@ -144,6 +144,8 @@ r_tls_server_free (RTLSServer * server)
 
   r_free (server->ticket);
   r_queue_clear (&server->qsend, r_buffer_unref);
+  /* Scrub key material before releasing the struct. */
+  r_memclear_secure (server->mastersecret, sizeof (server->mastersecret));
   r_free (server);
 }
 
@@ -761,6 +763,8 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
 
   R_LOG_DEBUG ("%p - ver %.4x", server, server->version);
 
+  if (R_UNLIKELY (server->hello.cslen == 0 || (server->hello.cslen & 1)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
   count = server->hello.cslen / sizeof (ruint16);
   incoming = r_mem_newa_n (RTLSCipherSuite, count);
   for (i = 0; i < count; i++)
@@ -887,7 +891,14 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
 
   if ((ret = r_tls_parser_parse_client_key_exchange_rsa (parser, &encpms, &size)) == R_TLS_ERROR_OK) {
     ruint8 pms[48];
-    ruint8 * out = r_alloca (size);
+    ruint8 * out;
+
+    /* size is the peer's encrypted-PMS length; cap it before the
+     * stack allocation (a real RSA block is at most a few hundred
+     * bytes even for very large keys). */
+    if (R_UNLIKELY (size > 2048))
+      return R_TLS_ERROR_CORRUPT_RECORD;
+    out = r_alloca (size);
 
     r_prng_fill (server->prng, pms, sizeof (pms));
     if (r_crypto_key_decrypt (server->privkey, server->prng, encpms, size, out, &size) == R_CRYPTO_OK) {
@@ -924,7 +935,7 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
         server->hello.random, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         NULL);
-    r_memclear (pms, sizeof (pms));
+    r_memclear_secure (pms, sizeof (pms));
 #if 0
     R_LOG_DEBUG ("RSA MasterSecret:");
     R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG,
@@ -970,6 +981,8 @@ r_tls_server_expand_master_secret (RTLSServer * server)
       server->server.fixediv = r_memdup (ptr, size); ptr += size;
     }
   }
+
+  r_memclear_secure (keyblock, sizeof (keyblock));
 }
 
 static RTLSError
@@ -980,7 +993,9 @@ r_tls_server_parse_finished (RTLSServer * server, const RTLSParser * parser)
   rsize size;
 
   if ((ret = r_tls_parser_parse_finished (parser, &verify_data, &size)) == R_TLS_ERROR_OK) {
-    if (size >= 12) {
+    /* verify-data is 12 bytes for TLS 1.x; bound it so a peer can't drive
+     * the stack allocations below with a huge length. */
+    if (size >= 12 && size <= 64) {
       ruint8 * verify_calc = r_alloca (size);
       rsize hashsize = r_msg_digest_size (server->hshash);
       ruint8 * hash = r_alloca (hashsize);
@@ -1300,8 +1315,11 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
     server->inbuf = NULL;
 
     if (!r_tls_parser_is_dtls (&parser) || parser.epoch == server->client.epoch) {
-      if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac)) != R_TLS_ERROR_OK)
+      if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac)) != R_TLS_ERROR_OK) {
+        /* A record that fails decrypt / MAC must not be processed. */
         R_LOG_WARNING ("Decryption returned: %d", err);
+        continue;
+      }
     }
 
     if (parser.content == R_TLS_CONTENT_TYPE_ALERT) {
