@@ -323,8 +323,10 @@ r_string_erase (RString * str, rsize pos, rsize len)
 {
   if (pos > str->len)
     return 0;
-  else if (pos + len >= str->len)
-    return r_string_truncate (str, pos);
+  else if (pos + len >= str->len) {
+    r_string_truncate (str, pos);
+    return str->len;
+  }
 
   str->len -= len;
   r_memmove (str->cstr + pos, str->cstr + pos + len, str->len - pos + 1);

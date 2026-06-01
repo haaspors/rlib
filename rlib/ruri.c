@@ -218,7 +218,9 @@ r_uri_parse (RUri * uri)
       uri->query.ptr = p;
     }
 
-    /* fragment */
+    /* fragment (skip the leading '#', mirroring the query's '?') */
+    if (p < pend && *p == '#')
+      p++;
     uri->fragment.ptr = p;
     uri->fragment.size = RPOINTER_TO_SIZE (pend - p);
   } else {

@@ -19,7 +19,7 @@
 #define __R_STRING_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 #include <rlib/rtypes.h>
@@ -45,10 +45,9 @@
  * @c r_string_free or, if you want to keep the inner @c rchar @c *
  * after, @c r_string_free_keep.
  *
- * The mutating functions return the resulting length so callers
- * can chain or detect failure (0 with no prior length is the only
- * ambiguous case; otherwise a non-zero result means the operation
- * was applied).
+ * Most mutating functions return the number of bytes they added or
+ * removed (@c r_string_reset and @c r_string_erase instead return the
+ * resulting length); a @c 0 return signals failure or a no-op.
  */
 
 R_BEGIN_DECLS
@@ -117,7 +116,10 @@ R_API int r_string_cmp_cstr (RString * str, const rchar * cstr);
 /**
  * @name Mutations
  *
- * All return the resulting length in bytes after the operation.
+ * Each returns the number of bytes added or removed by the operation,
+ * @b not the resulting total length (the exceptions are
+ * @ref r_string_reset and @ref r_string_erase, which return the
+ * resulting length).
  * Family layout: reset → append* → prepend* → insert* → overwrite*
  * → truncate / erase. The @c _len variants take an explicit byte
  * count, useful for non-NUL-terminated source spans; the @c _printf
@@ -143,7 +145,7 @@ R_API rsize r_string_append (RString * str, const rchar * cstr);
 R_API rsize r_string_append_len (RString * str, const rchar * cstr, rsize len);
 /**
  * @brief printf-format and append the result to @p str.
- * @return New length after the append.
+ * @return Number of bytes appended.
  */
 R_API rsize r_string_append_printf (RString * str, const rchar * fmt, ...) R_ATTR_PRINTF (2, 3);
 /** @brief va_list flavour of r_string_append_printf. */
@@ -161,7 +163,7 @@ R_API rsize r_string_prepend_vprintf (RString * str, const rchar * fmt, va_list 
 /**
  * @brief Insert @p cstr at byte offset @p pos, sliding the existing
  * tail to the right.
- * @return New length after the insert.
+ * @return Number of bytes inserted.
  */
 R_API rsize r_string_insert (RString * str, rsize pos, const rchar * cstr);
 /** @brief Length-bounded variant of r_string_insert. */
@@ -176,11 +178,13 @@ R_API rsize r_string_overwrite (RString * str, rsize pos, const rchar * cstr);
 /** @brief Length-bounded variant of r_string_overwrite. */
 R_API rsize r_string_overwrite_len (RString * str, rsize pos, const rchar * cstr, rsize len);
 
-/** @brief Trim @p str to @p len bytes. No-op if it's already shorter. */
+/** @brief Trim @p str to @p len bytes (no-op, returning 0, if already
+ *  shorter). @return Number of bytes removed. */
 R_API rsize r_string_truncate (RString * str, rsize len);
 /**
- * @brief Remove @p len bytes starting at byte offset @p pos.
- * @return New length after the erase.
+ * @brief Remove @p len bytes starting at byte offset @p pos (clamped to
+ * the end of the string).
+ * @return The resulting length (0 if @p pos is past the end).
  */
 R_API rsize r_string_erase (RString * str, rsize pos, rsize len);
 
