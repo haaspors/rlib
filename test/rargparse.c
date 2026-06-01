@@ -78,6 +78,71 @@ RTEST (rargparse, help_epilog, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rargparse, set_get_appname_options, RTEST_FAST)
+{
+  RArgParser * parser = r_arg_parser_new ("origapp", NULL);
+
+  r_assert_cmpstr (r_arg_parser_get_appname (parser), ==, "origapp");
+  r_assert_cmpstr (r_arg_parser_get_options (parser), ==, "[options]");
+
+  r_arg_parser_set_appname (parser, "tool");
+  r_arg_parser_set_options (parser, "[OPTS] FILE");
+  r_assert_cmpstr (r_arg_parser_get_appname (parser), ==, "tool");
+  r_assert_cmpstr (r_arg_parser_get_options (parser), ==, "[OPTS] FILE");
+
+  r_arg_parser_set_options (parser, NULL);
+  r_assert_cmpptr (r_arg_parser_get_options (parser), ==, NULL);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, help_custom_appname_options, RTEST_FAST)
+{
+  rchar * expected, * help;
+  RArgParser * parser = r_arg_parser_new ("ignored", NULL);
+
+  r_arg_parser_set_appname (parser, "mytool");
+  r_arg_parser_set_options (parser, "[FLAGS] SRC DST");
+  expected = r_strprintf ("Usage:\n  %s %s\n\nOptions:\n%s",
+      "mytool", "[FLAGS] SRC DST", rargparse_helpopt);
+  r_assert_cmpstr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_NONE, NULL)), ==, expected);
+  r_free (expected);
+  r_free (help);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, help_no_options_token, RTEST_FAST)
+{
+  rchar * expected, * help;
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+
+  r_arg_parser_set_options (parser, NULL);
+  expected = r_strprintf ("Usage:\n  %s\n\nOptions:\n%s", "mytool", rargparse_helpopt);
+  r_assert_cmpstr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_NONE, NULL)), ==, expected);
+  r_free (expected);
+  r_free (help);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, version_custom_appname, RTEST_FAST)
+{
+  rchar * verstr;
+  RArgParser * parser = r_arg_parser_new ("orig", "1.2.3");
+
+  r_arg_parser_set_appname (parser, "renamed");
+  r_assert_cmpptr ((verstr = r_arg_parser_get_version (parser)), !=, NULL);
+  r_assert_cmpstr (verstr, ==, "renamed version 1.2.3\n");
+  r_free (verstr);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (rargparse, group, RTEST_FAST)
 {
   RArgOptionGroup * group;

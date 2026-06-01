@@ -185,10 +185,33 @@ R_API RArgParser * r_arg_parser_new (const rchar * app, const rchar * version) R
  * @name Parser configuration
  * @{
  */
+/**
+ * @brief Override the program name shown in @c --help and the Usage
+ * line (default: the @p app passed to @c r_arg_parser_new, or
+ * @c argv[0] at parse time).
+ *
+ * Set this before adding sub-commands, since their composed names are
+ * derived from the program name at @c r_arg_parser_add_command time.
+ * Pass @c NULL to clear it.
+ */
+R_API void r_arg_parser_set_appname (RArgParser * parser, const rchar * appname);
+/**
+ * @brief Override the options-summary token printed after the program
+ * name in the Usage line (default: @c "[options]").
+ *
+ * This is the synopsis fragment, @b not the option set itself (use
+ * @c r_arg_parser_add_option_entries for that). Pass @c NULL to omit
+ * the token entirely.
+ */
+R_API void r_arg_parser_set_options (RArgParser * parser, const rchar * options);
 /** @brief Set the prologue paragraph shown above option help. */
 R_API void r_arg_parser_set_summary (RArgParser * parser, const rchar * summary);
 /** @brief Set the epilogue paragraph shown below option help. */
 R_API void r_arg_parser_set_epilog (RArgParser * parser, const rchar * epilog);
+/** @brief Return the program name, or @c NULL. */
+R_API const rchar * r_arg_parser_get_appname (RArgParser * parser);
+/** @brief Return the Usage-line options-summary token, or @c NULL. */
+R_API const rchar * r_arg_parser_get_options (RArgParser * parser);
 /** @brief Return the previously-set summary, or @c NULL. */
 R_API const rchar * r_arg_parser_get_summary (RArgParser * parser);
 /** @brief Return the previously-set epilog, or @c NULL. */

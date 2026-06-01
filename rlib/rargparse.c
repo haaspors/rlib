@@ -34,8 +34,6 @@
 #include <rlib/rstr.h>
 #include <rlib/os/rtty.h>
 
-/* TODO: Add API to customize options usage string + (get|set)ters appname++ */
-
 struct RArgParser
 {
   RRef ref;
@@ -393,6 +391,32 @@ r_arg_parser_new (const rchar * app, const rchar * version)
 }
 
 void
+r_arg_parser_set_appname (RArgParser * parser, const rchar * appname)
+{
+  r_free (parser->appname);
+  parser->appname = r_strdup (appname);
+}
+
+void
+r_arg_parser_set_options (RArgParser * parser, const rchar * options)
+{
+  r_free (parser->options);
+  parser->options = r_strdup (options);
+}
+
+const rchar *
+r_arg_parser_get_appname (RArgParser * parser)
+{
+  return parser->appname;
+}
+
+const rchar *
+r_arg_parser_get_options (RArgParser * parser)
+{
+  return parser->options;
+}
+
+void
 r_arg_parser_set_summary (RArgParser * parser, const rchar * summary)
 {
   r_free (parser->summary);
@@ -542,9 +566,13 @@ r_arg_parser_get_help (RArgParser * parser, RArgParseFlags flags,
   if (R_UNLIKELY (parser == NULL))
     return NULL;
 
+  if (appname == NULL)
+    appname = parser->appname;
+
   str = r_string_new_sized (1024);
-  r_string_append_printf (str, "Usage:\n  %s %s",
-      appname != NULL ? appname : parser->appname, parser->options);
+  r_string_append_printf (str, "Usage:\n  %s", appname != NULL ? appname : "");
+  if (parser->options != NULL)
+    r_string_append_printf (str, " %s", parser->options);
   for (i = 0; i < parser->main->count; i++) {
     const RArgOptionEntry * opt = &parser->main->entries[i];
     rchar * name;
@@ -620,7 +648,8 @@ r_arg_parser_get_version (RArgParser * parser)
     real = "(\"version not specified\")";
   }
 
-  return r_strprintf ("%s %s%s\n", parser->appname, prefix, real);
+  return r_strprintf ("%s %s%s\n",
+      parser->appname != NULL ? parser->appname : "", prefix, real);
 }
 
 rboolean
