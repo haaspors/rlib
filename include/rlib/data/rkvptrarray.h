@@ -18,6 +18,10 @@
 #ifndef __R_KV_PTR_ARRAY_H__
 #define __R_KV_PTR_ARRAY_H__
 
+#if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
+#error "#include <rlib.h> only please."
+#endif
+
 /**
  * @defgroup r_kvptrarray Key-value pointer array
  * @ingroup r_data

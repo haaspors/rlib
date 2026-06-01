@@ -109,13 +109,13 @@ typedef struct {
 #define r_mem_newa_n(type, n) ((type*) r_alloca (sizeof (type) * (rsize) (n)))
 
 /** @brief Stack-allocate a zeroed array of @p n elements of @p type. */
-#define r_mem_newa0_n(type, n)((type*) (r_alloca0 (sizeof (type) * (rsize) (n)))
+#define r_mem_newa0_n(type, n) ((type*) r_alloca0 (sizeof (type) * (rsize) (n)))
 
 /** @brief Stack-allocate a single instance of @p type. */
 #define r_mem_newa(type)      r_mem_newa_n (type, 1)
 
 /** @brief Stack-allocate a single zeroed instance of @p type. */
-#define r_mem_newa0(type)     r_mem_newa_n0 (type, 1)
+#define r_mem_newa0(type)     r_mem_newa0_n (type, 1)
 
 
 /* ----- Heap allocations -------------------------------------------- */
