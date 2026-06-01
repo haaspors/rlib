@@ -28,6 +28,41 @@ typedef rboolean (*RMDUpdate) (RMsgDigest * md, rconstpointer data, rsize size);
 typedef rboolean (*RMDGet) (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
 typedef rboolean (*RMDSqueeze) (RMsgDigest * md, ruint8 * data, rsize size);
 
+/* MD2 (RFC 1319): byte-oriented digest over 16-byte blocks. Unlike the
+ * Merkle-Damgård siblings below it pads to the block boundary rather
+ * than encoding a bit length, and folds in a 16-byte running checksum
+ * that is absorbed as one extra block during finalisation. */
+#define R_MD2_SIZE         (128 / 8)
+#define R_MD2_BLOCK_SIZE   16
+typedef struct {
+  ruint8 state[R_MD2_SIZE];
+  ruint8 checksum[R_MD2_SIZE];
+
+  ruint8 buffer[R_MD2_BLOCK_SIZE];
+  rsize bufsize;
+} RMd2;
+static void r_md2_init (RMsgDigest * md);
+static rboolean r_md2_final (RMsgDigest * md);
+static rboolean r_md2_update (RMsgDigest * md, rconstpointer data, rsize size);
+static rboolean r_md2_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
+
+/* MD4 (RFC 1320): little-endian Merkle-Damgård sharing MD5's block
+ * layout and length padding, with three rounds and a distinct schedule. */
+#define R_MD4_SIZE         (128 / 8)
+#define R_MD4_WORD_SIZE    (R_MD4_SIZE / sizeof (ruint32))
+#define R_MD4_BLOCK_SIZE   (512 / 8)
+typedef struct {
+  ruint32 data[R_MD4_WORD_SIZE];
+  ruint64 len;
+
+  ruint8 buffer[R_MD4_BLOCK_SIZE];
+  rsize bufsize;
+} RMd4;
+static void r_md4_init (RMsgDigest * md);
+static rboolean r_md4_final (RMsgDigest * md);
+static rboolean r_md4_update (RMsgDigest * md, rconstpointer data, rsize size);
+static rboolean r_md4_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out);
+
 /* MD5 */
 #define R_MD5_SIZE         (128 / 8)
 #define R_MD5_WORD_SIZE    (R_MD5_SIZE / sizeof (ruint32))
@@ -129,6 +164,10 @@ RMsgDigest *
 r_msg_digest_new (RMsgDigestType type)
 {
   switch (type) {
+    case R_MSG_DIGEST_TYPE_MD2:
+      return r_msg_digest_new_md2 ();
+    case R_MSG_DIGEST_TYPE_MD4:
+      return r_msg_digest_new_md4 ();
     case R_MSG_DIGEST_TYPE_MD5:
       return r_msg_digest_new_md5 ();
     case R_MSG_DIGEST_TYPE_SHA1:
@@ -168,6 +207,10 @@ rsize
 r_msg_digest_type_size (RMsgDigestType type)
 {
   switch (type) {
+    case R_MSG_DIGEST_TYPE_MD2:
+      return R_MD2_SIZE;
+    case R_MSG_DIGEST_TYPE_MD4:
+      return R_MD4_SIZE;
     case R_MSG_DIGEST_TYPE_MD5:
       return R_MD5_SIZE;
     case R_MSG_DIGEST_TYPE_SHA1:
@@ -193,6 +236,10 @@ rsize
 r_msg_digest_type_blocksize (RMsgDigestType type)
 {
   switch (type) {
+    case R_MSG_DIGEST_TYPE_MD2:
+      return R_MD2_BLOCK_SIZE;
+    case R_MSG_DIGEST_TYPE_MD4:
+      return R_MD4_BLOCK_SIZE;
     case R_MSG_DIGEST_TYPE_MD5:
       return R_MD5_BLOCK_SIZE;
     case R_MSG_DIGEST_TYPE_SHA1:
@@ -344,20 +391,370 @@ r_msg_digest_get_hex_full (const RMsgDigest * md,
 }
 
 /**************************************/
-/*              MD2 / MD4             */
+/*                MD2                 */
 /**************************************/
-/* MD2 and MD4 are declared in the public header but not implemented
- * yet; return NULL rather than fail to link. */
+/* The 256-byte S-box from RFC 1319 Appendix A (a permutation of
+ * 0..255 derived from the fractional digits of pi). */
+static const ruint8 _r_md2_sbox[256] = {
+   41, 46, 67, 201, 162, 216, 124, 1, 61, 54, 84, 161, 236, 240, 6,
+   19, 98, 167, 5, 243, 192, 199, 115, 140, 152, 147, 43, 217, 188,
+   76, 130, 202, 30, 155, 87, 60, 253, 212, 224, 22, 103, 66, 111, 24,
+   138, 23, 229, 18, 190, 78, 196, 214, 218, 158, 222, 73, 160, 251,
+   245, 142, 187, 47, 238, 122, 169, 104, 121, 145, 21, 178, 7, 63,
+   148, 194, 16, 137, 11, 34, 95, 33, 128, 127, 93, 154, 90, 144, 50,
+   39, 53, 62, 204, 231, 191, 247, 151, 3, 255, 25, 48, 179, 72, 165,
+   181, 209, 215, 94, 146, 42, 172, 86, 170, 198, 79, 184, 56, 210,
+   150, 164, 125, 182, 118, 252, 107, 226, 156, 116, 4, 241, 69, 157,
+   112, 89, 100, 113, 135, 32, 134, 91, 207, 101, 230, 45, 168, 2, 27,
+   96, 37, 173, 174, 176, 185, 246, 28, 70, 97, 105, 52, 64, 126, 15,
+   85, 71, 163, 35, 221, 81, 175, 58, 195, 92, 249, 206, 186, 197,
+   234, 38, 44, 83, 13, 110, 133, 40, 132, 9, 211, 223, 205, 244, 65,
+   129, 77, 82, 106, 220, 55, 200, 108, 193, 171, 250, 36, 225, 123,
+   8, 12, 189, 177, 74, 120, 136, 149, 139, 227, 99, 232, 109, 233,
+   203, 213, 254, 59, 0, 29, 57, 242, 239, 183, 14, 102, 88, 208, 228,
+   166, 119, 114, 248, 235, 117, 75, 10, 49, 68, 80, 180, 143, 237,
+   31, 26, 219, 153, 141, 51, 159, 17, 131, 20
+};
+
 RMsgDigest *
 r_msg_digest_new_md2 (void)
 {
-  return NULL;
+  RMsgDigest * ret;
+  rsize mdsize = sizeof (RMsgDigest) + sizeof (RMd2);
+
+  if ((ret = r_malloc (mdsize)) != NULL) {
+    ret->type = R_MSG_DIGEST_TYPE_MD2;
+    ret->is_final = FALSE;
+    ret->mdsize = mdsize;
+    ret->blocksize = R_MD2_BLOCK_SIZE;
+    ret->init = r_md2_init;
+    ret->final = r_md2_final;
+    ret->update = r_md2_update;
+    ret->get = r_md2_get;
+    ret->squeeze = NULL;
+
+    ret->init (ret);
+  }
+
+  return ret;
 }
 
+static void
+r_md2_init (RMsgDigest * md)
+{
+  RMd2 * md2 = (RMd2 *)(md + 1);
+  r_memset (md2->state, 0, sizeof (md2->state));
+  r_memset (md2->checksum, 0, sizeof (md2->checksum));
+  md2->bufsize = 0;
+}
+
+static void
+r_md2_update_block (RMd2 * md2, const ruint8 * block)
+{
+  ruint8 x[48];
+  ruint8 t;
+  rsize i, j;
+
+  for (i = 0; i < R_MD2_BLOCK_SIZE; i++) {
+    x[i]      = md2->state[i];
+    x[16 + i] = block[i];
+    x[32 + i] = md2->state[i] ^ block[i];
+  }
+
+  /* 18 rounds of byte substitution across the 48-byte working set. */
+  t = 0;
+  for (i = 0; i < 18; i++) {
+    for (j = 0; j < 48; j++)
+      t = x[j] ^= _r_md2_sbox[t];
+    t = (ruint8) (t + i);
+  }
+
+  for (i = 0; i < R_MD2_BLOCK_SIZE; i++)
+    md2->state[i] = x[i];
+
+  /* Update the running checksum: each block byte is folded in via the
+   * S-box, keyed by the previous checksum byte, and chained forward. */
+  t = md2->checksum[R_MD2_BLOCK_SIZE - 1];
+  for (i = 0; i < R_MD2_BLOCK_SIZE; i++)
+    t = md2->checksum[i] ^= _r_md2_sbox[block[i] ^ t];
+}
+
+static rboolean
+r_md2_update (RMsgDigest * md, rconstpointer data, rsize size)
+{
+  RMd2 * md2;
+  const ruint8 * ptr;
+
+  if (R_UNLIKELY (md == NULL || data == NULL))
+    return FALSE;
+
+  ptr = data;
+  md2 = (RMd2 *)(md + 1);
+  if (md2->bufsize > 0) {
+    rsize s = sizeof (md2->buffer) - md2->bufsize;
+    if (s <= size) {
+      r_memcpy (&md2->buffer[md2->bufsize], ptr, s);
+      ptr += s;
+      size -= s;
+      md2->bufsize = 0;
+      r_md2_update_block (md2, md2->buffer);
+    } else {
+      r_memcpy (&md2->buffer[md2->bufsize], ptr, size);
+      md2->bufsize += size;
+      return TRUE;
+    }
+  }
+
+  for (; size >= R_MD2_BLOCK_SIZE; size -= R_MD2_BLOCK_SIZE) {
+    r_md2_update_block (md2, ptr);
+    ptr += R_MD2_BLOCK_SIZE;
+  }
+
+  if ((md2->bufsize = size) > 0)
+    r_memcpy (md2->buffer, ptr, md2->bufsize);
+
+  return TRUE;
+}
+
+static rboolean
+r_md2_final (RMsgDigest * md)
+{
+  RMd2 * md2 = (RMd2 *)(md + 1);
+  ruint8 checksum[R_MD2_BLOCK_SIZE];
+  ruint8 pad = (ruint8) (R_MD2_BLOCK_SIZE - md2->bufsize);
+  rsize i;
+
+  /* Pad to a full block with bytes whose value is the pad length. */
+  for (i = md2->bufsize; i < R_MD2_BLOCK_SIZE; i++)
+    md2->buffer[i] = pad;
+  r_md2_update_block (md2, md2->buffer);
+
+  /* Append the checksum as a final block (copied out first so the
+   * block-update's own checksum pass doesn't read what it writes). */
+  r_memcpy (checksum, md2->checksum, sizeof (checksum));
+  r_md2_update_block (md2, checksum);
+  return TRUE;
+}
+
+static rboolean
+r_md2_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
+{
+  const RMd2 * md2 = (const RMd2 *)(md + 1);
+
+  if (R_UNLIKELY (data == NULL || size < R_MD2_SIZE))
+    return FALSE;
+
+  r_memcpy (data, md2->state, R_MD2_SIZE);
+  if (out != NULL)
+    *out = R_MD2_SIZE;
+
+  return TRUE;
+}
+
+/**************************************/
+/*                MD4                 */
+/**************************************/
 RMsgDigest *
 r_msg_digest_new_md4 (void)
 {
-  return NULL;
+  RMsgDigest * ret;
+  rsize mdsize = sizeof (RMsgDigest) + sizeof (RMd4);
+
+  if ((ret = r_malloc (mdsize)) != NULL) {
+    ret->type = R_MSG_DIGEST_TYPE_MD4;
+    ret->is_final = FALSE;
+    ret->mdsize = mdsize;
+    ret->blocksize = R_MD4_BLOCK_SIZE;
+    ret->init = r_md4_init;
+    ret->final = r_md4_final;
+    ret->update = r_md4_update;
+    ret->get = r_md4_get;
+    ret->squeeze = NULL;
+
+    ret->init (ret);
+  }
+
+  return ret;
+}
+
+static void
+r_md4_init (RMsgDigest * md)
+{
+  RMd4 * md4 = (RMd4 *)(md + 1);
+  md4->bufsize = 0;
+  md4->len = 0;
+  md4->data[0] = 0x67452301;
+  md4->data[1] = 0xefcdab89;
+  md4->data[2] = 0x98badcfe;
+  md4->data[3] = 0x10325476;
+}
+
+static void
+r_md4_update_block (RMd4 * md4, const ruint8 * data)
+{
+  ruint32 a, b, c, d, x[R_MD4_BLOCK_SIZE / sizeof (ruint32)];
+  rsize i;
+
+  for (i = 0; i < R_MD4_BLOCK_SIZE / sizeof (ruint32); i++)
+    x[i] = r_load_le32 (data + i * sizeof (ruint32));
+
+  a = md4->data[0];
+  b = md4->data[1];
+  c = md4->data[2];
+  d = md4->data[3];
+
+  /* Round 1: F(b,c,d) = (b & c) | (~b & d) */
+#define MD4_CORE(a, b, c, d, x, s) \
+  (a) += (((b) & (c)) | ((~b) & (d))) + (x); \
+  (a) = RUINT32_ROTL ((a), (s));
+  MD4_CORE (a, b, c, d, x[ 0],  3);
+  MD4_CORE (d, a, b, c, x[ 1],  7);
+  MD4_CORE (c, d, a, b, x[ 2], 11);
+  MD4_CORE (b, c, d, a, x[ 3], 19);
+  MD4_CORE (a, b, c, d, x[ 4],  3);
+  MD4_CORE (d, a, b, c, x[ 5],  7);
+  MD4_CORE (c, d, a, b, x[ 6], 11);
+  MD4_CORE (b, c, d, a, x[ 7], 19);
+  MD4_CORE (a, b, c, d, x[ 8],  3);
+  MD4_CORE (d, a, b, c, x[ 9],  7);
+  MD4_CORE (c, d, a, b, x[10], 11);
+  MD4_CORE (b, c, d, a, x[11], 19);
+  MD4_CORE (a, b, c, d, x[12],  3);
+  MD4_CORE (d, a, b, c, x[13],  7);
+  MD4_CORE (c, d, a, b, x[14], 11);
+  MD4_CORE (b, c, d, a, x[15], 19);
+#undef MD4_CORE
+
+  /* Round 2: G(b,c,d) = (b & c) | (b & d) | (c & d) */
+#define MD4_CORE(a, b, c, d, x, s) \
+  (a) += (((b) & (c)) | ((b) & (d)) | ((c) & (d))) + (x) + (ruint32)0x5a827999; \
+  (a) = RUINT32_ROTL ((a), (s));
+  MD4_CORE (a, b, c, d, x[ 0],  3);
+  MD4_CORE (d, a, b, c, x[ 4],  5);
+  MD4_CORE (c, d, a, b, x[ 8],  9);
+  MD4_CORE (b, c, d, a, x[12], 13);
+  MD4_CORE (a, b, c, d, x[ 1],  3);
+  MD4_CORE (d, a, b, c, x[ 5],  5);
+  MD4_CORE (c, d, a, b, x[ 9],  9);
+  MD4_CORE (b, c, d, a, x[13], 13);
+  MD4_CORE (a, b, c, d, x[ 2],  3);
+  MD4_CORE (d, a, b, c, x[ 6],  5);
+  MD4_CORE (c, d, a, b, x[10],  9);
+  MD4_CORE (b, c, d, a, x[14], 13);
+  MD4_CORE (a, b, c, d, x[ 3],  3);
+  MD4_CORE (d, a, b, c, x[ 7],  5);
+  MD4_CORE (c, d, a, b, x[11],  9);
+  MD4_CORE (b, c, d, a, x[15], 13);
+#undef MD4_CORE
+
+  /* Round 3: H(b,c,d) = b ^ c ^ d */
+#define MD4_CORE(a, b, c, d, x, s) \
+  (a) += ((b) ^ (c) ^ (d)) + (x) + (ruint32)0x6ed9eba1; \
+  (a) = RUINT32_ROTL ((a), (s));
+  MD4_CORE (a, b, c, d, x[ 0],  3);
+  MD4_CORE (d, a, b, c, x[ 8],  9);
+  MD4_CORE (c, d, a, b, x[ 4], 11);
+  MD4_CORE (b, c, d, a, x[12], 15);
+  MD4_CORE (a, b, c, d, x[ 2],  3);
+  MD4_CORE (d, a, b, c, x[10],  9);
+  MD4_CORE (c, d, a, b, x[ 6], 11);
+  MD4_CORE (b, c, d, a, x[14], 15);
+  MD4_CORE (a, b, c, d, x[ 1],  3);
+  MD4_CORE (d, a, b, c, x[ 9],  9);
+  MD4_CORE (c, d, a, b, x[ 5], 11);
+  MD4_CORE (b, c, d, a, x[13], 15);
+  MD4_CORE (a, b, c, d, x[ 3],  3);
+  MD4_CORE (d, a, b, c, x[11],  9);
+  MD4_CORE (c, d, a, b, x[ 7], 11);
+  MD4_CORE (b, c, d, a, x[15], 15);
+#undef MD4_CORE
+
+  md4->data[0] += a;
+  md4->data[1] += b;
+  md4->data[2] += c;
+  md4->data[3] += d;
+}
+
+static rboolean
+r_md4_update (RMsgDigest * md, rconstpointer data, rsize size)
+{
+  RMd4 * md4;
+  const ruint8 * ptr;
+
+  if (R_UNLIKELY (md == NULL || data == NULL))
+    return FALSE;
+
+  ptr = data;
+  md4 = (RMd4 *)(md + 1);
+  md4->len += size;
+  if (md4->bufsize > 0) {
+    rsize s = sizeof (md4->buffer) - md4->bufsize;
+    if (s <= size) {
+      r_memcpy (&md4->buffer[md4->bufsize], ptr, s);
+      ptr += s;
+      size -= s;
+      md4->bufsize = 0;
+      r_md4_update_block (md4, md4->buffer);
+      r_memset (md4->buffer, 0, sizeof (md4->buffer));
+    } else {
+      r_memcpy (&md4->buffer[md4->bufsize], ptr, size);
+      md4->bufsize += size;
+      return TRUE;
+    }
+  }
+
+  for (; size >= R_MD4_BLOCK_SIZE; size -= R_MD4_BLOCK_SIZE) {
+    r_md4_update_block (md4, ptr);
+    ptr += R_MD4_BLOCK_SIZE;
+  }
+
+  if ((md4->bufsize = size) > 0)
+    r_memcpy (md4->buffer, ptr, md4->bufsize);
+
+  return TRUE;
+}
+
+static rboolean
+r_md4_final (RMsgDigest * md)
+{
+  RMd4 * md4 = (RMd4 *)(md + 1);
+  rsize bufsize = md4->bufsize;
+  ruint8 * ptr;
+
+  md4->buffer[bufsize++] = 0x80;
+  ptr = md4->buffer;
+  if (bufsize <= sizeof (md4->buffer) - sizeof (ruint64)) {
+    rsize s = sizeof (md4->buffer) - sizeof (ruint64) - bufsize;
+    r_memset (&ptr[bufsize], 0, s);
+  } else {
+    rsize s = sizeof (md4->buffer) - bufsize;
+    r_memset (&ptr[bufsize], 0, s);
+
+    r_md4_update_block (md4, md4->buffer);
+    r_memset (md4->buffer, 0, sizeof (md4->buffer));
+    ptr = r_alloca0 (R_MD4_BLOCK_SIZE);
+  }
+
+  r_store_le64 (&ptr[R_MD4_BLOCK_SIZE - sizeof (ruint64)], md4->len << 3);
+  r_md4_update_block (md4, ptr);
+  return TRUE;
+}
+
+static rboolean
+r_md4_get (const RMsgDigest * md, ruint8 * data, rsize size, rsize * out)
+{
+  const RMd4 * md4 = (const RMd4 *)(md + 1);
+  rsize i;
+
+  if (R_UNLIKELY (data == NULL || size < R_MD4_SIZE))
+    return FALSE;
+
+  for (i = 0; i < R_MD4_SIZE / sizeof (ruint32); i++)
+    r_store_le32 (data + i * sizeof (ruint32), md4->data[i]);
+  if (out != NULL)
+    *out = R_MD4_SIZE;
+
+  return TRUE;
 }
 
 /**************************************/

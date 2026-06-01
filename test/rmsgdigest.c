@@ -4,6 +4,8 @@
 
 RTEST (rmsgdigest, type_string, R_TEST_TYPE_FAST)
 {
+  r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_MD2), ==, "md2");
+  r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_MD4), ==, "md4");
   r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_MD5), ==, "md5");
   r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_SHA1), ==, "sha-1");
   r_assert_cmpstr (r_msg_digest_type_string (R_MSG_DIGEST_TYPE_SHA224), ==, "sha-224");
@@ -15,6 +17,8 @@ RTEST_END;
 
 RTEST (rmsgdigest, type_from_str, R_TEST_TYPE_FAST)
 {
+  r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("md2")),     ==, R_MSG_DIGEST_TYPE_MD2);
+  r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("md4")),     ==, R_MSG_DIGEST_TYPE_MD4);
   r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("md5")),     ==, R_MSG_DIGEST_TYPE_MD5);
   r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("sha-1")),   ==, R_MSG_DIGEST_TYPE_SHA1);
   r_assert_cmpint (r_msg_digest_type_from_str (R_STR_WITH_SIZE_ARGS ("sha-224")), ==, R_MSG_DIGEST_TYPE_SHA224);
@@ -47,6 +51,120 @@ RTEST (rmsgdigest, md5, R_TEST_TYPE_FAST)
 
   r_free (hex);
   r_msg_digest_free (md);
+}
+RTEST_END;
+
+/* RFC 1319 Appendix A.5 test suite. */
+static const struct { const rchar * in; const rchar * hex; } _md2_vectors[] = {
+  { "", "8350e5a3e24c153df2275c9f80692773" },
+  { "a", "32ec01ec4a6dac72c0ab96fb34c0b5d1" },
+  { "abc", "da853b0d3f88d99b30283a69e6ded6bb" },
+  { "message digest", "ab4f496bfb2a530b219ff33031fe06b0" },
+  { "abcdefghijklmnopqrstuvwxyz", "4e8ddff3650292ab5a4108c3aa47940b" },
+  { "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    "da33def2a42df13975352846c30338cd" },
+  { "1234567890123456789012345678901234567890"
+    "1234567890123456789012345678901234567890",
+    "d5976f79d83d3a0dc9806c3c66f3efd8" },
+};
+
+RTEST (rmsgdigest, md2, R_TEST_TYPE_FAST)
+{
+  RMsgDigest * md = r_msg_digest_new_md2 ();
+  ruint8 data[32];
+  rsize size;
+  rchar * hex;
+
+  r_assert_cmpuint (r_msg_digest_size (md),       ==, 128 / 8);
+  r_assert_cmpuint (r_msg_digest_blocksize (md),  ==, 16);
+  r_assert (r_msg_digest_update (md, "abc", 3));
+  r_assert (r_msg_digest_get_data (md, data, sizeof (data), &size));
+  r_assert_cmpuint (size, ==, r_msg_digest_size (md));
+  r_assert_cmpmem (data, ==,
+      "\xda\x85\x3b\x0d\x3f\x88\xd9\x9b\x30\x28\x3a\x69\xe6\xde\xd6\xbb", size);
+  r_assert_cmpstr ((hex = r_msg_digest_get_hex (md)), ==,
+      "da853b0d3f88d99b30283a69e6ded6bb");
+  r_assert (r_msg_digest_update (md, "abc", 3));
+
+  r_assert (r_msg_digest_finish (md));
+  r_assert (!r_msg_digest_update (md, "abc", 3));
+
+  r_free (hex);
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, md2_rfc_vectors, R_TEST_TYPE_FAST)
+{
+  rsize i;
+
+  for (i = 0; i < R_N_ELEMENTS (_md2_vectors); i++) {
+    RMsgDigest * md = r_msg_digest_new_md2 ();
+    rchar * hex;
+
+    r_assert (r_msg_digest_update (md, _md2_vectors[i].in,
+          r_strlen (_md2_vectors[i].in)));
+    r_assert_cmpstr ((hex = r_msg_digest_get_hex (md)), ==, _md2_vectors[i].hex);
+    r_free (hex);
+    r_msg_digest_free (md);
+  }
+}
+RTEST_END;
+
+/* RFC 1320 Appendix A.5 test suite. */
+static const struct { const rchar * in; const rchar * hex; } _md4_vectors[] = {
+  { "", "31d6cfe0d16ae931b73c59d7e0c089c0" },
+  { "a", "bde52cb31de33e46245e05fbdbd6fb24" },
+  { "abc", "a448017aaf21d8525fc10ae87aa6729d" },
+  { "message digest", "d9130a8164549fe818874806e1c7014b" },
+  { "abcdefghijklmnopqrstuvwxyz", "d79e1c308aa5bbcdeea8ed63df412da9" },
+  { "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    "043f8582f241db351ce627e153e7f0e4" },
+  { "1234567890123456789012345678901234567890"
+    "1234567890123456789012345678901234567890",
+    "e33b4ddc9c38f2199c3e7b164fcc0536" },
+};
+
+RTEST (rmsgdigest, md4, R_TEST_TYPE_FAST)
+{
+  RMsgDigest * md = r_msg_digest_new_md4 ();
+  ruint8 data[32];
+  rsize size;
+  rchar * hex;
+
+  r_assert_cmpuint (r_msg_digest_size (md),       ==, 128 / 8);
+  r_assert_cmpuint (r_msg_digest_blocksize (md),  ==, 512 / 8);
+  r_assert (r_msg_digest_update (md, "abc", 3));
+  r_assert (r_msg_digest_get_data (md, data, sizeof (data), &size));
+  r_assert_cmpuint (size, ==, r_msg_digest_size (md));
+  r_assert_cmpmem (data, ==,
+      "\xa4\x48\x01\x7a\xaf\x21\xd8\x52\x5f\xc1\x0a\xe8\x7a\xa6\x72\x9d", size);
+  r_assert_cmpstr ((hex = r_msg_digest_get_hex (md)), ==,
+      "a448017aaf21d8525fc10ae87aa6729d");
+  r_assert (r_msg_digest_update (md, "abc", 3));
+
+  r_assert (r_msg_digest_finish (md));
+  r_assert (!r_msg_digest_update (md, "abc", 3));
+
+  r_free (hex);
+  r_msg_digest_free (md);
+}
+RTEST_END;
+
+RTEST (rmsgdigest, md4_rfc_vectors, R_TEST_TYPE_FAST)
+{
+  rsize i;
+
+  for (i = 0; i < R_N_ELEMENTS (_md4_vectors); i++) {
+    RMsgDigest * md = r_msg_digest_new_md4 ();
+    rchar * hex;
+
+    r_assert (r_msg_digest_update (md, _md4_vectors[i].in,
+          r_strlen (_md4_vectors[i].in)));
+    r_assert_cmpstr ((hex = r_msg_digest_get_hex (md)), ==, _md4_vectors[i].hex);
+    r_free (hex);
+    r_msg_digest_free (md);
+  }
 }
 RTEST_END;
 
@@ -84,6 +202,14 @@ RTEST (rmsgdigest, new_dispatch, R_TEST_TYPE_FAST)
   /* r_msg_digest_new must dispatch to every implemented digest, not
    * just MD5/SHA1/SHA256/SHA512. */
   RMsgDigest * md;
+
+  r_assert_cmpptr ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_MD2)), !=, NULL);
+  r_assert_cmpuint (r_msg_digest_size (md), ==, 128 / 8);
+  r_msg_digest_free (md);
+
+  r_assert_cmpptr ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_MD4)), !=, NULL);
+  r_assert_cmpuint (r_msg_digest_size (md), ==, 128 / 8);
+  r_msg_digest_free (md);
 
   r_assert_cmpptr ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_SHA224)), !=, NULL);
   r_assert_cmpuint (r_msg_digest_size (md), ==, 224 / 8);
