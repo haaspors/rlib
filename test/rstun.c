@@ -180,7 +180,7 @@ RTEST (rstun, req_alloc, RTEST_FAST)
   r_assert (r_stun_msg_method_is_allocate (pkt_req_alloc));
   r_assert (r_stun_attr_tlv_first (pkt_req_alloc, &tlv));
   r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_REQUESTED_TRANSPORT);
-  r_assert_cmphex (r_stun_attr_tlv_parse_reqested_transport_protocol (pkt_req_alloc, &tlv), ==, 0x11); /* UDP */
+  r_assert_cmphex (r_stun_attr_tlv_parse_requested_transport_protocol (pkt_req_alloc, &tlv), ==, 0x11); /* UDP */
   r_assert (!r_stun_attr_tlv_next (pkt_req_alloc, &tlv));
 
   r_assert (r_stun_is_valid_msg (pkt_error_resp_alloc, sizeof (pkt_error_resp_alloc)));
@@ -210,7 +210,7 @@ RTEST (rstun, req_alloc, RTEST_FAST)
   r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS);
   r_assert (r_stun_attr_tlv_next (pkt_success_resp_alloc, &tlv));
   r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_LIFETIME);
-  r_assert_cmpuint (r_stun_att_tlv_parse_lifetime (pkt_success_resp_alloc, &tlv), ==, 120);
+  r_assert_cmpuint (r_stun_attr_tlv_parse_lifetime (pkt_success_resp_alloc, &tlv), ==, 120);
   r_assert (r_stun_attr_tlv_next (pkt_success_resp_alloc, &tlv));
   r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_MESSAGE_INTEGRITY);
   r_assert (!r_stun_attr_tlv_next (pkt_success_resp_alloc, &tlv));
@@ -244,7 +244,7 @@ RTEST (rstun, message_integrity_fingerprint, RTEST_FAST)
   r_assert_cmpmem (tlv.value, ==, "STUN test client", tlv.len);
   r_assert (r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
   r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_PRIORITY);
-  r_assert_cmphex (r_stun_att_tlv_parse_lifetime (pkt_rfc5769_2_1, &tlv), ==, 0x6e0001ff);
+  r_assert_cmphex (r_stun_attr_tlv_parse_lifetime (pkt_rfc5769_2_1, &tlv), ==, 0x6e0001ff);
   r_assert (r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));
   r_assert_cmphex (tlv.type, ==, R_STUN_ATTR_TYPE_ICE_CONTROLLED);
   r_assert (r_stun_attr_tlv_next (pkt_rfc5769_2_1, &tlv));

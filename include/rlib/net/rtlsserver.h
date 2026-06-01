@@ -101,7 +101,7 @@ R_API rboolean r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer
 R_API rboolean r_tls_server_send_appdata (RTLSServer * server, RBuffer * buffer);
 
 /** @brief Export RFC 5705 keying material for an application label / context. */
-R_API RTLSError r_tls_server_export_keying_matierial (const RTLSServer * server,
+R_API RTLSError r_tls_server_export_keying_material (const RTLSServer * server,
     ruint8 * material, rsize size, const rchar * label, rsize len,
     const ruint8 * ctx, rsize ctxsize);
 

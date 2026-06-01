@@ -216,13 +216,13 @@ R_API RSocketAddress * r_stun_attr_tlv_parse_address (rconstpointer buf, const R
 /** @brief Parse an XOR-MAPPED-ADDRESS-style attribute (de-XORing against the header). */
 R_API RSocketAddress * r_stun_attr_tlv_parse_xor_address (rconstpointer buf, const RStunAttrTLV * tlv);
 /** @brief Parse a REQUESTED-TRANSPORT attribute's protocol byte. */
-R_API ruint8 r_stun_attr_tlv_parse_reqested_transport_protocol (rconstpointer buf, const RStunAttrTLV * tlv);
+R_API ruint8 r_stun_attr_tlv_parse_requested_transport_protocol (rconstpointer buf, const RStunAttrTLV * tlv);
 /** @brief Parse an ERROR-CODE attribute's numeric code. */
 R_API ruint r_stun_attr_tlv_parse_error_code (rconstpointer buf, const RStunAttrTLV * tlv);
 /** @brief Parse a LIFETIME attribute (seconds). */
-#define r_stun_att_tlv_parse_lifetime(buf, tlv) RUINT32_FROM_BE (*(ruint32 *)((tlv)->value))
+#define r_stun_attr_tlv_parse_lifetime(buf, tlv) RUINT32_FROM_BE (*(ruint32 *)((tlv)->value))
 /** @brief Parse a PRIORITY attribute (ICE candidate priority). */
-#define r_stun_att_tlv_parse_priority(buf, tlv) RUINT32_FROM_BE (*(ruint32 *)((tlv)->value))
+#define r_stun_attr_tlv_parse_priority(buf, tlv) RUINT32_FROM_BE (*(ruint32 *)((tlv)->value))
 
 /** @brief Verify a short-term-credential MESSAGE-INTEGRITY against @p key. */
 R_API rboolean r_stun_msg_check_integrity_short_cred (rconstpointer buf,

@@ -79,7 +79,7 @@ typedef enum {
   R_RTP_PT_LPC              =   7, /*  8000 (mono)    [RFC3551] */
   R_RTP_PT_PCMA             =   8, /*  8000 (mono)    [RFC3551] */
   R_RTP_PT_G722             =   9, /*  8000 (mono)    [RFC3551] */
-  R_RTP_PT_L16_STERO        =  10, /* 44100 (stereo)  [RFC3551] */
+  R_RTP_PT_L16_STEREO        =  10, /* 44100 (stereo)  [RFC3551] */
   R_RTP_PT_L16_MONO         =  11, /* 44100 (mono)    [RFC3551] */
   R_RTP_PT_QCELP            =  12, /*  8000 (mono)    [RFC3551] */
   R_RTP_PT_CN               =  13, /*  8000 (mono)    [RFC3389] */
