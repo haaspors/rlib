@@ -93,7 +93,13 @@ r_resolve_sync (const rchar * host, const rchar * service,
           it->ai_family, it->ai_protocol, it->ai_socktype, it->ai_flags);
       R_LOG_MEM_DUMP (R_LOG_LEVEL_TRACE, it->ai_addr, it->ai_addrlen);
 
-      cur = r_mem_new (RResolvedAddr);
+      if ((cur = r_mem_new (RResolvedAddr)) == NULL) {
+        freeaddrinfo (aires);
+        r_resolved_addr_free (ret);
+        if (res != NULL)
+          *res = R_RESOLVE_OOM;
+        return NULL;
+      }
       cur->hints.family = (RSocketFamily)it->ai_family;
       switch (it->ai_socktype) {
         case SOCK_STREAM:

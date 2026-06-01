@@ -780,7 +780,7 @@ r_io_set_socket_ipv4_ttl (RIOHandle handle, int ttl)
 RSocketStatus
 r_io_get_socket_ipv6_multicast_loop (RIOHandle handle, rboolean * mloop)
 {
-  return r_io_get_socket_option_bool (handle, IPPROTO_IPV6, IP_MULTICAST_LOOP, mloop);
+  return r_io_get_socket_option_bool (handle, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, mloop);
 }
 
 RSocketStatus
@@ -798,7 +798,7 @@ r_io_get_socket_ipv6_ttl (RIOHandle handle, int * ttl)
 RSocketStatus
 r_io_set_socket_ipv6_multicast_loop (RIOHandle handle, rboolean mloop)
 {
-  return r_io_set_socket_option (handle, IPPROTO_IPV6, IP_MULTICAST_LOOP, mloop);
+  return r_io_set_socket_option (handle, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, mloop);
 }
 
 RSocketStatus
