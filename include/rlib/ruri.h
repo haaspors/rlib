@@ -19,7 +19,7 @@
 #define __R_URI_H__
 
 #if !defined(__RLIB_H_INCLUDE_GUARD__) && !defined(RLIB_COMPILATION)
-#error "#include <rlib.h> only pelase."
+#error "#include <rlib.h> only please."
 #endif
 
 /**
@@ -130,10 +130,12 @@ R_API rchar * r_uri_get_pqf (const RUri * uri) R_ATTR_MALLOC;
 /** @} */
 
 /** @name Escaped component accessors (borrowed)
- *  Each returns a borrowed pointer into the URI's escaped backing
- *  store plus its length via @p size; do not free.
+ *  Each @c _ptr accessor returns a borrowed pointer into the URI's
+ *  escaped backing store plus its length via @p size; do not free.
+ *  The exception is @ref r_uri_get_escaped, which allocates a copy of
+ *  the whole escaped URI (free with @c r_free).
  *  @{ */
-/** @brief Whole URI, escaped (allocating). */
+/** @brief Whole URI, escaped (allocating; free with @c r_free). */
 R_API rchar * r_uri_get_escaped (const RUri * uri) R_ATTR_MALLOC;
 /** @brief Borrowed pointer to the whole escaped URI. */
 R_API const rchar * r_uri_get_escaped_ptr (const RUri * uri, rsize * size);
