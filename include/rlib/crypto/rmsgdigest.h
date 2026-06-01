@@ -140,8 +140,8 @@ R_API RMsgDigest * r_msg_digest_new (RMsgDigestType type);
  */
 R_API void r_msg_digest_free (RMsgDigest * md);
 
-R_API RMsgDigest * r_msg_digest_new_md2 (void);     /**< @brief Construct a fresh MD2 digest (not yet implemented; returns @c NULL). */
-R_API RMsgDigest * r_msg_digest_new_md4 (void);     /**< @brief Construct a fresh MD4 digest (not yet implemented; returns @c NULL). */
+R_API RMsgDigest * r_msg_digest_new_md2 (void);     /**< @brief Construct a fresh MD2 digest. */
+R_API RMsgDigest * r_msg_digest_new_md4 (void);     /**< @brief Construct a fresh MD4 digest. */
 R_API RMsgDigest * r_msg_digest_new_md5 (void);     /**< @brief Construct a fresh MD5 digest. */
 R_API RMsgDigest * r_msg_digest_new_sha1 (void);    /**< @brief Construct a fresh SHA-1 digest. */
 R_API RMsgDigest * r_msg_digest_new_sha224 (void);  /**< @brief Construct a fresh SHA-224 digest. */
