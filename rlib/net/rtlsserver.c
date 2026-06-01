@@ -946,43 +946,59 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
   return ret;
 }
 
-static void
+static RTLSError
 r_tls_server_expand_master_secret (RTLSServer * server)
 {
   ruint8 keyblock[256];
+  RTLSError ret;
 
   if (server->prf (keyblock, sizeof (keyblock),
         server->mastersecret, sizeof (server->mastersecret),
         R_STR_WITH_SIZE_ARGS ("key expansion"),
         server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         server->hello.random, (rsize)R_TLS_HELLO_RANDOM_BYTES,
-        NULL) == R_TLS_ERROR_OK) {
+        NULL) != R_TLS_ERROR_OK) {
+    r_memclear_secure (keyblock, sizeof (keyblock));
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  }
+
+  {
     ruint8 * ptr = keyblock;
     rsize size;
+
+    ret = R_TLS_ERROR_OK;
 
     /* MAC */
     if ((size = r_msg_digest_type_size (server->csinfo->mac)) > 0) {
       R_LOG_DEBUG ("HMAC (%d) from keyblock of size %u", server->csinfo->mac, (ruint)size);
       server->client.hmac = r_hmac_new (server->csinfo->mac, ptr, size); ptr += size;
       server->server.hmac = r_hmac_new (server->csinfo->mac, ptr, size); ptr += size;
+      if (server->client.hmac == NULL || server->server.hmac == NULL)
+        ret = R_TLS_ERROR_OOM;
     }
 
     /* Key */
-    if ((size = server->csinfo->cipher->keybits / 8) > 0) {
+    if (ret == R_TLS_ERROR_OK && (size = server->csinfo->cipher->keybits / 8) > 0) {
       R_LOG_DEBUG ("Key from keyblock of size %u", (ruint)size);
       server->client.cipher = r_crypto_cipher_new (server->csinfo->cipher, ptr); ptr += size;
       server->server.cipher = r_crypto_cipher_new (server->csinfo->cipher, ptr); ptr += size;
+      if (server->client.cipher == NULL || server->server.cipher == NULL)
+        ret = R_TLS_ERROR_OOM;
     }
 
     /* IV */
-    if ((size = server->csinfo->cipher->ivsize) > 0) {
+    if (ret == R_TLS_ERROR_OK && (size = server->csinfo->cipher->ivsize) > 0) {
       R_LOG_DEBUG ("IV from keyblock of size %u", (ruint)size);
       server->client.fixediv = r_memdup (ptr, size); ptr += size;
       server->server.fixediv = r_memdup (ptr, size); ptr += size;
+      if (server->client.fixediv == NULL || server->server.fixediv == NULL)
+        ret = R_TLS_ERROR_OOM;
     }
   }
 
+  /* Any partial allocations are released by r_tls_server_free. */
   r_memclear_secure (keyblock, sizeof (keyblock));
+  return ret;
 }
 
 static RTLSError
@@ -1159,7 +1175,8 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
       R_LOG_TRACE ("Updating HS hash with ClientKeyExchange %u bytes",
           (ruint)parser->fragment.size);
       r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
-      r_tls_server_expand_master_secret (server);
+      if ((err = r_tls_server_expand_master_secret (server)) != R_TLS_ERROR_OK)
+        r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
       break;
     case R_TLS_ERROR_CORRUPT_RECORD:
       r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_DECODE_ERROR);
