@@ -344,6 +344,23 @@ r_msg_digest_get_hex_full (const RMsgDigest * md,
 }
 
 /**************************************/
+/*              MD2 / MD4             */
+/**************************************/
+/* MD2 and MD4 are declared in the public header but not implemented
+ * yet; return NULL rather than fail to link. */
+RMsgDigest *
+r_msg_digest_new_md2 (void)
+{
+  return NULL;
+}
+
+RMsgDigest *
+r_msg_digest_new_md4 (void)
+{
+  return NULL;
+}
+
+/**************************************/
 /*                MD5                 */
 /**************************************/
 RMsgDigest *
