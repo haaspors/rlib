@@ -5,6 +5,7 @@ rlibtest_sources = [
   'rasn1der.c',
   'rasn1enc.c',
   'rasn1oid.c',
+  'ratomic.c',
   'rargparse.c',
   'rbase64.c',
   'rbitops.c',

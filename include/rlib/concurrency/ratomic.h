@@ -321,7 +321,6 @@ __extension__ ({                                              \
 #elif USE_MSC_ATOMICS
 #include <intrin.h>
 
-/* TODO: Check if this works with MSC */
 #define r_atomic_int_load(a)                    (MemoryBarrier(), *a)
 #define r_atomic_int_store(a, v)                _InterlockedExchange ((long volatile *)a, (long)v)
 #define r_atomic_int_exchange(a, v)             _InterlockedExchange ((long volatile *)a, (long)v)
