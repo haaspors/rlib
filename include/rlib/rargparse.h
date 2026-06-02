@@ -284,6 +284,43 @@ R_API rboolean r_arg_parser_add_option_group (RArgParser * parser,
  */
 R_API rboolean r_arg_parser_set_option_choices (RArgParser * parser,
     const rchar * longarg, const rchar * const * choices);
+/**
+ * @brief Custom value handler invoked during parsing.
+ *
+ * @param longarg  The option's long name (so one callback can serve
+ *                 several options).
+ * @param value    The raw command-line token for this occurrence.
+ * @param user     The user pointer passed to
+ *                 @c r_arg_parser_set_option_callback.
+ * @return @c TRUE to accept the value, @c FALSE to reject it (the parse
+ *         then fails with @c R_ARG_PARSE_VALUE_ERROR).
+ */
+typedef rboolean (*RArgOptionCallback) (const rchar * longarg,
+    const rchar * value, rpointer user);
+/**
+ * @brief Attach a custom value handler/validator to @p longarg.
+ *
+ * After the option's built-in type parse succeeds, @p func is called
+ * with the raw value (per occurrence, and per element for a
+ * @c STRING_ARRAY) and must return @c TRUE to accept or @c FALSE to
+ * reject (failing the parse with @c R_ARG_PARSE_VALUE_ERROR). It runs
+ * only for values given on the command line, never for a @c defval.
+ *
+ * The value is still recorded as usual (retrievable via the matching
+ * typed getter); the callback is the escape hatch for @e additionally
+ * parsing/validating it — e.g. pair it with a @c STRING option to parse
+ * arbitrary syntax and capture the result through @p user, which the
+ * caller owns. Because options are handled as they are seen, the
+ * callback may already have run for earlier options when a later one
+ * makes the parse fail. Pass @p func = @c NULL to clear.
+ *
+ * Call after the option has been registered.
+ *
+ * @return @c TRUE on success; @c FALSE if @p longarg is unknown or
+ *         names an argument-less option (@c NONE / @c COUNTER).
+ */
+R_API rboolean r_arg_parser_set_option_callback (RArgParser * parser,
+    const rchar * longarg, RArgOptionCallback func, rpointer user);
 /** @} */
 
 /**

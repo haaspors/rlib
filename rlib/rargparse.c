@@ -55,6 +55,8 @@ struct RArgParser
 
   /* longarg -> (const rchar * const *) allowed-value set, borrowed. */
   RDictionary * choices;
+  /* longarg -> owned RArgCallbackReg (custom value handler). */
+  RDictionary * callbacks;
 };
 
 static RArgParseCtx *
@@ -374,6 +376,7 @@ r_arg_parser_free (RArgParser * parser)
 
     r_kv_ptr_array_clear (&parser->commands);
     r_dictionary_unref (parser->choices);
+    r_dictionary_unref (parser->callbacks);
     r_free (parser);
   }
 }
@@ -408,6 +411,7 @@ r_arg_parser_new (const rchar * app, const rchar * version)
 
     r_kv_ptr_array_init (&ret->commands, r_str_equal);
     ret->choices = r_dictionary_new ();
+    ret->callbacks = r_dictionary_new_full (r_free);
   }
 
   return ret;
@@ -878,6 +882,53 @@ r_arg_parser_get_choices (const RArgParser * parser, const rchar * longarg)
   return r_dictionary_lookup (parser->choices, longarg);
 }
 
+typedef struct {
+  RArgOptionCallback func;
+  rpointer user;
+} RArgCallbackReg;
+
+/* Run the choices restriction and any custom callback against @p value
+ * (an already type-parsed token for @p entry); sets the parser error
+ * and returns VALUE_ERROR on rejection, OK otherwise. */
+static RArgParseResult
+r_arg_parser_validate_value (RArgParser * parser, const RArgOptionEntry * entry,
+    const rchar * value)
+{
+  rboolean positional = (entry->flags & R_ARG_OPTION_FLAG_POSITIONAL) != 0;
+  const rchar * const * ch = r_arg_parser_get_choices (parser, entry->longarg);
+  const RArgCallbackReg * cb;
+
+  if (!r_arg_value_in_choices (ch, value)) {
+    rchar * list = r_arg_choices_join (ch, ", ");
+    if (positional) {
+      rchar * pname = r_arg_positional_usage_name (entry);
+      r_arg_parser_set_error (parser,
+          "invalid value '%s' for argument '%s' (allowed: %s)", value, pname, list);
+      r_free (pname);
+    } else {
+      r_arg_parser_set_error (parser,
+          "invalid value '%s' for option '--%s' (allowed: %s)", value, entry->longarg, list);
+    }
+    r_free (list);
+    return R_ARG_PARSE_VALUE_ERROR;
+  }
+
+  cb = r_dictionary_lookup (parser->callbacks, entry->longarg);
+  if (cb != NULL && !cb->func (entry->longarg, value, cb->user)) {
+    if (positional) {
+      rchar * pname = r_arg_positional_usage_name (entry);
+      r_arg_parser_set_error (parser, "invalid value '%s' for argument '%s'", value, pname);
+      r_free (pname);
+    } else {
+      r_arg_parser_set_error (parser, "invalid value '%s' for option '--%s'",
+          value, entry->longarg);
+    }
+    return R_ARG_PARSE_VALUE_ERROR;
+  }
+
+  return R_ARG_PARSE_OK;
+}
+
 rboolean
 r_arg_parser_set_option_choices (RArgParser * parser, const rchar * longarg,
     const rchar * const * choices)
@@ -906,6 +957,35 @@ r_arg_parser_set_option_choices (RArgParser * parser, const rchar * longarg,
         (rpointer) choices);
   } else {
     r_dictionary_remove (parser->choices, entry->longarg);
+  }
+
+  return TRUE;
+}
+
+rboolean
+r_arg_parser_set_option_callback (RArgParser * parser, const rchar * longarg,
+    RArgOptionCallback func, rpointer user)
+{
+  RArgOptionEntry * entry;
+
+  if (R_UNLIKELY (parser == NULL || longarg == NULL))
+    return FALSE;
+  if ((entry = r_arg_parser_find_entry_by_longarg (parser, longarg)) == NULL)
+    return FALSE;
+  if (entry->type == R_ARG_OPTION_TYPE_NONE ||
+      entry->type == R_ARG_OPTION_TYPE_COUNTER) {
+    R_LOG_CAT_WARNING (&rlib_logcat,
+        "ignoring callback for argument-less --%s", entry->longarg);
+    return FALSE;
+  }
+
+  if (func != NULL) {
+    RArgCallbackReg * reg = r_mem_new (RArgCallbackReg);
+    reg->func = func;
+    reg->user = user;
+    r_dictionary_insert (parser->callbacks, (rpointer) entry->longarg, reg);
+  } else {
+    r_dictionary_remove (parser->callbacks, entry->longarg);
   }
 
   return TRUE;
@@ -972,15 +1052,9 @@ r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
   }
 
   if (ret == R_ARG_PARSE_OK && entry->type != R_ARG_OPTION_TYPE_NONE) {
-    const rchar * const * ch = r_arg_parser_get_choices (parser, entry->longarg);
-    if (!r_arg_value_in_choices (ch, str)) {
-      rchar * list = r_arg_choices_join (ch, ", ");
-      r_arg_parser_set_error (parser,
-          "invalid value '%s' for option '--%s' (allowed: %s)",
-          str, entry->longarg, list);
-      r_free (list);
-      return R_ARG_PARSE_VALUE_ERROR;
-    }
+    RArgParseResult v = r_arg_parser_validate_value (parser, entry, str);
+    if (v != R_ARG_PARSE_OK)
+      return v;
   }
 
   if (entry->type == R_ARG_OPTION_TYPE_STRING_ARRAY) {
@@ -1156,16 +1230,9 @@ r_arg_parser_parse_positionals (RArgParser * parser, RArgParseCtx * ctx,
     }
 
     {
-      const rchar * const * ch = r_arg_parser_get_choices (parser, entry->longarg);
-      if (!r_arg_value_in_choices (ch, str)) {
-        rchar * pname = r_arg_positional_usage_name (entry);
-        rchar * list = r_arg_choices_join (ch, ", ");
-        r_arg_parser_set_error (parser,
-            "invalid value '%s' for argument '%s' (allowed: %s)", str, pname, list);
-        r_free (pname);
-        r_free (list);
-        return R_ARG_PARSE_VALUE_ERROR;
-      }
+      RArgParseResult v = r_arg_parser_validate_value (parser, entry, str);
+      if (v != R_ARG_PARSE_OK)
+        return v;
     }
 
     r_dictionary_insert (ctx->options, entry->longarg, (rpointer) str);
