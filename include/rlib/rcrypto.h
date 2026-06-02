@@ -29,6 +29,7 @@
  *
  *   - @ref r_crypto_symmetric — block / stream cipher base, AES and ChaCha20.
  *   - @ref r_crypto_hash — message digests and HMAC.
+ *   - @ref r_crypto_kdf — password-based key derivation (PBKDF2).
  *   - @ref r_crypto_key — polymorphic asymmetric-key handle plus the
  *     concrete key kinds (RSA, DSA, DH) that plug into it.
  *   - @ref r_crypto_ec — elliptic-curve arithmetic and the EdDSA /

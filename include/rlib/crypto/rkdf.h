@@ -50,7 +50,7 @@ R_BEGIN_DECLS
  *                    functions are not valid PRFs.
  * @param password    Password bytes; may be empty but not @c NULL.
  * @param passlen     Length of @p password in bytes.
- * @param salt        Salt bytes.
+ * @param salt        Salt bytes; may be empty but not @c NULL.
  * @param saltlen     Length of @p salt in bytes.
  * @param iterations  Iteration count; must be at least 1.
  * @param out         Destination buffer for @p outlen derived bytes.
