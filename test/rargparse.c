@@ -1111,6 +1111,99 @@ RTEST (rargparse, counter, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rargparse, choices, RTEST_FAST)
+{
+  static const rchar * const modes[] = { "fast", "slow", NULL };
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParseCtx * ctx;
+  RArgParseResult res;
+  rchar ** strv, ** argv;
+  rchar * help, * val;
+  int argc;
+
+  r_assert (r_arg_parser_add_option_entry (parser, "mode", 'm',
+        R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "the mode", NULL));
+  r_assert (r_arg_parser_add_option_entry (parser, "verbose", 'v',
+        R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "noisy", NULL));
+
+  r_assert (r_arg_parser_set_option_choices (parser, "mode", modes));
+  /* Unknown option and argument-less options are rejected. */
+  r_assert (!r_arg_parser_set_option_choices (parser, "nope", modes));
+  r_assert (!r_arg_parser_set_option_choices (parser, "verbose", modes));
+
+  /* Accepted value. */
+  strv = argv = r_strv_new ("prog", "--mode=fast", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert_cmpstr ((val = r_arg_parse_ctx_get_option_string (ctx, "mode")), ==, "fast");
+  r_free (val);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  /* Rejected value, with an explanatory error listing the set. */
+  strv = argv = r_strv_new ("prog", "--mode=wat", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==,
+      "invalid value 'wat' for option '--mode' (allowed: fast, slow)");
+  r_strv_free (strv);
+
+  /* Help shows the set as the value placeholder. */
+  r_assert_cmpptr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_NONE, NULL)), !=, NULL);
+  r_assert_cmpptr (r_strstr (help, "--mode={fast,slow}"), !=, NULL);
+  r_free (help);
+
+  /* NULL clears the restriction. */
+  r_assert (r_arg_parser_set_option_choices (parser, "mode", NULL));
+  strv = argv = r_strv_new ("prog", "--mode=anything", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert_cmpstr ((val = r_arg_parse_ctx_get_option_string (ctx, "mode")), ==, "anything");
+  r_free (val);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, choices_positional, RTEST_FAST)
+{
+  static const rchar * const colors[] = { "red", "green", NULL };
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParseResult res;
+  rchar ** strv, ** argv;
+  int argc;
+
+  r_assert (r_arg_parser_add_option_entry (parser, "color", 0,
+        R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_POSITIONAL, "a color", NULL));
+  r_assert (r_arg_parser_set_option_choices (parser, "color", colors));
+
+  strv = argv = r_strv_new ("prog", "blue", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==,
+      "invalid value 'blue' for argument 'COLOR' (allowed: red, green)");
+  r_strv_free (strv);
+
+  /* The Arguments help section lists the allowed set. */
+  {
+    rchar * help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_NONE, NULL);
+    r_assert_cmpptr (help, !=, NULL);
+    r_assert_cmpptr (r_strstr (help, "(one of: red, green)"), !=, NULL);
+    r_free (help);
+  }
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (rargparse, get_value, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {

@@ -52,6 +52,9 @@ struct RArgParser
   RSList * groups;
 
   RKVPtrArray commands;
+
+  /* longarg -> (const rchar * const *) allowed-value set, borrowed. */
+  RDictionary * choices;
 };
 
 static RArgParseCtx *
@@ -370,6 +373,7 @@ r_arg_parser_free (RArgParser * parser)
     r_slist_destroy_full (parser->groups, r_arg_option_group_unref);
 
     r_kv_ptr_array_clear (&parser->commands);
+    r_dictionary_unref (parser->choices);
     r_free (parser);
   }
 }
@@ -403,6 +407,7 @@ r_arg_parser_new (const rchar * app, const rchar * version)
         r_arg_help_args, R_N_ELEMENTS (r_arg_help_args));
 
     r_kv_ptr_array_init (&ret->commands, r_str_equal);
+    ret->choices = r_dictionary_new ();
   }
 
   return ret;
@@ -482,11 +487,15 @@ r_arg_positional_usage_name (const RArgOptionEntry * opt)
   return ret;
 }
 
+static rchar * r_arg_choices_join (const rchar * const * choices, const rchar * sep);
+
 static void
-r_arg_positional_entry_append_help (const RArgOptionEntry * opt, RString * str)
+r_arg_positional_entry_append_help (const RArgOptionEntry * opt, RString * str,
+    RDictionary * choices)
 {
   rssize spacing = 32;
   rchar * name;
+  const rchar * const * ch;
 
   if (opt->flags & R_ARG_OPTION_FLAG_HIDDEN)
     return;
@@ -499,15 +508,23 @@ r_arg_positional_entry_append_help (const RArgOptionEntry * opt, RString * str)
     spacing -= r_string_append (str, " ");
 
   r_string_append (str, opt->desc);
+  ch = (choices != NULL) ? r_dictionary_lookup (choices, opt->longarg) : NULL;
+  if (ch != NULL) {
+    rchar * list = r_arg_choices_join (ch, ", ");
+    r_string_append_printf (str, " (one of: %s)", list);
+    r_free (list);
+  }
   if (opt->defval != NULL)
     r_string_append_printf (str, " [default: %s]", opt->defval);
   r_string_append (str, "\n");
 }
 
 static void
-r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
+r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str,
+    RDictionary * choices)
 {
   rssize spacing = 32;
+  const rchar * const * ch;
 
   if (opt->flags & R_ARG_OPTION_FLAG_HIDDEN)
     return;
@@ -520,7 +537,12 @@ r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
     spacing -= r_string_append_printf (str, "-%c, ", opt->shortarg);
 
   spacing -= r_string_append_printf (str, "--%s", opt->longarg);
-  if (opt->eqname == NULL || *opt->eqname == 0) {
+  ch = (choices != NULL) ? r_dictionary_lookup (choices, opt->longarg) : NULL;
+  if (ch != NULL) {
+    rchar * list = r_arg_choices_join (ch, ",");
+    spacing -= r_string_append_printf (str, "={%s}", list);
+    r_free (list);
+  } else if (opt->eqname == NULL || *opt->eqname == 0) {
     switch (opt->type) {
       case R_ARG_OPTION_TYPE_NONE:
       case R_ARG_OPTION_TYPE_COUNTER:
@@ -553,7 +575,8 @@ r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
 }
 
 static void
-r_arg_option_group_append_help (const RArgOptionGroup * group, RString * str)
+r_arg_option_group_append_help (const RArgOptionGroup * group, RString * str,
+    RDictionary * choices)
 {
   rsize i;
 
@@ -562,7 +585,7 @@ r_arg_option_group_append_help (const RArgOptionGroup * group, RString * str)
     r_string_append_printf (str, "%s:\n", group->desc);
 
   for (i = 0; i < group->count; i++)
-    r_arg_option_entry_append_help (&group->entries[i], str);
+    r_arg_option_entry_append_help (&group->entries[i], str, choices);
 }
 
 static void
@@ -628,9 +651,13 @@ r_arg_parser_get_help (const RArgParser * parser, RArgParseFlags flags,
   if ((flags & R_ARG_PARSE_FLAG_DISABLE_HELP) == R_ARG_PARSE_FLAG_DISABLE_HELP)
     i += R_N_ELEMENTS (r_arg_version_args) + R_N_ELEMENTS (r_arg_help_args);
   for (; i < parser->main->count; i++)
-    r_arg_option_entry_append_help (&parser->main->entries[i], str);
+    r_arg_option_entry_append_help (&parser->main->entries[i], str, parser->choices);
 
-  r_slist_foreach (parser->groups, (RFunc)r_arg_option_group_append_help, str);
+  {
+    RSList * it;
+    for (it = parser->groups; it != NULL; it = it->next)
+      r_arg_option_group_append_help (it->data, str, parser->choices);
+  }
 
   {
     rboolean any = FALSE;
@@ -644,7 +671,7 @@ r_arg_parser_get_help (const RArgParser * parser, RArgParseFlags flags,
         r_string_append (str, "\nArguments:\n");
         any = TRUE;
       }
-      r_arg_positional_entry_append_help (opt, str);
+      r_arg_positional_entry_append_help (opt, str, parser->choices);
     }
   }
 
@@ -816,6 +843,74 @@ r_arg_option_parser_string (const rchar ** str, rchar ** val)
   return R_ARG_PARSE_OK;
 }
 
+static rboolean
+r_arg_value_in_choices (const rchar * const * choices, const rchar * value)
+{
+  rsize i;
+
+  if (choices == NULL)
+    return TRUE;
+  for (i = 0; choices[i] != NULL; i++) {
+    if (r_str_equal (choices[i], value))
+      return TRUE;
+  }
+  return FALSE;
+}
+
+static rchar *
+r_arg_choices_join (const rchar * const * choices, const rchar * sep)
+{
+  RString * s = r_string_new_sized (64);
+  rsize i;
+
+  for (i = 0; choices != NULL && choices[i] != NULL; i++) {
+    if (i > 0)
+      r_string_append (s, sep);
+    r_string_append (s, choices[i]);
+  }
+  return r_string_free_keep (s);
+}
+
+/* Allowed-value set registered for @p longarg, or NULL for unrestricted. */
+static const rchar * const *
+r_arg_parser_get_choices (const RArgParser * parser, const rchar * longarg)
+{
+  return r_dictionary_lookup (parser->choices, longarg);
+}
+
+rboolean
+r_arg_parser_set_option_choices (RArgParser * parser, const rchar * longarg,
+    const rchar * const * choices)
+{
+  RArgOptionEntry * entry;
+
+  if (R_UNLIKELY (parser == NULL || longarg == NULL))
+    return FALSE;
+  if ((entry = r_arg_parser_find_entry_by_longarg (parser, longarg)) == NULL)
+    return FALSE;
+  if (entry->type == R_ARG_OPTION_TYPE_NONE ||
+      entry->type == R_ARG_OPTION_TYPE_COUNTER) {
+    R_LOG_CAT_WARNING (&rlib_logcat,
+        "ignoring choices for argument-less --%s", entry->longarg);
+    return FALSE;
+  }
+
+  if (choices != NULL) {
+    if (entry->defval != NULL && !r_arg_value_in_choices (choices, entry->defval))
+      R_LOG_CAT_WARNING (&rlib_logcat,
+          "default value '%s' for --%s is not among its choices",
+          entry->defval, entry->longarg);
+    /* Both key and value are borrowed; the caller must keep them alive
+     * for the parser's lifetime (as with the rest of RArgOptionEntry). */
+    r_dictionary_insert (parser->choices, (rpointer) entry->longarg,
+        (rpointer) choices);
+  } else {
+    r_dictionary_remove (parser->choices, entry->longarg);
+  }
+
+  return TRUE;
+}
+
 static RArgParseResult
 r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
     RArgOptionEntry * entry, const rchar ** arg, int * argc, const rchar *** argv)
@@ -873,6 +968,18 @@ r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
         (*argc)--;
         (*argv)++;
       }
+    }
+  }
+
+  if (ret == R_ARG_PARSE_OK && entry->type != R_ARG_OPTION_TYPE_NONE) {
+    const rchar * const * ch = r_arg_parser_get_choices (parser, entry->longarg);
+    if (!r_arg_value_in_choices (ch, str)) {
+      rchar * list = r_arg_choices_join (ch, ", ");
+      r_arg_parser_set_error (parser,
+          "invalid value '%s' for option '--%s' (allowed: %s)",
+          str, entry->longarg, list);
+      r_free (list);
+      return R_ARG_PARSE_VALUE_ERROR;
     }
   }
 
@@ -1046,6 +1153,19 @@ r_arg_parser_parse_positionals (RArgParser * parser, RArgParseCtx * ctx,
           str, pname);
       r_free (pname);
       return R_ARG_PARSE_VALUE_ERROR;
+    }
+
+    {
+      const rchar * const * ch = r_arg_parser_get_choices (parser, entry->longarg);
+      if (!r_arg_value_in_choices (ch, str)) {
+        rchar * pname = r_arg_positional_usage_name (entry);
+        rchar * list = r_arg_choices_join (ch, ", ");
+        r_arg_parser_set_error (parser,
+            "invalid value '%s' for argument '%s' (allowed: %s)", str, pname, list);
+        r_free (pname);
+        r_free (list);
+        return R_ARG_PARSE_VALUE_ERROR;
+      }
     }
 
     r_dictionary_insert (ctx->options, entry->longarg, (rpointer) str);
