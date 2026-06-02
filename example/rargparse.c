@@ -37,7 +37,10 @@ main (int argc, char ** argv)
 
     r_arg_parse_ctx_unref (ctx);
   } else {
-    ret = r_arg_parser_print_help (parser, R_ARG_PARSE_FLAG_DONT_EXIT, NULL, -1);
+    /* Parse failed: report exactly what was wrong (with a --help hint)
+     * on stderr, rather than dumping the whole help text. */
+    r_arg_parser_print_error (parser, R_ARG_PARSE_FLAG_NONE);
+    ret = -1;
   }
 
   r_arg_parser_unref (parser);
