@@ -1204,6 +1204,71 @@ RTEST (rargparse, choices_positional, RTEST_FAST)
 }
 RTEST_END;
 
+static rboolean
+rargparse_cb_even (const rchar * longarg, const rchar * value, rpointer user)
+{
+  int * captured = user;
+  const rchar * end;
+  RStrParse err;
+  int v;
+
+  r_assert_cmpstr (longarg, ==, "num");   /* the option name is threaded through */
+  v = r_str_to_int (value, &end, 0, &err);
+  if (err != R_STR_PARSE_OK || (v & 1) != 0)  /* accept even ints only */
+    return FALSE;
+  if (captured != NULL)
+    *captured = v;
+  return TRUE;
+}
+
+RTEST (rargparse, callback, RTEST_FAST)
+{
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParseCtx * ctx;
+  RArgParseResult res;
+  rchar ** strv, ** argv;
+  int argc;
+  int captured = -1;
+
+  r_assert (r_arg_parser_add_option_entry (parser, "num", 'n',
+        R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "an even number", NULL));
+  r_assert (r_arg_parser_set_option_callback (parser, "num", rargparse_cb_even, &captured));
+  /* Unknown option is rejected. */
+  r_assert (!r_arg_parser_set_option_callback (parser, "nope", rargparse_cb_even, NULL));
+
+  /* Accepted, and the value is captured through the user pointer. */
+  strv = argv = r_strv_new ("prog", "--num=4", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert_cmpint (captured, ==, 4);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  /* Rejected; user pointer is left untouched. */
+  captured = -1;
+  strv = argv = r_strv_new ("prog", "--num=5", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==, "invalid value '5' for option '--num'");
+  r_assert_cmpint (captured, ==, -1);
+  r_strv_free (strv);
+
+  /* Clearing the callback removes the restriction. */
+  r_assert (r_arg_parser_set_option_callback (parser, "num", NULL, NULL));
+  strv = argv = r_strv_new ("prog", "--num=5", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (rargparse, get_value, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
