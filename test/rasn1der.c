@@ -354,6 +354,39 @@ RTEST (rasn1der, parse_time_heap_buffer, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rasn1der, parse_time_generalized_local, RTEST_FAST)
+{
+  /* GeneralizedTime with Z (UTC) or a +/-hhmm offset resolves to an
+   * instant; a bare value with no zone is ambiguous and is rejected. */
+  static const ruint8 gt_utc[] = { 0x18, 0x0f,
+      '2','0','2','3','1','2','0','1','0','8','3','0','0','0','Z' };
+  static const ruint8 gt_offset[] = { 0x18, 0x13,
+      '2','0','2','3','1','2','0','1','0','8','3','0','0','0','+','0','1','0','0' };
+  static const ruint8 gt_local[] = { 0x18, 0x0a,
+      '2','0','2','3','1','2','0','1','0','8' };
+  static const struct { const ruint8 * der; rsize len; RAsn1DecoderStatus exp; }
+  cases[] = {
+    { gt_utc,    sizeof (gt_utc),    R_ASN1_DECODER_OK },
+    { gt_offset, sizeof (gt_offset), R_ASN1_DECODER_OK },
+    { gt_local,  sizeof (gt_local),  R_ASN1_DECODER_PARSE_ERROR },
+  };
+  rsize i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    RAsn1BinDecoder * dec;
+    RAsn1BinTLV tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+    ruint64 t = 0;
+
+    r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+            cases[i].der, cases[i].len)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+    r_assert (R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_GENERALIZED_TIME));
+    r_assert_cmpint (r_asn1_bin_tlv_parse_time (&tlv, &t), ==, cases[i].exp);
+    r_asn1_bin_decoder_unref (dec);
+  }
+}
+RTEST_END;
+
 RTEST (rasn1der, parse_empty_bit_string, RTEST_FAST)
 {
   /* BIT STRING with zero content bytes. parse_bit_string_bits used
@@ -650,6 +683,41 @@ RTEST (rasn1der, parse_string_rejects_malformed_utf8, RTEST_FAST)
   r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str),
       ==, R_ASN1_DECODER_PARSE_ERROR);
   r_asn1_bin_decoder_unref (dec);
+}
+RTEST_END;
+
+RTEST (rasn1der, parse_string_charset, RTEST_FAST)
+{
+  /* PrintableString punctuation that IS in the X.680 set ("a-b.c") is
+   * accepted; "@" is not, and must be rejected. NumericString rejects a
+   * letter; IA5String rejects a byte > 0x7f. */
+  static const ruint8 print_ok[]   = { 0x13, 0x05, 'a', '-', 'b', '.', 'c' };
+  static const ruint8 print_bad[]  = { 0x13, 0x03, 'a', '@', 'b' };
+  static const ruint8 numeric_ok[] = { 0x12, 0x03, '1', ' ', '2' };
+  static const ruint8 numeric_bad[]= { 0x12, 0x02, '1', 'a' };
+  static const ruint8 ia5_bad[]    = { 0x16, 0x02, 'a', 0x80 };
+  static const struct { const ruint8 * der; rsize len; RAsn1DecoderStatus exp; }
+  cases[] = {
+    { print_ok,    sizeof (print_ok),    R_ASN1_DECODER_OK },
+    { print_bad,   sizeof (print_bad),   R_ASN1_DECODER_PARSE_ERROR },
+    { numeric_ok,  sizeof (numeric_ok),  R_ASN1_DECODER_OK },
+    { numeric_bad, sizeof (numeric_bad), R_ASN1_DECODER_PARSE_ERROR },
+    { ia5_bad,     sizeof (ia5_bad),     R_ASN1_DECODER_PARSE_ERROR },
+  };
+  rsize i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    RAsn1BinDecoder * dec;
+    RAsn1BinTLV tlv = (RAsn1BinTLV)R_ASN1_BIN_TLV_INIT;
+    rchar * str = NULL;
+
+    r_assert_cmpptr ((dec = r_asn1_bin_decoder_new (R_ASN1_DER,
+          cases[i].der, cases[i].len)), !=, NULL);
+    r_assert_cmpint (r_asn1_bin_decoder_next (dec, &tlv), ==, R_ASN1_DECODER_OK);
+    r_assert_cmpint (r_asn1_bin_tlv_parse_string (&tlv, &str), ==, cases[i].exp);
+    r_free (str);
+    r_asn1_bin_decoder_unref (dec);
+  }
 }
 RTEST_END;
 
