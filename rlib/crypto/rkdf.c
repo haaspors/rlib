@@ -34,8 +34,8 @@ r_kdf_pbkdf2 (RMsgDigestType prf, const ruint8 * password, rsize passlen,
   ruint block = 1;
 
   hlen = r_msg_digest_type_size (prf);
-  if (R_UNLIKELY (password == NULL || out == NULL || outlen == 0 ||
-        iterations == 0 || hlen == 0 || hlen > R_KDF_MAX_HASH))
+  if (R_UNLIKELY (password == NULL || salt == NULL || out == NULL ||
+        outlen == 0 || iterations == 0 || hlen == 0 || hlen > R_KDF_MAX_HASH))
     return FALSE;
 
   if ((hmac = r_hmac_new (prf, password, passlen)) == NULL)

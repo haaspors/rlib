@@ -46,6 +46,8 @@ RTEST (rkdf, pbkdf2_invalid_args, R_TEST_TYPE_FAST)
   r_assert (!r_kdf_pbkdf2 (R_MSG_DIGEST_TYPE_SHA256,
         NULL, 0, (const ruint8 *) "s", 1, 1, dk, 16));            /* NULL password */
   r_assert (!r_kdf_pbkdf2 (R_MSG_DIGEST_TYPE_SHA256,
+        (const ruint8 *) "p", 1, NULL, 0, 1, dk, 16));            /* NULL salt */
+  r_assert (!r_kdf_pbkdf2 (R_MSG_DIGEST_TYPE_SHA256,
         (const ruint8 *) "p", 1, (const ruint8 *) "s", 1, 0, dk, 16)); /* 0 iterations */
   r_assert (!r_kdf_pbkdf2 (R_MSG_DIGEST_TYPE_SHA256,
         (const ruint8 *) "p", 1, (const ruint8 *) "s", 1, 1, NULL, 16)); /* NULL out */
