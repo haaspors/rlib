@@ -1223,7 +1223,7 @@ r_arg_parser_check_mutex_groups (RArgParser * parser, RArgParseCtx * ctx)
 }
 
 static RArgParseResult
-r_arg_parser_parse_options (RArgParser * parser, RArgParseCtx * ctx,
+r_arg_parser_scan_options_strict (RArgParser * parser, RArgParseCtx * ctx,
     int * argc, const rchar *** argv)
 {
   RArgParseResult ret = R_ARG_PARSE_OK;
@@ -1249,6 +1249,93 @@ r_arg_parser_parse_options (RArgParser * parser, RArgParseCtx * ctx,
       } while (*arg != 0 && ret == R_ARG_PARSE_OK);
     }
   }
+
+  return ret;
+}
+
+/* GNU-getopt-style scan: options are parsed wherever they occur, and on
+ * success argv is reordered in place to [operands..., option region...]
+ * with *argc set to the operand count, so a later parse_positionals /
+ * parse_command sees the operands. The reorder is a true permutation —
+ * every original argv pointer survives exactly once (so a caller owning
+ * the vector can still free it). */
+static RArgParseResult
+r_arg_parser_scan_options_permuted (RArgParser * parser, RArgParseCtx * ctx,
+    int * argc, const rchar *** argv)
+{
+  const rchar ** av = *argv;
+  int n = *argc;
+  const rchar ** ops;
+  const rchar ** rest;
+  int nops = 0, nrest = 0, rd = 0;
+  RArgParseResult ret = R_ARG_PARSE_OK;
+  rboolean endopts = FALSE;
+
+  if (n <= 0)
+    return R_ARG_PARSE_OK;
+
+  ops = r_mem_new_n (const rchar *, n);
+  rest = r_mem_new_n (const rchar *, n);
+
+  while (rd < n && ret == R_ARG_PARSE_OK) {
+    const rchar * tok = av[rd];
+
+    if (!endopts && tok[0] == '-' && tok[1] == '-' && tok[2] == 0) {
+      rest[nrest++] = tok;                  /* keep "--" in the tail */
+      endopts = TRUE;
+      rd++;
+    } else if (!endopts && tok[0] == '-' && tok[1] != 0) {
+      const rchar * arg = tok + 1;
+      int sub_argc = n - rd - 1;            /* tokens after this one */
+      const rchar ** sub_argv = &av[rd + 1];
+      int consumed, k;
+
+      if (*arg == '-') {
+        arg++;
+        ret = r_arg_parser_parse_long_option (parser, ctx, &arg, &sub_argc, &sub_argv);
+      } else {
+        do {
+          ret = r_arg_parser_parse_short_option (parser, ctx, &arg, &sub_argc, &sub_argv);
+        } while (*arg != 0 && ret == R_ARG_PARSE_OK);
+      }
+      consumed = (n - rd - 1) - sub_argc;   /* value tokens taken */
+      for (k = 0; k <= consumed; k++)
+        rest[nrest++] = av[rd + k];         /* option token + its values */
+      rd += 1 + consumed;
+    } else {
+      ops[nops++] = tok;
+      rd++;
+    }
+  }
+
+  if (ret == R_ARG_PARSE_OK) {
+    if (nops > 0)
+      r_memcpy (av, ops, nops * sizeof (const rchar *));
+    if (nrest > 0)
+      r_memcpy (av + nops, rest, nrest * sizeof (const rchar *));
+    *argc = nops;
+  }
+
+  r_free (ops);
+  r_free (rest);
+  return ret;
+}
+
+static RArgParseResult
+r_arg_parser_parse_options (RArgParser * parser, RArgParseCtx * ctx,
+    int * argc, const rchar *** argv)
+{
+  RArgParseResult ret;
+
+  /* Permute only when there are no sub-commands: with commands the first
+   * operand is the command, and scanning past it would wrongly parse the
+   * sub-command's options at this level. (Sub-command parsers have no
+   * commands of their own, so they still permute their own arguments.) */
+  if ((ctx->flags & R_ARG_PARSE_FLAG_PERMUTE) &&
+      r_kv_ptr_array_size (&parser->commands) == 0)
+    ret = r_arg_parser_scan_options_permuted (parser, ctx, argc, argv);
+  else
+    ret = r_arg_parser_scan_options_strict (parser, ctx, argc, argv);
 
   /* Check version */
   if (r_arg_parse_ctx_get_option_bool (ctx, "version")) {
