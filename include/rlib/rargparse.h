@@ -266,6 +266,24 @@ R_API rboolean r_arg_parser_add_option_entry (RArgParser * parser,
  */
 R_API rboolean r_arg_parser_add_option_group (RArgParser * parser,
     RArgOptionGroup * group);
+/**
+ * @brief Restrict the option named @p longarg to an enumerated set.
+ *
+ * @p choices is a @c NULL-terminated array of permitted values
+ * (matched as exact strings, so best suited to @c STRING / @c FILENAME
+ * options); pass @c NULL to clear a previously-set restriction. A
+ * command-line value outside the set is rejected with
+ * @c R_ARG_PARSE_VALUE_ERROR, and the set is shown in @c --help as
+ * @c --longarg={a,b,c}.
+ *
+ * The array (and its strings) is borrowed and must outlive the parser.
+ * Call after the option has been registered.
+ *
+ * @return @c TRUE on success; @c FALSE if @p longarg is unknown or
+ *         names an argument-less option (@c NONE / @c COUNTER).
+ */
+R_API rboolean r_arg_parser_set_option_choices (RArgParser * parser,
+    const rchar * longarg, const rchar * const * choices);
 /** @} */
 
 /**
