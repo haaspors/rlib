@@ -201,7 +201,8 @@ r_arg_option_entry_ctx_init (RArgOptionEntry * entry, const RArgOptionEntry * op
   if (opt->type >= R_ARG_OPTION_TYPE_COUNT)
     return FALSE;
   if ((opt->flags & R_ARG_OPTION_FLAG_POSITIONAL) &&
-      opt->type == R_ARG_OPTION_TYPE_NONE)
+      (opt->type == R_ARG_OPTION_TYPE_NONE ||
+       opt->type == R_ARG_OPTION_TYPE_COUNTER))
     return FALSE;
 
   r_memcpy (entry, opt, sizeof (RArgOptionEntry));
@@ -222,9 +223,10 @@ r_arg_option_entry_ctx_init (RArgOptionEntry * entry, const RArgOptionEntry * op
         "ignoring incompatible inverse flag for --%s", opt->longarg);
     entry->flags &= ~R_ARG_OPTION_FLAG_INVERSE;
   }
-  if (opt->defval != NULL && opt->type == R_ARG_OPTION_TYPE_NONE) {
+  if (opt->defval != NULL && (opt->type == R_ARG_OPTION_TYPE_NONE ||
+        opt->type == R_ARG_OPTION_TYPE_COUNTER)) {
     R_LOG_CAT_WARNING (&rlib_logcat,
-        "ignoring default value for boolean --%s", opt->longarg);
+        "ignoring default value for argument-less --%s", opt->longarg);
     entry->defval = NULL;
   }
   if (opt->defval != NULL && (opt->flags & R_ARG_OPTION_FLAG_REQUIRED)) {
@@ -521,6 +523,7 @@ r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
   if (opt->eqname == NULL || *opt->eqname == 0) {
     switch (opt->type) {
       case R_ARG_OPTION_TYPE_NONE:
+      case R_ARG_OPTION_TYPE_COUNTER:
         break;
       case R_ARG_OPTION_TYPE_FILENAME:
         spacing -= r_string_append (str, "=FILENAME");
@@ -535,7 +538,8 @@ r_arg_option_entry_append_help (const RArgOptionEntry * opt, RString * str)
         spacing -= r_string_append (str, "=VALUE");
         break;
     }
-  } else if (opt->type != R_ARG_OPTION_TYPE_NONE) {
+  } else if (opt->type != R_ARG_OPTION_TYPE_NONE &&
+      opt->type != R_ARG_OPTION_TYPE_COUNTER) {
     spacing -= r_string_append_printf (str, "=%s", opt->eqname);
   }
 
@@ -818,6 +822,13 @@ r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
 {
   RArgParseResult ret = R_ARG_PARSE_ERROR;
   const rchar * str;
+
+  if (entry->type == R_ARG_OPTION_TYPE_COUNTER) {
+    /* Argument-less tally: bump the stored occurrence count. */
+    rsize n = RPOINTER_TO_SIZE (r_dictionary_lookup (ctx->options, entry->longarg));
+    r_dictionary_insert (ctx->options, entry->longarg, RSIZE_TO_POINTER (n + 1));
+    return R_ARG_PARSE_OK;
+  }
 
   if (entry->type == R_ARG_OPTION_TYPE_NONE) {
     str = *arg;
@@ -1337,6 +1348,21 @@ r_arg_parse_ctx_get_option_int (RArgParseCtx * ctx, const rchar * longarg)
   }
 
   return ret;
+}
+
+ruint
+r_arg_parse_ctx_get_option_count (RArgParseCtx * ctx, const rchar * longarg)
+{
+  RArgOptionEntry * entry;
+
+  if ((entry = r_arg_parser_find_entry_by_longarg (ctx->parser, longarg)) != NULL &&
+      entry->type == R_ARG_OPTION_TYPE_COUNTER) {
+    /* Stored directly as the tally (see r_arg_parser_parse_option_ctx),
+     * NULL when the flag never appeared. */
+    return (ruint) RPOINTER_TO_SIZE (r_dictionary_lookup (ctx->options, longarg));
+  }
+
+  return 0;
 }
 
 rint64

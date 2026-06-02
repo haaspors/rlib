@@ -1068,6 +1068,49 @@ RTEST (rargparse, error_subcommand, RTEST_FAST)
 }
 RTEST_END;
 
+static ruint
+rargparse_count_of (RArgParser * parser, const rchar * a, const rchar * b)
+{
+  RArgParseCtx * ctx;
+  rchar ** strv, ** argv;
+  int argc;
+  ruint ret;
+
+  strv = argv = r_strv_new ("prog", a, b, NULL);  /* a / b may be NULL */
+  argc = (int) r_strv_len (argv);
+  ctx = r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+      &argc, (const rchar ***)&argv, NULL);
+  r_assert_cmpptr (ctx, !=, NULL);
+  ret = r_arg_parse_ctx_get_option_count (ctx, "verbose");
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+  return ret;
+}
+
+RTEST (rargparse, counter, RTEST_FAST)
+{
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  rchar * help;
+
+  r_assert (r_arg_parser_add_option_entry (parser, "verbose", 'v',
+        R_ARG_OPTION_TYPE_COUNTER, R_ARG_OPTION_FLAG_NONE, "be more verbose", NULL));
+
+  r_assert_cmpuint (rargparse_count_of (parser, NULL, NULL),         ==, 0);
+  r_assert_cmpuint (rargparse_count_of (parser, "-v", NULL),         ==, 1);
+  r_assert_cmpuint (rargparse_count_of (parser, "-vvv", NULL),       ==, 3);
+  r_assert_cmpuint (rargparse_count_of (parser, "-v", "-v"),         ==, 2);
+  r_assert_cmpuint (rargparse_count_of (parser, "--verbose", "--verbose"), ==, 2);
+
+  /* Help shows the flag without a value placeholder. */
+  r_assert_cmpptr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_NONE, NULL)), !=, NULL);
+  r_assert_cmpptr (r_strstr (help, "-v, --verbose "), !=, NULL);
+  r_assert_cmpptr (r_strstr (help, "verbose="), ==, NULL);
+  r_free (help);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (rargparse, get_value, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {

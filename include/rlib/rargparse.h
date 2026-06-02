@@ -91,6 +91,7 @@ typedef enum {
   R_ARG_OPTION_TYPE_STRING,                     /**< Single string; last occurrence wins. */
   R_ARG_OPTION_TYPE_FILENAME,                   /**< Single filename string. */
   R_ARG_OPTION_TYPE_STRING_ARRAY,               /**< Repeatable string; values accumulate in argv order. */
+  R_ARG_OPTION_TYPE_COUNTER,                    /**< Argument-less flag that tallies its occurrences (e.g. @c -vvv); read with @c r_arg_parse_ctx_get_option_count. */
   R_ARG_OPTION_TYPE_COUNT,                      /**< Sentinel: number of value types (also @c ERROR). */
   R_ARG_OPTION_TYPE_ERROR = R_ARG_OPTION_TYPE_COUNT /**< Returned by getters on unknown / wrong-typed option. */
 } RArgOptionType;
@@ -396,6 +397,8 @@ R_API rboolean r_arg_parse_ctx_get_option_value (RArgParseCtx * ctx,
 R_API rboolean r_arg_parse_ctx_get_option_bool (RArgParseCtx * ctx, const rchar * longarg);
 /** @brief @c INT value, or 0 if absent. */
 R_API int r_arg_parse_ctx_get_option_int (RArgParseCtx * ctx, const rchar * longarg);
+/** @brief @c COUNTER tally — how many times the flag was given, or 0. */
+R_API ruint r_arg_parse_ctx_get_option_count (RArgParseCtx * ctx, const rchar * longarg);
 /** @brief @c INT64 value, or 0 if absent. */
 R_API rint64 r_arg_parse_ctx_get_option_int64 (RArgParseCtx * ctx, const rchar * longarg);
 /** @brief @c DOUBLE value, or 0.0 if absent. */
