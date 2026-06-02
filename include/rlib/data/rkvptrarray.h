@@ -121,7 +121,7 @@ R_API rconstpointer r_kv_ptr_array_get_const (const RKVPtrArray * array, rsize i
  * @brief Find the first slot whose key matches @p key within
  * @c [idx, idx+size).
  */
-R_API rsize r_kv_ptr_array_find_range (RKVPtrArray * array, rconstpointer key, rsize idx, rssize size);
+R_API rsize r_kv_ptr_array_find_range (const RKVPtrArray * array, rconstpointer key, rsize idx, rssize size);
 
 /** @} */
 
@@ -165,6 +165,20 @@ R_API rsize r_kv_ptr_array_foreach_range (RKVPtrArray * array,
 /** @brief Convenience: iterate every pair. */
 #define r_kv_ptr_array_foreach(array, func, user) \
   r_kv_ptr_array_foreach_range (array, 0, -1, func, user)
+
+/**
+ * @brief Const-visitor variant of @ref r_kv_ptr_array_foreach_range.
+ *
+ * Takes a @c const array and an @ref RKeyValueConstFunc that receives
+ * @c rconstpointer key / value, so it can iterate without granting the
+ * callback mutable access to the stored pairs (the read-only mirror of
+ * @c get vs @c get_const).
+ */
+R_API rsize r_kv_ptr_array_foreach_const_range (const RKVPtrArray * array,
+    rsize idx, rssize size, RKeyValueConstFunc func, rpointer user);
+/** @brief Convenience: const-iterate every pair. */
+#define r_kv_ptr_array_foreach_const(array, func, user) \
+  r_kv_ptr_array_foreach_const_range (array, 0, -1, func, user)
 
 /** @} */
 

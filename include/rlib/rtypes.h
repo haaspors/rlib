@@ -408,6 +408,8 @@ typedef rboolean (*REqualFunc) (rconstpointer a, rconstpointer b);
 typedef rsize (*RHashFunc) (rconstpointer key);
 /** @brief Iteration callback over (key, value, user) triples. */
 typedef void (*RKeyValueFunc) (rpointer key, rpointer value, rpointer user);
+/** @brief Const-visitor iteration callback over (key, value, user) triples. */
+typedef void (*RKeyValueConstFunc) (rconstpointer key, rconstpointer value, rpointer user);
 /** @brief Iteration callback over (const char *key, value, user). */
 typedef void (*RStrKeyValueFunc) (const rchar * key, rpointer value, rpointer user);
 /**
