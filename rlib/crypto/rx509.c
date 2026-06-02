@@ -189,12 +189,13 @@ r_crypto_x509_ext_key_usage (RCryptoX509Cert * cert,
 {
   (void) critical;
 
-  do {
-    if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE))
-      break;
-    if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
-      break;
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE))
+    return FALSE;
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return FALSE;
 
+  /* ExtKeyUsageSyntax ::= SEQUENCE OF KeyPurposeId; visit every OID. */
+  do {
     if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
       if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ID_CE_OID_EXT_KEY_USAGE"\x00"))
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_ANY;
@@ -210,9 +211,9 @@ r_crypto_x509_ext_key_usage (RCryptoX509Cert * cert,
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_TIME_STAMPING;
       else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_ID_KP_OID_OCSP_SIGNING))
         cert->extKeyUsage |= R_X509_EXT_KEY_USAGE_OCSP_SIGNING;
-
     }
-  } while (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK);
+  } while (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK);
+  r_asn1_bin_decoder_out (dec, tlv);
 
   return TRUE;
 }
@@ -223,20 +224,27 @@ r_crypto_x509_certificate_policies (RCryptoX509Cert * cert,
 {
   (void) critical;
 
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE))
+    return FALSE;
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return FALSE;
+
+  /* certificatePolicies ::= SEQUENCE OF PolicyInformation, each a
+   * SEQUENCE whose first element is the policyIdentifier OID. Descend
+   * into every PolicyInformation; r_asn1_bin_decoder_out advances to
+   * the next sibling. */
   do {
     if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE))
       break;
     if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
       break;
-
-    if (r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+    if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER)) {
       rchar * oid;
       if (r_asn1_bin_tlv_parse_oid_to_dot (tlv, &oid) == R_ASN1_DECODER_OK)
         cert->policies = r_slist_prepend (cert->policies, oid);
-
-      r_asn1_bin_decoder_out (dec, tlv);
     }
   } while (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK);
+  r_asn1_bin_decoder_out (dec, tlv);
 
   return TRUE;
 }
