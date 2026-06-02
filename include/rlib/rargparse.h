@@ -157,6 +157,7 @@ typedef enum {
   R_ARG_PARSE_MISSING_OPTION,                   /**< Required option was absent. */
   R_ARG_PARSE_VALUE_ERROR,                      /**< An option's value didn't parse. */
   R_ARG_PARSE_MISSING_COMMAND,                  /**< Sub-command parser didn't see a command. */
+  R_ARG_PARSE_MUTUALLY_EXCLUSIVE,               /**< Two options from a mutually-exclusive group were given. */
   R_ARG_PARSE_OOM,                              /**< Allocation failure. */
   R_ARG_PARSE_ERROR,                            /**< Generic / internal error. */
 } RArgParseResult;
@@ -321,6 +322,25 @@ typedef rboolean (*RArgOptionCallback) (const rchar * longarg,
  */
 R_API rboolean r_arg_parser_set_option_callback (RArgParser * parser,
     const rchar * longarg, RArgOptionCallback func, rpointer user);
+/**
+ * @brief Declare a set of options as mutually exclusive.
+ *
+ * @p longargs is a @c NULL-terminated array of registered option long
+ * names that may not be combined on the command line; supplying two of
+ * them fails the parse with @c R_ARG_PARSE_MUTUALLY_EXCLUSIVE. When
+ * @p required is @c TRUE, exactly one member must be given (an empty
+ * group fails with @c R_ARG_PARSE_MISSING_OPTION). The relationship is
+ * shown in @c --help as @c [--a | --b] (or @c (--a | --b) when
+ * required).
+ *
+ * The array (and its strings) is borrowed and must outlive the parser.
+ * Call after the member options have been registered.
+ *
+ * @return @c TRUE on success; @c FALSE if any name is unknown or fewer
+ *         than two are given.
+ */
+R_API rboolean r_arg_parser_add_mutex_group (RArgParser * parser,
+    const rchar * const * longargs, rboolean required);
 /** @} */
 
 /**

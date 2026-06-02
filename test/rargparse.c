@@ -1269,6 +1269,80 @@ RTEST (rargparse, callback, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rargparse, mutex, RTEST_FAST)
+{
+  static const rchar * const verbosity[] = { "quiet", "verbose", NULL };
+  static const rchar * const fmt[] = { "json", "xml", NULL };
+  static const rchar * const unknown[] = { "quiet", "nope", NULL };
+  static const rchar * const single[] = { "quiet", NULL };
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParseCtx * ctx;
+  RArgParseResult res;
+  rchar ** strv, ** argv;
+  rchar * help;
+  int argc;
+
+  r_assert (r_arg_parser_add_option_entry (parser, "quiet", 'q',
+        R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "be quiet", NULL));
+  r_assert (r_arg_parser_add_option_entry (parser, "verbose", 'v',
+        R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "be noisy", NULL));
+  r_assert (r_arg_parser_add_option_entry (parser, "json", 0,
+        R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "json output", NULL));
+  r_assert (r_arg_parser_add_option_entry (parser, "xml", 0,
+        R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "xml output", NULL));
+
+  r_assert (r_arg_parser_add_mutex_group (parser, verbosity, FALSE));
+  r_assert (r_arg_parser_add_mutex_group (parser, fmt, TRUE));
+  /* Group validation: unknown member / fewer than two members. */
+  r_assert (!r_arg_parser_add_mutex_group (parser, unknown, FALSE));
+  r_assert (!r_arg_parser_add_mutex_group (parser, single, FALSE));
+
+  /* A lone optional member plus the required choice: OK. */
+  strv = argv = r_strv_new ("prog", "-q", "--json", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  /* Empty optional group is fine (only the required group must be met). */
+  strv = argv = r_strv_new ("prog", "--xml", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  /* Two members of the optional group: conflict. */
+  strv = argv = r_strv_new ("prog", "-q", "-v", "--json", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_MUTUALLY_EXCLUSIVE);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==,
+      "options '--quiet' and '--verbose' are mutually exclusive");
+  r_strv_free (strv);
+
+  /* Required group with no member given: missing. */
+  strv = argv = r_strv_new ("prog", "-q", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_MISSING_OPTION);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==,
+      "one of --json, --xml is required");
+  r_strv_free (strv);
+
+  /* Help synopsis shows both groups. */
+  r_assert_cmpptr ((help = r_arg_parser_get_help (parser, R_ARG_PARSE_FLAG_NONE, NULL)), !=, NULL);
+  r_assert_cmpptr (r_strstr (help, "[--quiet | --verbose]"), !=, NULL);
+  r_assert_cmpptr (r_strstr (help, "(--json | --xml)"), !=, NULL);
+  r_free (help);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (rargparse, get_value, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {

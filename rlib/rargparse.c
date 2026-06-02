@@ -57,7 +57,14 @@ struct RArgParser
   RDictionary * choices;
   /* longarg -> owned RArgCallbackReg (custom value handler). */
   RDictionary * callbacks;
+  /* owned RArgMutexGroup entries (mutually-exclusive option sets). */
+  RPtrArray * mutex;
 };
+
+typedef struct {
+  const rchar * const * longargs;   /* borrowed, NULL-terminated */
+  rboolean required;
+} RArgMutexGroup;
 
 static RArgParseCtx *
 r_arg_parser_parse_internal (RArgParser * parser, RArgParseFlags flags,
@@ -377,6 +384,7 @@ r_arg_parser_free (RArgParser * parser)
     r_kv_ptr_array_clear (&parser->commands);
     r_dictionary_unref (parser->choices);
     r_dictionary_unref (parser->callbacks);
+    r_ptr_array_unref (parser->mutex);
     r_free (parser);
   }
 }
@@ -412,6 +420,7 @@ r_arg_parser_new (const rchar * app, const rchar * version)
     r_kv_ptr_array_init (&ret->commands, r_str_equal);
     ret->choices = r_dictionary_new ();
     ret->callbacks = r_dictionary_new_full (r_free);
+    ret->mutex = r_ptr_array_new ();
   }
 
   return ret;
@@ -641,6 +650,14 @@ r_arg_parser_get_help (const RArgParser * parser, RArgParseFlags flags,
     else
       r_string_append_printf (str, " %s", name);
     r_free (name);
+  }
+  for (i = 0; i < r_ptr_array_size (parser->mutex); i++) {
+    const RArgMutexGroup * grp = r_ptr_array_get_const (parser->mutex, i);
+    rsize j;
+    r_string_append (str, grp->required ? " (" : " [");
+    for (j = 0; grp->longargs[j] != NULL; j++)
+      r_string_append_printf (str, "%s--%s", j > 0 ? " | " : "", grp->longargs[j]);
+    r_string_append (str, grp->required ? ")" : "]");
   }
   if (r_kv_ptr_array_size (&parser->commands) > 0)
     r_string_append (str, " <command>");
@@ -991,6 +1008,36 @@ r_arg_parser_set_option_callback (RArgParser * parser, const rchar * longarg,
   return TRUE;
 }
 
+rboolean
+r_arg_parser_add_mutex_group (RArgParser * parser, const rchar * const * longargs,
+    rboolean required)
+{
+  RArgMutexGroup * grp;
+  rsize n;
+
+  if (R_UNLIKELY (parser == NULL || longargs == NULL))
+    return FALSE;
+
+  for (n = 0; longargs[n] != NULL; n++) {
+    if (r_arg_parser_find_entry_by_longarg (parser, longargs[n]) == NULL) {
+      R_LOG_CAT_WARNING (&rlib_logcat,
+          "mutex group references unknown option --%s", longargs[n]);
+      return FALSE;
+    }
+  }
+  if (n < 2) {
+    R_LOG_CAT_WARNING (&rlib_logcat,
+        "mutex group needs at least two options");
+    return FALSE;
+  }
+
+  grp = r_mem_new (RArgMutexGroup);
+  grp->longargs = longargs;
+  grp->required = required;
+  r_ptr_array_add (parser->mutex, grp, r_free);
+  return TRUE;
+}
+
 static RArgParseResult
 r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
     RArgOptionEntry * entry, const rchar ** arg, int * argc, const rchar *** argv)
@@ -1132,6 +1179,47 @@ r_arg_parser_first_missing_required (RArgParser * parser, RArgParseCtx * ctx)
   }
 
   return NULL;
+}
+
+static RArgParseResult
+r_arg_parser_check_mutex_groups (RArgParser * parser, RArgParseCtx * ctx)
+{
+  rsize gi;
+
+  for (gi = 0; gi < r_ptr_array_size (parser->mutex); gi++) {
+    const RArgMutexGroup * grp = r_ptr_array_get_const (parser->mutex, gi);
+    const rchar * first = NULL;
+    rsize i;
+
+    for (i = 0; grp->longargs[i] != NULL; i++) {
+      if (!r_dictionary_contains (ctx->options, grp->longargs[i]))
+        continue;
+      if (first == NULL) {
+        first = grp->longargs[i];
+      } else {
+        r_arg_parser_set_error (parser,
+            "options '--%s' and '--%s' are mutually exclusive",
+            first, grp->longargs[i]);
+        return R_ARG_PARSE_MUTUALLY_EXCLUSIVE;
+      }
+    }
+
+    if (first == NULL && grp->required) {
+      RString * s = r_string_new_sized (64);
+      rchar * list;
+      for (i = 0; grp->longargs[i] != NULL; i++) {
+        if (i > 0)
+          r_string_append (s, ", ");
+        r_string_append_printf (s, "--%s", grp->longargs[i]);
+      }
+      list = r_string_free_keep (s);
+      r_arg_parser_set_error (parser, "one of %s is required", list);
+      r_free (list);
+      return R_ARG_PARSE_MISSING_OPTION;
+    }
+  }
+
+  return R_ARG_PARSE_OK;
 }
 
 static RArgParseResult
@@ -1333,7 +1421,7 @@ r_arg_parser_parse_internal (RArgParser * parser, RArgParseFlags flags,
               missing->longarg);
         }
         curres = R_ARG_PARSE_MISSING_OPTION;
-      } else {
+      } else if ((curres = r_arg_parser_check_mutex_groups (parser, ret)) == R_ARG_PARSE_OK) {
         curres = r_arg_parser_parse_command (parser, flags, ret, argc, argv);
       }
     }
