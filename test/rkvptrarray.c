@@ -282,3 +282,45 @@ RTEST (rkvptrarray, foreach, RTEST_FAST)
 }
 RTEST_END;
 
+static void
+rkvptrarray_str_concat_const (rconstpointer key, rconstpointer val, rpointer user)
+{
+  RString * str = user;
+  const rchar * strkey = key;
+  r_string_append_printf (str, "/%s:%u", strkey, RPOINTER_TO_UINT (val));
+}
+
+RTEST (rkvptrarray, foreach_const, RTEST_FAST)
+{
+  RKVPtrArray * array;
+  const RKVPtrArray * carray;
+  RString * str;
+  rchar * tmp;
+
+  r_assert_cmpptr ((array = r_kv_ptr_array_new_str ()), !=, NULL);
+  r_kv_ptr_array_add (array, "foo", NULL, RUINT_TO_POINTER (22), NULL);
+  r_kv_ptr_array_add (array, "bar", NULL, RUINT_TO_POINTER (32), NULL);
+  r_kv_ptr_array_add (array, "foobar", NULL, RUINT_TO_POINTER (42), NULL);
+
+  /* Drive the const-visitor iteration and find through a const handle. */
+  carray = array;
+
+  r_assert_cmpptr ((str = r_string_new_sized (128)), !=, NULL);
+  r_assert_cmpuint (r_kv_ptr_array_foreach_const (carray,
+          rkvptrarray_str_concat_const, str), ==, 3);
+  r_assert_cmpstr ((tmp = r_string_free_keep (str)), ==, "/foo:22/bar:32/foobar:42");
+  r_free (tmp);
+
+  r_assert_cmpptr ((str = r_string_new_sized (128)), !=, NULL);
+  r_assert_cmpuint (r_kv_ptr_array_foreach_const_range (carray, 1, 2,
+          rkvptrarray_str_concat_const, str), ==, 2);
+  r_assert_cmpstr ((tmp = r_string_free_keep (str)), ==, "/bar:32/foobar:42");
+  r_free (tmp);
+
+  r_assert_cmpuint (r_kv_ptr_array_find (carray, "bar"), ==, 1);
+  r_assert_cmpuint (r_kv_ptr_array_find (carray, "nope"), ==, R_KV_PTR_ARRAY_INVALID_IDX);
+
+  r_kv_ptr_array_unref (array);
+}
+RTEST_END;
+

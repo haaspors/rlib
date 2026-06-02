@@ -140,7 +140,7 @@ r_ptr_equal (rconstpointer a, rconstpointer b)
 }
 
 rsize
-r_kv_ptr_array_find_range (RKVPtrArray * array, rconstpointer key, rsize idx, rssize size)
+r_kv_ptr_array_find_range (const RKVPtrArray * array, rconstpointer key, rsize idx, rssize size)
 {
   rsize end;
   REqualFunc eqfunc;
@@ -239,6 +239,24 @@ r_kv_ptr_array_remove_key_all (RKVPtrArray * array, rpointer key)
 rsize
 r_kv_ptr_array_foreach_range (RKVPtrArray * array,
     rsize idx, rssize size, RKeyValueFunc func, rpointer user)
+{
+  rsize i, end;
+
+  if (R_UNLIKELY (func == NULL)) return 0;
+
+  if (R_UNLIKELY (idx >= array->nsize)) return 0;
+  end = (size < 0) ? array->nsize : idx + size;
+  if (R_UNLIKELY (end > array->nsize)) return 0;
+
+  for (i = idx; i < end; i++)
+    func (R_KV_PTR_ARRAY_N (array, i).key, R_KV_PTR_ARRAY_N (array, i).val, user);
+
+  return end - idx;
+}
+
+rsize
+r_kv_ptr_array_foreach_const_range (const RKVPtrArray * array,
+    rsize idx, rssize size, RKeyValueConstFunc func, rpointer user)
 {
   rsize i, end;
 
