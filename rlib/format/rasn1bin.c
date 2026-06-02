@@ -20,6 +20,7 @@
 #include "rasn1-private.h"
 
 #include <rlib/format/roid.h>
+#include <rlib/charset/rascii.h>
 #include <rlib/charset/runicode.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
@@ -311,6 +312,41 @@ r_asn1_bin_tlv_parse_oid (const RAsn1BinTLV * tlv, ruint32 * varray, rsize * len
   }
 }
 
+/* PrintableString (X.680 41.4): letters, digits, space and a fixed set
+ * of punctuation. */
+static rboolean
+r_asn1_is_printable_char (ruint8 c)
+{
+  return r_ascii_isalnum (c) || c == ' ' ||
+      c == '\'' || c == '(' || c == ')' || c == '+' || c == ',' ||
+      c == '-' || c == '.' || c == '/' || c == ':' || c == '=' || c == '?';
+}
+
+/* NumericString (X.680 41.2): digits and space. */
+static rboolean
+r_asn1_is_numeric_char (ruint8 c)
+{
+  return r_ascii_isdigit (c) || c == ' ';
+}
+
+/* IA5String: International Alphabet No. 5, i.e. 7-bit (ASCII) codes. */
+static rboolean
+r_asn1_is_ia5_char (ruint8 c)
+{
+  return c <= 0x7f;
+}
+
+static rboolean
+r_asn1_string_chars_valid (const ruint8 * p, rsize len, rboolean (* ok) (ruint8))
+{
+  rsize i;
+  for (i = 0; i < len; i++) {
+    if (!ok (p[i]))
+      return FALSE;
+  }
+  return TRUE;
+}
+
 RAsn1DecoderStatus
 r_asn1_bin_tlv_parse_string (const RAsn1BinTLV * tlv, rchar ** str)
 {
@@ -319,20 +355,32 @@ r_asn1_bin_tlv_parse_string (const RAsn1BinTLV * tlv, rchar ** str)
 
   switch (R_ASN1_BIN_TLV_ID_TAG (tlv)) {
     /* UTF8String: X.680 requires the encoded value to be valid UTF-8.
-     * Validate the bytes before strdup'ing them. The other byte-
-     * encoded string types pass through verbatim - their character-
-     * set restrictions are still TODO (see below). */
+     * Validate the bytes before strdup'ing them. */
     case R_ASN1_ID_UTF8_STRING:
       if (r_utf8_validate ((const rchar *)tlv->value, (rssize)tlv->len,
             NULL) != R_UNICODE_OK)
         return R_ASN1_DECODER_PARSE_ERROR;
       *str = r_strdup_size ((const rchar *) tlv->value, (rssize) tlv->len);
       break;
+    /* Restricted byte-encoded types: enforce their character sets. */
     case R_ASN1_ID_NUMERIC_STRING:
+      if (!r_asn1_string_chars_valid (tlv->value, tlv->len, r_asn1_is_numeric_char))
+        return R_ASN1_DECODER_PARSE_ERROR;
+      *str = r_strdup_size ((const rchar *) tlv->value, (rssize) tlv->len);
+      break;
     case R_ASN1_ID_PRINTABLE_STRING:
+      if (!r_asn1_string_chars_valid (tlv->value, tlv->len, r_asn1_is_printable_char))
+        return R_ASN1_DECODER_PARSE_ERROR;
+      *str = r_strdup_size ((const rchar *) tlv->value, (rssize) tlv->len);
+      break;
+    case R_ASN1_ID_IA5_STRING:
+      if (!r_asn1_string_chars_valid (tlv->value, tlv->len, r_asn1_is_ia5_char))
+        return R_ASN1_DECODER_PARSE_ERROR;
+      *str = r_strdup_size ((const rchar *) tlv->value, (rssize) tlv->len);
+      break;
+    /* Looser / deprecated byte-encoded types pass through verbatim. */
     case R_ASN1_ID_T61_STRING:
     case R_ASN1_ID_VIDEOTEX_STRING:
-    case R_ASN1_ID_IA5_STRING:
     case R_ASN1_ID_GRAPHIC_STRING:
     case R_ASN1_ID_VISIBLE_STRING:
     case R_ASN1_ID_GENERAL_STRING:
@@ -347,10 +395,6 @@ r_asn1_bin_tlv_parse_string (const RAsn1BinTLV * tlv, rchar ** str)
     default:
       return R_ASN1_DECODER_WRONG_TYPE;
   }
-
-  /* TODO: restricted character-set validation for PrintableString /
-   *       NumericString / IA5String; zero-copy variant returning an
-   *       RStrChunk into the TLV. */
 
   return (*str != NULL) ? R_ASN1_DECODER_OK : R_ASN1_DECODER_OOM;
 }
@@ -500,7 +544,10 @@ r_asn1_bin_tlv_parse_time (const RAsn1BinTLV * tlv, ruint64 * time)
     if (end - ptr == 1 && *ptr == 'Z') {
       ptr++;
     } else if (ptr == end) {
-      /* TODO: Adjust for Local time */
+      /* Bare local time (no Z and no +hhmm/-hhmm offset) names no zone,
+       * so it can't be resolved to an instant; reject it rather than
+       * silently treat it as UTC. DER (X.509) mandates Z anyway. */
+      return R_ASN1_DECODER_PARSE_ERROR;
     }
   } else {
     return R_ASN1_DECODER_WRONG_TYPE;
