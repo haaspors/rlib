@@ -104,6 +104,65 @@ typedef enum {
 } RX509ExtKeyUsage;
 
 /**
+ * @brief X.509 @c GeneralName alternative (RFC 5280 §4.2.1.6).
+ *
+ * The enumerator value equals the on-wire context-tag number of the
+ * CHOICE, so it can be read directly off the DER tag.
+ */
+typedef enum {
+  R_X509_GENERAL_NAME_OTHER             = 0, /**< @c otherName [0]. */
+  R_X509_GENERAL_NAME_RFC822            = 1, /**< @c rfc822Name [1] (e-mail, IA5String). */
+  R_X509_GENERAL_NAME_DNS               = 2, /**< @c dNSName [2] (IA5String). */
+  R_X509_GENERAL_NAME_X400              = 3, /**< @c x400Address [3]. */
+  R_X509_GENERAL_NAME_DIRECTORY         = 4, /**< @c directoryName [4] (a @c Name). */
+  R_X509_GENERAL_NAME_EDI_PARTY         = 5, /**< @c ediPartyName [5]. */
+  R_X509_GENERAL_NAME_URI               = 6, /**< @c uniformResourceIdentifier [6] (IA5String). */
+  R_X509_GENERAL_NAME_IP                = 7, /**< @c iPAddress [7] (OCTET STRING). */
+  R_X509_GENERAL_NAME_REGISTERED_ID     = 8, /**< @c registeredID [8] (OBJECT IDENTIFIER). */
+} RX509GeneralNameType;
+
+/**
+ * @brief One parsed @c GeneralName, as carried by Subject Alternative
+ * Name, Name Constraints and the Authority Key Identifier's
+ * @c authorityCertIssuer.
+ *
+ * Opaque; introspect with @ref r_x509_general_name_type and the
+ * @c r_x509_general_name_as_* accessors. Owned by the @ref RCryptoCert
+ * it was parsed from and valid for that certificate's lifetime.
+ */
+typedef struct RX509GeneralName RX509GeneralName;
+
+/** @brief Return which CHOICE alternative @p gn holds. */
+R_API RX509GeneralNameType r_x509_general_name_type (const RX509GeneralName * gn);
+/**
+ * @brief Return the textual value for the IA5String alternatives
+ * (@c rfc822Name, @c dNSName, @c uniformResourceIdentifier).
+ * @return NUL-terminated string owned by @p gn, or @c NULL for any
+ *         other alternative.
+ */
+R_API const rchar * r_x509_general_name_as_string (const RX509GeneralName * gn);
+/**
+ * @brief Return the raw address octets for the @c iPAddress alternative
+ * (4 bytes for IPv4, 16 for IPv6; or a CIDR pair in Name Constraints).
+ * @param gn    The general name.
+ * @param size  Out: length of the returned octets.
+ * @return Octets owned by @p gn, or @c NULL for any other alternative.
+ */
+R_API const ruint8 * r_x509_general_name_as_ip (const RX509GeneralName * gn, rsize * size);
+/**
+ * @brief Return the @c registeredID alternative as a dotted OID string.
+ * @return Newly allocated string the caller frees with @c r_free, or
+ *         @c NULL for any other alternative.
+ */
+R_API rchar * r_x509_general_name_as_oid (const RX509GeneralName * gn);
+/**
+ * @brief Return the @c directoryName alternative as a Distinguished
+ * Name string.
+ * @return String owned by @p gn, or @c NULL for any other alternative.
+ */
+R_API const rchar * r_x509_general_name_as_dn (const RX509GeneralName * gn);
+
+/**
  * @brief Parse a DER-encoded X.509 certificate, copying the bytes.
  *
  * @param data  Pointer to the certificate's DER bytes.
@@ -172,6 +231,53 @@ R_API RX509ExtKeyUsage r_crypto_x509_cert_ext_key_usage (const RCryptoCert * cer
  * the OID dotted string @p policy.
  */
 R_API rboolean r_crypto_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy);
+
+/** @brief Number of @c SubjectAltName general names (0 if absent). */
+R_API rsize r_crypto_x509_cert_subject_alt_name_count (const RCryptoCert * cert);
+/**
+ * @brief Return the @p idx'th @c SubjectAltName general name.
+ * @return The general name, or @c NULL if @p idx is out of range.
+ */
+R_API const RX509GeneralName * r_crypto_x509_cert_subject_alt_name (const RCryptoCert * cert, rsize idx);
+
+/** @brief Number of @c authorityCertIssuer general names in the AKI (0 if absent). */
+R_API rsize r_crypto_x509_cert_authority_cert_issuer_count (const RCryptoCert * cert);
+/**
+ * @brief Return the @p idx'th @c authorityCertIssuer general name.
+ * @return The general name, or @c NULL if @p idx is out of range.
+ */
+R_API const RX509GeneralName * r_crypto_x509_cert_authority_cert_issuer (const RCryptoCert * cert, rsize idx);
+
+/** @brief Number of @c permittedSubtrees base names in @c NameConstraints. */
+R_API rsize r_crypto_x509_cert_name_constraint_permitted_count (const RCryptoCert * cert);
+/**
+ * @brief Return the @p idx'th @c permittedSubtrees base general name.
+ * @return The general name, or @c NULL if @p idx is out of range.
+ */
+R_API const RX509GeneralName * r_crypto_x509_cert_name_constraint_permitted (const RCryptoCert * cert, rsize idx);
+/** @brief Number of @c excludedSubtrees base names in @c NameConstraints. */
+R_API rsize r_crypto_x509_cert_name_constraint_excluded_count (const RCryptoCert * cert);
+/**
+ * @brief Return the @p idx'th @c excludedSubtrees base general name.
+ * @return The general name, or @c NULL if @p idx is out of range.
+ */
+R_API const RX509GeneralName * r_crypto_x509_cert_name_constraint_excluded (const RCryptoCert * cert, rsize idx);
+
+/** @brief Number of @c PolicyMappings entries (0 if absent). */
+R_API rsize r_crypto_x509_cert_policy_mapping_count (const RCryptoCert * cert);
+/**
+ * @brief Return the @p idx'th @c PolicyMappings entry as a pair of
+ * dotted OID strings.
+ * @param cert                    The certificate.
+ * @param idx                     Entry index.
+ * @param issuer_domain_policy    Out (optional): issuer-domain policy OID,
+ *                                owned by @p cert.
+ * @param subject_domain_policy   Out (optional): subject-domain policy OID,
+ *                                owned by @p cert.
+ * @return @c TRUE if @p idx is in range and the out pointers were set.
+ */
+R_API rboolean r_crypto_x509_cert_policy_mapping (const RCryptoCert * cert, rsize idx,
+    const rchar ** issuer_domain_policy, const rchar ** subject_domain_policy);
 
 /**
  * @brief True iff @p cert is a CA: the @c BasicConstraints @c CA flag
