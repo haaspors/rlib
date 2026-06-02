@@ -34,6 +34,8 @@
 #include <rlib/rstr.h>
 #include <rlib/os/rtty.h>
 
+#include <stdarg.h>
+
 struct RArgParser
 {
   RRef ref;
@@ -43,6 +45,8 @@ struct RArgParser
   rchar * version;
   rchar * summary;
   rchar * epilog;
+
+  rchar * errmsg;       /* reason the most recent parse failed, or NULL */
 
   RArgOptionGroup * main;
   RSList * groups;
@@ -268,8 +272,8 @@ r_arg_option_group_find_entry_by_longarg (const RArgOptionGroup * group,
   return NULL;
 }
 
-static rboolean
-r_arg_option_group_check_required_options (const RArgOptionGroup * group, RDictionary * options)
+static const RArgOptionEntry *
+r_arg_option_group_first_missing_required (const RArgOptionGroup * group, RDictionary * options)
 {
   rsize i;
 
@@ -277,11 +281,11 @@ r_arg_option_group_check_required_options (const RArgOptionGroup * group, RDicti
     RArgOptionEntry * opt = &group->entries[i];
     if ((opt->flags & R_ARG_OPTION_FLAG_REQUIRED) &&
         !r_dictionary_contains (options, opt->longarg)) {
-      return FALSE;
+      return opt;
     }
   }
 
-  return TRUE;
+  return NULL;
 }
 
 static rboolean
@@ -358,6 +362,7 @@ r_arg_parser_free (RArgParser * parser)
     r_free (parser->version);
     r_free (parser->summary);
     r_free (parser->epilog);
+    r_free (parser->errmsg);
 
     r_arg_option_group_unref (parser->main);
     r_slist_destroy_full (parser->groups, r_arg_option_group_unref);
@@ -365,6 +370,17 @@ r_arg_parser_free (RArgParser * parser)
     r_kv_ptr_array_clear (&parser->commands);
     r_free (parser);
   }
+}
+
+static void R_ATTR_PRINTF (2, 3)
+r_arg_parser_set_error (RArgParser * parser, const rchar * fmt, ...)
+{
+  va_list args;
+
+  r_free (parser->errmsg);
+  va_start (args, fmt);
+  parser->errmsg = r_strvprintf (fmt, args);
+  va_end (args);
 }
 
 RArgParser *
@@ -803,8 +819,6 @@ r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
   RArgParseResult ret = R_ARG_PARSE_ERROR;
   const rchar * str;
 
-  (void) parser;
-
   if (entry->type == R_ARG_OPTION_TYPE_NONE) {
     str = *arg;
     ret = r_arg_option_parse_none (arg, NULL,
@@ -816,6 +830,7 @@ r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
     } else if (*argc > 0) {
       str = **argv;
     } else {
+      r_arg_parser_set_error (parser, "option '--%s' requires a value", entry->longarg);
       return R_ARG_PARSE_ERROR;
     }
 
@@ -861,6 +876,10 @@ r_arg_parser_parse_option_ctx (RArgParser * parser, RArgParseCtx * ctx,
     r_dictionary_insert (ctx->options, entry->longarg, (rpointer)str);
   }
 
+  if (ret != R_ARG_PARSE_OK)
+    r_arg_parser_set_error (parser, "invalid value '%s' for option '--%s'",
+        str, entry->longarg);
+
   return ret;
 }
 
@@ -876,6 +895,7 @@ r_arg_parser_parse_short_option (RArgParser * parser, RArgParseCtx * ctx,
       (*arg)++;
     return r_arg_parser_parse_option_ctx (parser, ctx, entry, arg, argc, argv);
   } else if ((ctx->flags & R_ARG_PARSE_FLAG_ALLOW_UNKNOWN) == 0) {
+    r_arg_parser_set_error (parser, "unrecognized option '-%c'", **arg);
     return R_ARG_PARSE_UNKNOWN_OPTION;
   }
 
@@ -896,26 +916,30 @@ r_arg_parser_parse_long_option (RArgParser * parser, RArgParseCtx * ctx,
 
     return r_arg_parser_parse_option_ctx (parser, ctx, entry, arg, argc, argv);
   } else if ((ctx->flags & R_ARG_PARSE_FLAG_ALLOW_UNKNOWN) == 0) {
+    const rchar * eq = r_strchr (*arg, (int)'=');
+    int nlen = (eq != NULL) ? (int)(eq - *arg) : (int)r_strlen (*arg);
+    r_arg_parser_set_error (parser, "unrecognized option '--%.*s'", nlen, *arg);
     return R_ARG_PARSE_UNKNOWN_OPTION;
   }
 
   return R_ARG_PARSE_OK;
 }
 
-static rboolean
-r_arg_parser_check_required_options (RArgParser * parser, RArgParseCtx * ctx)
+static const RArgOptionEntry *
+r_arg_parser_first_missing_required (RArgParser * parser, RArgParseCtx * ctx)
 {
+  const RArgOptionEntry * missing;
   RSList * it;
 
-  if (!r_arg_option_group_check_required_options (parser->main, ctx->options))
-    return FALSE;
+  if ((missing = r_arg_option_group_first_missing_required (parser->main, ctx->options)) != NULL)
+    return missing;
 
   for (it = parser->groups; it != NULL; it = it->next) {
-    if (!r_arg_option_group_check_required_options (it->data, ctx->options))
-      return FALSE;
+    if ((missing = r_arg_option_group_first_missing_required (it->data, ctx->options)) != NULL)
+      return missing;
   }
 
-  return TRUE;
+  return NULL;
 }
 
 static RArgParseResult
@@ -998,10 +1022,20 @@ r_arg_parser_parse_positionals (RArgParser * parser, RArgParseCtx * ctx,
         parsed = r_arg_option_parser_string (&end, NULL);
         break;
       default:
+        {
+          rchar * pname = r_arg_positional_usage_name (entry);
+          r_arg_parser_set_error (parser, "argument '%s' has an unsupported type", pname);
+          r_free (pname);
+        }
         return R_ARG_PARSE_ERROR;
     }
-    if (parsed != R_ARG_PARSE_OK)
+    if (parsed != R_ARG_PARSE_OK) {
+      rchar * pname = r_arg_positional_usage_name (entry);
+      r_arg_parser_set_error (parser, "invalid value '%s' for argument '%s'",
+          str, pname);
+      r_free (pname);
       return R_ARG_PARSE_VALUE_ERROR;
+    }
 
     r_dictionary_insert (ctx->options, entry->longarg, (rpointer) str);
     (*argv)++;
@@ -1064,7 +1098,14 @@ r_arg_parser_parse_command (RArgParser * parser, RArgParseFlags flags,
     ret = R_ARG_PARSE_OK;
     ctx->cmdctx = r_arg_parser_parse_internal (cmdparser, flags,
         cmd, argc, argv, &ret);
+    /* Surface the sub-command's error on the parser the caller holds. */
+    if (ret != R_ARG_PARSE_OK && cmdparser->errmsg != NULL)
+      r_arg_parser_set_error (parser, "%s", cmdparser->errmsg);
   } else {
+    if (cmd != NULL)
+      r_arg_parser_set_error (parser, "unknown command '%s'", cmd);
+    else
+      r_arg_parser_set_error (parser, "missing command");
     ret = R_ARG_PARSE_MISSING_COMMAND;
   }
 
@@ -1082,10 +1123,21 @@ r_arg_parser_parse_internal (RArgParser * parser, RArgParseFlags flags,
   if ((ret = r_arg_parse_ctx_new (parser, flags, appname)) != NULL) {
     if ((curres = r_arg_parser_parse_options (parser, ret, argc, argv)) == R_ARG_PARSE_OK &&
         (curres = r_arg_parser_parse_positionals (parser, ret, argc, argv)) == R_ARG_PARSE_OK) {
-      if (!r_arg_parser_check_required_options (parser, ret))
+      const RArgOptionEntry * missing =
+          r_arg_parser_first_missing_required (parser, ret);
+      if (missing != NULL) {
+        if (missing->flags & R_ARG_OPTION_FLAG_POSITIONAL) {
+          rchar * pname = r_arg_positional_usage_name (missing);
+          r_arg_parser_set_error (parser, "missing required argument '%s'", pname);
+          r_free (pname);
+        } else {
+          r_arg_parser_set_error (parser, "required option '--%s' is missing",
+              missing->longarg);
+        }
         curres = R_ARG_PARSE_MISSING_OPTION;
-      else
+      } else {
         curres = r_arg_parser_parse_command (parser, flags, ret, argc, argv);
+      }
     }
 
     if (curres != R_ARG_PARSE_OK) {
@@ -1107,6 +1159,17 @@ r_arg_parser_parse (RArgParser * parser, RArgParseFlags flags,
 {
   const rchar * appname;
 
+  if (R_UNLIKELY (parser == NULL)) {
+    if (res != NULL)
+      *res = R_ARG_PARSE_ARG_ERROR;
+    return NULL;
+  }
+
+  /* Clear any error from a previous parse up front, so get_error stays
+   * honest even on the malformed-argv early-out below. */
+  r_free (parser->errmsg);
+  parser->errmsg = NULL;
+
   if (R_UNLIKELY (argc == NULL || *argc < 1 || argv == NULL)) {
     if (res != NULL)
       *res = R_ARG_PARSE_ARG_ERROR;
@@ -1117,6 +1180,28 @@ r_arg_parser_parse (RArgParser * parser, RArgParseFlags flags,
   (*argv)++;
   (*argc)--;
   return r_arg_parser_parse_internal (parser, flags, appname, argc, argv, res);
+}
+
+const rchar *
+r_arg_parser_get_error (const RArgParser * parser)
+{
+  return parser != NULL ? parser->errmsg : NULL;
+}
+
+void
+r_arg_parser_print_error (RArgParser * parser, RArgParseFlags flags)
+{
+  const rchar * app;
+
+  if (parser == NULL || parser->errmsg == NULL)
+    return;
+  if ((flags & R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT) != 0)
+    return;
+
+  app = parser->appname != NULL ? parser->appname : "";
+  r_printerr ("%s: %s\n", app, parser->errmsg);
+  if ((flags & R_ARG_PARSE_FLAG_DISABLE_HELP) == 0)
+    r_printerr ("Try '%s --help' for more information.\n", app);
 }
 
 void

@@ -879,6 +879,195 @@ RTEST (rargparse, parse_unknown_option, RTEST_FAST)
 }
 RTEST_END;
 
+#define RARGPARSE_ERR_FLAGS \
+  (R_ARG_PARSE_FLAG_DONT_EXIT | R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT)
+
+RTEST (rargparse, error_messages, RTEST_FAST)
+{
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParseCtx * ctx;
+  RArgParseResult res;
+  rchar ** strv, ** argv;
+  int argc;
+
+  r_assert (r_arg_parser_add_option_entry (parser, "num", 'n',
+        R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_NONE, "a number", NULL));
+  r_assert (r_arg_parser_add_option_entry (parser, "name", 0,
+        R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_REQUIRED, "a name", NULL));
+
+  /* No parse has run: no error recorded. */
+  r_assert_cmpptr (r_arg_parser_get_error (parser), ==, NULL);
+
+  strv = argv = r_strv_new ("prog", "--bogus", "--name=x", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_UNKNOWN_OPTION);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==, "unrecognized option '--bogus'");
+  r_strv_free (strv);
+
+  strv = argv = r_strv_new ("prog", "-z", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_UNKNOWN_OPTION);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==, "unrecognized option '-z'");
+  r_strv_free (strv);
+
+  strv = argv = r_strv_new ("prog", "--name=x", "--num=abc", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==,
+      "invalid value 'abc' for option '--num'");
+  r_strv_free (strv);
+
+  strv = argv = r_strv_new ("prog", "--num=1", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_MISSING_OPTION);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==,
+      "required option '--name' is missing");
+  r_strv_free (strv);
+
+  /* A subsequent successful parse clears the recorded error. */
+  strv = argv = r_strv_new ("prog", "--name=ok", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_OK);
+  r_assert_cmpptr (r_arg_parser_get_error (parser), ==, NULL);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+static RString * g_rargparse_capture;
+static rboolean
+rargparse_capture_printerr (const rchar * str, rsize size, rpointer data)
+{
+  (void) data;
+  r_string_append_len (g_rargparse_capture, str, size);
+  return TRUE;
+}
+
+RTEST (rargparse, error_print, RTEST_FAST)
+{
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParseResult res;
+  RPrintFunc oldfunc;
+  rpointer olddata;
+  rchar ** strv, ** argv;
+  rchar * tmp;
+  int argc;
+
+  strv = argv = r_strv_new ("prog", "--bogus", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res), ==, NULL);
+  r_assert_cmpint (res, ==, R_ARG_PARSE_UNKNOWN_OPTION);
+  r_strv_free (strv);
+
+  /* print_error writes the message and the hint to stderr. */
+  g_rargparse_capture = r_string_new_sized (128);
+  r_override_printerr_handler (rargparse_capture_printerr, NULL, &oldfunc, &olddata);
+  r_arg_parser_print_error (parser, R_ARG_PARSE_FLAG_NONE);
+  r_override_printerr_handler (oldfunc, olddata, NULL, NULL);
+  r_assert_cmpstr ((tmp = r_string_free_keep (g_rargparse_capture)), ==,
+      "mytool: unrecognized option '--bogus'\n"
+      "Try 'mytool --help' for more information.\n");
+  r_free (tmp);
+
+  /* DONT_PRINT_STDOUT suppresses it entirely. */
+  g_rargparse_capture = r_string_new_sized (128);
+  r_override_printerr_handler (rargparse_capture_printerr, NULL, &oldfunc, &olddata);
+  r_arg_parser_print_error (parser, R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT);
+  r_override_printerr_handler (oldfunc, olddata, NULL, NULL);
+  r_assert_cmpuint (r_string_length (g_rargparse_capture), ==, 0);
+  r_string_free (g_rargparse_capture);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, error_positional, RTEST_FAST)
+{
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParseResult res;
+  rchar ** strv, ** argv;
+
+  r_assert (r_arg_parser_add_option_entry (parser, "count", 0,
+        R_ARG_OPTION_TYPE_INT, R_ARG_OPTION_FLAG_POSITIONAL, "how many", NULL));
+
+  strv = argv = r_strv_new ("prog", NULL);
+  {
+    int argc = (int) r_strv_len (argv);
+    r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+            &argc, (const rchar ***)&argv, &res), ==, NULL);
+  }
+  r_assert_cmpint (res, ==, R_ARG_PARSE_MISSING_OPTION);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==,
+      "missing required argument 'COUNT'");
+  r_strv_free (strv);
+
+  strv = argv = r_strv_new ("prog", "abc", NULL);
+  {
+    int argc = (int) r_strv_len (argv);
+    r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+            &argc, (const rchar ***)&argv, &res), ==, NULL);
+  }
+  r_assert_cmpint (res, ==, R_ARG_PARSE_VALUE_ERROR);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==,
+      "invalid value 'abc' for argument 'COUNT'");
+  r_strv_free (strv);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, error_subcommand, RTEST_FAST)
+{
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParser * cmd;
+  RArgParseResult res;
+  rchar ** strv, ** argv;
+
+  r_assert_cmpptr ((cmd = r_arg_parser_add_command (parser, "build", "Build it")), !=, NULL);
+  r_assert (r_arg_parser_add_option_entry (cmd, "target", 't',
+        R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_REQUIRED, "target", NULL));
+  r_arg_parser_unref (cmd);
+
+  /* A sub-command's error must surface on the root parser the caller holds. */
+  strv = argv = r_strv_new ("prog", "build", NULL);
+  {
+    int argc = (int) r_strv_len (argv);
+    r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+            &argc, (const rchar ***)&argv, &res), ==, NULL);
+  }
+  r_assert_cmpint (res, ==, R_ARG_PARSE_MISSING_OPTION);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==,
+      "required option '--target' is missing");
+  r_strv_free (strv);
+
+  /* Unknown command. */
+  strv = argv = r_strv_new ("prog", "nope", NULL);
+  {
+    int argc = (int) r_strv_len (argv);
+    r_assert_cmpptr (r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+            &argc, (const rchar ***)&argv, &res), ==, NULL);
+  }
+  r_assert_cmpint (res, ==, R_ARG_PARSE_MISSING_COMMAND);
+  r_assert_cmpstr (r_arg_parser_get_error (parser), ==, "unknown command 'nope'");
+  r_strv_free (strv);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (rargparse, get_value, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
