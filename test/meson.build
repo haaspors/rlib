@@ -53,6 +53,7 @@ rlibtest_sources = [
   'rhzrptr.c',
   'rjson.c',
   'rjson_parser.c',
+  'rkdf.c',
   'rkvptrarray.c',
   'rlist.c',
   'rlog.c',
