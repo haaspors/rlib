@@ -736,6 +736,182 @@ RTEST (rcryptopem, legacy_encrypted_rsa_aes256, RTEST_FAST)
 }
 RTEST_END;
 
+/* The same RSA key as pem_legacy_unenc, re-wrapped as PKCS#8
+ * EncryptedPrivateKeyInfo with PBES2 (PBKDF2 + AES-CBC), generated with:
+ *   openssl pkcs8 -topk8 -v2 <cipher> -v2prf <prf> -passout pass:test123
+ * The three fixtures exercise AES-128/192/256 and the SHA1/256/512 PRFs. */
+static const rchar pem_pkcs8_aes256_sha256[] =
+  "-----BEGIN ENCRYPTED PRIVATE KEY-----\n"
+  "MIIC5TBfBgkqhkiG9w0BBQ0wUjAxBgkqhkiG9w0BBQwwJAQQz2Q59bpbOyvHjcFU\n"
+  "G0uP0gICCAAwDAYIKoZIhvcNAgkFADAdBglghkgBZQMEASoEEPMhOdTSTYGk355Z\n"
+  "ApZAcLEEggKAsCkU8aBDR7j++/m1GCiJdQNORzfzNpU7SFR9vFEojfeMCkTejnN/\n"
+  "XjcXYrFedQJGWnmbrKwofHgl9fpoEJzeCONm6crXywnFd3P5REIIctbjdwmYgNtx\n"
+  "SgiHyeWoCVV0JlFf5u24OOqGpltYg6idV3y9c2PuFg2G2Nhu6H42L1oxVVp66qV4\n"
+  "8LFlK1ttPhdtymE7+4r9qld1W12ZZklBc4sQYJciBJrT8p8WLP71cfh8x4XqmiNy\n"
+  "I/EPrOyn5BOGLNplsOAJ3+/MwYLYogXwZ8iyO1DrlzyM5iNyQsP+cdDKQlTsqy2H\n"
+  "h27l0NybgW8TC1KbTBuHkEKC7MPwYA6EWwxUF9geOQbVp0QGyRmb3voPFkirrY3D\n"
+  "sXlOwlRz7lkmUkObRSGJhAoNF0W0a9fsQaw+xsStqBPcHyy2KJoiAusZa8hr8QH/\n"
+  "sRKmdGSfN/cL5GajfZNPUKqMb7Om4hWvSg1Zo3TTqf+v8B3d6kxZErmPPhzW+Jjx\n"
+  "clJjpCzU1QGCAuTIzqO65EwP2Ngr5wIvsrNuD2aaJMgWK2EKjh19HObjj7pFZksZ\n"
+  "vz0IQMbRp7teuQl5j86Bxf6FcFgY9VtPKSZqfIIUVCsTN41vpIVdn2HDx82Vgayi\n"
+  "LvLgNPlU+teKrCt1MqadXrAFPh2iSKs5dIkjM6KmDqOh8YKQY6/+9MfKS5pBxKRe\n"
+  "NmwNaaicEToOAT+BGntlXxuvyjmPA6nqx5aKKhlqVT9COL4EHomzx0od/DGyGC/h\n"
+  "CcvBRtoe5nKXoSTMhwSKsISUyhGyFuFYgFaa48shnpvacQ/KvmQU8+37LcTFhMvN\n"
+  "DvSM2QybDXybh2g/h4VEnxSM23UGju6NgQ==\n"
+  "-----END ENCRYPTED PRIVATE KEY-----\n";
+
+static const rchar pem_pkcs8_aes128_sha1[] =
+  "-----BEGIN ENCRYPTED PRIVATE KEY-----\n"
+  "MIIC1zBRBgkqhkiG9w0BBQ0wRDAjBgkqhkiG9w0BBQwwFgQQXnPAyk3QKZyXru4G\n"
+  "kcSzBQICCAAwHQYJYIZIAWUDBAECBBAdK/50ZfvVm0xjR3xIg9ugBIICgCZl9NYU\n"
+  "cOlphrsbjzSSEVKo4I5LUO0ty9umQNYrdsY9EoxmFTtP6LA7PUmY6dkRkFFGa7/B\n"
+  "J1tW4G2CKndAEKyQu0hfFIBd+GSMdgssl8cluQHjZuKQc9ygycSK6KzHJKM527vu\n"
+  "RaVxr30pdYVaic+U91NgI16kKiGu2AhWvIutWiVYrUWPxmLWqiUlA1OFPWwTFgXf\n"
+  "HpnlpyufqVaFid7Y5FeBeswZq9nxYBrbcaKn4hTAUfXT6ua59kNm3UHVzSQrOnR+\n"
+  "ynpTQOoxRtCKZ2hHKnyPx9zUE1GCYfBRPzHIVnE91UM+TmHP4YHxqfSjNTJRUeI5\n"
+  "flwXfho8K9ko8l7ELOfuFpATOrrWwPcq9NzZeZYitk1pQiMQAGOENdIyYoPmIQaX\n"
+  "dCI5eZD9C3X45JFsHIsPjYs0jAx6iRMBUgt8q64ovlryc8AtAbbWpILWmuj2f1Dp\n"
+  "zMw02t19xn2C6WGdlOTXQD9k1gEfmrFsHH707fbu57LLMJlilycZeAP0Fzltz9yh\n"
+  "Am3l35CnuT5zlSVWrpKwe71eeTY3qxjmUz8puEainADG95J6Eao03V4LIxVxmvFL\n"
+  "BLQ9VcxYnBpGzl72cVYGJNBkAMjQcbq8/dYtTFhiR0ShRJy9zPotluDJ/VHCF80M\n"
+  "owP3856TfM1sNUQ/tlMAE+EAlA9hJIGhIcLSf7C4HvYO8vPVF/y15wthFyeyqnkd\n"
+  "TrA2yH+gYaHbzzET76ztaoJnhuOwPQDoaUt1ZpQj6lhw1BbJvb0hvRVI/04ey3na\n"
+  "pFogUIGlzotUvMiVT+BjTH6hf106qEAYkP8g0WdIt9q2pVQU+DOXYwcT+gSCYKny\n"
+  "yUBmcsv1nv/smHU=\n"
+  "-----END ENCRYPTED PRIVATE KEY-----\n";
+
+static const rchar pem_pkcs8_aes192_sha512[] =
+  "-----BEGIN ENCRYPTED PRIVATE KEY-----\n"
+  "MIIC5TBfBgkqhkiG9w0BBQ0wUjAxBgkqhkiG9w0BBQwwJAQQ1iexcuZI77yRGtme\n"
+  "ObeJVgICCAAwDAYIKoZIhvcNAgsFADAdBglghkgBZQMEARYEEC5pcG2S8Z33xDqZ\n"
+  "0ZbuCWEEggKAX+L1ipgZtQfTCSuV+TdpeWM+b8x5LHmd/NKpvDe2o+CD6eW8foWZ\n"
+  "KMHM76HT0Xin/rHEVVCCUTcWiBNNWBS+gOh8zL2/WDI9xg5loqexRviuAYQpr7FP\n"
+  "GtN9OAKnnwHMK40U5g9pcCD/6nG/Z3/WSeyTOlEqM2cFZL+XEO0FLneAwuF8C/of\n"
+  "P5XjjuxKpFsAgsUIB3hvYgk72wgfs7BIy2+Y9YRu8YK8JFUBCtk067mQEmJoYfe5\n"
+  "0/MfSgCzoGT+V3MLNCDclWzmcEUNOASrJqvNrhwRfvJ1lTxgs2hp82+lxX7PdGWb\n"
+  "SAk3pDrztn2ziIita772Z0auoCCT2dcGOqJ4grpHE3Vr0VOvkfIGs96j765r3sA0\n"
+  "V5eCSE2ODmFlYM9JIIu4UP+4nycl3bdUG6Ha2Q89QiJ0QkIuOlEC9pCGC/XHuxXm\n"
+  "tD0dAZcXOUAyzJ+EkmSQ5jAaAiOl2+flprmhx9tug+XlEthVnHUFkBL1OYGuQdWI\n"
+  "t4Ar3T4fLDtlbL+h12NmVaBFD8o3YbeX77kDZYMMmOBYg6UXSfHojewBRgtfen+L\n"
+  "iO9C7acYhAPkpZOadl07W+g3loNmek5MQbnOz++DCFUbex+0Y1vYloGbQE4joNQr\n"
+  "ijSuLJmtlvhmIt/mCbtcyP6fT/gIfq0n0QLMJvJPUKEj2+hpry/jytxr1ahrV/cg\n"
+  "ZrOZmkT4IfmLfsBjpneKmFfbWTMYVuJkACpw0I/vSUgALxXl/DjXKpkBjYZwOO8e\n"
+  "e5Jjm5fVT0YRttx2tdfeU156yR6FLn++8hg8+m/lg7tVELJnJQgeDC6pzUA4n0Gm\n"
+  "Cf/XksbXfELWPpuNBbiseaJKd3jss3Cxnw==\n"
+  "-----END ENCRYPTED PRIVATE KEY-----\n";
+
+static void
+verify_pkcs8_pbes2_pem (const rchar * pem, rsize size, const rchar * pass)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key, * expected;
+  rmpint n, e;
+
+  /* Decode the unencrypted reference key. */
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_legacy_unenc, sizeof (pem_legacy_unenc))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert_cmpptr ((expected = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+
+  r_assert_cmpptr ((parser = r_pem_parser_new (pem, size)), !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert_cmpint (r_pem_block_get_type (block), ==,
+      R_PEM_TYPE_ENCRYPTED_PRIVATE_KEY);
+  /* A missing or wrong passphrase must fail without producing a key. */
+  r_assert_cmpptr (r_pem_block_get_key (block, NULL, 0), ==, NULL);
+  r_assert_cmpptr (r_pem_block_get_key (block, "wrongpass", 9), ==, NULL);
+
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, pass, r_strlen (pass))),
+      !=, NULL);
+
+  /* Compare modulus + exponent of decrypted key vs reference key. */
+  r_mpint_init (&n);
+  r_mpint_init (&e);
+  r_assert (r_rsa_pub_key_get_n (key, &n));
+  r_assert (r_rsa_pub_key_get_e (key, &e));
+  {
+    rmpint en, ee;
+    r_mpint_init (&en);
+    r_mpint_init (&ee);
+    r_assert (r_rsa_pub_key_get_n (expected, &en));
+    r_assert (r_rsa_pub_key_get_e (expected, &ee));
+    r_assert_cmpint (r_mpint_cmp (&n, &en), ==, 0);
+    r_assert_cmpint (r_mpint_cmp (&e, &ee), ==, 0);
+    r_mpint_clear (&en);
+    r_mpint_clear (&ee);
+  }
+  r_mpint_clear (&n);
+  r_mpint_clear (&e);
+
+  r_crypto_key_unref (key);
+  r_crypto_key_unref (expected);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+}
+
+RTEST (rcryptopem, pkcs8_pbes2_aes256_sha256, RTEST_FAST)
+{
+  verify_pkcs8_pbes2_pem (pem_pkcs8_aes256_sha256,
+      sizeof (pem_pkcs8_aes256_sha256), "test123");
+}
+RTEST_END;
+
+RTEST (rcryptopem, pkcs8_pbes2_aes128_sha1, RTEST_FAST)
+{
+  verify_pkcs8_pbes2_pem (pem_pkcs8_aes128_sha1,
+      sizeof (pem_pkcs8_aes128_sha1), "test123");
+}
+RTEST_END;
+
+RTEST (rcryptopem, pkcs8_pbes2_aes192_sha512, RTEST_FAST)
+{
+  verify_pkcs8_pbes2_pem (pem_pkcs8_aes192_sha512,
+      sizeof (pem_pkcs8_aes192_sha512), "test123");
+}
+RTEST_END;
+
+RTEST (rcryptopem, pkcs8_pbes2_plaintext_wiped, RTEST_FAST)
+{
+  /* The PBES2 path AES-decrypts into a buffer holding the recovered
+   * PrivateKeyInfo DER, which r_pem_block_get_key must wipe before
+   * freeing. Same modulus byte-run needle as the legacy wipe test. */
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  rmpint n;
+  ruint8 modulus[128];
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_legacy_unenc, sizeof (pem_legacy_unenc))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_mpint_init (&n);
+  r_assert (r_rsa_pub_key_get_n (key, &n));
+  r_assert (r_mpint_to_binary_with_size (&n, modulus, sizeof (modulus)));
+  r_mpint_clear (&n);
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+
+  r_wipe_witness_install ();
+  r_assert_cmpptr ((parser = r_pem_parser_new (pem_pkcs8_aes256_sha256,
+          sizeof (pem_pkcs8_aes256_sha256))), !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, "test123", 7)), !=, NULL);
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+  r_wipe_witness_uninstall ();
+
+  r_assert (!r_wipe_witness_freed_contains (modulus + 16, 32));
+}
+RTEST_END;
+
 RTEST (rcryptopem, legacy_decrypted_plaintext_wiped, RTEST_FAST)
 {
   /* Decrypt a legacy-encrypted PEM and verify that the DER-encoded

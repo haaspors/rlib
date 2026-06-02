@@ -210,6 +210,13 @@ R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
 #define R_RSA_OID_PBES2                         R_RSA_OID_PKCS_5"\x0d"
 #define R_RSA_OID_PBMAC1                        R_RSA_OID_PKCS_5"\x0e"
 
+/* PBKDF2 PRFs: rsadsi digestAlgorithm (1.2.840.113549.2.x). */
+#define R_RSA_OID_HMAC_WITH_SHA1                R_RSA_OID_RSADSI"\x02\x07"
+#define R_RSA_OID_HMAC_WITH_SHA224              R_RSA_OID_RSADSI"\x02\x08"
+#define R_RSA_OID_HMAC_WITH_SHA256              R_RSA_OID_RSADSI"\x02\x09"
+#define R_RSA_OID_HMAC_WITH_SHA384              R_RSA_OID_RSADSI"\x02\x0a"
+#define R_RSA_OID_HMAC_WITH_SHA512              R_RSA_OID_RSADSI"\x02\x0b"
+
 #define R_OIW_OID                               R_ASN1_OID_ISO_ID_ORG"\x0e"
 #define R_OIW_SECSIG_OID                        R_OIW_OID"\x03"
 #define R_OIW_SECSIG_OID_MD4_RSA                R_OIW_SECSIG_OID"\x02\x02"
@@ -226,6 +233,10 @@ R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
 #define R_OID_DIGEST_ALG_SHA384                 R_US_GOV_OID"\x03\x04\x02\x02"
 #define R_OID_DIGEST_ALG_SHA512                 R_US_GOV_OID"\x03\x04\x02\x03"
 #define R_OID_DIGEST_ALG_SHA224                 R_US_GOV_OID"\x03\x04\x02\x04"
+/* NIST AES-CBC (2.16.840.1.101.3.4.1.{2,22,42}). */
+#define R_OID_AES_128_CBC                       R_US_GOV_OID"\x03\x04\x01\x02"
+#define R_OID_AES_192_CBC                       R_US_GOV_OID"\x03\x04\x01\x16"
+#define R_OID_AES_256_CBC                       R_US_GOV_OID"\x03\x04\x01\x2a"
 
 #define R_X9CM_OID                              R_ASN1_OID_ISO_US"\xce\x38"
 #define R_ANSI_X9_62_OID                        R_ASN1_OID_ISO_US"\xce\x3d"

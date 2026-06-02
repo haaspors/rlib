@@ -21,6 +21,7 @@
 
 #include <rlib/crypto/raes.h>
 #include <rlib/crypto/rcipher.h>
+#include <rlib/crypto/rkdf.h>
 #include <rlib/crypto/rdh.h>
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/rrsa.h>
@@ -603,6 +604,180 @@ r_pem_decrypt_legacy (RPemBlock * block, const ruint8 * passphrase, rsize ppsize
   return cipherbuf;
 }
 
+/* Map a PBKDF2 PRF AlgorithmIdentifier OID (tlv at the OID) to a digest. */
+static rboolean
+r_pem_pbes2_prf_md (const RAsn1BinTLV * tlv, RMsgDigestType * md)
+{
+  if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_HMAC_WITH_SHA1))
+    *md = R_MSG_DIGEST_TYPE_SHA1;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_HMAC_WITH_SHA224))
+    *md = R_MSG_DIGEST_TYPE_SHA224;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_HMAC_WITH_SHA256))
+    *md = R_MSG_DIGEST_TYPE_SHA256;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_HMAC_WITH_SHA384))
+    *md = R_MSG_DIGEST_TYPE_SHA384;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_HMAC_WITH_SHA512))
+    *md = R_MSG_DIGEST_TYPE_SHA512;
+  else
+    return FALSE;
+  return TRUE;
+}
+
+/* Decrypt a PKCS#8 EncryptedPrivateKeyInfo (RFC 5958) protected with
+ * PBES2 (RFC 8018 §6.2): PBKDF2 key derivation over an HMAC PRF feeding
+ * AES-CBC. @a dec must be positioned at the outer SEQUENCE (@a tlv). On
+ * success returns a newly allocated buffer holding the recovered
+ * PrivateKeyInfo DER; the caller must wipe and free it. Legacy PBES1 and
+ * non-AES schemes are intentionally unsupported and return NULL. */
+static ruint8 *
+r_pem_decrypt_pkcs8 (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv,
+    const rchar * passphrase, rsize ppsize, rsize * out_size)
+{
+  RMsgDigestType prf = R_MSG_DIGEST_TYPE_SHA1;  /* PBKDF2 default PRF */
+  const ruint8 * salt = NULL;
+  const ruint8 * iv = NULL;
+  const ruint8 * ciphertext = NULL;
+  rsize saltlen = 0, ctlen = 0;
+  ruint32 iterations = 0;
+  ruint keybits = 0;
+  ruint8 key[32];
+  ruint8 ivbuf[16];
+  RCryptoCipher * cipher;
+  ruint8 * plain;
+  ruint8 pad;
+  rsize i;
+
+  if (passphrase == NULL)
+    return NULL;
+
+  /* encryptionAlgorithm AlgorithmIdentifier, then its algorithm OID. */
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) ||
+      !r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_PBES2))
+    return NULL;
+
+  /* parameters: PBES2-params { keyDerivationFunc, encryptionScheme }.
+   * Descend into keyDerivationFunc and check it is PBKDF2. */
+  if (r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) ||
+      !r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RSA_OID_PBKDF2))
+    return NULL;
+
+  /* PBKDF2-params { salt, iterationCount, keyLength OPT, prf OPT }. */
+  if (r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING))
+    return NULL;  /* salt CHOICE 'otherSource' is unsupported */
+  salt = tlv->value;
+  saltlen = tlv->len;
+  if (r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+      r_asn1_bin_tlv_parse_integer_u32 (tlv, &iterations) != R_ASN1_DECODER_OK ||
+      iterations == 0)
+    return NULL;
+  for (;;) {
+    RAsn1DecoderStatus st = r_asn1_bin_decoder_next (dec, tlv);
+    if (st != R_ASN1_DECODER_OK)
+      break;
+    if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER)) {
+      continue;  /* keyLength: key size is taken from the AES scheme below */
+    } else if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE)) {
+      if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+        return NULL;
+      if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER) ||
+          !r_pem_pbes2_prf_md (tlv, &prf))
+        return NULL;
+      r_asn1_bin_decoder_out (dec, tlv);
+      break;  /* prf is the last PBKDF2-params field */
+    } else {
+      break;
+    }
+  }
+
+  /* Ascend out of PBKDF2-params and keyDerivationFunc; the second out
+   * lands on encryptionScheme (the sibling of keyDerivationFunc). */
+  r_asn1_bin_decoder_out (dec, tlv);
+  if (r_asn1_bin_decoder_out (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER))
+    return NULL;
+  if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_AES_128_CBC))
+    keybits = 128;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_AES_192_CBC))
+    keybits = 192;
+  else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_OID_AES_256_CBC))
+    keybits = 256;
+  else
+    return NULL;
+  if (r_asn1_bin_decoder_next (dec, tlv) != R_ASN1_DECODER_OK ||
+      !R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING) ||
+      tlv->len != sizeof (ivbuf))
+    return NULL;
+  iv = tlv->value;
+
+  /* Ascend back to the outer SEQUENCE; the third out lands on
+   * encryptedData (the sibling of encryptionAlgorithm). */
+  r_asn1_bin_decoder_out (dec, tlv);
+  r_asn1_bin_decoder_out (dec, tlv);
+  if (r_asn1_bin_decoder_out (dec, tlv) != R_ASN1_DECODER_OK)
+    return NULL;
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING))
+    return NULL;
+  ciphertext = tlv->value;
+  ctlen = tlv->len;
+  if (ctlen == 0 || (ctlen & 0xf) != 0)
+    return NULL;  /* AES-CBC ciphertext must be a whole number of blocks */
+
+  if (!r_kdf_pbkdf2 (prf, (const ruint8 *) passphrase, ppsize,
+        salt, saltlen, iterations, key, keybits / 8))
+    return NULL;
+  cipher = r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_CBC, keybits, key);
+  r_memclear_secure (key, sizeof (key));
+  if (cipher == NULL)
+    return NULL;
+
+  if ((plain = r_malloc (ctlen)) == NULL) {
+    r_crypto_cipher_unref (cipher);
+    return NULL;
+  }
+  r_memcpy (ivbuf, iv, sizeof (ivbuf));
+  if (r_crypto_cipher_decrypt (cipher, plain, ctlen, ciphertext,
+        ivbuf, sizeof (ivbuf)) != R_CRYPTO_CIPHER_OK) {
+    r_crypto_cipher_unref (cipher);
+    goto fail;
+  }
+  r_crypto_cipher_unref (cipher);
+
+  /* PKCS#7 padding: a wrong passphrase yields garbage plaintext, which
+   * this check (and the subsequent ASN.1 parse) almost always rejects. */
+  pad = plain[ctlen - 1];
+  if (pad == 0 || pad > sizeof (ivbuf) || pad > ctlen)
+    goto fail;
+  for (i = ctlen - pad; i < ctlen; i++) {
+    if (plain[i] != pad)
+      goto fail;
+  }
+
+  *out_size = ctlen - pad;
+  return plain;
+
+fail:
+  r_memclear_secure (plain, ctlen);
+  r_free (plain);
+  return NULL;
+}
+
 RCryptoKey *
 r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
 {
@@ -669,7 +844,27 @@ r_pem_block_get_key (RPemBlock * block, const rchar * passphrase, rsize ppsize)
     case R_PEM_TYPE_PRIVATE_KEY:
       ret = r_crypto_key_from_asn1_private_key (dec, &tlv);
       break;
-    /* TODO: PKCS#8 EncryptedPrivateKeyInfo */
+    case R_PEM_TYPE_ENCRYPTED_PRIVATE_KEY: {
+      ruint8 * plain;
+      rsize plain_size = 0;
+
+      if ((plain = r_pem_decrypt_pkcs8 (dec, &tlv, passphrase, ppsize,
+              &plain_size)) != NULL) {
+        RAsn1BinDecoder * pdec;
+        RAsn1BinTLV ptlv = R_ASN1_BIN_TLV_INIT;
+
+        /* The recovered DER is a PrivateKeyInfo; parse it with a borrowed
+         * decoder over our plaintext buffer, then wipe the plaintext. */
+        if ((pdec = r_asn1_bin_decoder_new (R_ASN1_BER, plain, plain_size)) != NULL) {
+          if (r_asn1_bin_decoder_next (pdec, &ptlv) == R_ASN1_DECODER_OK)
+            ret = r_crypto_key_from_asn1_private_key (pdec, &ptlv);
+          r_asn1_bin_decoder_unref (pdec);
+        }
+        r_memclear_secure (plain, plain_size);
+        r_free (plain);
+      }
+      break;
+    }
     default:
       break;
   }
