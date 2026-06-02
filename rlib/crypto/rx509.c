@@ -22,6 +22,7 @@
 
 #include <rlib/format/roid.h>
 #include <rlib/data/rlist.h>
+#include <rlib/data/rptrarray.h>
 
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
@@ -30,6 +31,19 @@ typedef struct {
   ruint8 * value;
   rsize size;
 } RX509Buf;
+
+struct RX509GeneralName {
+  ruint8 id;        /* original identifier octet (context tag) */
+  ruint8 * raw;     /* content bytes of the chosen alternative */
+  rsize rawsize;
+  rchar * str;      /* IA5String (rfc822/dns/uri) or DN (directoryName); else NULL */
+};
+
+/* One PolicyMappings entry: a pair of dotted-OID strings. */
+typedef struct {
+  rchar * issuer;
+  rchar * subject;
+} RX509PolicyMapping;
 
 typedef struct {
   RCryptoCert cert;
@@ -44,7 +58,7 @@ typedef struct {
   RX509Buf subjectKeyID;
   RX509Buf authorityKeyID;
   rchar * authority;
-  ruint64 authorityCertSerialNumber;
+  RX509Buf authorityCertSerial;     /* AKI [2] raw INTEGER content */
 
   RX509KeyUsage keyUsage;
   RX509ExtKeyUsage extKeyUsage;
@@ -53,10 +67,153 @@ typedef struct {
   rint32 pathLen;
   rint32 requireExplicitPolicy;
   rint32 inhibitPolicyMapping;
+
+  RPtrArray * sans;                 /* RX509GeneralName *: subjectAltName */
+  RPtrArray * authorityCertIssuer;  /* RX509GeneralName *: AKI [1] */
+  RPtrArray * ncPermitted;          /* RX509GeneralName *: nameConstraints permitted */
+  RPtrArray * ncExcluded;           /* RX509GeneralName *: nameConstraints excluded */
+  RPtrArray * policyMappings;       /* RX509PolicyMapping * */
 } RCryptoX509Cert;
 
 typedef rboolean (*RCertX509ExtFunc) (RCryptoX509Cert * cert,
     RAsn1BinDecoder * dec, RAsn1BinTLV * tlv, rboolean critical);
+
+static void
+r_x509_general_name_free (RX509GeneralName * gn)
+{
+  r_free (gn->raw);
+  r_free (gn->str);
+  r_free (gn);
+}
+
+static void
+r_x509_policy_mapping_free (RX509PolicyMapping * pm)
+{
+  r_free (pm->issuer);
+  r_free (pm->subject);
+  r_free (pm);
+}
+
+/* Build a GeneralName from a TLV positioned at one CHOICE element. */
+static RX509GeneralName *
+r_x509_general_name_new_from_tlv (const RAsn1BinTLV * tlv)
+{
+  RX509GeneralName * gn;
+
+  if ((gn = r_mem_new0 (RX509GeneralName)) == NULL)
+    return NULL;
+
+  gn->id = *tlv->start;
+  gn->rawsize = tlv->len;
+  gn->raw = r_memdup (tlv->value, tlv->len);
+
+  switch ((RX509GeneralNameType)(gn->id & R_ASN1_ID_TAG_MASK)) {
+    case R_X509_GENERAL_NAME_RFC822:
+    case R_X509_GENERAL_NAME_DNS:
+    case R_X509_GENERAL_NAME_URI:
+      gn->str = r_strndup ((const rchar *) tlv->value, tlv->len);
+      break;
+    case R_X509_GENERAL_NAME_DIRECTORY: {
+      /* [4] is EXPLICIT, wrapping the RDNSequence; parse it with a
+       * borrowed sub-decoder over the content bytes. */
+      RAsn1BinDecoder * sub;
+      if ((sub = r_asn1_bin_decoder_new (R_ASN1_DER, gn->raw, gn->rawsize)) != NULL) {
+        RAsn1BinTLV stlv = R_ASN1_BIN_TLV_INIT;
+        if (r_asn1_bin_decoder_next (sub, &stlv) == R_ASN1_DECODER_OK)
+          r_asn1_bin_tlv_parse_distinguished_name (sub, &stlv, &gn->str);
+        r_asn1_bin_decoder_unref (sub);
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  return gn;
+}
+
+RX509GeneralNameType
+r_x509_general_name_type (const RX509GeneralName * gn)
+{
+  return (RX509GeneralNameType)(gn->id & R_ASN1_ID_TAG_MASK);
+}
+
+const rchar *
+r_x509_general_name_as_string (const RX509GeneralName * gn)
+{
+  switch (r_x509_general_name_type (gn)) {
+    case R_X509_GENERAL_NAME_RFC822:
+    case R_X509_GENERAL_NAME_DNS:
+    case R_X509_GENERAL_NAME_URI:
+      return gn->str;
+    default:
+      return NULL;
+  }
+}
+
+const ruint8 *
+r_x509_general_name_as_ip (const RX509GeneralName * gn, rsize * size)
+{
+  if (r_x509_general_name_type (gn) != R_X509_GENERAL_NAME_IP)
+    return NULL;
+  if (size != NULL)
+    *size = gn->rawsize;
+  return gn->raw;
+}
+
+rchar *
+r_x509_general_name_as_oid (const RX509GeneralName * gn)
+{
+  static const ruint8 oid_tag = R_ASN1_ID (R_ASN1_ID_UNIVERSAL,
+      R_ASN1_ID_PRIMITIVE, R_ASN1_ID_OBJECT_IDENTIFIER);
+  RAsn1BinTLV tlv;
+  rchar * dot = NULL;
+
+  if (r_x509_general_name_type (gn) != R_X509_GENERAL_NAME_REGISTERED_ID)
+    return NULL;
+
+  /* Synthesise a TLV over the stored content: the parser checks the
+   * tag via start[0] and reads the value from value/len. */
+  tlv.start = &oid_tag;
+  tlv.len = gn->rawsize;
+  tlv.value = gn->raw;
+  if (r_asn1_bin_tlv_parse_oid_to_dot (&tlv, &dot) != R_ASN1_DECODER_OK)
+    return NULL;
+  return dot;
+}
+
+const rchar *
+r_x509_general_name_as_dn (const RX509GeneralName * gn)
+{
+  return r_x509_general_name_type (gn) == R_X509_GENERAL_NAME_DIRECTORY ?
+      gn->str : NULL;
+}
+
+/* Iterate the GeneralName children of the constructed @p tlv points at
+ * (a GeneralNames SEQUENCE, or the implicitly-tagged [1] of an AKI),
+ * appending each to @p arr. Leaves the decoder stack balanced. */
+static rboolean
+r_x509_parse_general_names (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv,
+    RPtrArray ** arr)
+{
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return FALSE;
+
+  if (*arr == NULL && (*arr = r_ptr_array_new ()) == NULL) {
+    r_asn1_bin_decoder_out (dec, tlv);
+    return FALSE;
+  }
+
+  do {
+    RX509GeneralName * gn;
+    if (tlv->start != NULL &&
+        (gn = r_x509_general_name_new_from_tlv (tlv)) != NULL)
+      r_ptr_array_add (*arr, gn, (RDestroyNotify) r_x509_general_name_free);
+  } while (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK);
+
+  r_asn1_bin_decoder_out (dec, tlv);
+  return TRUE;
+}
 
 static rboolean
 r_crypto_x509_authority_key_id (RCryptoX509Cert * cert,
@@ -73,12 +230,17 @@ r_crypto_x509_authority_key_id (RCryptoX509Cert * cert,
     cert->authorityKeyID.size = tlv->len;
     r_asn1_bin_decoder_next (dec, tlv);
   }
-  if (R_ASN1_BIN_TLV_IS_ID (tlv, R_ASN1_ID_CONTEXT | 1)) {
-    /* TODO: authorityCertIssuer -> GeneralNames */
-    r_asn1_bin_decoder_next (dec, tlv);
+  if (R_ASN1_BIN_TLV_IS_ID (tlv, R_ASN1_ID_CONTEXT | R_ASN1_ID_CONSTRUCTED | 1)) {
+    /* authorityCertIssuer [1] GeneralNames (implicitly-tagged SEQUENCE OF).
+     * parse_general_names descends and on return tlv already sits on the
+     * following sibling, so no extra next() here. */
+    r_x509_parse_general_names (dec, tlv, &cert->authorityCertIssuer);
   }
   if (R_ASN1_BIN_TLV_IS_ID (tlv, R_ASN1_ID_CONTEXT | 2)) {
-    r_asn1_bin_tlv_parse_integer_u64 (tlv, &cert->authorityCertSerialNumber);
+    /* authorityCertSerialNumber [2]: keep the raw INTEGER content for
+     * a byte-exact re-emit (it has no public accessor). */
+    cert->authorityCertSerial.value = r_memdup (tlv->value, tlv->len);
+    cert->authorityCertSerial.size = tlv->len;
     r_asn1_bin_decoder_next (dec, tlv);
   }
   r_asn1_bin_decoder_out (dec, tlv);
@@ -250,6 +412,119 @@ r_crypto_x509_certificate_policies (RCryptoX509Cert * cert,
 }
 
 static rboolean
+r_crypto_x509_subject_alt_name (RCryptoX509Cert * cert,
+    RAsn1BinDecoder * dec, RAsn1BinTLV * tlv, rboolean critical)
+{
+  (void) critical;
+
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE))
+    return FALSE;
+  return r_x509_parse_general_names (dec, tlv, &cert->sans);
+}
+
+static rboolean
+r_crypto_x509_name_constraints (RCryptoX509Cert * cert,
+    RAsn1BinDecoder * dec, RAsn1BinTLV * tlv, rboolean critical)
+{
+  (void) critical;
+
+  /* NameConstraints ::= SEQUENCE { permittedSubtrees [0] OPTIONAL,
+   * excludedSubtrees [1] OPTIONAL }, each GeneralSubtrees ::= SEQUENCE
+   * OF GeneralSubtree ::= SEQUENCE { base GeneralName, ... }. */
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE))
+    return FALSE;
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return FALSE;
+
+  /* Walk the (at most two) children. A matched subtree set is descended
+   * into, and r_asn1_bin_decoder_out advances to the following child;
+   * an unmatched child is stepped over with next. Both yield the same
+   * status, so a single check drives the loop. */
+  for (;;) {
+    RAsn1DecoderStatus st;
+    RPtrArray ** arr;
+
+    if (R_ASN1_BIN_TLV_IS_ID (tlv, R_ASN1_ID_CONTEXT | R_ASN1_ID_CONSTRUCTED | 0))
+      arr = &cert->ncPermitted;
+    else if (R_ASN1_BIN_TLV_IS_ID (tlv, R_ASN1_ID_CONTEXT | R_ASN1_ID_CONSTRUCTED | 1))
+      arr = &cert->ncExcluded;
+    else
+      arr = NULL;
+
+    if (arr == NULL) {
+      st = r_asn1_bin_decoder_next (dec, tlv);
+    } else if (*arr == NULL && (*arr = r_ptr_array_new ()) == NULL) {
+      break;
+    } else if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK) {
+      break;
+    } else {
+      /* This [0]/[1] is the GeneralSubtrees SEQUENCE OF; descend into
+       * each GeneralSubtree to reach its base GeneralName. */
+      do {
+        if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE))
+          break;
+        if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+          break;
+        if (tlv->start != NULL) {
+          RX509GeneralName * gn = r_x509_general_name_new_from_tlv (tlv);
+          if (gn != NULL)
+            r_ptr_array_add (*arr, gn, (RDestroyNotify) r_x509_general_name_free);
+        }
+      } while (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK);
+      st = r_asn1_bin_decoder_out (dec, tlv);
+    }
+
+    if (st != R_ASN1_DECODER_OK)
+      break;
+  }
+
+  r_asn1_bin_decoder_out (dec, tlv);
+  return TRUE;
+}
+
+static rboolean
+r_crypto_x509_policy_mappings (RCryptoX509Cert * cert,
+    RAsn1BinDecoder * dec, RAsn1BinTLV * tlv, rboolean critical)
+{
+  (void) critical;
+
+  /* PolicyMappings ::= SEQUENCE OF SEQUENCE { issuerDomainPolicy OID,
+   * subjectDomainPolicy OID }. */
+  if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE))
+    return FALSE;
+  if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+    return FALSE;
+
+  if (cert->policyMappings == NULL &&
+      (cert->policyMappings = r_ptr_array_new ()) == NULL) {
+    r_asn1_bin_decoder_out (dec, tlv);
+    return FALSE;
+  }
+
+  do {
+    RX509PolicyMapping * pm;
+
+    if (!R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_SEQUENCE))
+      break;
+    if (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK)
+      break;
+
+    if ((pm = r_mem_new0 (RX509PolicyMapping)) != NULL) {
+      if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER))
+        r_asn1_bin_tlv_parse_oid_to_dot (tlv, &pm->issuer);
+      if (r_asn1_bin_decoder_next (dec, tlv) == R_ASN1_DECODER_OK &&
+          R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OBJECT_IDENTIFIER))
+        r_asn1_bin_tlv_parse_oid_to_dot (tlv, &pm->subject);
+      r_ptr_array_add (cert->policyMappings, pm,
+          (RDestroyNotify) r_x509_policy_mapping_free);
+    }
+  } while (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK);
+
+  r_asn1_bin_decoder_out (dec, tlv);
+  return TRUE;
+}
+
+static rboolean
 r_crypto_x509_cert_v3_parse_extensions (RCryptoX509Cert * cert,
     RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
 {
@@ -262,14 +537,13 @@ r_crypto_x509_cert_v3_parse_extensions (RCryptoX509Cert * cert,
     { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_AUTHORITY_KEY_ID), r_crypto_x509_authority_key_id },
     { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_SUBJECT_KEY_ID), r_crypto_x509_subject_key_id },
     { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_BASIC_CONSTRAINTS), r_crypto_x509_basic_constraints },
-    /*{ R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_NAME_CONSTRAINTS), r_crypto_x509_name_constraints },*/
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_NAME_CONSTRAINTS), r_crypto_x509_name_constraints },
     { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_POLICY_CONSTRAINTS), r_crypto_x509_policy_constraints },
     { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_KEY_USAGE), r_crypto_x509_key_usage },
     { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_EXT_KEY_USAGE), r_crypto_x509_ext_key_usage },
     { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_CERTIFICATE_POLICIES), r_crypto_x509_certificate_policies },
-    /*{ R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_SUBJECT_ALT_NAME), r_crypto_x509_subject_alt_name },*/
-    /*{ R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_POLICY_MAPPINGS), r_crypto_x509_policy_mappings },*/
-    /* TODO */
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_SUBJECT_ALT_NAME), r_crypto_x509_subject_alt_name },
+    { R_STR_WITH_SIZE_ARGS (R_ID_CE_OID_POLICY_MAPPINGS), r_crypto_x509_policy_mappings },
   };
 
   if (R_UNLIKELY (r_asn1_bin_decoder_into (dec, tlv) != R_ASN1_DECODER_OK))
@@ -429,6 +703,148 @@ beach:
   return FALSE;
 }
 
+static rboolean r_x509_write_oid_from_dot (RAsn1BinEncoder * enc, const rchar * dot);
+
+/* Emit each GeneralName verbatim: its original context tag and the
+ * stored content reproduce the CHOICE alternative byte-for-byte. */
+static rboolean
+r_crypto_x509_write_general_names (RAsn1BinEncoder * enc, const RPtrArray * arr)
+{
+  rsize i, n = (arr != NULL) ? r_ptr_array_size (arr) : 0;
+
+  for (i = 0; i < n; i++) {
+    const RX509GeneralName * gn = r_ptr_array_get_const (arr, i);
+    if (r_asn1_bin_encoder_add_raw (enc, gn->id, gn->raw, gn->rawsize) != R_ASN1_ENCODER_OK)
+      return FALSE;
+  }
+
+  return TRUE;
+}
+
+static rboolean
+r_crypto_x509_write_ext_subject_alt_name (const RCryptoX509Cert * cert,
+    RAsn1BinEncoder * enc)
+{
+  const ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  rboolean ret = FALSE;
+
+  if (cert->sans == NULL || r_ptr_array_size (cert->sans) == 0)
+    return TRUE;
+
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+    if (r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_SUBJECT_ALT_NAME) == R_ASN1_ENCODER_OK) {
+      if (r_asn1_bin_encoder_begin_octet_string (enc, 0) == R_ASN1_ENCODER_OK) {
+        if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          ret = r_crypto_x509_write_general_names (enc, cert->sans);
+          r_asn1_bin_encoder_end_constructed (enc);
+        }
+        r_asn1_bin_encoder_end_octet_string (enc);
+      }
+    }
+    r_asn1_bin_encoder_end_constructed (enc);
+  }
+
+  return ret;
+}
+
+/* Emit one GeneralSubtrees set ([0] permitted / [1] excluded), each
+ * base GeneralName wrapped in a GeneralSubtree SEQUENCE. */
+static rboolean
+r_crypto_x509_write_name_constraint_subtrees (RAsn1BinEncoder * enc,
+    const RPtrArray * arr, ruint tag)
+{
+  const ruint8 seqid = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  rboolean ret = FALSE;
+  rsize i, n = r_ptr_array_size (arr);
+
+  if (r_asn1_bin_encoder_begin_constructed (enc,
+        R_ASN1_ID (R_ASN1_ID_CONTEXT, R_ASN1_ID_CONSTRUCTED, tag), 0) != R_ASN1_ENCODER_OK)
+    return FALSE;
+
+  ret = TRUE;
+  for (i = 0; i < n && ret; i++) {
+    const RX509GeneralName * gn = r_ptr_array_get_const (arr, i);
+    ret = FALSE;
+    if (r_asn1_bin_encoder_begin_constructed (enc, seqid, 0) == R_ASN1_ENCODER_OK) {
+      ret = r_asn1_bin_encoder_add_raw (enc, gn->id, gn->raw, gn->rawsize) == R_ASN1_ENCODER_OK;
+      r_asn1_bin_encoder_end_constructed (enc);
+    }
+  }
+
+  r_asn1_bin_encoder_end_constructed (enc);
+  return ret;
+}
+
+static rboolean
+r_crypto_x509_write_ext_name_constraints (const RCryptoX509Cert * cert,
+    RAsn1BinEncoder * enc)
+{
+  const ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  rboolean ret = FALSE;
+  rboolean have_p = cert->ncPermitted != NULL && r_ptr_array_size (cert->ncPermitted) > 0;
+  rboolean have_e = cert->ncExcluded != NULL && r_ptr_array_size (cert->ncExcluded) > 0;
+
+  if (!have_p && !have_e)
+    return TRUE;
+
+  /* Mark critical (RFC 5280 §4.2.1.10: NameConstraints MUST be critical). */
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+    if (r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_NAME_CONSTRAINTS) == R_ASN1_ENCODER_OK &&
+        r_asn1_bin_encoder_add_boolean (enc, TRUE) == R_ASN1_ENCODER_OK) {
+      if (r_asn1_bin_encoder_begin_octet_string (enc, 0) == R_ASN1_ENCODER_OK) {
+        if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          ret = TRUE;
+          if (ret && have_p)
+            ret = r_crypto_x509_write_name_constraint_subtrees (enc, cert->ncPermitted, 0);
+          if (ret && have_e)
+            ret = r_crypto_x509_write_name_constraint_subtrees (enc, cert->ncExcluded, 1);
+          r_asn1_bin_encoder_end_constructed (enc);
+        }
+        r_asn1_bin_encoder_end_octet_string (enc);
+      }
+    }
+    r_asn1_bin_encoder_end_constructed (enc);
+  }
+
+  return ret;
+}
+
+static rboolean
+r_crypto_x509_write_ext_policy_mappings (const RCryptoX509Cert * cert,
+    RAsn1BinEncoder * enc)
+{
+  const ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
+  rboolean ret = FALSE;
+  rsize i, n = (cert->policyMappings != NULL) ? r_ptr_array_size (cert->policyMappings) : 0;
+
+  if (n == 0)
+    return TRUE;
+
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+    if (r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_POLICY_MAPPINGS) == R_ASN1_ENCODER_OK) {
+      if (r_asn1_bin_encoder_begin_octet_string (enc, 0) == R_ASN1_ENCODER_OK) {
+        if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          ret = TRUE;
+          for (i = 0; i < n && ret; i++) {
+            const RX509PolicyMapping * pm = r_ptr_array_get_const (cert->policyMappings, i);
+            ret = FALSE;
+            if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+              ret = r_x509_write_oid_from_dot (enc, pm->issuer) &&
+                    r_x509_write_oid_from_dot (enc, pm->subject);
+              r_asn1_bin_encoder_end_constructed (enc);
+            }
+          }
+          r_asn1_bin_encoder_end_constructed (enc);
+        }
+        r_asn1_bin_encoder_end_octet_string (enc);
+      }
+    }
+    r_asn1_bin_encoder_end_constructed (enc);
+  }
+
+  return ret;
+}
+
 static rboolean
 r_crypto_x509_write_ext_basic_constraints (const RCryptoX509Cert * cert,
     RAsn1BinEncoder * enc)
@@ -520,53 +936,29 @@ r_crypto_x509_write_ext_ext_key_usage (const RCryptoX509Cert * cert,
   if (cert->extKeyUsage == R_X509_EXT_KEY_USAGE_NONE)
     return TRUE;
 
+  /* ExtKeyUsageSyntax ::= SEQUENCE OF KeyPurposeId: all purpose OIDs are
+   * direct children of one SEQUENCE inside the extnValue OCTET STRING. */
   if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
     if (r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_EXT_KEY_USAGE) == R_ASN1_ENCODER_OK) {
       if (r_asn1_bin_encoder_begin_octet_string (enc, 0) == R_ASN1_ENCODER_OK) {
-        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_ANY) {
-          if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+        if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          ret = TRUE;
+          if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_ANY)
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_EXT_KEY_USAGE"\x00");
-            r_asn1_bin_encoder_end_octet_string (enc);
-          }
-        }
-        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_SERVER_AUTH) {
-          if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_SERVER_AUTH)
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_SERVER_AUTH);
-            r_asn1_bin_encoder_end_octet_string (enc);
-          }
-        }
-        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_CLIENT_AUTH) {
-          if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_CLIENT_AUTH)
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_CLIENT_AUTH);
-            r_asn1_bin_encoder_end_octet_string (enc);
-          }
-        }
-        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_CODE_SIGNING) {
-          if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_CODE_SIGNING)
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_CODE_SIGNING);
-            r_asn1_bin_encoder_end_octet_string (enc);
-          }
-        }
-        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_EMAIL_PROTECTION) {
-          if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_EMAIL_PROTECTION)
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_EMAIL_PROTECTION);
-            r_asn1_bin_encoder_end_octet_string (enc);
-          }
-        }
-        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_TIME_STAMPING) {
-          if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_TIME_STAMPING)
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_TIME_STAMPING);
-            r_asn1_bin_encoder_end_octet_string (enc);
-          }
-        }
-        if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_OCSP_SIGNING) {
-          if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+          if (cert->extKeyUsage & R_X509_EXT_KEY_USAGE_OCSP_SIGNING)
             r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_KP_OID_OCSP_SIGNING);
-            r_asn1_bin_encoder_end_octet_string (enc);
-          }
+          r_asn1_bin_encoder_end_constructed (enc);
         }
-
-        ret = TRUE;
         r_asn1_bin_encoder_end_octet_string (enc);
       }
     }
@@ -611,18 +1003,37 @@ r_crypto_x509_write_ext_authority_key_id (const RCryptoX509Cert * cert,
 {
   const ruint8 id = R_ASN1_ID (R_ASN1_ID_UNIVERSAL, R_ASN1_ID_CONSTRUCTED, R_ASN1_ID_SEQUENCE);
   rboolean ret = FALSE;
+  rboolean have_issuer = cert->authorityCertIssuer != NULL &&
+      r_ptr_array_size (cert->authorityCertIssuer) > 0;
 
-  if (cert->authorityKeyID.value == NULL)
+  if (cert->authorityKeyID.value == NULL && !have_issuer)
     return TRUE;
 
   if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
     if (r_asn1_bin_encoder_add_oid_rawsz (enc, R_ID_CE_OID_AUTHORITY_KEY_ID) == R_ASN1_ENCODER_OK) {
       if (r_asn1_bin_encoder_begin_octet_string (enc, 0) == R_ASN1_ENCODER_OK) {
         if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
-          if (r_asn1_bin_encoder_add_raw (enc,
+          ret = TRUE;
+          /* keyIdentifier [0] */
+          if (ret && cert->authorityKeyID.value != NULL)
+            ret = r_asn1_bin_encoder_add_raw (enc,
                 R_ASN1_ID (R_ASN1_ID_CONTEXT, R_ASN1_ID_PRIMITIVE, 0),
-                cert->authorityKeyID.value, cert->authorityKeyID.size) == R_ASN1_ENCODER_OK)
-            ret = TRUE;
+                cert->authorityKeyID.value, cert->authorityKeyID.size) == R_ASN1_ENCODER_OK;
+          /* authorityCertIssuer [1] and authorityCertSerialNumber [2]
+           * are both-present-or-both-absent (RFC 5280 §4.2.1.1). */
+          if (ret && have_issuer) {
+            if (r_asn1_bin_encoder_begin_constructed (enc,
+                  R_ASN1_ID (R_ASN1_ID_CONTEXT, R_ASN1_ID_CONSTRUCTED, 1), 0) == R_ASN1_ENCODER_OK) {
+              ret = r_crypto_x509_write_general_names (enc, cert->authorityCertIssuer);
+              r_asn1_bin_encoder_end_constructed (enc);
+            } else {
+              ret = FALSE;
+            }
+            if (ret && cert->authorityCertSerial.value != NULL)
+              ret = r_asn1_bin_encoder_add_raw (enc,
+                  R_ASN1_ID (R_ASN1_ID_CONTEXT, R_ASN1_ID_PRIMITIVE, 2),
+                  cert->authorityCertSerial.value, cert->authorityCertSerial.size) == R_ASN1_ENCODER_OK;
+          }
           r_asn1_bin_encoder_end_constructed (enc);
         }
 
@@ -756,19 +1167,18 @@ r_crypto_x509_write_ext_certificate_policies (const RCryptoX509Cert * cert,
   if (r_asn1_bin_encoder_begin_octet_string (enc, 0) != R_ASN1_ENCODER_OK)
     goto end_outer;
 
-  /* The reader iterates per-policy SEQUENCEs at the OCTET_STRING level,
-   * each containing the PolicyInformation SEQUENCE that wraps the
-   * policyIdentifier OID. Match that shape. */
-  ret = TRUE;
-  for (cur = cert->policies; cur != NULL && ret; cur = cur->next) {
-    ret = FALSE;
-    if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+  /* certificatePolicies ::= SEQUENCE OF PolicyInformation: one outer
+   * SEQUENCE holds a PolicyInformation SEQUENCE per policyIdentifier. */
+  if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
+    ret = TRUE;
+    for (cur = cert->policies; cur != NULL && ret; cur = cur->next) {
+      ret = FALSE;
       if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
         ret = r_x509_write_oid_from_dot (enc, (const rchar *)cur->data);
         r_asn1_bin_encoder_end_constructed (enc);
       }
-      r_asn1_bin_encoder_end_constructed (enc);
     }
+    r_asn1_bin_encoder_end_constructed (enc);
   }
 
   r_asn1_bin_encoder_end_octet_string (enc);
@@ -911,14 +1321,16 @@ r_crypto_x509_cert_export (const RCryptoCert * ccert, RAsn1BinEncoder * enc)
               R_ASN1_ID (R_ASN1_ID_CONTEXT, R_ASN1_ID_CONSTRUCTED, 3),
               0) == R_ASN1_ENCODER_OK) {
           if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
-            /* TODO: Add more extensions */
             if (r_crypto_x509_write_ext_subject_key_id (cert, enc) &&
                 r_crypto_x509_write_ext_authority_key_id (cert, enc) &&
                 r_crypto_x509_write_ext_basic_constraints (cert, enc) &&
                 r_crypto_x509_write_ext_key_usage (cert, enc) &&
                 r_crypto_x509_write_ext_ext_key_usage (cert, enc) &&
                 r_crypto_x509_write_ext_policy_constraints (cert, enc) &&
-                r_crypto_x509_write_ext_certificate_policies (cert, enc))
+                r_crypto_x509_write_ext_certificate_policies (cert, enc) &&
+                r_crypto_x509_write_ext_subject_alt_name (cert, enc) &&
+                r_crypto_x509_write_ext_name_constraints (cert, enc) &&
+                r_crypto_x509_write_ext_policy_mappings (cert, enc))
               ret = R_CRYPTO_OK;
             r_asn1_bin_encoder_end_constructed (enc);
           }
@@ -966,8 +1378,14 @@ r_crypto_x509_cert_free (RCryptoX509Cert * cert)
   r_free (cert->subjectUniqueID.value);
   r_free (cert->subjectKeyID.value);
   r_free (cert->authorityKeyID.value);
+  r_free (cert->authorityCertSerial.value);
   r_free (cert->authority);
   r_slist_destroy_full (cert->policies, r_free);
+  if (cert->sans != NULL) r_ptr_array_unref (cert->sans);
+  if (cert->authorityCertIssuer != NULL) r_ptr_array_unref (cert->authorityCertIssuer);
+  if (cert->ncPermitted != NULL) r_ptr_array_unref (cert->ncPermitted);
+  if (cert->ncExcluded != NULL) r_ptr_array_unref (cert->ncExcluded);
+  if (cert->policyMappings != NULL) r_ptr_array_unref (cert->policyMappings);
   r_free (cert);
 }
 
@@ -1145,6 +1563,93 @@ r_crypto_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy)
   }
 
   return FALSE;
+}
+
+static rsize
+r_x509_ptr_array_count (const RPtrArray * arr)
+{
+  return (arr != NULL) ? r_ptr_array_size (arr) : 0;
+}
+
+static const RX509GeneralName *
+r_x509_ptr_array_gn (const RPtrArray * arr, rsize idx)
+{
+  if (arr == NULL || idx >= r_ptr_array_size (arr))
+    return NULL;
+  return r_ptr_array_get_const ((RPtrArray *)arr, idx);
+}
+
+rsize
+r_crypto_x509_cert_subject_alt_name_count (const RCryptoCert * cert)
+{
+  return r_x509_ptr_array_count (((const RCryptoX509Cert *)cert)->sans);
+}
+
+const RX509GeneralName *
+r_crypto_x509_cert_subject_alt_name (const RCryptoCert * cert, rsize idx)
+{
+  return r_x509_ptr_array_gn (((const RCryptoX509Cert *)cert)->sans, idx);
+}
+
+rsize
+r_crypto_x509_cert_authority_cert_issuer_count (const RCryptoCert * cert)
+{
+  return r_x509_ptr_array_count (((const RCryptoX509Cert *)cert)->authorityCertIssuer);
+}
+
+const RX509GeneralName *
+r_crypto_x509_cert_authority_cert_issuer (const RCryptoCert * cert, rsize idx)
+{
+  return r_x509_ptr_array_gn (((const RCryptoX509Cert *)cert)->authorityCertIssuer, idx);
+}
+
+rsize
+r_crypto_x509_cert_name_constraint_permitted_count (const RCryptoCert * cert)
+{
+  return r_x509_ptr_array_count (((const RCryptoX509Cert *)cert)->ncPermitted);
+}
+
+const RX509GeneralName *
+r_crypto_x509_cert_name_constraint_permitted (const RCryptoCert * cert, rsize idx)
+{
+  return r_x509_ptr_array_gn (((const RCryptoX509Cert *)cert)->ncPermitted, idx);
+}
+
+rsize
+r_crypto_x509_cert_name_constraint_excluded_count (const RCryptoCert * cert)
+{
+  return r_x509_ptr_array_count (((const RCryptoX509Cert *)cert)->ncExcluded);
+}
+
+const RX509GeneralName *
+r_crypto_x509_cert_name_constraint_excluded (const RCryptoCert * cert, rsize idx)
+{
+  return r_x509_ptr_array_gn (((const RCryptoX509Cert *)cert)->ncExcluded, idx);
+}
+
+rsize
+r_crypto_x509_cert_policy_mapping_count (const RCryptoCert * cert)
+{
+  const RCryptoX509Cert * x509 = (const RCryptoX509Cert *)cert;
+  return (x509->policyMappings != NULL) ? r_ptr_array_size (x509->policyMappings) : 0;
+}
+
+rboolean
+r_crypto_x509_cert_policy_mapping (const RCryptoCert * cert, rsize idx,
+    const rchar ** issuer_domain_policy, const rchar ** subject_domain_policy)
+{
+  const RCryptoX509Cert * x509 = (const RCryptoX509Cert *)cert;
+  const RX509PolicyMapping * pm;
+
+  if (x509->policyMappings == NULL || idx >= r_ptr_array_size (x509->policyMappings))
+    return FALSE;
+
+  pm = r_ptr_array_get_const (x509->policyMappings, idx);
+  if (issuer_domain_policy != NULL)
+    *issuer_domain_policy = pm->issuer;
+  if (subject_domain_policy != NULL)
+    *subject_domain_policy = pm->subject;
+  return TRUE;
 }
 
 RCryptoResult
