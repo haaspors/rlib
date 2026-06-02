@@ -96,7 +96,7 @@ r_asn1_ber_decoder_next (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
   lst = dec->stack;
   if (tlv->value == NULL) {
     ret = r_asn1_ber_tlv_init (tlv, dec->data, dec->size);
-  } else if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_EOC)) {
+  } else if (R_ASN1_BIN_TLV_IS_ID (tlv, R_ASN1_ID_EOC)) {
     if (lst != NULL) {
       ret = R_ASN1_DECODER_EOC;
     } else if (R_ASN1_BIN_TLV_NEXT (tlv) > dec->data + dec->size) {
