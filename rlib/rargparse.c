@@ -546,10 +546,10 @@ r_arg_option_group_append_help (const RArgOptionGroup * group, RString * str)
 }
 
 static void
-r_arg_command_append_help (rpointer key, rpointer val, rpointer user)
+r_arg_command_append_help (rconstpointer key, rconstpointer val, rpointer user)
 {
-  rchar * cmd = key;
-  RArgParser * parser = val;
+  const rchar * cmd = key;
+  const RArgParser * parser = val;
   RString * str = user;
   rssize spacing = 32;
 
@@ -630,9 +630,7 @@ r_arg_parser_get_help (const RArgParser * parser, RArgParseFlags flags,
 
   if (r_kv_ptr_array_size (&parser->commands) > 0) {
     r_string_append (str, "\nCommands:\n");
-    /* foreach only reads; cast off the const this read-only getter added. */
-    r_kv_ptr_array_foreach ((RKVPtrArray *) &parser->commands,
-        r_arg_command_append_help, str);
+    r_kv_ptr_array_foreach_const (&parser->commands, r_arg_command_append_help, str);
   }
 
   if (parser->epilog != NULL)
