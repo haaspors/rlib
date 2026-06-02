@@ -107,6 +107,7 @@
 #include <rlib/crypto/red448.h>
 #include <rlib/crypto/recurve-montgomery.h>
 #include <rlib/crypto/rhmac.h>
+#include <rlib/crypto/rkdf.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rmsgdigest.h>
 #include <rlib/crypto/rpem.h>
