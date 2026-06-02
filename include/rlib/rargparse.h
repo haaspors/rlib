@@ -145,6 +145,16 @@ typedef enum {
   R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT  = 1 << 1, /**< Suppress automatic help / version output. */
   R_ARG_PARSE_FLAG_DISABLE_HELP        = 1 << 2, /**< Don't auto-register @c --help / @c -h. */
   R_ARG_PARSE_FLAG_ALLOW_UNKNOWN      = 1 << 3, /**< Pass unknown options through instead of failing. */
+  /**
+   * Parse options that appear after positionals too, GNU-getopt style
+   * (e.g. @c "tool file --verbose"), permuting @p argv in place so the
+   * operands end up first. Without it, option scanning stops at the
+   * first non-option token (POSIX-strict). @c -- still ends option
+   * scanning. Ignored for a parser that has sub-commands (the command
+   * boundary is kept); sub-command parsers honour it for their own
+   * arguments.
+   */
+  R_ARG_PARSE_FLAG_PERMUTE            = 1 << 4,
 } RArgParseFlags;
 
 /** @brief Result code from @c r_arg_parser_parse. */

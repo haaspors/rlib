@@ -1343,6 +1343,113 @@ RTEST (rargparse, mutex, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rargparse, permute, RTEST_FAST)
+{
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParseCtx * ctx;
+  RArgParseResult res;
+  rchar ** strv, ** argv;
+  rchar * sv;
+  int argc;
+
+  r_assert (r_arg_parser_add_option_entry (parser, "verbose", 'v',
+        R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "noisy", NULL));
+  r_assert (r_arg_parser_add_option_entry (parser, "name", 'n',
+        R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_NONE, "a name", NULL));
+  r_assert (r_arg_parser_add_option_entry (parser, "file", 0,
+        R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_POSITIONAL, "input", NULL));
+
+  /* Strict (default): an option after the positional is left unparsed. */
+  strv = argv = r_strv_new ("prog", "f.txt", "--verbose", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser, RARGPARSE_ERR_FLAGS,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert (!r_arg_parse_ctx_get_option_bool (ctx, "verbose"));
+  r_assert_cmpint (argc, ==, 1);
+  r_assert_cmpstr (argv[0], ==, "--verbose");
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  /* PERMUTE: the same option after the positional is now parsed. */
+  strv = argv = r_strv_new ("prog", "f.txt", "--verbose", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
+          RARGPARSE_ERR_FLAGS | R_ARG_PARSE_FLAG_PERMUTE,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert (r_arg_parse_ctx_get_option_bool (ctx, "verbose"));
+  r_assert_cmpstr ((sv = r_arg_parse_ctx_get_option_string (ctx, "file")), ==, "f.txt");
+  r_free (sv);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  /* PERMUTE: interleaved options and a separate-arg value after the operand. */
+  strv = argv = r_strv_new ("prog", "-v", "f.txt", "-n", "bob", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
+          RARGPARSE_ERR_FLAGS | R_ARG_PARSE_FLAG_PERMUTE,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert (r_arg_parse_ctx_get_option_bool (ctx, "verbose"));
+  r_assert_cmpstr ((sv = r_arg_parse_ctx_get_option_string (ctx, "name")), ==, "bob");
+  r_free (sv);
+  r_assert_cmpstr ((sv = r_arg_parse_ctx_get_option_string (ctx, "file")), ==, "f.txt");
+  r_free (sv);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  /* PERMUTE: -- still ends option scanning; what follows is an operand. */
+  strv = argv = r_strv_new ("prog", "--", "--verbose", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
+          RARGPARSE_ERR_FLAGS | R_ARG_PARSE_FLAG_PERMUTE,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert (!r_arg_parse_ctx_get_option_bool (ctx, "verbose"));
+  r_assert_cmpstr ((sv = r_arg_parse_ctx_get_option_string (ctx, "file")), ==, "--verbose");
+  r_free (sv);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rargparse, permute_command, RTEST_FAST)
+{
+  RArgParser * parser = r_arg_parser_new ("mytool", NULL);
+  RArgParser * cmd;
+  RArgParseCtx * ctx, * sub;
+  RArgParseResult res;
+  rchar ** strv, ** argv;
+  rchar * sv;
+  int argc;
+
+  r_assert_cmpptr ((cmd = r_arg_parser_add_command (parser, "build", "build it")), !=, NULL);
+  r_assert (r_arg_parser_add_option_entry (cmd, "fast", 'x',
+        R_ARG_OPTION_TYPE_NONE, R_ARG_OPTION_FLAG_NONE, "go fast", NULL));
+  r_assert (r_arg_parser_add_option_entry (cmd, "target", 0,
+        R_ARG_OPTION_TYPE_STRING, R_ARG_OPTION_FLAG_POSITIONAL, "target", NULL));
+  r_arg_parser_unref (cmd);
+
+  /* PERMUTE on a parser with commands keeps the command boundary (it
+   * must not parse the sub-command's options at the top level); the
+   * sub-command then permutes its own arguments. */
+  strv = argv = r_strv_new ("prog", "build", "out.bin", "-x", NULL);
+  argc = (int) r_strv_len (argv);
+  r_assert_cmpptr ((ctx = r_arg_parser_parse (parser,
+          RARGPARSE_ERR_FLAGS | R_ARG_PARSE_FLAG_PERMUTE,
+          &argc, (const rchar ***)&argv, &res)), !=, NULL);
+  r_assert_cmpstr (r_arg_parse_ctx_get_command (ctx), ==, "build");
+  r_assert_cmpptr ((sub = r_arg_parse_ctx_get_command_ctx (ctx)), !=, NULL);
+  r_assert (r_arg_parse_ctx_get_option_bool (sub, "fast"));
+  r_assert_cmpstr ((sv = r_arg_parse_ctx_get_option_string (sub, "target")), ==, "out.bin");
+  r_free (sv);
+  r_arg_parse_ctx_unref (sub);
+  r_arg_parse_ctx_unref (ctx);
+  r_strv_free (strv);
+
+  r_arg_parser_unref (parser);
+}
+RTEST_END;
+
 RTEST (rargparse, get_value, RTEST_FAST)
 {
   static RArgOptionEntry entries[] = {
