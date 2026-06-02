@@ -308,6 +308,26 @@ R_API void r_arg_parser_print_version (RArgParser * parser, RArgParseFlags flags
  */
 R_API int r_arg_parser_print_help (RArgParser * parser, RArgParseFlags flags,
     const rchar * appname, int exitval);
+/**
+ * @brief Human-readable reason the most recent @c r_arg_parser_parse
+ * failed (e.g. @c "unrecognized option '--foo'").
+ *
+ * @return Borrowed message string, valid until the next parse or
+ *         @c r_arg_parser_unref; @c NULL if the last parse succeeded,
+ *         none has run, or it failed without a specific reason (e.g.
+ *         @c R_ARG_PARSE_ARG_ERROR / @c R_ARG_PARSE_OOM). Do not free.
+ */
+R_API const rchar * r_arg_parser_get_error (const RArgParser * parser);
+/**
+ * @brief Print the recorded parse error and a @c --help hint to stderr.
+ *
+ * Opt-in: call it after @c r_arg_parser_parse returns @c NULL with an
+ * error code (unlike help / version, it is not emitted automatically).
+ * No-op when there is no recorded error or
+ * @c R_ARG_PARSE_FLAG_DONT_PRINT_STDOUT is set; the hint is omitted
+ * under @c R_ARG_PARSE_FLAG_DISABLE_HELP.
+ */
+R_API void r_arg_parser_print_error (RArgParser * parser, RArgParseFlags flags);
 /** @} */
 
 /**
