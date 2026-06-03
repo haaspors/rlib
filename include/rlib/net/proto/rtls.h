@@ -739,6 +739,32 @@ R_API RTLSError r_tls_write_change_cipher (rpointer data, rsize size,
 R_API RTLSError r_dtls_write_change_cipher (rpointer data, rsize size,
     rsize * out, RTLSVersion ver, ruint16 epoch, ruint64 seqno);
 
+/**
+ * @brief Write a TLS application_data record (header + @p payload) into @p data.
+ * @param data Destination buffer.
+ * @param size Capacity of @p data in bytes.
+ * @param out Out: bytes written.
+ * @param ver Protocol version.
+ * @param payload Application-data bytes to place in the record fragment.
+ * @param plen Length of @p payload in bytes.
+ */
+R_API RTLSError r_tls_write_application_data (rpointer data, rsize size,
+    rsize * out, RTLSVersion ver, const ruint8 * payload, rsize plen);
+/**
+ * @brief Write a DTLS application_data record (header + @p payload) into @p data.
+ * @param data Destination buffer.
+ * @param size Capacity of @p data in bytes.
+ * @param out Out: bytes written.
+ * @param ver Protocol version.
+ * @param epoch DTLS epoch.
+ * @param seqno DTLS record sequence number.
+ * @param payload Application-data bytes to place in the record fragment.
+ * @param plen Length of @p payload in bytes.
+ */
+R_API RTLSError r_dtls_write_application_data (rpointer data, rsize size,
+    rsize * out, RTLSVersion ver, ruint16 epoch, ruint64 seqno,
+    const ruint8 * payload, rsize plen);
+
 /** @brief Write a TLS Alert record (@p level + @p type) into @p data. */
 R_API RTLSError r_tls_write_alert (rpointer data, rsize size, rsize * out,
     RTLSVersion ver, RTLSAlertLevel level, RTLSAlertType type);
