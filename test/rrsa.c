@@ -108,6 +108,49 @@ RTEST (rrsa, decrypt_pkcs, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrsa, encrypt_pkcs_with_public_key, RTEST_FAST)
+{
+  static const ruint8 plain[] = { 'h', 'e', 'l', 'l', 'o', ' ', 'r', 's', 'a' };
+  rmpint n, e, d;
+  RCryptoKey * pub, * priv;
+  RPrng * prng;
+  ruint8 enc[256], dec[sizeof (plain)];
+  rsize enclen = sizeof (enc), declen = sizeof (dec);
+
+  r_mpint_init_str (&n,
+      "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"
+      "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"
+      "358143b44a35449eb264113121a455bd7fde3fac919e94b56fb9bb4f651cdb23ead439"
+      "d6cd523eb08191e75b35fd13a7419b3090f24787bd4f4e1967", NULL, 16);
+  r_mpint_init_str (&d,
+      "0x1628e4a39ebea86c8df0cd11572691017cfefb14ea1c12e1dedc7856032dad0f9612"
+      "00a38684f0a36dca30102e2464989d19a805933794c7d329ebc890089d3c4c6f602766"
+      "e5d62add74e82e490bbf92f6a482153853031be2844a700557b97673e727cd1316d3e6"
+      "fa7fc991d4227366ec552cbe90d367ef2e2e79fe66d26311", NULL, 16);
+  r_mpint_init_str (&e, "65537", NULL, 10);
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((pub = r_rsa_pub_key_new (&n, &e)), !=, NULL);
+  r_assert_cmpptr ((priv = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
+
+  /* Encrypting with the PUBLIC key must succeed (it previously rejected
+   * anything but a private key) and round-trip through the private key. */
+  r_assert_cmpuint (r_crypto_key_encrypt (pub, prng, plain, sizeof (plain), enc, &enclen),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpuint (r_rsa_pkcs1v1_5_decrypt (priv, enc, enclen, dec, &declen),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpuint (declen, ==, sizeof (plain));
+  r_assert_cmpmem (dec, ==, plain, sizeof (plain));
+
+  r_mpint_clear (&n);
+  r_mpint_clear (&e);
+  r_mpint_clear (&d);
+  r_crypto_key_unref (pub);
+  r_crypto_key_unref (priv);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
 /* The encrypted plaintext for `rsa_encrypted` above is "foobar\n",
  * 7 bytes. The implicit-rejection variant takes a fixed out_size
  * and returns either the real plaintext (when padding valid AND
