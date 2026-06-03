@@ -56,6 +56,8 @@ RTEST_FIXTURE_STRUCT (rtlsserver)
 {
   RTLSServer * server;
   rboolean hs_done;
+  rboolean got_error;
+  RTLSAlertType last_alert;
 
   RClock * clock;
   REvLoop * evloop;
@@ -71,6 +73,15 @@ r_tlsserver_test_hs_done (rpointer ctx, RTLSServer * server)
   RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
   (void) server;
   fixture->hs_done = TRUE;
+}
+
+static void
+r_tlsserver_test_error (rpointer ctx, RTLSAlertType alert, RTLSServer * server)
+{
+  RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
+  (void) server;
+  fixture->got_error = TRUE;
+  fixture->last_alert = alert;
 }
 
 static rboolean
@@ -98,6 +109,7 @@ RTEST_FIXTURE_SETUP (rtlsserver)
     r_tlsserver_test_hs_done,
     r_tlsserver_test_buffer_out,
     r_tlsserver_test_buffer_appdata,
+    r_tlsserver_test_error,
   };
   RCryptoCert * cert;
   RCryptoKey * pk;
@@ -106,6 +118,8 @@ RTEST_FIXTURE_SETUP (rtlsserver)
   r_assert_cmpptr ((fixture->clock = r_test_clock_new (FALSE)), !=, NULL);
   r_assert_cmpptr ((fixture->evloop = r_ev_loop_new_full (fixture->clock, NULL)), !=, NULL);
   fixture->hs_done = FALSE;
+  fixture->got_error = FALSE;
+  fixture->last_alert = R_TLS_ALERT_TYPE_CLOSE_NOTIFY;
 
   r_queue_init (&fixture->qout);
   r_queue_init (&fixture->qapp);
@@ -335,3 +349,74 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST_F (rtlsserver, dtls_handshake_error_alert, RTEST_FAST)
+{
+  /* A DTLS handshake record whose type is neither ClientHello nor
+   * ServerHello (0x0b = Certificate) is unexpected in the hello state. */
+  static const ruint8 pkt_bad_hs[] = {
+    0x16, 0xfe, 0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c,
+    0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  };
+  RBuffer * buf;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSAlertLevel alevel;
+  RTLSAlertType atype;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_server_incoming_data (pkt_bad_hs);
+
+  /* The error callback fired with the alert that was sent. */
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+  r_assert (!fixture->hs_done);
+
+  /* A fatal alert record was emitted to the peer. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST_F (rtlsserver, tls_handshake_error_alert, RTEST_FAST)
+{
+  /* As above but over a (non-DTLS) TLS 1.2 record, exercising the
+   * r_tls_write_alert framing path. 0x0b = Certificate, unexpected in
+   * the hello state. */
+  static const ruint8 pkt_bad_hs[] = {
+    0x16, 0x03, 0x03, 0x00, 0x04, 0x0b, 0x00, 0x00, 0x00
+  };
+  RBuffer * buf;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSAlertLevel alevel;
+  RTLSAlertType atype;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_server_incoming_data (pkt_bad_hs);
+
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+  r_assert (!fixture->hs_done);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert (!r_tls_parser_is_dtls (&parser));
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+RTEST_END;
