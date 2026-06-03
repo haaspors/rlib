@@ -98,6 +98,7 @@ rlibtest_sources = [
   'rtime.c',
   'rtimeoutcblist.c',
   'rtls.c',
+  'rtlsclient.c',
   'rtlsserver.c',
   'rtty.c',
   'runicode.c',

@@ -108,6 +108,7 @@ rlib_sources = [
   'net/rnet.c',
   'net/rresolve.c',
   'net/rsrtp.c',
+  'net/rtlsclient.c',
   'net/rtlsserver.c',
   'os/rproc.c',
   'os/rsignal.c',
