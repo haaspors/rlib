@@ -826,3 +826,56 @@ RTEST_F (rtlsserver, dtls_renegotiation_info_scsv, RTEST_FAST)
   r_buffer_unref (buf);
 }
 RTEST_END;
+
+/* A ClientHello whose trailing extension declares a body that isn't present
+ * must be parsed without reading past the extensions block: the extension
+ * iterator stops at the truncated entry and the handshake proceeds from the
+ * valid ones. (Regression for the missing body-bounds check in
+ * r_tls_hello_msg_extension_next.) */
+RTEST_F (rtlsserver, dtls_clienthello_truncated_extension, RTEST_FAST)
+{
+  ruint8 body[128];
+  ruint8 * p = body;
+  ruint8 * extlenp;
+  ruint8 ch[256];
+  rsize bodylen, hs, chlen;
+  RBuffer * buf;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+
+  *p++ = 0xfe; *p++ = 0xfd;                  /* client_version DTLS 1.2 */
+  r_prng_fill (fixture->prng, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  *p++ = 0;                                  /* cookie length */
+  r_store_be16 (p, 2); p += 2;
+  r_store_be16 (p, (ruint16)R_TLS_CS_RSA_WITH_AES_128_CBC_SHA); p += 2;
+  *p++ = 1; *p++ = 0;                        /* compression: null */
+  extlenp = p; p += 2;
+  /* valid empty renegotiation_info */
+  r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+  r_store_be16 (p, 1); p += 2; *p++ = 0;
+  /* trailing renegotiation_info declaring 10 bytes with none present */
+  r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+  r_store_be16 (p, 10); p += 2;
+  r_store_be16 (extlenp, (ruint16)(p - (extlenp + 2)));
+  bodylen = (rsize)(p - body);
+
+  r_assert_cmpint (r_dtls_write_handshake (ch, sizeof (ch), &hs,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO,
+        (ruint16)bodylen, 0, 0, 0, 0, (ruint32)bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (ch + hs, body, bodylen);
+  chlen = hs + bodylen;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  /* Handled without an over-read: the truncated extension is dropped and the
+   * server answers from the valid first extension. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+RTEST_END;
