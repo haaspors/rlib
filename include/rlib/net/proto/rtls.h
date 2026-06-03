@@ -710,6 +710,27 @@ R_API RTLSError r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * 
 /** @brief DTLS alias for @ref r_tls_write_hs_server_hello. */
 #define r_dtls_write_hs_server_hello r_tls_write_hs_server_hello
 /**
+ * @brief Write a ClientHello handshake message into @p data.
+ * @param data Destination buffer.
+ * @param size Capacity of @p data in bytes.
+ * @param out Out: bytes written.
+ * @param ver Offered protocol version; a DTLS version emits the cookie field.
+ * @param clirand Client random field.
+ * @param sid Session ID, or @c NULL.
+ * @param sidsize Session-ID length in bytes.
+ * @param cookie DTLS cookie, or @c NULL (DTLS only).
+ * @param cookiesize DTLS cookie length in bytes.
+ * @param cs Offered cipher suites (most-preferred first).
+ * @param ncs Number of cipher suites in @p cs.
+ * @param comp Offered compression method.
+ */
+R_API RTLSError r_tls_write_hs_client_hello (rpointer data, rsize size, rsize * out,
+    RTLSVersion ver, const ruint8 clirand[R_TLS_HELLO_RANDOM_BYTES],
+    const ruint8 * sid, ruint8 sidsize, const ruint8 * cookie, ruint8 cookiesize,
+    const RTLSCipherSuite * cs, ruint16 ncs, RTLSCompressionMethod comp);
+/** @brief DTLS alias for @ref r_tls_write_hs_client_hello (cookie field emitted). */
+#define r_dtls_write_hs_client_hello r_tls_write_hs_client_hello
+/**
  * @brief Write a NewSessionTicket handshake message into @p buf.
  * @param buf Destination buffer.
  * @param size Capacity of @p buf in bytes.
