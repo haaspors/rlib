@@ -111,22 +111,39 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
       i += res;
       handles[i].revents = handles[i].events;
     } else if (res == WAIT_FAILED) {
-      DWORD dw;
-      LPVOID lpMsgBuf;
+      DWORD dw = GetLastError ();
 
-      switch ((dw = GetLastError ())) {
-      case ERROR_INVALID_HANDLE:
-        errno = EINVAL;
+      if (dw == ERROR_INVALID_HANDLE) {
+        /* A handle in [i, count) went invalid since the wait set was built (a
+         * socket closed concurrently, or via a deferred io-watch teardown).
+         * Unlike poll()/ppoll(), which flag a closed descriptor with POLLNVAL
+         * and still report the rest, WaitForMultipleObjectsEx fails the whole
+         * wait on one bad handle -> r_poll would return -1 and the loop would
+         * dispatch nothing, stalling every other ready handle. Instead skip
+         * the invalid handle: dispatch any ready handle among the rest and
+         * return promptly, so the loop runs its pending callbacks (which drop
+         * the closed handle from the set on the next turn). */
+        ruint j;
+        for (j = i; j < count; j++) {
+          if (WaitForSingleObject (win32_handles[j], 0) == WAIT_OBJECT_0) {
+            handles[j].revents = handles[j].events;
+            ret++;
+          } else {
+            handles[j].revents = 0;
+          }
+        }
         break;
-      /* FIXME: Add more error codes? */
-      default:
-        errno = EIO;
       }
 
-      FormatMessageA (FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-          NULL, dw, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR) &lpMsgBuf, 0, NULL);
-      R_LOG_CAT_ERROR (R_LOG_CAT_ASSERT, "WaitForMultipleObjectsEx error '%s'", lpMsgBuf);
-      LocalFree (lpMsgBuf);
+      {
+        LPVOID lpMsgBuf;
+
+        errno = EIO;
+        FormatMessageA (FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            NULL, dw, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR) &lpMsgBuf, 0, NULL);
+        R_LOG_CAT_ERROR (R_LOG_CAT_ASSERT, "WaitForMultipleObjectsEx error '%s'", lpMsgBuf);
+        LocalFree (lpMsgBuf);
+      }
       return -1;
     } else if (res == WAIT_TIMEOUT) {
       break;
