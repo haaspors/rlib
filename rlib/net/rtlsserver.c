@@ -412,20 +412,8 @@ r_tls_server_write_hello (RTLSServer * server)
     extsize += r_tls_server_write_hs_ext_renegotiation (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_extended_ms (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_encrypt_then_mac (server, ptr + 2 + extsize);
-    /* FIXME: Write remaining ServerHello extensions */
-#if 0
-    extsize += r_tls_server_write_hs_ext_max_fragment_length (server, ptr + 2 + extsize);
-    extsize += r_tls_server_write_hs_ext_truncated_hmac (server, ptr + 2 + extsize);
-#endif
     extsize += r_tls_server_write_hs_ext_session_ticket (server, ptr + 2 + extsize);
-#if 0
-    extsize += r_tls_server_write_hs_ext_supported_point_formats (server, ptr + 2 + extsize);
-#endif
     extsize += r_tls_server_write_hs_ext_use_srtp (server, ptr + 2 + extsize);
-#if 0
-    extsize += r_tls_server_write_hs_ext_ecjpake_kkpp (server, ptr + 2 + extsize);
-    extsize += r_tls_server_write_hs_ext_alpn (server, ptr + 2 + extsize);
-#endif
 
     if (extsize > 0) {
       r_store_be16 (ptr, extsize);
