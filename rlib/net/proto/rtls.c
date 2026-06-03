@@ -1342,6 +1342,44 @@ r_tls_write_hs_server_hello (rpointer data, rsize size, rsize * out,
 }
 
 RTLSError
+r_tls_write_hs_client_hello (rpointer data, rsize size, rsize * out,
+    RTLSVersion ver, const ruint8 clirand[R_TLS_HELLO_RANDOM_BYTES],
+    const ruint8 * sid, ruint8 sidsize, const ruint8 * cookie, ruint8 cookiesize,
+    const RTLSCipherSuite * cs, ruint16 ncs, RTLSCompressionMethod comp)
+{
+  ruint8 * p;
+  rboolean dtls = r_tls_version_is_dtls (ver);
+  ruint16 i;
+  rsize need = 2 + R_TLS_HELLO_RANDOM_BYTES + 1 + sidsize +
+      (dtls ? (rsize)(1 + cookiesize) : 0) + 2 + (rsize)ncs * sizeof (ruint16) + 1 + 1;
+
+  if (R_UNLIKELY (data == NULL || cs == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  p = data;
+  *p++ = (ver >> 8) & 0xff;
+  *p++ = (ver     ) & 0xff;
+  r_memcpy (p, clirand, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = sidsize;
+  if (sidsize > 0) { r_memcpy (p, sid, sidsize); p += sidsize; }
+  if (dtls) {
+    *p++ = cookiesize;
+    if (cookiesize > 0) { r_memcpy (p, cookie, cookiesize); p += cookiesize; }
+  }
+  r_store_be16 (p, (ruint16)(ncs * sizeof (ruint16))); p += 2;
+  for (i = 0; i < ncs; i++) {
+    r_store_be16 (p, (ruint16)cs[i]); p += 2;
+  }
+  *p++ = 1;                  /* one compression method follows */
+  *p++ = (comp) & 0xff;
+
+  if (out != NULL)
+    *out = need;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_write_hs_new_session_ticket (rpointer data, rsize size, rsize * out,
     ruint32 lifetime, const ruint8 * ticket, ruint16 tsize)
 {
