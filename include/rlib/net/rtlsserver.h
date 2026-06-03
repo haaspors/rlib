@@ -62,10 +62,16 @@ R_BEGIN_DECLS
 /** @brief Opaque, refcounted TLS / DTLS server session. */
 typedef struct RTLSServer RTLSServer;
 
-/** @brief Callback delivering a buffer (outgoing record or app data). */
-typedef rboolean (*RTLSServerBufferCb) (rpointer ctx, RBuffer * buf, RTLSServer * server);
-/** @brief Callback fired when the handshake completes. */
-typedef void (*RTLSServerHandshakeDoneCb) (rpointer ctx, RTLSServer * server);
+/**
+ * @brief Callback delivering a buffer (outgoing record or app data).
+ *
+ * @p session is the @ref RTLSServer or @ref RTLSClient the callback bundle
+ * is attached to (the bundle is shared between both); cast to the type the
+ * caller registered it with.
+ */
+typedef rboolean (*RTLSBufferCb) (rpointer ctx, RBuffer * buf, rpointer session);
+/** @brief Callback fired when the handshake completes (@p session as above). */
+typedef void (*RTLSHandshakeDoneCb) (rpointer ctx, rpointer session);
 /** @brief Callback selecting the preferred cipher suites for a TLS version. */
 typedef rboolean (*RTLSPreferredCipherSuitesCb) (rpointer ctx, RTLSVersion ver, RTLSCipherSuite * cs, rsize * count);
 /**
@@ -74,9 +80,10 @@ typedef rboolean (*RTLSPreferredCipherSuitesCb) (rpointer ctx, RTLSVersion ver, 
  * @p alert is the alert description sent to the peer. The session has
  * moved to its error state; the callback may fire more than once for a
  * session, so it should be idempotent (e.g. tear the transport down
- * only once). May be @c NULL.
+ * only once). May be @c NULL. @p session is the @ref RTLSServer or
+ * @ref RTLSClient the bundle is attached to.
  */
-typedef void (*RTLSServerErrorCb) (rpointer ctx, RTLSAlertType alert, RTLSServer * server);
+typedef void (*RTLSErrorCb) (rpointer ctx, RTLSAlertType alert, rpointer session);
 /**
  * @brief Callback verifying the peer's certificate chain (leaf first).
  *
@@ -95,10 +102,10 @@ typedef rboolean (*RTLSCertVerifyCb) (rpointer ctx, RCryptoCert * const * chain,
 /** @brief Callback bundle wiring a session to its transport and policy. */
 typedef struct {
   RTLSPreferredCipherSuitesCb   preferred_cipher_suites; /**< Choose cipher suites; may be @c NULL for defaults. */
-  RTLSServerHandshakeDoneCb     handshake_done;          /**< Fired once the handshake finishes. */
-  RTLSServerBufferCb            out;                     /**< Sink for outgoing encrypted records. */
-  RTLSServerBufferCb            appdata;                 /**< Sink for decrypted application data. */
-  RTLSServerErrorCb             error;                   /**< Fired on a fatal alert; may be @c NULL. */
+  RTLSHandshakeDoneCb           handshake_done;          /**< Fired once the handshake finishes. */
+  RTLSBufferCb                  out;                     /**< Sink for outgoing encrypted records. */
+  RTLSBufferCb                  appdata;                 /**< Sink for decrypted application data. */
+  RTLSErrorCb                   error;                   /**< Fired on a fatal alert; may be @c NULL. */
   RTLSCertVerifyCb              verify_cert;             /**< Verify the peer certificate chain; may be @c NULL. */
 } RTLSCallbacks;
 
