@@ -148,6 +148,15 @@ R_API int r_printerr (const rchar * fmt, ...) R_ATTR_PRINTF (1, 2);
 typedef rboolean (*RPrintFunc) (const rchar * str, rsize size, rpointer data);
 /**
  * @brief Install a new sink for @ref r_print.
+ *
+ * Installing or swapping a sink is atomic with respect to concurrent
+ * @ref r_print calls: a reader never observes a new @p func paired with
+ * a previous @p data. The sink runs outside any lock, however, so a call
+ * already in flight may still invoke the previous sink after this
+ * returns — @p data's lifetime is the caller's responsibility. Keep it
+ * valid for as long as the sink may be invoked: install before
+ * concurrent use, or quiesce printing before freeing replaced data.
+ *
  * @param func     New sink, or @c NULL to restore the default.
  * @param data     Opaque pointer forwarded to @p func on every call.
  * @param oldfunc  Optional out-pointer: receives the previously-installed sink.
