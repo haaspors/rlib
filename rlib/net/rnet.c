@@ -20,17 +20,6 @@
 #include "rsocket-private.h"
 #include "rnet-private.h"
 
-#include <rlib/rstr.h>
-
-#ifdef R_OS_WIN32
-#include <rlib/charset/runicode.h>
-#include <rlib/os/rmodule.h>
-
-static const rchar * __stdcall r_win32_sim_inet_ntop (int family, rconstpointer src,
-    rchar * dst, size_t size);
-static RMODULE g_r_win32_ws2_32_dll = NULL;
-#endif
-
 void
 r_networking_init (void)
 {
@@ -39,66 +28,13 @@ r_networking_init (void)
   WSADATA wsaData;
   WSAStartup (req, &wsaData);
 #endif
-
-#ifdef R_OS_WIN32
-  if ((g_r_win32_ws2_32_dll = r_module_open ("ws2_32.dll", TRUE, NULL)) != NULL) {
-    r_win32_inet_ntop = r_module_lookup (g_r_win32_ws2_32_dll, "inet_ntop");
-  } else {
-    r_win32_inet_ntop = r_win32_sim_inet_ntop;
-  }
-#endif
 }
 
 void
 r_networking_deinit (void)
 {
-#ifdef R_OS_WIN32
-  if (g_r_win32_ws2_32_dll != NULL)
-    r_module_close (g_r_win32_ws2_32_dll);
-#endif
 #ifdef HAVE_WINSOCK2
   WSACleanup ();
 #endif
 }
-
-#ifdef R_OS_WIN32
-/* IP address literals are pure ASCII so the UTF-8 <-> UTF-16
- * helpers round-trip them losslessly. WCHAR is 16-bit on Windows
- * and identical in layout to runichar2 -- cast for the WSA W APIs. */
-#define R_NET_WIN32_ADDR_STR_MAX  64
-
-static const rchar * __stdcall
-r_win32_sim_inet_ntop (int family, rconstpointer src, rchar * dst, size_t size)
-{
-  DWORD len, wdstsize = R_NET_WIN32_ADDR_STR_MAX;
-  struct sockaddr_storage ss;
-  runichar2 wdst[R_NET_WIN32_ADDR_STR_MAX];
-
-  r_memset (&ss, 0, sizeof (ss));
-  ss.ss_family = family;
-
-  if (ss.ss_family == R_AF_INET) {
-    struct sockaddr_in * sin = (struct sockaddr_in *) &ss;
-
-    len = sizeof (struct sockaddr_in);
-    r_memcpy (&sin->sin_addr, src, sizeof (sin->sin_addr));
-  } else if (ss.ss_family == R_AF_INET6) {
-    struct sockaddr_in6 * sin6 = (struct sockaddr_in6 *) &ss;
-
-    len = sizeof (struct sockaddr_in6);
-    r_memcpy (&sin6->sin6_addr, src, sizeof (sin6->sin6_addr));
-  } else {
-    WSASetLastError (WSAEAFNOSUPPORT);
-    return NULL;
-  }
-
-  if (WSAAddressToStringW ((struct sockaddr *) &ss, len, NULL,
-        (WCHAR *)wdst, &wdstsize) != 0)
-    return NULL;
-
-  if (r_utf16_to_utf8 (dst, size, wdst, wdstsize, NULL, NULL) != R_UNICODE_OK)
-    return NULL;
-  return dst;
-}
-#endif
 
