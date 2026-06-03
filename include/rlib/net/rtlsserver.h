@@ -77,6 +77,20 @@ typedef rboolean (*RTLSPreferredCipherSuitesCb) (rpointer ctx, RTLSVersion ver, 
  * only once). May be @c NULL.
  */
 typedef void (*RTLSServerErrorCb) (rpointer ctx, RTLSAlertType alert, RTLSServer * server);
+/**
+ * @brief Callback verifying the peer's certificate chain (leaf first).
+ *
+ * Invoked during the handshake with the parsed certificate @p chain
+ * (@p count entries, the peer's end-entity certificate first). Return
+ * @c FALSE to reject and abort the handshake with a @c bad_certificate
+ * alert. May be @c NULL, which accepts any chain — appropriate for tests
+ * and for verifying out of band (e.g. SDP fingerprint) after the
+ * handshake. The certificates are borrowed; do not unref them.
+ *
+ * Used by @ref RTLSClient to validate the server certificate (and, in
+ * future, by the server for client-certificate / mTLS checks).
+ */
+typedef rboolean (*RTLSCertVerifyCb) (rpointer ctx, RCryptoCert * const * chain, ruint count);
 
 /** @brief Callback bundle wiring a session to its transport and policy. */
 typedef struct {
@@ -85,6 +99,7 @@ typedef struct {
   RTLSServerBufferCb            out;                     /**< Sink for outgoing encrypted records. */
   RTLSServerBufferCb            appdata;                 /**< Sink for decrypted application data. */
   RTLSServerErrorCb             error;                   /**< Fired on a fatal alert; may be @c NULL. */
+  RTLSCertVerifyCb              verify_cert;             /**< Verify the peer certificate chain; may be @c NULL. */
 } RTLSCallbacks;
 
 /** @brief Create a TLS server with the given callbacks and user context. */

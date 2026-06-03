@@ -217,6 +217,7 @@ r_rtc_crypto_transport_new_dtls (RRtcIceTransport * ice, RPrng * prng,
     r_rtc_dtls_srv_buffer_out,
     r_rtc_dtls_srv_buffer_appdata,
     NULL,
+    NULL,
   };
 
   if (R_UNLIKELY (ice == NULL)) return NULL;

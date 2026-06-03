@@ -110,6 +110,7 @@ RTEST_FIXTURE_SETUP (rtlsserver)
     r_tlsserver_test_buffer_out,
     r_tlsserver_test_buffer_appdata,
     r_tlsserver_test_error,
+    NULL,
   };
   RCryptoCert * cert;
   RCryptoKey * pk;
