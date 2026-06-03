@@ -879,3 +879,207 @@ RTEST_F (rtlsserver, dtls_clienthello_truncated_extension, RTEST_FAST)
   r_buffer_unref (buf);
 }
 RTEST_END;
+
+/* After the handshake the server can encrypt and emit application data via
+ * r_tls_server_send_appdata; the record decrypts back to the sent bytes. */
+RTEST_F (rtlsserver, dtls_send_appdata, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RCryptoCipher * cipher = NULL;
+  RHmac * hmac = NULL;
+  RBuffer * buf, * app;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint8 ch[256];
+  rsize chlen;
+  static const ruint8 appdata[] = {
+    'h', 'e', 'l', 'l', 'o', ' ', 'a', 'p', 'p', 'd', 'a', 't', 'a'
+  };
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
+      FALSE, FALSE, FALSE, TRUE, NULL, 0);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+  r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
+      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac);
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+  r_assert (fixture->hs_done);
+
+  /* Drop the server's ChangeCipherSpec + Finished flight. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_buffer_unref (buf);
+
+  /* Send application data and recover it from the emitted record. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)appdata, sizeof (appdata), sizeof (appdata), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_APPLICATION_DATA);
+  r_assert_cmpuint (parser.epoch, ==, 1);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.fragment.size, ==, sizeof (appdata));
+  r_assert_cmpint (r_memcmp (parser.fragment.data, appdata, sizeof (appdata)), ==, 0);
+
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  r_hmac_free (hmac);
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
+/* Over a (non-DTLS) TLS connection the record sequence number is implicit and
+ * must advance per record: the client Finished is read seqno 0, the first
+ * application_data record is seqno 1. A regression where the server MAC'd
+ * every TLS record with seqno 0 completed the handshake (Finished is 0) but
+ * dropped the first appdata record. Drive a full TLS RSA handshake with an
+ * in-test client, then send one appdata record and assert it is delivered. */
+RTEST_F (rtlsserver, tls_appdata_second_record_seqno, RTEST_FAST)
+{
+  RCryptoKey * pk;
+  RMsgDigest * md;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RBuffer * buf, * plain, * enc;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RCryptoCipher * ccipher;
+  RHmac * chmac;
+  ruint8 chbody[128], ch[256];
+  ruint8 crand[R_TLS_HELLO_RANDOM_BYTES], srand[R_TLS_HELLO_RANDOM_BYTES];
+  ruint8 pms[48], ms[48], kb[128], vd[12], iv[16], sh[64];
+  ruint8 encpms[512], cke[512], fin[64], ccs[16];
+  rsize chlen, chbodylen, hs, enclen = sizeof (encpms), ckelen, finhs, ccslen, shlen;
+  ruint8 * p = chbody;
+  ruint8 * extlenp;
+  static const ruint8 appdata[] = { 'p', 'i', 'n', 'g' };
+
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((md = r_msg_digest_new_sha256 ()), !=, NULL);
+
+  /* TLS 1.2 ClientHello (RSA-AES128-CBC-SHA, null compression, empty
+   * renegotiation_info; no extended_master_secret -> legacy key derivation). */
+  *p++ = 0x03; *p++ = 0x03;
+  r_prng_fill (fixture->prng, p, R_TLS_HELLO_RANDOM_BYTES);
+  r_memcpy (crand, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  r_store_be16 (p, 2); p += 2;
+  r_store_be16 (p, (ruint16)R_TLS_CS_RSA_WITH_AES_128_CBC_SHA); p += 2;
+  *p++ = 1; *p++ = 0;                        /* compression: null */
+  extlenp = p; p += 2;
+  r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+  r_store_be16 (p, 1); p += 2; *p++ = 0;
+  r_store_be16 (extlenp, (ruint16)(p - (extlenp + 2)));
+  chbodylen = (rsize)(p - chbody);
+
+  r_assert_cmpint (r_tls_write_handshake (ch, sizeof (ch), &hs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO, (ruint16)chbodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (ch + hs, chbody, chbodylen);
+  chlen = hs + chbodylen;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+  r_test_tls_hash_record (md, ch, chlen);
+
+  /* server flight: ServerHello (capture server random) + Certificate + HelloDone */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  r_memcpy (srand, hello.random, sizeof (srand));
+  while (r_tls_parser_init_next (&parser, NULL) == R_TLS_ERROR_OK)
+    r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  /* ClientKeyExchange */
+  pms[0] = 0x03; pms[1] = 0x03;
+  r_prng_fill (fixture->prng, pms + 2, sizeof (pms) - 2);
+  r_assert_cmpint (r_crypto_key_encrypt (pk, fixture->prng, pms, sizeof (pms), encpms, &enclen),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_tls_write_handshake (cke, sizeof (cke), &hs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE, (ruint16)(2 + enclen)), ==, R_TLS_ERROR_OK);
+  r_store_be16 (cke + hs, (ruint16)enclen);
+  r_memcpy (cke + hs + 2, encpms, enclen);
+  ckelen = hs + 2 + enclen;
+  r_test_tls_hash_record (md, cke, ckelen);
+
+  /* legacy master secret + key block (client MAC | server MAC | client key | ...) */
+  shlen = r_msg_digest_size (md);
+  r_assert (r_msg_digest_get_data (md, sh, shlen, NULL));
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (ms, sizeof (ms), pms, sizeof (pms),
+        R_STR_WITH_SIZE_ARGS ("master secret"),
+        crand, sizeof (crand), srand, sizeof (srand), NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (kb, sizeof (kb), ms, sizeof (ms),
+        R_STR_WITH_SIZE_ARGS ("key expansion"),
+        srand, sizeof (srand), crand, sizeof (crand), NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (vd, sizeof (vd), ms, sizeof (ms),
+        R_STR_WITH_SIZE_ARGS ("client finished"), sh, shlen, NULL), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpptr ((ccipher = r_cipher_aes_128_cbc_new (kb + 40)), !=, NULL);
+  r_assert_cmpptr ((chmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb, 20)), !=, NULL);
+
+  /* encrypted Finished (client write seqno 0) */
+  r_assert_cmpint (r_tls_write_handshake (fin, sizeof (fin), &finhs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_FINISHED, sizeof (vd)), ==, R_TLS_ERROR_OK);
+  r_memcpy (fin + finhs, vd, sizeof (vd));
+  r_assert_cmpptr ((plain = r_buffer_new_wrapped (R_MEM_FLAG_NONE, fin,
+          finhs + sizeof (vd), finhs + sizeof (vd), 0, NULL, NULL)), !=, NULL);
+  r_prng_fill (fixture->prng, iv, sizeof (iv));
+  r_assert_cmpptr ((enc = r_tls_encrypt_buffer (plain, 0, ccipher, iv, chmac, FALSE)), !=, NULL);
+  r_buffer_unref (plain);
+
+  /* ChangeCipherSpec + Finished */
+  r_assert_cmpint (r_tls_write_change_cipher (ccs, sizeof (ccs), &ccslen,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_test_tls_server_feed (fixture->server, cke, ckelen);
+  r_test_tls_server_feed (fixture->server, ccs, ccslen);
+  r_assert (r_buffer_map (enc, &info, R_MEM_MAP_READ));
+  r_test_tls_server_feed (fixture->server, info.data, info.size);
+  r_buffer_unmap (enc, &info);
+  r_buffer_unref (enc);
+
+  r_assert (fixture->hs_done);
+
+  /* application_data record at client write seqno 1 — the regression dropped it */
+  {
+    ruint8 app[64];
+    rsize applen;
+    r_assert_cmpint (r_tls_write_application_data (app, sizeof (app), &applen,
+          R_TLS_VERSION_TLS_1_2, appdata, sizeof (appdata)), ==, R_TLS_ERROR_OK);
+    r_assert_cmpptr ((plain = r_buffer_new_wrapped (R_MEM_FLAG_NONE, app, applen, applen,
+            0, NULL, NULL)), !=, NULL);
+    r_prng_fill (fixture->prng, iv, sizeof (iv));
+    r_assert_cmpptr ((enc = r_tls_encrypt_buffer (plain, 1, ccipher, iv, chmac, FALSE)), !=, NULL);
+    r_buffer_unref (plain);
+    r_assert (r_buffer_map (enc, &info, R_MEM_MAP_READ));
+    r_test_tls_server_feed (fixture->server, info.data, info.size);
+    r_buffer_unmap (enc, &info);
+    r_buffer_unref (enc);
+  }
+
+  /* the appdata callback must have received the decrypted bytes */
+  r_assert_cmpptr ((buf = r_queue_pop (&fixture->qapp)), !=, NULL);
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+  r_assert_cmpuint (info.size, ==, sizeof (appdata));
+  r_assert_cmpint (r_memcmp (info.data, appdata, sizeof (appdata)), ==, 0);
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+
+  r_hmac_free (chmac);
+  r_crypto_cipher_unref (ccipher);
+  r_memclear_secure (pms, sizeof (pms));
+  r_memclear_secure (ms, sizeof (ms));
+  r_memclear_secure (kb, sizeof (kb));
+  r_msg_digest_free (md);
+  r_crypto_key_unref (pk);
+}
+RTEST_END;

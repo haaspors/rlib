@@ -1409,13 +1409,18 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
 
   for (err = r_tls_parser_init_buffer (&parser, server->inbuf);
       err == R_TLS_ERROR_OK;
-      err = r_tls_parser_init_next (&parser, &server->inbuf), server->client.seqno++) {
+      err = r_tls_parser_init_next (&parser, &server->inbuf)) {
     r_buffer_unref (server->inbuf);
     server->inbuf = NULL;
 
     /* Remember the record-layer version so a fatal alert can be framed
      * correctly even before the version is negotiated. */
     server->recordver = parser.version;
+
+    /* TLS carries no explicit record sequence number; feed the running read
+     * counter to the MAC. (DTLS reads epoch/seqno from the record header.) */
+    if (!r_tls_parser_is_dtls (&parser))
+      parser.seqno = server->client.seqno;
 
     if (!r_tls_parser_is_dtls (&parser) || parser.epoch == server->client.epoch) {
       if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac,
@@ -1425,6 +1430,10 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
         continue;
       }
     }
+
+    /* Count the accepted record. A ChangeCipherSpec resets the read counter
+     * to 0 for the new read state in its handler below, so increment first. */
+    server->client.seqno++;
 
     if (parser.content == R_TLS_CONTENT_TYPE_ALERT) {
       RTLSAlertLevel alevel;
@@ -1460,6 +1469,52 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
     return (err == R_TLS_ERROR_BUF_TOO_SMALL);
   }
 
+  return TRUE;
+}
+
+rboolean
+r_tls_server_send_appdata (RTLSServer * server, RBuffer * buffer)
+{
+  RBuffer * rec;
+  RMemMapInfo in = R_MEM_MAP_INFO_INIT, out = R_MEM_MAP_INFO_INIT;
+  RTLSError ret = R_TLS_ERROR_OOM;
+  rboolean dtls;
+  rsize recsize;
+
+  if (R_UNLIKELY (server == NULL || buffer == NULL)) return FALSE;
+  /* Application data may only flow once the handshake has finished. */
+  if (R_UNLIKELY (server->state != R_TLS_SERVER_APPDATA)) return FALSE;
+  if (R_UNLIKELY (!r_buffer_map (buffer, &in, R_MEM_MAP_READ))) return FALSE;
+
+  dtls = r_tls_version_is_dtls (server->version);
+  recsize = (dtls ? R_DTLS_RECORD_HDR_SIZE : R_TLS_RECORD_HDR_SIZE) + in.size;
+
+  if ((rec = r_buffer_new_alloc (NULL, recsize, NULL)) != NULL) {
+    if (r_buffer_map (rec, &out, R_MEM_MAP_WRITE)) {
+      if (dtls)
+        ret = r_dtls_write_application_data (out.data, out.size, NULL,
+            server->version, server->server.epoch, server->server.seqno,
+            in.data, in.size);
+      else
+        ret = r_tls_write_application_data (out.data, out.size, NULL,
+            server->version, in.data, in.size);
+      r_buffer_unmap (rec, &out);
+    }
+  }
+  r_buffer_unmap (buffer, &in);
+
+  if (rec != NULL) {
+    if (ret == R_TLS_ERROR_OK) {
+      r_buffer_set_size (rec, recsize);
+      ret = r_tls_server_send_record (server, rec);
+    }
+    r_buffer_unref (rec);
+  }
+
+  if (ret != R_TLS_ERROR_OK)
+    return FALSE;
+
+  r_tls_server_send_out (server);
   return TRUE;
 }
 

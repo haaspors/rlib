@@ -1424,6 +1424,63 @@ r_dtls_write_change_cipher (rpointer data, rsize size,
 }
 
 RTLSError
+r_tls_write_application_data (rpointer data, rsize size, rsize * out,
+    RTLSVersion ver, const ruint8 * payload, rsize plen)
+{
+  ruint8 * p;
+
+  if (R_UNLIKELY (data == NULL || payload == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < (rsize)R_TLS_RECORD_HDR_SIZE + plen))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  p = data;
+  p[0x00] = R_TLS_CONTENT_TYPE_APPLICATION_DATA;
+  p[0x01] = (ver  >>  8) & 0xff;
+  p[0x02] = (ver       ) & 0xff;
+  p[0x03] = (plen >>  8) & 0xff;
+  p[0x04] = (plen      ) & 0xff;
+  r_memcpy (p + R_TLS_RECORD_HDR_SIZE, payload, plen);
+
+  if (out != NULL)
+    *out = R_TLS_RECORD_HDR_SIZE + plen;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_dtls_write_application_data (rpointer data, rsize size, rsize * out,
+    RTLSVersion ver, ruint16 epoch, ruint64 seqno,
+    const ruint8 * payload, rsize plen)
+{
+  ruint8 * p;
+
+  if (R_UNLIKELY (data == NULL || payload == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < (rsize)R_DTLS_RECORD_HDR_SIZE + plen))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  p = data;
+  p[0x00] = R_TLS_CONTENT_TYPE_APPLICATION_DATA;
+  p[0x01] = (ver   >>  8) & 0xff;
+  p[0x02] = (ver        ) & 0xff;
+  p[0x03] = (epoch >>  8) & 0xff;
+  p[0x04] = (epoch      ) & 0xff;
+  p[0x05] = (seqno >> 40) & 0xff;
+  p[0x06] = (seqno >> 32) & 0xff;
+  p[0x07] = (seqno >> 24) & 0xff;
+  p[0x08] = (seqno >> 16) & 0xff;
+  p[0x09] = (seqno >>  8) & 0xff;
+  p[0x0a] = (seqno      ) & 0xff;
+  p[0x0b] = (plen  >>  8) & 0xff;
+  p[0x0c] = (plen       ) & 0xff;
+  r_memcpy (p + R_DTLS_RECORD_HDR_SIZE, payload, plen);
+
+  if (out != NULL)
+    *out = R_DTLS_RECORD_HDR_SIZE + plen;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_write_alert (rpointer data, rsize size, rsize * out,
     RTLSVersion ver, RTLSAlertLevel level, RTLSAlertType type)
 {
