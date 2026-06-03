@@ -58,6 +58,83 @@ RTEST (rsocketaddress, ipv4_new, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsocketaddress, ipv4_parse, RTEST_FAST)
+{
+  RSocketAddress * a;
+  static const rchar * invalid[] = {
+    "", "foobar", "1.2.3", "1.2.3.4.5", "256.1.1.1", "1.2.3.256",
+    "01.2.3.4", "1.2.3.04", "1.2.3.4.", ".1.2.3", "1..2.3", "1.2.3.4 ",
+    " 1.2.3.4", "1.2.3.4a", "00.0.0.0",
+  };
+  rsize i;
+
+  r_assert_cmpptr ((a = r_socket_address_ipv4_new_from_string ("0.0.0.0", 0)), !=, NULL);
+  r_assert_cmpuint (r_socket_address_ipv4_get_ip (a), ==, 0);
+  r_socket_address_unref (a);
+
+  r_assert_cmpptr ((a = r_socket_address_ipv4_new_from_string ("255.255.255.255", 7)), !=, NULL);
+  r_assert_cmphex (r_socket_address_ipv4_get_ip (a), ==, 0xffffffff);
+  r_assert_cmpuint (r_socket_address_ipv4_get_port (a), ==, 7);
+  r_socket_address_unref (a);
+
+  r_assert_cmpptr ((a = r_socket_address_ipv4_new_from_string ("192.168.100.200", 0)), !=, NULL);
+  r_assert_cmphex (r_socket_address_ipv4_get_ip (a), ==, 0xc0a864c8);
+  r_socket_address_unref (a);
+
+  for (i = 0; i < R_N_ELEMENTS (invalid); i++)
+    r_assert_cmpptr (r_socket_address_ipv4_new_from_string (invalid[i], 0), ==, NULL);
+}
+RTEST_END;
+
+RTEST (rsocketaddress, ipv6_parse, RTEST_FAST)
+{
+  RSocketAddress * a;
+  ruint8 b[16];
+  static const ruint8 loop[16]     = { 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1 };
+  static const ruint8 zero[16]     = { 0, };
+  static const ruint8 v4mapped[16] = { 0,0,0,0, 0,0,0,0, 0,0,0xff,0xff, 1,2,3,4 };
+  static const ruint8 doc[16]      = { 0x20,0x01,0x0d,0xb8, 0,0,0,0, 0,0,0,0, 0,0,0,1 };
+  static const rchar * invalid[] = {
+    "", ":", ":::", "1::2::3", "1:2:3:4:5:6:7:8:9", "1:2:3:4:5:6:7",
+    "12345::", "g::1", "1.2.3.4", "::ffff:1.2.3.256", "::ffff:1.2.3",
+    "1:2:3:4:5:6:7:8:", ":1:2:3:4:5:6:7:8", "::1.2.3.4.5", "2001:db8:::1",
+  };
+  rsize i;
+
+  r_assert_cmpptr ((a = r_socket_address_ipv6_new_from_string ("::1", 42)), !=, NULL);
+  r_assert (r_socket_address_ipv6_get_ip_bytes (a, b));
+  r_assert_cmpmem (b, ==, loop, 16);
+  r_assert_cmpuint (r_socket_address_ipv6_get_port (a), ==, 42);
+  r_socket_address_unref (a);
+
+  r_assert_cmpptr ((a = r_socket_address_ipv6_new_from_string ("::", 0)), !=, NULL);
+  r_assert (r_socket_address_ipv6_get_ip_bytes (a, b));
+  r_assert_cmpmem (b, ==, zero, 16);
+  r_socket_address_unref (a);
+
+  /* embedded trailing IPv4 */
+  r_assert_cmpptr ((a = r_socket_address_ipv6_new_from_string ("::ffff:1.2.3.4", 0)), !=, NULL);
+  r_assert (r_socket_address_ipv6_get_ip_bytes (a, b));
+  r_assert_cmpmem (b, ==, v4mapped, 16);
+  r_socket_address_unref (a);
+
+  /* zero-compression yields the same bytes as the fully-written form */
+  r_assert_cmpptr ((a = r_socket_address_ipv6_new_from_string ("2001:db8::1", 0)), !=, NULL);
+  r_assert (r_socket_address_ipv6_get_ip_bytes (a, b));
+  r_assert_cmpmem (b, ==, doc, 16);
+  r_socket_address_unref (a);
+  r_assert_cmpptr ((a = r_socket_address_ipv6_new_from_string (
+        "2001:0db8:0000:0000:0000:0000:0000:0001", 0)), !=, NULL);
+  r_assert (r_socket_address_ipv6_get_ip_bytes (a, b));
+  r_assert_cmpmem (b, ==, doc, 16);
+  r_socket_address_unref (a);
+
+  r_assert_cmpptr (r_socket_address_ipv6_new_from_string (NULL, 0), ==, NULL);
+  for (i = 0; i < R_N_ELEMENTS (invalid); i++)
+    r_assert_cmpptr (r_socket_address_ipv6_new_from_string (invalid[i], 0), ==, NULL);
+}
+RTEST_END;
+
 RTEST (rsocketaddress, ipv4_to_str, RTEST_FAST)
 {
   RSocketAddress * addr_u32, * addr_str;

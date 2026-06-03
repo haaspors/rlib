@@ -26,7 +26,6 @@
 #include <rlib/charset/runicode.h>
 #include <rlib/os/rmodule.h>
 
-static int __stdcall r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst);
 static const rchar * __stdcall r_win32_sim_inet_ntop (int family, rconstpointer src,
     rchar * dst, size_t size);
 static RMODULE g_r_win32_ws2_32_dll = NULL;
@@ -43,10 +42,8 @@ r_networking_init (void)
 
 #ifdef R_OS_WIN32
   if ((g_r_win32_ws2_32_dll = r_module_open ("ws2_32.dll", TRUE, NULL)) != NULL) {
-    r_win32_inet_pton = r_module_lookup (g_r_win32_ws2_32_dll, "inet_pton");
     r_win32_inet_ntop = r_module_lookup (g_r_win32_ws2_32_dll, "inet_ntop");
   } else {
-    r_win32_inet_pton = r_win32_sim_inet_pton;
     r_win32_inet_ntop = r_win32_sim_inet_ntop;
   }
 #endif
@@ -69,40 +66,6 @@ r_networking_deinit (void)
  * helpers round-trip them losslessly. WCHAR is 16-bit on Windows
  * and identical in layout to runichar2 -- cast for the WSA W APIs. */
 #define R_NET_WIN32_ADDR_STR_MAX  64
-
-static int __stdcall
-r_win32_sim_inet_pton (int family, const rchar * src, rpointer dst)
-{
-  struct sockaddr_storage ss;
-  int len = sizeof (ss);
-  runichar2 wsrc[R_NET_WIN32_ADDR_STR_MAX];
-
-  if (family != R_AF_INET && family != R_AF_INET6) {
-    WSASetLastError (WSAEAFNOSUPPORT);
-    return -1;
-  }
-
-  if (r_utf8_to_utf16 (wsrc, R_N_ELEMENTS (wsrc), src, -1, NULL, NULL) != R_UNICODE_OK)
-    return 0;
-
-  if (r_strchr (src, (int)':') == NULL) {
-    struct sockaddr_in * sin = (struct sockaddr_in *)&ss;
-    if (WSAStringToAddressW ((WCHAR *)wsrc, R_AF_INET, NULL, (struct sockaddr *) &ss, &len) == 0) {
-      r_memcpy (dst, &sin->sin_addr, sizeof (sin->sin_addr));
-      return 1;
-    }
-  }
-
-  if (r_strchr (src, (int)']') == NULL) {
-    struct sockaddr_in6 * sin6 = (struct sockaddr_in6 *)&ss;
-    if (WSAStringToAddressW ((WCHAR *)wsrc, R_AF_INET6, NULL, (struct sockaddr *) &ss, &len) == 0) {
-      r_memcpy (dst, &sin6->sin6_addr, sizeof (sin6->sin6_addr));
-      return 1;
-    }
-  }
-
-  return 0;
-}
 
 static const rchar * __stdcall
 r_win32_sim_inet_ntop (int family, rconstpointer src, rchar * dst, size_t size)

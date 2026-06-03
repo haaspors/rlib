@@ -21,6 +21,7 @@
 #include "rsocket-private.h"
 #include "net/rnet-private.h"
 
+#include <rlib/charset/rascii.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
@@ -117,22 +118,140 @@ r_socket_address_ipv6_new_from_bytes (const ruint8 ip[16], ruint16 port)
   return ret;
 }
 
+/* Parse a strict dotted-quad "d.d.d.d" (decimal octets 0-255, no leading
+ * zeros), as accepted by inet_pton(AF_INET); @p src is NUL-terminated. */
+static rboolean
+r_socket_address_parse_ipv4 (const rchar * src, ruint8 out[4])
+{
+  ruint8 tmp[4];
+  ruint8 * tp = tmp;
+  ruint octets = 0;
+  rboolean saw_digit = FALSE;
+  rchar ch;
+
+  *tp = 0;
+  while ((ch = *src++) != 0) {
+    if (r_ascii_isdigit (ch)) {
+      ruint nw = (ruint) *tp * 10 + (ruint) (ch - '0');
+      if (saw_digit && *tp == 0)        /* reject a leading zero */
+        return FALSE;
+      if (nw > 255)
+        return FALSE;
+      *tp = (ruint8) nw;
+      if (!saw_digit) {
+        if (++octets > 4)
+          return FALSE;
+        saw_digit = TRUE;
+      }
+    } else if (ch == '.' && saw_digit) {
+      if (octets == 4)
+        return FALSE;
+      *++tp = 0;
+      saw_digit = FALSE;
+    } else {
+      return FALSE;
+    }
+  }
+  if (octets != 4)
+    return FALSE;
+
+  r_memcpy (out, tmp, sizeof (tmp));
+  return TRUE;
+}
+
+/* Parse an RFC 4291 IPv6 text address — "::" zero-compression and an
+ * optional trailing embedded IPv4 included — into 16 network-order
+ * bytes. Mirrors the classic inet_pton6 state machine. */
+static rboolean
+r_socket_address_parse_ipv6 (const rchar * src, ruint8 out[16])
+{
+  ruint8 tmp[16], * tp, * endp, * colonp;
+  const rchar * curtok;
+  ruint val = 0;
+  ruint xdigits = 0;
+  rchar ch;
+
+  r_memset (tmp, 0, sizeof (tmp));
+  tp = tmp;
+  endp = tmp + sizeof (tmp);
+  colonp = NULL;
+
+  /* A leading ':' is only valid as part of "::". */
+  if (*src == ':') {
+    if (*++src != ':')
+      return FALSE;
+  }
+  curtok = src;
+
+  while ((ch = *src++) != 0) {
+    if (r_ascii_isxdigit (ch)) {
+      val = (val << 4) | (ruint) r_ascii_xdigit_value (ch);
+      if (++xdigits > 4)
+        return FALSE;
+      continue;
+    }
+    if (ch == ':') {
+      curtok = src;
+      if (xdigits == 0) {
+        if (colonp != NULL)             /* only one "::" permitted */
+          return FALSE;
+        colonp = tp;
+        continue;
+      }
+      if (*src == 0)                    /* a trailing single ':' is invalid */
+        return FALSE;
+      if (tp + 2 > endp)
+        return FALSE;
+      *tp++ = (ruint8) (val >> 8);
+      *tp++ = (ruint8) val;
+      xdigits = 0;
+      val = 0;
+      continue;
+    }
+    if (ch == '.' && tp + 4 <= endp &&
+        r_socket_address_parse_ipv4 (curtok, tp)) {
+      tp += 4;                          /* embedded trailing IPv4 */
+      xdigits = 0;
+      break;                            /* parse_ipv4 consumed up to the NUL */
+    }
+    return FALSE;
+  }
+
+  if (xdigits > 0) {
+    if (tp + 2 > endp)
+      return FALSE;
+    *tp++ = (ruint8) (val >> 8);
+    *tp++ = (ruint8) val;
+  }
+
+  if (colonp != NULL) {
+    /* Slide the groups after "::" to the end, zero-filling the gap. */
+    rsize n = (rsize) (tp - colonp);
+    rsize i;
+    if (tp == endp)                     /* "::" with no room to expand */
+      return FALSE;
+    for (i = 1; i <= n; i++) {
+      *(endp - i) = colonp[n - i];
+      colonp[n - i] = 0;
+    }
+    tp = endp;
+  }
+  if (tp != endp)
+    return FALSE;
+
+  r_memcpy (out, tmp, sizeof (tmp));
+  return TRUE;
+}
+
 RSocketAddress *
 r_socket_address_ipv6_new_from_string (const rchar * ip, ruint16 port)
 {
   ruint8 buf[16];
 
   if (R_UNLIKELY (ip == NULL)) return NULL;
+  if (!r_socket_address_parse_ipv6 (ip, buf))
+    return NULL;
 
-#if defined (HAVE_INET_PTON)
-  if (inet_pton (R_AF_INET6, ip, buf) < 1)
-    return NULL;
-#elif defined (R_OS_WIN32)
-  if (r_win32_inet_pton (R_AF_INET6, ip, buf) < 1)
-    return NULL;
-#else
-  return NULL;
-#endif
   return r_socket_address_ipv6_new_from_bytes (buf, port);
 }
 
@@ -157,43 +276,13 @@ r_socket_address_ipv4_new_uint8 (ruint8 a, ruint8 b, ruint8 c, ruint8 d, ruint16
 RSocketAddress *
 r_socket_address_ipv4_new_from_string (const rchar * ip, ruint16 port)
 {
-  RSocketAddress * ret;
-  ruint32 a;
+  ruint8 b[4];
 
   if (R_UNLIKELY (ip == NULL)) return NULL;
-
-  {
-#if defined (HAVE_INET_PTON)
-    struct in_addr in;
-    if (inet_pton (R_AF_INET, ip, &in) < 1)
-      return NULL;
-    a = in.s_addr;
-#elif defined (R_OS_WIN32)
-    struct in_addr in;
-    if (r_win32_inet_pton (R_AF_INET, ip, &in) < 1)
-      return NULL;
-    a = in.s_addr;
-#elif defined (HAVE_INET_ATON)
-    struct in_addr in;
-    if (inet_aton (ip, &in) < 1)
-      return NULL;
-    a = in.s_addr;
-#else
-    /* FIXME: Implement parsing and remove inet_pton/inet_aton */
+  if (!r_socket_address_parse_ipv4 (ip, b))
     return NULL;
-#endif
-  }
 
-  if ((ret = r_mem_new0 (RSocketAddress)) != NULL) {
-    r_ref_init (ret, r_free);
-
-    ret->addrlen = R_SOCKET_ADDRESS_IPV4_SIZE;
-    R_SOCKET_ADDRESS_FAMILY (ret) = R_SOCKET_FAMILY_IPV4;
-    R_SOCKET_ADDRESS_IPV4_PORT (ret) = r_htons (port);
-    R_SOCKET_ADDRESS_IPV4_ADDR (ret) = a;
-  }
-
-  return ret;
+  return r_socket_address_ipv4_new_uint8 (b[0], b[1], b[2], b[3], port);
 }
 
 RSocketFamily
@@ -280,7 +369,7 @@ r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port,
 {
   if (R_UNLIKELY (addr == NULL)) return FALSE;
 
-#if defined (HAVE_INET_PTON)
+#if defined (HAVE_INET_NTOP)
   if (inet_ntop (R_AF_INET, &((struct sockaddr_in *)&addr->addr)->sin_addr, str, size) == NULL)
     return FALSE;
   if (port) {
@@ -339,9 +428,9 @@ r_socket_address_ipv6_build_str (const RSocketAddress * addr, rboolean port,
   if (R_UNLIKELY (addr == NULL || str == NULL)) return FALSE;
   if (r_socket_address_get_family (addr) != R_SOCKET_FAMILY_IPV6) return FALSE;
 
-#if defined (HAVE_INET_PTON) || defined (R_OS_WIN32)
+#if defined (HAVE_INET_NTOP) || defined (R_OS_WIN32)
   {
-#if defined (HAVE_INET_PTON)
+#if defined (HAVE_INET_NTOP)
     if (inet_ntop (R_AF_INET6, R_SOCKET_ADDRESS_IPV6_ADDR (addr),
             port ? str + 1 : str, port ? size - 1 : size) == NULL)
       return FALSE;
