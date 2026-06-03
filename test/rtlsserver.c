@@ -170,6 +170,60 @@ r_test_tls_server_queue_agg (RQueue * q)
   r_buffer_unref (buf);                                                       \
 } R_STMT_END
 
+/* Wrap a raw byte range in a buffer and feed it to the server. */
+static void
+r_test_tls_server_feed (RTLSServer * server, const ruint8 * data, rsize size)
+{
+  RBuffer * buf;
+
+  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)data, size, size, 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_incoming_data (server, buf));
+  r_buffer_unref (buf);
+}
+
+/* Build a minimal DTLS 1.2 ClientHello (RSA-AES128-CBC-SHA, null
+ * compression) into @out, returning its length. When @scsv the
+ * TLS_EMPTY_RENEGOTIATION_INFO_SCSV cipher is added; when @renego_ext a
+ * renegotiation_info extension carrying a @renegolen-byte
+ * renegotiated_connection is appended. */
+static rsize
+r_test_tls_build_dtls_client_hello (RPrng * prng, ruint8 * out, rsize outsz,
+    rboolean scsv, rboolean renego_ext, const ruint8 * renego, ruint8 renegolen)
+{
+  ruint8 body[256];
+  ruint8 * p = body;
+  ruint8 * extlenp;
+  rsize bodylen, hs, nsuites;
+
+  *p++ = 0xfe; *p++ = 0xfd;                  /* client_version DTLS 1.2 */
+  r_prng_fill (prng, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  *p++ = 0;                                  /* cookie length (DTLS) */
+  nsuites = scsv ? 2 : 1;
+  r_store_be16 (p, (ruint16)(nsuites * sizeof (ruint16))); p += 2;
+  r_store_be16 (p, (ruint16)R_TLS_CS_RSA_WITH_AES_128_CBC_SHA); p += 2;
+  if (scsv) {
+    r_store_be16 (p, (ruint16)R_TLS_CS_EMPTY_RENEGOTIATION_INFO_SCSV); p += 2;
+  }
+  *p++ = 1; *p++ = 0;                        /* compression: null */
+  extlenp = p; p += 2;                       /* extensions length placeholder */
+  if (renego_ext) {
+    r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+    r_store_be16 (p, (ruint16)(1 + renegolen)); p += 2;
+    *p++ = renegolen;
+    if (renegolen > 0) { r_memcpy (p, renego, renegolen); p += renegolen; }
+  }
+  r_store_be16 (extlenp, (ruint16)(p - (extlenp + 2)));
+  bodylen = (rsize)(p - body);
+
+  r_assert_cmpint (r_dtls_write_handshake (out, outsz, &hs,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO,
+        (ruint16)bodylen, 0, 0, 0, 0, (ruint32)bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (out + hs, body, bodylen);
+  return hs + bodylen;
+}
+
 static const ruint8 pkt_dtls_client_hallo[] = {
   0x16, 0xfe, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9a, 0x01, 0x00, 0x00,
   0x8e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x8e, 0xfe, 0xfd, 0x0e, 0x49, 0x7a, 0xe5, 0x2a,
@@ -653,6 +707,83 @@ RTEST_F (rtlsserver, tls_handshake_error_alert, RTEST_FAST)
   r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
   r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+/* RFC 5746: a non-empty renegotiated_connection in the initial ClientHello
+ * (rlib does not renegotiate) must abort with a fatal handshake_failure. */
+RTEST_F (rtlsserver, dtls_renegotiation_info_not_empty, RTEST_FAST)
+{
+  static const ruint8 renego[] = { 0xde, 0xad, 0xbe, 0xef };
+  ruint8 ch[256];
+  rsize chlen;
+  RBuffer * buf;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSAlertLevel alevel;
+  RTLSAlertType atype;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
+      FALSE, TRUE, renego, sizeof (renego));
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_HANDSHAKE_FAILURE);
+  r_assert (!fixture->hs_done);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_HANDSHAKE_FAILURE);
+
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+/* RFC 5746 3.6: TLS_EMPTY_RENEGOTIATION_INFO_SCSV signals secure
+ * renegotiation like an empty renegotiation_info extension, so the
+ * ServerHello must echo a renegotiation_info extension. */
+RTEST_F (rtlsserver, dtls_renegotiation_info_scsv, RTEST_FAST)
+{
+  ruint8 ch[256];
+  rsize chlen;
+  RBuffer * buf;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg msg;
+  RTLSHelloExt ext;
+  RTLSError e;
+  rboolean seen_renego = FALSE;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
+      TRUE, FALSE, NULL, 0);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert (!fixture->got_error);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &msg), ==, R_TLS_ERROR_OK);
+  for (e = r_tls_hello_msg_extension_first (&msg, &ext); e == R_TLS_ERROR_OK;
+      e = r_tls_hello_msg_extension_next (&msg, &ext)) {
+    if (ext.type == R_TLS_EXT_TYPE_RENEGOTIATION_INFO) {
+      seen_renego = TRUE;
+      r_assert_cmpuint (ext.len, ==, 1);  /* empty renegotiated_connection */
+      r_assert_cmpuint (ext.data[0], ==, 0);
+    }
+  }
+  r_assert (seen_renego);
 
   r_tls_parser_clear (&parser);
   r_buffer_unref (buf);

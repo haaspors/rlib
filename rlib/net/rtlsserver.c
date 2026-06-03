@@ -853,7 +853,13 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
     switch (hsext.type) {
       case R_TLS_EXT_TYPE_RENEGOTIATION_INFO:
         server->support_renego = TRUE;
-        /* FIXME: parse renego info */
+        /* RFC 5746: extension_data is renegotiated_connection<0..255> (a
+         * 1-byte length prefix). It must be empty on the initial handshake;
+         * rlib does not renegotiate, so a non-empty value is rejected. */
+        if (hsext.len < 1 || hsext.data[0] != hsext.len - 1)
+          return R_TLS_ERROR_CORRUPT_RECORD;
+        if (hsext.data[0] != 0)
+          return R_TLS_ERROR_HANDSHAKE_FAILURE;
         break;
       case R_TLS_EXT_TYPE_SESSION_TICKET:
         server->support_new_session_ticket = TRUE;
@@ -877,6 +883,12 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
         break;
     }
   }
+
+  /* RFC 5746 3.6: the SCSV signals secure-renegotiation support just like
+   * an empty renegotiation_info extension. */
+  if (r_tls_hello_msg_has_cipher_suite (&server->hello,
+        R_TLS_CS_EMPTY_RENEGOTIATION_INFO_SCSV))
+    server->support_renego = TRUE;
 
   if (server->support_new_session_ticket) {
     /* FIXME: create session ticket server->ticket, server->ticketsize */
