@@ -68,6 +68,15 @@ typedef rboolean (*RTLSServerBufferCb) (rpointer ctx, RBuffer * buf, RTLSServer 
 typedef void (*RTLSServerHandshakeDoneCb) (rpointer ctx, RTLSServer * server);
 /** @brief Callback selecting the preferred cipher suites for a TLS version. */
 typedef rboolean (*RTLSPreferredCipherSuitesCb) (rpointer ctx, RTLSVersion ver, RTLSCipherSuite * cs, rsize * count);
+/**
+ * @brief Callback fired when the session aborts with a fatal alert.
+ *
+ * @p alert is the alert description sent to the peer. The session has
+ * moved to its error state; the callback may fire more than once for a
+ * session, so it should be idempotent (e.g. tear the transport down
+ * only once). May be @c NULL.
+ */
+typedef void (*RTLSServerErrorCb) (rpointer ctx, RTLSAlertType alert, RTLSServer * server);
 
 /** @brief Callback bundle wiring a session to its transport and policy. */
 typedef struct {
@@ -75,6 +84,7 @@ typedef struct {
   RTLSServerHandshakeDoneCb     handshake_done;          /**< Fired once the handshake finishes. */
   RTLSServerBufferCb            out;                     /**< Sink for outgoing encrypted records. */
   RTLSServerBufferCb            appdata;                 /**< Sink for decrypted application data. */
+  RTLSServerErrorCb             error;                   /**< Fired on a fatal alert; may be @c NULL. */
 } RTLSCallbacks;
 
 /** @brief Create a TLS server with the given callbacks and user context. */

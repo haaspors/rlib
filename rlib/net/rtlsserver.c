@@ -70,6 +70,7 @@ struct RTLSServer {
   rboolean servrandompinned;
 
   RTLSVersion version;
+  RTLSVersion recordver;        /* version of the last record seen, for pre-nego alerts */
   RTLSCompressionMethod comp;
   const RTLSCipherSuiteInfo * csinfo;
   rboolean support_renego;
@@ -1038,13 +1039,54 @@ r_tls_server_parse_finished (RTLSServer * server, const RTLSParser * parser)
 }
 
 
+static void r_tls_server_send_out (RTLSServer * server);
+
 static void
 r_tls_server_send_alert (RTLSServer * server, RTLSAlertType alert)
 {
-  /* TODO: emit error callback */
-  /* TODO: Send alert! */
+  RBuffer * buf;
+  RTLSError ret = R_TLS_ERROR_OOM;
+  /* Use the negotiated version once known, else the version of the
+   * record being processed (the handshake may have failed before
+   * negotiation). */
+  RTLSVersion ver = (server->version != 0) ? server->version : server->recordver;
 
   R_LOG_WARNING ("Sending alert: 0x%.2x in state (%d)", alert, server->state);
+
+  /* Emit a fatal alert record to the peer. Best-effort: even if it
+   * cannot be built/sent we still report and move to the error state. */
+  if ((buf = r_tls_server_alloc_buffer (server)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+      rsize sz = 0;
+
+      if (r_tls_version_is_dtls (ver))
+        ret = r_dtls_write_alert (info.data, info.size, &sz, ver,
+            server->server.epoch, server->server.seqno,
+            R_TLS_ALERT_LEVEL_FATAL, alert);
+      else
+        ret = r_tls_write_alert (info.data, info.size, &sz, ver,
+            R_TLS_ALERT_LEVEL_FATAL, alert);
+      r_buffer_unmap (buf, &info);
+
+      if (ret == R_TLS_ERROR_OK) {
+        r_buffer_set_size (buf, sz);
+        ret = r_tls_server_send_record (server, buf);
+      }
+    }
+    r_buffer_unref (buf);
+  }
+
+  if (ret != R_TLS_ERROR_OK)
+    R_LOG_WARNING ("Failed to emit alert 0x%.2x: %d", alert, ret);
+  else
+    /* Flush now: the caller returns an error, skipping the normal
+     * send_out in r_tls_server_incoming_data. */
+    r_tls_server_send_out (server);
+
+  if (server->cb.error != NULL)
+    server->cb.error (server->userdata, alert, server);
 
   r_tls_server_change_state (server, R_TLS_SERVER_ERROR);
 }
@@ -1330,6 +1372,10 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
       err = r_tls_parser_init_next (&parser, &server->inbuf), server->client.seqno++) {
     r_buffer_unref (server->inbuf);
     server->inbuf = NULL;
+
+    /* Remember the record-layer version so a fatal alert can be framed
+     * correctly even before the version is negotiated. */
+    server->recordver = parser.version;
 
     if (!r_tls_parser_is_dtls (&parser) || parser.epoch == server->client.epoch) {
       if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac)) != R_TLS_ERROR_OK) {
