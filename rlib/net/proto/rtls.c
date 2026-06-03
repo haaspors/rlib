@@ -1040,6 +1040,12 @@ r_tls_hello_msg_extension_next (const RTLSHelloMsg * msg, RTLSHelloExt * ext)
   ext->type = r_load_be16 (&ext->start[0]);
   ext->len = r_load_be16 (&ext->start[2]);
   ext->data = ext->start + R_TLS_HELLO_EXT_HDR_SIZE;
+  /* The extension body must fit within the declared extensions length
+   * (mirrors the check in _first; a truncated trailing extension would
+   * otherwise leave data+len past the block and over-read it). */
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ext->data + ext->len) >
+        RPOINTER_TO_SIZE (msg->ext + msg->extlen)))
+    return R_TLS_ERROR_EOB;
 
   return R_TLS_ERROR_OK;
 }
