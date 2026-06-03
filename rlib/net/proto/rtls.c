@@ -215,9 +215,104 @@ r_tls_parser_next (RTLSParser * parser)
   return ret;
 }
 
+/* Fill the 13-byte MAC seed prefix: seq_num (epoch+seqno for DTLS) +
+ * content type + version + length, where length is the IV+ciphertext size
+ * for encrypt-then-MAC (RFC 7366) or the plaintext size for MAC-then-encrypt. */
+static void
+r_tls_mac_seed (const RTLSParser * parser, ruint8 scratch[13], rsize length)
+{
+  if (r_tls_parser_is_dtls (parser)) {
+    scratch[0x00] = (parser->epoch   >>  8) & 0xff;
+    scratch[0x01] = (parser->epoch        ) & 0xff;
+  } else {
+    scratch[0x00] = (parser->seqno   >> 56) & 0xff;
+    scratch[0x01] = (parser->seqno   >> 48) & 0xff;
+  }
+  scratch[0x02] = (parser->seqno   >> 40) & 0xff;
+  scratch[0x03] = (parser->seqno   >> 32) & 0xff;
+  scratch[0x04] = (parser->seqno   >> 24) & 0xff;
+  scratch[0x05] = (parser->seqno   >> 16) & 0xff;
+  scratch[0x06] = (parser->seqno   >>  8) & 0xff;
+  scratch[0x07] = (parser->seqno        ) & 0xff;
+  scratch[0x08] = (parser->content      ) & 0xff;
+  scratch[0x09] = (parser->version >>  8) & 0xff;
+  scratch[0x0a] = (parser->version      ) & 0xff;
+  scratch[0x0b] = (length          >>  8) & 0xff;
+  scratch[0x0c] = (length               ) & 0xff;
+}
+
+/* RFC 7366 encrypt-then-MAC decrypt: the fragment is IV || ciphertext || MAC.
+ * Verify the MAC over the IV and ciphertext first, then decrypt and strip
+ * the CBC padding. */
+static RTLSError
+r_tls_parser_decrypt_etm (RTLSParser * parser,
+    const RCryptoCipher * cipher, RHmac * mac)
+{
+  RBuffer * buf, * replace;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rsize ivsize = cipher->info->ivsize;
+  rsize macsize = r_hmac_size (mac);
+  rsize ctlen, contentsize, padding;
+  ruint8 scratch[sizeof (ruint64) + sizeof (ruint8) + 2 * sizeof (ruint16)];
+  ruint8 * iv;
+
+  if (parser->fragment.size < ivsize + ivsize + macsize)
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  ctlen = parser->fragment.size - ivsize - macsize;
+  if ((ctlen % ivsize) != 0)
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  r_tls_mac_seed (parser, scratch, ivsize + ctlen);
+  r_hmac_reset (mac);
+  r_hmac_update (mac, scratch, sizeof (scratch));
+  r_hmac_update (mac, parser->fragment.data, ivsize + ctlen);
+  if (!r_hmac_verify (mac, parser->fragment.data + ivsize + ctlen, macsize))
+    return R_TLS_ERROR_INVALID_MAC;
+
+  if ((buf = r_buffer_new_alloc (NULL, ctlen, NULL)) == NULL)
+    return R_TLS_ERROR_OOM;
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_OOM;
+  }
+
+  iv = r_alloca (ivsize);
+  r_memcpy (iv, parser->fragment.data, ivsize);
+  if (r_crypto_cipher_decrypt (cipher, info.data, info.size,
+        parser->fragment.data + ivsize, iv, ivsize) != R_CRYPTO_CIPHER_OK) {
+    r_buffer_unmap (buf, &info);
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  }
+
+  padding = 1 + info.data[info.size - 1];
+  if (padding > ctlen) {
+    r_buffer_unmap (buf, &info);
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  }
+  contentsize = ctlen - padding;
+  r_buffer_unmap (buf, &info);
+  r_buffer_resize (buf, 0, contentsize);
+
+  replace = r_buffer_replace_byte_range (parser->buf,
+      parser->offset, parser->fragment.size, buf);
+  r_buffer_unref (buf);
+  r_buffer_unmap (parser->buf, &parser->fragment);
+  r_buffer_unref (parser->buf);
+  parser->buf = replace;
+  parser->recsize = parser->offset + contentsize;
+
+  if (!r_buffer_map_byte_range (parser->buf, parser->offset, (rssize)contentsize,
+        &parser->fragment, R_MEM_MAP_READ))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  return R_TLS_ERROR_OK;
+}
+
 RTLSError
 r_tls_parser_decrypt (RTLSParser * parser,
-    const RCryptoCipher * cipher, RHmac * mac)
+    const RCryptoCipher * cipher, RHmac * mac, rboolean etm)
 {
   RBuffer * buf, * replace;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
@@ -228,6 +323,9 @@ r_tls_parser_decrypt (RTLSParser * parser,
   if (R_UNLIKELY (cipher == NULL)) return R_TLS_ERROR_INVAL;
   if (R_UNLIKELY (cipher->info->type == R_CRYPTO_CIPHER_ALGO_NULL))
     return R_TLS_ERROR_OK;
+
+  if (etm && mac != NULL && cipher->info->mode == R_CRYPTO_CIPHER_MODE_CBC)
+    return r_tls_parser_decrypt_etm (parser, cipher, mac);
 
   ivsize = cipher->info->ivsize;
   if (R_UNLIKELY (parser->fragment.size < ivsize))
@@ -386,9 +484,75 @@ _r_tls_encrypt_buffer (const ruint8 * buf, rsize bufsize, rsize hdrsize,
   return ret;
 }
 
+/* RFC 7366 encrypt-then-MAC: emit record hdr + IV + ENC(fragment||padding),
+ * then the MAC over @aad (seq + type + version), the IV+ciphertext length and
+ * the IV+ciphertext. @aad is the 11-byte seq+type+version prefix the wrapper
+ * assembled (the length is appended here since it depends on the ciphertext). */
+static RBuffer *
+_r_tls_encrypt_buffer_etm (const ruint8 * buf, rsize bufsize, rsize hdrsize,
+    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac,
+    const ruint8 * aad)
+{
+  RBuffer * ret = NULL;
+  rsize ivsize = cipher->info->ivsize;
+  rsize fragsize = bufsize - hdrsize;
+  rsize macsize = r_hmac_size (hmac);
+  ruint8 padding = (ruint8)(ivsize - (fragsize % ivsize));
+  rsize ctlen = fragsize + padding;
+  rsize reclen = ivsize + ctlen + macsize;
+
+  if ((ret = r_buffer_new_alloc (NULL, hdrsize + reclen, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+    RCryptoCipherResult res;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      ruint8 * ivtmp = r_alloca (ivsize);
+      ruint8 * p = info.data;
+      ruint8 lenbe[sizeof (ruint16)];
+
+      /* record hdr with the IV+ciphertext+MAC length */
+      r_memcpy (p, buf, hdrsize - 2);
+      p += hdrsize - 2;
+      *p++ = (reclen >> 8) & 0xff;
+      *p++ = (reclen     ) & 0xff;
+
+      /* IV (in the clear), then fragment + padding to encrypt */
+      r_memcpy (ivtmp, iv, ivsize);
+      r_memcpy (p, iv, ivsize);
+      r_memcpy (p + ivsize, buf + hdrsize, fragsize);
+      r_memset (p + ivsize + fragsize, padding - 1, padding);
+
+      res = r_crypto_cipher_encrypt (cipher, p + ivsize, ctlen, p + ivsize, ivtmp, ivsize);
+
+      if (res == R_CRYPTO_CIPHER_OK) {
+        /* MAC over seq + type + version + length + IV + ciphertext */
+        lenbe[0] = ((ivsize + ctlen) >> 8) & 0xff;
+        lenbe[1] = ((ivsize + ctlen)     ) & 0xff;
+        r_hmac_reset (hmac);
+        r_hmac_update (hmac, aad, sizeof (ruint64) + sizeof (ruint8) + sizeof (ruint16));
+        r_hmac_update (hmac, lenbe, sizeof (lenbe));
+        r_hmac_update (hmac, p, ivsize + ctlen);
+        if (!r_hmac_get_data (hmac, p + ivsize + ctlen, macsize, &macsize))
+          res = R_CRYPTO_CIPHER_INVAL;
+      }
+
+      r_buffer_unmap (ret, &info);
+    } else {
+      res = R_CRYPTO_CIPHER_INVAL;
+    }
+
+    if (res != R_CRYPTO_CIPHER_OK) {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
 RBuffer *
 r_dtls_encrypt_buffer (RBuffer * buf, const RCryptoCipher * cipher,
-    const ruint8 * iv, RHmac * hmac)
+    const ruint8 * iv, RHmac * hmac, rboolean etm)
 {
   RBuffer * ret;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
@@ -398,22 +562,32 @@ r_dtls_encrypt_buffer (RBuffer * buf, const RCryptoCipher * cipher,
   if (R_UNLIKELY (hmac == NULL)) return NULL;
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
-    rsize macsize = r_hmac_size (hmac);
-    ruint8 * macbuf = r_alloca (macsize);
-    ruint16 fraglen = RUINT16_TO_BE ((ruint16)(info.size - R_DTLS_RECORD_HDR_SIZE));
     ruint16 hdrsize = R_DTLS_RECORD_HDR_SIZE;
 
-    r_hmac_reset (hmac);
-    r_hmac_update (hmac, info.data + 3, sizeof (ruint64)); /* epoch + seqno */
-    r_hmac_update (hmac, info.data, 1 + sizeof (ruint16)); /* type + version */
-    r_hmac_update (hmac, &fraglen, sizeof (ruint16)); /* length */
-    r_hmac_update (hmac, info.data + hdrsize, info.size - hdrsize); /* fragment */
-
-    if (r_hmac_get_data (hmac, macbuf, macsize, &macsize)) {
-      ret = _r_tls_encrypt_buffer (info.data, info.size, hdrsize,
-          cipher, iv, macbuf, macsize);
+    if (etm && cipher->info->mode == R_CRYPTO_CIPHER_MODE_CBC) {
+      ruint8 aad[sizeof (ruint64) + sizeof (ruint8) + sizeof (ruint16)];
+      r_memcpy (aad, info.data + 3, sizeof (ruint64)); /* epoch + seqno */
+      aad[8] = info.data[0];                           /* type */
+      aad[9] = info.data[1]; aad[10] = info.data[2];   /* version */
+      ret = _r_tls_encrypt_buffer_etm (info.data, info.size, hdrsize,
+          cipher, iv, hmac, aad);
     } else {
-      ret = NULL;
+      rsize macsize = r_hmac_size (hmac);
+      ruint8 * macbuf = r_alloca (macsize);
+      ruint16 fraglen = RUINT16_TO_BE ((ruint16)(info.size - R_DTLS_RECORD_HDR_SIZE));
+
+      r_hmac_reset (hmac);
+      r_hmac_update (hmac, info.data + 3, sizeof (ruint64)); /* epoch + seqno */
+      r_hmac_update (hmac, info.data, 1 + sizeof (ruint16)); /* type + version */
+      r_hmac_update (hmac, &fraglen, sizeof (ruint16)); /* length */
+      r_hmac_update (hmac, info.data + hdrsize, info.size - hdrsize); /* fragment */
+
+      if (r_hmac_get_data (hmac, macbuf, macsize, &macsize)) {
+        ret = _r_tls_encrypt_buffer (info.data, info.size, hdrsize,
+            cipher, iv, macbuf, macsize);
+      } else {
+        ret = NULL;
+      }
     }
     r_buffer_unmap (buf, &info);
   } else {
@@ -425,7 +599,7 @@ r_dtls_encrypt_buffer (RBuffer * buf, const RCryptoCipher * cipher,
 
 RBuffer *
 r_tls_encrypt_buffer (RBuffer * buf, ruint64 seqno,
-    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac)
+    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac, rboolean etm)
 {
   RBuffer * ret;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
@@ -435,21 +609,31 @@ r_tls_encrypt_buffer (RBuffer * buf, ruint64 seqno,
   if (R_UNLIKELY (hmac == NULL)) return NULL;
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
-    rsize macsize = r_hmac_size (hmac);
-    ruint8 * macbuf = r_alloca (macsize);
     ruint16 hdrsize = R_TLS_RECORD_HDR_SIZE;
 
     seqno = RUINT64_TO_BE (seqno);
-    r_hmac_reset (hmac);
-    r_hmac_update (hmac, &seqno, sizeof (ruint64)); /* seqno */
-    r_hmac_update (hmac, info.data, 5); /* type + version + length */
-    r_hmac_update (hmac, info.data + hdrsize, info.size - hdrsize); /* fragment */
-
-    if (r_hmac_get_data (hmac, macbuf, macsize, &macsize)) {
-      ret = _r_tls_encrypt_buffer (info.data, info.size, hdrsize,
-          cipher, iv, macbuf, macsize);
+    if (etm && cipher->info->mode == R_CRYPTO_CIPHER_MODE_CBC) {
+      ruint8 aad[sizeof (ruint64) + sizeof (ruint8) + sizeof (ruint16)];
+      r_memcpy (aad, &seqno, sizeof (ruint64));        /* seqno */
+      aad[8] = info.data[0];                           /* type */
+      aad[9] = info.data[1]; aad[10] = info.data[2];   /* version */
+      ret = _r_tls_encrypt_buffer_etm (info.data, info.size, hdrsize,
+          cipher, iv, hmac, aad);
     } else {
-      ret = NULL;
+      rsize macsize = r_hmac_size (hmac);
+      ruint8 * macbuf = r_alloca (macsize);
+
+      r_hmac_reset (hmac);
+      r_hmac_update (hmac, &seqno, sizeof (ruint64)); /* seqno */
+      r_hmac_update (hmac, info.data, 5); /* type + version + length */
+      r_hmac_update (hmac, info.data + hdrsize, info.size - hdrsize); /* fragment */
+
+      if (r_hmac_get_data (hmac, macbuf, macsize, &macsize)) {
+        ret = _r_tls_encrypt_buffer (info.data, info.size, hdrsize,
+            cipher, iv, macbuf, macsize);
+      } else {
+        ret = NULL;
+      }
     }
     r_buffer_unmap (buf, &info);
   } else {

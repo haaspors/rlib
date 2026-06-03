@@ -442,9 +442,15 @@ R_API RBuffer * r_tls_parser_next (RTLSParser * parser);
 /** @brief Release resources held by @p parser. */
 R_API void r_tls_parser_clear (RTLSParser * parser);
 
-/** @brief Decrypt and MAC-verify the current record in place. */
+/**
+ * @brief Decrypt and MAC-verify the current record in place.
+ * @param parser Parser positioned on the record to decrypt.
+ * @param cipher Record-protection cipher.
+ * @param mac Record MAC, or @c NULL.
+ * @param etm Use encrypt-then-MAC (RFC 7366) for CBC suites when @c TRUE.
+ */
 R_API RTLSError r_tls_parser_decrypt (RTLSParser * parser,
-    const RCryptoCipher * cipher, RHmac * mac);
+    const RCryptoCipher * cipher, RHmac * mac, rboolean etm);
 
 /** @brief @c TRUE if protocol @p version is a DTLS version. */
 #define r_tls_version_is_dtls(version) ((version) > RUINT16_MAX / 2)
@@ -625,20 +631,22 @@ R_API RTLSError r_tls_1_2_prf_sha512 (ruint8 * dst, rsize dsize,
  * @param cipher Record-protection cipher.
  * @param iv Explicit IV, or @c NULL.
  * @param hmac Record MAC, or @c NULL.
+ * @param etm Use encrypt-then-MAC (RFC 7366) for CBC suites when @c TRUE.
  * @return New buffer holding the protected record, or @c NULL on failure.
  */
 R_API RBuffer * r_tls_encrypt_buffer (RBuffer * buf, ruint64 seqno,
-    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac);
+    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac, rboolean etm);
 /**
  * @brief Encrypt and MAC a DTLS record buffer (sequence taken from the record).
  * @param buf Plaintext record payload.
  * @param cipher Record-protection cipher.
  * @param iv Explicit IV, or @c NULL.
  * @param hmac Record MAC, or @c NULL.
+ * @param etm Use encrypt-then-MAC (RFC 7366) for CBC suites when @c TRUE.
  * @return New buffer holding the protected record, or @c NULL on failure.
  */
 R_API RBuffer * r_dtls_encrypt_buffer (RBuffer * buf,
-    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac);
+    const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac, rboolean etm);
 
 /**
  * @brief Write a TLS handshake record header into @p data.

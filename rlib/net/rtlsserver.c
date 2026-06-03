@@ -41,7 +41,7 @@ typedef enum {
 typedef RTLSError (*RTLSServerStateFunc) (RTLSServer * server, const RTLSParser * parser);
 typedef RBuffer * (*RTLSServerEncryptFunc) (RTLSServer * server, RBuffer * buf);
 typedef RTLSError (*RTLSServerDecryptFunc) (RTLSParser * parser,
-    const RCryptoCipher * cipher, RHmac * mac);
+    const RCryptoCipher * cipher, RHmac * mac, rboolean etm);
 
 typedef struct {
   RHmac * hmac;
@@ -76,6 +76,7 @@ struct RTLSServer {
   rboolean support_renego;
   rboolean support_new_session_ticket;
   rboolean support_ext_master_secret;
+  rboolean encrypt_then_mac;
   RSRTPCipherSuite dtls_srtp_profile;
   ruint8 srtp_mki_size;
   const ruint8 * srtp_mki;
@@ -152,11 +153,12 @@ r_tls_server_free (RTLSServer * server)
 
 static RTLSError
 r_tls_server_null_decrypt (RTLSParser * parser, const RCryptoCipher * cipher,
-    RHmac * mac)
+    RHmac * mac, rboolean etm)
 {
   (void) parser;
   (void) cipher;
   (void) mac;
+  (void) etm;
 
   return R_TLS_ERROR_OK;
 }
@@ -262,10 +264,10 @@ r_tls_server_cipher_encrypt (RTLSServer * server, RBuffer * buf)
   r_prng_fill (server->prng, iv, server->server.cipher->info->ivsize);
   if (r_tls_version_is_dtls (server->version)) {
     ret = r_dtls_encrypt_buffer (buf,
-        server->server.cipher, iv, server->server.hmac);
+        server->server.cipher, iv, server->server.hmac, server->encrypt_then_mac);
   } else {
     ret = r_tls_encrypt_buffer (buf, server->server.seqno,
-        server->server.cipher, iv, server->server.hmac);
+        server->server.cipher, iv, server->server.hmac, server->encrypt_then_mac);
   }
 
   return ret;
@@ -318,6 +320,17 @@ r_tls_server_write_hs_ext_extended_ms (const RTLSServer * server, ruint8 * ptr)
     return 0;
 
   r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET);
+  r_store_be16 (&ptr[2], 0);
+  return 4;
+}
+
+static ruint16
+r_tls_server_write_hs_ext_encrypt_then_mac (const RTLSServer * server, ruint8 * ptr)
+{
+  if (!server->encrypt_then_mac)
+    return 0;
+
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_ENCRYPT_THEN_MAC);
   r_store_be16 (&ptr[2], 0);
   return 4;
 }
@@ -398,11 +411,11 @@ r_tls_server_write_hello (RTLSServer * server)
     extsize = 0;
     extsize += r_tls_server_write_hs_ext_renegotiation (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_extended_ms (server, ptr + 2 + extsize);
+    extsize += r_tls_server_write_hs_ext_encrypt_then_mac (server, ptr + 2 + extsize);
     /* FIXME: Write remaining ServerHello extensions */
 #if 0
     extsize += r_tls_server_write_hs_ext_max_fragment_length (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_truncated_hmac (server, ptr + 2 + extsize);
-    extsize += r_tls_server_write_hs_ext_encrypt_then_mac (server, ptr + 2 + extsize);
 #endif
     extsize += r_tls_server_write_hs_ext_session_ticket (server, ptr + 2 + extsize);
 #if 0
@@ -845,6 +858,7 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   server->support_renego = FALSE;
   server->support_new_session_ticket = FALSE;
   server->support_ext_master_secret = FALSE;
+  server->encrypt_then_mac = FALSE;
   server->dtls_srtp_profile = R_SRTP_CS_NONE;
 
   for (r = r_tls_hello_msg_extension_first (&server->hello, &hsext);
@@ -875,6 +889,12 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
             server->dtls_srtp_profile = R_SRTP_CS_AES_128_CM_HMAC_SHA1_32;
           }
         }
+        break;
+      case R_TLS_EXT_TYPE_ENCRYPT_THEN_MAC:
+        /* RFC 7366: only applies to block (CBC) cipher suites; AEAD and
+         * stream/NULL suites ignore it. */
+        if (server->csinfo->cipher->mode == R_CRYPTO_CIPHER_MODE_CBC)
+          server->encrypt_then_mac = TRUE;
         break;
       case R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET:
         server->support_ext_master_secret = TRUE;
@@ -1427,7 +1447,8 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
     server->recordver = parser.version;
 
     if (!r_tls_parser_is_dtls (&parser) || parser.epoch == server->client.epoch) {
-      if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac)) != R_TLS_ERROR_OK) {
+      if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac,
+              server->encrypt_then_mac)) != R_TLS_ERROR_OK) {
         /* A record that fails decrypt / MAC must not be processed. */
         R_LOG_WARNING ("Decryption returned: %d", err);
         continue;
