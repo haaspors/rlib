@@ -51,6 +51,7 @@ R_INITIALIZER (rlib_init)
   r_task_queue_init ();
   r_thread_init ();
   r_test_init ();
+  r_tls_client_init ();
   r_tls_server_init ();
 }
 
