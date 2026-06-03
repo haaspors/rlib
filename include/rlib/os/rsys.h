@@ -143,7 +143,10 @@ R_API rsize r_sys_topology_node_cpu_count (const RSysNode * node);
 /** @brief Return the @p idx-th CPU of @p node as a new reference
  *  (caller @c r_sys_cpu_unref's), or @c NULL if out of range. */
 R_API RSysCpu * r_sys_topology_node_cpu (RSysNode * node, rsize idx);
-/** @brief Bytes of memory local to @p node. */
+/**
+ * @brief Bytes of available (free) memory local to @p node, or 0 when
+ * the platform does not expose it (e.g. non-NUMA macOS).
+ */
 R_API rsize r_sys_topology_node_available_memory (const RSysNode * node);
 
 /** @brief Take a reference on a topology (alias for @ref r_ref_ref). */

@@ -122,6 +122,12 @@ RTEST (rsys, topology, RTEST_FAST | RTEST_SYSTEM)
     r_assert (r_sys_topology_node_cpuset (node, cpuset));
     r_assert_cmpuint (cpucount, ==, r_bitset_popcount (cpuset));
 
+    r_assert_cmpuint (r_sys_topology_node_available_memory (NULL), ==, 0);
+#if defined (R_OS_LINUX)
+    /* Linux reports per-node MemFree via sysfs; an online node has some. */
+    r_assert_cmpuint (r_sys_topology_node_available_memory (node), >, 0);
+#endif
+
     r_assert_cmpptr (r_sys_topology_node_cpu (NULL, 0), ==, NULL);
     r_assert_cmpptr (r_sys_topology_node_cpu (node, cpucount), ==, NULL);
 

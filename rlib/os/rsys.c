@@ -605,6 +605,37 @@ r_sys_topology_prepend_cpu (rsize bit, rpointer data)
   node->cpus[node->cpucount++] = r_sys_cpu_discover (bit, node);
 }
 
+#if defined (R_OS_LINUX)
+/* Per-node available memory from /sys/devices/system/node/nodeN/meminfo,
+ * whose "Node N MemFree:" line is reported in kB (this is what libnuma's
+ * numa_node_size() ultimately reads). Returns 0 if unavailable. */
+static rsize
+r_sys_node_available_memory (rsize idx)
+{
+  rchar path[256];
+  RFile * f;
+  rsize ret = 0;
+
+  r_snprintf (path, sizeof (path), R_SYSFS_NODE_FMT "/meminfo", (ruint)idx);
+  if ((f = r_file_open (path, "r")) != NULL) {
+    rchar buf[256];
+    while (r_file_read_line (f, buf, sizeof (buf)) == R_FILE_ERROR_OK) {
+      rchar * p;
+      if ((p = r_strstr (buf, "MemFree:")) != NULL) {
+        RStrParse res;
+        ruint64 kb = r_str_to_uint64 (p + 8, NULL, 10, &res);
+        if (res == R_STR_PARSE_OK)
+          ret = (rsize) (kb * 1024);
+        break;
+      }
+    }
+    r_file_unref (f);
+  }
+
+  return ret;
+}
+#endif
+
 static RSysNode *
 r_sys_node_discover (rsize idx, RSysTopology * topo)
 {
@@ -627,9 +658,9 @@ r_sys_node_discover (rsize idx, RSysTopology * topo)
       ret->availablemem = (rsize)availmem;
     }
 #elif defined (R_OS_LINUX)
-    /* FIXME: Read out available memory */
+    ret->availablemem = r_sys_node_available_memory (idx);
 #elif defined (HAVE_SYSCTLBYNAME)
-    /* FIXME: Read out available memory */
+    /* macOS is not a NUMA platform; availablemem is left 0. */
 #endif
   }
 
