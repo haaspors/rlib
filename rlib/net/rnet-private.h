@@ -37,10 +37,6 @@
 
 R_BEGIN_DECLS
 
-#ifdef R_OS_WIN32
-R_API_HIDDEN const rchar * (__stdcall * r_win32_inet_ntop) (int, rpointer, rchar *, size_t);
-#endif
-
 R_END_DECLS
 
 #endif /* __R_NET_PRIV_H__ */

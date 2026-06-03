@@ -135,6 +135,67 @@ RTEST (rsocketaddress, ipv6_parse, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsocketaddress, ipv6_to_str, RTEST_FAST)
+{
+  static const struct { const rchar * in; const rchar * out; } cases[] = {
+    { "::",                                       "::" },
+    { "::1",                                      "::1" },
+    { "2001:db8::1",                              "2001:db8::1" },
+    { "2001:0db8:0000:0000:0000:0000:0000:0001",  "2001:db8::1" },  /* canonicalised */
+    { "fe80:0:0:0:0:0:0:1",                       "fe80::1" },
+    { "1:2:3:4:5:6:7:8",                          "1:2:3:4:5:6:7:8" },
+    { "1:0:0:2:0:0:0:3",                          "1:0:0:2::3" },    /* longest run wins */
+    { "1:0:2:3:4:5:6:7",                          "1:0:2:3:4:5:6:7" }, /* single 0 not collapsed */
+    { "::ffff:1.2.3.4",                           "::ffff:1.2.3.4" }, /* v4-mapped */
+    { "::1.2.3.4",                                 "::1.2.3.4" },     /* v4-compatible */
+    { "ABCD::",                                   "abcd::" },        /* lowercased */
+  };
+  /* Round-trip stability: parse -> format -> parse yields the same bytes. */
+  static const rchar * roundtrip[] = {
+    "::1", "2001:db8::1", "::ffff:1.2.3.4", "::1.2.3.4", "fe80::1",
+    "1:2:3:4:5:6:7:8", "1:0:0:2::3",
+  };
+  RSocketAddress * a;
+  rchar * s;
+  rchar buf[8];
+  rsize i;
+
+  for (i = 0; i < R_N_ELEMENTS (cases); i++) {
+    r_assert_cmpptr ((a = r_socket_address_ipv6_new_from_string (cases[i].in, 0)), !=, NULL);
+    r_assert_cmpptr ((s = r_socket_address_ipv6_to_str (a, FALSE)), !=, NULL);
+    r_assert_cmpstr (s, ==, cases[i].out);
+    r_free (s);
+    r_socket_address_unref (a);
+  }
+
+  /* Bracketed host:port form. */
+  r_assert_cmpptr ((a = r_socket_address_ipv6_new_from_string ("2001:db8::1", 443)), !=, NULL);
+  r_assert_cmpptr ((s = r_socket_address_ipv6_to_str (a, TRUE)), !=, NULL);
+  r_assert_cmpstr (s, ==, "[2001:db8::1]:443");
+  r_free (s);
+
+  /* Too-small / NULL output buffers fail rather than overrun. */
+  r_assert (!r_socket_address_ipv6_build_str (a, FALSE, buf, sizeof (buf))); /* needs 12 */
+  r_assert (!r_socket_address_ipv6_build_str (a, FALSE, NULL, 64));
+  r_socket_address_unref (a);
+
+  for (i = 0; i < R_N_ELEMENTS (roundtrip); i++) {
+    RSocketAddress * b;
+    ruint8 b1[16], b2[16];
+
+    r_assert_cmpptr ((a = r_socket_address_ipv6_new_from_string (roundtrip[i], 0)), !=, NULL);
+    r_assert (r_socket_address_ipv6_get_ip_bytes (a, b1));
+    r_assert_cmpptr ((s = r_socket_address_ipv6_to_str (a, FALSE)), !=, NULL);
+    r_assert_cmpptr ((b = r_socket_address_ipv6_new_from_string (s, 0)), !=, NULL);
+    r_assert (r_socket_address_ipv6_get_ip_bytes (b, b2));
+    r_assert_cmpmem (b1, ==, b2, 16);
+    r_free (s);
+    r_socket_address_unref (a);
+    r_socket_address_unref (b);
+  }
+}
+RTEST_END;
+
 RTEST (rsocketaddress, ipv4_to_str, RTEST_FAST)
 {
   RSocketAddress * addr_u32, * addr_str;

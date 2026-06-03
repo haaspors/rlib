@@ -335,8 +335,6 @@ check_funcs = [
   [ 'timer_create', 'time.h' ],
   [ 'clock_gettime', 'time.h' ],
   [ 'setitimer', 'sys/time.h' ],
-  # arpa/inet
-  [ 'inet_ntop', 'arpa/inet.h' ],
   # other
   [ 'fcntl', 'fcntl.h' ],
   [ 'ioctl', 'sys/ioctl.h' ],

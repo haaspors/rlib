@@ -51,6 +51,29 @@ R_BEGIN_DECLS
  * etc.) only return meaningful data when @ref r_socket_address_get_family
  * matches; calling them on the wrong family is a programmer error.
  *
+ * @par Coming from libc inet_*
+ * rlib parses and formats IP addresses itself, with no dependency on
+ * @c inet_pton / @c inet_aton / @c inet_ntop. The equivalents wrap the
+ * result in an @ref RSocketAddress and fold in the port:
+ *   - @c inet_pton(AF_INET,...) / @c inet_aton -> @ref r_socket_address_ipv4_new_from_string
+ *   - @c inet_pton(AF_INET6,...) -> @ref r_socket_address_ipv6_new_from_string
+ *   - @c inet_ntop(AF_INET,...) -> @ref r_socket_address_ipv4_to_str / @ref r_socket_address_ipv4_build_str
+ *   - @c inet_ntop(AF_INET6,...) -> @ref r_socket_address_ipv6_to_str / @ref r_socket_address_ipv6_build_str
+ *
+ * The @c _new_from_string parsers return @c NULL on malformed input
+ * (the same reject set as @c inet_pton, e.g. leading-zero octets);
+ * recover the raw network-order bytes with @ref r_socket_address_ipv4_get_ip
+ * or @ref r_socket_address_ipv6_get_ip_bytes. The @c _to_str /
+ * @c _build_str formatters emit the RFC 5952 canonical text and, when
+ * asked, append @c :port (bracketing IPv6 as @c [addr]:port).
+ *
+ * @code
+ * RSocketAddress * a = r_socket_address_ipv6_new_from_string ("2001:db8::1", 443);
+ * rchar * s = r_socket_address_ipv6_to_str (a, TRUE);  // "[2001:db8::1]:443"
+ * r_free (s);
+ * r_socket_address_unref (a);
+ * @endcode
+ *
  * @{
  */
 

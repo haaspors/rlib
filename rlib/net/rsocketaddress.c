@@ -363,53 +363,84 @@ r_socket_address_ipv6_get_ip_bytes (const RSocketAddress * addr, ruint8 ip[16])
   return TRUE;
 }
 
+/* Longest text forms incl. NUL: "255.255.255.255" and
+ * "ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255". */
+#define R_SOCKET_ADDRESS_IPV4_STRLEN  16
+#define R_SOCKET_ADDRESS_IPV6_STRLEN  46
+
+/* Write the dotted-quad for four network-order octets; returns length. */
+static rsize
+r_socket_address_format_ipv4 (const ruint8 ip[4], rchar * dst)
+{
+  return (rsize) r_sprintf (dst, "%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT,
+      ip[0], ip[1], ip[2], ip[3]);
+}
+
+/* Format 16 network-order bytes as a canonical RFC 5952 IPv6 address:
+ * lowercase, the longest run of zero groups (leftmost on ties) collapsed
+ * to "::", and a trailing embedded IPv4 for the v4-mapped / v4-compatible
+ * forms — matching inet_ntop. @p dst must hold R_SOCKET_ADDRESS_IPV6_STRLEN. */
+static void
+r_socket_address_format_ipv6 (const ruint8 ip[16], rchar * dst)
+{
+  ruint words[8];
+  int best_base = -1, best_len = 0, cur_base = -1, cur_len = 0, i;
+  rchar * tp = dst;
+
+  for (i = 0; i < 8; i++)
+    words[i] = ((ruint) ip[i * 2] << 8) | (ruint) ip[i * 2 + 1];
+
+  /* Longest run of consecutive zero groups, leftmost winning on a tie. */
+  for (i = 0; i < 8; i++) {
+    if (words[i] == 0) {
+      if (cur_base == -1) { cur_base = i; cur_len = 1; }
+      else cur_len++;
+      if (cur_len > best_len) { best_base = cur_base; best_len = cur_len; }
+    } else {
+      cur_base = -1;
+    }
+  }
+  if (best_len < 2)             /* "::" only collapses two or more groups */
+    best_base = -1;
+
+  for (i = 0; i < 8; i++) {
+    if (best_base != -1 && i >= best_base && i < best_base + best_len) {
+      if (i == best_base)
+        *tp++ = ':';
+      continue;
+    }
+    if (i != 0)
+      *tp++ = ':';
+    if (i == 6 && best_base == 0 &&
+        (best_len == 6 || (best_len == 5 && words[5] == 0xffff))) {
+      tp += r_socket_address_format_ipv4 (ip + 12, tp);
+      break;
+    }
+    tp += (rsize) r_sprintf (tp, "%x", words[i]);
+  }
+  if (best_base != -1 && best_base + best_len == 8)
+    *tp++ = ':';
+  *tp = 0;
+}
+
 rboolean
 r_socket_address_ipv4_build_str (const RSocketAddress * addr, rboolean port,
     rchar * str, rsize size)
 {
-  if (R_UNLIKELY (addr == NULL)) return FALSE;
+  rchar tmp[R_SOCKET_ADDRESS_IPV4_STRLEN + 8];
+  rsize n;
 
-#if defined (HAVE_INET_NTOP)
-  if (inet_ntop (R_AF_INET, &((struct sockaddr_in *)&addr->addr)->sin_addr, str, size) == NULL)
+  if (R_UNLIKELY (addr == NULL || str == NULL)) return FALSE;
+
+  n = r_socket_address_format_ipv4 (
+      (const ruint8 *) &R_SOCKET_ADDRESS_IPV4_ADDR (addr), tmp);
+  if (port)
+    n += (rsize) r_sprintf (tmp + n, ":%"RUINT16_FMT,
+        r_ntohs (R_SOCKET_ADDRESS_IPV4_PORT (addr)));
+
+  if (n + 1 > size)
     return FALSE;
-  if (port) {
-    rchar p[8];
-    r_sprintf (p, ":%"RUINT16_FMT, r_ntohs (R_SOCKET_ADDRESS_IPV4_PORT (addr)));
-    if (size <= r_strlen (str) + r_strlen (p))
-      return FALSE;
-
-    r_strcat (str, p);
-  }
-#elif defined (R_OS_WIN32)
-  if (r_win32_inet_ntop (R_AF_INET, &((struct sockaddr_in *)&addr->addr)->sin_addr, str, size) == NULL)
-    return FALSE;
-  if (port) {
-    rchar p[8];
-    r_sprintf (p, ":%"RUINT16_FMT, r_ntohs (R_SOCKET_ADDRESS_IPV4_PORT (addr)));
-    if (size <= r_strlen (str) + r_strlen (p))
-      return FALSE;
-
-    r_strcat (str, p);
-  }
-#else
-  if (port) {
-    return r_snprintf (str, size,
-        "%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT":%"RUINT16_FMT,
-        (ruint8)((R_SOCKET_ADDRESS_IPV4_ADDR (addr)      ) & 0xff),
-        (ruint8)((R_SOCKET_ADDRESS_IPV4_ADDR (addr) >>  8) & 0xff),
-        (ruint8)((R_SOCKET_ADDRESS_IPV4_ADDR (addr) >> 16) & 0xff),
-        (ruint8)((R_SOCKET_ADDRESS_IPV4_ADDR (addr) >> 24) & 0xff),
-        r_ntohs (R_SOCKET_ADDRESS_IPV4_PORT (addr))) < (int)size;
-  } else {
-    return r_snprintf (str, size,
-        "%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT".%"RUINT8_FMT,
-        (ruint8)((R_SOCKET_ADDRESS_IPV4_ADDR (addr)      ) & 0xff),
-        (ruint8)((R_SOCKET_ADDRESS_IPV4_ADDR (addr) >>  8) & 0xff),
-        (ruint8)((R_SOCKET_ADDRESS_IPV4_ADDR (addr) >> 16) & 0xff),
-        (ruint8)((R_SOCKET_ADDRESS_IPV4_ADDR (addr) >> 24) & 0xff)) < (int)size;
-  }
-#endif
-
+  r_memcpy (str, tmp, n + 1);
   return TRUE;
 }
 
@@ -425,38 +456,28 @@ rboolean
 r_socket_address_ipv6_build_str (const RSocketAddress * addr, rboolean port,
     rchar * str, rsize size)
 {
+  rchar tmp[R_SOCKET_ADDRESS_IPV6_STRLEN + 10];   /* "[" + addr + "]:65535" */
+  rsize n;
+
   if (R_UNLIKELY (addr == NULL || str == NULL)) return FALSE;
   if (r_socket_address_get_family (addr) != R_SOCKET_FAMILY_IPV6) return FALSE;
 
-#if defined (HAVE_INET_NTOP) || defined (R_OS_WIN32)
-  {
-#if defined (HAVE_INET_NTOP)
-    if (inet_ntop (R_AF_INET6, R_SOCKET_ADDRESS_IPV6_ADDR (addr),
-            port ? str + 1 : str, port ? size - 1 : size) == NULL)
-      return FALSE;
-#else
-    if (r_win32_inet_ntop (R_AF_INET6, R_SOCKET_ADDRESS_IPV6_ADDR (addr),
-            port ? str + 1 : str, port ? size - 1 : size) == NULL)
-      return FALSE;
-#endif
-    if (port) {
-      /* RFC 3986 / 2732: bracket the address and append :port. */
-      rsize ipsize = r_strlen (str + 1);
-      rchar suffix[8];
-      rsize suffix_len = r_sprintf (suffix, "]:%"RUINT16_FMT,
-          r_ntohs (R_SOCKET_ADDRESS_IPV6_PORT (addr)));
-      if (1 + ipsize + suffix_len + 1 > size)
-        return FALSE;
-      str[0] = '[';
-      r_memcpy (&str[1 + ipsize], suffix, suffix_len + 1);
-    }
-    return TRUE;
+  if (port) {
+    /* RFC 3986 / 2732: bracket the address and append :port. */
+    tmp[0] = '[';
+    r_socket_address_format_ipv6 (R_SOCKET_ADDRESS_IPV6_ADDR (addr), tmp + 1);
+    n = r_strlen (tmp);
+    n += (rsize) r_sprintf (tmp + n, "]:%"RUINT16_FMT,
+        r_ntohs (R_SOCKET_ADDRESS_IPV6_PORT (addr)));
+  } else {
+    r_socket_address_format_ipv6 (R_SOCKET_ADDRESS_IPV6_ADDR (addr), tmp);
+    n = r_strlen (tmp);
   }
-#else
-  (void) port;
-  (void) size;
-  return FALSE;
-#endif
+
+  if (n + 1 > size)
+    return FALSE;
+  r_memcpy (str, tmp, n + 1);
+  return TRUE;
 }
 
 rchar *
