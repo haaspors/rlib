@@ -170,60 +170,6 @@ r_test_tls_server_queue_agg (RQueue * q)
   r_buffer_unref (buf);                                                       \
 } R_STMT_END
 
-/* Wrap a raw byte range in a buffer and feed it to the server. */
-static void
-r_test_tls_server_feed (RTLSServer * server, const ruint8 * data, rsize size)
-{
-  RBuffer * buf;
-
-  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
-          (rpointer)data, size, size, 0, NULL, NULL)), !=, NULL);
-  r_assert (r_tls_server_incoming_data (server, buf));
-  r_buffer_unref (buf);
-}
-
-/* Build a minimal DTLS 1.2 ClientHello (RSA-AES128-CBC-SHA, null
- * compression) into @out, returning its length. When @scsv the
- * TLS_EMPTY_RENEGOTIATION_INFO_SCSV cipher is added; when @renego_ext a
- * renegotiation_info extension carrying a @renegolen-byte
- * renegotiated_connection is appended. */
-static rsize
-r_test_tls_build_dtls_client_hello (RPrng * prng, ruint8 * out, rsize outsz,
-    rboolean scsv, rboolean renego_ext, const ruint8 * renego, ruint8 renegolen)
-{
-  ruint8 body[256];
-  ruint8 * p = body;
-  ruint8 * extlenp;
-  rsize bodylen, hs, nsuites;
-
-  *p++ = 0xfe; *p++ = 0xfd;                  /* client_version DTLS 1.2 */
-  r_prng_fill (prng, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
-  *p++ = 0;                                  /* session id length */
-  *p++ = 0;                                  /* cookie length (DTLS) */
-  nsuites = scsv ? 2 : 1;
-  r_store_be16 (p, (ruint16)(nsuites * sizeof (ruint16))); p += 2;
-  r_store_be16 (p, (ruint16)R_TLS_CS_RSA_WITH_AES_128_CBC_SHA); p += 2;
-  if (scsv) {
-    r_store_be16 (p, (ruint16)R_TLS_CS_EMPTY_RENEGOTIATION_INFO_SCSV); p += 2;
-  }
-  *p++ = 1; *p++ = 0;                        /* compression: null */
-  extlenp = p; p += 2;                       /* extensions length placeholder */
-  if (renego_ext) {
-    r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
-    r_store_be16 (p, (ruint16)(1 + renegolen)); p += 2;
-    *p++ = renegolen;
-    if (renegolen > 0) { r_memcpy (p, renego, renegolen); p += renegolen; }
-  }
-  r_store_be16 (extlenp, (ruint16)(p - (extlenp + 2)));
-  bodylen = (rsize)(p - body);
-
-  r_assert_cmpint (r_dtls_write_handshake (out, outsz, &hs,
-        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO,
-        (ruint16)bodylen, 0, 0, 0, 0, (ruint32)bodylen), ==, R_TLS_ERROR_OK);
-  r_memcpy (out + hs, body, bodylen);
-  return hs + bodylen;
-}
-
 static const ruint8 pkt_dtls_client_hallo[] = {
   0x16, 0xfe, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9a, 0x01, 0x00, 0x00,
   0x8e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x8e, 0xfe, 0xfd, 0x0e, 0x49, 0x7a, 0xe5, 0x2a,
@@ -268,29 +214,45 @@ r_test_tls_hash_record (RMsgDigest * md, const ruint8 * data, rsize size)
 }
 
 /* Build a minimal DTLS 1.2 ClientHello (RSA-AES128-CBC-SHA, null
- * compression, empty renegotiation_info, optionally extended_master_secret)
- * into @out; returns its length. */
+ * compression) into @out; returns its length. @scsv adds the
+ * TLS_EMPTY_RENEGOTIATION_INFO_SCSV cipher; @renego_ext appends a
+ * renegotiation_info extension carrying a @renegolen-byte
+ * renegotiated_connection; @ems appends the extended_master_secret
+ * extension; @etm appends the encrypt_then_mac extension. */
 static rsize
-r_test_tls_build_dtls_client_hello (RPrng * prng, rboolean ems,
-    ruint8 * out, rsize outsz)
+r_test_tls_build_dtls_client_hello (RPrng * prng, ruint8 * out, rsize outsz,
+    rboolean ems, rboolean etm, rboolean scsv, rboolean renego_ext,
+    const ruint8 * renego, ruint8 renegolen)
 {
-  ruint8 body[128];
+  ruint8 body[256];
   ruint8 * p = body;
   ruint8 * extlenp;
-  rsize bodylen, hs;
+  rsize bodylen, hs, nsuites;
 
   *p++ = 0xfe; *p++ = 0xfd;                  /* client_version DTLS 1.2 */
   r_prng_fill (prng, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
   *p++ = 0;                                  /* session id length */
   *p++ = 0;                                  /* cookie length (DTLS) */
-  r_store_be16 (p, 2); p += 2;               /* cipher suites length */
+  nsuites = scsv ? 2 : 1;
+  r_store_be16 (p, (ruint16)(nsuites * sizeof (ruint16))); p += 2;
   r_store_be16 (p, (ruint16)R_TLS_CS_RSA_WITH_AES_128_CBC_SHA); p += 2;
+  if (scsv) {
+    r_store_be16 (p, (ruint16)R_TLS_CS_EMPTY_RENEGOTIATION_INFO_SCSV); p += 2;
+  }
   *p++ = 1; *p++ = 0;                        /* compression: null */
   extlenp = p; p += 2;                       /* extensions length placeholder */
-  r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
-  r_store_be16 (p, 1); p += 2; *p++ = 0;     /* empty renegotiated_connection */
+  if (renego_ext) {
+    r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+    r_store_be16 (p, (ruint16)(1 + renegolen)); p += 2;
+    *p++ = renegolen;
+    if (renegolen > 0) { r_memcpy (p, renego, renegolen); p += renegolen; }
+  }
   if (ems) {
     r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET); p += 2;
+    r_store_be16 (p, 0); p += 2;
+  }
+  if (etm) {
+    r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_ENCRYPT_THEN_MAC); p += 2;
     r_store_be16 (p, 0); p += 2;
   }
   r_store_be16 (extlenp, (ruint16)(p - (extlenp + 2)));
@@ -315,7 +277,7 @@ r_test_tls_build_dtls_client_hello (RPrng * prng, rboolean ems,
 static void
 r_test_tls_dtls_client_complete (RTLSServer * server, RPrng * prng,
     const ruint8 * ch, rsize chlen, const ruint8 * srvflight, rsize srvlen,
-    rboolean ems, RCryptoCipher ** srv_cipher, RHmac ** srv_hmac)
+    rboolean ems, rboolean etm, RCryptoCipher ** srv_cipher, RHmac ** srv_hmac)
 {
   RCryptoKey * pk;
   RBuffer * buf;
@@ -331,7 +293,7 @@ r_test_tls_dtls_client_complete (RTLSServer * server, RPrng * prng,
   RCryptoCipher * cipher;
   RHmac * hmac;
   RBuffer * plain, * encbuf;
-  rboolean seen_ems = FALSE;
+  rboolean seen_ems = FALSE, seen_etm = FALSE;
   RTLSError e;
 
   /* The server's RSA key: rlib's r_crypto_key_encrypt drives the public
@@ -363,6 +325,8 @@ r_test_tls_dtls_client_complete (RTLSServer * server, RPrng * prng,
         e = r_tls_hello_msg_extension_next (&hello, &ext)) {
       if (ext.type == R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET)
         seen_ems = TRUE;
+      else if (ext.type == R_TLS_EXT_TYPE_ENCRYPT_THEN_MAC)
+        seen_etm = TRUE;
     }
   }
   while (r_tls_parser_init_next (&parser, NULL) == R_TLS_ERROR_OK)
@@ -370,6 +334,7 @@ r_test_tls_dtls_client_complete (RTLSServer * server, RPrng * prng,
   r_tls_parser_clear (&parser);
   r_buffer_unref (buf);
   r_assert_cmpint (seen_ems, ==, ems);
+  r_assert_cmpint (seen_etm, ==, etm);
 
   /* ClientKeyExchange: RSA-encrypt a 48-byte pre-master secret */
   pms[0] = 0xfe; pms[1] = 0xfd;
@@ -414,7 +379,7 @@ r_test_tls_dtls_client_complete (RTLSServer * server, RPrng * prng,
   r_assert_cmpptr ((cipher = r_cipher_aes_128_cbc_new (kb + 40)), !=, NULL);
   r_assert_cmpptr ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb, 20)), !=, NULL);
   r_prng_fill (prng, iv, sizeof (iv));
-  r_assert_cmpptr ((encbuf = r_dtls_encrypt_buffer (plain, cipher, iv, hmac)), !=, NULL);
+  r_assert_cmpptr ((encbuf = r_dtls_encrypt_buffer (plain, cipher, iv, hmac, etm)), !=, NULL);
   r_buffer_unref (plain);
   r_hmac_free (hmac);
   r_crypto_cipher_unref (cipher);
@@ -546,7 +511,7 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
   r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
   r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
       pkt_dtls_client_hallo, sizeof (pkt_dtls_client_hallo), info.data, info.size,
-      TRUE, &cipher, &hmac);
+      TRUE, FALSE, &cipher, &hmac);
   r_buffer_unmap (buf, &info);
   r_buffer_unref (buf);
   r_assert (fixture->hs_done);
@@ -574,7 +539,7 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
 
   /* The server Finished is encrypted; decrypt it with the keys the client
    * derived from the shared (EMS) master secret. */
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE), ==, R_TLS_ERROR_OK);
   {
     const ruint8 * verify_data;
     rsize verify_size;
@@ -613,7 +578,8 @@ RTEST_F (rtlsserver, dtls_handshake_without_ems, RTEST_FAST)
   r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
       ==, R_TLS_ERROR_OK);
 
-  chlen = r_test_tls_build_dtls_client_hello (fixture->prng, FALSE, ch, sizeof (ch));
+  chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
+      FALSE, FALSE, FALSE, TRUE, NULL, 0);
   r_test_tls_server_feed (fixture->server, ch, chlen);
 
   r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
@@ -630,11 +596,82 @@ RTEST_F (rtlsserver, dtls_handshake_without_ems, RTEST_FAST)
 
   r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
   r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
-      ch, chlen, info.data, info.size, FALSE, &cipher, &hmac);
+      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac);
   r_buffer_unmap (buf, &info);
   r_buffer_unref (buf);
 
   r_assert (fixture->hs_done);
+
+  r_hmac_free (hmac);
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
+/* RFC 7366: a ClientHello offering encrypt_then_mac (with a CBC suite) must
+ * have the extension echoed and the handshake complete with encrypt-then-MAC
+ * record protection in both directions. */
+RTEST_F (rtlsserver, dtls_encrypt_then_mac_handshake, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RCryptoCipher * cipher = NULL;
+  RHmac * hmac = NULL;
+  RBuffer * buf;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RTLSHelloMsg msg;
+  RTLSHelloExt ext;
+  RTLSError e;
+  ruint8 ch[256];
+  rsize chlen;
+  rboolean seen_etm = FALSE;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
+      FALSE, TRUE, FALSE, TRUE, NULL, 0);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &msg), ==, R_TLS_ERROR_OK);
+  for (e = r_tls_hello_msg_extension_first (&msg, &ext); e == R_TLS_ERROR_OK;
+      e = r_tls_hello_msg_extension_next (&msg, &ext)) {
+    if (ext.type == R_TLS_EXT_TYPE_ENCRYPT_THEN_MAC) {
+      seen_etm = TRUE;
+      r_assert_cmpuint (ext.len, ==, 0);
+    }
+  }
+  r_assert (seen_etm);
+  r_tls_parser_clear (&parser);
+
+  /* Complete the handshake; the in-test client uses EtM record protection.
+   * hs_done implies the server accepted the EtM-protected client Finished. */
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+  r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
+      ch, chlen, info.data, info.size, FALSE, TRUE, &cipher, &hmac);
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+  r_assert (fixture->hs_done);
+
+  /* The server Finished must be EtM-protected: decrypt it with EtM. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC);
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.epoch, ==, 1);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, TRUE), ==, R_TLS_ERROR_OK);
+  {
+    const ruint8 * verify_data;
+    rsize verify_size;
+
+    r_assert_cmpint (r_tls_parser_parse_finished (&parser, &verify_data, &verify_size),
+        ==, R_TLS_ERROR_OK);
+    r_assert_cmpuint (verify_size, ==, 12);
+  }
+
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
 
   r_hmac_free (hmac);
   r_crypto_cipher_unref (cipher);
@@ -729,7 +766,7 @@ RTEST_F (rtlsserver, dtls_renegotiation_info_not_empty, RTEST_FAST)
       ==, R_TLS_ERROR_OK);
 
   chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
-      FALSE, TRUE, renego, sizeof (renego));
+      FALSE, FALSE, FALSE, TRUE, renego, sizeof (renego));
   r_test_tls_server_feed (fixture->server, ch, chlen);
 
   r_assert (fixture->got_error);
@@ -766,7 +803,7 @@ RTEST_F (rtlsserver, dtls_renegotiation_info_scsv, RTEST_FAST)
       ==, R_TLS_ERROR_OK);
 
   chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
-      TRUE, FALSE, NULL, 0);
+      FALSE, FALSE, TRUE, FALSE, NULL, 0);
   r_test_tls_server_feed (fixture->server, ch, chlen);
 
   r_assert (!fixture->got_error);
