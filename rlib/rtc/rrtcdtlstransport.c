@@ -42,9 +42,10 @@ r_rtc_dtls_transport_free (RRtcDtlsTransport * dtls)
 }
 
 static void
-r_rtc_dtls_srv_hs_done (rpointer data, RTLSServer * srv)
+r_rtc_dtls_srv_hs_done (rpointer data, rpointer session)
 {
   RRtcDtlsTransport * dtls = data;
+  RTLSServer * srv = session;
   RSRTPCipherSuite cs;
   const RSRTPCipherSuiteInfo * csinfo;
   ruint8 * material;
@@ -87,10 +88,10 @@ r_rtc_dtls_srv_hs_done (rpointer data, RTLSServer * srv)
 }
 
 static rboolean
-r_rtc_dtls_srv_buffer_out (rpointer data, RBuffer * buf, RTLSServer * srv)
+r_rtc_dtls_srv_buffer_out (rpointer data, RBuffer * buf, rpointer session)
 {
   RRtcCryptoTransport * crypto = data;
-  (void) srv;
+  (void) session;
 
   R_LOG_TRACE ("RtcCryptoTransport %p %p %"RSIZE_FMT,
       crypto, buf, r_buffer_get_size (buf));
@@ -99,12 +100,12 @@ r_rtc_dtls_srv_buffer_out (rpointer data, RBuffer * buf, RTLSServer * srv)
 }
 
 static rboolean
-r_rtc_dtls_srv_buffer_appdata (rpointer data, RBuffer * buf, RTLSServer * srv)
+r_rtc_dtls_srv_buffer_appdata (rpointer data, RBuffer * buf, rpointer session)
 {
   RRtcCryptoTransport * crypto = data;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
   (void) crypto;
-  (void) srv;
+  (void) session;
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
     R_LOG_MEM_DUMP (R_LOG_LEVEL_TRACE, info.data, info.size);

@@ -68,36 +68,36 @@ RTEST_FIXTURE_STRUCT (rtlsserver)
 };
 
 static void
-r_tlsserver_test_hs_done (rpointer ctx, RTLSServer * server)
+r_tlsserver_test_hs_done (rpointer ctx, rpointer session)
 {
   RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
-  (void) server;
+  (void) session;
   fixture->hs_done = TRUE;
 }
 
 static void
-r_tlsserver_test_error (rpointer ctx, RTLSAlertType alert, RTLSServer * server)
+r_tlsserver_test_error (rpointer ctx, RTLSAlertType alert, rpointer session)
 {
   RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
-  (void) server;
+  (void) session;
   fixture->got_error = TRUE;
   fixture->last_alert = alert;
 }
 
 static rboolean
-r_tlsserver_test_buffer_out (rpointer ctx, RBuffer * buf, RTLSServer * server)
+r_tlsserver_test_buffer_out (rpointer ctx, RBuffer * buf, rpointer session)
 {
   RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
-  (void) server;
+  (void) session;
 
   return r_queue_push (&fixture->qout, r_buffer_ref (buf)) != NULL;
 }
 
 static rboolean
-r_tlsserver_test_buffer_appdata (rpointer ctx, RBuffer * buf, RTLSServer * server)
+r_tlsserver_test_buffer_appdata (rpointer ctx, RBuffer * buf, rpointer session)
 {
   RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
-  (void) server;
+  (void) session;
 
   return r_queue_push (&fixture->qapp, r_buffer_ref (buf)) != NULL;
 }
