@@ -32,6 +32,7 @@
 
 #include <rlib/ev/revloop.h>
 #include <rlib/rbuffer.h>
+#include <rlib/net/rsocket.h>
 #include <rlib/net/rsocketaddress.h>
 #include <rlib/rref.h>
 
@@ -58,6 +59,8 @@ typedef struct REvUDP REvUDP;
 typedef RBuffer * (*REvUDPBufferAllocFunc) (rpointer data, REvUDP * evudp);
 /** @brief Deliver a datagram buffer; @p addr is the sender / destination. */
 typedef void (*REvUDPBufferFunc) (rpointer data, RBuffer * buf, RSocketAddress * addr, REvUDP * evudp);
+/** @brief Fired on an asynchronous socket error; @p error is the failing @ref RSocketStatus. */
+typedef void (*REvUDPErrorFunc) (rpointer data, REvUDP * evudp, RSocketStatus error);
 
 /** @brief Create a UDP socket of @p family on @p loop. */
 R_API REvUDP * r_ev_udp_new (RSocketFamily family, REvLoop * loop);
@@ -79,6 +82,21 @@ R_API rboolean r_ev_udp_task_recv_start (REvUDP * evudp, ruint taskgroup,
     rpointer data, RDestroyNotify datanotify);
 /** @brief Stop receiving. */
 R_API rboolean r_ev_udp_recv_stop (REvUDP * evudp);
+/**
+ * @brief Install a handler for asynchronous socket errors (a failed
+ * receive or send, or an error event reported by the loop).
+ *
+ * Unlike TCP the datagram socket stays usable: a failed send drops just
+ * that datagram and a receive error stops draining until the next
+ * event.
+ *
+ * The handler may fire more than once (once per failed datagram, or a
+ * receive error followed by a separate error event), so it should be
+ * idempotent. Replaces any previously installed handler (invoking the
+ * previous @p datanotify on its data); pass @c NULL @p error to clear it.
+ */
+R_API void r_ev_udp_set_error_handler (REvUDP * evudp,
+    REvUDPErrorFunc error, rpointer data, RDestroyNotify datanotify);
 /** @brief Send @p buf to @p address; @p done fires on completion. */
 R_API rboolean r_ev_udp_send (REvUDP * evudp, RBuffer * buf,
     RSocketAddress * address, REvUDPBufferFunc done,

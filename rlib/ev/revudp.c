@@ -24,6 +24,8 @@
 
 #include <rlib/rmem.h>
 
+#define R_LOG_CAT_DEFAULT &revlogcat
+
 typedef struct {
   RBuffer * buf;
   RSocketAddress * addr;
@@ -40,6 +42,14 @@ typedef struct {
       (send)->datanotify ((send)->data);                                      \
   } R_STMT_END
 
+static void
+r_ev_udp_send_ctx_free (rpointer data)
+{
+  REvUDPSendCtx * ctx = data;
+  r_ev_udp_send_ctx_clear (ctx);
+  r_free (ctx);
+}
+
 
 struct REvUDP {
   REvIO evio;
@@ -51,6 +61,9 @@ struct REvUDP {
   REvUDPBufferAllocFunc alloc;
   REvUDPBufferFunc recv;
   rpointer recv_data;
+  REvUDPErrorFunc error;
+  rpointer error_data;
+  RDestroyNotify error_datanotify;
   rpointer recv_iocb_ctx;
   rauint recv_counter;
   RTask * recv_task;
@@ -61,7 +74,9 @@ struct REvUDP {
 static void
 r_ev_udp_free (REvUDP * evudp)
 {
-  r_queue_clear (&evudp->qsend, r_buffer_unref);
+  r_queue_clear (&evudp->qsend, r_ev_udp_send_ctx_free);
+  if (evudp->error_datanotify != NULL)
+    evudp->error_datanotify (evudp->error_data);
   r_socket_unref (evudp->socket);
   r_ev_io_clear (&evudp->evio);
   r_free (evudp);
@@ -133,16 +148,20 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
         evudp->recv (evudp->recv_data, buf, copy, evudp);
         r_socket_address_unref (copy);
         break;
-      /* FIXME: Handle errors?? */
+      case R_SOCKET_WOULD_BLOCK:
+        break;
       default:
+        R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" recv res %d",
+            evudp->evio.loop, R_EV_IO_ARGS (evudp), res);
         break;
     }
     r_buffer_unref (buf);
   } while (res == R_SOCKET_OK);
 
-  /* FIXME: What do we do when something fails and we are unable to drain socket? */
-  if (res != R_SOCKET_WOULD_BLOCK)
-    abort ();
+  /* A datagram socket stays usable on error: stop draining until the
+   * next event and report. */
+  if (res != R_SOCKET_WOULD_BLOCK && evudp->error != NULL)
+    evudp->error (evudp->error_data, evudp, res);
 }
 
 static void
@@ -163,8 +182,15 @@ r_ev_udp_send_iocb (REvUDP * evudp)
     } else if (res == R_SOCKET_WOULD_BLOCK) {
       break;
     } else {
-      /* FIXME: What do we do when something fails and we are unable to drain send queue? */
-      abort ();
+      /* This datagram cannot be sent: drop it, report, and keep
+       * draining the rest -- the socket stays usable. */
+      R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" send res %d",
+          evudp->evio.loop, R_EV_IO_ARGS (evudp), res);
+      r_queue_pop (&evudp->qsend);
+      if (evudp->error != NULL)
+        evudp->error (evudp->error_data, evudp, res);
+      r_ev_udp_send_ctx_clear (ctx);
+      r_free (ctx);
     }
   }
 }
@@ -172,9 +198,13 @@ r_ev_udp_send_iocb (REvUDP * evudp)
 static void
 r_ev_udp_error_iocb (REvUDP * evudp)
 {
-  (void) evudp;
-  /* TODO */
-  abort ();
+  RSocketStatus err = r_socket_get_error (evudp->socket);
+  R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" err: %d",
+      evudp->evio.loop, R_EV_IO_ARGS (evudp), err);
+  /* Only notify on a still-set error (the recv / send path may already
+   * have consumed and reported it in this same dispatch). */
+  if (err != R_SOCKET_OK && evudp->error != NULL)
+    evudp->error (evudp->error_data, evudp, err);
 }
 
 static void
@@ -292,6 +322,19 @@ r_ev_udp_recv_stop (REvUDP * evudp)
   }
 
   return ret;
+}
+
+void
+r_ev_udp_set_error_handler (REvUDP * evudp, REvUDPErrorFunc error,
+    rpointer data, RDestroyNotify datanotify)
+{
+  if (R_UNLIKELY (evudp == NULL)) return;
+
+  if (evudp->error_datanotify != NULL)
+    evudp->error_datanotify (evudp->error_data);
+  evudp->error = error;
+  evudp->error_data = data;
+  evudp->error_datanotify = datanotify;
 }
 
 rboolean
