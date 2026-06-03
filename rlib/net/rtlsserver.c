@@ -312,6 +312,17 @@ r_tls_server_write_hs_ext_renegotiation (const RTLSServer * server, ruint8 * ptr
 }
 
 static ruint16
+r_tls_server_write_hs_ext_extended_ms (const RTLSServer * server, ruint8 * ptr)
+{
+  if (!server->support_ext_master_secret)
+    return 0;
+
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET);
+  r_store_be16 (&ptr[2], 0);
+  return 4;
+}
+
+static ruint16
 r_tls_server_write_hs_ext_session_ticket (const RTLSServer * server, ruint8 * ptr)
 {
   if (!server->support_new_session_ticket || server->ticketsize == 0)
@@ -386,12 +397,12 @@ r_tls_server_write_hello (RTLSServer * server)
     }
     extsize = 0;
     extsize += r_tls_server_write_hs_ext_renegotiation (server, ptr + 2 + extsize);
-    /* FIXME: Write ServerHello extensions */
+    extsize += r_tls_server_write_hs_ext_extended_ms (server, ptr + 2 + extsize);
+    /* FIXME: Write remaining ServerHello extensions */
 #if 0
     extsize += r_tls_server_write_hs_ext_max_fragment_length (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_truncated_hmac (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_encrypt_then_mac (server, ptr + 2 + extsize);
-    extsize += r_tls_server_write_hs_ext_extended_ms (server, ptr + 2 + extsize);
 #endif
     extsize += r_tls_server_write_hs_ext_session_ticket (server, ptr + 2 + extsize);
 #if 0
@@ -859,7 +870,9 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
           }
         }
         break;
-      case R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET: /* Skip it! */
+      case R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET:
+        server->support_ext_master_secret = TRUE;
+        break;
       default:
         break;
     }
@@ -884,14 +897,13 @@ r_tls_server_parse_client_certificate (RTLSServer * server,
 
 static RTLSError
 r_tls_server_parse_client_key_exchange (RTLSServer * server,
-    const RTLSParser * parser)
+    const RTLSParser * parser, ruint8 pms[48])
 {
   const ruint8 * encpms;
   rsize size;
   RTLSError ret;
 
   if ((ret = r_tls_parser_parse_client_key_exchange_rsa (parser, &encpms, &size)) == R_TLS_ERROR_OK) {
-    ruint8 pms[48];
     ruint8 * out;
 
     /* size is the peer's encrypted-PMS length; cap it before the
@@ -901,7 +913,7 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
       return R_TLS_ERROR_CORRUPT_RECORD;
     out = r_alloca (size);
 
-    r_prng_fill (server->prng, pms, sizeof (pms));
+    r_prng_fill (server->prng, pms, 48);
     if (r_crypto_key_decrypt (server->privkey, server->prng, encpms, size, out, &size) == R_CRYPTO_OK) {
       if (size == 48) {
         r_memcpy (pms, out, size);
@@ -919,7 +931,7 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
 
 #if 0
     R_LOG_DEBUG ("RSA PreMasterSecret:");
-    R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG, pms, sizeof (pms));
+    R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG, pms, 48);
     R_LOG_DEBUG ("Client random:");
     R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG,
         server->hello.random, (rsize)R_TLS_HELLO_RANDOM_BYTES);
@@ -927,22 +939,43 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
     R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG,
         server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES);
 #endif
+  }
 
-    /* FIXME: implement use of extended master secret */
+  return ret;
+}
 
-    /* convert to mastersecret */
+/* RFC 7627: when extended master secret is negotiated the seed is the
+ * handshake-transcript hash through ClientKeyExchange (the session hash)
+ * rather than the client/server randoms. The caller must therefore have
+ * absorbed the ClientKeyExchange into hshash before calling this. */
+static RTLSError
+r_tls_server_derive_master_secret (RTLSServer * server, const ruint8 pms[48])
+{
+  RTLSError ret;
+
+  if (server->support_ext_master_secret) {
+    rsize hashsize = r_msg_digest_size (server->hshash);
+    ruint8 * sessionhash = r_alloca (hashsize);
+
+    if (!r_msg_digest_get_data (server->hshash, sessionhash, hashsize, NULL))
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
     ret = server->prf (server->mastersecret, sizeof (server->mastersecret),
-        pms, sizeof (pms), R_STR_WITH_SIZE_ARGS ("master secret"),
+        pms, 48, R_STR_WITH_SIZE_ARGS ("extended master secret"),
+        sessionhash, hashsize, NULL);
+  } else {
+    ret = server->prf (server->mastersecret, sizeof (server->mastersecret),
+        pms, 48, R_STR_WITH_SIZE_ARGS ("master secret"),
         server->hello.random, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         NULL);
-    r_memclear_secure (pms, sizeof (pms));
-#if 0
-    R_LOG_DEBUG ("RSA MasterSecret:");
-    R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG,
-        server->mastersecret, sizeof (server->mastersecret));
-#endif
   }
+
+#if 0
+  R_LOG_DEBUG ("RSA MasterSecret:");
+  R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG,
+      server->mastersecret, sizeof (server->mastersecret));
+#endif
 
   return ret;
 }
@@ -1207,8 +1240,9 @@ static RTLSError
 r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
 {
   RTLSError err;
+  ruint8 pms[48];
 
-  if ((err = r_tls_server_parse_client_key_exchange (server, parser)) == R_TLS_ERROR_OK)
+  if ((err = r_tls_server_parse_client_key_exchange (server, parser, pms)) == R_TLS_ERROR_OK)
     err = r_tls_server_change_state (server, R_TLS_SERVER_CHANGE_CIPHER);
 
   /* FIXME: Add proper alert codes for error scenarios */
@@ -1216,8 +1250,10 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
     case R_TLS_ERROR_OK:
       R_LOG_TRACE ("Updating HS hash with ClientKeyExchange %u bytes",
           (ruint)parser->fragment.size);
+      /* hash CKE first: the extended-master-secret session hash covers it */
       r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
-      if ((err = r_tls_server_expand_master_secret (server)) != R_TLS_ERROR_OK)
+      if ((err = r_tls_server_derive_master_secret (server, pms)) != R_TLS_ERROR_OK ||
+          (err = r_tls_server_expand_master_secret (server)) != R_TLS_ERROR_OK)
         r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
       break;
     case R_TLS_ERROR_CORRUPT_RECORD:
@@ -1229,6 +1265,7 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
       break;
   }
 
+  r_memclear_secure (pms, sizeof (pms));
   return err;
 }
 
