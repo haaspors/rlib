@@ -948,17 +948,6 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
         pms[1] = (((ruint16)server->version)     ) & 0xff;
       }
     }
-
-#if 0
-    R_LOG_DEBUG ("RSA PreMasterSecret:");
-    R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG, pms, 48);
-    R_LOG_DEBUG ("Client random:");
-    R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG,
-        server->hello.random, (rsize)R_TLS_HELLO_RANDOM_BYTES);
-    R_LOG_DEBUG ("Server random:");
-    R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG,
-        server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES);
-#endif
   }
 
   return ret;
@@ -990,12 +979,6 @@ r_tls_server_derive_master_secret (RTLSServer * server, const ruint8 pms[48])
         server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         NULL);
   }
-
-#if 0
-  R_LOG_DEBUG ("RSA MasterSecret:");
-  R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG,
-      server->mastersecret, sizeof (server->mastersecret));
-#endif
 
   return ret;
 }
