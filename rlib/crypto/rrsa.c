@@ -956,13 +956,18 @@ r_rsa_pkcs1v1_5_encrypt (const RCryptoKey * key, RPrng * prng,
 
   if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_RSA)) return R_CRYPTO_WRONG_TYPE;
-  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return R_CRYPTO_WRONG_TYPE;
+  /* RSA encryption is a public-key operation: accept a public key (e.g. one
+   * pulled from a peer certificate) as well as a private one. RRsaPrivKey
+   * embeds RRsaPubKey as its first member, so (RRsaPubKey *) is valid for
+   * both and r_rsa_raw_encrypt_internal uses the public exponent regardless. */
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY &&
+        key->type != R_CRYPTO_PUBLIC_KEY)) return R_CRYPTO_WRONG_TYPE;
 
   if (R_UNLIKELY (prng == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (data == NULL)) return R_CRYPTO_INVAL;
   if (R_UNLIKELY (out == NULL || outsize == NULL)) return R_CRYPTO_INVAL;
 
-  k = r_mpint_digits_used (&((const RRsaPrivKey*)key)->pub.n) * sizeof (rmpint_digit);
+  k = r_mpint_digits_used (&((const RRsaPubKey*)key)->n) * sizeof (rmpint_digit);
   if (size > k - 11 || *outsize < k)
     return R_CRYPTO_WRONG_SIZE;
 
