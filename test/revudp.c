@@ -172,3 +172,42 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+
+static void
+udp_error_received (rpointer data, REvUDP * evudp, RSocketStatus error)
+{
+  (void) evudp;
+  *((RSocketStatus *)data) = error;
+}
+
+RTEST (revudp, send_error_handler, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RSocketAddress * addr;
+  REvUDP * evudp;
+  RSocketStatus err = R_SOCKET_OK;
+  ruint i;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((evudp = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4243)), !=, NULL);
+  r_ev_udp_set_error_handler (evudp, udp_error_received, &err, NULL);
+
+  /* A datagram larger than the IPv4 UDP maximum (65507) cannot be sent;
+   * the failed datagram is dropped and reported, the socket stays usable. */
+  r_assert (r_ev_udp_send_take (evudp, r_malloc0 (70000), 70000, addr, NULL, NULL, NULL));
+
+  for (i = 0; i < 8 && err == R_SOCKET_OK; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_assert_cmpint (err, !=, R_SOCKET_OK);
+
+  r_socket_address_unref (addr);
+  r_ev_udp_unref (evudp);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;

@@ -57,12 +57,18 @@ R_BEGIN_DECLS
 typedef struct REvTCP REvTCP;
 /** @brief Allocate the buffer the next receive will fill. */
 typedef RBuffer * (*REvTCPBufferAllocFunc) (rpointer data, REvTCP * evtcp);
-/** @brief Deliver a received / sent buffer. */
+/**
+ * @brief Deliver a received / sent buffer. On the receive path a
+ * @c NULL @p buf signals end-of-stream (a clean close, or — when no
+ * error handler is installed — a receive error).
+ */
 typedef void (*REvTCPBufferFunc) (rpointer data, RBuffer * buf, REvTCP * evtcp);
 /** @brief Connection-attempt result; @p status is 0 on success. */
 typedef void (*REvTCPConnectedFunc) (rpointer data, REvTCP * evtcp, int status);
 /** @brief Fired on a listening socket when a new connection @p newtcp is ready. */
 typedef void (*REvTCPConnectionReadyFunc) (rpointer data, REvTCP * newtcp, REvTCP * listening);
+/** @brief Fired on an asynchronous socket error; @p error is the failing @ref RSocketStatus. */
+typedef void (*REvTCPErrorFunc) (rpointer data, REvTCP * evtcp, RSocketStatus error);
 
 /** @brief Create an unconnected TCP socket of @p family on @p loop. */
 R_API REvTCP * r_ev_tcp_new (RSocketFamily family, REvLoop * loop);
@@ -106,6 +112,24 @@ R_API rboolean r_ev_tcp_task_recv_start (REvTCP * evtcp, ruint taskgroup,
     rpointer data, RDestroyNotify datanotify);
 /** @brief Stop receiving. */
 R_API rboolean r_ev_tcp_recv_stop (REvTCP * evtcp);
+/**
+ * @brief Install a handler for asynchronous socket errors (a failed
+ * receive or send, or an error event reported by the loop).
+ *
+ * On a receive error the handler is invoked in place of the @c recv
+ * end-of-stream notification (a @c NULL buffer), so it can tell a
+ * peer/socket failure apart from a clean close; with no handler
+ * installed, a receive error falls back to that end-of-stream
+ * notification.
+ *
+ * The handler may fire more than once for a connection (for example a
+ * receive-path error followed by a separate error event), so it should
+ * be idempotent — e.g. close the socket only once. Replaces any
+ * previously installed handler (invoking the previous @p datanotify on
+ * its data); pass @c NULL @p error to clear it.
+ */
+R_API void r_ev_tcp_set_error_handler (REvTCP * evtcp,
+    REvTCPErrorFunc error, rpointer data, RDestroyNotify datanotify);
 /** @brief Send @p buf without a completion callback. */
 #define r_ev_tcp_send_and_forget(evtcp, buf) r_ev_tcp_send (evtcp, buf, NULL, NULL, NULL)
 /** @brief Send @p buf; @p done fires when the write completes. */

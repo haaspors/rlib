@@ -40,6 +40,14 @@ typedef struct {
       (send)->datanotify ((send)->data);                                      \
   } R_STMT_END
 
+static void
+r_ev_tcp_send_ctx_free (rpointer data)
+{
+  REvTCPSendCtx * ctx = data;
+  r_ev_tcp_send_ctx_clear (ctx);
+  r_free (ctx);
+}
+
 
 struct REvTCP {
   REvIO evio;
@@ -53,6 +61,9 @@ struct REvTCP {
   REvTCPBufferAllocFunc alloc;
   REvTCPBufferFunc recv;
   rpointer recv_data;
+  REvTCPErrorFunc error;
+  rpointer error_data;
+  RDestroyNotify error_datanotify;
   rpointer listen_iocb_ctx;
   rpointer connect_iocb_ctx;
   rpointer recv_iocb_ctx;
@@ -66,7 +77,9 @@ struct REvTCP {
 static void
 r_ev_tcp_free (REvTCP * evtcp)
 {
-  r_queue_clear (&evtcp->qsend, r_buffer_unref);
+  r_queue_clear (&evtcp->qsend, r_ev_tcp_send_ctx_free);
+  if (evtcp->error_datanotify != NULL)
+    evtcp->error_datanotify (evtcp->error_data);
   r_socket_unref (evtcp->socket);
   r_ev_io_clear (&evtcp->evio);
   r_free (evtcp);
@@ -217,10 +230,14 @@ r_ev_tcp_connect (REvTCP * evtcp, const RSocketAddress * address,
     R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT, evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
     if ((evtcp->connect_iocb_ctx = r_ev_io_start (&evtcp->evio, R_EV_IO_WRITABLE,
         r_ev_tcp_connected_cb, data, datanotify)) == NULL) {
-      /* FIXME: What to do about this? */
+      /* Could not watch the connecting socket; report failure to the
+       * caller (connected will not fire) rather than crash. */
       R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT,
           evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
-      abort ();
+      if (datanotify != NULL)
+        datanotify (data);
+      evtcp->connected = NULL;
+      ret = R_SOCKET_OOM;
     }
   }
 
@@ -262,10 +279,14 @@ r_ev_tcp_listen (REvTCP * evtcp, ruint8 backlog,
         evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
     if ((evtcp->listen_iocb_ctx = r_ev_io_start (&evtcp->evio, R_EV_IO_READABLE,
         r_ev_tcp_listen_cb, data, datanotify)) == NULL) {
-      /* FIXME: What to do about this? */
+      /* Could not watch the listening socket; report failure to the
+       * caller rather than crash. */
       R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT,
           evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
-      abort ();
+      if (datanotify != NULL)
+        datanotify (data);
+      evtcp->connection = NULL;
+      ret = R_SOCKET_OOM;
     }
   }
 
@@ -283,11 +304,35 @@ r_ev_tcp_buffer_alloc_default (rpointer data, REvTCP * evtcp)
   return r_buffer_new_alloc (NULL, R_EV_TCP_BUFFER_SIZE, NULL);
 }
 
+/* Stop receiving and notify the application that the stream is done.
+ * @res is R_SOCKET_OK for a clean close (end-of-stream) and a failing
+ * status for a socket error. With an error handler installed an error
+ * is reported through it; otherwise (and always on a clean close) the
+ * recv callback is invoked with a NULL buffer. The notified callback
+ * may close and even unref evtcp; the ref taken for the deferred stop
+ * keeps it alive across the call. */
+static void
+r_ev_tcp_recv_teardown (REvTCP * evtcp, RSocketStatus res)
+{
+  r_ev_loop_add_cb_after (evtcp->evio.loop, r_ev_tcp_io_stop_after,
+      r_ev_tcp_ref (evtcp), r_ev_tcp_unref, evtcp->recv_iocb_ctx, NULL);
+  evtcp->recv_iocb_ctx = NULL;
+  if (evtcp->recv_task != NULL) {
+    r_task_unref (evtcp->recv_task);
+    evtcp->recv_task = NULL;
+  }
+
+  if (res != R_SOCKET_OK && evtcp->error != NULL)
+    evtcp->error (evtcp->error_data, evtcp, res);
+  else
+    evtcp->recv (evtcp->recv_data, NULL, evtcp);
+}
+
 static void
 r_ev_tcp_recv_iocb (REvTCP * evtcp)
 {
   RBuffer * buf;
-  RSocketStatus res;
+  RSocketStatus res = R_SOCKET_WOULD_BLOCK;
   rsize size;
 
   r_atomic_uint_store (&evtcp->recv_counter, 0);
@@ -310,28 +355,13 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
         } else {
           R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT" EOS",
               evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
-
-          /* Almost like r_ev_tcp_recv_stop */
-          r_ev_loop_add_cb_after (evtcp->evio.loop, r_ev_tcp_io_stop_after,
-              r_ev_tcp_ref (evtcp), r_ev_tcp_unref,
-              evtcp->recv_iocb_ctx, NULL);
-          evtcp->recv_iocb_ctx = NULL;
-          if (evtcp->recv_task != NULL) {
-            r_task_unref (evtcp->recv_task);
-            evtcp->recv_task = NULL;
-          }
-
-          /* Lastly call recv handler.
-           * Be aware that handler might close and even unref
-           * Allthough we should have a ref becuase r_ev_io_stop above
-           */
-          evtcp->recv (evtcp->recv_data, NULL, evtcp);
+          r_buffer_unref (buf);
+          r_ev_tcp_recv_teardown (evtcp, R_SOCKET_OK);
           return;
         }
         break;
       case R_SOCKET_WOULD_BLOCK:
         break;
-      /* FIXME: Handle errors?? */
       default:
         R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" res %d",
             evtcp->evio.loop, R_EV_IO_ARGS (evtcp), res);
@@ -340,7 +370,10 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
     r_buffer_unref (buf);
   } while (res == R_SOCKET_OK);
 
-  /* FIXME: What do we do when something fails and we are unable to drain socket? */
+  /* A socket error (anything but a would-block drain) tears the stream
+   * down and reports, instead of silently stalling. */
+  if (res != R_SOCKET_WOULD_BLOCK)
+    r_ev_tcp_recv_teardown (evtcp, res);
 }
 
 static void r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio);
@@ -376,10 +409,19 @@ r_ev_tcp_send_iocb (REvTCP * evtcp)
           r_ev_tcp_iocb, NULL, NULL);
       break;
     } else {
-      /* FIXME: What do we do when something fails and we are unable to drain send queue? */
+      /* The connection is broken: stop the writable watcher so it does
+       * not spin, report the error, and leave the unsendable queue to be
+       * released when the socket is closed / freed. */
       R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" res %d",
           evtcp->evio.loop, R_EV_IO_ARGS (evtcp), res);
-      abort ();
+      if (evtcp->send_iocb_ctx != NULL) {
+        r_ev_loop_add_cb_after (evtcp->evio.loop, r_ev_tcp_io_stop_after,
+            r_ev_tcp_ref (evtcp), r_ev_tcp_unref, evtcp->send_iocb_ctx, NULL);
+        evtcp->send_iocb_ctx = NULL;
+      }
+      if (evtcp->error != NULL)
+        evtcp->error (evtcp->error_data, evtcp, res);
+      break;
     }
   }
 }
@@ -387,9 +429,14 @@ r_ev_tcp_send_iocb (REvTCP * evtcp)
 static void
 r_ev_tcp_error_iocb (REvTCP * evtcp)
 {
+  RSocketStatus err = r_socket_get_error (evtcp->socket);
   R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" err: %d",
-      evtcp->evio.loop, R_EV_IO_ARGS (evtcp),
-      r_socket_get_error (evtcp->socket));
+      evtcp->evio.loop, R_EV_IO_ARGS (evtcp), err);
+  /* The error may already have been consumed (and reported) by the
+   * recv / send path in this same dispatch; only notify on a still-set
+   * error so the handler isn't called with a stale R_SOCKET_OK. */
+  if (err != R_SOCKET_OK && evtcp->error != NULL)
+    evtcp->error (evtcp->error_data, evtcp, err);
 }
 
 static void
@@ -508,6 +555,19 @@ r_ev_tcp_recv_stop (REvTCP * evtcp)
   }
 
   return ret;
+}
+
+void
+r_ev_tcp_set_error_handler (REvTCP * evtcp, REvTCPErrorFunc error,
+    rpointer data, RDestroyNotify datanotify)
+{
+  if (R_UNLIKELY (evtcp == NULL)) return;
+
+  if (evtcp->error_datanotify != NULL)
+    evtcp->error_datanotify (evtcp->error_data);
+  evtcp->error = error;
+  evtcp->error_data = data;
+  evtcp->error_datanotify = datanotify;
 }
 
 rboolean
