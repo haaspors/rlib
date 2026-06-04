@@ -177,8 +177,15 @@ r_hash_table_insert (RHashTable * ht, rpointer key, rpointer value)
 
   if (R_UNLIKELY (ht == NULL)) return R_HASH_TABLE_INVAL;
 
-  if (ht->size >= R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx))
-    r_hash_table_resize (ht, ht->allocidx + 1);
+  /* Grow before the table fills. Open addressing needs at least one empty
+   * bucket for a probe to terminate -- a fully populated table makes a lookup
+   * of an absent key loop forever -- and probe chains must stay short. Resize
+   * at 3/4 load. */
+  {
+    rsize cap = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx);
+    if (ht->size >= cap - (cap >> 2))
+      r_hash_table_resize (ht, ht->allocidx + 1);
+  }
 
   idx = r_hash_table_lookup_bucket (ht, key, &hash);
   if (ht->buckets[idx].hash == hash) {
