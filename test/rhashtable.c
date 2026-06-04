@@ -232,3 +232,72 @@ RTEST (rhashtable, foreach, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (rhashtable, lookup_absent_never_loops, RTEST_FAST)
+{
+  RHashTable * ht;
+  rsize i;
+  const rsize n = 1000;
+
+  r_assert_cmpptr ((ht = r_hash_table_new (NULL, NULL)), !=, NULL);
+
+  /* Insert many entries, crossing several resizes; after every insert look up
+   * a key that was never inserted. Before the load-factor fix a fully
+   * populated table had no empty bucket, so the open-addressing probe for an
+   * absent key never terminated -- this test would hang. */
+  for (i = 0; i < n; i++) {
+    r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (i + 1),
+          RUINT_TO_POINTER (i + 1)), ==, R_HASH_TABLE_OK);
+    r_assert_cmpint (r_hash_table_contains (ht, RSIZE_TO_POINTER (n + i + 1)),
+        ==, R_HASH_TABLE_NOT_FOUND);
+    r_assert_cmpptr (r_hash_table_lookup (ht, RSIZE_TO_POINTER (n + i + 1)),
+        ==, NULL);
+  }
+
+  r_assert_cmpuint (r_hash_table_size (ht), ==, n);
+  /* Every inserted key still resolves (probe integrity across the resizes). */
+  for (i = 0; i < n; i++)
+    r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht,
+            RSIZE_TO_POINTER (i + 1))), ==, i + 1);
+  /* And keys never inserted are absent (and the lookups terminate). */
+  for (i = 0; i < n; i++)
+    r_assert_cmpint (r_hash_table_contains (ht, RSIZE_TO_POINTER (n + i + 1)),
+        ==, R_HASH_TABLE_NOT_FOUND);
+
+  r_hash_table_unref (ht);
+}
+RTEST_END;
+
+RTEST (rhashtable, lookup_absent_str_keys, RTEST_FAST)
+{
+  RHashTable * ht;
+  rsize i;
+  const rsize n = 500;
+
+  /* As above but with string keys: more collisions / longer probe chains
+   * exercise the absent-key probe-termination path harder. */
+  r_assert_cmpptr ((ht = r_hash_table_new_full (r_str_hash, r_str_equal,
+          r_free, NULL)), !=, NULL);
+
+  for (i = 0; i < n; i++) {
+    rchar * absent = r_strprintf ("absent-%"RSIZE_FMT, i);
+    r_assert_cmpint (r_hash_table_insert (ht,
+          r_strprintf ("key-%"RSIZE_FMT, i), RUINT_TO_POINTER (i + 1)),
+        ==, R_HASH_TABLE_OK);
+    r_assert_cmpint (r_hash_table_contains (ht, absent), ==, R_HASH_TABLE_NOT_FOUND);
+    r_free (absent);
+  }
+
+  r_assert_cmpuint (r_hash_table_size (ht), ==, n);
+  for (i = 0; i < n; i++) {
+    rchar * present = r_strprintf ("key-%"RSIZE_FMT, i);
+    rchar * absent = r_strprintf ("absent-%"RSIZE_FMT, i);
+    r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht, present)), ==, i + 1);
+    r_assert_cmpint (r_hash_table_contains (ht, absent), ==, R_HASH_TABLE_NOT_FOUND);
+    r_free (present);
+    r_free (absent);
+  }
+
+  r_hash_table_unref (ht);
+}
+RTEST_END;
