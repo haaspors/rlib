@@ -28,8 +28,6 @@
  * hooks and task-queue integration.
  */
 
-#include <rlib/ev/revio.h>
-
 #include <rlib/rclock.h>
 #include <rlib/rref.h>
 #include <rlib/concurrency/rtaskqueue.h>
@@ -46,9 +44,8 @@
  *
  * An @ref REvLoop owns an @ref RClock (for timers) and optionally an
  * @ref RTaskQueue (for offloading work via @ref r_ev_loop_add_task).
- * I/O sources (@ref r_evio, @ref r_evtcp, @ref r_evudp,
- * @ref r_evresolve, @ref r_evwakeup) register against it and fire
- * their callbacks on the loop thread, so callbacks must not block —
+ * I/O sources (@ref r_evtcp, @ref r_evudp, @ref r_evresolve) register
+ * against it and fire their callbacks on the loop thread, so callbacks must not block —
  * push long-running work to a task group instead.
  *
  * @{
@@ -143,10 +140,6 @@ R_API RTask * r_ev_loop_add_task_full (REvLoop * loop, ruint taskgroup,
 R_API RTask * r_ev_loop_add_task_full_v (REvLoop * loop, ruint taskgroup,
     RTaskFunc task, REvFunc done, rpointer data, RDestroyNotify datanotify,
     va_list args);
-
-/** @brief Convenience: create an @ref REvIO watcher for @p handle on @p loop. */
-static inline REvIO * r_ev_loop_create_ev_io (REvLoop * loop, RIOHandle handle)
-{ return r_ev_io_new (loop, handle); }
 
 R_END_DECLS
 

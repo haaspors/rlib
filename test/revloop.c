@@ -272,77 +272,6 @@ RTEST (revloop, callback_later_cancel, RTEST_FAST)
 }
 RTEST_END;
 
-#if defined (R_OS_UNIX)
-typedef struct {
-  REvIO * evio;
-  rpointer ctx;
-  int fd[2];
-  rsize iocount;
-} RTestEvIOStartCtx;
-
-static void
-io_count_cb (rpointer data, REvIOEvents events, REvIO * evio)
-{
-  RTestEvIOStartCtx * ctx = data;
-
-  (void) evio;
-
-  ctx->iocount++;
-
-  int r;
-  ruint64 buf;
-  if (events & R_EV_IO_READABLE) {
-    do {
-      r = r_io_read (ctx->fd[0], &buf, sizeof (ruint64));
-    } while (r > 0);
-  }
-}
-
-static rboolean
-idle_stop_evio_cb (rpointer data, REvLoop * loop)
-{
-  RTestEvIOStartCtx * ctx = data;
-  (void) loop;
-  r_ev_io_stop (ctx->evio, ctx->ctx);
-  return FALSE;
-}
-
-RTEST (revloop, evio_handle, RTEST_FAST)
-{
-  REvLoop * loop;
-  RClock * clock;
-  RTestEvIOStartCtx ctx = { NULL, NULL, { -1, -1 }, 0 };
-
-  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
-  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
-
-  r_assert_cmpint (pipe (ctx.fd), ==, 0);
-
-  r_assert_cmpptr (r_ev_loop_create_ev_io (loop, R_IO_HANDLE_INVALID), ==, NULL);
-  r_assert_cmpptr ((ctx.evio = r_ev_loop_create_ev_io (loop, ctx.fd[0])), !=, NULL);
-  r_assert_cmpptr ((ctx.ctx = r_ev_io_start (ctx.evio, R_EV_IO_READABLE, io_count_cb, &ctx, NULL)), !=, NULL);
-  r_assert_cmpint (write (ctx.fd[1], "test", 4), ==, 4);
-  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT), ==, 1);
-  r_assert_cmpuint (ctx.iocount, ==, 1);
-  r_assert_cmpuint (r_ev_loop_get_iterations (loop), ==, 1);
-  r_assert_cmpuint (r_ev_loop_get_idle_count (loop), ==, 0);
-
-  r_assert (r_ev_loop_add_idle (loop, idle_stop_evio_cb, &ctx, NULL));
-  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
-  r_assert_cmpuint (ctx.iocount, ==, 1);
-  r_assert_cmpuint (r_ev_loop_get_iterations (loop), ==, 2);
-  r_assert_cmpuint (r_ev_loop_get_idle_count (loop), ==, 1);
-
-  close (ctx.fd[0]);
-  close (ctx.fd[1]);
-  r_ev_io_unref (ctx.evio);
-  r_assert_cmpuint (r_ref_refcount (loop), ==, 1);
-  r_ev_loop_unref (loop);
-  r_clock_unref (clock);
-}
-RTEST_END;
-#endif
-
 static void
 register_thread_task (rpointer data, RTaskQueue * queue, RTask * task)
 {
@@ -433,29 +362,6 @@ RTEST (revloop, add_task_with_taskgroup, RTEST_FAST)
   r_ev_loop_unref (loop);
   r_clock_unref (clock);
   r_task_queue_unref (tq);
-}
-RTEST_END;
-
-RTEST (revio, user, RTEST_FAST)
-{
-  REvLoop * loop;
-  RClock * clock;
-  REvIO * evio;
-  rpointer data;
-
-  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
-  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
-  r_clock_unref (clock);
-
-  /* dummy fd/handle 42 */
-  r_assert_cmpptr ((evio = r_ev_loop_create_ev_io (loop, (RIOHandle)(ruintptr)42)), !=, NULL);
-  r_assert_cmpptr (r_ev_io_get_user (evio), ==, NULL);
-
-  r_assert_cmpptr ((data = r_malloc (42)), !=, NULL);
-  r_ev_io_set_user (evio, data, r_free);
-  r_assert_cmpptr (r_ev_io_get_user (evio), ==, data);
-  r_ev_io_unref (evio);
-  r_ev_loop_unref (loop);
 }
 RTEST_END;
 

@@ -22,6 +22,7 @@
 #error "rev-private.h should only be used internally in rlib!"
 #endif
 
+#include <rlib/ev/revio.h>
 #include <rlib/ev/revloop.h>
 #include <rlib/ev/revwakeup.h>
 
@@ -40,6 +41,19 @@ R_API_HIDDEN R_LOG_CATEGORY_DEFINE_EXTERN (revlogcat);
 
 R_API_HIDDEN void r_ev_loop_add_cb_after (REvLoop * loop, RFunc func,
     rpointer data, RDestroyNotify datanotify, rpointer user, RDestroyNotify usernotify);
+
+/* I/O readiness event bits (reactor backends: epoll / kqueue / rpoll). */
+typedef enum {
+  R_EV_IO_READABLE    = (1 << 0), /* Handle is readable. */
+  /*R_EV_IO_PRI         = (1 << 1),*/
+  R_EV_IO_WRITABLE    = (1 << 2), /* Handle is writable. */
+  R_EV_IO_ERROR       = (1 << 3), /* Error condition on the handle. */
+  R_EV_IO_HANGUP      = (1 << 4), /* Peer hung up / handle closed. */
+} REvIOEvent;
+/* Bitwise-OR of REvIOEvent values. */
+typedef ruint REvIOEvents;
+/* Readiness callback; events is the set that fired. */
+typedef void (*REvIOCB) (rpointer data, REvIOEvents events, REvIO * evio);
 
 typedef enum {
   R_EV_IO_FLAGS_NONE  = 0,
@@ -142,6 +156,19 @@ R_API_HIDDEN void r_ev_io_init (REvIO * evio, REvLoop * loop, RIOHandle handle,
     RDestroyNotify notify);
 R_API_HIDDEN void r_ev_io_clear (REvIO * evio);
 R_API_HIDDEN rboolean r_ev_io_validate_taskgroup (REvIO * evio, ruint taskgroup);
+
+/* Low-level readiness watcher API -- internal: applications use r_evtcp /
+ * r_evudp. Readiness has no equivalent on a completion (IOCP) backend. */
+R_API_HIDDEN REvIO * r_ev_io_new (REvLoop * loop, RIOHandle handle);
+#define r_ev_io_ref r_ref_ref
+#define r_ev_io_unref r_ref_unref
+R_API_HIDDEN void r_ev_io_set_user (REvIO * evio, rpointer user, RDestroyNotify notify);
+R_API_HIDDEN rpointer r_ev_io_get_user (REvIO * evio) R_ATTR_WARN_UNUSED_RESULT;
+R_API_HIDDEN rpointer r_ev_io_start (REvIO * evio, REvIOEvents events, REvIOCB io_cb,
+    rpointer data, RDestroyNotify datanotify) R_ATTR_WARN_UNUSED_RESULT;
+R_API_HIDDEN rboolean r_ev_io_stop (REvIO * evio, rpointer ctx);
+R_API_HIDDEN rboolean r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
+    rpointer data, RDestroyNotify datanotify);
 
 #define r_ev_io_invoke_iocb(evio, events)                                     \
   R_STMT_START {                                                              \
