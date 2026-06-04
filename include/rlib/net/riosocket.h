@@ -122,6 +122,12 @@ R_API RSocketStatus r_io_set_socket_broadcast (RIOHandle handle, rboolean broadc
 R_API RSocketStatus r_io_set_socket_keepalive (RIOHandle handle, rboolean keepalive);
 /** @brief Set the @c SO_REUSEADDR flag. */
 R_API RSocketStatus r_io_set_socket_reuseaddr (RIOHandle handle, rboolean reuse);
+/**
+ * @brief Set @c SO_LINGER. With @p onoff set and @p linger 0, @c close
+ * aborts the connection immediately (sends a TCP RST) instead of a graceful
+ * shutdown.
+ */
+R_API RSocketStatus r_io_set_socket_linger (RIOHandle handle, rboolean onoff, ruint16 linger);
 /** @} */
 
 /** @name Connection lifecycle

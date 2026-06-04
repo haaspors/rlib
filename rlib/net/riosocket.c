@@ -225,6 +225,28 @@ r_io_set_socket_reuseaddr (RIOHandle handle, rboolean reuse)
 }
 
 RSocketStatus
+r_io_set_socket_linger (RIOHandle handle, rboolean onoff, ruint16 linger)
+{
+  if (R_UNLIKELY (handle == R_IO_HANDLE_INVALID)) return R_SOCKET_INVAL;
+
+#if defined (HAVE_WINSOCK2) || defined (HAVE_POSIX_SOCKETS)
+  {
+    struct linger l;
+    int res;
+
+    l.l_onoff = onoff ? 1 : 0;
+    l.l_linger = linger;
+    res = setsockopt (R_IO_HANDLE_TO_SOCKET_HANDLE (handle), SOL_SOCKET,
+        SO_LINGER, (rconstpointer)&l, sizeof (l));
+    return (res == 0) ? R_SOCKET_OK : r_socket_errno_to_socket_status ();
+  }
+#else
+  (void) onoff; (void) linger;
+  return R_SOCKET_NOT_SUPPORTED;
+#endif
+}
+
+RSocketStatus
 r_io_socket_close (RIOHandle handle)
 {
   int res;

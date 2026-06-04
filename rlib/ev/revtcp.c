@@ -154,6 +154,12 @@ r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotif
   return r_ev_io_close ((REvIO *)evtcp, close_cb, data, datanotify);
 }
 
+RSocket *
+r_ev_tcp_get_socket (const REvTCP * evtcp)
+{
+  return evtcp != NULL ? evtcp->socket : NULL;
+}
+
 RSocketAddress *
 r_ev_tcp_get_local_address (const REvTCP * evtcp)
 {
