@@ -30,6 +30,7 @@
 
 #include <rlib/rtypes.h>
 
+#include <rlib/ev/revio.h>
 #include <rlib/ev/revloop.h>
 #include <rlib/rbuffer.h>
 #include <rlib/net/rsocketaddress.h>
