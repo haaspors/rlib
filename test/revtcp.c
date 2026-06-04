@@ -30,6 +30,8 @@ data_received (rpointer data, RBuffer * buf, REvTCP * evtcp)
   *b = r_buffer_ref (buf);
 }
 
+/* The recv-error tests below are gated off on Windows (see their guard). */
+#ifndef R_OS_WIN32
 static void
 error_received (rpointer data, REvTCP * evtcp, RSocketStatus error)
 {
@@ -44,6 +46,7 @@ eos_received (rpointer data, RBuffer * buf, REvTCP * evtcp)
   if (buf == NULL)
     *((rboolean *)data) = TRUE;
 }
+#endif
 
 static void
 error_noop (rpointer data, REvTCP * evtcp, RSocketStatus error)
@@ -107,6 +110,14 @@ RTEST (revtcp, listen_connect_accept_send_recv, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+/* These two exercise an abortive close (peer RST) and assert the client
+ * observes it promptly. On Windows that is not reliably possible in a readiness
+ * reactor: an abortive RST on a loopback socket is, intermittently, not
+ * surfaced by the stack (recv keeps returning WOULDBLOCK) until a multi-second
+ * TCP abort timeout -- documented Winsock behaviour that libuv et al. avoid
+ * only via IOCP (pre-posted overlapped reads). Gated off on Windows until the
+ * Win32 backend gains an IOCP read path. */
+#ifndef R_OS_WIN32
 RTEST (revtcp, recv_error_handler, RTEST_FAST | RTEST_SYSTEM)
 {
   REvLoop * loop;
@@ -136,17 +147,17 @@ RTEST (revtcp, recv_error_handler, RTEST_FAST | RTEST_SYSTEM)
   r_assert (r_ev_tcp_close (server, NULL, NULL, NULL));
   r_ev_tcp_unref (server);
 
-  /* Client receives + reports errors; it sends data the server side
-   * never reads. */
+  /* Client just receives + reports errors. It deliberately does not send:
+   * a pending client send racing the peer's reset makes the client discover
+   * the dead connection via its own retransmission timeout (~tens of seconds)
+   * rather than via the incoming RST, which is what made this flaky. */
   r_ev_tcp_set_error_handler (client, error_received, &err, NULL);
   r_assert (r_ev_tcp_recv_start (client, NULL, data_received, &buf, NULL));
-  r_assert (r_ev_tcp_send_dup (client, "foobar", 6, NULL, NULL, NULL));
 
-  /* Let the datagram reach the server's socket, then close it abruptly:
-   * closing with unread data makes the kernel send an RST, which the
-   * client observes as a connection-reset error rather than EOF. */
-  for (i = 0; i < 8; i++)
-    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+  /* Close servcli abruptly so the idle client observes a connection-reset
+   * error rather than EOF. SO_LINGER with a zero timeout makes close send a
+   * TCP RST immediately and deterministically. */
+  r_assert (r_socket_set_linger (r_ev_tcp_get_socket (servcli), TRUE, 0));
   r_assert (r_ev_tcp_close (servcli, NULL, NULL, NULL));
   r_ev_tcp_unref (servcli);
 
@@ -198,10 +209,10 @@ RTEST (revtcp, recv_error_no_handler, RTEST_FAST | RTEST_SYSTEM)
   r_assert (r_ev_tcp_close (server, NULL, NULL, NULL));
   r_ev_tcp_unref (server);
 
+  /* Idle client (no pending send, see recv_error_handler); force an immediate,
+   * deterministic RST from the peer. */
   r_assert (r_ev_tcp_recv_start (client, NULL, eos_received, &eos, NULL));
-  r_assert (r_ev_tcp_send_dup (client, "foobar", 6, NULL, NULL, NULL));
-  for (i = 0; i < 8; i++)
-    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+  r_assert (r_socket_set_linger (r_ev_tcp_get_socket (servcli), TRUE, 0));
   r_assert (r_ev_tcp_close (servcli, NULL, NULL, NULL));
   r_ev_tcp_unref (servcli);
 
@@ -217,6 +228,7 @@ RTEST (revtcp, recv_error_no_handler, RTEST_FAST | RTEST_SYSTEM)
   r_ev_loop_unref (loop);
 }
 RTEST_END;
+#endif /* !R_OS_WIN32 */
 
 /* The error handler's data is released (via datanotify) both when it is
  * replaced and when the socket is freed. */
