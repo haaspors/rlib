@@ -38,14 +38,16 @@
  *
  * @brief Synchronous IO-readiness multiplexer.
  *
- * @ref r_poll is a thin wrapper around @c poll() / @c WSAPoll() that
- * takes a flat @ref RPoll array. @ref RPollSet adds bookkeeping for
- * an arbitrary-size set with per-handle user data and constant-time
- * lookups (handle → index, handle → user pointer).
+ * @ref r_poll takes a flat @ref RPoll array and waits with the host's
+ * readiness primitive: @c ppoll() / @c poll() or @c select() on POSIX,
+ * and a @c WSAEventSelect + @c WaitForMultipleObjectsEx wait on Windows.
+ * @ref RPollSet adds bookkeeping for an arbitrary-size set with
+ * per-handle user data and constant-time lookups (handle → index,
+ * handle → user pointer).
  *
  * This is the synchronous polling primitive; for high-throughput
  * event-driven I/O use @c r_evloop (ev/) which sits on @c epoll /
- * @c kqueue / IOCP.
+ * @c kqueue, falling back to @ref r_poll elsewhere (including Windows).
  *
  * @{
  */
@@ -74,6 +76,14 @@ typedef struct {
   RIOHandle handle;   /**< Handle to poll. */
   rushort events;     /**< Requested events bitmask (@c R_IO_* flags). */
   rushort revents;    /**< Returned events, filled by @ref r_poll. */
+#ifdef R_OS_WIN32
+  /* Win32 only: the WSAEVENT a socket handle is associated with through
+   * WSAEventSelect, so WaitForMultipleObjectsEx waits on socket readiness
+   * rather than the bare socket. NULL for a non-socket handle (e.g. the
+   * loop wakeup event), which is waited on directly. Owned by the
+   * @ref RPollSet that manages this entry. */
+  rpointer wsaevent;
+#endif
 } RPoll;
 
 /**
@@ -82,7 +92,7 @@ typedef struct {
  *
  * @param handles Array of @p count descriptors to watch.
  * @param count   Number of descriptors.
- * @param timeout Maximum time to wait, or @c R_CLOCK_TIME_NONE for "wait forever".
+ * @param timeout Maximum time to wait, or @c R_CLOCK_TIME_INFINITE for "wait forever".
  * @return Number of descriptors with non-zero @c revents, @c 0 on
  *         timeout, or @c -1 on error.
  */
@@ -116,6 +126,11 @@ R_API void r_poll_set_clear (RPollSet * ps);
 R_API int r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user);
 /** @brief Remove @p handle from the set; safe if it isn't present. */
 R_API rboolean r_poll_set_remove (RPollSet * ps, RIOHandle handle);
+/**
+ * @brief Change the watched @p events of @p handle already in the set.
+ * @return @c TRUE if the handle was present and updated.
+ */
+R_API rboolean r_poll_set_modify (RPollSet * ps, RIOHandle handle, rushort events);
 
 /** @brief Look up @p handle's index in the set, or @c -1 if absent. */
 R_API int r_poll_set_find (RPollSet * ps, RIOHandle handle);

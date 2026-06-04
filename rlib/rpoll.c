@@ -33,6 +33,7 @@
 #include <unistd.h>
 #endif
 #ifdef R_OS_WIN32
+#include <winsock2.h>
 #include <windows.h>
 #endif
 #include <errno.h>
@@ -80,79 +81,97 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   return ret;
 }
 #elif defined (R_OS_WIN32)
+/* Cap on how long the Win32 wait actually blocks. WSAEventSelect records a
+ * network event with WSAEnumNetworkEvents but does not always *signal* the
+ * event object the wait blocks on (FD_CLOSE in particular is edge-triggered).
+ * Capping the wait turns an indefinite block into a periodic re-check: every
+ * wake -- including a timeout -- re-runs WSAEnumNetworkEvents and so picks up
+ * any recorded-but-unsignalled readiness within the cap rather than sleeping
+ * through it. */
+#define R_POLL_WIN32_MAX_WAIT_MS    1000
+
+/* Map the requested R_IO_* readiness to the FD_* network events a socket is
+ * associated with through WSAEventSelect. FD_CLOSE is folded into readability
+ * so a peer reset / EOF wakes the read watcher (recv then reports the error). */
+static long
+r_poll_win32_fd_events (rushort events)
+{
+  long ret = 0;
+
+  if (events & R_IO_IN)  ret |= FD_READ | FD_ACCEPT | FD_CLOSE;
+  if (events & R_IO_OUT) ret |= FD_WRITE | FD_CONNECT;
+  if (events & R_IO_PRI) ret |= FD_OOB;
+
+  return ret;
+}
+
 int
 r_poll (RPoll * handles, ruint count, RClockTime timeout)
 {
-  int ret;
-  HANDLE win32_handles[MAXIMUM_WAIT_OBJECTS];
+  HANDLE waits[MAXIMUM_WAIT_OBJECTS];
   ruint i;
+  int ret = 0;
   DWORD t, res;
 
   if (R_UNLIKELY (count > MAXIMUM_WAIT_OBJECTS)) {
     errno = E2BIG;
     return -1;
   }
+  if (R_UNLIKELY (count == 0))
+    return 0;
 
-  if (timeout == R_CLOCK_TIME_INFINITE) {
-    t = INFINITE;
-  } else if (timeout != 0) {
-    t = (DWORD)(R_TIME_AS_MSECONDS (timeout) + 1);
-  } else {
+  if (timeout == 0)
     t = 0;
+  else if (timeout == R_CLOCK_TIME_INFINITE)
+    t = R_POLL_WIN32_MAX_WAIT_MS;
+  else
+    t = (DWORD) MIN (R_TIME_AS_MSECONDS (timeout) + 1, R_POLL_WIN32_MAX_WAIT_MS);
+
+  /* Wait on the per-socket WSAEVENT (socket readiness) or, for a non-socket
+   * handle such as the loop wakeup, on the handle itself. WSAEVENTs stay valid
+   * even after their socket is closed, so a closed-but-not-yet-pruned socket
+   * can no longer fail the whole wait the way a bare socket handle did. */
+  for (i = 0; i < count; i++) {
+    handles[i].revents = 0;
+    waits[i] = (handles[i].wsaevent != NULL) ?
+        (HANDLE)handles[i].wsaevent : (HANDLE)handles[i].handle;
   }
 
-  for (i = 0; i < count; i++)
-    win32_handles[i] = handles[i].handle;
+  res = WaitForMultipleObjectsEx ((DWORD)count, waits, FALSE, t, FALSE);
+  /* Read actual readiness from every entry for every result: a normal wake, a
+   * WAIT_TIMEOUT (re-enumerate to pick up an event recorded but not signalled,
+   * see the cap above), or WAIT_FAILED (a single bad bare handle -- a socket
+   * whose arming fell back to a direct wait, closed before it was pruned --
+   * fails the whole call; the probe below skips it and the loop prunes it next
+   * turn instead of stalling). */
+  (void) res;
 
-  for (ret = 0, i = 0; i < count; ret++, i++, t = 0) {
-    res = WaitForMultipleObjectsEx (count - i, &win32_handles[i], FALSE, t, TRUE);
+  for (i = 0; i < count; i++) {
+    if (handles[i].wsaevent != NULL) {
+      WSANETWORKEVENTS ne;
+      rushort rev = 0;
 
-    if (res < (WAIT_OBJECT_0 + count - i)) {
-      i += res;
+      if (WSAEnumNetworkEvents ((SOCKET)(ruintptr)handles[i].handle,
+            (WSAEVENT)handles[i].wsaevent, &ne) != 0)
+        continue;   /* e.g. WSAENOTSOCK: a socket closed but not yet pruned */
+
+      if (ne.lNetworkEvents & (FD_READ | FD_ACCEPT | FD_CLOSE)) rev |= R_IO_IN;
+      if (ne.lNetworkEvents & FD_OOB)                           rev |= R_IO_PRI;
+      if (ne.lNetworkEvents & (FD_WRITE | FD_CONNECT))          rev |= R_IO_OUT;
+      /* A failed connect / abortive close surfaces as an error condition; the
+       * loop watches WRITABLE for connect and READABLE for recv. */
+      if ((ne.lNetworkEvents & FD_CONNECT) && ne.iErrorCode[FD_CONNECT_BIT] != 0)
+        rev |= R_IO_ERR | R_IO_OUT;
+      if ((ne.lNetworkEvents & FD_CLOSE) && ne.iErrorCode[FD_CLOSE_BIT] != 0)
+        rev |= R_IO_ERR | R_IO_IN;
+
+      if (rev != 0) {
+        handles[i].revents = rev;
+        ret++;
+      }
+    } else if (WaitForSingleObject ((HANDLE)handles[i].handle, 0) == WAIT_OBJECT_0) {
       handles[i].revents = handles[i].events;
-    } else if (res == WAIT_FAILED) {
-      DWORD dw = GetLastError ();
-
-      if (dw == ERROR_INVALID_HANDLE) {
-        /* A handle in [i, count) went invalid since the wait set was built (a
-         * socket closed concurrently, or via a deferred io-watch teardown).
-         * Unlike poll()/ppoll(), which flag a closed descriptor with POLLNVAL
-         * and still report the rest, WaitForMultipleObjectsEx fails the whole
-         * wait on one bad handle -> r_poll would return -1 and the loop would
-         * dispatch nothing, stalling every other ready handle. Instead skip
-         * the invalid handle: dispatch any ready handle among the rest and
-         * return promptly, so the loop runs its pending callbacks (which drop
-         * the closed handle from the set on the next turn). */
-        ruint j;
-        for (j = i; j < count; j++) {
-          if (WaitForSingleObject (win32_handles[j], 0) == WAIT_OBJECT_0) {
-            handles[j].revents = handles[j].events;
-            ret++;
-          } else {
-            handles[j].revents = 0;
-          }
-        }
-        break;
-      }
-
-      {
-        LPVOID lpMsgBuf;
-
-        errno = EIO;
-        FormatMessageA (FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            NULL, dw, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR) &lpMsgBuf, 0, NULL);
-        R_LOG_CAT_ERROR (R_LOG_CAT_ASSERT, "WaitForMultipleObjectsEx error '%s'", lpMsgBuf);
-        LocalFree (lpMsgBuf);
-      }
-      return -1;
-    } else if (res == WAIT_TIMEOUT) {
-      break;
-    } else if (res == WAIT_IO_COMPLETION) {
-      /* FIXME: WAIT_IO_COMPLETION */
-      r_assert_not_reached ();
-    } else {
-      /* FIXME: What to do when we get WAIT_ABANDONED_0 */
-      r_assert_not_reached ();
+      ret++;
     }
   }
 
@@ -223,6 +242,60 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
 #error Need either 'poll' or 'select'
 #endif
 
+#ifdef R_OS_WIN32
+/* Associate a socket entry with a fresh WSAEVENT so r_poll can wait on its
+ * readiness. A handle that is not a socket (the loop wakeup event) keeps
+ * wsaevent == NULL and is waited on directly. */
+static void
+r_poll_entry_arm (RPoll * p)
+{
+  WSAEVENT ev;
+
+  p->wsaevent = NULL;
+  if ((ev = WSACreateEvent ()) == WSA_INVALID_EVENT)
+    return;
+
+  /* A non-socket handle (the loop wakeup) fails with WSAENOTSOCK and keeps
+   * wsaevent == NULL, so it is waited on directly. */
+  if (WSAEventSelect ((SOCKET)(ruintptr)p->handle, ev,
+        r_poll_win32_fd_events (p->events)) == 0)
+    p->wsaevent = ev;
+  else
+    WSACloseEvent (ev);
+}
+
+/* Re-issue the WSAEventSelect association after the watched events changed. */
+static void
+r_poll_entry_rearm (RPoll * p)
+{
+  if (p->wsaevent != NULL)
+    WSAEventSelect ((SOCKET)(ruintptr)p->handle, (WSAEVENT)p->wsaevent,
+        r_poll_win32_fd_events (p->events));
+}
+
+static void
+r_poll_entry_disarm (RPoll * p)
+{
+  if (p->wsaevent != NULL) {
+    WSAEventSelect ((SOCKET)(ruintptr)p->handle, NULL, 0);
+    WSACloseEvent ((WSAEVENT)p->wsaevent);
+    p->wsaevent = NULL;
+  }
+}
+
+#define R_POLL_ENTRY_ARM(p)         r_poll_entry_arm (p)
+#define R_POLL_ENTRY_REARM(p)       r_poll_entry_rearm (p)
+#define R_POLL_ENTRY_DISARM(p)      r_poll_entry_disarm (p)
+#define R_POLL_ENTRY_TAKE(dst, src) R_STMT_START {                            \
+    (dst)->wsaevent = (src)->wsaevent; (src)->wsaevent = NULL;                \
+  } R_STMT_END
+#else
+#define R_POLL_ENTRY_ARM(p)         R_STMT_START { } R_STMT_END
+#define R_POLL_ENTRY_REARM(p)       R_STMT_START { } R_STMT_END
+#define R_POLL_ENTRY_DISARM(p)      R_STMT_START { } R_STMT_END
+#define R_POLL_ENTRY_TAKE(dst, src) R_STMT_START { } R_STMT_END
+#endif
+
 void
 r_poll_set_init (RPollSet * ps, ruint alloc)
 {
@@ -236,6 +309,12 @@ r_poll_set_init (RPollSet * ps, ruint alloc)
 void
 r_poll_set_clear (RPollSet * ps)
 {
+#ifdef R_OS_WIN32
+  ruint i;
+  for (i = 0; i < ps->count; i++)
+    R_POLL_ENTRY_DISARM (&ps->handles[i]);
+#endif
+
   r_free (ps->handles);
   r_hash_table_unref (ps->handle_idx);
   r_hash_table_unref (ps->handle_user);
@@ -296,6 +375,7 @@ r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user)
 
   idx = ps->count++;
   r_poll_set_update (ps, idx, handle, events, user);
+  R_POLL_ENTRY_ARM (&ps->handles[idx]);
   return (int)idx;
 }
 
@@ -310,16 +390,21 @@ r_poll_set_remove_idx (RPollSet * ps, int idx)
   key = RIO_HANDLE_TO_POINTER (ps->handles[idx].handle);
   if (r_hash_table_remove_full (ps->handle_user, key, NULL, &user) == R_HASH_TABLE_OK) {
     r_hash_table_remove (ps->handle_idx, key);
+    R_POLL_ENTRY_DISARM (&ps->handles[idx]);
 
     if ((ruint)idx < --ps->count) {
       RPoll * last = &ps->handles[ps->count];
       rpointer last_user;
 
       if (r_hash_table_lookup_full (ps->handle_user, RIO_HANDLE_TO_POINTER (last->handle),
-            NULL, &last_user) == R_HASH_TABLE_OK)
+            NULL, &last_user) == R_HASH_TABLE_OK) {
         r_poll_set_update (ps, (ruint)idx, last->handle, last->events, last_user);
-      else
+        /* Carry the moved entry's WSAEVENT to its new slot (update only
+         * rewrites the poll fields, not the association). */
+        R_POLL_ENTRY_TAKE (&ps->handles[idx], last);
+      } else {
         return FALSE;
+      }
     }
 
     return TRUE;
@@ -333,5 +418,19 @@ r_poll_set_remove (RPollSet * ps, RIOHandle handle)
 {
   if (R_UNLIKELY (ps == NULL)) return FALSE;
   return r_poll_set_remove_idx (ps, r_poll_set_find (ps, handle));
+}
+
+rboolean
+r_poll_set_modify (RPollSet * ps, RIOHandle handle, rushort events)
+{
+  int idx;
+
+  if (R_UNLIKELY (ps == NULL)) return FALSE;
+  if ((idx = r_poll_set_find (ps, handle)) < 0)
+    return FALSE;
+
+  ps->handles[idx].events = events;
+  R_POLL_ENTRY_REARM (&ps->handles[idx]);
+  return TRUE;
 }
 

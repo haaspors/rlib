@@ -503,7 +503,11 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
     if (R_UNLIKELY (R_EV_IO_IS_CLOSED (evio))) {
       if (R_EV_IO_IS_ADDED (evio)) {
         R_LOG_DEBUG ("loop %p closed evio "R_EV_IO_FORMAT, loop, R_EV_IO_ARGS (evio));
-        r_poll_set_remove (&loop->pollset, evio->handle);
+        /* Only drop the entry if it still belongs to this evio: the handle
+         * value may have been recycled to a new socket whose entry replaced
+         * ours in the set, and removing by handle would evict the new owner. */
+        if (r_poll_set_get_user (&loop->pollset, evio->handle) == evio)
+          r_poll_set_remove (&loop->pollset, evio->handle);
         evio->flags &= ~R_EV_IO_ADDED;
       }
       evio->handle = R_IO_HANDLE_INVALID;
@@ -531,14 +535,9 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
           R_LOG_ERROR ("Couldn't add %"R_IO_HANDLE_FMT" evio "R_EV_IO_FORMAT" to pollset",
               evio->handle, R_EV_IO_ARGS (evio));
         }
-      } else {
-        int idx;
-        if ((idx = r_poll_set_find (&loop->pollset, evio->handle)) >= 0) {
-          loop->pollset.handles[idx].events = events;
-        } else {
-          R_LOG_ERROR ("Couldn't update events on evio "R_EV_IO_FORMAT,
-              R_EV_IO_ARGS (evio));
-        }
+      } else if (!r_poll_set_modify (&loop->pollset, evio->handle, events)) {
+        R_LOG_ERROR ("Couldn't update events on evio "R_EV_IO_FORMAT,
+            R_EV_IO_ARGS (evio));
       }
     } else if (R_EV_IO_IS_ADDED (evio)) {
       if (r_poll_set_remove (&loop->pollset, evio->handle)) {
