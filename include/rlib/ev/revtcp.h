@@ -82,6 +82,8 @@ R_API rboolean r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb,
 /** @brief Drop a reference (alias for @ref r_ref_unref). */
 #define r_ev_tcp_unref r_ref_unref
 
+/** @brief The underlying socket (borrowed) for advanced socket configuration. */
+R_API RSocket * r_ev_tcp_get_socket (const REvTCP * evtcp);
 /** @brief Local address the socket is bound to. */
 R_API RSocketAddress * r_ev_tcp_get_local_address (const REvTCP * evtcp);
 /** @brief Remote (peer) address of a connected socket. */

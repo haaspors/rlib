@@ -271,6 +271,13 @@ r_socket_set_keepalive (RSocket * socket, rboolean keepalive)
 }
 
 rboolean
+r_socket_set_linger (RSocket * socket, rboolean onoff, ruint16 linger)
+{
+  if (R_UNLIKELY (socket == NULL)) return FALSE;
+  return r_io_set_socket_linger (socket->handle, onoff, linger) == R_SOCKET_OK;
+}
+
+rboolean
 r_socket_set_multicast_loop (RSocket * socket, rboolean loop)
 {
   rboolean ret;

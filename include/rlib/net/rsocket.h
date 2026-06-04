@@ -155,6 +155,12 @@ R_API rboolean r_socket_set_blocking (RSocket * socket, rboolean blocking);
 R_API rboolean r_socket_set_broadcast (RSocket * socket, rboolean broadcast);
 /** @brief Set the @c SO_KEEPALIVE flag. */
 R_API rboolean r_socket_set_keepalive (RSocket * socket, rboolean keepalive);
+/**
+ * @brief Set @c SO_LINGER. With @p onoff @c TRUE and @p linger 0, closing the
+ * socket aborts the connection immediately (TCP RST) rather than performing a
+ * graceful shutdown.
+ */
+R_API rboolean r_socket_set_linger (RSocket * socket, rboolean onoff, ruint16 linger);
 /** @brief Set the per-family multicast loopback flag. */
 R_API rboolean r_socket_set_multicast_loop (RSocket * socket, rboolean loop);
 /** @brief Set the per-family multicast TTL. */
