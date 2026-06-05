@@ -1018,6 +1018,49 @@ r_http_response_get_request (RHttpResponse * res)
   return NULL;
 }
 
+/* TRUE if the message start line is HTTP/1.1. The version is the field that
+ * begins with "HTTP/": the first of a response status line ("HTTP/1.1 200 OK"),
+ * the third of a request line ("GET / HTTP/1.1"). Anything else (1.0, 0.9,
+ * malformed) is treated as not 1.1. */
+static rboolean
+r_http_msg_is_http_1_1 (RHttpMsg * msg)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rboolean ret = FALSE;
+
+  if (r_buffer_map (msg->start, &info, R_MEM_MAP_READ)) {
+    RStrMatchResult * sres;
+
+    if ((sres = r_http_parse_start_line (info.data, info.size)) != NULL) {
+      ruint v = (sres->token[0].chunk.size >= 5 &&
+          r_strncmp (sres->token[0].chunk.str, "HTTP/", 5) == 0) ? 0 : 4;
+      ret = sres->token[v].chunk.size == 8 &&
+          r_strncmp (sres->token[v].chunk.str, "HTTP/1.1", 8) == 0;
+      r_free (sres);
+    }
+
+    r_buffer_unmap (msg->start, &info);
+  }
+
+  return ret;
+}
+
+rboolean
+r_http_msg_is_keepalive (RHttpMsg * msg)
+{
+  if (R_UNLIKELY (msg == NULL)) return FALSE;
+
+  /* An explicit directive wins; absent that, only HTTP/1.1 persists by default.
+   * Connection reuse needs both sides to agree (a response and its originating
+   * request), which the caller checks. */
+  if (r_http_msg_has_header_of_value (msg, "Connection", -1, "close", -1))
+    return FALSE;
+  if (r_http_msg_has_header_of_value (msg, "Connection", -1, "keep-alive", -1))
+    return TRUE;
+
+  return r_http_msg_is_http_1_1 (msg);
+}
+
 RHttpError
 r_http_response_set_body_buffer_full (RHttpResponse * res, RBuffer * buf,
     const rchar * contenttype, rssize size, rboolean contentlen)

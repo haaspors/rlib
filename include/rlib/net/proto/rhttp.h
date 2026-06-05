@@ -192,6 +192,17 @@ R_API rboolean r_http_msg_has_header_of_value (RHttpMsg * msg,
 /** @brief Return the value of header @p field (newly allocated), or @c NULL. */
 R_API rchar * r_http_msg_get_header (RHttpMsg * msg, const rchar * field, rssize size);
 /**
+ * @brief @c TRUE if this message permits HTTP/1.1 keep-alive.
+ *
+ * From the message's own @c Connection header and HTTP version: explicit
+ * @c close is @c FALSE, explicit @c keep-alive is @c TRUE, otherwise persistence
+ * is the HTTP/1.1 default. Connection reuse needs both the response and its
+ * originating request to agree, and ignores body framing (a @ref
+ * R_HTTP_BODY_PARSE_CLOSE body still requires the connection to close) -- the
+ * caller combines those.
+ */
+R_API rboolean r_http_msg_is_keepalive (RHttpMsg * msg);
+/**
  * @brief Per-header callback for @ref r_http_msg_foreach_header.
  * @param data  User pointer passed to @ref r_http_msg_foreach_header.
  * @param name  Header name, @p nsize bytes — points into the message, not NUL-terminated.
@@ -255,6 +266,8 @@ R_API RUri * r_http_request_get_uri (RHttpRequest * req);
   r_http_msg_has_header_of_value ((RHttpMsg *)req, key, ksize, val, vsize)
 /** @brief @ref r_http_msg_get_header on a request. */
 #define r_http_request_get_header(req, field, size) r_http_msg_get_header ((RHttpMsg *)req, field, size)
+/** @brief @ref r_http_msg_is_keepalive on a request. */
+#define r_http_request_is_keepalive(req) r_http_msg_is_keepalive ((RHttpMsg *)req)
 /** @brief @ref r_http_msg_foreach_header on a request. */
 #define r_http_request_foreach_header(req, func, data) r_http_msg_foreach_header ((RHttpMsg *)req, func, data)
 /** @brief @ref r_http_msg_add_header on a request. */
@@ -301,6 +314,8 @@ R_API rchar * r_http_response_get_phrase (const RHttpResponse * res) R_ATTR_MALL
 /** @brief Return the request this response was built for (caller owns the
  *  reference; @ref r_http_request_unref when done), or @c NULL if none. */
 R_API RHttpRequest * r_http_response_get_request (RHttpResponse * res);
+/** @brief @ref r_http_msg_is_keepalive on a response. */
+#define r_http_response_is_keepalive(res) r_http_msg_is_keepalive ((RHttpMsg *)res)
 /** @brief @ref r_http_msg_has_header on a response. */
 #define r_http_response_has_header(res, field, size) r_http_msg_has_header ((RHttpMsg *)res, field, size)
 /** @brief @ref r_http_msg_has_header_of_value on a response. */

@@ -570,3 +570,59 @@ RTEST (rhttp, chunked_decode_malformed, RTEST_FAST)
   r_buffer_unref (buf);
 }
 RTEST_END;
+
+static rboolean
+r_test_response_blob_keepalive (const rchar * blob)
+{
+  RHttpResponse * res;
+  RBuffer * buf;
+  rboolean ret;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (blob, r_strlen (blob))), !=, NULL);
+  r_assert_cmpptr ((res = r_http_response_new_from_buffer (NULL, buf, NULL, NULL)), !=, NULL);
+  ret = r_http_response_is_keepalive (res);
+  r_http_response_unref (res);
+  r_buffer_unref (buf);
+  return ret;
+}
+
+RTEST (rhttp, msg_is_keepalive, RTEST_FAST)
+{
+  RHttpRequest * req, * reqclose, * reqka;
+
+  /* Response side (version is the first start-line field). */
+  /* HTTP/1.1 is persistent by default. */
+  r_assert (r_test_response_blob_keepalive (
+        "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"));
+  /* Explicit keep-alive persists. */
+  r_assert (r_test_response_blob_keepalive (
+        "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\nContent-Length: 0\r\n\r\n"));
+  /* Explicit close wins. */
+  r_assert (!r_test_response_blob_keepalive (
+        "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"));
+  /* HTTP/1.0 is not persistent by default. */
+  r_assert (!r_test_response_blob_keepalive (
+        "HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n"));
+  /* HTTP/1.0 with explicit keep-alive persists. */
+  r_assert (r_test_response_blob_keepalive (
+        "HTTP/1.0 200 OK\r\nConnection: keep-alive\r\nContent-Length: 0\r\n\r\n"));
+
+  /* Request side (version is the third start-line field). */
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((reqclose = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+  r_assert (r_http_request_add_header (reqclose, "Connection", -1, "close", -1));
+  r_assert_cmpptr ((reqka = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+  r_assert (r_http_request_add_header (reqka, "Connection", -1, "keep-alive", -1));
+
+  r_assert (r_http_request_is_keepalive (req));        /* HTTP/1.1 default */
+  r_assert (!r_http_request_is_keepalive (reqclose));
+  r_assert (r_http_request_is_keepalive (reqka));
+
+  r_http_request_unref (req);
+  r_http_request_unref (reqclose);
+  r_http_request_unref (reqka);
+}
+RTEST_END;
