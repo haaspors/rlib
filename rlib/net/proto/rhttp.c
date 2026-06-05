@@ -502,6 +502,94 @@ r_http_msg_set_header (RHttpMsg * msg, const rchar * field, rssize fsize,
   return r_http_msg_add_header (msg, field, fsize, value, vsize);
 }
 
+RHttpError
+r_http_chunked_decode (RBuffer * buf, RBuffer ** out)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RHttpError err = R_HTTP_BUF_TOO_SMALL;
+  RBuffer * body = NULL;
+
+  if (R_UNLIKELY (buf == NULL || out == NULL)) return R_HTTP_INVAL;
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_READ)) return R_HTTP_INVAL;
+
+  if ((body = r_buffer_new ()) != NULL) {
+    const rchar * data = (const rchar *) info.data, * end = data + info.size;
+    const rchar * p = data;
+
+    for (;;) {
+      ruint64 csize = 0;
+      const rchar * q;
+      rssize crlf;
+
+      /* chunk-size line: hex size, optional ";ext", terminated by CRLF.
+       * Parse the hex digits directly: r_str_to_uint64 mishandles a leading
+       * zero in base 16, which is exactly the terminating "0" chunk. */
+      if ((crlf = r_str_idx_of_str (p, (rsize) (end - p), "\r\n", 2)) < 0)
+        break;                                  /* size line incomplete */
+      if (!r_ascii_isxdigit (*p)) {             /* need at least one hex digit */
+        err = R_HTTP_DECODE_ERROR;
+        break;
+      }
+      for (q = p; q < p + crlf && r_ascii_isxdigit (*q); q++) {
+        ruint d = r_ascii_isdigit (*q) ? (ruint) (*q - '0') :
+            (r_ascii_isupper (*q) ? (ruint) (*q - 'A' + 10) :
+                                    (ruint) (*q - 'a' + 10));
+        if (csize > (RUINT64_MAX - d) / 16) {   /* overflow */
+          err = R_HTTP_DECODE_ERROR;
+          break;
+        }
+        csize = csize * 16 + d;
+      }
+      if (err == R_HTTP_DECODE_ERROR)
+        break;
+      p += crlf + 2;
+
+      if (csize == 0) {
+        /* last chunk; consume any trailers up to the terminating empty line. */
+        for (;;) {
+          if ((crlf = r_str_idx_of_str (p, (rsize) (end - p), "\r\n", 2)) < 0) {
+            err = R_HTTP_BUF_TOO_SMALL;
+            break;
+          }
+          p += crlf + 2;
+          if (crlf == 0) {                      /* empty line: complete */
+            err = R_HTTP_OK;
+            break;
+          }
+        }
+        break;
+      }
+
+      /* need the chunk data plus its trailing CRLF. */
+      if ((ruint64) (end - p) < csize + 2) {
+        err = R_HTTP_BUF_TOO_SMALL;
+        break;
+      }
+      if (!r_buffer_append_view (body, buf, (rsize) (p - data), (rssize) csize)) {
+        err = R_HTTP_INVAL;
+        break;
+      }
+      p += csize;
+      if (p[0] != '\r' || p[1] != '\n') {
+        err = R_HTTP_DECODE_ERROR;
+        break;
+      }
+      p += 2;
+    }
+  }
+
+  r_buffer_unmap (buf, &info);
+
+  if (err == R_HTTP_OK) {
+    *out = body;
+  } else {
+    if (body != NULL)
+      r_buffer_unref (body);
+    *out = NULL;
+  }
+  return err;
+}
+
 
 
 static RBuffer *

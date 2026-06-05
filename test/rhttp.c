@@ -493,3 +493,80 @@ RTEST (rhttp, set_body_no_duplicate_content_length, RTEST_FAST)
   r_http_response_unref (res);
 }
 RTEST_END;
+
+RTEST (rhttp, chunked_decode, RTEST_FAST)
+{
+  RBuffer * buf, * out;
+  static const rchar chunked[] =
+      "4\r\nWiki\r\n"
+      "5\r\npedia\r\n"
+      "E\r\n in\r\n\r\nchunks.\r\n"
+      "0\r\n\r\n";
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (chunked))), !=, NULL);
+  r_assert_cmpint (r_http_chunked_decode (buf, &out), ==, R_HTTP_OK);
+  r_assert_cmpptr (out, !=, NULL);
+  r_assert_cmpbufsstr (out, 0, -1, ==, "Wikipedia in\r\n\r\nchunks.");
+  r_buffer_unref (out);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rhttp, chunked_decode_chunk_ext_and_trailer, RTEST_FAST)
+{
+  RBuffer * buf, * out;
+  static const rchar chunked[] =
+      "5;name=value\r\nhello\r\n"
+      "0\r\n"
+      "X-Trailer: foo\r\n"
+      "\r\n";
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (chunked))), !=, NULL);
+  r_assert_cmpint (r_http_chunked_decode (buf, &out), ==, R_HTTP_OK);
+  r_assert_cmpbufsstr (out, 0, -1, ==, "hello");
+  r_buffer_unref (out);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rhttp, chunked_decode_incomplete, RTEST_FAST)
+{
+  RBuffer * buf, * out;
+
+  /* Size line not yet terminated. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("4"))), !=, NULL);
+  r_assert_cmpint (r_http_chunked_decode (buf, &out), ==, R_HTTP_BUF_TOO_SMALL);
+  r_assert_cmpptr (out, ==, NULL);
+  r_buffer_unref (buf);
+
+  /* Chunk data shorter than the announced size. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("4\r\nWi"))), !=, NULL);
+  r_assert_cmpint (r_http_chunked_decode (buf, &out), ==, R_HTTP_BUF_TOO_SMALL);
+  r_assert_cmpptr (out, ==, NULL);
+  r_buffer_unref (buf);
+
+  /* Last chunk seen but trailer block not terminated. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("4\r\nWiki\r\n0\r\n"))), !=, NULL);
+  r_assert_cmpint (r_http_chunked_decode (buf, &out), ==, R_HTTP_BUF_TOO_SMALL);
+  r_assert_cmpptr (out, ==, NULL);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rhttp, chunked_decode_malformed, RTEST_FAST)
+{
+  RBuffer * buf, * out;
+
+  /* Non-hex chunk size. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("zz\r\n"))), !=, NULL);
+  r_assert_cmpint (r_http_chunked_decode (buf, &out), ==, R_HTTP_DECODE_ERROR);
+  r_assert_cmpptr (out, ==, NULL);
+  r_buffer_unref (buf);
+
+  /* Chunk data not followed by CRLF. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS ("4\r\nWikiXX0\r\n\r\n"))), !=, NULL);
+  r_assert_cmpint (r_http_chunked_decode (buf, &out), ==, R_HTTP_DECODE_ERROR);
+  r_assert_cmpptr (out, ==, NULL);
+  r_buffer_unref (buf);
+}
+RTEST_END;
