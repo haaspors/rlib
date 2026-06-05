@@ -211,8 +211,22 @@ r_http_client_req_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
     case R_HTTP_BODY_PARSE_CLOSE:
       /* Body runs until the connection closes; handled on end-of-stream. */
       break;
+    case R_HTTP_BODY_PARSE_CHUNKED: {
+      RBuffer * body = NULL;
+      RHttpError err = (ctx->inbuf != NULL) ?
+          r_http_chunked_decode (ctx->inbuf, &body) : R_HTTP_BUF_TOO_SMALL;
+      if (err == R_HTTP_OK) {
+        r_http_response_set_body_buffer (ctx->res, body);
+        r_buffer_unref (body);
+        r_http_client_req_finish (ctx, R_HTTP_CLIENT_OK);
+      } else if (err != R_HTTP_BUF_TOO_SMALL) {
+        r_http_client_req_finish (ctx, R_HTTP_CLIENT_PARSE_FAILED);
+      }
+      /* else wait for more chunk bytes */
+      break;
+    }
     default:
-      /* Chunked / tunnel framing isn't implemented yet. */
+      /* Tunnel framing (after CONNECT) isn't implemented. */
       R_LOG_DEBUG ("%p: request %p unsupported body framing %d",
           ctx->client, ctx, (int) ctx->bodytype);
       r_http_client_req_finish (ctx, R_HTTP_CLIENT_PARSE_FAILED);
