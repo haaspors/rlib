@@ -721,20 +721,26 @@ r_str_to_uint_parse (const rchar * str, const rchar ** endptr, ruint base,
     goto beach;
 
   ret = R_STR_PARSE_OK;
-  if (*ptr == '0') {
-    ptr++;
-    if ((base == 0 || base == 16) && (*ptr == 'X' || *ptr == 'x')) {
-      if (!r_ascii_isxdigit (ptr[1]))
-        goto beach;
-      base = 16;
-      ptr++;
-    } else if (base == 0) {
-      if (*ptr < '0' || *ptr > '7')
-        goto beach;
-      base = 8;
-    }
-  } else if (base == 0) {
+  /* Pick the base / skip an optional prefix without consuming a leading zero
+   * that is itself a digit (matches r_str_to_int_parse above). */
+  if (base == 0) {
     base = 10;
+    if (ptr[0] == '0') {
+      if (ptr[1] == 'X' || ptr[1] == 'x') {
+        if (r_ascii_isxdigit (ptr[2])) {
+          base = 16;
+          ptr += 2;
+        }
+      } else if (ptr[1] >= '0' && ptr[1] <= '7') {
+        base = 8;
+        ptr++;
+      }
+    }
+  } else if (base == 16) {
+    if (ptr[0] == '0' && (ptr[1] == 'X' || ptr[1] == 'x') &&
+        r_ascii_isxdigit (ptr[2])) {
+      ptr += 2;
+    }
   }
 
   for (start = ptr; *ptr != 0;) {
@@ -750,8 +756,10 @@ r_str_to_uint_parse (const rchar * str, const rchar ** endptr, ruint base,
       break;
 
     ptr++;
+    /* nv >= v (not > v) so a still-zero accumulator -- a leading zero -- isn't
+     * mistaken for overflow. */
     nv = v * base + c;
-    if (nv <= m && nv > v) {
+    if (nv <= m && nv >= v) {
       v = nv;
     } else {
       v = m;
