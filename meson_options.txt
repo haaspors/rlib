@@ -23,3 +23,8 @@ option('enable_sockets',
     value : true,
     description : 'build with sockets support')
 
+option('rpoll',
+    type : 'feature',
+    value : 'disabled',
+    description : 'Windows: use the WSAEventSelect/poll readiness event-loop backend instead of the default IOCP (completion-port) backend')
+

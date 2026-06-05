@@ -47,7 +47,8 @@
  *
  * This is the synchronous polling primitive; for high-throughput
  * event-driven I/O use @c r_evloop (ev/) which sits on @c epoll /
- * @c kqueue, falling back to @ref r_poll elsewhere (including Windows).
+ * @c kqueue, IOCP on Windows, and falls back to @ref r_poll elsewhere
+ * (or on any platform when built with @c -Drpoll).
  *
  * @{
  */
