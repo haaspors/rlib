@@ -30,8 +30,17 @@ data_received (rpointer data, RBuffer * buf, REvTCP * evtcp)
   *b = r_buffer_ref (buf);
 }
 
-/* The recv-error tests below are gated off on Windows (see their guard). */
-#ifndef R_OS_WIN32
+static void
+data_counted (rpointer data, RBuffer * buf, REvTCP * evtcp)
+{
+  (void) evtcp;
+  if (buf != NULL)
+    *((rsize *)data) += r_buffer_get_size (buf);
+}
+
+/* The recv-error tests below need a backend that observes an abortive peer
+ * close; the rpoll readiness backend cannot, so they are gated off there. */
+#ifndef R_EV_USE_RPOLL
 static void
 error_received (rpointer data, REvTCP * evtcp, RSocketStatus error)
 {
@@ -110,14 +119,68 @@ RTEST (revtcp, listen_connect_accept_send_recv, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+/* Queue several sends back-to-back and confirm every byte arrives, exercising
+ * the ordered send queue (a completion backend posts one send at a time and
+ * re-arms the next from each completion) and repeated receive completions. */
+RTEST (revtcp, queued_send_recv, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RSocketAddress * addr;
+  REvTCP * server, * servcli = NULL, * client;
+  rboolean conn = FALSE;
+  rsize received = 0;
+  ruint8 chunk[1024];
+  ruint i;
+  const ruint nsends = 8;
+
+  r_memset (chunk, 0x5a, sizeof (chunk));
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((client = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x6364)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_assert_cmpint (r_ev_tcp_listen (server, 10, new_connection_ready, &servcli, NULL), ==, R_SOCKET_OK);
+  r_assert_cmpint (r_ev_tcp_connect (client, addr, client_connected, &conn, NULL), ==, R_SOCKET_WOULD_BLOCK);
+  r_socket_address_unref (addr);
+
+  while (servcli == NULL)
+    r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE), >, 0);
+  r_assert (conn);
+  r_assert (r_ev_tcp_close (server, NULL, NULL, NULL));
+  r_ev_tcp_unref (server);
+
+  r_assert (r_ev_tcp_recv_start (servcli, NULL, data_counted, &received, NULL));
+  for (i = 0; i < nsends; i++)
+    r_assert (r_ev_tcp_send_dup (client, chunk, sizeof (chunk), NULL, NULL, NULL));
+
+  while (received < (rsize)nsends * sizeof (chunk))
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+  r_assert_cmpuint (received, ==, (rsize)nsends * sizeof (chunk));
+  r_assert (r_ev_tcp_recv_stop (servcli));
+
+  r_assert (r_ev_tcp_close (client, NULL, NULL, NULL));
+  r_assert (r_ev_tcp_close (servcli, NULL, NULL, NULL));
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+
+  r_ev_tcp_unref (client);
+  r_ev_tcp_unref (servcli);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
 /* These two exercise an abortive close (peer RST) and assert the client
- * observes it promptly. On Windows that is not reliably possible in a readiness
- * reactor: an abortive RST on a loopback socket is, intermittently, not
- * surfaced by the stack (recv keeps returning WOULDBLOCK) until a multi-second
- * TCP abort timeout -- documented Winsock behaviour that libuv et al. avoid
- * only via IOCP (pre-posted overlapped reads). Gated off on Windows until the
- * Win32 backend gains an IOCP read path. */
-#ifndef R_OS_WIN32
+ * observes it promptly. The rpoll readiness backend cannot do this reliably:
+ * an abortive RST on a loopback socket is, intermittently, not surfaced by the
+ * Windows stack (recv keeps returning WOULDBLOCK) until a multi-second TCP
+ * abort timeout. A completion backend (IOCP, the Windows default) pre-posts
+ * overlapped reads and observes it promptly, so these run everywhere except a
+ * forced rpoll build. */
+#ifndef R_EV_USE_RPOLL
 RTEST (revtcp, recv_error_handler, RTEST_FAST | RTEST_SYSTEM)
 {
   REvLoop * loop;
@@ -228,7 +291,7 @@ RTEST (revtcp, recv_error_no_handler, RTEST_FAST | RTEST_SYSTEM)
   r_ev_loop_unref (loop);
 }
 RTEST_END;
-#endif /* !R_OS_WIN32 */
+#endif /* !R_EV_USE_RPOLL */
 
 /* The error handler's data is released (via datanotify) both when it is
  * replaced and when the socket is freed. */
