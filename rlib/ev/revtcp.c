@@ -703,6 +703,9 @@ r_ev_tcp_accept (REvTCP * evtcp, RSocketStatus * res)
 
 static void r_ev_tcp_io_stop_after (rpointer data, rpointer ctx);
 
+/* Readiness (reactor) backends only; the completion backend connects via
+ * ConnectEx and never installs this watcher. */
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_tcp_connected_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
@@ -718,6 +721,7 @@ r_ev_tcp_connected_cb (rpointer data, REvIOEvents events, REvIO * evio)
     evtcp->connected (data, evtcp, r_socket_get_error (evtcp->socket));
   }
 }
+#endif
 
 RSocketStatus
 r_ev_tcp_connect (REvTCP * evtcp, const RSocketAddress * address,
@@ -790,6 +794,8 @@ r_ev_tcp_connect (REvTCP * evtcp, const RSocketAddress * address,
 #endif
 }
 
+/* Readiness backends only; the completion backend accepts via AcceptEx. */
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_tcp_listen_cb (rpointer data, REvIOEvents events, REvIO * evio)
 {
@@ -805,6 +811,7 @@ r_ev_tcp_listen_cb (rpointer data, REvIOEvents events, REvIO * evio)
     r_ev_tcp_unref (newtcp);
   }
 }
+#endif
 
 RSocketStatus
 r_ev_tcp_listen (REvTCP * evtcp, ruint8 backlog,
@@ -945,7 +952,9 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
 
 static void r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio);
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void r_ev_tcp_send_iocb_ev (rpointer data, REvLoop * loop);
+#endif
 
 static void
 r_ev_tcp_io_stop_after (rpointer data, rpointer ctx)
@@ -1006,12 +1015,14 @@ r_ev_tcp_error_iocb (REvTCP * evtcp)
     evtcp->error (evtcp->error_data, evtcp, err);
 }
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_tcp_send_iocb_ev (rpointer data, REvLoop * loop)
 {
   (void) loop;
   r_ev_tcp_send_iocb (data);
 }
+#endif
 
 static void
 r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
@@ -1023,6 +1034,7 @@ r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
   if (events & R_EV_IO_ERROR) r_ev_tcp_error_iocb ((REvTCP *)evio);
 }
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_tcp_recv_iocb_task (rpointer data, RTaskQueue * queue, RTask * task)
 {
@@ -1030,7 +1042,9 @@ r_ev_tcp_recv_iocb_task (rpointer data, RTaskQueue * queue, RTask * task)
   (void) task;
   r_ev_tcp_recv_iocb (data);
 }
+#endif
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_tcp_task_recv_iocb (REvTCP * evtcp)
 {
@@ -1049,7 +1063,9 @@ r_ev_tcp_task_recv_iocb (REvTCP * evtcp)
     r_ev_tcp_unref (evtcp);
   }
 }
+#endif
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_tcp_task_iocb (rpointer data, REvIOEvents events, REvIO * evio)
 {
@@ -1059,6 +1075,7 @@ r_ev_tcp_task_iocb (rpointer data, REvIOEvents events, REvIO * evio)
   if (events & R_EV_IO_WRITABLE) r_ev_tcp_send_iocb ((REvTCP *)evio);
   if (events & R_EV_IO_ERROR) r_ev_tcp_error_iocb ((REvTCP *)evio);
 }
+#endif
 
 rboolean
 r_ev_tcp_recv_start (REvTCP * evtcp,
