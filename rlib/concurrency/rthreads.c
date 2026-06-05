@@ -109,7 +109,10 @@ r_thread_init (void)
 
   r_log_category_register (&rthreadcat);
 
-#ifdef HAVE_PTHREAD_GETNAME_NP
+  /* Windows threads are Win32 HANDLEs (see the struct), not pthread_t, so the
+   * pthread name query only applies off Windows -- mingw ships winpthreads, so
+   * gate on the OS, not just HAVE_PTHREAD_GETNAME_NP. */
+#if !defined (R_OS_WIN32) && defined (HAVE_PTHREAD_GETNAME_NP)
   static const int maxname = 24;
   rchar name[maxname + 1];
   if (pthread_getname_np (thread->thread, name, maxname) == 0 && name[0] != 0) {
@@ -635,7 +638,10 @@ r_thread_trampoline (rpointer data)
   /* Parent pre-bumped our ref before the OS thread call; TSS destructor unrefs at exit. */
   r_tss_set (&g__r_thread_self, thread);
   if (thread->name != NULL) {
-#if defined (R_OS_WIN32)
+#if defined (R_CC_MSVC)
+    /* The legacy debugger thread-name trick: raise a magic exception that a
+     * debugger interprets. It needs SEH to swallow when no debugger is
+     * attached, so it is MSVC-only -- not all of R_OS_WIN32. */
     THREADNAME_INFO info = { 0x1000, thread->name, -1, 0 };
     static const DWORD MS_VC_EXCEPTION = 0x406D1388;
 
@@ -644,6 +650,9 @@ r_thread_trampoline (rpointer data)
           sizeof (THREADNAME_INFO) / sizeof (ULONG_PTR), (ULONG_PTR*)&info);
     } __except(EXCEPTION_EXECUTE_HANDLER) {
     }
+#elif defined (R_OS_WIN32)
+    /* mingw / other Windows compilers: no SEH to swallow the exception, and a
+     * thread name is only a debugging nicety, so skip it. */
 #elif defined (HAVE_PTHREAD_SETNAME_NP_WITH_TID)
     pthread_setname_np (thread->thread, thread->name);
 #elif defined (HAVE_PTHREAD_SETNAME_NP_WITHOUT_TID)
