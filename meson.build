@@ -228,6 +228,18 @@ libm = cc.find_library('m', required : false)
 libdl = cc.find_library('dl', required : false)
 librt = cc.find_library('rt', required : false)
 
+# Windows system libraries, linked uniformly for MSVC and mingw via meson
+# (rather than MSVC-only `#pragma comment(lib, ...)`): ws2_32 for sockets,
+# dbghelp for the test framework's stack traces.
+if host_machine.system() == 'windows'
+  libwin = [
+    cc.find_library('ws2_32'),
+    cc.find_library('dbghelp'),
+  ]
+else
+  libwin = []
+endif
+
 
 # HEADERS
 req_headers = [
