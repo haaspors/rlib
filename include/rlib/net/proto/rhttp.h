@@ -199,6 +199,15 @@ R_API void r_http_msg_foreach_header (RHttpMsg * msg, RHttpHeaderFunc func, rpoi
 /** @brief Append a header @p field : @p value to the message. */
 R_API rboolean r_http_msg_add_header (RHttpMsg * msg,
     const rchar * field, rssize fsize, const rchar * value, rssize vsize);
+/**
+ * @brief Set header @p field to @p value, replacing any existing instances
+ * (the header is appended if it was not present).
+ */
+R_API rboolean r_http_msg_set_header (RHttpMsg * msg,
+    const rchar * field, rssize fsize, const rchar * value, rssize vsize);
+/** @brief Remove every instance of header @p field; @c TRUE if any was removed. */
+R_API rboolean r_http_msg_remove_header (RHttpMsg * msg,
+    const rchar * field, rssize fsize);
 
 /** @brief Opaque, refcounted HTTP request (an @ref RHttpMsg). */
 typedef struct RHttpRequest RHttpRequest;
@@ -239,6 +248,10 @@ R_API RUri * r_http_request_get_uri (RHttpRequest * req);
 #define r_http_request_foreach_header(req, func, data) r_http_msg_foreach_header ((RHttpMsg *)req, func, data)
 /** @brief @ref r_http_msg_add_header on a request. */
 #define r_http_request_add_header(req, field, fsize, value, vsize) r_http_msg_add_header ((RHttpMsg *)req, field, fsize, value, vsize)
+/** @brief @ref r_http_msg_set_header on a request. */
+#define r_http_request_set_header(req, field, fsize, value, vsize) r_http_msg_set_header ((RHttpMsg *)req, field, fsize, value, vsize)
+/** @brief @ref r_http_msg_remove_header on a request. */
+#define r_http_request_remove_header(req, field, fsize) r_http_msg_remove_header ((RHttpMsg *)req, field, fsize)
 /** @brief @ref r_http_msg_get_body on a request. */
 #define r_http_request_get_body(req, size) r_http_msg_get_body ((RHttpMsg *)req, size)
 /** @brief @ref r_http_msg_get_body_buffer on a request. */
@@ -288,6 +301,10 @@ R_API RHttpRequest * r_http_response_get_request (RHttpResponse * res);
 #define r_http_response_foreach_header(res, func, data) r_http_msg_foreach_header ((RHttpMsg *)res, func, data)
 /** @brief @ref r_http_msg_add_header on a response. */
 #define r_http_response_add_header(res, field, fsize, value, vsize) r_http_msg_add_header ((RHttpMsg *)res, field, fsize, value, vsize)
+/** @brief @ref r_http_msg_set_header on a response. */
+#define r_http_response_set_header(res, field, fsize, value, vsize) r_http_msg_set_header ((RHttpMsg *)res, field, fsize, value, vsize)
+/** @brief @ref r_http_msg_remove_header on a response. */
+#define r_http_response_remove_header(res, field, fsize) r_http_msg_remove_header ((RHttpMsg *)res, field, fsize)
 /** @brief @ref r_http_msg_get_body on a response. */
 #define r_http_response_get_body(res, size) r_http_msg_get_body ((RHttpMsg *)res, size)
 /** @brief @ref r_http_msg_get_body_buffer on a response. */
