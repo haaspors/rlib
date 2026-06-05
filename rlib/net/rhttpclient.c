@@ -21,10 +21,13 @@
 #include <rlib/net/rhttpclient.h>
 
 #include <rlib/ev/revtcp.h>
+#include <rlib/ev/revresolve.h>
 
 #include <rlib/data/rptrarray.h>
 
+#include <rlib/ruri.h>
 #include <rlib/rmem.h>
+#include <rlib/rstr.h>
 
 /* Cap unparsed response-header bytes so a peer that never sends the
  * terminating CRLFCRLF can't grow the input buffer without bound. */
@@ -100,9 +103,10 @@ r_http_client_req_do_close (rpointer data, REvLoop * loop)
  * @defer is TRUE when called from inside a connect/recv callback, where
  * closing the socket synchronously would free the io-watch entry the loop is
  * still iterating; the close is then deferred to a loop callback. It is FALSE
- * only for a synchronous connect failure raised from r_http_client_send (not a
- * loop callback, and the failed socket has no active watch), where deferring
- * would strand the close if the caller never runs the loop again. */
+ * only for a synchronous connect failure raised from
+ * r_http_client_request_to_addr (not a loop callback, and the failed socket has
+ * no active watch), where deferring would strand the close if the caller never
+ * runs the loop again. */
 static void
 r_http_client_req_teardown (RHttpClientReqCtx * ctx, RHttpClientResult result,
     rboolean defer)
@@ -120,11 +124,15 @@ r_http_client_req_teardown (RHttpClientReqCtx * ctx, RHttpClientResult result,
     ctx->cb (ctx->data, result == R_HTTP_CLIENT_OK ? ctx->res : NULL,
         result, ctx->client);
 
-  if (defer)
-    r_ev_loop_add_callback (ctx->client->loop, FALSE,
-        r_http_client_req_do_close, r_ref_ref (ctx), r_ref_unref);
-  else
-    r_ev_tcp_close (ctx->evtcp, NULL, NULL, NULL);
+  /* evtcp is NULL when the request fails during DNS resolution, before a
+   * socket is created; there is then nothing to close. */
+  if (ctx->evtcp != NULL) {
+    if (defer)
+      r_ev_loop_add_callback (ctx->client->loop, FALSE,
+          r_http_client_req_do_close, r_ref_ref (ctx), r_ref_unref);
+    else
+      r_ev_tcp_close (ctx->evtcp, NULL, NULL, NULL);
+  }
   r_ptr_array_remove_first_fast (ctx->client->reqs, ctx);
 
   r_ref_unref (ctx);
@@ -269,7 +277,7 @@ r_http_client_req_error (rpointer data, REvTCP * evtcp, RSocketStatus error)
 }
 
 rboolean
-r_http_client_send (RHttpClient * client, RHttpRequest * req,
+r_http_client_request_to_addr (RHttpClient * client, RHttpRequest * req,
     const RSocketAddress * addr,
     RHttpClientResponseFunc cb, rpointer data, RDestroyNotify notify)
 {
@@ -304,6 +312,98 @@ r_http_client_send (RHttpClient * client, RHttpRequest * req,
   if (r_ev_tcp_connect (ctx->evtcp, addr,
         r_http_client_req_connected, ctx, NULL) < R_SOCKET_OK)
     r_http_client_req_teardown (ctx, R_HTTP_CLIENT_CONNECT_FAILED, FALSE);
+
+  return TRUE;
+}
+
+/* DNS resolution completed: connect to the first resolved address. ctx is
+ * borrowed -- it stays alive in client->reqs for the duration of the
+ * resolution (nothing else can tear it down before this fires). */
+static void
+r_http_client_req_resolved (rpointer data, RResolvedAddr * addr,
+    RResolveResult res)
+{
+  RHttpClientReqCtx * ctx = data;
+
+  if (ctx->finished)
+    return;
+
+  if (res != R_RESOLVE_OK || addr == NULL || addr->addr == NULL) {
+    R_LOG_DEBUG ("%p: request %p resolve failed (%d)", ctx->client, ctx, (int) res);
+    r_http_client_req_finish (ctx, R_HTTP_CLIENT_RESOLVE_FAILED);
+    return;
+  }
+
+  if ((ctx->evtcp = r_ev_tcp_new (r_socket_address_get_family (addr->addr),
+          ctx->client->loop)) == NULL) {
+    r_http_client_req_finish (ctx, R_HTTP_CLIENT_CONNECT_FAILED);
+    return;
+  }
+  r_ev_tcp_set_error_handler (ctx->evtcp, r_http_client_req_error, ctx, NULL);
+  if (r_ev_tcp_connect (ctx->evtcp, addr->addr,
+        r_http_client_req_connected, ctx, NULL) < R_SOCKET_OK)
+    r_http_client_req_finish (ctx, R_HTTP_CLIENT_CONNECT_FAILED);
+}
+
+rboolean
+r_http_client_request (RHttpClient * client, RHttpRequest * req,
+    RHttpClientResponseFunc cb, rpointer data, RDestroyNotify notify)
+{
+  RHttpClientReqCtx * ctx;
+  RUri * uri;
+  rchar * host, * scheme;
+  ruint16 port;
+  rchar service[8];
+  RResolveHints hints = { R_SOCKET_FAMILY_NONE, R_SOCKET_TYPE_STREAM,
+      R_SOCKET_PROTOCOL_DEFAULT };
+  REvResolve * resolve;
+
+  if (R_UNLIKELY (client == NULL || req == NULL || cb == NULL))
+    return FALSE;
+  if (R_UNLIKELY ((uri = r_http_request_get_uri (req)) == NULL))
+    return FALSE;
+
+  host = r_uri_get_hostname (uri);
+  scheme = r_uri_get_scheme (uri);
+  port = r_uri_get_port (uri);
+  r_uri_unref (uri);
+
+  /* Fall back to the scheme's default port; only plaintext http is targeted. */
+  if (port == 0 && scheme != NULL && r_strcasecmp (scheme, "http") == 0)
+    port = 80;
+  r_free (scheme);
+  if (R_UNLIKELY (host == NULL || port == 0)) {
+    r_free (host);
+    return FALSE;
+  }
+  r_snprintf (service, sizeof (service), "%u", (ruint) port);
+
+  if ((ctx = r_mem_new0 (RHttpClientReqCtx)) == NULL) {
+    r_free (host);
+    return FALSE;
+  }
+  r_ref_init (ctx, r_http_client_req_ctx_free);
+  ctx->client = r_http_client_ref (client);
+  ctx->req = r_http_request_ref (req);
+  ctx->bodytype = R_HTTP_BODY_PARSE_SIZED;
+
+  /* Committed: the array owns ctx and every outcome is delivered via cb. */
+  ctx->cb = cb;
+  ctx->data = data;
+  ctx->notify = notify;
+  r_ptr_array_add (client->reqs, ctx, r_ref_unref);
+
+  R_LOG_TRACE ("%p: request %p resolving %s:%s", client, ctx, host, service);
+  resolve = r_ev_resolve_addr_new (host, service, 0, &hints, client->loop,
+      r_http_client_req_resolved, ctx, NULL);
+  r_free (host);
+  if (R_UNLIKELY (resolve == NULL)) {
+    r_http_client_req_teardown (ctx, R_HTTP_CLIENT_RESOLVE_FAILED, FALSE);
+    return TRUE;
+  }
+  /* The queued task keeps the resolve alive until the callback fires; we
+   * don't retain the handle (the request can't be cancelled mid-resolve). */
+  r_ev_resolve_unref (resolve);
 
   return TRUE;
 }
@@ -406,17 +506,40 @@ r_http_client_sync_cb (rpointer data, RHttpResponse * res,
 }
 
 RHttpResponse *
-r_http_client_sync_request (RHttpClientSync * sync, RHttpRequest * req,
+r_http_client_sync_request_to_addr (RHttpClientSync * sync, RHttpRequest * req,
     const RSocketAddress * addr, RHttpClientResult * result)
 {
   RHttpClientSyncState state = { NULL, R_HTTP_CLIENT_CONNECT_FAILED, FALSE,
       sync != NULL ? sync->loop : NULL };
 
   if (R_UNLIKELY (sync == NULL) ||
-      !r_http_client_send (sync->client, req, addr,
+      !r_http_client_request_to_addr (sync->client, req, addr,
           r_http_client_sync_cb, &state, NULL)) {
     if (result != NULL)
       *result = R_HTTP_CLIENT_CONNECT_FAILED;
+    return NULL;
+  }
+
+  while (!state.done)
+    r_ev_loop_run (sync->loop, R_EV_LOOP_RUN_LOOP);
+
+  if (result != NULL)
+    *result = state.result;
+  return state.res;
+}
+
+RHttpResponse *
+r_http_client_sync_request (RHttpClientSync * sync, RHttpRequest * req,
+    RHttpClientResult * result)
+{
+  RHttpClientSyncState state = { NULL, R_HTTP_CLIENT_RESOLVE_FAILED, FALSE,
+      sync != NULL ? sync->loop : NULL };
+
+  if (R_UNLIKELY (sync == NULL) ||
+      !r_http_client_request (sync->client, req,
+          r_http_client_sync_cb, &state, NULL)) {
+    if (result != NULL)
+      *result = R_HTTP_CLIENT_RESOLVE_FAILED;
     return NULL;
   }
 

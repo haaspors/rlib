@@ -33,9 +33,28 @@ r_test_http_send (REvLoop * loop, RHttpClient * client, RHttpRequest * req,
 {
   RTestHttpSyncState st = { NULL, R_HTTP_CLIENT_CONNECT_FAILED, FALSE, loop };
 
-  if (!r_http_client_send (client, req, addr, r_test_http_send_cb, &st, NULL)) {
+  if (!r_http_client_request_to_addr (client, req, addr, r_test_http_send_cb, &st, NULL)) {
     if (result != NULL)
       *result = R_HTTP_CLIENT_CONNECT_FAILED;
+    return NULL;
+  }
+  while (!st.done)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+  if (result != NULL)
+    *result = st.result;
+  return st.res;
+}
+
+/* As r_test_http_send, but targets the host/port derived from req's URI. */
+static RHttpResponse *
+r_test_http_send_uri (REvLoop * loop, RHttpClient * client, RHttpRequest * req,
+    RHttpClientResult * result)
+{
+  RTestHttpSyncState st = { NULL, R_HTTP_CLIENT_RESOLVE_FAILED, FALSE, loop };
+
+  if (!r_http_client_request (client, req, r_test_http_send_cb, &st, NULL)) {
+    if (result != NULL)
+      *result = R_HTTP_CLIENT_RESOLVE_FAILED;
     return NULL;
   }
   while (!st.done)
@@ -140,6 +159,73 @@ RTEST (rhttpclient, request_get, RTEST_FAST | RTEST_SYSTEM)
 
   r_socket_address_unref (addr);
   r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* The target is derived from the request URI (host:port) and resolved on the
+ * loop; 127.0.0.1 resolves numerically without touching DNS. */
+RTEST (rhttpclient, request_get_uri, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RHttpRequest * req;
+  RHttpResponse * res;
+  RSocketAddress * addr;
+  RHttpClientResult result;
+  rchar * body;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_http_client_server (loop, 47664, "/",
+          R_HTTP_STATUS_OK, &addr)), !=, NULL);
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1:47664/", NULL, NULL)), !=, NULL);
+
+  res = r_test_http_send_uri (loop, client, req, &result);
+  r_http_request_unref (req);
+
+  r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);
+  r_assert_cmpptr (res, !=, NULL);
+  r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_OK);
+  r_assert_cmpstr ((body = r_http_response_get_body (res, NULL)), ==,
+      R_TEST_HTTP_CLIENT_BODY);
+  r_free (body);
+  r_http_response_unref (res);
+
+  r_socket_address_unref (addr);
+  r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* A non-http scheme with no explicit port has no usable target: the request
+ * is rejected before it starts (FALSE), so notify is never called. */
+RTEST (rhttpclient, request_uri_unsupported, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpClient * client;
+  RHttpRequest * req;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "https://127.0.0.1/", NULL, NULL)), !=, NULL);
+
+  r_assert (!r_http_client_request (client, req, r_test_http_send_cb, NULL, NULL));
+
+  r_http_request_unref (req);
+  r_http_client_unref (client);
   r_ev_loop_unref (loop);
 }
 RTEST_END;
@@ -568,7 +654,52 @@ RTEST (rhttpclientsync, request, RTEST_FAST | RTEST_SYSTEM)
           "http://127.0.0.1/", NULL, NULL)), !=, NULL);
   r_assert (r_http_request_add_header (req, "Host", -1, "127.0.0.1", -1));
 
-  res = r_http_client_sync_request (sync, req, addr, &result);
+  res = r_http_client_sync_request_to_addr (sync, req, addr, &result);
+  r_http_request_unref (req);
+
+  r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);
+  r_assert_cmpptr (res, !=, NULL);
+  r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_OK);
+  r_assert_cmpstr ((body = r_http_response_get_body (res, NULL)), ==, "hi");
+  r_free (body);
+  r_http_response_unref (res);
+
+  r_thread_join (thread);
+  r_thread_unref (thread);
+  r_http_client_sync_unref (sync);
+  r_socket_close (listen);
+  r_socket_unref (listen);
+  r_socket_address_unref (addr);
+}
+RTEST_END;
+
+/* The blocking client derives and resolves the target from the request URI. */
+RTEST (rhttpclientsync, request_uri, RTEST_FAST | RTEST_SYSTEM)
+{
+  RSocket * listen;
+  RSocketAddress * addr;
+  RThread * thread;
+  RHttpClientSync * sync;
+  RHttpRequest * req;
+  RHttpResponse * res;
+  RHttpClientResult result;
+  rchar * body;
+
+  r_assert_cmpptr ((listen = r_socket_new (R_SOCKET_FAMILY_IPV4,
+          R_SOCKET_TYPE_STREAM, R_SOCKET_PROTOCOL_TCP)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1,
+          47666)), !=, NULL);
+  r_assert_cmpint (r_socket_bind (listen, addr, TRUE), ==, R_SOCKET_OK);
+  r_assert_cmpint (r_socket_listen (listen), ==, R_SOCKET_OK);
+  r_assert (r_socket_set_blocking (listen, TRUE));
+  r_assert_cmpptr ((thread = r_thread_new (NULL,
+          r_test_http_blocking_responder, listen)), !=, NULL);
+
+  r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1:47666/", NULL, NULL)), !=, NULL);
+
+  res = r_http_client_sync_request (sync, req, &result);
   r_http_request_unref (req);
 
   r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);
@@ -601,7 +732,7 @@ RTEST (rhttpclientsync, connect_refused, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
           "http://127.0.0.1/", NULL, NULL)), !=, NULL);
 
-  res = r_http_client_sync_request (sync, req, addr, &result);
+  res = r_http_client_sync_request_to_addr (sync, req, addr, &result);
   r_http_request_unref (req);
 
   r_assert_cmpint (result, ==, R_HTTP_CLIENT_CONNECT_FAILED);
