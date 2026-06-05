@@ -198,9 +198,8 @@ jobs:
     name: Windows mingw cross / ${{ matrix.buildtype }}
     # Cross-compile the Windows build with mingw-w64 (GCC) to keep it coherent
     # with a non-MSVC toolchain: catches OS-vs-compiler #ifdef regressions and
-    # include/link ordering that the MSVC jobs cannot. Build-only (werror off):
-    # mingw runtime warnings -- mainly the printf format archetype -- are a
-    # separate cleanup; runtime behaviour stays covered by the MSVC jobs.
+    # include/link ordering that the MSVC jobs cannot. Build-only: runtime
+    # behaviour stays covered by the MSVC jobs.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -214,7 +213,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y meson ninja-build gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
       - name: Configure
-        run: meson setup build --cross-file cross/mingw-w64-x86_64.ini --buildtype=${{ matrix.buildtype }} -Dwerror=false
+        run: meson setup build --cross-file cross/mingw-w64-x86_64.ini --buildtype=${{ matrix.buildtype }}
       - name: Build
         run: meson compile -C build
       - name: Upload logs on failure

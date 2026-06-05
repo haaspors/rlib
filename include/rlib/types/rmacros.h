@@ -315,12 +315,23 @@
 #define R_ATTR_MALLOC                 __attribute__((__malloc__))
 /** @brief Mark parameter @p arg_idx as a format string passed through verbatim. */
 #define R_ATTR_FORMAT_ARG(arg_idx)    __attribute__((__format_arg__ (arg_idx)))
+/* On mingw the default __printf__/__scanf__ archetypes map to the MS C
+ * runtime checker, which rejects the C99 hh/ll length modifiers our format
+ * macros emit. The gnu_printf/gnu_scanf archetypes check against the C99
+ * conversions; pair with __USE_MINGW_ANSI_STDIO so the linked runtime agrees. */
+#if defined(R_CC_MINGW)
+#define R_PRINTF_ARCHETYPE __gnu_printf__
+#define R_SCANF_ARCHETYPE  __gnu_scanf__
+#else
+#define R_PRINTF_ARCHETYPE __printf__
+#define R_SCANF_ARCHETYPE  __scanf__
+#endif
 /** @brief Enable @c printf-style format checking (@p fmt_idx, @p arg_idx are 1-based). */
 #define R_ATTR_PRINTF(fmt_idx, arg_idx) \
-  __attribute__((__format__ (__printf__, fmt_idx, arg_idx)))
+  __attribute__((__format__ (R_PRINTF_ARCHETYPE, fmt_idx, arg_idx)))
 /** @brief Enable @c scanf-style format checking. */
 #define R_ATTR_SCANF(fmt_idx, arg_idx)  \
-  __attribute__((__format__ (__scanf__, fmt_idx, arg_idx)))
+  __attribute__((__format__ (R_SCANF_ARCHETYPE, fmt_idx, arg_idx)))
 #else
 #define R_ATTR_NULL_TERMINATED
 #define R_ATTR_UNUSED

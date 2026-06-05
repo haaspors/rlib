@@ -32,6 +32,12 @@ if host_machine.system() == 'windows'
     '-DWIN32_LEAN_AND_MEAN=1',
     '-DSTRICT=1',
     language : 'c')
+  # mingw: select the C99-conformant stdio so the linked printf/scanf accept the
+  # hh/ll length modifiers our format macros emit, matching the gnu_* archetype
+  # the format-checking attributes use (see R_ATTR_PRINTF in rmacros.h).
+  if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
+    add_global_arguments('-D__USE_MINGW_ANSI_STDIO=1', language : 'c')
+  endif
 endif
 
 
@@ -197,13 +203,13 @@ elif sizeof_void_p == sizeof_long
   rconf.set('RLIB_INTMAX_TYPE', 'RLONG')
 elif sizeof_void_p == sizeof_longlong
   rconf.set('RINTPTR_TYPE', 'long long')
-  rconf.set('RINTPTR_MODIFIER', '"I64"')
-  rconf.set('RINTPTR_FMT', '"I64i"')
-  rconf.set('RUINTPTR_FMT', '"I64u"')
+  rconf.set('RINTPTR_MODIFIER', '"ll"')
+  rconf.set('RINTPTR_FMT', '"lli"')
+  rconf.set('RUINTPTR_FMT', '"llu"')
   rconf.set('RINTMAX_TYPE', 'long long')
-  rconf.set('RINTMAX_MODIFIER', '"I64"')
-  rconf.set('RINTMAX_FMT', '"I64i"')
-  rconf.set('RUINTMAX_FMT', '"I64u"')
+  rconf.set('RINTMAX_MODIFIER', '"ll"')
+  rconf.set('RINTMAX_FMT', '"lli"')
+  rconf.set('RUINTMAX_FMT', '"llu"')
   rconf.set('RLIB_UINTMAX_TYPE', 'RUINT64')
   rconf.set('RLIB_INTMAX_TYPE', 'RINT64')
 else
