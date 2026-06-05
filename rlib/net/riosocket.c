@@ -58,6 +58,11 @@ r_socket_err_to_socket_status (int err)
 #endif
     case EOPNOTSUPP:
       return R_SOCKET_INVALID_OP;
+#ifdef WSAEMSGSIZE
+    case WSAEMSGSIZE:
+#endif
+    case EMSGSIZE:
+      return R_SOCKET_MSG_SIZE;
     case 0:
       return R_SOCKET_OK;
     default:
@@ -76,7 +81,11 @@ r_io_socket (RSocketFamily family, RSocketType type, RSocketProtocol proto)
 {
   RIOHandle ret;
 #ifdef HAVE_WINSOCK2
-  ret = R_SOCKET_HANDLE_TO_IO_HANDLE (WSASocketW (family, type, proto, NULL, 0, 0));
+  /* WSA_FLAG_OVERLAPPED keeps the socket usable with the default IOCP backend's
+   * overlapped ops; it is harmless for the rpoll (WSAEventSelect) opt-out path,
+   * which issues non-overlapped WSARecv/WSASend regardless. */
+  ret = R_SOCKET_HANDLE_TO_IO_HANDLE (WSASocketW (family, type, proto, NULL, 0,
+        WSA_FLAG_OVERLAPPED));
 #elif defined (HAVE_POSIX_SOCKETS)
 #ifdef SOCK_CLOEXEC
   if ((ret = socket (family, type | SOCK_CLOEXEC, proto)) != R_IO_HANDLE_INVALID ||

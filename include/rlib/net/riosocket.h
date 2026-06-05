@@ -91,6 +91,7 @@ typedef enum {
   R_SOCKET_CONN_REFUSED     = -10,/**< Peer refused the connection. */
   R_SOCKET_CONN_RESET       = -11,/**< Connection reset by peer. */
   R_SOCKET_NOT_SUPPORTED    = -12,/**< Op not supported on this platform. */
+  R_SOCKET_MSG_SIZE         = -13,/**< Datagram exceeds the size limit (or was truncated on receive). */
 } RSocketStatus;
 
 
