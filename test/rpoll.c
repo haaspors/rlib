@@ -177,3 +177,49 @@ RTEST (rpollset, add_grows_past_initial_alloc, RTEST_FAST)
 }
 RTEST_END;
 
+static rpointer
+r_test_pollset_fail_realloc (rpointer ptr, rsize size)
+{
+  (void) ptr;
+  (void) size;
+  return NULL;
+}
+
+RTEST (rpollset, add_grow_oom_keeps_set_intact, RTEST_FAST)
+{
+  RPollSet ps;
+  RMemVTable saved, hook;
+  ruint i, fill;
+
+  r_poll_set_init (&ps, 0);
+
+  /* Fill exactly to capacity so the next add must grow the buffer. */
+  fill = ps.alloc;
+  for (i = 1; i <= fill; i++)
+    r_assert_cmpint (r_poll_set_add (&ps, (RIOHandle)(rsize)i, 0,
+          (rpointer)(rsize)i), >=, 0);
+  r_assert_cmpuint (ps.count, ==, fill);
+  r_assert_cmpuint (ps.alloc, ==, fill);
+
+  /* Fail the grow's realloc: the add must report failure without
+   * corrupting the set -- count/alloc unchanged and the buffer not nulled. */
+  r_mem_get_vtable (&saved);
+  hook = saved;
+  hook.realloc = r_test_pollset_fail_realloc;
+  r_mem_set_vtable (&hook);
+
+  r_assert_cmpint (r_poll_set_add (&ps, (RIOHandle)(rsize)(fill + 1), 0,
+        (rpointer)(rsize)(fill + 1)), <, 0);
+
+  r_mem_set_vtable (&saved);
+
+  r_assert_cmpuint (ps.count, ==, fill);
+  r_assert_cmpuint (ps.alloc, ==, fill);
+  for (i = 1; i <= fill; i++)
+    r_assert_cmpptr (r_poll_set_get_user (&ps, (RIOHandle)(rsize)i),
+        ==, (rpointer)(rsize)i);
+
+  r_poll_set_clear (&ps);
+}
+RTEST_END;
+
