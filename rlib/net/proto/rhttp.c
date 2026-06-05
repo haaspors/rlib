@@ -518,31 +518,19 @@ r_http_chunked_decode (RBuffer * buf, RBuffer ** out, rsize * consumed)
     const rchar * p = data;
 
     for (;;) {
-      ruint64 csize = 0;
-      const rchar * q;
+      ruint64 csize;
+      RStrParse parse;
       rssize crlf;
 
-      /* chunk-size line: hex size, optional ";ext", terminated by CRLF.
-       * Parse the hex digits directly: r_str_to_uint64 mishandles a leading
-       * zero in base 16, which is exactly the terminating "0" chunk. */
+      /* chunk-size line: hex size, optional ";ext", terminated by CRLF. The
+       * parse stops at the ';' or CR, so it never reads past the line. */
       if ((crlf = r_str_idx_of_str (p, (rsize) (end - p), "\r\n", 2)) < 0)
         break;                                  /* size line incomplete */
-      if (!r_ascii_isxdigit (*p)) {             /* need at least one hex digit */
+      csize = r_str_to_uint64 (p, NULL, 16, &parse);
+      if (parse != R_STR_PARSE_OK) {            /* no digits, or it overflowed */
         err = R_HTTP_DECODE_ERROR;
         break;
       }
-      for (q = p; q < p + crlf && r_ascii_isxdigit (*q); q++) {
-        ruint d = r_ascii_isdigit (*q) ? (ruint) (*q - '0') :
-            (r_ascii_isupper (*q) ? (ruint) (*q - 'A' + 10) :
-                                    (ruint) (*q - 'a' + 10));
-        if (csize > (RUINT64_MAX - d) / 16) {   /* overflow */
-          err = R_HTTP_DECODE_ERROR;
-          break;
-        }
-        csize = csize * 16 + d;
-      }
-      if (err == R_HTTP_DECODE_ERROR)
-        break;
       p += crlf + 2;
 
       if (csize == 0) {
