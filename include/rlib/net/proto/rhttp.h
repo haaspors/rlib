@@ -180,6 +180,22 @@ R_API rboolean r_http_msg_has_header_of_value (RHttpMsg * msg,
     const rchar * key, rssize ksize, const rchar * val, rssize vsize);
 /** @brief Return the value of header @p field (newly allocated), or @c NULL. */
 R_API rchar * r_http_msg_get_header (RHttpMsg * msg, const rchar * field, rssize size);
+/**
+ * @brief Per-header callback for @ref r_http_msg_foreach_header.
+ * @param data  User pointer passed to @ref r_http_msg_foreach_header.
+ * @param name  Header name, @p nsize bytes — points into the message, not NUL-terminated.
+ * @param nsize Length of @p name.
+ * @param value Header value, @p vsize bytes — points into the message, not NUL-terminated.
+ * @param vsize Length of @p value.
+ * @return @c TRUE to continue iterating, @c FALSE to stop.
+ */
+typedef rboolean (*RHttpHeaderFunc) (rpointer data,
+    const rchar * name, rsize nsize, const rchar * value, rsize vsize);
+/**
+ * @brief Invoke @p func for each header in order (zero-copy: @p name / @p value
+ * point into the message). Handles repeated headers (e.g. @c Set-Cookie).
+ */
+R_API void r_http_msg_foreach_header (RHttpMsg * msg, RHttpHeaderFunc func, rpointer data);
 /** @brief Append a header @p field : @p value to the message. */
 R_API rboolean r_http_msg_add_header (RHttpMsg * msg,
     const rchar * field, rssize fsize, const rchar * value, rssize vsize);
@@ -219,6 +235,8 @@ R_API RUri * r_http_request_get_uri (RHttpRequest * req);
   r_http_msg_has_header_of_value ((RHttpMsg *)req, key, ksize, val, vsize)
 /** @brief @ref r_http_msg_get_header on a request. */
 #define r_http_request_get_header(req, field, size) r_http_msg_get_header ((RHttpMsg *)req, field, size)
+/** @brief @ref r_http_msg_foreach_header on a request. */
+#define r_http_request_foreach_header(req, func, data) r_http_msg_foreach_header ((RHttpMsg *)req, func, data)
 /** @brief @ref r_http_msg_add_header on a request. */
 #define r_http_request_add_header(req, field, fsize, value, vsize) r_http_msg_add_header ((RHttpMsg *)req, field, fsize, value, vsize)
 /** @brief @ref r_http_msg_get_body on a request. */
@@ -266,6 +284,8 @@ R_API RHttpRequest * r_http_response_get_request (RHttpResponse * res);
   r_http_msg_has_header_of_value ((RHttpMsg *)res, key, ksize, val, vsize)
 /** @brief @ref r_http_msg_get_header on a response. */
 #define r_http_response_get_header(res, field, size) r_http_msg_get_header ((RHttpMsg *)res, field, size)
+/** @brief @ref r_http_msg_foreach_header on a response. */
+#define r_http_response_foreach_header(res, func, data) r_http_msg_foreach_header ((RHttpMsg *)res, func, data)
 /** @brief @ref r_http_msg_add_header on a response. */
 #define r_http_response_add_header(res, field, fsize, value, vsize) r_http_msg_add_header ((RHttpMsg *)res, field, fsize, value, vsize)
 /** @brief @ref r_http_msg_get_body on a response. */
