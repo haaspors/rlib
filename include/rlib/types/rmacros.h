@@ -58,6 +58,34 @@
 #define R_GNUC_PREREQ(x, y) 0
 #endif
 
+/**
+ * @name Compiler identity
+ *
+ * Toolchain axis, orthogonal to the OS axis (@c R_OS_*). Gate language
+ * extensions and toolchain quirks on these (SEH, @c \#pragma, intrinsics) --
+ * not on @c R_OS_WIN32, which is true for both MSVC and mingw. Each is defined
+ * only on the matching compiler; test with @c \#if @c defined(...). A mingw
+ * build is @c R_CC_GNUC + @c R_CC_MINGW; a Clang build is @c R_CC_GNUC +
+ * @c R_CC_CLANG.
+ *  @{ */
+#if defined(_MSC_VER)
+/** @brief Microsoft Visual C++ (or an MSVC-compatible front end). */
+#define R_CC_MSVC 1
+#endif
+#if defined(__MINGW32__)   /* also set under __MINGW64__ */
+/** @brief A mingw-w64 toolchain (GCC targeting the Windows runtime). */
+#define R_CC_MINGW 1
+#endif
+#if defined(__clang__)
+/** @brief The Clang/LLVM front end. */
+#define R_CC_CLANG 1
+#endif
+#if defined(__GNUC__)
+/** @brief GCC or a GCC-compatible front end (includes Clang and mingw). */
+#define R_CC_GNUC 1
+#endif
+/** @} */
+
 /** @name Symbol visibility
  *  @{ */
 #if defined(_WIN32) || defined(__CYGWIN__)
