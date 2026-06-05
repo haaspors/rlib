@@ -179,11 +179,15 @@ R_API RHttpError r_http_msg_set_body_buffer (RHttpMsg * msg, RBuffer * buf);
  *            chunk-size line).
  * @param out On @c R_HTTP_OK receives the decoded body (zero-copy views into
  *            @p buf; caller @ref r_buffer_unref's it). @c NULL otherwise.
+ * @param consumed If non-@c NULL, on @c R_HTTP_OK receives the number of bytes
+ *            consumed from @p buf (through the terminating chunk and trailers);
+ *            any remainder belongs to the next message.
  * @return @c R_HTTP_OK when the terminating zero-size chunk has arrived,
  *         @c R_HTTP_BUF_TOO_SMALL when more bytes are needed, or a decode
  *         error for a malformed stream.
  */
-R_API RHttpError r_http_chunked_decode (RBuffer * buf, RBuffer ** out) R_ATTR_WARN_UNUSED_RESULT;
+R_API RHttpError r_http_chunked_decode (RBuffer * buf, RBuffer ** out,
+    rsize * consumed) R_ATTR_WARN_UNUSED_RESULT;
 /** @brief @c TRUE if a header named @p field is present (@p size or @c -1). */
 R_API rboolean r_http_msg_has_header (RHttpMsg * msg, const rchar * field, rssize size);
 /** @brief @c TRUE if header @p key is present with value @p val. */

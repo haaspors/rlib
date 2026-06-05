@@ -61,6 +61,7 @@ struct RHttpClientReqCtx {
 
   RHttpResponse * res;
   rssize bodysize;
+  rsize bodyconsumed;       /* inbuf bytes the chunked decoder used (CHUNKED) */
   RHttpBodyParseType bodytype;
 
   RHttpClientResponseFunc cb;
@@ -329,17 +330,21 @@ r_http_client_req_reusable (RHttpClientReqCtx * ctx, RHttpClientConn * conn)
     return FALSE;
   if (ctx->res == NULL)
     return FALSE;
-  /* Only fixed-length bodies are pooled: the chunked decoder doesn't report
-   * how many bytes it consumed, so the post-body boundary is unknown. */
-  if (ctx->bodytype != R_HTTP_BODY_PARSE_SIZED)
+  /* Only self-delimited bodies are poolable (a read-until-close body needs the
+   * connection to close). */
+  if (ctx->bodytype != R_HTTP_BODY_PARSE_SIZED &&
+      ctx->bodytype != R_HTTP_BODY_PARSE_CHUNKED)
     return FALSE;
   /* Both sides must agree to persist. */
   if (!r_http_response_is_keepalive (ctx->res) ||
       !r_http_request_is_keepalive (ctx->req))
     return FALSE;
-  /* Unconsumed bytes past the body would corrupt the next response. */
+  /* Unconsumed bytes past the body would corrupt the next response. The body
+   * consumed inbuf's leading bodysize bytes (SIZED) or bodyconsumed bytes as
+   * reported by the chunked decoder (CHUNKED). */
   leftover = (ctx->inbuf != NULL ? r_buffer_get_size (ctx->inbuf) : 0) -
-      (ctx->bodysize > 0 ? (rsize) ctx->bodysize : 0);
+      (ctx->bodytype == R_HTTP_BODY_PARSE_CHUNKED ? ctx->bodyconsumed :
+          (ctx->bodysize > 0 ? (rsize) ctx->bodysize : 0));
   return leftover == 0;
 }
 
@@ -493,7 +498,8 @@ r_http_client_req_recv_data (RHttpClientReqCtx * ctx, RBuffer * buf)
     case R_HTTP_BODY_PARSE_CHUNKED: {
       RBuffer * body = NULL;
       RHttpError err = (ctx->inbuf != NULL) ?
-          r_http_chunked_decode (ctx->inbuf, &body) : R_HTTP_BUF_TOO_SMALL;
+          r_http_chunked_decode (ctx->inbuf, &body, &ctx->bodyconsumed) :
+          R_HTTP_BUF_TOO_SMALL;
       if (err == R_HTTP_OK) {
         r_http_response_set_body_buffer (ctx->res, body);
         r_buffer_unref (body);

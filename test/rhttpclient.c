@@ -757,6 +757,7 @@ typedef struct {
   rboolean close_each;
   int connections;
   int requests;
+  rboolean chunked;       /* reply chunked instead of Content-Length */
 } RTestKaServer;
 
 static rpointer
@@ -764,6 +765,10 @@ r_test_ka_responder (rpointer data)
 {
   RTestKaServer * s = data;
   static const rchar resp[] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi";
+  static const rchar chunkedresp[] =
+      "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nhi\r\n0\r\n\r\n";
+  const rchar * r = s->chunked ? chunkedresp : resp;
+  rsize rlen = (s->chunked ? sizeof (chunkedresp) : sizeof (resp)) - 1;
 
   while (s->requests < s->max_requests) {
     RSocket * conn;
@@ -776,7 +781,7 @@ r_test_ka_responder (rpointer data)
       rsize n = 0;
       if (r_socket_receive (conn, buf, sizeof (buf), &n) != R_SOCKET_OK || n == 0)
         break;                              /* peer closed / error */
-      r_socket_send (conn, (const ruint8 *) resp, sizeof (resp) - 1, &n);
+      r_socket_send (conn, (const ruint8 *) r, rlen, &n);
       s->requests++;
       if (s->close_each || s->requests >= s->max_requests)
         break;
@@ -826,7 +831,7 @@ r_test_ka_request (RHttpClientSync * sync, const RSocketAddress * addr)
 /* Two requests to one destination reuse a single pooled connection. */
 RTEST (rhttpclientsync, keepalive_reuse, RTEST_FAST | RTEST_SYSTEM)
 {
-  RTestKaServer s = { NULL, 2, FALSE, 0, 0 };
+  RTestKaServer s = { NULL, 2, FALSE, 0, 0, FALSE };
   RThread * thread;
   RSocketAddress * addr;
   RHttpClientSync * sync;
@@ -849,10 +854,37 @@ RTEST (rhttpclientsync, keepalive_reuse, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+/* A chunked (Transfer-Encoding) response is self-delimited, so its connection
+ * is pooled and reused like a Content-Length one. */
+RTEST (rhttpclientsync, keepalive_reuse_chunked, RTEST_FAST | RTEST_SYSTEM)
+{
+  RTestKaServer s = { NULL, 2, FALSE, 0, 0, TRUE };   /* chunked replies */
+  RThread * thread;
+  RSocketAddress * addr;
+  RHttpClientSync * sync;
+
+  thread = r_test_ka_start (&s, 47671, &addr);
+  r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
+
+  r_test_ka_request (sync, addr);
+  r_test_ka_request (sync, addr);
+
+  r_thread_join (thread);
+  r_thread_unref (thread);
+  r_assert_cmpint (s.requests, ==, 2);
+  r_assert_cmpint (s.connections, ==, 1);   /* chunked response reused */
+
+  r_http_client_sync_unref (sync);
+  r_socket_close (s.listen);
+  r_socket_unref (s.listen);
+  r_socket_address_unref (addr);
+}
+RTEST_END;
+
 /* With keep-alive disabled each request opens (and closes) its own connection. */
 RTEST (rhttpclientsync, keepalive_disabled, RTEST_FAST | RTEST_SYSTEM)
 {
-  RTestKaServer s = { NULL, 2, FALSE, 0, 0 };
+  RTestKaServer s = { NULL, 2, FALSE, 0, 0, FALSE };
   RThread * thread;
   RSocketAddress * addr;
   RHttpClientSync * sync;
@@ -882,7 +914,7 @@ RTEST_END;
  * transparently reconnects and still succeeds. */
 RTEST (rhttpclientsync, keepalive_retry_stale, RTEST_FAST | RTEST_SYSTEM)
 {
-  RTestKaServer s = { NULL, 2, TRUE, 0, 0 };   /* close after each response */
+  RTestKaServer s = { NULL, 2, TRUE, 0, 0, FALSE };   /* close after each response */
   RThread * thread;
   RSocketAddress * addr;
   RHttpClientSync * sync;
@@ -909,7 +941,7 @@ RTEST_END;
  * request opens a fresh connection. */
 RTEST (rhttpclient, keepalive_idle_timeout, RTEST_FAST | RTEST_SYSTEM)
 {
-  RTestKaServer s = { NULL, 2, FALSE, 0, 0 };
+  RTestKaServer s = { NULL, 2, FALSE, 0, 0, FALSE };
   RThread * thread;
   RSocketAddress * addr;
   REvLoop * loop;

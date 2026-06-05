@@ -503,11 +503,12 @@ r_http_msg_set_header (RHttpMsg * msg, const rchar * field, rssize fsize,
 }
 
 RHttpError
-r_http_chunked_decode (RBuffer * buf, RBuffer ** out)
+r_http_chunked_decode (RBuffer * buf, RBuffer ** out, rsize * consumed)
 {
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
   RHttpError err = R_HTTP_BUF_TOO_SMALL;
   RBuffer * body = NULL;
+  rsize used = 0;
 
   if (R_UNLIKELY (buf == NULL || out == NULL)) return R_HTTP_INVAL;
   if (!r_buffer_map (buf, &info, R_MEM_MAP_READ)) return R_HTTP_INVAL;
@@ -554,6 +555,7 @@ r_http_chunked_decode (RBuffer * buf, RBuffer ** out)
           p += crlf + 2;
           if (crlf == 0) {                      /* empty line: complete */
             err = R_HTTP_OK;
+            used = (rsize) (p - data);
             break;
           }
         }
@@ -582,6 +584,8 @@ r_http_chunked_decode (RBuffer * buf, RBuffer ** out)
 
   if (err == R_HTTP_OK) {
     *out = body;
+    if (consumed != NULL)
+      *consumed = used;
   } else {
     if (body != NULL)
       r_buffer_unref (body);
