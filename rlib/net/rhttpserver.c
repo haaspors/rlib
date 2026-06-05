@@ -27,6 +27,7 @@
 #include <rlib/data/rptrarray.h>
 
 #include <rlib/rmem.h>
+#include <rlib/rstr.h>
 
 struct RHttpServer {
   RRef ref;
@@ -118,6 +119,22 @@ r_http_client_ctx_tcp_response_ready (rpointer data, RHttpResponse * res,
 {
   RHttpClientCtx * ctx = data;
   RBuffer * buf;
+
+  /* A response on a kept-alive connection must be self-delimiting or the client
+   * cannot tell where it ends (it would wait for a close that never comes).
+   * Frame any response that is neither chunked nor already length-delimited --
+   * notably the bodyless auto-error responses built above. */
+  if (ctx->keepalive &&
+      !r_http_response_has_header (res, "Content-Length", -1) &&
+      !r_http_response_has_header (res, "Transfer-Encoding", -1)) {
+    RBuffer * body = r_http_response_get_body_buffer (res);
+    rchar len[16];
+
+    r_sprintf (len, "%"RSIZE_FMT, body != NULL ? r_buffer_get_size (body) : 0);
+    r_http_response_set_header (res, "Content-Length", -1, len, -1);
+    if (body != NULL)
+      r_buffer_unref (body);
+  }
 
   if ((buf = r_http_response_get_buffer (res)) != NULL) {
     R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT" [%s]",
