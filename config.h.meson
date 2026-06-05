@@ -47,6 +47,7 @@
 #mesondefine HAVE_STAT
 #mesondefine HAVE_FSTAT
 #mesondefine HAVE_LSTAT
+#mesondefine HAVE_SYMLINK
 #mesondefine HAVE_MKDIR
 #mesondefine HAVE_SYSCTLBYNAME
 #mesondefine HAVE_KQUEUE

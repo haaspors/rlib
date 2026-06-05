@@ -328,6 +328,7 @@ check_funcs = [
   [ 'lseek', 'unistd.h' ],
   [ 'lseek64', 'unistd.h' ],
   [ 'access', 'unistd.h' ],
+  [ 'symlink', 'unistd.h' ],
   [ 'pipe', 'unistd.h' ],
   [ 'pipe2', 'unistd.h' ],
   # sys/stat
