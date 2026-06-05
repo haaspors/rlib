@@ -26,7 +26,8 @@
 #if defined (HAVE_GETRANDOM) || defined (HAVE_GETENTROPY)
 #include <sys/random.h>
 #include <errno.h>
-#elif defined (R_OS_WIN32)
+#elif defined (HAVE_WINDOWS_H)
+#include <windows.h>
 #include <wincrypt.h>
 #elif defined (R_OS_UNIX)
 #include <rlib/file/rfile.h>

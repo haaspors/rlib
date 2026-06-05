@@ -19,7 +19,7 @@
 #include "config.h"
 #include <rlib/rmem.h>
 #include <string.h>
-#if defined (R_OS_WIN32)
+#if defined (HAVE_WINDOWS_H)
 #include <windows.h>
 #endif
 

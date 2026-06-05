@@ -7,6 +7,7 @@
 #mesondefine HAVE_LIMITS_H
 #mesondefine HAVE_FLOAT_H
 #mesondefine HAVE_STRING_H
+#mesondefine HAVE_WINDOWS_H
 #mesondefine HAVE_UNISTD_H
 #mesondefine HAVE_ALLOCA_H
 #mesondefine HAVE_SCHED_H

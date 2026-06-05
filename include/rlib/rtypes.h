@@ -371,8 +371,9 @@ typedef rint64                  RClockTimeDiff;
 typedef rpointer RIOHandle;
 /** @brief printf format specifier for an @c RIOHandle. */
 #define R_IO_HANDLE_FMT           "p"
-/** @brief Sentinel for "no handle". */
-#define R_IO_HANDLE_INVALID       INVALID_HANDLE_VALUE
+/** @brief Sentinel for "no handle" (the value of Win32 @c INVALID_HANDLE_VALUE,
+ * spelled directly so this public header needs no @c <windows.h>). */
+#define R_IO_HANDLE_INVALID       ((RIOHandle) (rintptr) -1)
 /** @brief Convert an @c rpointer to an @c RIOHandle. */
 #define RPOINTER_TO_IO_HANDLE(p)  (p)
 /** @brief Convert an @c RIOHandle to an @c rpointer. */

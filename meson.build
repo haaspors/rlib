@@ -234,6 +234,7 @@ req_headers = [
   'string.h',
 ]
 check_headers = [
+  'windows.h',
   'unistd.h',
   'alloca.h',
   'dlfcn.h',
