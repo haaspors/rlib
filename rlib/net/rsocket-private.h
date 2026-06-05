@@ -59,7 +59,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <wspiapi.h>
-#pragma comment(lib, "Ws2_32.lib")
 #endif
 
 R_BEGIN_DECLS

@@ -41,8 +41,7 @@
 
 #if defined (HAVE_WINDOWS_H)
 #include <windows.h>
-#include <dbghelp.h>
-#pragma comment(lib, "dbghelp.lib")
+#include <dbghelp.h>   /* linked via meson (Windows libs), for MSVC and mingw */
 #endif
 
 #ifdef HAVE_UNISTD_H
