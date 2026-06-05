@@ -24,7 +24,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
-#ifdef R_OS_WIN32
+#if defined (HAVE_WINDOWS_H)
 #include <windows.h>
 #include <process.h>
 #endif

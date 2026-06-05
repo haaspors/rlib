@@ -41,7 +41,7 @@ r_module_init (void)
 
 #ifdef RLIB_HAVE_MODULES
 
-#if defined (R_OS_WIN32)
+#if defined (HAVE_WINDOWS_H)
 #include <windows.h>
 
 RMODULE

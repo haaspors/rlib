@@ -32,7 +32,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#ifdef R_OS_WIN32
+#if defined (HAVE_WINDOWS_H)
 #include <winsock2.h>
 #include <windows.h>
 #endif

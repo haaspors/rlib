@@ -37,7 +37,7 @@
 #  endif
 # elif defined(R_OS_DARWIN)
 #  include <sys/sysctl.h>
-# elif defined(R_OS_WIN32)
+# elif defined(HAVE_WINDOWS_H)
 #  include <windows.h>
 # endif
 #endif

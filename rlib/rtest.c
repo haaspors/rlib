@@ -39,7 +39,8 @@
 #include <signal.h>
 #endif
 
-#if defined (R_OS_WIN32)
+#if defined (HAVE_WINDOWS_H)
+#include <windows.h>
 #include <dbghelp.h>
 #pragma comment(lib, "dbghelp.lib")
 #endif

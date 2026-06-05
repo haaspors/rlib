@@ -22,7 +22,7 @@
 
 #include <rlib/rio.h>
 
-#if defined (R_OS_WIN32)
+#if defined (HAVE_WINDOWS_H)
 #include <windows.h>
 #endif
 #ifdef HAVE_SYS_EVENTFD_H
