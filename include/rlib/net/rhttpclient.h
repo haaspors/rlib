@@ -44,13 +44,15 @@
  * to a peer, sends an @ref RHttpRequest and delivers the parsed
  * @ref RHttpResponse.
  *
- * @ref r_http_client_send is asynchronous: the result arrives via a
+ * @ref r_http_client_request_to_addr is asynchronous: the result arrives via a
  * callback on the loop thread. For blocking use without managing a loop,
  * see @ref RHttpClientSync, which owns a private loop and an @ref RHttpClient.
  *
- * Scope is plaintext HTTP/1.1 to an explicit @ref RSocketAddress, with
- * response bodies framed by @c Content-Length or by connection close.
- * Built on the @ref r_http_proto wire codec and @ref r_evtcp.
+ * Scope is plaintext HTTP/1.1, either to an explicit @ref RSocketAddress or
+ * to the host/port derived from the request URI (@ref r_http_client_request),
+ * with response bodies framed by @c Content-Length, chunked transfer-encoding
+ * or connection close. Built on the @ref r_http_proto wire codec and
+ * @ref r_evtcp.
  *
  * @{
  */
@@ -63,6 +65,7 @@ typedef struct RHttpClient RHttpClient;
 /** @brief Outcome of an HTTP request attempt. */
 typedef enum {
   R_HTTP_CLIENT_OK = 0,         /**< Response received and parsed. */
+  R_HTTP_CLIENT_RESOLVE_FAILED, /**< Could not resolve the request URI's host. */
   R_HTTP_CLIENT_CONNECT_FAILED, /**< Could not connect to the peer. */
   R_HTTP_CLIENT_SEND_FAILED,    /**< Could not send the request. */
   R_HTTP_CLIENT_RECV_FAILED,    /**< Transport error, or closed before the body completed. */
@@ -70,8 +73,8 @@ typedef enum {
 } RHttpClientResult;
 
 /**
- * @brief Deliver the outcome of @ref r_http_client_send.
- * @param data   User pointer passed to @ref r_http_client_send.
+ * @brief Deliver the outcome of @ref r_http_client_request_to_addr.
+ * @param data   User pointer passed to @ref r_http_client_request_to_addr.
  * @param res    The parsed response, non-@c NULL only when @p result is
  *               @ref R_HTTP_CLIENT_OK. Borrowed; @ref r_http_response_ref to keep it.
  * @param result The request outcome.
@@ -100,8 +103,32 @@ R_API RHttpClient * r_http_client_new (REvLoop * loop);
  *         @c FALSE the request could not be started and the caller retains
  *         ownership of @p data (@p notify is not called).
  */
-R_API rboolean r_http_client_send (RHttpClient * client, RHttpRequest * req,
+R_API rboolean r_http_client_request_to_addr (RHttpClient * client, RHttpRequest * req,
     const RSocketAddress * addr,
+    RHttpClientResponseFunc cb, rpointer data, RDestroyNotify notify);
+
+/**
+ * @brief Asynchronously resolve @p req's URI, send it and deliver the response.
+ *
+ * Derives the host and port from the request URI (@ref r_http_request_get_uri),
+ * resolves them on the loop via the asynchronous resolver (never blocking the
+ * loop thread), then connects to the first resolved address. The port defaults
+ * to 80 for the @c http scheme when the URI omits it. Only plaintext targets
+ * are supported: a missing host, or a URI with no port and a non-@c http
+ * scheme, is rejected.
+ *
+ * @param client The client.
+ * @param req    The request to send; its URI selects the target.
+ * @param cb     Invoked with the outcome on the loop thread.
+ * @param data   User pointer passed to @p cb.
+ * @param notify Destroy notify for @p data.
+ * @return @c TRUE if the request was started, in which case @p cb delivers the
+ *         outcome (including @ref R_HTTP_CLIENT_RESOLVE_FAILED) and @p notify is
+ *         called once the request finishes. On @c FALSE the request could not
+ *         be started -- the URI lacked a usable host/port -- and the caller
+ *         retains ownership of @p data (@p notify is not called).
+ */
+R_API rboolean r_http_client_request (RHttpClient * client, RHttpRequest * req,
     RHttpClientResponseFunc cb, rpointer data, RDestroyNotify notify);
 
 
@@ -109,7 +136,7 @@ R_API rboolean r_http_client_send (RHttpClient * client, RHttpRequest * req,
  * @brief Opaque, refcounted blocking HTTP client.
  *
  * A self-contained synchronous client: it owns a private @ref REvLoop and an
- * @ref RHttpClient, and @ref r_http_client_sync_request runs that loop until
+ * @ref RHttpClient, and @ref r_http_client_sync_request_to_addr runs that loop until
  * the response is in. Callers never deal with an event loop. For overlapping
  * or non-blocking requests, use @ref RHttpClient directly on your own loop.
  */
@@ -131,8 +158,23 @@ R_API RHttpClientSync * r_http_client_sync_new (void);
  * @return The response (caller @ref r_http_response_unref's it) on success,
  *         or @c NULL on failure.
  */
-R_API RHttpResponse * r_http_client_sync_request (RHttpClientSync * client,
+R_API RHttpResponse * r_http_client_sync_request_to_addr (RHttpClientSync * client,
     RHttpRequest * req, const RSocketAddress * addr, RHttpClientResult * result);
+
+/**
+ * @brief Resolve @p req's URI, send it and block until the response arrives.
+ *
+ * The blocking counterpart of @ref r_http_client_request -- the destination
+ * is derived from the request URI, so the caller passes no address.
+ *
+ * @param client The blocking client.
+ * @param req    The request to send; its URI selects the target.
+ * @param result If non-@c NULL, receives the request outcome.
+ * @return The response (caller @ref r_http_response_unref's it) on success,
+ *         or @c NULL on failure.
+ */
+R_API RHttpResponse * r_http_client_sync_request (RHttpClientSync * client,
+    RHttpRequest * req, RHttpClientResult * result);
 
 R_END_DECLS
 
