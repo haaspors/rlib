@@ -479,7 +479,7 @@ r_io_socket_receive_message (RIOHandle handle, RSocketAddress * address, RBuffer
     RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     if (r_mem_map (mem, &info[i], R_MEM_MAP_WRITE)) {
       bufs[i].len = (ULONG)info[i].size;
-      bufs[i].buf = info[i].data;
+      bufs[i].buf = (CHAR *)info[i].data;
     } else {
       /* WARNING */
       bufs[i].len = 0;
@@ -677,7 +677,7 @@ r_io_socket_send_message (RIOHandle handle, const RSocketAddress * address,
     RMem * mem = r_buffer_mem_peek (buffer, (ruint)i);
     if (r_mem_map (mem, &info[i], R_MEM_MAP_READ)) {
       bufs[i].len = (ULONG)info[i].size;
-      bufs[i].buf = info[i].data;
+      bufs[i].buf = (CHAR *)info[i].data;
     } else {
       /* WARNING */
       bufs[i].len = 0;

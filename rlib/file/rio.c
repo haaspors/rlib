@@ -56,7 +56,8 @@ r_file_permission_get_open_mode (const RFilePermission * perm)
 
 RIOHandle
 r_io_open_file (const rchar * file, RFileOpenMode mode, RFileAccess access,
-    RFileShareMode share, RFileFlags flags, const RFilePermission * perm)
+    RFileShareMode share, RFileFlags flags,
+    R_ATTR_UNUSED const RFilePermission * perm)
 {
   RIOHandle ret = R_IO_HANDLE_INVALID;
   if (R_UNLIKELY (file == NULL || *file == 0))

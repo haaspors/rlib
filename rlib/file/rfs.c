@@ -215,7 +215,7 @@ r_fs_get_cur_dir (void)
 #ifdef RLIB_HAVE_FILES
 #if defined (R_OS_WIN32)
   runichar2 dummy[2], * curdir;
-  int len = GetCurrentDirectoryW (2, dummy);
+  DWORD len = GetCurrentDirectoryW (2, dummy);
 
   curdir = r_mem_new_n (runichar2, len);
   if (GetCurrentDirectoryW (len, curdir) == len - 1)
@@ -317,7 +317,7 @@ r_fs_get_file_access (const rchar * path, DWORD req)
           if (GetFileSecurityW (upath,
                 OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
                 secdesc, len, &len)) {
-            GENERIC_MAPPING mapping = { 0xFFFFFFFF };
+            GENERIC_MAPPING mapping = { 0 };
             PRIVILEGE_SET privset = { 0 };
             DWORD privsetlen = sizeof (PRIVILEGE_SET);
             BOOL result = FALSE;
