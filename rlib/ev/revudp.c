@@ -156,6 +156,7 @@ r_ev_udp_buffer_alloc_default (rpointer data, REvUDP * evudp)
   return r_buffer_new_alloc (NULL, R_EV_UDP_BUFFER_SIZE, NULL);
 }
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_udp_recv_iocb (REvUDP * evudp)
 {
@@ -196,6 +197,7 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
   if (res != R_SOCKET_WOULD_BLOCK && evudp->error != NULL)
     evudp->error (evudp->error_data, evudp, res);
 }
+#endif
 
 static void
 r_ev_udp_send_iocb (REvUDP * evudp)
@@ -228,6 +230,7 @@ r_ev_udp_send_iocb (REvUDP * evudp)
   }
 }
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_udp_error_iocb (REvUDP * evudp)
 {
@@ -239,7 +242,9 @@ r_ev_udp_error_iocb (REvUDP * evudp)
   if (err != R_SOCKET_OK && evudp->error != NULL)
     evudp->error (evudp->error_data, evudp, err);
 }
+#endif
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_udp_recv_iocb_task (rpointer data, RTaskQueue * queue, RTask * task)
 {
@@ -247,6 +252,7 @@ r_ev_udp_recv_iocb_task (rpointer data, RTaskQueue * queue, RTask * task)
   (void) task;
   r_ev_udp_recv_iocb (data);
 }
+#endif
 
 static void
 r_ev_udp_send_iocb_ev (rpointer data, REvLoop * loop)
@@ -255,6 +261,9 @@ r_ev_udp_send_iocb_ev (rpointer data, REvLoop * loop)
   r_ev_udp_send_iocb (data);
 }
 
+/* Readiness backends only; the completion backend drives recv/send via
+ * overlapped completions, not this readiness dispatch. */
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_udp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
 {
@@ -264,7 +273,9 @@ r_ev_udp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
   if (events & R_EV_IO_WRITABLE) r_ev_udp_send_iocb ((REvUDP *)evio);
   if (events & R_EV_IO_ERROR) r_ev_udp_error_iocb ((REvUDP *)evio);
 }
+#endif
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_udp_task_recv_iocb (REvUDP * evudp)
 {
@@ -283,7 +294,9 @@ r_ev_udp_task_recv_iocb (REvUDP * evudp)
     r_ev_udp_unref (evudp);
   }
 }
+#endif
 
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
 static void
 r_ev_udp_task_iocb (rpointer data, REvIOEvents events, REvIO * evio)
 {
@@ -293,6 +306,7 @@ r_ev_udp_task_iocb (rpointer data, REvIOEvents events, REvIO * evio)
   if (events & R_EV_IO_WRITABLE) r_ev_udp_send_iocb ((REvUDP *)evio);
   if (events & R_EV_IO_ERROR) r_ev_udp_error_iocb ((REvUDP *)evio);
 }
+#endif
 
 #if defined (R_OS_WIN32) && !defined (R_EV_USE_RPOLL)
 /* ---- IOCP (completion / proactor) UDP path -------------------------------
