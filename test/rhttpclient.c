@@ -453,7 +453,8 @@ r_test_raw_server_free (RTestRawServer * s)
 }
 
 static RHttpClientResult
-r_test_http_client_raw (ruint16 port, const rchar * blob)
+r_test_http_client_raw_body (ruint16 port, const rchar * blob,
+    const rchar * expect_body)
 {
   REvLoop * loop;
   RClock * clock;
@@ -474,6 +475,11 @@ r_test_http_client_raw (ruint16 port, const rchar * blob)
           "http://127.0.0.1/", NULL, NULL)), !=, NULL);
 
   res = r_test_http_send (loop, client, req, addr, &result);
+  if (expect_body != NULL && result == R_HTTP_CLIENT_OK) {
+    const rchar * body;
+    r_assert_cmpptr (res, !=, NULL);
+    r_assert_cmpstr ((body = r_http_response_get_body (res, NULL)), ==, expect_body);
+  }
   r_http_request_unref (req);
   if (res != NULL)
     r_http_response_unref (res);
@@ -486,13 +492,19 @@ r_test_http_client_raw (ruint16 port, const rchar * blob)
   return result;
 }
 
-/* A chunked response is valid HTTP but the client does not decode chunked
- * framing yet, so it reports a parse failure rather than hanging. */
-RTEST (rhttpclient, response_chunked_unsupported, RTEST_FAST | RTEST_SYSTEM)
+static RHttpClientResult
+r_test_http_client_raw (ruint16 port, const rchar * blob)
 {
-  r_assert_cmpint (r_test_http_client_raw (47660,
+  return r_test_http_client_raw_body (port, blob, NULL);
+}
+
+/* A chunked response is decoded back into the reassembled body. */
+RTEST (rhttpclient, response_chunked, RTEST_FAST | RTEST_SYSTEM)
+{
+  r_assert_cmpint (r_test_http_client_raw_body (47660,
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
-        "3\r\nabc\r\n0\r\n\r\n"), ==, R_HTTP_CLIENT_PARSE_FAILED);
+        "4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n", "Wikipedia"),
+      ==, R_HTTP_CLIENT_OK);
 }
 RTEST_END;
 
