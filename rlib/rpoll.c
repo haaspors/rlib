@@ -17,9 +17,11 @@
  */
 
 #include "config.h"
+#include "rlib-private.h"
 #include <rlib/rpoll.h>
 
 #include <rlib/rassert.h>
+#include <rlib/rlog.h>
 #include <rlib/rmem.h>
 #include <rlib/rtime.h>
 
@@ -37,6 +39,8 @@
 #include <windows.h>
 #endif
 #include <errno.h>
+
+#define R_LOG_CAT_DEFAULT &rlib_logcat
 
 #define R_POLL_SET_MIN_INCREASE     64
 
@@ -144,7 +148,9 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
    * whose arming fell back to a direct wait, closed before it was pruned --
    * fails the whole call; the probe below skips it and the loop prunes it next
    * turn instead of stalling). */
-  (void) res;
+  if (R_UNLIKELY (res == WAIT_FAILED))
+    R_LOG_WARNING ("WaitForMultipleObjectsEx failed (%lu); probing handles",
+        (unsigned long) GetLastError ());
 
   for (i = 0; i < count; i++) {
     if (handles[i].wsaevent != NULL) {
@@ -363,14 +369,18 @@ r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user)
   if (R_UNLIKELY (handle == R_IO_HANDLE_INVALID)) return -1;
 
   if (ps->count >= ps->alloc) {
+    ruint nalloc = ps->alloc;
+    RPoll * nhandles;
     do {
-      ps->alloc += R_POLL_SET_MIN_INCREASE;
-    } while (ps->count >= ps->alloc);
-    ps->handles = r_realloc (ps->handles, sizeof (RPoll) * ps->alloc);
-    if (R_UNLIKELY (ps->handles == NULL)) {
-      /* FIXME: Error out properly */
+      nalloc += R_POLL_SET_MIN_INCREASE;
+    } while (ps->count >= nalloc);
+    /* realloc into a temporary so a failure leaves the set intact (the old
+     * buffer is still valid) rather than nulling ps->handles. */
+    if (R_UNLIKELY ((nhandles = r_realloc (ps->handles,
+              sizeof (RPoll) * nalloc)) == NULL))
       return -1;
-    }
+    ps->handles = nhandles;
+    ps->alloc = nalloc;
   }
 
   idx = ps->count++;
