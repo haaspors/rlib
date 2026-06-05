@@ -974,7 +974,9 @@ r_test_run_nofork_setup (RTestRunNoForkCtx * ctx, RClockTime timeout)
 #ifdef RLIB_HAVE_SIGNALS
 #if defined (R_OS_WIN32)
   ctx->ouef = SetUnhandledExceptionFilter (_r_test_win32_exception_filter);
+#ifdef HAVE__SET_ABORT_BEHAVIOR
   _set_abort_behavior (0, _CALL_REPORTFAULT | _WRITE_ABORT_MSG);
+#endif
   ctx->osigabrt = signal (SIGABRT, _r_test_win32_err_handler);
 #elif defined (R_OS_UNIX)
 #ifdef HAVE_SIGALTSTACK
