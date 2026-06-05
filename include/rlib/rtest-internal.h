@@ -40,6 +40,16 @@
 #else
 #define _RTEST_DATA_QUAL  const
 #endif
+
+/* The _r_test_sym pointers are an exported fallback for finding the tests when
+ * the .rtest section can't be located. mingw's ld cannot export a weak symbol
+ * allocated into a custom section ("wrong type"), and there the section walker
+ * works, so skip the export. */
+#if defined (R_CC_MINGW)
+#define _RTEST_SYM_EXPORT
+#else
+#define _RTEST_SYM_EXPORT  R_API_EXPORT
+#endif
 #define _RTEST_FUNC_NAME(suite, test)         __rtest_##suite##_##test##_func
 #define _RTEST_FIXTURE_DATA_NAME(suite)       __rtest_##suite##_data
 #define _RTEST_FIXTURE_SETUP_NAME(suite)      __rtest_##suite##_setup
@@ -53,7 +63,7 @@
     skip, #suite, #test, (type), (timeout),                                   \
     (RTestFunc)_RTEST_FUNC_NAME(suite, test), start, end,                     \
     fdata, (RTestFixtureFunc)setup, (RTestFixtureFunc)teardown };             \
-  R_API_EXPORT R_ATTR_WEAK                                                    \
+  _RTEST_SYM_EXPORT R_ATTR_WEAK                                               \
   const RTest * R_PASTE (_RTEST_SYM_, __COUNTER__) = &_RTEST_DATA_NAME (suite, test)
 
 #define RTEST_DEFINE_TEST(suite, test, skip, type, timeout, start, end)       \
