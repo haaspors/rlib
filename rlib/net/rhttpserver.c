@@ -205,11 +205,9 @@ r_http_client_ctx_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
       buf = NULL;
       if ((ctx->req = r_http_request_new_from_buffer (ctx->inbuf, &err, &buf)) != NULL) {
         ctx->bodysize = r_http_request_calc_body_size (ctx->req, NULL);
-        if (r_http_request_has_header_of_value (ctx->req, "Connection", -1, "close", -1))
-          ctx->keepalive = FALSE;
-        else
-          ctx->keepalive = r_http_request_has_header_of_value (ctx->req,
-              "Connection", -1, "keep-alive", -1);
+        /* Persistent unless the request says otherwise: explicit close closes,
+         * explicit keep-alive persists, and HTTP/1.1 persists by default. */
+        ctx->keepalive = r_http_request_is_keepalive (ctx->req);
 
         R_LOG_TRACE ("%p: "R_EV_IO_FORMAT" request created %p [%s] waiting for body size %"RSSIZE_FMT,
             ctx->server, R_EV_IO_ARGS (evtcp), ctx->req, ctx->keepalive ? "keepalive" : "close", ctx->bodysize);
