@@ -20,9 +20,14 @@ rconf = configuration_data()
 
 install_subdir('include', install_dir : '')
 
-if host_machine.system() != 'windows'
+# _GNU_SOURCE follows the compiler/libc, not the OS: glibc, and mingw's libc,
+# both gate extensions (vasprintf, the GNU strerror_r, ...) on it, while MSVC's
+# CRT does not. Keying it on the compiler keeps the build's feature macros in
+# step with the function probes below (which assume _GNU_SOURCE).
+if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
   add_global_arguments('-D_GNU_SOURCE=1', language : 'c')
-else
+endif
+if host_machine.system() == 'windows'
   add_global_arguments(
     '-DWIN32_LEAN_AND_MEAN=1',
     '-DSTRICT=1',
