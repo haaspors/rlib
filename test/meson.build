@@ -39,6 +39,7 @@ rlibtest_sources = [
   'rdirtree.c',
   'relf.c',
   'rendianness.c',
+  'renv.c',
   'revloop.c',
   'revtcp.c',
   'revudp.c',

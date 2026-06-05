@@ -45,7 +45,10 @@ R_BEGIN_DECLS
 /**
  * @brief Look up @p key in the process environment.
  * @return Pointer to the value (owned by the environment, not the
- *         caller), or @c NULL if @p key is unset.
+ *         caller), or @c NULL if @p key is unset or @p key is @c NULL.
+ *         Treat the result as valid only until the next call to any of
+ *         these accessors (on win32 it is a per-thread UTF-8 conversion
+ *         of the environment, reused on the next lookup).
  */
 R_API const rchar * r_getenv (const rchar * key);
 /**
