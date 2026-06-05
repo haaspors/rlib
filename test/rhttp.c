@@ -407,3 +407,89 @@ RTEST (rhttp, header_foreach, RTEST_FAST)
   r_http_response_unref (res);
 }
 RTEST_END;
+
+static rboolean
+r_test_hdr_count_named (rpointer data, const rchar * name, rsize nsize,
+    const rchar * value, rsize vsize)
+{
+  ruint * matches = ((rpointer *) data)[0];
+  const rchar * target = ((rpointer *) data)[1];
+  (void) value; (void) vsize;
+  if (nsize == r_strlen (target) && r_strncasecmp (name, target, nsize) == 0)
+    (*matches)++;
+  return TRUE;
+}
+
+
+static ruint
+r_test_count_header (RHttpResponse * res, const rchar * field)
+{
+  ruint matches = 0;
+  rpointer ctx[2];
+  ctx[0] = &matches;
+  ctx[1] = (rpointer) field;
+  r_http_response_foreach_header (res, r_test_hdr_count_named, ctx);
+  return matches;
+}
+
+RTEST (rhttp, header_set_remove, RTEST_FAST)
+{
+  RHttpResponse * res;
+  rchar * tmp;
+
+  r_assert_cmpptr ((res = r_http_response_new (NULL, R_HTTP_STATUS_OK,
+          NULL, NULL, NULL)), !=, NULL);
+
+  /* set replaces an existing header rather than duplicating it. */
+  r_assert (r_http_response_add_header (res, "X-Test", -1, "one", -1));
+  r_assert (r_http_response_set_header (res, "X-Test", -1, "two", -1));
+  r_assert_cmpuint (r_test_count_header (res, "X-Test"), ==, 1);
+  r_assert_cmpstr ((tmp = r_http_response_get_header (res, "X-Test", -1)), ==, "two");
+  r_free (tmp);
+
+  /* set on an absent header adds it. */
+  r_assert (r_http_response_set_header (res, "X-New", -1, "v", -1));
+  r_assert_cmpstr ((tmp = r_http_response_get_header (res, "X-New", -1)), ==, "v");
+  r_free (tmp);
+
+  /* remove drops every instance and reports whether anything was removed. */
+  r_assert (r_http_response_add_header (res, "X-Dup", -1, "a", -1));
+  r_assert (r_http_response_add_header (res, "X-Dup", -1, "b", -1));
+  r_assert_cmpuint (r_test_count_header (res, "X-Dup"), ==, 2);
+  r_assert (r_http_response_remove_header (res, "X-Dup", -1));
+  r_assert_cmpuint (r_test_count_header (res, "X-Dup"), ==, 0);
+  r_assert (!r_http_response_remove_header (res, "X-Dup", -1));
+
+  /* the untouched headers survive. */
+  r_assert_cmpuint (r_test_count_header (res, "X-Test"), ==, 1);
+  r_assert_cmpuint (r_test_count_header (res, "X-New"), ==, 1);
+
+  r_http_response_unref (res);
+}
+RTEST_END;
+
+RTEST (rhttp, set_body_no_duplicate_content_length, RTEST_FAST)
+{
+  RHttpResponse * res;
+  RBuffer * b1, * b2;
+  rchar * tmp;
+
+  r_assert_cmpptr ((res = r_http_response_new (NULL, R_HTTP_STATUS_OK,
+          NULL, NULL, NULL)), !=, NULL);
+  r_assert_cmpptr ((b1 = r_buffer_new_dup ("ab", 2)), !=, NULL);
+  r_assert_cmpptr ((b2 = r_buffer_new_dup ("xyz", 3)), !=, NULL);
+
+  /* Re-setting the body must overwrite Content-Length, not add a second. */
+  r_http_response_set_body_buffer_full (res, b1, "text/plain", -1, TRUE);
+  r_http_response_set_body_buffer_full (res, b2, "text/plain", -1, TRUE);
+
+  r_assert_cmpuint (r_test_count_header (res, "Content-Length"), ==, 1);
+  r_assert_cmpuint (r_test_count_header (res, "Content-Type"), ==, 1);
+  r_assert_cmpstr ((tmp = r_http_response_get_header (res, "Content-Length", -1)), ==, "3");
+  r_free (tmp);
+
+  r_buffer_unref (b1);
+  r_buffer_unref (b2);
+  r_http_response_unref (res);
+}
+RTEST_END;

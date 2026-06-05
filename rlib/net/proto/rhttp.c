@@ -440,6 +440,68 @@ r_http_msg_add_header (RHttpMsg * msg, const rchar * field, rssize fsize,
   return TRUE;
 }
 
+rboolean
+r_http_msg_remove_header (RHttpMsg * msg, const rchar * field, rssize fsize)
+{
+  RBuffer * empty;
+  rboolean removed = FALSE;
+
+  if (R_UNLIKELY (msg == NULL)) return FALSE;
+  if (R_UNLIKELY (field == NULL)) return FALSE;
+  if (fsize < 0) fsize = r_strlen (field);
+  if (R_UNLIKELY (fsize == 0)) return FALSE;
+  if (R_UNLIKELY (msg->hdr == NULL)) return FALSE;
+  if ((empty = r_buffer_new ()) == NULL) return FALSE;
+
+  /* Splice out each matching line so the other headers keep their exact
+   * bytes; re-scan after each removal since offsets shift. */
+  for (;;) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+    rsize off = 0, len = 0;
+    rboolean found = FALSE;
+    RBuffer * next;
+
+    if (r_buffer_map (msg->hdr, &info, R_MEM_MAP_READ)) {
+      const rchar * data = (const rchar *) info.data, * end = data + info.size;
+      const rchar * p = data, * name, * value;
+      rsize nsize, vsize;
+      while (r_http_header_next (&p, end, &name, &nsize, &value, &vsize)) {
+        if (nsize == (rsize) fsize && r_strncasecmp (name, field, nsize) == 0) {
+          off = (rsize) (name - data);
+          len = (rsize) (p - name);     /* the line, including its CRLF */
+          found = TRUE;
+          break;
+        }
+      }
+      r_buffer_unmap (msg->hdr, &info);
+    }
+
+    if (!found)
+      break;
+    if ((next = r_buffer_replace_byte_range (msg->hdr, off, (rssize) len, empty)) == NULL)
+      break;
+    r_buffer_unref (msg->hdr);
+    msg->hdr = next;
+    removed = TRUE;
+  }
+
+  r_buffer_unref (empty);
+  return removed;
+}
+
+rboolean
+r_http_msg_set_header (RHttpMsg * msg, const rchar * field, rssize fsize,
+    const rchar * value, rssize vsize)
+{
+  if (R_UNLIKELY (msg == NULL)) return FALSE;
+  if (R_UNLIKELY (field == NULL)) return FALSE;
+  if (R_UNLIKELY (value == NULL)) return FALSE;
+
+  /* Replace any existing instances, then append once. */
+  r_http_msg_remove_header (msg, field, fsize);
+  return r_http_msg_add_header (msg, field, fsize, value, vsize);
+}
+
 
 
 static RBuffer *
@@ -876,11 +938,11 @@ r_http_response_set_body_buffer_full (RHttpResponse * res, RBuffer * buf,
 
   if ((ret = r_http_response_set_body_buffer (res, buf)) == R_HTTP_OK) {
     if (contenttype != NULL)
-      r_http_response_add_header (res, "Content-Type", -1, contenttype, size);
+      r_http_response_set_header (res, "Content-Type", -1, contenttype, size);
     if (contentlen) {
       rchar len[16];
       r_sprintf (len, "%"RSIZE_FMT, r_buffer_get_size (buf));
-      r_http_response_add_header (res, "Content-Length", -1, len, -1);
+      r_http_response_set_header (res, "Content-Length", -1, len, -1);
     }
   }
 
