@@ -321,3 +321,89 @@ RTEST_END;
 
 /* TODO: Add tests for various request->reponse patterns! */
 
+
+static const rchar http_hdr_response[] =
+  "HTTP/1.1 200 OK\r\n"
+  "Content-Type: text/html\r\n"
+  "Content-Length: 5\r\n"
+  "Set-Cookie: a=1\r\n"
+  "Set-Cookie: b=2\r\n"
+  "Connection: keep-alive, Upgrade\r\n"
+  "\r\n"
+  "hello";
+
+RTEST (rhttp, header_lookup_anchored, RTEST_FAST)
+{
+  RHttpResponse * res;
+  RHttpError err;
+  RBuffer * buf;
+  rchar * tmp;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (http_hdr_response))), !=, NULL);
+  r_assert_cmpptr ((res = r_http_response_new_from_buffer (NULL, buf, &err, NULL)), !=, NULL);
+  r_buffer_unref (buf);
+
+  /* Whole-name match (case-insensitive). */
+  r_assert_cmpstr ((tmp = r_http_response_get_header (res, "Content-Type", -1)), ==, "text/html"); r_free (tmp);
+  r_assert_cmpstr ((tmp = r_http_response_get_header (res, "content-length", -1)), ==, "5"); r_free (tmp);
+  r_assert (r_http_response_has_header (res, "Content-Length", -1));
+
+  /* A field name that is only a suffix of another header must NOT match. */
+  r_assert_cmpptr ((tmp = r_http_response_get_header (res, "Type", -1)), ==, NULL);
+  r_assert_cmpptr ((tmp = r_http_response_get_header (res, "Length", -1)), ==, NULL);
+  r_assert (!r_http_response_has_header (res, "Type", -1));
+  r_assert (!r_http_response_has_header (res, "Length", -1));
+
+  /* Value match within a comma list, case-insensitive. */
+  r_assert (r_http_response_has_header_of_value (res, "Connection", -1, "keep-alive", -1));
+  r_assert (r_http_response_has_header_of_value (res, "Connection", -1, "upgrade", -1));
+  r_assert (!r_http_response_has_header_of_value (res, "Connection", -1, "close", -1));
+
+  r_http_response_unref (res);
+}
+RTEST_END;
+
+typedef struct {
+  ruint count;
+  ruint cookies;
+  ruint stop_at;
+} RTestHdrCtx;
+
+static rboolean
+r_test_hdr_count (rpointer data, const rchar * name, rsize nsize,
+    const rchar * value, rsize vsize)
+{
+  RTestHdrCtx * ctx = data;
+  (void) value; (void) vsize;
+
+  ctx->count++;
+  if (nsize == 10 && r_strncasecmp (name, "Set-Cookie", 10) == 0)
+    ctx->cookies++;
+  return ctx->stop_at == 0 || ctx->count < ctx->stop_at;
+}
+
+RTEST (rhttp, header_foreach, RTEST_FAST)
+{
+  RHttpResponse * res;
+  RHttpError err;
+  RBuffer * buf;
+  RTestHdrCtx ctx = { 0, 0, 0 };
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (http_hdr_response))), !=, NULL);
+  r_assert_cmpptr ((res = r_http_response_new_from_buffer (NULL, buf, &err, NULL)), !=, NULL);
+  r_buffer_unref (buf);
+
+  /* Enumerate all headers in order, including the repeated Set-Cookie. */
+  r_http_response_foreach_header (res, r_test_hdr_count, &ctx);
+  r_assert_cmpuint (ctx.count, ==, 5);
+  r_assert_cmpuint (ctx.cookies, ==, 2);
+
+  /* Returning FALSE stops the walk. */
+  ctx.count = ctx.cookies = 0;
+  ctx.stop_at = 2;
+  r_http_response_foreach_header (res, r_test_hdr_count, &ctx);
+  r_assert_cmpuint (ctx.count, ==, 2);
+
+  r_http_response_unref (res);
+}
+RTEST_END;

@@ -239,6 +239,46 @@ r_http_msg_set_body_buffer (RHttpMsg * msg, RBuffer * buf)
   return R_HTTP_OK;
 }
 
+/* Zero-copy header scanner: advance *pp to the next "Name: value" line in the
+ * raw header block [*pp, end) and return its name/value as slices into the
+ * buffer (OWS trimmed). Returns FALSE at the terminating empty line or end.
+ * Malformed lines (no colon) are skipped. This is the single line-anchored
+ * primitive all the header accessors build on -- no allocation, no copy. */
+static rboolean
+r_http_header_next (const rchar ** pp, const rchar * end,
+    const rchar ** name, rsize * nsize, const rchar ** value, rsize * vsize)
+{
+  while (*pp < end) {
+    const rchar * p = *pp, * eol, * v, * ve;
+    rssize idx;
+
+    idx = r_str_idx_of_str (p, (rsize) (end - p), "\r\n", 2);
+    eol = (idx < 0) ? end : p + idx;
+    *pp = (idx < 0) ? end : eol + 2;
+
+    if (eol == p)               /* empty line: end of the header block */
+      return FALSE;
+
+    if ((idx = r_str_idx_of_str (p, (rsize) (eol - p), ":", 1)) < 0)
+      continue;                 /* no colon: skip a malformed line */
+
+    *name = p;
+    *nsize = (rsize) idx;
+    while (*nsize > 0 && r_ascii_isspace (p[*nsize - 1]))
+      (*nsize)--;               /* trim trailing OWS before the colon */
+
+    v = p + idx + 1;
+    while (v < eol && (*v == ' ' || *v == '\t')) v++;
+    ve = eol;
+    while (ve > v && (ve[-1] == ' ' || ve[-1] == '\t')) ve--;
+    *value = v;
+    *vsize = (rsize) (ve - v);
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
 rboolean
 r_http_msg_has_header (RHttpMsg * msg, const rchar * field, rssize size)
 {
@@ -251,9 +291,15 @@ r_http_msg_has_header (RHttpMsg * msg, const rchar * field, rssize size)
   if (R_UNLIKELY (size == 0)) return FALSE;
 
   if (r_buffer_map (msg->hdr, &info, R_MEM_MAP_READ)) {
-    rssize idx;
-    if ((idx = r_str_idx_of_str_case ((rchar *)info.data, info.size, field, size)) >= 0)
-      ret = info.data[idx + (rsize)size] == ':';
+    const rchar * p = (const rchar *) info.data, * end = (const rchar *) info.data + info.size;
+    const rchar * name, * value;
+    rsize nsize, vsize;
+    while (r_http_header_next (&p, end, &name, &nsize, &value, &vsize)) {
+      if (nsize == (rsize) size && r_strncasecmp (name, field, nsize) == 0) {
+        ret = TRUE;
+        break;
+      }
+    }
     r_buffer_unmap (msg->hdr, &info);
   }
 
@@ -276,20 +322,17 @@ r_http_msg_has_header_of_value (RHttpMsg * msg,
   if (R_UNLIKELY (vsize == 0)) return FALSE;
 
   if (r_buffer_map (msg->hdr, &info, R_MEM_MAP_READ)) {
-    rsize off = 0;
-    rssize idx;
-    while (off < info.size &&
-        (idx = r_str_idx_of_str_case ((rchar *)info.data + off, info.size - off, key, ksize)) >= 0) {
-      off += idx + ksize + 1;
-      while (off < info.size && r_ascii_isspace (((rchar *)info.data)[off]))
-        off++;
-
-      if (off + vsize < info.size && r_strncasecmp ((rchar *)info.data + off, val, vsize) == 0) {
+    const rchar * p = (const rchar *) info.data, * end = (const rchar *) info.data + info.size;
+    const rchar * name, * value;
+    rsize nsize, vsz;
+    /* Match the value anywhere within a same-named header's value, so a
+     * comma list like "Connection: keep-alive, Upgrade" matches "keep-alive". */
+    while (r_http_header_next (&p, end, &name, &nsize, &value, &vsz)) {
+      if (nsize == (rsize) ksize && r_strncasecmp (name, key, nsize) == 0 &&
+          r_str_idx_of_str_case (value, vsz, val, vsize) >= 0) {
         ret = TRUE;
         break;
       }
-
-      off += vsize;
     }
     r_buffer_unmap (msg->hdr, &info);
   }
@@ -301,25 +344,20 @@ static const rchar *
 r_http_get_header (rconstpointer data, rsize size, const rchar * field, rssize fsize,
     rsize * out)
 {
-  const rchar * beg = data, * end = beg + size, * ret = NULL;
-  rssize idx;
+  const rchar * p = data, * end = (const rchar *) data + size;
+  const rchar * name, * value;
+  rsize nsize, vsize;
 
   if (fsize < 0) fsize = r_strlen (field);
-  if ((idx = r_str_idx_of_str_case (beg, size, field, fsize)) >= 0 &&
-      beg[idx + (rsize)fsize] == ':') {
-    const rchar * valbeg;
-
-    valbeg = r_str_lwstrip (beg + idx + 1 + (rsize)fsize);
-    if ((idx = r_str_idx_of_str (valbeg, RPOINTER_TO_SIZE (end - valbeg), "\r\n", 2)) >= 0) {
-      while (idx > 0 && r_ascii_isspace (valbeg[idx - 1]))
-        idx--;
+  while (r_http_header_next (&p, end, &name, &nsize, &value, &vsize)) {
+    if (nsize == (rsize) fsize && r_strncasecmp (name, field, nsize) == 0) {
       if (out != NULL)
-        *out = (rsize)idx;
-      ret = valbeg;
+        *out = vsize;
+      return value;
     }
   }
 
-  return ret;
+  return NULL;
 }
 
 rchar *
@@ -341,6 +379,26 @@ r_http_msg_get_header (RHttpMsg * msg, const rchar * field, rssize fsize)
   }
 
   return ret;
+}
+
+void
+r_http_msg_foreach_header (RHttpMsg * msg, RHttpHeaderFunc func, rpointer data)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  if (R_UNLIKELY (msg == NULL)) return;
+  if (R_UNLIKELY (func == NULL)) return;
+
+  if (r_buffer_map (msg->hdr, &info, R_MEM_MAP_READ)) {
+    const rchar * p = (const rchar *) info.data, * end = (const rchar *) info.data + info.size;
+    const rchar * name, * value;
+    rsize nsize, vsize;
+    while (r_http_header_next (&p, end, &name, &nsize, &value, &vsize)) {
+      if (!func (data, name, nsize, value, vsize))
+        break;
+    }
+    r_buffer_unmap (msg->hdr, &info);
+  }
 }
 
 rboolean
