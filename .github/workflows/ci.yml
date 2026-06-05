@@ -165,6 +165,35 @@ jobs:
           name: testlog-windows-arm-${{ matrix.buildtype }}
           path: build/meson-logs/
 
+  windows-rpoll:
+    name: Windows rpoll / MSVC / ${{ matrix.buildtype }}
+    # IOCP is the default Windows backend (covered by the Windows / MSVC job);
+    # this one forces the WSAEventSelect/poll readiness backend (-Drpoll) so the
+    # opt-out path keeps building and passing (minus the recv-error tests, which
+    # a readiness backend cannot satisfy and which gate themselves off).
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install meson + ninja
+        run: pip install meson ninja
+      - name: Configure
+        run: meson setup build --buildtype=${{ matrix.buildtype }} -Drpoll=enabled
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        run: meson test -C build --print-errorlogs --timeout-multiplier 6
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: testlog-windows-rpoll-${{ matrix.buildtype }}
+          path: build/meson-logs/
+
   sanitizers:
     name: Sanitizers / ${{ matrix.name }}
     runs-on: ubuntu-latest
