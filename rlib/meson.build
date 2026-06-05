@@ -104,6 +104,7 @@ rlib_sources = [
   'net/proto/rsdp.c',
   'net/proto/rstun.c',
   'net/proto/rtls.c',
+  'net/rhttpclient.c',
   'net/rhttpserver.c',
   'net/rnet.c',
   'net/rresolve.c',

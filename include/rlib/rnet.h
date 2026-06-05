@@ -47,6 +47,7 @@
 #include <rlib/net/rsocket.h>
 #include <rlib/net/rsocketaddress.h>
 #include <rlib/net/rresolve.h>
+#include <rlib/net/rhttpclient.h>
 #include <rlib/net/rhttpserver.h>
 #include <rlib/net/rsrtp.h>
 #include <rlib/net/rtlsclient.h>

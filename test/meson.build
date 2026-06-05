@@ -50,6 +50,7 @@ rlibtest_sources = [
   'rhashset.c',
   'rhashtable.c',
   'rhttp.c',
+  'rhttpclient.c',
   'rhttpserver.c',
   'rhzrptr.c',
   'rjson.c',

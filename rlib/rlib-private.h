@@ -34,6 +34,7 @@ R_API_HIDDEN void r_ev_loop_deinit (void);
 R_API_HIDDEN void r_log_init (void);
 R_API_HIDDEN void r_log_deinit (void);
 
+R_API_HIDDEN void r_http_client_init (void);
 R_API_HIDDEN void r_http_server_init (void);
 
 R_API_HIDDEN void r_mem_allocator_init (void);
