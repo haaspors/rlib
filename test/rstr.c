@@ -605,6 +605,65 @@ RTEST (rstr, to_int_base2, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rstr, to_int_leading_zero, RTEST_FAST)
+{
+  RStrParse res = R_STR_PARSE_OK;
+  const rchar * e;
+
+  /* A bare zero, and a zero accumulator extended by more zeros, must parse as
+   * 0 (not INVAL/RANGE) -- for every base. */
+  r_assert_cmpuint (r_str_to_uint64 ("0", &e, 16, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint64 ("00", &e, 16, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint64 ("0", &e, 10, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint64 ("0", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint64 ("000", &e, 0, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+
+  /* Leading zeros before significant digits, and a value-zero followed by a
+   * non-digit. */
+  r_assert_cmpuint (r_str_to_uint64 ("007f", &e, 16, &res), ==, 0x7f);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint64 ("000123", &e, 10, &res), ==, 123);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint64 ("0;ext", &e, 16, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, ";ext");
+
+  /* An explicit 0x prefix followed by a zero value. */
+  r_assert_cmpuint (r_str_to_uint64 ("0x0", &e, 16, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpuint (r_str_to_uint64 ("0x00ff", &e, 0, &res), ==, 0xff);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+
+  /* The signed parser agrees (including the negative zero spelling). */
+  r_assert_cmpint  (r_str_to_int64 ("0", &e, 16, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpint  (r_str_to_int64 ("00", &e, 16, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpint  (r_str_to_int64 ("-0", &e, 10, &res), ==, 0);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+  r_assert_cmpint  (r_str_to_int64 ("007f", &e, 16, &res), ==, 0x7f);
+  r_assert_cmpint  (res, ==, R_STR_PARSE_OK);
+  r_assert_cmpstr  (e, ==, "");
+}
+RTEST_END;
+
 RTEST (rstr, to_int_base_error, RTEST_FAST)
 {
   RStrParse res = R_STR_PARSE_OK;
