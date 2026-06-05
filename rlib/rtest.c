@@ -88,7 +88,7 @@ static RTss                         g__r_test_last_pos_tss = R_TSS_INIT (NULL);
 #define _ERR_ARGS(COUNT)   (COUNT) ? (_RES_CLR (R_CLR_MAGENTA)) : "", COUNT, _RESET_CLR
 
 #if defined (R_OS_WIN32)
-static const int g__r_test_sigs[] = {
+R_ATTR_UNUSED static const int g__r_test_sigs[] = {
   SIGABRT, SIGFPE, SIGSEGV, SIGILL
 };
 #elif defined (R_OS_UNIX)
@@ -180,7 +180,7 @@ static rsize          g__r_test_current_run_idx = 0;
 
 static const rchar *
 r_test_get_run_str (RTestRunState state, RTestSkipReason skip,
-    const rchar ** runresclr, FILE * f)
+    const rchar ** runresclr, R_ATTR_UNUSED FILE * f)
 {
   switch (state) {
     case R_TEST_RUN_STATE_SUCCESS:
