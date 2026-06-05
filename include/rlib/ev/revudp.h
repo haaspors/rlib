@@ -45,8 +45,11 @@
  *
  * As with @ref r_evtcp, receiving pairs an allocator callback (to
  * supply each datagram's @ref RBuffer) with a receive callback that
- * also reports the sender address; the @c _task_recv_start variant
- * dispatches to a task group. Callbacks fire on the loop thread.
+ * also reports the sender address. Callbacks fire on the loop thread,
+ * except the @c _task_recv_start variant, which dispatches to a task
+ * group. Because @ref r_ev_udp_recv_stop drains the last such task from
+ * the loop thread, a task-group receive callback must not block on work
+ * that needs the loop thread.
  *
  * @{
  */

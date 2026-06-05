@@ -45,9 +45,12 @@
  * connect, listen / accept, and callback-based send / receive.
  *
  * Receiving uses a caller-supplied allocator callback (to provide the
- * @ref RBuffer each read fills) plus a receive callback; the
- * @c _task_recv_start variant hands received buffers to a task group
- * for off-thread processing. All callbacks fire on the loop thread.
+ * @ref RBuffer each read fills) plus a receive callback. Callbacks fire on
+ * the loop thread, except the @c _task_recv_start variant, which hands
+ * received buffers to a task group for off-thread processing. Because
+ * @ref r_ev_tcp_recv_stop / @ref r_ev_tcp_close drain the last such task
+ * from the loop thread, a task-group receive callback must not block on work
+ * that needs the loop thread.
  *
  * @{
  */
