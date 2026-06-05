@@ -488,7 +488,12 @@ r_http_server_tcp_connection_ready (rpointer data,
         server, R_EV_IO_ARGS (newtcp), R_EV_IO_ARGS (listening));
 
     if (r_ev_tcp_recv_start (newtcp, NULL, r_http_client_ctx_tcp_recv, ctx, NULL)) {
-      r_ptr_array_add (server->clients, r_ref_ref (ctx), r_ref_unref);
+      /* Transfer the context's reference to the clients array; the recv
+       * callback borrows it. Keeping a second ref here would leak the ctx
+       * (and thus never close the accepted socket) once it leaves the array. */
+      r_ptr_array_add (server->clients, ctx, r_ref_unref);
+    } else {
+      r_ref_unref (ctx);
     }
   } else {
     R_LOG_WARNING ("%p: New connection "R_EV_IO_FORMAT" on "R_EV_IO_FORMAT
@@ -564,7 +569,11 @@ r_http_server_close_client_ctx (rpointer data, rpointer user)
   RHttpServerStopCtx * ctx = user;
   R_LOG_DEBUG ("%p: Force close client socket "R_EV_IO_FORMAT,
       ctx->server, R_EV_IO_ARGS (cli->evtcp));
-  r_http_client_ctx_close (cli, r_ref_ref (ctx), r_ref_unref);
+  /* Close only; the array removal (and the context's last unref) is done by
+   * the r_ptr_array_remove_all_full walk that invoked this. Calling
+   * r_http_client_ctx_close here would remove the entry mid-walk and drop the
+   * reference twice. */
+  r_ev_tcp_close (cli->evtcp, NULL, r_ref_ref (ctx), r_ref_unref);
 }
 
 rsize
