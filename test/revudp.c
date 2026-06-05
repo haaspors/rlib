@@ -3,6 +3,9 @@
 typedef struct {
   RList * buffers;
   RList * addrs;
+  rauint recvd;       /* bumped last in buffer_recv; lets a waiter on another
+                         thread observe delivery and synchronize-with the
+                         writes above (task_recv delivers off the loop thread). */
 } REvUDPTestRecvCtx;
 
 static void
@@ -14,6 +17,7 @@ buffer_recv (rpointer user, RBuffer * buf, RSocketAddress * addr, REvUDP * evudp
 
   ctx->buffers = r_list_append (ctx->buffers, r_buffer_ref (buf));
   ctx->addrs = r_list_append (ctx->addrs, r_socket_address_ref (addr));
+  r_atomic_uint_fetch_add (&ctx->recvd, 1);
 }
 
 static void
@@ -67,6 +71,10 @@ RTEST (revudp, bind_recv, RTEST_FAST | RTEST_SYSTEM)
 
   r_socket_address_unref (addr);
   r_ev_udp_unref (evudp);
+  /* Drain the cancelled in-flight recv: a completion backend reaps its aborted
+   * completion here, releasing the socket so it cannot linger bound to the port
+   * into the next test. No-op on a readiness backend (nothing outstanding). */
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
   r_ev_loop_unref (loop);
 }
 RTEST_END;
@@ -98,7 +106,13 @@ RTEST (revudp, send_recv, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((udp2 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
   r_assert (r_ev_udp_send_take (udp2, r_memdup (sendbuf, 512), 512, addr, buffer_send_done, &sentbuf, NULL));
 
-  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE), ==, 1);
+  /* Drive the loop until the datagram round-trips. A completion (proactor)
+   * backend delivers the send and recv completions independently with no
+   * ordering guarantee, so this may span more than one iteration. NOWAIT (don't
+   * block): a blocking run-once after the datagram is delivered would wait
+   * forever for a second one. */
+  while (sentbuf == NULL || ctx.buffers == NULL)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
 
   r_assert (r_ev_udp_recv_stop (udp1));
 
@@ -116,6 +130,55 @@ RTEST (revudp, send_recv, RTEST_FAST | RTEST_SYSTEM)
   r_socket_address_unref (addr);
   r_ev_udp_unref (udp1);
   r_ev_udp_unref (udp2);
+  /* Drain the cancelled in-flight recv (see bind_recv). */
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* Several datagrams in flight at once, exercising the re-armed receive (a
+ * completion backend posts the next WSARecvFrom from each completion). */
+RTEST (revudp, send_recv_multi, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RSocketAddress * addr;
+  REvUDP * udp1, * udp2;
+  REvUDPTestRecvCtx ctx;
+  ruint8 sendbuf[512];
+  ruint i;
+  const ruint ndatagrams = 4;
+
+  r_memclear (&ctx, sizeof (REvUDPTestRecvCtx));
+  r_memset (sendbuf, 0x37, 512);
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((udp1 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
+  r_assert (r_ev_udp_bind (udp1, addr, TRUE));
+  r_assert (r_ev_udp_recv_start (udp1, NULL, buffer_recv, &ctx, NULL));
+
+  r_assert_cmpptr ((udp2 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  for (i = 0; i < ndatagrams; i++)
+    r_assert (r_ev_udp_send_take (udp2, r_memdup (sendbuf, 512), 512, addr, NULL, NULL, NULL));
+
+  while (r_atomic_uint_load (&ctx.recvd) < ndatagrams)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_assert (r_ev_udp_recv_stop (udp1));
+  r_assert_cmpuint (r_list_len (ctx.buffers), ==, ndatagrams);
+  r_assert_cmpuint (r_list_len (ctx.addrs), ==, ndatagrams);
+  r_assert_cmpbufmem (ctx.buffers->data, 0, -1, ==, sendbuf, 512);
+
+  r_list_destroy_full (ctx.buffers, r_buffer_unref);
+  r_list_destroy_full (ctx.addrs, r_socket_address_unref);
+  r_socket_address_unref (addr);
+  r_ev_udp_unref (udp1);
+  r_ev_udp_unref (udp2);
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
   r_ev_loop_unref (loop);
 }
 RTEST_END;
@@ -149,7 +212,12 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((udp2 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
   r_assert (r_ev_udp_send_take (udp2, r_memdup (sendbuf, 512), 512, addr, buffer_send_done, &sentbuf, NULL));
 
-  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE), ==, 1);
+  /* Drive the loop until the datagram round-trips (see the note in send_recv).
+   * The recv is delivered on a task-group thread, so wait on the atomic counter
+   * rather than reading the lists directly -- it both signals delivery and
+   * synchronizes-with the worker's writes to ctx. */
+  while (sentbuf == NULL || r_atomic_uint_load (&ctx.recvd) == 0)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
 
   r_assert (r_ev_udp_recv_stop (udp1));
 
@@ -167,6 +235,8 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
   r_socket_address_unref (addr);
   r_ev_udp_unref (udp1);
   r_ev_udp_unref (udp2);
+  /* Drain the cancelled in-flight recv (see bind_recv). */
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
   r_task_queue_unref (tq);
   r_ev_loop_unref (loop);
 }
@@ -204,7 +274,7 @@ RTEST (revudp, send_error_handler, RTEST_FAST | RTEST_SYSTEM)
   for (i = 0; i < 8 && err == R_SOCKET_OK; i++)
     r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
 
-  r_assert_cmpint (err, !=, R_SOCKET_OK);
+  r_assert_cmpint (err, ==, R_SOCKET_MSG_SIZE);
 
   r_socket_address_unref (addr);
   r_ev_udp_unref (evudp);
