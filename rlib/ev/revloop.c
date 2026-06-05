@@ -17,6 +17,8 @@
  */
 
 #include "config.h"
+/* Before rlib-private.h: pulls in <winsock2.h> ahead of any <windows.h>. */
+#include "rev-iocp-private.h"
 #include "../rlib-private.h"
 #include "rev-private.h"
 
@@ -43,12 +45,20 @@
 #include <errno.h>
 
 
-/* Setup MACROS to select evloop backend! */
-#if defined (HAVE_KQUEUE)
+/* Setup MACROS to select evloop backend!
+ * R_EV_USE_RPOLL (-Drpoll) forces the readiness/poll backend on any platform;
+ * otherwise it is kqueue, epoll, IOCP on Windows, and poll as the fallback. */
+#if defined (R_EV_USE_RPOLL)
+#define USE_RPOLL   1
+#define USE_WAKEUP  1
+#elif defined (HAVE_KQUEUE)
 #define USE_KQUEUE  1
 #elif defined (HAVE_EPOLL_CTL)
 #define USE_EPOLL   1
 #define USE_WAKEUP  1
+#elif defined (R_OS_WIN32)
+/* IOCP wakes via PostQueuedCompletionStatus, so no separate USE_WAKEUP. */
+#define USE_IOCP    1
 #else
 #define USE_RPOLL   1
 #define USE_WAKEUP  1
@@ -108,6 +118,11 @@ struct REvLoop {
   RIOHandle handle;
 #ifdef USE_RPOLL
   RPollSet pollset;
+#endif
+#ifdef USE_IOCP
+  /* In-flight overlapped ops; keeps the loop alive until they all complete
+   * (the completion backend has no 'active' readiness watchers). */
+  rsize iocp_inflight;
 #endif
   RQueue active;
   RQueue chg;
@@ -191,6 +206,15 @@ r_ev_loop_setup (REvLoop * loop, RClock * clock, RTaskQueue * tq)
   }
 #elif defined (USE_EPOLL)
  loop->handle = epoll_create1 (0);
+#elif defined (USE_IOCP)
+  loop->iocp_inflight = 0;
+  loop->handle = (RIOHandle) CreateIoCompletionPort (INVALID_HANDLE_VALUE,
+      NULL, 0, 0);
+  if (R_UNLIKELY (loop->handle == NULL)) {
+    R_LOG_ERROR ("Failed to create IOCP port for loop %p (%lu)",
+        loop, (unsigned long) GetLastError ());
+    loop->handle = R_IO_HANDLE_INVALID;
+  }
 #elif defined (USE_RPOLL)
   loop->handle = R_IO_HANDLE_INVALID;
   r_poll_set_init (&loop->pollset, 0);
@@ -264,6 +288,9 @@ r_ev_loop_next_deadline (REvLoop * loop, REvLoopRunMode mode)
   if (r_cbqueue_size (&loop->acbs) > 0) return loop->ts;
   if (r_clock_timeout_count (loop->clock) == 0 &&
       r_queue_size (&loop->active) == 0 &&
+#ifdef USE_IOCP
+      loop->iocp_inflight == 0 &&
+#endif
       r_atomic_uint_load (&loop->tqitems) == 0)
     return loop->ts;
 
@@ -609,8 +636,62 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
   return ret;
 }
+#elif defined (USE_IOCP)
+static int
+r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
+{
+  OVERLAPPED_ENTRY entries[R_EV_LOOP_MAX_EVENTS];
+  ULONG count = 0, i;
+  DWORD timeout;
+  int total = 0;
+
+  if (deadline != R_CLOCK_TIME_INFINITE)
+    timeout = (DWORD) R_TIME_AS_MSECONDS (deadline - loop->ts) + 1;
+  else
+    timeout = INFINITE;
+
+  /* Block (up to the deadline) for the first batch, then drain every other
+   * completion that is already ready with a non-blocking poll. This keeps one
+   * loop iteration from leaving a ready completion behind -- e.g. a loopback
+   * datagram whose recv completes just after the send that triggered it. */
+  for (;;) {
+    if (!GetQueuedCompletionStatusEx (loop->handle, entries,
+          (ULONG) R_N_ELEMENTS (entries), &count, timeout, FALSE)) {
+      DWORD err = GetLastError ();
+      if (err == WAIT_TIMEOUT)
+        break;
+      R_LOG_ERROR ("GetQueuedCompletionStatusEx for loop %p failed (%lu)",
+          loop, (unsigned long) err);
+      return total > 0 ? total : -1;
+    }
+
+    R_LOG_DEBUG ("IOCP for loop %p with %lu completions", loop,
+        (unsigned long) count);
+    for (i = 0; i < count; i++) {
+      OVERLAPPED_ENTRY * e = &entries[i];
+      REvIOCPOp * op;
+
+      /* A NULL overlapped on the reserved key is a r_ev_loop_wakeup post. */
+      if (e->lpOverlapped == NULL) {
+        if (e->lpCompletionKey == R_EV_IOCP_WAKEUP_KEY)
+          r_ev_loop_move_done_callbacks (loop);
+        continue;
+      }
+
+      op = CONTAINING_RECORD (e->lpOverlapped, REvIOCPOp, overlapped);
+      if (R_LIKELY (loop->iocp_inflight > 0))
+        loop->iocp_inflight--;
+      op->cb (op, loop, (rsize) e->dwNumberOfBytesTransferred);
+    }
+
+    total += (int) count;
+    timeout = 0;
+  }
+
+  return total;
+}
 #else
-/* TODO: Implement win32 backend */
+/* No IO backend (e.g. bare metal): the loop still drives timers / callbacks. */
 static int
 r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 {
@@ -623,6 +704,32 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 }
 #endif
 
+#ifdef USE_IOCP
+rboolean
+r_ev_loop_iocp_associate (REvLoop * loop, RIOHandle handle)
+{
+  if (CreateIoCompletionPort ((HANDLE) handle, loop->handle, 0, 0) == NULL) {
+    R_LOG_ERROR ("Failed to associate handle %p with loop %p port (%lu)",
+        handle, loop, (unsigned long) GetLastError ());
+    return FALSE;
+  }
+  return TRUE;
+}
+
+void
+r_ev_loop_iocp_submit (REvLoop * loop)
+{
+  loop->iocp_inflight++;
+}
+
+void
+r_ev_loop_iocp_unsubmit (REvLoop * loop)
+{
+  if (R_LIKELY (loop->iocp_inflight > 0))
+    loop->iocp_inflight--;
+}
+#endif
+
 static rsize
 r_ev_loop_outstanding_events (REvLoop * loop)
 {
@@ -631,6 +738,9 @@ r_ev_loop_outstanding_events (REvLoop * loop)
     r_cbqueue_size (&loop->bcbs) +
     loop->tqitems +
     r_clock_timeout_count (loop->clock) +
+#ifdef USE_IOCP
+    loop->iocp_inflight +
+#endif
     r_queue_size (&loop->active);
 }
 
@@ -826,6 +936,10 @@ r_ev_loop_wakeup (REvLoop * loop)
     R_LOG_DEBUG ("loop %p wakeup!", loop);
   else
     R_LOG_ERROR ("Wakeup signalling failed for loop %p", loop);
+#elif defined (USE_IOCP)
+  if (!PostQueuedCompletionStatus (loop->handle, 0, R_EV_IOCP_WAKEUP_KEY, NULL))
+    R_LOG_ERROR ("Wakeup signalling failed for loop %p (%lu)",
+        loop, (unsigned long) GetLastError ());
 #else
 #error No wakeup mechanism
 #endif

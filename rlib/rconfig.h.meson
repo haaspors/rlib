@@ -48,6 +48,11 @@
 #mesondefine R_OS_DARWIN
 #mesondefine R_OS_RTEMS
 
+/* Event-loop backend: defined when built with -Drpoll to force the readiness/
+ * poll backend (overriding epoll/kqueue/IOCP); otherwise the backend is chosen
+ * automatically (IOCP on Windows). */
+#mesondefine R_EV_USE_RPOLL
+
 
 typedef signed char             rint8;
 typedef signed @RINT16_TYPE@    rint16;

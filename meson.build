@@ -517,6 +517,14 @@ foreach d : rconf_defines
   rconf.set(d[0], d[1].strip() != '' ? d[1] : d[2])
 endforeach
 
+# -Drpoll=enabled forces the WSAEventSelect/poll readiness event-loop backend,
+# overriding epoll/kqueue/IOCP on any platform. On Windows this opts out of the
+# default IOCP (completion-port) backend (which, unlike rpoll, can observe an
+# abortive peer close).
+if get_option('rpoll').enabled()
+  rconf.set('R_EV_USE_RPOLL', 1)
+endif
+
 configure_file(input : 'config.h.meson', output : 'config.h', configuration : conf)
 
 ###############################################################################
