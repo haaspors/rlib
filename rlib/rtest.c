@@ -846,7 +846,7 @@ _r_test_win32_exception_filter (PEXCEPTION_POINTERS ep)
 
   if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_STACK_OVERFLOW) {
     r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
-        "exception code: %u", ep->ExceptionRecord->ExceptionCode);
+        "exception code: %lu", (unsigned long) ep->ExceptionRecord->ExceptionCode);
   }
 
   _r_test_win32_err_handler (SIGSEGV);
