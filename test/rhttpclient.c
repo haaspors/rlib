@@ -9,7 +9,6 @@ typedef struct {
   RHttpResponse * res;
   RHttpClientResult result;
   rboolean done;
-  REvLoop * loop;
 } RTestHttpSyncState;
 
 static void
@@ -21,7 +20,6 @@ r_test_http_send_cb (rpointer data, RHttpResponse * res,
   st->result = result;
   st->res = (res != NULL) ? r_http_response_ref (res) : NULL;
   st->done = TRUE;
-  r_ev_loop_stop (st->loop);
 }
 
 /* Issue an async request and drive @loop until it completes. The in-process
@@ -31,15 +29,17 @@ static RHttpResponse *
 r_test_http_send (REvLoop * loop, RHttpClient * client, RHttpRequest * req,
     const RSocketAddress * addr, RHttpClientResult * result)
 {
-  RTestHttpSyncState st = { NULL, R_HTTP_CLIENT_CONNECT_FAILED, FALSE, loop };
+  RTestHttpSyncState st = { NULL, R_HTTP_CLIENT_CONNECT_FAILED, FALSE };
 
   if (!r_http_client_request_to_addr (client, req, addr, r_test_http_send_cb, &st, NULL)) {
     if (result != NULL)
       *result = R_HTTP_CLIENT_CONNECT_FAILED;
     return NULL;
   }
+  /* RUN_ONCE (not RUN_LOOP+stop): stopping is sticky, so the loop stays
+   * reusable for a follow-up request on the same loop. */
   while (!st.done)
-    r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
   if (result != NULL)
     *result = st.result;
   return st.res;
@@ -50,15 +50,17 @@ static RHttpResponse *
 r_test_http_send_uri (REvLoop * loop, RHttpClient * client, RHttpRequest * req,
     RHttpClientResult * result)
 {
-  RTestHttpSyncState st = { NULL, R_HTTP_CLIENT_RESOLVE_FAILED, FALSE, loop };
+  RTestHttpSyncState st = { NULL, R_HTTP_CLIENT_RESOLVE_FAILED, FALSE };
 
   if (!r_http_client_request (client, req, r_test_http_send_cb, &st, NULL)) {
     if (result != NULL)
       *result = R_HTTP_CLIENT_RESOLVE_FAILED;
     return NULL;
   }
+  /* RUN_ONCE (not RUN_LOOP+stop): stopping is sticky, so the loop stays
+   * reusable for a follow-up request on the same loop. */
   while (!st.done)
-    r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
   if (result != NULL)
     *result = st.result;
   return st.res;
@@ -740,5 +742,217 @@ RTEST (rhttpclientsync, connect_refused, RTEST_FAST | RTEST_SYSTEM)
 
   r_socket_address_unref (addr);
   r_http_client_sync_unref (sync);
+}
+RTEST_END;
+
+/* A keep-alive-capable raw responder: accept connections and serve a fixed
+ * response per request on each, until @max_requests have been served. Counts
+ * accepted connections and served requests so a test can prove reuse (one
+ * connection, many requests) or a reconnect (a new connection). With
+ * @close_each it closes the connection after every response, so a pooled
+ * connection the client tries to reuse is already dead. */
+typedef struct {
+  RSocket * listen;
+  int max_requests;
+  rboolean close_each;
+  int connections;
+  int requests;
+} RTestKaServer;
+
+static rpointer
+r_test_ka_responder (rpointer data)
+{
+  RTestKaServer * s = data;
+  static const rchar resp[] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi";
+
+  while (s->requests < s->max_requests) {
+    RSocket * conn;
+    if ((conn = r_socket_accept (s->listen, NULL)) == NULL)
+      break;
+    s->connections++;
+    r_socket_set_blocking (conn, TRUE);
+    for (;;) {
+      ruint8 buf[2048];
+      rsize n = 0;
+      if (r_socket_receive (conn, buf, sizeof (buf), &n) != R_SOCKET_OK || n == 0)
+        break;                              /* peer closed / error */
+      r_socket_send (conn, (const ruint8 *) resp, sizeof (resp) - 1, &n);
+      s->requests++;
+      if (s->close_each || s->requests >= s->max_requests)
+        break;
+    }
+    r_socket_close (conn);
+    r_socket_unref (conn);
+  }
+
+  return NULL;
+}
+
+static RThread *
+r_test_ka_start (RTestKaServer * s, ruint16 port, RSocketAddress ** out)
+{
+  RSocketAddress * addr;
+
+  r_assert_cmpptr ((s->listen = r_socket_new (R_SOCKET_FAMILY_IPV4,
+          R_SOCKET_TYPE_STREAM, R_SOCKET_PROTOCOL_TCP)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1,
+          port)), !=, NULL);
+  r_assert_cmpint (r_socket_bind (s->listen, addr, TRUE), ==, R_SOCKET_OK);
+  r_assert_cmpint (r_socket_listen (s->listen), ==, R_SOCKET_OK);
+  r_assert (r_socket_set_blocking (s->listen, TRUE));
+  *out = addr;
+  return r_thread_new (NULL, r_test_ka_responder, s);
+}
+
+static void
+r_test_ka_request (RHttpClientSync * sync, const RSocketAddress * addr)
+{
+  RHttpRequest * req;
+  RHttpResponse * res;
+  RHttpClientResult result;
+  rchar * body;
+
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+  res = r_http_client_sync_request_to_addr (sync, req, addr, &result);
+  r_http_request_unref (req);
+  r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);
+  r_assert_cmpptr (res, !=, NULL);
+  r_assert_cmpstr ((body = r_http_response_get_body (res, NULL)), ==, "hi");
+  r_free (body);
+  r_http_response_unref (res);
+}
+
+/* Two requests to one destination reuse a single pooled connection. */
+RTEST (rhttpclientsync, keepalive_reuse, RTEST_FAST | RTEST_SYSTEM)
+{
+  RTestKaServer s = { NULL, 2, FALSE, 0, 0 };
+  RThread * thread;
+  RSocketAddress * addr;
+  RHttpClientSync * sync;
+
+  thread = r_test_ka_start (&s, 47667, &addr);
+  r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
+
+  r_test_ka_request (sync, addr);
+  r_test_ka_request (sync, addr);
+
+  r_thread_join (thread);
+  r_thread_unref (thread);
+  r_assert_cmpint (s.requests, ==, 2);
+  r_assert_cmpint (s.connections, ==, 1);   /* both served on one connection */
+
+  r_http_client_sync_unref (sync);
+  r_socket_close (s.listen);
+  r_socket_unref (s.listen);
+  r_socket_address_unref (addr);
+}
+RTEST_END;
+
+/* With keep-alive disabled each request opens (and closes) its own connection. */
+RTEST (rhttpclientsync, keepalive_disabled, RTEST_FAST | RTEST_SYSTEM)
+{
+  RTestKaServer s = { NULL, 2, FALSE, 0, 0 };
+  RThread * thread;
+  RSocketAddress * addr;
+  RHttpClientSync * sync;
+
+  thread = r_test_ka_start (&s, 47670, &addr);
+  r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
+  r_assert (r_http_client_sync_get_keepalive (sync));   /* on by default */
+  r_http_client_sync_set_keepalive (sync, FALSE);
+  r_assert (!r_http_client_sync_get_keepalive (sync));
+
+  r_test_ka_request (sync, addr);
+  r_test_ka_request (sync, addr);
+
+  r_thread_join (thread);
+  r_thread_unref (thread);
+  r_assert_cmpint (s.requests, ==, 2);
+  r_assert_cmpint (s.connections, ==, 2);   /* not pooled: a connection each */
+
+  r_http_client_sync_unref (sync);
+  r_socket_close (s.listen);
+  r_socket_unref (s.listen);
+  r_socket_address_unref (addr);
+}
+RTEST_END;
+
+/* When a pooled connection has been closed by the peer, the next request
+ * transparently reconnects and still succeeds. */
+RTEST (rhttpclientsync, keepalive_retry_stale, RTEST_FAST | RTEST_SYSTEM)
+{
+  RTestKaServer s = { NULL, 2, TRUE, 0, 0 };   /* close after each response */
+  RThread * thread;
+  RSocketAddress * addr;
+  RHttpClientSync * sync;
+
+  thread = r_test_ka_start (&s, 47668, &addr);
+  r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
+
+  r_test_ka_request (sync, addr);   /* pools the connection */
+  r_test_ka_request (sync, addr);   /* reuses it, finds it dead, retries */
+
+  r_thread_join (thread);
+  r_thread_unref (thread);
+  r_assert_cmpint (s.requests, ==, 2);
+  r_assert_cmpint (s.connections, ==, 2);   /* second request reconnected */
+
+  r_http_client_sync_unref (sync);
+  r_socket_close (s.listen);
+  r_socket_unref (s.listen);
+  r_socket_address_unref (addr);
+}
+RTEST_END;
+
+/* An idle pooled connection is evicted once its timeout elapses, so a later
+ * request opens a fresh connection. */
+RTEST (rhttpclient, keepalive_idle_timeout, RTEST_FAST | RTEST_SYSTEM)
+{
+  RTestKaServer s = { NULL, 2, FALSE, 0, 0 };
+  RThread * thread;
+  RSocketAddress * addr;
+  REvLoop * loop;
+  RClock * clock;
+  RHttpClient * client;
+  RHttpRequest * req;
+  RHttpResponse * res;
+  RHttpClientResult result;
+  int i;
+
+  thread = r_test_ka_start (&s, 47669, &addr);
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+  r_http_client_set_idle_timeout (client, 5 * R_SECOND);
+
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+  res = r_test_http_send (loop, client, req, addr, &result);
+  r_http_request_unref (req);
+  r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);
+  r_http_response_unref (res);
+
+  /* Advance past the idle timeout and pump the loop so the timer fires, the
+   * connection is evicted and the deferred close runs. */
+  r_test_clock_update_time (clock, 100 * R_SECOND);
+  for (i = 0; i < 8; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+  res = r_test_http_send (loop, client, req, addr, &result);
+  r_http_request_unref (req);
+  r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);
+  r_http_response_unref (res);
+
+  r_thread_join (thread);
+  r_thread_unref (thread);
+  r_assert_cmpint (s.connections, ==, 2);   /* eviction forced a reconnect */
+
+  r_clock_unref (clock);
+  r_http_client_unref (client);
+  r_ev_loop_unref (loop);
+  r_socket_address_unref (addr);
 }
 RTEST_END;
