@@ -51,8 +51,9 @@
  * Scope is plaintext HTTP/1.1, either to an explicit @ref RSocketAddress or
  * to the host/port derived from the request URI (@ref r_http_client_request),
  * with response bodies framed by @c Content-Length, chunked transfer-encoding
- * or connection close. Built on the @ref r_http_proto wire codec and
- * @ref r_evtcp.
+ * or connection close. Persistent connections are reused via a small per-client
+ * pool (@ref r_http_client_set_keepalive). Built on the @ref r_http_proto wire
+ * codec and @ref r_evtcp.
  *
  * @{
  */
@@ -89,6 +90,28 @@ R_API RHttpClient * r_http_client_new (REvLoop * loop);
 #define r_http_client_ref   r_ref_ref
 /** @brief Drop a reference (alias for @ref r_ref_unref). */
 #define r_http_client_unref r_ref_unref
+
+/**
+ * @brief Enable or disable HTTP/1.1 keep-alive connection reuse (default on).
+ *
+ * When enabled, a connection left open by a self-delimited, persistent response
+ * is parked in a per-client pool and reused by the next request to the same
+ * destination. A caller can still force a single request to close by setting a
+ * @c Connection: close header on it.
+ */
+R_API void r_http_client_set_keepalive (RHttpClient * client, rboolean enabled);
+/** @brief Whether keep-alive connection reuse is enabled (see @ref r_http_client_set_keepalive). */
+R_API rboolean r_http_client_get_keepalive (RHttpClient * client);
+/**
+ * @brief Set how long an idle pooled connection is kept before eviction.
+ * @param client  The client.
+ * @param timeout Idle lifetime (e.g. @c 30 * @c R_SECOND); @c 0 disables the
+ *                timer so connections live until the peer closes them or the
+ *                client is destroyed. Default is 60 seconds.
+ */
+R_API void r_http_client_set_idle_timeout (RHttpClient * client, RClockTimeDiff timeout);
+/** @brief The idle-connection timeout (see @ref r_http_client_set_idle_timeout). */
+R_API RClockTimeDiff r_http_client_get_idle_timeout (RHttpClient * client);
 
 /**
  * @brief Asynchronously send @p req to @p addr and deliver the response.
@@ -148,6 +171,15 @@ R_API RHttpClientSync * r_http_client_sync_new (void);
 #define r_http_client_sync_ref   r_ref_ref
 /** @brief Drop a reference (alias for @ref r_ref_unref). */
 #define r_http_client_sync_unref r_ref_unref
+
+/** @brief @ref r_http_client_set_keepalive on the underlying client. */
+R_API void r_http_client_sync_set_keepalive (RHttpClientSync * client, rboolean enabled);
+/** @brief @ref r_http_client_get_keepalive on the underlying client. */
+R_API rboolean r_http_client_sync_get_keepalive (RHttpClientSync * client);
+/** @brief @ref r_http_client_set_idle_timeout on the underlying client. */
+R_API void r_http_client_sync_set_idle_timeout (RHttpClientSync * client, RClockTimeDiff timeout);
+/** @brief @ref r_http_client_get_idle_timeout on the underlying client. */
+R_API RClockTimeDiff r_http_client_sync_get_idle_timeout (RHttpClientSync * client);
 
 /**
  * @brief Send @p req to @p addr and block until the response arrives.

@@ -23,27 +23,38 @@
 #include <rlib/ev/revtcp.h>
 #include <rlib/ev/revresolve.h>
 
+#include <rlib/net/rsocket.h>
 #include <rlib/data/rptrarray.h>
 
 #include <rlib/ruri.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
+#include <rlib/rtime.h>
 
 /* Cap unparsed response-header bytes so a peer that never sends the
  * terminating CRLFCRLF can't grow the input buffer without bound. */
 #define R_HTTP_CLIENT_MAX_HEADER  (64 * 1024)
 
+/* Default idle-connection timeout before a pooled connection is evicted. */
+#define R_HTTP_CLIENT_IDLE_TIMEOUT  (60 * R_SECOND)
+
+typedef struct RHttpClientConn RHttpClientConn;
+typedef struct RHttpClientReqCtx RHttpClientReqCtx;
+
 struct RHttpClient {
   RRef ref;
 
   REvLoop * loop;
-  RPtrArray * reqs;
+  RPtrArray * reqs;     /* in-flight request contexts */
+  RPtrArray * idle;     /* idle RHttpClientConn, scanned by destination addr */
+  rboolean keepalive;
+  RClockTimeDiff idle_timeout;
 };
 
-typedef struct {
+struct RHttpClientReqCtx {
   RRef ref;
   RHttpClient * client;
-  REvTCP * evtcp;
+  RHttpClientConn * conn;   /* serving connection; holds a ref while in use */
 
   RHttpRequest * req;
   RBuffer * inbuf;
@@ -56,8 +67,29 @@ typedef struct {
   rpointer data;
   RDestroyNotify notify;
 
+  RSocketAddress * dest;  /* connect target; keys reuse and drives the retry */
+  rboolean reused;        /* running on a pooled connection */
+  rboolean retried;       /* a stale-connection retry has already happened */
   rboolean finished;
-} RHttpClientReqCtx;
+};
+
+/* A client connection. It owns the socket and keeps its recv watch armed for
+ * its whole life, so reuse needs no re-arming. While serving a request conn->req
+ * is set; when idle it is NULL and the connection sits in client->idle awaiting
+ * reuse, watched only so a peer close evicts it. */
+struct RHttpClientConn {
+  RRef ref;
+  RHttpClient * client;       /* borrowed */
+  REvTCP * evtcp;
+  RSocketAddress * addr;      /* destination key */
+  RHttpClientReqCtx * req;    /* current request, or NULL when idle */
+  RClockEntry * timer;        /* idle-eviction timer, set only when idle */
+  rboolean recving;           /* recv watch armed */
+  rboolean closing;
+};
+
+#define r_http_client_conn_ref   r_ref_ref
+#define r_http_client_conn_unref r_ref_unref
 
 #define R_LOG_CAT_DEFAULT &httpclicat
 R_LOG_CATEGORY_DEFINE_STATIC (httpclicat, "httpclient", "RLib HTTP client",
@@ -68,6 +100,17 @@ r_http_client_init (void)
 {
   r_log_category_register (&httpclicat);
 }
+
+
+/* Forward declarations (the request and connection flows are mutually
+ * recursive: connect -> send -> recv -> complete, with reuse and retry). */
+static void r_http_client_req_complete (RHttpClientReqCtx * ctx,
+    RHttpClientResult result, rboolean defer);
+static void r_http_client_req_fail (RHttpClientReqCtx * ctx,
+    RHttpClientResult result, rboolean defer);
+static void r_http_client_req_connect (RHttpClientReqCtx * ctx, rboolean defer);
+static void r_http_client_req_send (RHttpClientReqCtx * ctx, rboolean defer);
+static void r_http_client_conn_evict (RHttpClientConn * conn);
 
 
 static void
@@ -81,42 +124,238 @@ r_http_client_req_ctx_free (RHttpClientReqCtx * ctx)
     r_buffer_unref (ctx->inbuf);
   if (ctx->req != NULL)
     r_http_request_unref (ctx->req);
-  if (ctx->evtcp != NULL)
-    r_ev_tcp_unref (ctx->evtcp);
+  /* Normally cleared at completion; only set here on an abnormal teardown
+   * (e.g. the loop torn down mid-connect). Detach and drop our connection ref
+   * (conn_free closes the socket). */
+  if (ctx->conn != NULL) {
+    ctx->conn->req = NULL;
+    r_http_client_conn_unref (ctx->conn);
+  }
+  if (ctx->dest != NULL)
+    r_socket_address_unref (ctx->dest);
 
   r_http_client_unref (ctx->client);
   r_free (ctx);
 }
 
-static void
-r_http_client_req_do_close (rpointer data, REvLoop * loop)
-{
-  RHttpClientReqCtx * ctx = data;
-  (void) loop;
+/* --- connection lifecycle ------------------------------------------------- */
 
-  r_ev_tcp_close (ctx->evtcp, NULL, NULL, NULL);
+static void
+r_http_client_conn_free (RHttpClientConn * conn)
+{
+  if (conn->timer != NULL)
+    r_ev_loop_cancel_timer (conn->client->loop, conn->timer);
+  if (conn->evtcp != NULL) {
+    /* When closed via conn_close the close is already done/scheduled
+     * (closing == TRUE); otherwise (pool torn down with the client) close it
+     * here, synchronously -- we are not inside an io callback. */
+    if (!conn->closing)
+      r_ev_tcp_close (conn->evtcp, NULL, NULL, NULL);
+    r_ev_tcp_unref (conn->evtcp);
+  }
+  if (conn->addr != NULL)
+    r_socket_address_unref (conn->addr);
+  r_free (conn);
 }
 
-/* Deliver the outcome once and tear the request down. Idempotent: a
- * receive-path error and a later error event can both land here.
- *
- * @defer is TRUE when called from inside a connect/recv callback, where
- * closing the socket synchronously would free the io-watch entry the loop is
- * still iterating; the close is then deferred to a loop callback. It is FALSE
- * only for a synchronous connect failure raised from
- * r_http_client_request_to_addr (not a loop callback, and the failed socket has
- * no active watch), where deferring would strand the close if the caller never
- * runs the loop again. */
 static void
-r_http_client_req_teardown (RHttpClientReqCtx * ctx, RHttpClientResult result,
+r_http_client_conn_do_close (rpointer data, REvLoop * loop)
+{
+  RHttpClientConn * conn = data;
+  (void) loop;
+
+  r_ev_tcp_close (conn->evtcp, NULL, NULL, NULL);
+}
+
+/* Close conn's socket. Idempotent. @defer is TRUE when called from inside one
+ * of the socket's own callbacks, where closing synchronously would free the
+ * io-watch the loop is still iterating. Does not touch refs or pool membership. */
+static void
+r_http_client_conn_close (RHttpClientConn * conn, rboolean defer)
+{
+  if (conn->closing)
+    return;
+  conn->closing = TRUE;
+
+  if (conn->timer != NULL) {
+    r_ev_loop_cancel_timer (conn->client->loop, conn->timer);
+    conn->timer = NULL;
+  }
+  if (conn->evtcp != NULL) {
+    if (defer)
+      r_ev_loop_add_callback (conn->client->loop, FALSE,
+          r_http_client_conn_do_close, r_http_client_conn_ref (conn),
+          r_http_client_conn_unref);
+    else
+      r_ev_tcp_close (conn->evtcp, NULL, NULL, NULL);
+  }
+}
+
+/* Drop an idle connection from the pool and close it (deferred -- this runs
+ * from the idle recv/error/timer callbacks). Idempotent. */
+static void
+r_http_client_conn_evict (RHttpClientConn * conn)
+{
+  if (conn->closing)
+    return;
+
+  /* Hold a ref across the pool removal, which drops the array's ref. */
+  r_http_client_conn_ref (conn);
+  r_http_client_conn_close (conn, TRUE);
+  r_ptr_array_remove_first_fast (conn->client->idle, conn);
+  r_http_client_conn_unref (conn);
+}
+
+static void
+r_http_client_conn_idle_timeout (rpointer data, REvLoop * loop)
+{
+  RHttpClientConn * conn = data;
+  (void) loop;
+
+  conn->timer = NULL;   /* the entry fired; evict must not cancel it */
+  R_LOG_TRACE ("%p: idle connection %p timed out", conn->client, conn);
+  r_http_client_conn_evict (conn);
+}
+
+/* Receive on a connection. Routed to the current request, or -- when the
+ * connection is idle in the pool -- treated as a peer close that evicts it. */
+static void r_http_client_req_recv_data (RHttpClientReqCtx * ctx, RBuffer * buf);
+
+static void
+r_http_client_conn_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
+{
+  RHttpClientConn * conn = data;
+  (void) evtcp;
+
+  if (conn->req == NULL || conn->req->finished) {
+    /* Bytes or EOF on a parked connection: the peer is done with it. */
+    r_http_client_conn_evict (conn);
+    return;
+  }
+  r_http_client_req_recv_data (conn->req, buf);
+}
+
+static void
+r_http_client_conn_error (rpointer data, REvTCP * evtcp, RSocketStatus error)
+{
+  RHttpClientConn * conn = data;
+  (void) evtcp;
+
+  R_LOG_DEBUG ("%p: connection %p socket error (%d)", conn->client, conn,
+      (int) error);
+  if (conn->req == NULL)
+    r_http_client_conn_evict (conn);
+  else
+    r_http_client_req_fail (conn->req, R_HTTP_CLIENT_RECV_FAILED, TRUE);
+}
+
+static void
+r_http_client_conn_connected (rpointer data, REvTCP * evtcp, int status)
+{
+  RHttpClientConn * conn = data;
+  (void) evtcp;
+
+  if (conn->req == NULL)        /* request gone (e.g. torn down); drop conn */
+    return;
+  if (status != 0) {
+    R_LOG_DEBUG ("%p: request %p connect failed (%d)", conn->client, conn->req,
+        status);
+    r_http_client_req_fail (conn->req, R_HTTP_CLIENT_CONNECT_FAILED, TRUE);
+    return;
+  }
+
+  r_http_client_req_send (conn->req, TRUE);
+}
+
+static RHttpClientConn *
+r_http_client_conn_new (RHttpClient * client, RSocketAddress * addr)
+{
+  RHttpClientConn * conn;
+
+  if ((conn = r_mem_new0 (RHttpClientConn)) == NULL)
+    return NULL;
+  r_ref_init (conn, r_http_client_conn_free);
+  conn->client = client;
+  conn->addr = r_socket_address_ref (addr);
+  if ((conn->evtcp = r_ev_tcp_new (r_socket_address_get_family (addr),
+          client->loop)) == NULL) {
+    r_http_client_conn_unref (conn);
+    return NULL;
+  }
+  r_ev_tcp_set_error_handler (conn->evtcp, r_http_client_conn_error, conn, NULL);
+  return conn;
+}
+
+/* Take a live pooled connection to @addr out of the pool for reuse, or NULL.
+ * The returned connection carries the reference the pool held. */
+static RHttpClientConn *
+r_http_client_pool_acquire (RHttpClient * client, const RSocketAddress * addr)
+{
+  rsize i = 0;
+
+  while (i < r_ptr_array_size (client->idle)) {
+    RHttpClientConn * conn = r_ptr_array_get (client->idle, i);
+
+    if (conn->closing || !r_socket_address_is_equal (conn->addr, addr)) {
+      i++;
+      continue;
+    }
+    if (!r_socket_is_alive (r_ev_tcp_get_socket (conn->evtcp))) {
+      r_http_client_conn_evict (conn);   /* dead; drop and re-check this slot */
+      continue;
+    }
+
+    r_http_client_conn_ref (conn);       /* keep across the pool removal */
+    if (conn->timer != NULL) {
+      r_ev_loop_cancel_timer (client->loop, conn->timer);
+      conn->timer = NULL;
+    }
+    r_ptr_array_remove_first_fast (client->idle, conn);
+    return conn;                         /* ref transfers to the caller */
+  }
+
+  return NULL;
+}
+
+/* --- request flow --------------------------------------------------------- */
+
+/* TRUE if conn may be parked for reuse after this exchange. */
+static rboolean
+r_http_client_req_reusable (RHttpClientReqCtx * ctx, RHttpClientConn * conn)
+{
+  rsize leftover;
+
+  if (!ctx->client->keepalive || conn->closing || conn->evtcp == NULL)
+    return FALSE;
+  if (ctx->res == NULL)
+    return FALSE;
+  /* Only fixed-length bodies are pooled: the chunked decoder doesn't report
+   * how many bytes it consumed, so the post-body boundary is unknown. */
+  if (ctx->bodytype != R_HTTP_BODY_PARSE_SIZED)
+    return FALSE;
+  /* Both sides must agree to persist. */
+  if (!r_http_response_is_keepalive (ctx->res) ||
+      !r_http_request_is_keepalive (ctx->req))
+    return FALSE;
+  /* Unconsumed bytes past the body would corrupt the next response. */
+  leftover = (ctx->inbuf != NULL ? r_buffer_get_size (ctx->inbuf) : 0) -
+      (ctx->bodysize > 0 ? (rsize) ctx->bodysize : 0);
+  return leftover == 0;
+}
+
+/* Deliver the outcome once, then either park the connection for reuse (on a
+ * successful, reusable exchange) or close it, and tear the request down. */
+static void
+r_http_client_req_complete (RHttpClientReqCtx * ctx, RHttpClientResult result,
     rboolean defer)
 {
+  RHttpClientConn * conn;
+
   if (ctx->finished)
     return;
   ctx->finished = TRUE;
 
-  /* Keep ctx alive across the callback and the array removal below (the
-   * array holds the only other reference). */
+  /* Keep ctx alive across the callback and the array removal below. */
   r_ref_ref (ctx);
 
   R_LOG_TRACE ("%p: request %p finished (%d)", ctx->client, ctx, (int) result);
@@ -124,43 +363,75 @@ r_http_client_req_teardown (RHttpClientReqCtx * ctx, RHttpClientResult result,
     ctx->cb (ctx->data, result == R_HTTP_CLIENT_OK ? ctx->res : NULL,
         result, ctx->client);
 
-  /* evtcp is NULL when the request fails during DNS resolution, before a
-   * socket is created; there is then nothing to close. */
-  if (ctx->evtcp != NULL) {
-    if (defer)
-      r_ev_loop_add_callback (ctx->client->loop, FALSE,
-          r_http_client_req_do_close, r_ref_ref (ctx), r_ref_unref);
-    else
-      r_ev_tcp_close (ctx->evtcp, NULL, NULL, NULL);
+  /* Detach the connection (a safe pointer flip -- the recv watch stays armed)
+   * and decide its fate. conn is NULL if the request failed before connecting. */
+  conn = ctx->conn;
+  ctx->conn = NULL;
+  if (conn != NULL) {
+    conn->req = NULL;
+    if (result == R_HTTP_CLIENT_OK && r_http_client_req_reusable (ctx, conn)) {
+      if (ctx->client->idle_timeout > 0)
+        r_ev_loop_add_callback_later (ctx->client->loop, &conn->timer,
+            ctx->client->idle_timeout, r_http_client_conn_idle_timeout, conn,
+            NULL);
+      R_LOG_TRACE ("%p: parking idle connection %p", ctx->client, conn);
+      r_ptr_array_add (ctx->client->idle, conn, r_http_client_conn_unref);
+    } else {
+      r_http_client_conn_close (conn, defer);
+      r_http_client_conn_unref (conn);
+    }
   }
-  r_ptr_array_remove_first_fast (ctx->client->reqs, ctx);
 
+  r_ptr_array_remove_first_fast (ctx->client->reqs, ctx);
   r_ref_unref (ctx);
 }
 
-#define r_http_client_req_finish(ctx, result) \
-  r_http_client_req_teardown (ctx, result, TRUE)
-
+/* Deliver a failure, but first transparently retry once if it happened on a
+ * pooled connection before any response arrived -- the request almost
+ * certainly never reached the server, so reconnect and resend. */
 static void
-r_http_client_req_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
+r_http_client_req_fail (RHttpClientReqCtx * ctx, RHttpClientResult result,
+    rboolean defer)
 {
-  RHttpClientReqCtx * ctx = data;
-  (void) evtcp;
-
-  /* The recv watch stays armed until the deferred close runs, so a late
-   * event after the request finished must be ignored. */
   if (ctx->finished)
     return;
 
+  if (ctx->reused && !ctx->retried && ctx->res == NULL) {
+    RHttpClientConn * conn = ctx->conn;
+
+    ctx->retried = TRUE;
+    ctx->reused = FALSE;
+    ctx->conn = NULL;
+    if (conn != NULL) {
+      conn->req = NULL;
+      r_http_client_conn_close (conn, defer);
+      r_http_client_conn_unref (conn);
+    }
+    if (ctx->inbuf != NULL) {
+      r_buffer_unref (ctx->inbuf);
+      ctx->inbuf = NULL;
+    }
+    R_LOG_DEBUG ("%p: request %p retrying on a fresh connection", ctx->client, ctx);
+    r_http_client_req_connect (ctx, defer);
+    return;
+  }
+
+  r_http_client_req_complete (ctx, result, defer);
+}
+
+static void
+r_http_client_req_recv_data (RHttpClientReqCtx * ctx, RBuffer * buf)
+{
   if (buf == NULL) {
-    /* End-of-stream: a CLOSE-framed body ends here; anything else mid-body
-     * is a truncated response. */
+    /* End-of-stream: a CLOSE-framed body ends here; anything else mid-body is a
+     * truncated response (and, on a reused connection with nothing received
+     * yet, a candidate for the stale-connection retry). */
     if (ctx->res != NULL && ctx->bodytype == R_HTTP_BODY_PARSE_CLOSE) {
       if (ctx->inbuf != NULL)
         r_http_response_set_body_buffer (ctx->res, ctx->inbuf);
-      r_http_client_req_finish (ctx, R_HTTP_CLIENT_OK);
+      r_http_client_req_complete (ctx, R_HTTP_CLIENT_OK, TRUE);
     } else {
-      r_http_client_req_finish (ctx, R_HTTP_CLIENT_RECV_FAILED);
+      r_http_client_req_fail (ctx, R_HTTP_CLIENT_RECV_FAILED, TRUE);
     }
     return;
   }
@@ -182,14 +453,14 @@ r_http_client_req_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
       if (r_buffer_get_size (ctx->inbuf) > R_HTTP_CLIENT_MAX_HEADER) {
         r_buffer_unref (ctx->inbuf);
         ctx->inbuf = remainder;
-        r_http_client_req_finish (ctx, R_HTTP_CLIENT_PARSE_FAILED);
+        r_http_client_req_complete (ctx, R_HTTP_CLIENT_PARSE_FAILED, TRUE);
         return;
       }
       /* Wait for more header bytes (remainder re-holds the pending data). */
     } else {
       r_buffer_unref (ctx->inbuf);
       ctx->inbuf = remainder;
-      r_http_client_req_finish (ctx, R_HTTP_CLIENT_PARSE_FAILED);
+      r_http_client_req_complete (ctx, R_HTTP_CLIENT_PARSE_FAILED, TRUE);
       return;
     }
 
@@ -206,13 +477,13 @@ r_http_client_req_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
   switch (ctx->bodytype) {
     case R_HTTP_BODY_PARSE_SIZED:
       if (ctx->bodysize <= 0) {
-        r_http_client_req_finish (ctx, R_HTTP_CLIENT_OK);
+        r_http_client_req_complete (ctx, R_HTTP_CLIENT_OK, TRUE);
       } else if (ctx->inbuf != NULL &&
           r_buffer_get_size (ctx->inbuf) >= (rsize) ctx->bodysize) {
         RBuffer * body = r_buffer_view (ctx->inbuf, 0, (rsize) ctx->bodysize);
         r_http_response_set_body_buffer (ctx->res, body);
         r_buffer_unref (body);
-        r_http_client_req_finish (ctx, R_HTTP_CLIENT_OK);
+        r_http_client_req_complete (ctx, R_HTTP_CLIENT_OK, TRUE);
       }
       /* else wait for more body bytes */
       break;
@@ -226,9 +497,9 @@ r_http_client_req_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
       if (err == R_HTTP_OK) {
         r_http_response_set_body_buffer (ctx->res, body);
         r_buffer_unref (body);
-        r_http_client_req_finish (ctx, R_HTTP_CLIENT_OK);
+        r_http_client_req_complete (ctx, R_HTTP_CLIENT_OK, TRUE);
       } else if (err != R_HTTP_BUF_TOO_SMALL) {
-        r_http_client_req_finish (ctx, R_HTTP_CLIENT_PARSE_FAILED);
+        r_http_client_req_complete (ctx, R_HTTP_CLIENT_PARSE_FAILED, TRUE);
       }
       /* else wait for more chunk bytes */
       break;
@@ -237,43 +508,98 @@ r_http_client_req_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
       /* Tunnel framing (after CONNECT) isn't implemented. */
       R_LOG_DEBUG ("%p: request %p unsupported body framing %d",
           ctx->client, ctx, (int) ctx->bodytype);
-      r_http_client_req_finish (ctx, R_HTTP_CLIENT_PARSE_FAILED);
+      r_http_client_req_complete (ctx, R_HTTP_CLIENT_PARSE_FAILED, TRUE);
       break;
   }
 }
 
+/* Serialize and send the request on ctx's connection, arming its recv watch
+ * once. Used by both a fresh connect and a reused pooled connection. */
 static void
-r_http_client_req_connected (rpointer data, REvTCP * evtcp, int status)
+r_http_client_req_send (RHttpClientReqCtx * ctx, rboolean defer)
 {
-  RHttpClientReqCtx * ctx = data;
+  RHttpClientConn * conn = ctx->conn;
   RBuffer * buf;
-  (void) evtcp;
 
-  if (status != 0) {
-    R_LOG_DEBUG ("%p: request %p connect failed (%d)", ctx->client, ctx, status);
-    r_http_client_req_finish (ctx, R_HTTP_CLIENT_CONNECT_FAILED);
-    return;
-  }
+  /* Advertise keep-alive so the peer persists the connection (our server, and
+   * RFC 7230 strictly, treat 1.1 as persistent, but an explicit header is the
+   * interoperable signal). Idempotent across a retry's re-send. */
+  if (ctx->client->keepalive &&
+      !r_http_request_has_header (ctx->req, "Connection", -1))
+    r_http_request_add_header (ctx->req, "Connection", -1, "keep-alive", -1);
 
   if ((buf = r_http_msg_get_buffer ((RHttpMsg *) ctx->req)) == NULL) {
-    r_http_client_req_finish (ctx, R_HTTP_CLIENT_SEND_FAILED);
+    r_http_client_req_fail (ctx, R_HTTP_CLIENT_SEND_FAILED, defer);
     return;
   }
-  r_ev_tcp_send_and_forget (ctx->evtcp, buf);
+  r_ev_tcp_send_and_forget (conn->evtcp, buf);
   r_buffer_unref (buf);
 
-  if (!r_ev_tcp_recv_start (ctx->evtcp, NULL, r_http_client_req_recv, ctx, NULL))
-    r_http_client_req_finish (ctx, R_HTTP_CLIENT_RECV_FAILED);
+  /* The recv watch is bound to the connection for its whole life; a reused
+   * connection already has it armed. */
+  if (!conn->recving) {
+    if (!r_ev_tcp_recv_start (conn->evtcp, NULL, r_http_client_conn_recv,
+            conn, NULL)) {
+      r_http_client_req_fail (ctx, R_HTTP_CLIENT_RECV_FAILED, defer);
+      return;
+    }
+    conn->recving = TRUE;
+  }
 }
 
+/* Open a fresh connection to ctx->dest and send once connected. */
 static void
-r_http_client_req_error (rpointer data, REvTCP * evtcp, RSocketStatus error)
+r_http_client_req_connect (RHttpClientReqCtx * ctx, rboolean defer)
 {
-  RHttpClientReqCtx * ctx = data;
-  (void) evtcp;
+  RHttpClientConn * conn;
 
-  R_LOG_DEBUG ("%p: request %p socket error (%d)", ctx->client, ctx, (int) error);
-  r_http_client_req_finish (ctx, R_HTTP_CLIENT_RECV_FAILED);
+  ctx->reused = FALSE;
+  if ((conn = r_http_client_conn_new (ctx->client, ctx->dest)) == NULL) {
+    r_http_client_req_complete (ctx, R_HTTP_CLIENT_CONNECT_FAILED, defer);
+    return;
+  }
+  ctx->conn = conn;     /* ctx owns the new connection's reference */
+  conn->req = ctx;
+  if (r_ev_tcp_connect (conn->evtcp, ctx->dest,
+        r_http_client_conn_connected, conn, NULL) < R_SOCKET_OK)
+    r_http_client_req_complete (ctx, R_HTTP_CLIENT_CONNECT_FAILED, defer);
+}
+
+/* Reuse a pooled connection to ctx->dest if one is idle, else connect fresh. */
+static void
+r_http_client_req_dispatch (RHttpClientReqCtx * ctx, rboolean defer)
+{
+  RHttpClientConn * conn = r_http_client_pool_acquire (ctx->client, ctx->dest);
+
+  if (conn != NULL) {
+    ctx->conn = conn;   /* acquire transferred the pool's reference to us */
+    ctx->reused = TRUE;
+    conn->req = ctx;
+    R_LOG_TRACE ("%p: request %p reusing pooled connection %p", ctx->client,
+        ctx, conn);
+    r_http_client_req_send (ctx, defer);
+    return;
+  }
+
+  r_http_client_req_connect (ctx, defer);
+}
+
+static RHttpClientReqCtx *
+r_http_client_req_ctx_new (RHttpClient * client, RHttpRequest * req,
+    RHttpClientResponseFunc cb, rpointer data, RDestroyNotify notify)
+{
+  RHttpClientReqCtx * ctx;
+
+  if ((ctx = r_mem_new0 (RHttpClientReqCtx)) == NULL)
+    return NULL;
+  r_ref_init (ctx, r_http_client_req_ctx_free);
+  ctx->client = r_http_client_ref (client);
+  ctx->req = r_http_request_ref (req);
+  ctx->bodytype = R_HTTP_BODY_PARSE_SIZED;
+  ctx->cb = cb;
+  ctx->data = data;
+  ctx->notify = notify;
+  return ctx;
 }
 
 rboolean
@@ -286,39 +612,26 @@ r_http_client_request_to_addr (RHttpClient * client, RHttpRequest * req,
   if (R_UNLIKELY (client == NULL || req == NULL || addr == NULL || cb == NULL))
     return FALSE;
 
-  if ((ctx = r_mem_new0 (RHttpClientReqCtx)) == NULL)
+  if ((ctx = r_http_client_req_ctx_new (client, req, cb, data, notify)) == NULL)
     return FALSE;
-  r_ref_init (ctx, r_http_client_req_ctx_free);
-  ctx->client = r_http_client_ref (client);
-  ctx->req = r_http_request_ref (req);
-  ctx->bodytype = R_HTTP_BODY_PARSE_SIZED;
-
-  /* Set cb/data/notify only once the request is committed (TRUE return):
-   * a FALSE return must not invoke notify -- the caller keeps ownership. */
-  if ((ctx->evtcp = r_ev_tcp_new (r_socket_address_get_family (addr),
-          client->loop)) == NULL) {
+  if ((ctx->dest = r_socket_address_copy (addr)) == NULL) {
+    ctx->cb = NULL;     /* not committed: notify must not run */
+    ctx->notify = NULL;
     r_ref_unref (ctx);
     return FALSE;
   }
-  ctx->cb = cb;
-  ctx->data = data;
-  ctx->notify = notify;
 
-  /* The array owns the request context; the in-flight callbacks borrow it. */
+  /* Committed: the array owns ctx and every outcome is delivered via cb. */
   r_ptr_array_add (client->reqs, ctx, r_ref_unref);
-  r_ev_tcp_set_error_handler (ctx->evtcp, r_http_client_req_error, ctx, NULL);
-
   R_LOG_TRACE ("%p: request %p started", client, ctx);
-  if (r_ev_tcp_connect (ctx->evtcp, addr,
-        r_http_client_req_connected, ctx, NULL) < R_SOCKET_OK)
-    r_http_client_req_teardown (ctx, R_HTTP_CLIENT_CONNECT_FAILED, FALSE);
+  r_http_client_req_dispatch (ctx, FALSE);
 
   return TRUE;
 }
 
-/* DNS resolution completed: connect to the first resolved address. ctx is
- * borrowed -- it stays alive in client->reqs for the duration of the
- * resolution (nothing else can tear it down before this fires). */
+/* DNS resolution completed: reuse a pooled connection for, or connect to, the
+ * first resolved address. ctx is borrowed -- it stays alive in client->reqs
+ * for the duration of the resolution (nothing else can tear it down first). */
 static void
 r_http_client_req_resolved (rpointer data, RResolvedAddr * addr,
     RResolveResult res)
@@ -330,19 +643,15 @@ r_http_client_req_resolved (rpointer data, RResolvedAddr * addr,
 
   if (res != R_RESOLVE_OK || addr == NULL || addr->addr == NULL) {
     R_LOG_DEBUG ("%p: request %p resolve failed (%d)", ctx->client, ctx, (int) res);
-    r_http_client_req_finish (ctx, R_HTTP_CLIENT_RESOLVE_FAILED);
+    r_http_client_req_complete (ctx, R_HTTP_CLIENT_RESOLVE_FAILED, TRUE);
     return;
   }
 
-  if ((ctx->evtcp = r_ev_tcp_new (r_socket_address_get_family (addr->addr),
-          ctx->client->loop)) == NULL) {
-    r_http_client_req_finish (ctx, R_HTTP_CLIENT_CONNECT_FAILED);
+  if ((ctx->dest = r_socket_address_copy (addr->addr)) == NULL) {
+    r_http_client_req_complete (ctx, R_HTTP_CLIENT_RESOLVE_FAILED, TRUE);
     return;
   }
-  r_ev_tcp_set_error_handler (ctx->evtcp, r_http_client_req_error, ctx, NULL);
-  if (r_ev_tcp_connect (ctx->evtcp, addr->addr,
-        r_http_client_req_connected, ctx, NULL) < R_SOCKET_OK)
-    r_http_client_req_finish (ctx, R_HTTP_CLIENT_CONNECT_FAILED);
+  r_http_client_req_dispatch (ctx, TRUE);
 }
 
 rboolean
@@ -378,19 +687,12 @@ r_http_client_request (RHttpClient * client, RHttpRequest * req,
   }
   r_snprintf (service, sizeof (service), "%u", (ruint) port);
 
-  if ((ctx = r_mem_new0 (RHttpClientReqCtx)) == NULL) {
+  if ((ctx = r_http_client_req_ctx_new (client, req, cb, data, notify)) == NULL) {
     r_free (host);
     return FALSE;
   }
-  r_ref_init (ctx, r_http_client_req_ctx_free);
-  ctx->client = r_http_client_ref (client);
-  ctx->req = r_http_request_ref (req);
-  ctx->bodytype = R_HTTP_BODY_PARSE_SIZED;
 
   /* Committed: the array owns ctx and every outcome is delivered via cb. */
-  ctx->cb = cb;
-  ctx->data = data;
-  ctx->notify = notify;
   r_ptr_array_add (client->reqs, ctx, r_ref_unref);
 
   R_LOG_TRACE ("%p: request %p resolving %s:%s", client, ctx, host, service);
@@ -398,7 +700,7 @@ r_http_client_request (RHttpClient * client, RHttpRequest * req,
       r_http_client_req_resolved, ctx, NULL);
   r_free (host);
   if (R_UNLIKELY (resolve == NULL)) {
-    r_http_client_req_teardown (ctx, R_HTTP_CLIENT_RESOLVE_FAILED, FALSE);
+    r_http_client_req_complete (ctx, R_HTTP_CLIENT_RESOLVE_FAILED, FALSE);
     return TRUE;
   }
   /* The queued task keeps the resolve alive until the callback fires; we
@@ -413,8 +715,11 @@ r_http_client_request (RHttpClient * client, RHttpRequest * req,
 static void
 r_http_client_free (RHttpClient * client)
 {
-  /* A request context holds a reference on the client, so the client can
-   * only be freed once every request has finished and left client->reqs. */
+  /* A request context holds a reference on the client, so the client can only
+   * be freed once every request has finished and left client->reqs. Pooled
+   * connections are owned by client->idle; unref'ing it closes each one
+   * (conn_free, synchronous close -- we are not inside an io callback here). */
+  r_ptr_array_unref (client->idle);
   r_ptr_array_unref (client->reqs);
   r_ev_loop_unref (client->loop);
   r_free (client);
@@ -433,6 +738,9 @@ r_http_client_new (REvLoop * loop)
 
     ret->loop = loop;
     ret->reqs = r_ptr_array_new ();
+    ret->idle = r_ptr_array_new ();
+    ret->keepalive = TRUE;
+    ret->idle_timeout = R_HTTP_CLIENT_IDLE_TIMEOUT;
 
     R_LOG_INFO ("New HTTP client %p", ret);
   } else {
@@ -440,6 +748,32 @@ r_http_client_new (REvLoop * loop)
   }
 
   return ret;
+}
+
+void
+r_http_client_set_keepalive (RHttpClient * client, rboolean enabled)
+{
+  if (R_UNLIKELY (client == NULL)) return;
+  client->keepalive = enabled;
+}
+
+rboolean
+r_http_client_get_keepalive (RHttpClient * client)
+{
+  return client != NULL ? client->keepalive : FALSE;
+}
+
+void
+r_http_client_set_idle_timeout (RHttpClient * client, RClockTimeDiff timeout)
+{
+  if (R_UNLIKELY (client == NULL)) return;
+  client->idle_timeout = timeout;
+}
+
+RClockTimeDiff
+r_http_client_get_idle_timeout (RHttpClient * client)
+{
+  return client != NULL ? client->idle_timeout : 0;
 }
 
 
@@ -453,7 +787,6 @@ typedef struct {
   RHttpResponse * res;
   RHttpClientResult result;
   rboolean done;
-  REvLoop * loop;
 } RHttpClientSyncState;
 
 static void
@@ -491,6 +824,32 @@ r_http_client_sync_new (void)
   return ret;
 }
 
+void
+r_http_client_sync_set_keepalive (RHttpClientSync * sync, rboolean enabled)
+{
+  if (R_UNLIKELY (sync == NULL)) return;
+  r_http_client_set_keepalive (sync->client, enabled);
+}
+
+rboolean
+r_http_client_sync_get_keepalive (RHttpClientSync * sync)
+{
+  return sync != NULL ? r_http_client_get_keepalive (sync->client) : FALSE;
+}
+
+void
+r_http_client_sync_set_idle_timeout (RHttpClientSync * sync, RClockTimeDiff timeout)
+{
+  if (R_UNLIKELY (sync == NULL)) return;
+  r_http_client_set_idle_timeout (sync->client, timeout);
+}
+
+RClockTimeDiff
+r_http_client_sync_get_idle_timeout (RHttpClientSync * sync)
+{
+  return sync != NULL ? r_http_client_get_idle_timeout (sync->client) : 0;
+}
+
 static void
 r_http_client_sync_cb (rpointer data, RHttpResponse * res,
     RHttpClientResult result, RHttpClient * client)
@@ -501,16 +860,13 @@ r_http_client_sync_cb (rpointer data, RHttpResponse * res,
   state->result = result;
   state->res = (res != NULL) ? r_http_response_ref (res) : NULL;
   state->done = TRUE;
-  /* Break out of the r_ev_loop_run below now that the exchange is complete. */
-  r_ev_loop_stop (state->loop);
 }
 
 RHttpResponse *
 r_http_client_sync_request_to_addr (RHttpClientSync * sync, RHttpRequest * req,
     const RSocketAddress * addr, RHttpClientResult * result)
 {
-  RHttpClientSyncState state = { NULL, R_HTTP_CLIENT_CONNECT_FAILED, FALSE,
-      sync != NULL ? sync->loop : NULL };
+  RHttpClientSyncState state = { NULL, R_HTTP_CLIENT_CONNECT_FAILED, FALSE };
 
   if (R_UNLIKELY (sync == NULL) ||
       !r_http_client_request_to_addr (sync->client, req, addr,
@@ -520,8 +876,11 @@ r_http_client_sync_request_to_addr (RHttpClientSync * sync, RHttpRequest * req,
     return NULL;
   }
 
+  /* Drive the private loop a round at a time until the exchange completes; the
+   * loop is not "stopped" (that is sticky), so it stays reusable for the next
+   * request on this client. */
   while (!state.done)
-    r_ev_loop_run (sync->loop, R_EV_LOOP_RUN_LOOP);
+    r_ev_loop_run (sync->loop, R_EV_LOOP_RUN_ONCE);
 
   if (result != NULL)
     *result = state.result;
@@ -532,8 +891,7 @@ RHttpResponse *
 r_http_client_sync_request (RHttpClientSync * sync, RHttpRequest * req,
     RHttpClientResult * result)
 {
-  RHttpClientSyncState state = { NULL, R_HTTP_CLIENT_RESOLVE_FAILED, FALSE,
-      sync != NULL ? sync->loop : NULL };
+  RHttpClientSyncState state = { NULL, R_HTTP_CLIENT_RESOLVE_FAILED, FALSE };
 
   if (R_UNLIKELY (sync == NULL) ||
       !r_http_client_request (sync->client, req,
@@ -544,7 +902,7 @@ r_http_client_sync_request (RHttpClientSync * sync, RHttpRequest * req,
   }
 
   while (!state.done)
-    r_ev_loop_run (sync->loop, R_EV_LOOP_RUN_LOOP);
+    r_ev_loop_run (sync->loop, R_EV_LOOP_RUN_ONCE);
 
   if (result != NULL)
     *result = state.result;
