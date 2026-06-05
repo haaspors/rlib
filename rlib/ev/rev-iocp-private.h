@@ -73,6 +73,14 @@ r_ev_iocp_op_init (REvIOCPOp * op, REvIOCPOpFunc cb, rpointer data)
   op->data = data;
 }
 
+/* Cap a buffer length to what one WSABUF (32-bit ULONG) can describe. */
+static inline ULONG
+r_ev_iocp_wsabuf_len (rsize size)
+{
+  const rsize max = (rsize) 0xFFFFFFFFu;
+  return (ULONG) (size > max ? max : size);
+}
+
 /* Associate @handle (a socket) with the loop's completion port; completions
  * for overlapped ops on it are then delivered to r_ev_loop_io_wait. */
 R_API_HIDDEN rboolean r_ev_loop_iocp_associate (REvLoop * loop, RIOHandle handle);

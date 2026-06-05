@@ -457,7 +457,7 @@ r_ev_udp_iocp_post_recv (REvUDP * evudp)
 
   r_ev_iocp_op_init (&evudp->iocp_recv, r_ev_udp_iocp_recv_complete, evudp);
   evudp->iocp_recv.wbuf.buf = (CHAR *) evudp->iocp_recv_map.data;
-  evudp->iocp_recv.wbuf.len = (ULONG) evudp->iocp_recv_map.size;
+  evudp->iocp_recv.wbuf.len = r_ev_iocp_wsabuf_len (evudp->iocp_recv_map.size);
   r_ev_udp_ref (evudp);
   r_ev_loop_iocp_submit (evudp->evio.loop);
   res = WSARecvFrom (R_EV_UDP_IOCP_SOCKET (evudp), &evudp->iocp_recv.wbuf, 1, NULL,
@@ -513,31 +513,59 @@ r_ev_udp_iocp_post_send (REvUDP * evudp)
 {
   REvUDPSendCtx * ctx;
   int res;
+  DWORD err;
 
-  if ((ctx = r_queue_peek (&evudp->qsend)) == NULL)
-    return TRUE;
-  if (!r_buffer_map (ctx->buf, &evudp->iocp_send_map, R_MEM_MAP_READ))
-    return FALSE;
+  /* Drive the send queue. A datagram that cannot be sent is dropped (after
+   * reporting) rather than left to stall the queue -- datagrams are
+   * independent, unlike a TCP stream. */
+  while ((ctx = r_queue_peek (&evudp->qsend)) != NULL) {
+    if (!r_buffer_map (ctx->buf, &evudp->iocp_send_map, R_MEM_MAP_READ)) {
+      if (evudp->error != NULL)
+        evudp->error (evudp->error_data, evudp, R_SOCKET_OOM);
+      r_queue_pop (&evudp->qsend);
+      r_ev_udp_send_ctx_clear (ctx);
+      r_free (ctx);
+      continue;
+    }
+    if (evudp->iocp_send_map.size > (rsize) 0xFFFFFFFFu) {
+      r_buffer_unmap (ctx->buf, &evudp->iocp_send_map);
+      if (evudp->error != NULL)
+        evudp->error (evudp->error_data, evudp, R_SOCKET_MSG_SIZE);
+      r_queue_pop (&evudp->qsend);
+      r_ev_udp_send_ctx_clear (ctx);
+      r_free (ctx);
+      continue;
+    }
 
-  r_ev_iocp_op_init (&evudp->iocp_send, r_ev_udp_iocp_send_complete, evudp);
-  evudp->iocp_send.wbuf.buf = (CHAR *) evudp->iocp_send_map.data;
-  evudp->iocp_send.wbuf.len = (ULONG) evudp->iocp_send_map.size;
-  evudp->iocp_send_active = TRUE;
-  r_ev_udp_ref (evudp);
-  r_ev_loop_iocp_submit (evudp->evio.loop);
-  res = WSASendTo (R_EV_UDP_IOCP_SOCKET (evudp), &evudp->iocp_send.wbuf, 1, NULL, 0,
-      (const struct sockaddr *) &ctx->addr->addr, (int) ctx->addr->addrlen,
-      &evudp->iocp_send.overlapped, NULL);
-  if (res == 0 || WSAGetLastError () == WSA_IO_PENDING)
-    return TRUE;
+    r_ev_iocp_op_init (&evudp->iocp_send, r_ev_udp_iocp_send_complete, evudp);
+    evudp->iocp_send.wbuf.buf = (CHAR *) evudp->iocp_send_map.data;
+    evudp->iocp_send.wbuf.len = (ULONG) evudp->iocp_send_map.size;
+    evudp->iocp_send_active = TRUE;
+    r_ev_udp_ref (evudp);
+    r_ev_loop_iocp_submit (evudp->evio.loop);
+    res = WSASendTo (R_EV_UDP_IOCP_SOCKET (evudp), &evudp->iocp_send.wbuf, 1, NULL, 0,
+        (const struct sockaddr *) &ctx->addr->addr, (int) ctx->addr->addrlen,
+        &evudp->iocp_send.overlapped, NULL);
+    if (res == 0 || WSAGetLastError () == WSA_IO_PENDING)
+      return TRUE;
 
-  R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" WSASendTo failed %d",
-      evudp->evio.loop, R_EV_IO_ARGS (evudp), WSAGetLastError ());
-  r_ev_loop_iocp_unsubmit (evudp->evio.loop);
-  r_buffer_unmap (ctx->buf, &evudp->iocp_send_map);
-  evudp->iocp_send_active = FALSE;
-  r_ev_udp_unref (evudp);
-  return FALSE;
+    /* Synchronous failure: capture the error before logging (a log call can
+     * clobber the thread last-error), report, drop, and keep draining. */
+    err = (DWORD) WSAGetLastError ();
+    R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" WSASendTo failed %lu",
+        evudp->evio.loop, R_EV_IO_ARGS (evudp), (unsigned long) err);
+    r_ev_loop_iocp_unsubmit (evudp->evio.loop);
+    r_buffer_unmap (ctx->buf, &evudp->iocp_send_map);
+    evudp->iocp_send_active = FALSE;
+    if (evudp->error != NULL)
+      evudp->error (evudp->error_data, evudp, r_ev_udp_iocp_status (err));
+    r_queue_pop (&evudp->qsend);
+    r_ev_udp_send_ctx_clear (ctx);
+    r_free (ctx);
+    r_ev_udp_unref (evudp);
+  }
+
+  return TRUE;
 }
 
 #endif /* R_OS_WIN32 && !R_EV_USE_RPOLL */

@@ -406,7 +406,7 @@ r_ev_tcp_iocp_post_recv (REvTCP * evtcp)
 
   r_ev_iocp_op_init (&evtcp->iocp_recv, r_ev_tcp_iocp_recv_complete, evtcp);
   evtcp->iocp_recv.wbuf.buf = (CHAR *) evtcp->iocp_recv_map.data;
-  evtcp->iocp_recv.wbuf.len = (ULONG) evtcp->iocp_recv_map.size;
+  evtcp->iocp_recv.wbuf.len = r_ev_iocp_wsabuf_len (evtcp->iocp_recv_map.size);
   r_ev_tcp_ref (evtcp);
   r_ev_loop_iocp_submit (evtcp->evio.loop);
   res = WSARecv (R_EV_TCP_IOCP_SOCKET (evtcp), &evtcp->iocp_recv.wbuf, 1, NULL, &flags,
@@ -444,8 +444,11 @@ r_ev_tcp_iocp_send_complete (REvIOCPOp * op, REvLoop * loop, rsize bytes)
       ctx->done (ctx->data, ctx->buf, evtcp);
     r_ev_tcp_send_ctx_clear (ctx);
     r_free (ctx);
-    if (!r_socket_is_closed (evtcp->socket))
-      r_ev_tcp_iocp_post_send (evtcp);
+    /* Re-arm the next queued send; if it cannot be posted (e.g. the buffer
+     * cannot be mapped), report rather than silently stalling the queue. */
+    if (!r_socket_is_closed (evtcp->socket) &&
+        !r_ev_tcp_iocp_post_send (evtcp) && evtcp->error != NULL)
+      evtcp->error (evtcp->error_data, evtcp, R_SOCKET_ERROR);
   } else if (err != 0 && err != ERROR_OPERATION_ABORTED) {
     R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" send err %lu",
         evtcp->evio.loop, R_EV_IO_ARGS (evtcp), (unsigned long) err);
@@ -466,6 +469,11 @@ r_ev_tcp_iocp_post_send (REvTCP * evtcp)
     return TRUE;
   if (!r_buffer_map (ctx->buf, &evtcp->iocp_send_map, R_MEM_MAP_READ))
     return FALSE;
+  if (evtcp->iocp_send_map.size > (rsize) 0xFFFFFFFFu) {
+    /* Too large for a single WSABUF; the stream send queue does not chunk. */
+    r_buffer_unmap (ctx->buf, &evtcp->iocp_send_map);
+    return FALSE;
+  }
 
   r_ev_iocp_op_init (&evtcp->iocp_send, r_ev_tcp_iocp_send_complete, evtcp);
   evtcp->iocp_send.wbuf.buf = (CHAR *) evtcp->iocp_send_map.data;
