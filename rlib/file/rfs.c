@@ -37,6 +37,10 @@
 #if defined (HAVE_WINDOWS_H)
 #include <rlib/charset/runicode.h>
 #include <windows.h>
+/* Older Windows SDKs predate the unprivileged-symlink flag (value from winnt.h). */
+#ifndef SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
+#define SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE 0x2
+#endif
 #endif
 #include <errno.h>
 
@@ -293,6 +297,28 @@ r_fs_get_file_attributes (const rchar * path)
   return ret;
 }
 
+/* TRUE if upath is a symlink: a reparse point tagged IO_REPARSE_TAG_SYMLINK.
+ * The tag (dwReserved0) and the link's own attributes come from the find data,
+ * which -- unlike GetFileAttributes -- describes the link, not its target. When
+ * it is a symlink and is_dir is non-NULL, *is_dir reports a directory symlink. */
+static rboolean
+r_fs_win32_is_symlink (const runichar2 * upath, rboolean * is_dir)
+{
+  WIN32_FIND_DATAW fd;
+  HANDLE h;
+  rboolean ret = FALSE;
+
+  if ((h = FindFirstFileW (upath, &fd)) != INVALID_HANDLE_VALUE) {
+    ret = (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 &&
+        fd.dwReserved0 == IO_REPARSE_TAG_SYMLINK;
+    if (ret && is_dir != NULL)
+      *is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    FindClose (h);
+  }
+
+  return ret;
+}
+
 static DWORD
 r_fs_get_file_access (const rchar * path, DWORD req)
 {
@@ -412,9 +438,14 @@ rboolean
 r_fs_test_is_symlink (const rchar * path)
 {
 #if defined (R_OS_WIN32)
-  /* FIXME: Symlinks on windows? */
-  (void) path;
-  return FALSE;
+  runichar2 * upath;
+  rboolean ret = FALSE;
+
+  if ((upath = r_utf8_to_utf16_dup (path, -1, NULL, NULL, NULL)) != NULL) {
+    ret = r_fs_win32_is_symlink (upath, NULL);
+    r_free (upath);
+  }
+  return ret;
 #elif defined (HAVE_LSTAT)
   struct stat s;
   return (lstat (path, &s) == 0) && S_ISLNK (s.st_mode);
@@ -507,6 +538,75 @@ r_fs_mkdir_full (const rchar * path, int mode)
   r_free (parent);
 
   return ret ? r_fs_mkdir (path, mode) : FALSE;
+}
+
+rboolean
+r_fs_symlink (const rchar * target, const rchar * linkpath)
+{
+  if (R_UNLIKELY (target == NULL || linkpath == NULL))
+    return FALSE;
+
+#if defined (R_OS_WIN32)
+  {
+    runichar2 * wtarget, * wlink;
+    rboolean ret = FALSE;
+    /* Windows distinguishes file and directory symlinks at creation time. */
+    DWORD flags = r_fs_test_is_directory (target) ?
+        SYMBOLIC_LINK_FLAG_DIRECTORY : 0;
+
+    wtarget = r_utf8_to_utf16_dup (target, -1, NULL, NULL, NULL);
+    wlink = r_utf8_to_utf16_dup (linkpath, -1, NULL, NULL, NULL);
+    if (wtarget != NULL && wlink != NULL) {
+      /* Prefer the unprivileged (developer-mode) path; older Windows rejects
+       * the flag with ERROR_INVALID_PARAMETER, so retry without it. */
+      ret = CreateSymbolicLinkW (wlink, wtarget,
+          flags | SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0;
+      if (!ret && GetLastError () == ERROR_INVALID_PARAMETER)
+        ret = CreateSymbolicLinkW (wlink, wtarget, flags) != 0;
+    }
+
+    r_free (wtarget);
+    r_free (wlink);
+    return ret;
+  }
+#elif defined (HAVE_SYMLINK)
+  return symlink (target, linkpath) == 0;
+#else
+  return FALSE;
+#endif
+}
+
+rboolean
+r_fs_remove_symlink (const rchar * path)
+{
+  if (R_UNLIKELY (path == NULL))
+    return FALSE;
+
+#if defined (R_OS_WIN32)
+  {
+    runichar2 * upath;
+    rboolean is_dir = FALSE, ret = FALSE;
+
+    if ((upath = r_utf8_to_utf16_dup (path, -1, NULL, NULL, NULL)) != NULL) {
+      /* Remove only an actual symlink, and with the matching call: a directory
+       * symlink needs RemoveDirectoryW, a file symlink DeleteFileW. */
+      if (r_fs_win32_is_symlink (upath, &is_dir))
+        ret = is_dir ? (RemoveDirectoryW (upath) != 0) :
+            (DeleteFileW (upath) != 0);
+      r_free (upath);
+    }
+    return ret;
+  }
+#elif defined (HAVE_LSTAT)
+  /* unlink removes the link itself; the guard keeps us from deleting a real
+   * file or directory if the caller hands us a non-symlink path. */
+  if (!r_fs_test_is_symlink (path))
+    return FALSE;
+  return unlink (path) == 0;
+#else
+  (void) path;
+  return FALSE;
+#endif
 }
 
 rboolean

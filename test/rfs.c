@@ -146,3 +146,24 @@ RTEST (rfs, mkdir, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rfs, is_symlink, RTEST_FAST | RTEST_SYSTEM)
+{
+  rchar * link;
+  r_assert_cmpptr ((link = r_fs_path_new_tmpfile ()), !=, NULL);
+
+  /* A path that does not exist is not a symlink. */
+  r_assert (!r_fs_test_is_symlink (link));
+
+  /* Positive check: detect a symlink we create. r_fs_symlink returns FALSE
+   * when the platform forbids it (e.g. unprivileged Windows), so the check is
+   * skipped, not failed, there. */
+  if (r_fs_symlink ("rlib-symlink-target", link)) {
+    r_assert (r_fs_test_is_symlink (link));
+    r_assert (r_fs_remove_symlink (link));
+    r_assert (!r_fs_test_is_symlink (link));
+  }
+
+  r_free (link);
+}
+RTEST_END;
+

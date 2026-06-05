@@ -123,6 +123,25 @@ R_API rboolean r_fs_mkdir (const rchar * path, int mode);
 R_API rboolean r_fs_mkdir_full (const rchar * path, int mode);
 
 /**
+ * @brief Create a symbolic link at @p linkpath pointing to @p target.
+ * @param target   Path the link refers to (need not exist; may be relative).
+ * @param linkpath Path of the link to create.
+ * @return @c TRUE on success. On Windows this needs the
+ *         @c SeCreateSymbolicLinkPrivilege or developer mode and returns
+ *         @c FALSE when neither is available; the directory-vs-file link kind
+ *         is chosen from @p target's current type.
+ */
+R_API rboolean r_fs_symlink (const rchar * target, const rchar * linkpath);
+
+/**
+ * @brief Remove the symbolic link at @p path.
+ * @return @c TRUE on success. Returns @c FALSE if @p path is not a symbolic
+ *         link, so a regular file or directory is never deleted by mistake.
+ *         The link's target is left untouched.
+ */
+R_API rboolean r_fs_remove_symlink (const rchar * path);
+
+/**
  * @brief @c TRUE if @p path is absolute.
  *
  * Absolute means a leading separator (Unix) or a drive-letter +
