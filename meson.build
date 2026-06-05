@@ -382,6 +382,9 @@ if host_machine.system() == 'windows'
   check_funcs += [
     [ '_stricmp', 'string.h' ],
     [ '_strnicmp', 'string.h' ],
+    # CRT extension to suppress the abort() dialog; present on UCRT and modern
+    # mingw, absent on the older msvcrt-based mingw runtime.
+    [ '_set_abort_behavior', 'stdlib.h' ],
   ]
 endif
 
