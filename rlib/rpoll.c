@@ -203,6 +203,9 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
         handles[i].revents = handles[i].events;
         ret++;
       } else if (w == WAIT_FAILED) {
+        /* Not a waitable handle after all; mark it dead so it is excluded from
+         * the next wait (and reported now) rather than failing every call. */
+        handles[i].wsaevent = R_POLL_WSAEVENT_DEAD;
         handles[i].revents = R_IO_ERR;
         ret++;
       }
@@ -293,13 +296,15 @@ r_poll_entry_arm (RPoll * p)
         r_poll_win32_fd_events (p->events)) == 0) {
     p->wsaevent = ev;
   } else {
-    /* WSAENOTSOCK is a genuine non-socket handle (the loop wakeup): keep
-     * wsaevent == NULL and wait on it directly. Any other failure means it is
-     * a socket that cannot be armed (already closed/closing); mark it dead so
-     * r_poll never waits on the raw socket handle. */
-    int err = WSAGetLastError ();
+    /* WSAEventSelect fails both for the loop wakeup (a real, waitable handle)
+     * and for an already closed/closing socket -- both report WSAENOTSOCK, so
+     * the error code can't tell them apart. Distinguish by whether the handle
+     * is waitable at all: a socket (open or closed) is not a waitable object,
+     * so WaitForSingleObject fails on it. Mark such an entry dead so r_poll
+     * never waits on the raw socket; only a genuinely waitable non-socket
+     * handle (the wakeup) keeps the bare direct-wait path. */
     WSACloseEvent (ev);
-    if (err != WSAENOTSOCK)
+    if (WaitForSingleObject ((HANDLE)(ruintptr)p->handle, 0) == WAIT_FAILED)
       p->wsaevent = R_POLL_WSAEVENT_DEAD;
   }
 }
