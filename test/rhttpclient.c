@@ -988,3 +988,49 @@ RTEST (rhttpclient, keepalive_idle_timeout, RTEST_FAST | RTEST_SYSTEM)
   r_socket_address_unref (addr);
 }
 RTEST_END;
+
+/* TEMP (rpoll dead-socket validation, do not merge): hammer the mid-request
+ * force-close so the Windows rpoll race that strands an unarmable socket in the
+ * wait set hits within one run. */
+RTEST (rhttpclient, server_stop_stress_repro, RTEST_FAST | RTEST_SYSTEM)
+{
+  ruint iter;
+
+  for (iter = 0; iter < 200; iter++) {
+    REvLoop * loop;
+    RClock * clock;
+    RHttpServer * srv;
+    RHttpClient * client;
+    RHttpRequest * req;
+    RHttpResponse * res;
+    RSocketAddress * addr;
+    RHttpClientResult result;
+
+    r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+    r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+    r_clock_unref (clock);
+
+    r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
+    r_assert (r_http_server_set_handler (srv, "/", -1,
+          r_test_http_client_stop_handler, NULL, NULL));
+    r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1,
+            (ruint16) (47900 + iter))), !=, NULL);
+    r_assert (r_http_server_listen (srv, addr));
+
+    r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+    r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+            "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+
+    res = r_test_http_send (loop, client, req, addr, &result);
+    r_http_request_unref (req);
+    (void) result;
+    if (res != NULL)
+      r_http_response_unref (res);
+
+    r_socket_address_unref (addr);
+    r_http_client_unref (client);
+    r_http_server_unref (srv);
+    r_ev_loop_unref (loop);
+  }
+}
+RTEST_END;
