@@ -592,7 +592,9 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
       REvIOEvents rev;
       RIOHandle handle;
     } dispatch[R_EV_LOOP_MAX_EVENTS];
+    RIOHandle dead[R_EV_LOOP_MAX_EVENTS];
     int ndispatch = 0;
+    int ndead = 0;
     int j;
 
     R_LOG_DEBUG ("r_poll for loop %p with %d events", loop, ret);
@@ -612,9 +614,15 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
         continue;
 
       evio = r_poll_set_get_user (&loop->pollset, handle);
-      if (R_UNLIKELY (evio == NULL)) {
-        R_LOG_WARNING ("loop %p: r_poll reported events on stale handle "
-            "%"R_IO_HANDLE_FMT" (no evio); skipping", loop, handle);
+      if (R_UNLIKELY (evio == NULL || R_EV_IO_IS_CLOSED (evio))) {
+        /* The handle has gone invalid -- e.g. a closed socket whose arming
+         * fell back to a bare wait, which then fails WaitForMultipleObjectsEx
+         * on every call. Drop it from the set (after dispatch, so the set is
+         * not mutated mid-scan) or the loop spins on it. */
+        R_LOG_DEBUG ("loop %p: pruning dead handle %"R_IO_HANDLE_FMT" from pollset",
+            loop, handle);
+        if (ndead < R_EV_LOOP_MAX_EVENTS)
+          dead[ndead++] = handle;
         continue;
       }
 
@@ -630,6 +638,9 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
           (ruint)dispatch[j].rev);
       r_ev_io_invoke_iocb (dispatch[j].evio, dispatch[j].rev);
     }
+
+    for (j = 0; j < ndead; j++)
+      r_poll_set_remove (&loop->pollset, dead[j]);
   } else {
     R_LOG_ERROR ("r_poll for loop %p failed with error %d", loop, ret);
   }
