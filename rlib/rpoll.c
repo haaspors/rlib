@@ -146,8 +146,8 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
    * WAIT_TIMEOUT (re-enumerate to pick up an event recorded but not signalled,
    * see the cap above), or WAIT_FAILED (a single bad bare handle -- a socket
    * whose arming fell back to a direct wait, closed before it was pruned --
-   * fails the whole call; the probe below skips it and the loop prunes it next
-   * turn instead of stalling). */
+   * fails the whole call; the probe below reports it as an error so the loop
+   * tears it down, rather than re-failing every call and spinning). */
   if (R_UNLIKELY (res == WAIT_FAILED))
     R_LOG_WARNING ("WaitForMultipleObjectsEx failed (%lu); probing handles",
         (unsigned long) GetLastError ());
@@ -175,9 +175,20 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
         handles[i].revents = rev;
         ret++;
       }
-    } else if (WaitForSingleObject ((HANDLE)handles[i].handle, 0) == WAIT_OBJECT_0) {
-      handles[i].revents = handles[i].events;
-      ret++;
+    } else {
+      /* Bare handle (the loop wakeup, or a socket whose arming fell back to a
+       * direct wait). WAIT_OBJECT_0 -> ready; WAIT_FAILED -> the handle is
+       * invalid (closed before it was pruned), so report an error and let the
+       * loop tear it down -- otherwise that handle fails the whole wait on
+       * every call and the loop spins. WAIT_TIMEOUT -> not ready. */
+      DWORD w = WaitForSingleObject ((HANDLE)handles[i].handle, 0);
+      if (w == WAIT_OBJECT_0) {
+        handles[i].revents = handles[i].events;
+        ret++;
+      } else if (w == WAIT_FAILED) {
+        handles[i].revents = R_IO_ERR;
+        ret++;
+      }
     }
   }
 
