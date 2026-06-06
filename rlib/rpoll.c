@@ -94,6 +94,14 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
  * through it. */
 #define R_POLL_WIN32_MAX_WAIT_MS    1000
 
+/* Sentinel RPoll.wsaevent for a socket that could not be associated with a
+ * WSAEVENT -- WSAEventSelect failed for a reason other than "not a socket",
+ * i.e. the socket was already closed/closing. Such an entry must never be
+ * waited on as a raw handle: a socket is not a waitable object, so the wait
+ * fails (ACCESS_DENIED / INVALID_HANDLE) on every call forever. r_poll reports
+ * it as an error instead, so the loop prunes it. */
+#define R_POLL_WSAEVENT_DEAD        ((rpointer) ~(rsize) 0)
+
 /* Map the requested R_IO_* readiness to the FD_* network events a socket is
  * associated with through WSAEventSelect. FD_CLOSE is folded into readability
  * so a peer reset / EOF wakes the read watcher (recv then reports the error). */
@@ -131,29 +139,40 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   else
     t = (DWORD) MIN (R_TIME_AS_MSECONDS (timeout) + 1, R_POLL_WIN32_MAX_WAIT_MS);
 
-  /* Wait on the per-socket WSAEVENT (socket readiness) or, for a non-socket
-   * handle such as the loop wakeup, on the handle itself. WSAEVENTs stay valid
-   * even after their socket is closed, so a closed-but-not-yet-pruned socket
-   * can no longer fail the whole wait the way a bare socket handle did. */
-  for (i = 0; i < count; i++) {
-    handles[i].revents = 0;
-    waits[i] = (handles[i].wsaevent != NULL) ?
-        (HANDLE)handles[i].wsaevent : (HANDLE)handles[i].handle;
+  /* Build the wait set from the waitable entries only: a per-socket WSAEVENT
+   * (socket readiness), or a genuine non-socket handle such as the loop wakeup
+   * (waited on directly). A dead-socket entry is reported as an error and left
+   * out -- waiting on a raw socket handle fails the whole call forever. A
+   * WSAEVENT stays valid even after its socket is closed, so a closed-but-not-
+   * yet-pruned socket no longer fails the wait. */
+  {
+    ruint nwait = 0;
+    for (i = 0; i < count; i++) {
+      handles[i].revents = 0;
+      if (handles[i].wsaevent == R_POLL_WSAEVENT_DEAD) {
+        handles[i].revents = R_IO_ERR;
+        ret++;
+        continue;
+      }
+      waits[nwait++] = (handles[i].wsaevent != NULL) ?
+          (HANDLE)handles[i].wsaevent : (HANDLE)handles[i].handle;
+    }
+
+    /* With a dead entry to report, don't block -- return so the loop prunes it
+     * this turn (still harvest any concurrent real readiness). */
+    if (nwait > 0) {
+      res = WaitForMultipleObjectsEx ((DWORD)nwait, waits, FALSE,
+          ret > 0 ? 0 : t, FALSE);
+      if (R_UNLIKELY (res == WAIT_FAILED))
+        R_LOG_WARNING ("WaitForMultipleObjectsEx failed (%lu); probing handles",
+            (unsigned long) GetLastError ());
+    }
   }
 
-  res = WaitForMultipleObjectsEx ((DWORD)count, waits, FALSE, t, FALSE);
-  /* Read actual readiness from every entry for every result: a normal wake, a
-   * WAIT_TIMEOUT (re-enumerate to pick up an event recorded but not signalled,
-   * see the cap above), or WAIT_FAILED (a single bad bare handle -- a socket
-   * whose arming fell back to a direct wait, closed before it was pruned --
-   * fails the whole call; the probe below reports it as an error so the loop
-   * tears it down, rather than re-failing every call and spinning). */
-  if (R_UNLIKELY (res == WAIT_FAILED))
-    R_LOG_WARNING ("WaitForMultipleObjectsEx failed (%lu); probing handles",
-        (unsigned long) GetLastError ());
-
   for (i = 0; i < count; i++) {
-    if (handles[i].wsaevent != NULL) {
+    if (handles[i].wsaevent == R_POLL_WSAEVENT_DEAD) {
+      continue;   /* already reported as an error above */
+    } else if (handles[i].wsaevent != NULL) {
       WSANETWORKEVENTS ne;
       rushort rev = 0;
 
@@ -176,11 +195,9 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
         ret++;
       }
     } else {
-      /* Bare handle (the loop wakeup, or a socket whose arming fell back to a
-       * direct wait). WAIT_OBJECT_0 -> ready; WAIT_FAILED -> the handle is
-       * invalid (closed before it was pruned), so report an error and let the
-       * loop tear it down -- otherwise that handle fails the whole wait on
-       * every call and the loop spins. WAIT_TIMEOUT -> not ready. */
+      /* A genuine non-socket handle (the loop wakeup). WAIT_OBJECT_0 -> ready;
+       * WAIT_TIMEOUT -> not ready; WAIT_FAILED -> defensively report an error so
+       * an unexpectedly-invalid handle is torn down rather than spun on. */
       DWORD w = WaitForSingleObject ((HANDLE)handles[i].handle, 0);
       if (w == WAIT_OBJECT_0) {
         handles[i].revents = handles[i].events;
@@ -272,20 +289,26 @@ r_poll_entry_arm (RPoll * p)
   if ((ev = WSACreateEvent ()) == WSA_INVALID_EVENT)
     return;
 
-  /* A non-socket handle (the loop wakeup) fails with WSAENOTSOCK and keeps
-   * wsaevent == NULL, so it is waited on directly. */
   if (WSAEventSelect ((SOCKET)(ruintptr)p->handle, ev,
-        r_poll_win32_fd_events (p->events)) == 0)
+        r_poll_win32_fd_events (p->events)) == 0) {
     p->wsaevent = ev;
-  else
+  } else {
+    /* WSAENOTSOCK is a genuine non-socket handle (the loop wakeup): keep
+     * wsaevent == NULL and wait on it directly. Any other failure means it is
+     * a socket that cannot be armed (already closed/closing); mark it dead so
+     * r_poll never waits on the raw socket handle. */
+    int err = WSAGetLastError ();
     WSACloseEvent (ev);
+    if (err != WSAENOTSOCK)
+      p->wsaevent = R_POLL_WSAEVENT_DEAD;
+  }
 }
 
 /* Re-issue the WSAEventSelect association after the watched events changed. */
 static void
 r_poll_entry_rearm (RPoll * p)
 {
-  if (p->wsaevent != NULL)
+  if (p->wsaevent != NULL && p->wsaevent != R_POLL_WSAEVENT_DEAD)
     WSAEventSelect ((SOCKET)(ruintptr)p->handle, (WSAEVENT)p->wsaevent,
         r_poll_win32_fd_events (p->events));
 }
@@ -293,11 +316,11 @@ r_poll_entry_rearm (RPoll * p)
 static void
 r_poll_entry_disarm (RPoll * p)
 {
-  if (p->wsaevent != NULL) {
+  if (p->wsaevent != NULL && p->wsaevent != R_POLL_WSAEVENT_DEAD) {
     WSAEventSelect ((SOCKET)(ruintptr)p->handle, NULL, 0);
     WSACloseEvent ((WSAEVENT)p->wsaevent);
-    p->wsaevent = NULL;
   }
+  p->wsaevent = NULL;
 }
 
 #define R_POLL_ENTRY_ARM(p)         r_poll_entry_arm (p)
