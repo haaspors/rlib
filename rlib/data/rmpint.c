@@ -1193,6 +1193,42 @@ r_mpint_shr_digit (rmpint * dst, const rmpint * a, ruint16 d)
   return TRUE;
 }
 
+/* Fixed-size Comba (column/product-scanning) multiply of two @p n-digit
+ * operands into @p out[0 .. 2n-1]. Unlike the generic loop below it indexes the
+ * digit arrays directly -- no per-access bounds check and no per-column range
+ * recompute -- which is the win on the hot RSA sizes (n == 32 -> 1024-bit,
+ * n == 64 -> 2048-bit). @p out must not alias @p a or @p b.
+ *
+ * Each column sum is kept in a three-digit accumulator (c0,c1,c2): a single
+ * digit-product is at most (2^32-1)^2, split into low/high halves, and at most
+ * n of them accumulate per column (c2 <= n, far below 2^32), so nothing
+ * overflows. */
+static void
+r_mpint_mul_comba (rmpint_digit * out, const rmpint_digit * a,
+    const rmpint_digit * b, ruint n)
+{
+  const ruint dbits = sizeof (rmpint_digit) * 8;
+  rmpint_digit c0 = 0, c1 = 0, c2 = 0;
+  ruint k;
+
+  for (k = 0; k < 2 * n; k++) {
+    ruint i = (k + 1 > n) ? k + 1 - n : 0;
+    ruint imax = (k < n) ? k : n - 1;
+
+    for (; i <= imax; i++) {
+      rmpint_word uv = (rmpint_word)a[i] * b[k - i];
+      rmpint_word t = (rmpint_word)c0 + (rmpint_digit)uv;
+      c0 = (rmpint_digit)t;
+      t = (rmpint_word)c1 + (rmpint_digit)(uv >> dbits) + (rmpint_digit)(t >> dbits);
+      c1 = (rmpint_digit)t;
+      c2 += (rmpint_digit)(t >> dbits);
+    }
+
+    out[k] = c0;
+    c0 = c1; c1 = c2; c2 = 0;
+  }
+}
+
 /* Based on Paul G. Combas algorithm/method */
 rboolean
 r_mpint_mul (rmpint * dst, const rmpint * a, const rmpint * b)
@@ -1209,14 +1245,6 @@ r_mpint_mul (rmpint * dst, const rmpint * a, const rmpint * b)
   if (R_UNLIKELY (used < a->dig_used || used < b->dig_used))
     return FALSE;
 
-  /* FIXME: Add specific comba versions for 1024 and 2048 bits multiplications */
-#if 0
-  if (a->dig_used == 16 && b->dig_used == 16)
-    return r_mpint_mul_comba16 (dst, a, b);
-  if (a->dig_used == 32 && b->dig_used == 32)
-    return r_mpint_mul_comba32 (dst, a, b);
-#endif
-
   if (a == dst || b == dst) {
     /* dst aliases one of the operands; build the full product in a
      * fresh scratch first, then r_mpint_set into dst. The scratch
@@ -1231,7 +1259,11 @@ r_mpint_mul (rmpint * dst, const rmpint * a, const rmpint * b)
     out = dst;
   }
 
-  for (ix = 0, acc = 0; ix < used; ix++) {
+  /* Fixed-size fast path for the hot RSA operand sizes (1024 / 2048 bit). */
+  if (a->dig_used == b->dig_used &&
+      (a->dig_used == 32 || a->dig_used == 64)) {
+    r_mpint_mul_comba (out->data, a->data, b->data, a->dig_used);
+  } else for (ix = 0, acc = 0; ix < used; ix++) {
     ty = MIN (ix, b->dig_used - 1);
     tx = ix - ty;
 

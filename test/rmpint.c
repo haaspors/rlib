@@ -504,6 +504,71 @@ RTEST (rmpint, mul, RTEST_FAST)
 }
 RTEST_END;
 
+/* Independent schoolbook reference: sum_i (a * b_digit[i]) << i digits, built
+ * only from mul-by-digit / shift / add, none of which use the Comba path. */
+static void
+r_test_mpint_mul_ref (rmpint * ref, const rmpint * a, const rmpint * b)
+{
+  rmpint term = R_MPINT_INIT;
+  ruint16 i, nb = r_mpint_digits_used (b);
+
+  r_mpint_zero (ref);
+  for (i = 0; i < nb; i++) {
+    r_assert (r_mpint_mul_u32 (&term, a, r_mpint_get_digit (b, i)));
+    r_assert (r_mpint_shl_digit (&term, &term, i));
+    r_assert (r_mpint_add (ref, ref, &term));
+  }
+  r_mpint_clear (&term);
+}
+
+/* The 1024- and 2048-bit fixed-size Comba path must agree with the schoolbook
+ * reference for random full-size operands (and their squares). */
+RTEST (rmpint, mul_comba, RTEST_FAST)
+{
+  static const ruint16 ndig[] = { 32, 64 };   /* 1024-bit, 2048-bit */
+  rmpint a = R_MPINT_INIT, b = R_MPINT_INIT;
+  rmpint prod = R_MPINT_INIT, ref = R_MPINT_INIT;
+  RPrng * prng;
+  rsize ni;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+
+  for (ni = 0; ni < R_N_ELEMENTS (ndig); ni++) {
+    ruint8 buf[64 * sizeof (rmpint_digit)];
+    rsize nbytes = ndig[ni] * sizeof (rmpint_digit);
+    int it;
+
+    for (it = 0; it < 64; it++) {
+      r_assert (r_prng_fill (prng, buf, nbytes));
+      buf[0] |= 0x80;                 /* force top digit non-zero -> dig_used == n */
+      r_mpint_init_binary (&a, buf, nbytes);
+      r_assert (r_prng_fill (prng, buf, nbytes));
+      buf[0] |= 0x80;
+      r_mpint_init_binary (&b, buf, nbytes);
+      r_assert_cmpuint (r_mpint_digits_used (&a), ==, ndig[ni]);
+      r_assert_cmpuint (r_mpint_digits_used (&b), ==, ndig[ni]);
+
+      /* a * b */
+      r_assert (r_mpint_mul (&prod, &a, &b));
+      r_test_mpint_mul_ref (&ref, &a, &b);
+      r_assert_cmpint (r_mpint_cmp (&prod, &ref), ==, 0);
+
+      /* a * a (squaring also takes the equal-size path) */
+      r_assert (r_mpint_mul (&prod, &a, &a));
+      r_test_mpint_mul_ref (&ref, &a, &a);
+      r_assert_cmpint (r_mpint_cmp (&prod, &ref), ==, 0);
+
+      r_mpint_clear (&a);
+      r_mpint_clear (&b);
+    }
+  }
+
+  r_mpint_clear (&prod);
+  r_mpint_clear (&ref);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
 RTEST (rmpint, div, RTEST_FAST)
 {
   rmpint n = R_MPINT_INIT, d = R_MPINT_INIT, q = R_MPINT_INIT, r = R_MPINT_INIT, cmp;
