@@ -75,13 +75,18 @@ r_rtp_is_valid_hdr (rconstpointer buf, rsize size)
   return size >= minsize;
 }
 
-RBuffer *
-r_buffer_new_rtp_buffer (RBuffer * payload, ruint8 pad, ruint8 cc)
+static RBuffer *
+r_rtp_new (RBuffer * payload, ruint8 pad, ruint8 cc, rboolean ext,
+    ruint16 profile, rconstpointer extdata, rsize extsize)
 {
   RBuffer * ret;
 
   if (R_UNLIKELY (payload == NULL)) return NULL;
   if (R_UNLIKELY (cc > 0x0f)) return NULL;
+  /* The extension is a whole number of 32-bit words, counted by a 16-bit
+   * length field (RFC 3550 5.3.1). */
+  if (R_UNLIKELY (ext && ((extsize & 0x3) != 0 ||
+          extsize > (rsize)0xffff * sizeof (ruint32)))) return NULL;
 
   if ((ret = r_buffer_new ()) != NULL) {
     RRTPHdr * hdr;
@@ -95,7 +100,7 @@ r_buffer_new_rtp_buffer (RBuffer * payload, ruint8 pad, ruint8 cc)
 
     hdr->v = R_RTP_VERSION;
     hdr->p = pad > 0 ? 1 : 0;
-    hdr->x = 0;
+    hdr->x = ext ? 1 : 0;
     hdr->cc = cc;
     if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, hdr, size, size, 0)) == NULL)) {
       r_free (hdr);
@@ -106,6 +111,30 @@ r_buffer_new_rtp_buffer (RBuffer * payload, ruint8 pad, ruint8 cc)
     r_mem_unref (mem);
     if (R_UNLIKELY (!res))
       goto error;
+
+    if (ext) {
+      ruint8 * e;
+
+      size = sizeof (ruint32) + extsize;     /* profile+length word, then data */
+      if (R_UNLIKELY ((e = r_malloc0 (size)) == NULL))
+        goto error;
+
+      *(ruint16 *)&e[0] = RUINT16_TO_BE (profile);
+      *(ruint16 *)&e[sizeof (ruint16)] =
+          RUINT16_TO_BE ((ruint16)(extsize / sizeof (ruint32)));
+      if (extsize > 0 && extdata != NULL)
+        r_memcpy (e + sizeof (ruint32), extdata, extsize);
+
+      if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, e, size, size, 0)) == NULL)) {
+        r_free (e);
+        goto error;
+      }
+
+      res = r_buffer_mem_append (ret, mem);
+      r_mem_unref (mem);
+      if (R_UNLIKELY (!res))
+        goto error;
+    }
 
     if (R_UNLIKELY (!r_buffer_append_mem_from_buffer (ret, payload)))
       goto error;
@@ -134,6 +163,19 @@ r_buffer_new_rtp_buffer (RBuffer * payload, ruint8 pad, ruint8 cc)
 error:
   r_buffer_unref (ret);
   return NULL;
+}
+
+RBuffer *
+r_buffer_new_rtp_buffer (RBuffer * payload, ruint8 pad, ruint8 cc)
+{
+  return r_rtp_new (payload, pad, cc, FALSE, 0, NULL, 0);
+}
+
+RBuffer *
+r_buffer_new_rtp_buffer_ext (RBuffer * payload, ruint8 pad, ruint8 cc,
+    ruint16 profile, rconstpointer extdata, rsize extsize)
+{
+  return r_rtp_new (payload, pad, cc, TRUE, profile, extdata, extsize);
 }
 
 RBuffer *
@@ -281,6 +323,30 @@ r_rtp_buffer_has_extension (const RRTPBuffer * rtp)
 {
   const RRTPHdr * hdr = (const RRTPHdr *)rtp->hdr.data;
   return hdr->x;
+}
+
+rboolean
+r_rtp_buffer_get_extension (const RRTPBuffer * rtp, ruint16 * profile,
+    const ruint8 ** data, ruint16 * size)
+{
+  const RRTPHdr * hdr;
+
+  if (R_UNLIKELY (rtp == NULL || rtp->hdr.data == NULL))
+    return FALSE;
+  hdr = (const RRTPHdr *)rtp->hdr.data;
+  if (!hdr->x || rtp->ext.data == NULL || rtp->ext.size < sizeof (ruint32))
+    return FALSE;
+
+  /* ext region: [profile(16) | length-in-words(16) | data...]; the mapped
+   * size already accounts for length, so data is everything past the word. */
+  if (profile != NULL)
+    *profile = RUINT16_FROM_BE (*(const ruint16 *)rtp->ext.data);
+  if (data != NULL)
+    *data = rtp->ext.data + sizeof (ruint32);
+  if (size != NULL)
+    *size = (ruint16)(rtp->ext.size - sizeof (ruint32));
+
+  return TRUE;
 }
 
 rboolean
