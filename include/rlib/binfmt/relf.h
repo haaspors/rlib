@@ -444,6 +444,57 @@ typedef struct {
   ruint64 entsize;
 } RElf64SHdr;
 
+/**
+ * @name Dynamic-table tags
+ *
+ * Values of @c d_tag in a @ref RElf32Dyn / @ref RElf64Dyn entry of the
+ * @c .dynamic (@c PT_DYNAMIC / @c SHT_DYNAMIC) table. Tags below
+ * @c R_ELF_DTYPE_NUM cover the base ABI (needed libraries, string / symbol
+ * tables, relocation tables, init / fini, run paths, ...); the @c LOOS ..
+ * @c HIPROC ranges are OS- and processor-specific. A @c d_tag of
+ * @c R_ELF_DTYPE_NULL terminates the table.
+ * @{
+ */
+#define R_ELF_DTYPE_NULL              0
+#define R_ELF_DTYPE_NEEDED            1
+#define R_ELF_DTYPE_PLTRELSZ          2
+#define R_ELF_DTYPE_PLTGOT            3
+#define R_ELF_DTYPE_HASH              4
+#define R_ELF_DTYPE_STRTAB            5
+#define R_ELF_DTYPE_SYMTAB            6
+#define R_ELF_DTYPE_RELA              7
+#define R_ELF_DTYPE_RELASZ            8
+#define R_ELF_DTYPE_RELAENT           9
+#define R_ELF_DTYPE_STRSZ             10
+#define R_ELF_DTYPE_SYMENT            11
+#define R_ELF_DTYPE_INIT              12
+#define R_ELF_DTYPE_FINI              13
+#define R_ELF_DTYPE_SONAME            14
+#define R_ELF_DTYPE_RPATH             15
+#define R_ELF_DTYPE_SYMBOLIC          16
+#define R_ELF_DTYPE_REL               17
+#define R_ELF_DTYPE_RELSZ             18
+#define R_ELF_DTYPE_RELENT            19
+#define R_ELF_DTYPE_PLTREL            20
+#define R_ELF_DTYPE_DEBUG             21
+#define R_ELF_DTYPE_TEXTREL           22
+#define R_ELF_DTYPE_JMPREL            23
+#define R_ELF_DTYPE_BIND_NOW          24
+#define R_ELF_DTYPE_INIT_ARRAY        25
+#define R_ELF_DTYPE_FINI_ARRAY        26
+#define R_ELF_DTYPE_INIT_ARRAYSZ      27
+#define R_ELF_DTYPE_FINI_ARRAYSZ      28
+#define R_ELF_DTYPE_RUNPATH           29
+#define R_ELF_DTYPE_FLAGS             30
+#define R_ELF_DTYPE_PREINIT_ARRAY     32
+#define R_ELF_DTYPE_PREINIT_ARRAYSZ   33
+#define R_ELF_DTYPE_NUM               34
+#define R_ELF_DTYPE_LOOS              0x6000000d
+#define R_ELF_DTYPE_HIOS              0x6ffff000
+#define R_ELF_DTYPE_LOPROC            0x70000000
+#define R_ELF_DTYPE_HIPROC            0x7fffffff
+/** @} */
+
 /* Dynamic symbol */
 /** @brief ELF32 dynamic-table entry (tag + value pair). */
 typedef struct {

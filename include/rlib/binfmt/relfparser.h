@@ -56,8 +56,9 @@
  * normalizes such an image to host byte order on a private copy at parse
  * time, so all accessors below return native-order values regardless of the
  * file's e_ident[EI_DATA]. */
-/* FIXME: Go over ELF chapter 2 loading and dynamic linking */
-/*    * TODO: Add program loading and dynamic linking API? */
+/* The dynamic table (.dynamic / PT_DYNAMIC) is parseable via the dyntbl API
+ * below; actual program loading and dynamic linking (segment mapping,
+ * relocation application, cross-object symbol resolution) is not provided. */
 
 
 R_BEGIN_DECLS
@@ -370,6 +371,32 @@ R_API const rchar * r_elf_nhdr64_get_name (RElf64NHdr * nhdr);
 R_API rpointer r_elf_nhdr32_get_desc (RElf32NHdr * nhdr, rsize * size);
 /** @brief Descriptor payload of an ELF64 note. */
 R_API rpointer r_elf_nhdr64_get_desc (RElf64NHdr * nhdr, rsize * size);
+
+/* ELF Section Header - dynamic */
+/** @brief Number of entries in an ELF32 DYNAMIC section. */
+R_API ruint32 r_elf_parser_dyntbl32_dyn_count (RElfParser * parser, RElf32SHdr * shdr);
+/** @brief Number of entries in an ELF64 DYNAMIC section. */
+R_API ruint64 r_elf_parser_dyntbl64_dyn_count (RElfParser * parser, RElf64SHdr * shdr);
+/** @brief ELF32 dynamic entry at @p idx within a DYNAMIC section, or @c NULL. */
+R_API RElf32Dyn * r_elf_parser_dyntbl32_get_dyn (RElfParser * parser, RElf32SHdr * shdr, ruint32 idx);
+/** @brief ELF64 dynamic entry at @p idx within a DYNAMIC section, or @c NULL. */
+R_API RElf64Dyn * r_elf_parser_dyntbl64_get_dyn (RElfParser * parser, RElf64SHdr * shdr, ruint64 idx);
+/**
+ * @brief First ELF32 dynamic entry with the given @c d_tag, or @c NULL.
+ *
+ * Scans up to the terminating @c R_ELF_DTYPE_NULL entry.
+ */
+R_API RElf32Dyn * r_elf_parser_dyntbl32_find_dyn_by_tag (RElfParser * parser, RElf32SHdr * shdr, rint32 tag);
+/** @brief First ELF64 dynamic entry with the given @c d_tag, or @c NULL. */
+R_API RElf64Dyn * r_elf_parser_dyntbl64_find_dyn_by_tag (RElfParser * parser, RElf64SHdr * shdr, rint64 tag);
+/**
+ * @brief Resolve the string a string-valued ELF32 dynamic entry points at
+ * (e.g. @c DT_SONAME, @c DT_NEEDED, @c DT_RPATH), via the string table the
+ * DYNAMIC section is linked to, or @c NULL.
+ */
+R_API const rchar * r_elf_parser_dyn32_get_str (RElfParser * parser, RElf32SHdr * shdr, RElf32Dyn * dyn);
+/** @brief Resolve the string a string-valued ELF64 dynamic entry points at, or @c NULL. */
+R_API const rchar * r_elf_parser_dyn64_get_str (RElfParser * parser, RElf64SHdr * shdr, RElf64Dyn * dyn);
 
 
 /** @} */
