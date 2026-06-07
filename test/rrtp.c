@@ -52,6 +52,101 @@ RTEST (rrtp, is_valid_hdr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcp, sr_sender_only_wire, RTEST_FAST)
+{
+  /* SR with no report blocks (RC=0): serialize to exact wire bytes, and parse
+   * the same bytes back -- each side checked against the spec independently. */
+  static const ruint8 golden[] = {
+    0x80, 0xc8, 0x00, 0x06,                          /* V2 RC0, PT=SR, len=6 */
+    0x11, 0x22, 0x33, 0x44,                          /* ssrc */
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,  /* ntp */
+    0xde, 0xad, 0xbe, 0xef,                          /* rtptime */
+    0x00, 0x00, 0x00, 0x64,                          /* packets = 100 */
+    0x00, 0x00, 0x4e, 0x20                           /* bytes = 20000 */
+  };
+  /* field order: ssrc, rtptime, ntptime, packets, bytes */
+  RRTCPSenderInfo si = { 0x11223344, 0xdeadbeef, 0x0102030405060708, 100, 20000 };
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  RRTCPSenderInfo gsi;
+  RRTCPReportBlock grb;
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_sr (buf, &si, NULL, 0));
+  r_assert_cmpbufmem (buf, 0, -1, ==, golden, sizeof (golden));
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (golden, sizeof (golden))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_SR);
+  r_assert_cmpuint (r_rtcp_packet_get_count (pkt), ==, 0);
+  r_assert (r_rtcp_packet_sr_get_sender_info (pkt, &gsi));
+  r_assert_cmphex (gsi.ssrc, ==, 0x11223344);
+  r_assert_cmphex (gsi.ntptime, ==, 0x0102030405060708);
+  r_assert_cmphex (gsi.rtptime, ==, 0xdeadbeef);
+  r_assert_cmpuint (gsi.packets, ==, 100);
+  r_assert_cmpuint (gsi.bytes, ==, 20000);
+  r_assert (!r_rtcp_packet_sr_get_report_block (pkt, 0, &grb));
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtcp, rr_two_blocks_wire, RTEST_FAST)
+{
+  /* RR with two report blocks (RC=2): exercises the idx>0 block offsets. */
+  static const ruint8 golden[] = {
+    0x82, 0xc9, 0x00, 0x0d,                          /* V2 RC2, PT=RR, len=13 */
+    0x99, 0xaa, 0xbb, 0xcc,                          /* reporter ssrc */
+    0x55, 0x66, 0x77, 0x88,                          /* rb0 ssrc */
+    0x05, 0xff, 0xff, 0xfd,                          /* frac=5, lost=-3 */
+    0x00, 0x00, 0x10, 0x00,                          /* exthighestseq */
+    0x00, 0x00, 0x00, 0x40,                          /* jitter */
+    0xaa, 0xbb, 0xcc, 0xdd,                          /* lsr */
+    0x00, 0x00, 0x00, 0x11,                          /* dlsr */
+    0x12, 0x34, 0x56, 0x78,                          /* rb1 ssrc */
+    0x00, 0x00, 0x00, 0x00,                          /* frac=0, lost=0 */
+    0x00, 0x00, 0x20, 0x00,                          /* exthighestseq */
+    0x00, 0x00, 0x00, 0x80,                          /* jitter */
+    0x12, 0x34, 0x56, 0x78,                          /* lsr */
+    0x00, 0x00, 0x00, 0x22                           /* dlsr */
+  };
+  RRTCPReportBlock rb[2] = {
+    { 0x55667788, 5, -3, 0x1000, 0x40, 0xaabbccdd, 0x11 },
+    { 0x12345678, 0,  0, 0x2000, 0x80, 0x12345678, 0x22 }
+  };
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  RRTCPReportBlock grb;
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_rr (buf, 0x99aabbcc, rb, 2));
+  r_assert_cmpbufmem (buf, 0, -1, ==, golden, sizeof (golden));
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (golden, sizeof (golden))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_RR);
+  r_assert_cmpuint (r_rtcp_packet_get_count (pkt), ==, 2);
+  r_assert_cmphex (r_rtcp_packet_rr_get_ssrc (pkt), ==, 0x99aabbcc);
+  r_assert (r_rtcp_packet_sr_get_report_block (pkt, 0, &grb));
+  r_assert_cmphex (grb.ssrc, ==, 0x55667788);
+  r_assert_cmpint (grb.packetslost, ==, -3);
+  r_assert (r_rtcp_packet_sr_get_report_block (pkt, 1, &grb));
+  r_assert_cmphex (grb.ssrc, ==, 0x12345678);
+  r_assert_cmpint (grb.packetslost, ==, 0);
+  r_assert_cmphex (grb.exthighestseq, ==, 0x2000);
+  r_assert_cmphex (grb.dlsr, ==, 0x22);
+  r_assert (!r_rtcp_packet_sr_get_report_block (pkt, 2, &grb));
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtp, ext_with_csrc_wire, RTEST_FAST)
 {
   /* RTP packet with both a CSRC entry and a header extension: serialize to
@@ -528,3 +623,56 @@ RTEST (rrtcp, rr_bye_compound_packet, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (rrtcp, write_sr_rr_compound, RTEST_FAST)
+{
+  /* Build an SR + RR compound, then read it back via the parser. */
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  /* RRTCPSenderInfo field order: ssrc, rtptime, ntptime, packets, bytes */
+  RRTCPSenderInfo si = { 0x11223344, 0xdeadbeef, 0x0102030405060708, 100, 20000 };
+  /* RRTCPReportBlock: ssrc, fractionlost, packetslost, exthighestseq, jitter, lsr, dlsr */
+  RRTCPReportBlock rb = { 0x55667788, 5, -3, 0x1000, 0x40, 0xaabbccdd, 0x11 };
+  RRTCPSenderInfo gsi;
+  RRTCPReportBlock grb;
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_sr (buf, &si, &rb, 1));
+  r_assert (r_rtcp_buffer_add_rr (buf, 0x99aabbcc, &rb, 1));
+
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 2);
+
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_SR);
+  r_assert_cmpuint (r_rtcp_packet_get_count (pkt), ==, 1);
+  r_assert (r_rtcp_packet_sr_get_sender_info (pkt, &gsi));
+  r_assert_cmphex (gsi.ssrc, ==, si.ssrc);
+  r_assert_cmphex (gsi.ntptime, ==, si.ntptime);
+  r_assert_cmphex (gsi.rtptime, ==, si.rtptime);
+  r_assert_cmpuint (gsi.packets, ==, si.packets);
+  r_assert_cmpuint (gsi.bytes, ==, si.bytes);
+  r_assert (r_rtcp_packet_sr_get_report_block (pkt, 0, &grb));
+  r_assert_cmphex (grb.ssrc, ==, rb.ssrc);
+  r_assert_cmpuint (grb.fractionlost, ==, rb.fractionlost);
+  r_assert_cmpint (grb.packetslost, ==, rb.packetslost);
+  r_assert_cmpuint (grb.exthighestseq, ==, rb.exthighestseq);
+  r_assert_cmpuint (grb.jitter, ==, rb.jitter);
+  r_assert_cmphex (grb.lsr, ==, rb.lsr);
+  r_assert_cmpuint (grb.dlsr, ==, rb.dlsr);
+
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, pkt)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_RR);
+  r_assert_cmpuint (r_rtcp_packet_get_count (pkt), ==, 1);
+  r_assert_cmphex (r_rtcp_packet_rr_get_ssrc (pkt), ==, 0x99aabbcc);
+  r_assert (r_rtcp_packet_sr_get_report_block (pkt, 0, &grb));
+  r_assert_cmphex (grb.ssrc, ==, rb.ssrc);
+  r_assert_cmpint (grb.packetslost, ==, rb.packetslost);
+
+  r_assert_cmpptr (r_rtcp_buffer_get_next_packet (&rtcp, pkt), ==, NULL);
+
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;

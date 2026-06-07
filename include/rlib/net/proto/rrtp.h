@@ -24,7 +24,8 @@
 
 /**
  * @file rlib/net/proto/rrtp.h
- * @brief RTP / RTCP (RFC 3550) packet validation, header access and parsing.
+ * @brief RTP / RTCP (RFC 3550): packet validation, header access, parsing and
+ * serialization.
  */
 
 #include <rlib/rtypes.h>
@@ -211,12 +212,13 @@ R_API ruint64 r_rtp_buffer_estimate_seq_idx (RRTPBuffer * rtp, ruint64 curidx);
  * @defgroup r_rtcp RTCP / SDES
  * @ingroup r_net
  *
- * @brief Parse RTCP compound packets (RFC 3550) over an @ref RBuffer.
+ * @brief Parse and build RTCP compound packets (RFC 3550) over an @ref RBuffer.
  *
  * An @ref RRTCPBuffer maps an @ref RBuffer with @ref r_rtcp_buffer_map and
  * iterates its packets via @ref r_rtcp_buffer_get_next_packet. Per
  * packet type, accessors decode Sender/Receiver Reports, Source
- * Description (SDES) chunks and items, BYE and APP packets.
+ * Description (SDES) chunks and items, BYE and APP packets; the
+ * @c r_rtcp_buffer_add_* helpers build the same packet types.
  *
  * @{
  */
@@ -312,7 +314,29 @@ typedef struct {
 /** @brief Static initialiser for an empty @ref RRTCPSDESItem. */
 #define R_RTCP_SDES_ITEM_INIT     { R_RTCP_SDES_UNKNOWN, 0, NULL }
 
-/* TODO: Add construction/writing of RTCP buffers and packets */
+/* WRITE / construction
+ *
+ * RTCP packets are appended to a plain @ref RBuffer (start with
+ * @ref r_buffer_new); each @c r_rtcp_buffer_add_* call appends one packet,
+ * forming a compound buffer readable with @ref r_rtcp_buffer_map. */
+/**
+ * @brief Append a Sender Report (SR) packet.
+ * @param buf     Compound RTCP buffer to append to.
+ * @param srinfo  Sender info (its @c ssrc is the report sender).
+ * @param rb      Array of @p nrb reception report blocks (may be @c NULL if 0).
+ * @param nrb     Number of report blocks (0..31).
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_rtcp_buffer_add_sr (RBuffer * buf, const RRTCPSenderInfo * srinfo, const RRTCPReportBlock * rb, ruint8 nrb);
+/**
+ * @brief Append a Receiver Report (RR) packet.
+ * @param buf   Compound RTCP buffer to append to.
+ * @param ssrc  SSRC of the report sender.
+ * @param rb    Array of @p nrb reception report blocks (may be @c NULL if 0).
+ * @param nrb   Number of report blocks (0..31).
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_rtcp_buffer_add_rr (RBuffer * buf, ruint32 ssrc, const RRTCPReportBlock * rb, ruint8 nrb);
 
 /** @brief Map @p buf into @p rtcp for packet iteration. */
 R_API rboolean r_rtcp_buffer_map (RRTCPBuffer * rtcp, RBuffer * buf, RMemMapFlags flags);
