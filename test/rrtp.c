@@ -52,6 +52,51 @@ RTEST (rrtp, is_valid_hdr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcp, sdes_two_items_wire, RTEST_FAST)
+{
+  /* SDES chunk with two items (CNAME + TOOL). */
+  static const ruint8 golden[] = {
+    0x81, 0xca, 0x00, 0x04,                          /* V2 SC1, PT=SDES, len=4 */
+    0xca, 0xfe, 0xf0, 0x0d,                          /* chunk ssrc */
+    0x01, 0x03, 0x61, 0x62, 0x63,                    /* CNAME "abc" */
+    0x06, 0x04, 0x72, 0x6c, 0x69, 0x62,              /* TOOL "rlib" */
+    0x00                                             /* terminator (already word-aligned) */
+  };
+  static const ruint8 cname[] = "abc";
+  static const ruint8 tool[] = "rlib";
+  RRTCPSDESItem items[2];
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  RRTCPSDESChunk * chunk;
+  RRTCPSDESItem item = R_RTCP_SDES_ITEM_INIT;
+
+  items[0].type = R_RTCP_SDES_CNAME; items[0].len = 3; items[0].data = (ruint8 *) cname;
+  items[1].type = R_RTCP_SDES_TOOL;  items[1].len = 4; items[1].data = (ruint8 *) tool;
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_sdes (buf, 0xcafef00d, items, 2));
+  r_assert_cmpbufmem (buf, 0, -1, ==, golden, sizeof (golden));
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (golden, sizeof (golden))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_SDES);
+  r_assert_cmpptr ((chunk = r_rtcp_packet_sdes_get_next_chunk (pkt, NULL)), !=, NULL);
+  r_assert_cmphex (r_rtcp_packet_sdes_chunk_get_ssrc (pkt, chunk), ==, 0xcafef00d);
+  r_assert_cmpint (r_rtcp_packet_sdes_chunk_get_next_item (pkt, chunk, &item), ==, R_RTCP_PARSE_OK);
+  r_assert_cmpuint (item.type, ==, R_RTCP_SDES_CNAME);
+  r_assert_cmpmem (item.data, ==, cname, 3);
+  r_assert_cmpint (r_rtcp_packet_sdes_chunk_get_next_item (pkt, chunk, &item), ==, R_RTCP_PARSE_OK);
+  r_assert_cmpuint (item.type, ==, R_RTCP_SDES_TOOL);
+  r_assert_cmpmem (item.data, ==, tool, 4);
+  r_assert_cmpint (r_rtcp_packet_sdes_chunk_get_next_item (pkt, chunk, &item), ==, R_RTCP_PARSE_ZERO);
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtcp, sr_sender_only_wire, RTEST_FAST)
 {
   /* SR with no report blocks (RC=0): serialize to exact wire bytes, and parse
@@ -671,6 +716,45 @@ RTEST (rrtcp, write_sr_rr_compound, RTEST_FAST)
   r_assert_cmpint (grb.packetslost, ==, rb.packetslost);
 
   r_assert_cmpptr (r_rtcp_buffer_get_next_packet (&rtcp, pkt), ==, NULL);
+
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtcp, write_sdes, RTEST_FAST)
+{
+  /* Build a single-chunk SDES with a CNAME item and read it back. */
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  RRTCPSDESChunk * chunk;
+  RRTCPSDESItem item = R_RTCP_SDES_ITEM_INIT;
+  static const ruint8 cname[] = "alice@example";
+  RRTCPSDESItem items[1];
+
+  items[0].type = R_RTCP_SDES_CNAME;
+  items[0].len = sizeof (cname) - 1;
+  items[0].data = (ruint8 *) cname;
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_sdes (buf, 0xcafef00d, items, 1));
+
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_SDES);
+  r_assert_cmpuint (r_rtcp_packet_get_count (pkt), ==, 1);
+
+  r_assert_cmpptr ((chunk = r_rtcp_packet_sdes_get_next_chunk (pkt, NULL)), !=, NULL);
+  r_assert_cmphex (r_rtcp_packet_sdes_chunk_get_ssrc (pkt, chunk), ==, 0xcafef00d);
+  r_assert_cmpint (r_rtcp_packet_sdes_chunk_get_next_item (pkt, chunk, &item),
+      ==, R_RTCP_PARSE_OK);
+  r_assert_cmpuint (item.type, ==, R_RTCP_SDES_CNAME);
+  r_assert_cmpuint (item.len, ==, sizeof (cname) - 1);
+  r_assert_cmpmem (item.data, ==, cname, sizeof (cname) - 1);
+  /* the list terminates */
+  r_assert_cmpint (r_rtcp_packet_sdes_chunk_get_next_item (pkt, chunk, &item),
+      ==, R_RTCP_PARSE_ZERO);
 
   r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
   r_buffer_unref (buf);

@@ -337,6 +337,17 @@ R_API rboolean r_rtcp_buffer_add_sr (RBuffer * buf, const RRTCPSenderInfo * srin
  * @return @c TRUE on success.
  */
 R_API rboolean r_rtcp_buffer_add_rr (RBuffer * buf, ruint32 ssrc, const RRTCPReportBlock * rb, ruint8 nrb);
+/**
+ * @brief Append a Source Description (SDES) packet with a single chunk.
+ * @param buf     Compound RTCP buffer to append to.
+ * @param ssrc    The chunk's SSRC/CSRC.
+ * @param items   Array of @p nitems SDES items (@c type / @c len / @c data).
+ * @param nitems  Number of items (0 produces an empty chunk).
+ * @return @c TRUE on success.
+ *
+ * Builds one chunk (source count 1); call again to describe further sources.
+ */
+R_API rboolean r_rtcp_buffer_add_sdes (RBuffer * buf, ruint32 ssrc, const RRTCPSDESItem * items, ruint8 nitems);
 
 /** @brief Map @p buf into @p rtcp for packet iteration. */
 R_API rboolean r_rtcp_buffer_map (RRTCPBuffer * rtcp, RBuffer * buf, RMemMapFlags flags);
