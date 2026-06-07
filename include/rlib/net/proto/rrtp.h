@@ -136,6 +136,14 @@ R_API rboolean r_rtp_buffer_unmap (RRTPBuffer * rtp, RBuffer * buf);
 /* READ / getters */
 /** @brief @c TRUE if the padding bit is set. */
 R_API rboolean r_rtp_buffer_has_padding (const RRTPBuffer * rtp);
+/**
+ * @brief Number of trailing padding octets when the padding bit is set, else 0.
+ *
+ * The count is the packet's last octet (RFC 3550 §5.1, which counts itself),
+ * taken verbatim; for malformed input it may exceed the payload, so treat it
+ * as advisory (@ref r_rtp_buffer_map already clamps the payload mapping).
+ */
+R_API ruint8 r_rtp_buffer_get_padding (const RRTPBuffer * rtp);
 /** @brief @c TRUE if the extension bit is set. */
 R_API rboolean r_rtp_buffer_has_extension (const RRTPBuffer * rtp);
 /** @brief @c TRUE if the marker bit is set. */
@@ -166,7 +174,6 @@ R_API void r_rtp_buffer_set_seq (RRTPBuffer * rtp, ruint16 seq);
 R_API void r_rtp_buffer_set_timestamp (RRTPBuffer * rtp, ruint32 ts);
 /** @brief Set the @p n-th contributing source (CSRC) identifier. */
 R_API rboolean r_rtp_buffer_set_csrc (RRTPBuffer * rtp, ruint8 n, ruint32 csrc);
-/* TODO: padding */
 /* TODO: extension */
 
 

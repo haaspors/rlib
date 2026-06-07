@@ -252,6 +252,30 @@ r_rtp_buffer_has_padding (const RRTPBuffer * rtp)
   return hdr->p;
 }
 
+ruint8
+r_rtp_buffer_get_padding (const RRTPBuffer * rtp)
+{
+  const RRTPHdr * hdr;
+  rsize total;
+  ruint8 pad = 0;
+
+  if (R_UNLIKELY (rtp == NULL || rtp->hdr.data == NULL || rtp->buffer == NULL))
+    return 0;
+  hdr = (const RRTPHdr *)rtp->hdr.data;
+  if (!hdr->p)
+    return 0;
+
+  /* The pad count is the packet's last octet regardless of how the payload was
+   * mapped (it may be excluded from rtp->pay), so read it from the buffer. */
+  total = r_buffer_get_size (rtp->buffer);
+  if (R_UNLIKELY (total == 0))
+    return 0;
+  if (R_UNLIKELY (r_buffer_extract (rtp->buffer, total - 1, &pad, 1) != 1))
+    return 0;
+
+  return pad;
+}
+
 rboolean
 r_rtp_buffer_has_extension (const RRTPBuffer * rtp)
 {
