@@ -52,8 +52,11 @@
 #include <rlib/binfmt/relf.h>
 
 
+/* Non-native-endianness ELF files are read transparently: the parser
+ * normalizes such an image to host byte order on a private copy at parse
+ * time, so all accessors below return native-order values regardless of the
+ * file's e_ident[EI_DATA]. */
 /* FIXME: Add Rel API */
-/* FIXME: Figure out how to read non-native endianess formats */
 /* FIXME: Add high level API: */
 /*    * TODO: Add find corresponding rel/rela section for text/data section */
 /* FIXME: Go over ELF chapter 2 loading and dynamic linking */
