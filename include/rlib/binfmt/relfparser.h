@@ -57,7 +57,6 @@
  * time, so all accessors below return native-order values regardless of the
  * file's e_ident[EI_DATA]. */
 /* FIXME: Go over ELF chapter 2 loading and dynamic linking */
-/*    * TODO: Improve Program header API */
 /*    * TODO: Add Note API */
 /*    * TODO: Add program loading and dynamic linking API? */
 
@@ -136,6 +135,21 @@ R_API rpointer r_elf_parser_get_prg_header_table (RElfParser * parser);
 R_API RElf32PHdr * r_elf_parser_get_phdr32 (RElfParser * parser, ruint16 idx);
 /** @brief Pointer to the @p idx -th ELF64 program header. */
 R_API RElf64PHdr * r_elf_parser_get_phdr64 (RElfParser * parser, ruint16 idx);
+/** @brief First ELF32 program header of the given @c p_type, or @c NULL. */
+R_API RElf32PHdr * r_elf_parser_find_phdr32_by_type (RElfParser * parser, ruint32 type);
+/** @brief First ELF64 program header of the given @c p_type, or @c NULL. */
+R_API RElf64PHdr * r_elf_parser_find_phdr64_by_type (RElfParser * parser, ruint32 type);
+/**
+ * @brief Slice the file-resident bytes of an ELF32 segment (@c p_filesz at
+ * @c p_offset) out of the image.
+ * @param parser  The parser.
+ * @param phdr    Program header naming the segment to slice.
+ * @param size    Out: segment file size in bytes. Pass @c NULL to discard.
+ * @return Pointer to the segment bytes, or @c NULL if out of bounds.
+ */
+R_API rpointer r_elf_parser_phdr32_get_data (RElfParser * parser, RElf32PHdr * phdr, rsize * size);
+/** @brief Slice the file-resident bytes of an ELF64 segment out of the image. */
+R_API rpointer r_elf_parser_phdr64_get_data (RElfParser * parser, RElf64PHdr * phdr, rsize * size);
 
 /** @brief Lowest @c PT_LOAD virtual address (image base) for an ELF32. */
 R_API ruint32 r_elf_parser_get_base_addr32 (RElfParser * parser);
