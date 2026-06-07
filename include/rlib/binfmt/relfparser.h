@@ -38,15 +38,19 @@
  * (@ref r_elf_parser_get_class returns @c R_ELF_CLASS32 or
  * @c R_ELF_CLASS64) or by passing the file through one of the
  * sized accessor families and observing @c NULL when the class
- * doesn't match.
+ * doesn't match. Non-native-endianness images are normalized to host
+ * byte order at parse time, and @ref r_elf_parser_load builds an
+ * in-memory, self-relocated image of a single object.
  */
 
 /**
  * @file rlib/binfmt/relfparser.h
  * @ingroup r_binfmt_elf
- * @brief ELF parser: opaque @c RElfParser handle plus 32 / 64-bit
- * accessors for the file header, program / section headers, string
- * and symbol tables, and RELA-style relocations.
+ * @brief ELF parser and image loader: an opaque @c RElfParser handle
+ * with 32 / 64-bit accessors for the file header, program / section
+ * headers, string and symbol tables, REL / RELA relocations, notes
+ * (@c SHT_NOTE / @c PT_NOTE) and the dynamic table, plus a single-object
+ * loader (@ref RElfImage) that maps and self-relocates a PT_LOAD image.
  */
 
 #include <rlib/binfmt/relf.h>
@@ -56,9 +60,10 @@
  * normalizes such an image to host byte order on a private copy at parse
  * time, so all accessors below return native-order values regardless of the
  * file's e_ident[EI_DATA]. */
-/* The dynamic table (.dynamic / PT_DYNAMIC) is parseable via the dyntbl API
- * below; actual program loading and dynamic linking (segment mapping,
- * relocation application, cross-object symbol resolution) is not provided. */
+/* The dynamic table (.dynamic / PT_DYNAMIC) is parseable via the dyntbl API,
+ * and r_elf_parser_load maps + self-relocates a single object into an image
+ * and resolves its defined symbols.  Recursive DT_NEEDED dependency loading
+ * and cross-object symbol binding are not provided. */
 
 
 R_BEGIN_DECLS
@@ -336,6 +341,7 @@ R_API RElf64Sym * r_elf_parser_rela64_get_sym (RElfParser * parser, RElf64SHdr *
 R_API ruint32 * r_elf_parser_rela32_get_dst (RElfParser * parser, RElf32SHdr * shdr, RElf32Rela * rela);
 /** @brief Pointer to the ELF64 location patched by a RELA entry. */
 R_API ruint64 * r_elf_parser_rela64_get_dst (RElfParser * parser, RElf64SHdr * shdr, RElf64Rela * rela);
+
 /* ELF Section Header / Program Header - note */
 /** @brief Number of note entries in an ELF32 NOTE section. */
 R_API ruint32 r_elf_parser_notetbl32_note_count (RElfParser * parser, RElf32SHdr * shdr);
@@ -398,6 +404,42 @@ R_API const rchar * r_elf_parser_dyn32_get_str (RElfParser * parser, RElf32SHdr 
 /** @brief Resolve the string a string-valued ELF64 dynamic entry points at, or @c NULL. */
 R_API const rchar * r_elf_parser_dyn64_get_str (RElfParser * parser, RElf64SHdr * shdr, RElf64Dyn * dyn);
 
+/* ELF image loader */
+/** @brief Opaque, refcounted in-memory image produced by @ref r_elf_parser_load. */
+typedef struct RElfImage RElfImage;
+/**
+ * @brief Load an object into a fresh in-memory image.
+ *
+ * Maps the object's @c PT_LOAD segments into a newly allocated buffer, zeroes
+ * the @c .bss tail, and applies the object's own relocations: @c RELATIVE,
+ * plus absolute / @c GLOB_DAT / @c JMP_SLOT against symbols defined in the
+ * object (x86-64 and i386 relocation types). It does @e not recursively load
+ * @c DT_NEEDED dependencies or bind symbols across objects; undefined external
+ * symbols are left zero.  Intended for native-endianness objects: a
+ * non-native image's code and data keep the file's byte order, so only
+ * RELA-style relocations (whose addends come from the normalized relocation
+ * entries) are meaningful across byte orders.
+ *
+ * @return A refcounted @ref RElfImage, or @c NULL. Loading is 64-bit only by
+ *   design: a 32-bit object parses fully, but its relocation slots cannot
+ *   hold a 64-bit host address, so it cannot be loaded in-process here.
+ */
+R_API RElfImage * r_elf_parser_load (RElfParser * parser);
+/** @brief Add a reference to a loaded image. */
+R_API RElfImage * r_elf_image_ref (RElfImage * img);
+/** @brief Drop a reference; frees the image (and its mapping) at zero. */
+R_API void r_elf_image_unref (RElfImage * img);
+/** @brief Base address of the loaded image in memory. */
+R_API rpointer r_elf_image_get_mem (RElfImage * img);
+/** @brief Size of the loaded image in bytes. */
+R_API rsize r_elf_image_get_size (RElfImage * img);
+/** @brief Runtime entry point within the image, or @c NULL if the object has none. */
+R_API rpointer r_elf_image_get_entry (RElfImage * img);
+/**
+ * @brief Address within the loaded image of the defined dynamic symbol named
+ * @p name, or @c NULL if absent or undefined.
+ */
+R_API rpointer r_elf_image_resolve (RElfImage * img, const rchar * name);
 
 /** @} */
 

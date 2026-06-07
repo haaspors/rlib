@@ -1463,7 +1463,6 @@ r_elf_parser_rela64_get_dst (RElfParser * parser,
   return NULL;
 }
 
-
 ruint32
 r_elf_parser_reltbl32_rel_count (RElfParser * parser, RElf32SHdr * shdr)
 {
@@ -1760,6 +1759,7 @@ r_elf_parser_phdr64_get_note (RElfParser * parser, RElf64PHdr * phdr, ruint64 id
   return NULL;
 }
 
+
 ruint32
 r_elf_parser_dyntbl32_dyn_count (RElfParser * parser, RElf32SHdr * shdr)
 {
@@ -1860,4 +1860,272 @@ r_elf_parser_dyn64_get_str (RElfParser * parser, RElf64SHdr * shdr, RElf64Dyn * 
     return r_elf_parser_strtbl64_get_str (parser, strtab, dyn->un.ptr);
 
   return NULL;
+}
+
+/* ------------------------------------------------------------------------- *
+ * Program image loader
+ *
+ * Maps an object's PT_LOAD segments into a freshly-allocated image, applies
+ * the object's own relocations (RELATIVE plus absolute / GLOB_DAT / JMP_SLOT
+ * against symbols defined in this object; x86-64 and i386 share these type
+ * numbers), and resolves defined symbols to their address in the image.  It
+ * does not recursively load DT_NEEDED dependencies or bind across objects.
+ * ------------------------------------------------------------------------- */
+
+struct RElfImage {
+  rauint refcount;
+  RElfParser * parser;
+  ruint8 * image;
+  rsize size;
+  ruint64 base;     /* lowest PT_LOAD p_vaddr (link base) */
+  ruint64 bias;     /* runtime address of @base: image - base */
+  ruint64 entry;    /* runtime entry point, or 0 */
+};
+
+/* Map a link-time vaddr to its location in the loaded image, NULL if the
+ * span [vaddr, vaddr+need) falls outside the image. */
+static rpointer
+r_elf_image_vaddr (RElfImage * img, ruint64 vaddr, rsize need)
+{
+  if (vaddr >= img->base && (vaddr - img->base) <= img->size &&
+      img->size - (vaddr - img->base) >= need)
+    return img->image + (vaddr - img->base);
+
+  return NULL;
+}
+
+/* Apply one relocation to the 64-bit image. @rela selects RELA (use @addend)
+ * vs REL (the addend is the slot's existing value). */
+static void
+r_elf_image_apply64 (RElfImage * img, ruint64 offset, ruint64 info,
+    rint64 addend, RElf64Sym * symtab, ruint64 symcount, rboolean rela)
+{
+  ruint32 type = R_ELF64_RELINFO_TYPE (info);
+  ruint64 symidx = R_ELF64_RELINFO_SYM (info);
+  ruint64 * slot = r_elf_image_vaddr (img, offset, sizeof (ruint64));
+  ruint64 symval = 0;
+
+  if (slot == NULL)
+    return;
+  if (symidx != 0 && symtab != NULL && symidx < symcount &&
+      symtab[symidx].shndx != R_ELF_SHN_UNDEF)
+    symval = (symtab[symidx].shndx == R_ELF_SHN_ABS)
+        ? symtab[symidx].value : img->bias + symtab[symidx].value;
+
+  switch (type) {
+    case R_ELF_RELTYPE_X86_64_RELATIVE:
+      *slot = img->bias + (rela ? (ruint64) addend : *slot);
+      break;
+    case R_ELF_RELTYPE_X86_64_64:
+      *slot = symval + (rela ? (ruint64) addend : *slot);
+      break;
+    case R_ELF_RELTYPE_X86_64_GLOB_DAT:
+    case R_ELF_RELTYPE_X86_64_JUMP_SLOT:
+      *slot = symval + (rela ? (ruint64) addend : 0);
+      break;
+    default:                                /* unsupported: leave untouched */
+      break;
+  }
+}
+
+static void
+r_elf_image_reloc64 (RElfImage * img)
+{
+  RElfParser * p = img->parser;
+  RElf64SHdr * dynsh = r_elf_parser_find_shdr64_by_type (p, R_ELF_STYPE_DYNAMIC);
+  RElf64SHdr * dynsym;
+  RElf64Sym * symtab = NULL;
+  ruint64 symcount = 0;
+  ruint64 rela_va = 0, rela_sz = 0, rela_ent = sizeof (RElf64Rela);
+  ruint64 rel_va = 0, rel_sz = 0, rel_ent = sizeof (RElf64Rel);
+  ruint64 jmp_va = 0, jmp_sz = 0, pltrel = 0;
+  ruint64 symtab_va = 0;
+  ruint64 i, n;
+
+  if (dynsh == NULL)
+    return;
+
+  n = r_elf_parser_dyntbl64_dyn_count (p, dynsh);
+  for (i = 0; i < n; i++) {
+    RElf64Dyn * d = r_elf_parser_dyntbl64_get_dyn (p, dynsh, i);
+    if (d == NULL || d->tag == R_ELF_DTYPE_NULL) break;
+    switch (d->tag) {
+      case R_ELF_DTYPE_RELA:     rela_va = d->un.ptr; break;
+      case R_ELF_DTYPE_RELASZ:   rela_sz = d->un.ptr; break;
+      case R_ELF_DTYPE_RELAENT:  rela_ent = d->un.ptr; break;
+      case R_ELF_DTYPE_REL:      rel_va = d->un.ptr; break;
+      case R_ELF_DTYPE_RELSZ:    rel_sz = d->un.ptr; break;
+      case R_ELF_DTYPE_RELENT:   rel_ent = d->un.ptr; break;
+      case R_ELF_DTYPE_JMPREL:   jmp_va = d->un.ptr; break;
+      case R_ELF_DTYPE_PLTRELSZ: jmp_sz = d->un.ptr; break;
+      case R_ELF_DTYPE_PLTREL:   pltrel = d->un.ptr; break;
+      case R_ELF_DTYPE_SYMTAB:   symtab_va = d->un.ptr; break;
+      default: break;
+    }
+  }
+
+  if (symtab_va != 0)
+    symtab = r_elf_image_vaddr (img, symtab_va, sizeof (RElf64Sym));
+  if ((dynsym = r_elf_parser_find_shdr64_by_type (p, R_ELF_STYPE_DYNSYM)) != NULL)
+    symcount = r_elf_parser_symtbl64_sym_count (p, dynsym);
+
+  if (rela_va != 0 && rela_ent != 0) {
+    for (i = 0, n = rela_sz / rela_ent; i < n; i++) {
+      RElf64Rela * r = r_elf_image_vaddr (img, rela_va + i * rela_ent,
+          sizeof (RElf64Rela));
+      if (r != NULL)
+        r_elf_image_apply64 (img, r->offset, r->info, r->addend,
+            symtab, symcount, TRUE);
+    }
+  }
+  if (rel_va != 0 && rel_ent != 0) {
+    for (i = 0, n = rel_sz / rel_ent; i < n; i++) {
+      RElf64Rel * r = r_elf_image_vaddr (img, rel_va + i * rel_ent,
+          sizeof (RElf64Rel));
+      if (r != NULL)
+        r_elf_image_apply64 (img, r->offset, r->info, 0, symtab, symcount, FALSE);
+    }
+  }
+  if (jmp_va != 0) {
+    rboolean rela = (pltrel == R_ELF_DTYPE_RELA);
+    ruint64 ent = rela ? rela_ent : rel_ent;
+    for (i = 0, n = ent ? jmp_sz / ent : 0; i < n; i++) {
+      rpointer rp = r_elf_image_vaddr (img, jmp_va + i * ent, ent);
+      if (rp == NULL) continue;
+      if (rela) {
+        RElf64Rela * r = rp;
+        r_elf_image_apply64 (img, r->offset, r->info, r->addend,
+            symtab, symcount, TRUE);
+      } else {
+        RElf64Rel * r = rp;
+        r_elf_image_apply64 (img, r->offset, r->info, 0, symtab, symcount, FALSE);
+      }
+    }
+  }
+}
+
+static RElfImage *
+r_elf_load64 (RElfParser * parser)
+{
+  RElf64EHdr * eh = r_elf_parser_get_ehdr64 (parser);
+  ruint16 i, ph = r_elf_parser_prg_header_count (parser);
+  ruint64 base = 0, end = 0;
+  rboolean have = FALSE;
+  RElfImage * img;
+  ruint8 * image;
+  rsize size;
+
+  for (i = 0; i < ph; i++) {
+    RElf64PHdr * p = r_elf_parser_get_phdr64 (parser, i);
+    if (p == NULL || p->type != R_ELF_PTYPE_LOAD) continue;
+    if (!have) {
+      base = p->vaddr; end = p->vaddr + p->memsz; have = TRUE;
+    } else {
+      if (p->vaddr < base) base = p->vaddr;
+      if (p->vaddr + p->memsz > end) end = p->vaddr + p->memsz;
+    }
+  }
+  if (!have || end <= base)
+    return NULL;
+
+  size = end - base;
+  if ((image = r_malloc0 (size)) == NULL)
+    return NULL;
+
+  for (i = 0; i < ph; i++) {
+    RElf64PHdr * p = r_elf_parser_get_phdr64 (parser, i);
+    if (p == NULL || p->type != R_ELF_PTYPE_LOAD || p->filesz == 0) continue;
+    if (p->offset > parser->size || parser->size - p->offset < p->filesz)
+      continue;
+    if (p->vaddr < base || (p->vaddr - base) > size ||
+        size - (p->vaddr - base) < p->filesz)
+      continue;
+    r_memcpy (image + (p->vaddr - base),
+        (ruint8 *)parser->mem + p->offset, p->filesz);
+  }
+
+  img = r_mem_new (RElfImage);
+  r_atomic_uint_store (&img->refcount, 1);
+  img->parser = r_elf_parser_ref (parser);
+  img->image = image;
+  img->size = size;
+  img->base = base;
+  img->bias = (ruint64)(ruintptr) image - base;
+  img->entry = (eh != NULL && eh->entry != 0) ? img->bias + eh->entry : 0;
+
+  r_elf_image_reloc64 (img);
+
+  return img;
+}
+
+RElfImage *
+r_elf_parser_load (RElfParser * parser)
+{
+  if (parser == NULL)
+    return NULL;
+
+  switch (r_elf_parser_get_class (parser)) {
+    case R_ELF_CLASS64: return r_elf_load64 (parser);
+    default:            return NULL;
+  }
+}
+
+static void
+r_elf_image_free (RElfImage * img)
+{
+  r_elf_parser_unref (img->parser);
+  r_free (img->image);
+  r_free (img);
+}
+
+RElfImage *
+r_elf_image_ref (RElfImage * img)
+{
+  r_atomic_uint_fetch_add (&img->refcount, 1);
+  return img;
+}
+
+void
+r_elf_image_unref (RElfImage * img)
+{
+  if (r_atomic_uint_fetch_sub (&img->refcount, 1) == 1)
+    r_elf_image_free (img);
+}
+
+rpointer
+r_elf_image_get_mem (RElfImage * img)
+{
+  return (img != NULL) ? img->image : NULL;
+}
+
+rsize
+r_elf_image_get_size (RElfImage * img)
+{
+  return (img != NULL) ? img->size : 0;
+}
+
+rpointer
+r_elf_image_get_entry (RElfImage * img)
+{
+  if (img == NULL || img->entry == 0)
+    return NULL;
+  return r_elf_image_vaddr (img, img->entry - img->bias, 0);
+}
+
+rpointer
+r_elf_image_resolve (RElfImage * img, const rchar * name)
+{
+  RElf64SHdr * dynsym;
+  RElf64Sym * sym;
+
+  if (img == NULL || name == NULL)
+    return NULL;
+  if ((dynsym = r_elf_parser_find_shdr64_by_type (img->parser,
+          R_ELF_STYPE_DYNSYM)) == NULL)
+    return NULL;
+  if ((sym = r_elf_parser_symtbl64_find_sym_by_name (img->parser, dynsym,
+          name, -1)) == NULL || sym->shndx == R_ELF_SHN_UNDEF)
+    return NULL;
+
+  return r_elf_image_vaddr (img, sym->value, 0);
 }

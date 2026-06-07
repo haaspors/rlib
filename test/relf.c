@@ -297,6 +297,159 @@ build_min_dyn_elf64 (ruint8 * buf, ruint8 data)
   return cur;
 }
 
+/* Build a loadable ELF64 (ET_DYN) where vaddr == file offset: one PT_LOAD
+ * covering the file plus a 16-byte zero-initialized bss tail, and a .dynamic
+ * describing .dynsym / .dynstr / .rela.dyn / .rela.plt / .rel.dyn.  The six
+ * .data slots exercise RELATIVE, absolute (X86_64_64), GLOB_DAT, JMP_SLOT
+ * (via DT_JMPREL), an undefined-symbol reloc (left zero), and a REL-form
+ * RELATIVE.  e_entry points into .data.  @p slot_off returns .data's file
+ * offset (== vaddr); returns the file (not image) size. */
+static rsize
+build_min_load_elf64 (ruint8 * buf, ruint8 data, rsize * slot_off)
+{
+  const rboolean be = (data == R_ELF_DATA2MSB);
+  static const rchar dynstr[] = "\0datasym\0undefsym";
+  static const rchar shstr[] =
+      "\0.data\0.dynsym\0.dynstr\0.rela.dyn\0.rela.plt\0.rel.dyn\0.dynamic\0.shstrtab";
+  const ruint32 n_data = 1, n_dynsym = 7, n_dynstr = 15, n_reladyn = 23,
+      n_relaplt = 33, n_reldyn = 43, n_dynamic = 52, n_shstrtab = 61;
+  rsize off_ph, off_data, off_dynsym, off_dynstr, off_rela, off_relplt, off_rel,
+      off_dyn, off_shstr, off_sht, cur;
+  ruint8 * p;
+
+  cur = sizeof (RElf64EHdr);
+  off_ph = cur;     cur += 2 * sizeof (RElf64PHdr);
+  off_data = cur;   cur += 6 * 8;                    /* six 8-byte slots */
+  off_dynsym = cur; cur += 3 * sizeof (RElf64Sym);
+  off_dynstr = cur; cur += sizeof (dynstr);
+  cur = (cur + 7) & ~(rsize)7;
+  off_rela = cur;   cur += 4 * sizeof (RElf64Rela);
+  off_relplt = cur; cur += 1 * sizeof (RElf64Rela);
+  off_rel = cur;    cur += 1 * sizeof (RElf64Rel);
+  off_dyn = cur;    cur += 14 * sizeof (RElf64Dyn);
+  off_shstr = cur;  cur += sizeof (shstr);
+  cur = (cur + 7) & ~(rsize)7;
+  off_sht = cur;    cur += 9 * sizeof (RElf64SHdr);
+
+  r_memset (buf, 0, cur);
+  *slot_off = off_data;
+
+  buf[R_ELF_IDX_MAG0] = R_ELF_MAG0; buf[R_ELF_IDX_MAG1] = R_ELF_MAG1;
+  buf[R_ELF_IDX_MAG2] = R_ELF_MAG2; buf[R_ELF_IDX_MAG3] = R_ELF_MAG3;
+  buf[R_ELF_IDX_CLASS] = R_ELF_CLASS64;
+  buf[R_ELF_IDX_DATA] = data;
+  buf[R_ELF_IDX_VERSION] = R_ELF_VER_CURRENT;
+  w16 (buf + 16, be, R_ELF_ETYPE_DYN);
+  w16 (buf + 18, be, R_ELF_MACHINE_X86_64);
+  w32 (buf + 20, be, R_ELF_VER_CURRENT);
+  w64 (buf + 24, be, off_data);             /* e_entry -> .data */
+  w64 (buf + 32, be, off_ph);
+  w64 (buf + 40, be, off_sht);
+  w16 (buf + 52, be, sizeof (RElf64EHdr));
+  w16 (buf + 54, be, sizeof (RElf64PHdr));
+  w16 (buf + 56, be, 2);
+  w16 (buf + 58, be, sizeof (RElf64SHdr));
+  w16 (buf + 60, be, 9);
+  w16 (buf + 62, be, 8);
+
+  /* PT_LOAD: whole file at vaddr 0 + 16-byte bss tail (memsz > filesz). */
+  p = buf + off_ph;
+  w32 (p +  0, be, R_ELF_PTYPE_LOAD);
+  w32 (p +  4, be, R_ELF_PFLAGS_R | R_ELF_PFLAGS_W);
+  w64 (p +  8, be, 0);
+  w64 (p + 16, be, 0);
+  w64 (p + 24, be, 0);
+  w64 (p + 32, be, cur);                    /* filesz */
+  w64 (p + 40, be, cur + 16);               /* memsz (bss tail) */
+  w64 (p + 48, be, 0x1000);
+  p = buf + off_ph + sizeof (RElf64PHdr);
+  w32 (p +  0, be, R_ELF_PTYPE_DYNAMIC);
+  w32 (p +  4, be, R_ELF_PFLAGS_R | R_ELF_PFLAGS_W);
+  w64 (p +  8, be, off_dyn);
+  w64 (p + 16, be, off_dyn);
+  w64 (p + 24, be, off_dyn);
+  w64 (p + 32, be, 14 * sizeof (RElf64Dyn));
+  w64 (p + 40, be, 14 * sizeof (RElf64Dyn));
+  w64 (p + 48, be, 8);
+
+  /* .dynsym: [1] datasym (defined in .data), [2] undefsym (undefined) */
+  p = buf + off_dynsym + sizeof (RElf64Sym);
+  w32 (p +  0, be, n_data);                 /* reuse offset 1 == "datasym" */
+  p[4] = R_ELF_SYMINFO_CREATE (R_ELF_SYMBIND_GLOBAL, R_ELF_SYMTYPE_OBJECT);
+  w16 (p +  6, be, 1);                      /* shndx -> .data */
+  w64 (p +  8, be, off_data);
+  w64 (p + 16, be, 8);
+  p = buf + off_dynsym + 2 * sizeof (RElf64Sym);
+  w32 (p +  0, be, 9);                      /* "undefsym" */
+  p[4] = R_ELF_SYMINFO_CREATE (R_ELF_SYMBIND_GLOBAL, R_ELF_SYMTYPE_NOTYPE);
+  w16 (p +  6, be, R_ELF_SHN_UNDEF);
+
+  r_memcpy (buf + off_dynstr, dynstr, sizeof (dynstr));
+  r_memcpy (buf + off_shstr, shstr, sizeof (shstr));
+
+  /* .rela.dyn: RELATIVE, absolute, GLOB_DAT (vs datasym), undef (vs undefsym) */
+  p = buf + off_rela;
+  w64 (p +  0, be, off_data + 0 * 8); w64 (p +  8, be, R_ELF_RELTYPE_X86_64_RELATIVE); w64 (p + 16, be, 0x1000);
+  w64 (p + 24, be, off_data + 1 * 8); w64 (p + 32, be, ((ruint64) 1 << 32) | R_ELF_RELTYPE_X86_64_64); w64 (p + 40, be, 0x2);
+  w64 (p + 48, be, off_data + 2 * 8); w64 (p + 56, be, ((ruint64) 1 << 32) | R_ELF_RELTYPE_X86_64_GLOB_DAT); w64 (p + 64, be, 0);
+  w64 (p + 72, be, off_data + 4 * 8); w64 (p + 80, be, ((ruint64) 2 << 32) | R_ELF_RELTYPE_X86_64_64); w64 (p + 88, be, 0);
+
+  /* .rela.plt: JMP_SLOT (vs datasym) */
+  p = buf + off_relplt;
+  w64 (p +  0, be, off_data + 3 * 8); w64 (p +  8, be, ((ruint64) 1 << 32) | R_ELF_RELTYPE_X86_64_JUMP_SLOT); w64 (p + 16, be, 0);
+
+  /* .rel.dyn: REL-form RELATIVE on slot 5 */
+  p = buf + off_rel;
+  w64 (p +  0, be, off_data + 5 * 8); w64 (p +  8, be, R_ELF_RELTYPE_X86_64_RELATIVE);
+
+  /* .dynamic */
+  p = buf + off_dyn;
+  w64 (p +   0, be, R_ELF_DTYPE_SYMTAB);  w64 (p +   8, be, off_dynsym);
+  w64 (p +  16, be, R_ELF_DTYPE_SYMENT);  w64 (p +  24, be, sizeof (RElf64Sym));
+  w64 (p +  32, be, R_ELF_DTYPE_STRTAB);  w64 (p +  40, be, off_dynstr);
+  w64 (p +  48, be, R_ELF_DTYPE_STRSZ);   w64 (p +  56, be, sizeof (dynstr));
+  w64 (p +  64, be, R_ELF_DTYPE_RELA);    w64 (p +  72, be, off_rela);
+  w64 (p +  80, be, R_ELF_DTYPE_RELASZ);  w64 (p +  88, be, 4 * sizeof (RElf64Rela));
+  w64 (p +  96, be, R_ELF_DTYPE_RELAENT); w64 (p + 104, be, sizeof (RElf64Rela));
+  w64 (p + 112, be, R_ELF_DTYPE_REL);     w64 (p + 120, be, off_rel);
+  w64 (p + 128, be, R_ELF_DTYPE_RELSZ);   w64 (p + 136, be, sizeof (RElf64Rel));
+  w64 (p + 144, be, R_ELF_DTYPE_RELENT);  w64 (p + 152, be, sizeof (RElf64Rel));
+  w64 (p + 160, be, R_ELF_DTYPE_JMPREL);  w64 (p + 168, be, off_relplt);
+  w64 (p + 176, be, R_ELF_DTYPE_PLTRELSZ);w64 (p + 184, be, sizeof (RElf64Rela));
+  w64 (p + 192, be, R_ELF_DTYPE_PLTREL);  w64 (p + 200, be, R_ELF_DTYPE_RELA);
+  w64 (p + 208, be, R_ELF_DTYPE_NULL);    w64 (p + 216, be, 0);
+
+  /* section header table */
+  wr_shdr64 (buf + off_sht + 0 * sizeof (RElf64SHdr), be,
+      0, R_ELF_STYPE_NULL, 0, 0, 0, 0, 0, 0, 0, 0);
+  wr_shdr64 (buf + off_sht + 1 * sizeof (RElf64SHdr), be,
+      n_data, R_ELF_STYPE_PROGBITS, R_ELF_SFLAGS_ALLOC | R_ELF_SFLAGS_WRITE,
+      off_data, off_data, 6 * 8, 0, 0, 8, 0);
+  wr_shdr64 (buf + off_sht + 2 * sizeof (RElf64SHdr), be,
+      n_dynsym, R_ELF_STYPE_DYNSYM, R_ELF_SFLAGS_ALLOC, off_dynsym, off_dynsym,
+      3 * sizeof (RElf64Sym), 3, 1, 8, sizeof (RElf64Sym));
+  wr_shdr64 (buf + off_sht + 3 * sizeof (RElf64SHdr), be,
+      n_dynstr, R_ELF_STYPE_STRTAB, R_ELF_SFLAGS_ALLOC, off_dynstr, off_dynstr,
+      sizeof (dynstr), 0, 0, 1, 0);
+  wr_shdr64 (buf + off_sht + 4 * sizeof (RElf64SHdr), be,
+      n_reladyn, R_ELF_STYPE_RELA, R_ELF_SFLAGS_ALLOC, off_rela, off_rela,
+      4 * sizeof (RElf64Rela), 2, 0, 8, sizeof (RElf64Rela));
+  wr_shdr64 (buf + off_sht + 5 * sizeof (RElf64SHdr), be,
+      n_relaplt, R_ELF_STYPE_RELA, R_ELF_SFLAGS_ALLOC, off_relplt, off_relplt,
+      sizeof (RElf64Rela), 2, 1, 8, sizeof (RElf64Rela));
+  wr_shdr64 (buf + off_sht + 6 * sizeof (RElf64SHdr), be,
+      n_reldyn, R_ELF_STYPE_REL, R_ELF_SFLAGS_ALLOC, off_rel, off_rel,
+      sizeof (RElf64Rel), 2, 0, 8, sizeof (RElf64Rel));
+  wr_shdr64 (buf + off_sht + 7 * sizeof (RElf64SHdr), be,
+      n_dynamic, R_ELF_STYPE_DYNAMIC, R_ELF_SFLAGS_WRITE | R_ELF_SFLAGS_ALLOC,
+      off_dyn, off_dyn, 14 * sizeof (RElf64Dyn), 3, 0, 8, sizeof (RElf64Dyn));
+  wr_shdr64 (buf + off_sht + 8 * sizeof (RElf64SHdr), be,
+      n_shstrtab, R_ELF_STYPE_STRTAB, 0, 0, off_shstr, sizeof (shstr),
+      0, 0, 1, 0);
+
+  return cur;
+}
+
 /* Assert the parser produced the known field values, regardless of the
  * source byte order. */
 static void
@@ -631,6 +784,73 @@ RTEST (relf, dynamic, RTEST_FAST)
 
     r_elf_parser_unref (parser);
   }
+}
+RTEST_END;
+
+RTEST (relf, load, RTEST_FAST)
+{
+  ruint8 buf[2048];
+  int i;
+
+  /* Both byte orders: the image is copied from the normalized file view. */
+  for (i = 0; i < 2; i++) {
+    ruint8 enc = (i == 0) ? R_ELF_DATA2LSB : R_ELF_DATA2MSB;
+    RElfParser * parser;
+    RElfImage * img;
+    ruint8 * base;
+    ruint64 * slot, bias;
+    rsize slot_off = 0, k;
+    rsize sz = build_min_load_elf64 (buf, enc, &slot_off);
+
+    r_assert_cmpptr ((parser = r_elf_parser_new_from_mem (buf, sz)), !=, NULL);
+    r_assert_cmpptr ((img = r_elf_parser_load (parser)), !=, NULL);
+
+    r_assert_cmpptr ((base = r_elf_image_get_mem (img)), !=, NULL);
+    r_assert_cmpuint (r_elf_image_get_size (img), ==, sz + 16);
+    bias = (ruint64)(ruintptr) base;        /* image is at vaddr-base 0 */
+    slot = (ruint64 *)(base + slot_off);
+
+    r_assert_cmpuint (slot[0], ==, bias + 0x1000);         /* RELATIVE */
+    r_assert_cmpuint (slot[1], ==, bias + slot_off + 0x2); /* X86_64_64 */
+    r_assert_cmpuint (slot[2], ==, bias + slot_off);       /* GLOB_DAT */
+    r_assert_cmpuint (slot[3], ==, bias + slot_off);       /* JMP_SLOT (plt) */
+    r_assert_cmpuint (slot[4], ==, 0);                     /* undef -> left 0 */
+    r_assert_cmpuint (slot[5], ==, bias);                  /* REL RELATIVE */
+
+    /* The bss tail (past the file image) is zeroed. */
+    for (k = sz; k < sz + 16; k++)
+      r_assert_cmpuint (base[k], ==, 0);
+
+    r_assert_cmpptr (r_elf_image_get_entry (img), ==, base + slot_off);
+    r_assert_cmpptr (r_elf_image_resolve (img, "datasym"), ==, base + slot_off);
+    r_assert_cmpptr (r_elf_image_resolve (img, "undefsym"), ==, NULL);
+    r_assert_cmpptr (r_elf_image_resolve (img, "nope"), ==, NULL);
+
+    r_assert_cmpptr (r_elf_image_ref (img), ==, img);
+    r_elf_image_unref (img);                /* drops the extra ref */
+    r_elf_image_unref (img);
+    r_elf_parser_unref (parser);
+  }
+}
+RTEST_END;
+
+RTEST (relf, load_malformed, RTEST_FAST)
+{
+  ruint8 buf[2048];
+  RElfParser * parser;
+  RElfImage * img;
+  rsize slot_off = 0;
+  rsize sz = build_min_load_elf64 (buf, R_ELF_DATA2LSB, &slot_off);
+
+  /* Shrink the PT_LOAD p_memsz below its p_filesz: the segment copy must be
+   * refused rather than overflow the (now tiny) image. */
+  r_store_le64 (buf + sizeof (RElf64EHdr) + 40, 8);
+
+  r_assert_cmpptr ((parser = r_elf_parser_new_from_mem (buf, sz)), !=, NULL);
+  img = r_elf_parser_load (parser);         /* must not overflow the heap */
+  if (img != NULL)
+    r_elf_image_unref (img);
+  r_elf_parser_unref (parser);
 }
 RTEST_END;
 
