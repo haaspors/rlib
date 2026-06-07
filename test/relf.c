@@ -162,6 +162,60 @@ build_min_elf64 (ruint8 * buf, ruint8 data)
   return cur;
 }
 
+/* Build a section-less ELF64 (core-dump style) whose only structure is a
+ * single PT_NOTE segment, in the byte order named by @p data.  Exercises the
+ * segment-note normalization path, where no NOTE section aliases the bytes. */
+static rsize
+build_min_note_elf64 (ruint8 * buf, ruint8 data)
+{
+  const rboolean be = (data == R_ELF_DATA2MSB);
+  static const rchar note_name[] = "CORE";   /* sizeof 5 -> 4-byte-padded to 8 */
+  static const ruint8 note_desc[] = { 0x01, 0x02, 0x03, 0x04 };
+  const rsize namepad = (sizeof (note_name) + 3) & ~(rsize)3;
+  const rsize descpad = (sizeof (note_desc) + 3) & ~(rsize)3;
+  const rsize note_sz = sizeof (RElf64NHdr) + namepad + descpad;
+  rsize off_ph, off_note, cur;
+  ruint8 * p;
+
+  cur = sizeof (RElf64EHdr);
+  off_ph = cur;     cur += sizeof (RElf64PHdr);
+  off_note = cur;   cur += note_sz;
+
+  r_memset (buf, 0, cur);
+
+  buf[R_ELF_IDX_MAG0] = R_ELF_MAG0; buf[R_ELF_IDX_MAG1] = R_ELF_MAG1;
+  buf[R_ELF_IDX_MAG2] = R_ELF_MAG2; buf[R_ELF_IDX_MAG3] = R_ELF_MAG3;
+  buf[R_ELF_IDX_CLASS] = R_ELF_CLASS64;
+  buf[R_ELF_IDX_DATA] = data;
+  buf[R_ELF_IDX_VERSION] = R_ELF_VER_CURRENT;
+  w16 (buf + 16, be, R_ELF_ETYPE_CORE);     /* type */
+  w16 (buf + 18, be, R_ELF_MACHINE_X86_64); /* machine */
+  w32 (buf + 20, be, R_ELF_VER_CURRENT);    /* version */
+  w64 (buf + 32, be, off_ph);               /* phoff */
+  w64 (buf + 40, be, 0);                    /* shoff (no sections) */
+  w16 (buf + 52, be, sizeof (RElf64EHdr));  /* ehsize */
+  w16 (buf + 54, be, sizeof (RElf64PHdr));  /* phentsize */
+  w16 (buf + 56, be, 1);                    /* phnum */
+  /* shentsize / shnum / shstrndx stay 0 */
+
+  p = buf + off_ph;
+  w32 (p +  0, be, R_ELF_PTYPE_NOTE);       /* type */
+  w32 (p +  4, be, R_ELF_PFLAGS_R);         /* flags */
+  w64 (p +  8, be, off_note);               /* offset */
+  w64 (p + 32, be, note_sz);                /* filesz */
+  w64 (p + 40, be, note_sz);                /* memsz */
+  w64 (p + 48, be, 4);                      /* align */
+
+  p = buf + off_note;
+  w32 (p + 0, be, sizeof (note_name));      /* namesz */
+  w32 (p + 4, be, sizeof (note_desc));      /* descsz */
+  w32 (p + 8, be, R_ELF_NTYPE_PRSTATUS);    /* type */
+  r_memcpy (p + 12, note_name, sizeof (note_name));
+  r_memcpy (p + 12 + namepad, note_desc, sizeof (note_desc));
+
+  return cur;
+}
+
 /* Assert the parser produced the known field values, regardless of the
  * source byte order. */
 static void
@@ -244,6 +298,42 @@ verify_min_elf64 (RElfParser * parser)
         !=, NULL);
     r_assert_cmpstr (r_elf_parser_symtbl64_sym64_get_name (parser, relsymtbl, sym),
         ==, "rfunc");
+  }
+
+  {
+    RElf64NHdr * nhdr;
+    ruint8 * desc;
+    rsize dsize = 0;
+
+    r_assert_cmpptr ((sh = r_elf_parser_find_shdr64_by_type (parser,
+          R_ELF_STYPE_NOTE)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_notetbl64_note_count (parser, sh), ==, 1);
+    r_assert_cmpptr (r_elf_parser_notetbl64_get_note (parser, sh, 1), ==, NULL);
+    r_assert_cmpptr ((nhdr = r_elf_parser_notetbl64_get_note (parser, sh, 0)),
+        !=, NULL);
+    r_assert_cmpuint (nhdr->namesz, ==, 4);
+    r_assert_cmpuint (nhdr->descsz, ==, 4);
+    r_assert_cmpuint (nhdr->type, ==, 1);
+    r_assert_cmpstr (r_elf_nhdr64_get_name (nhdr), ==, "GNU");
+    r_assert_cmpptr ((desc = r_elf_nhdr64_get_desc (nhdr, &dsize)),
+        !=, NULL);
+    r_assert_cmpuint (dsize, ==, 4);
+    r_assert_cmpuint (desc[0], ==, 0xde);
+    r_assert_cmpuint (desc[3], ==, 0xef);
+  }
+
+  /* The PT_NOTE segment aliases the .note.test section bytes; same note. */
+  {
+    RElf64PHdr * ph;
+    RElf64NHdr * nhdr;
+
+    r_assert_cmpptr ((ph = r_elf_parser_find_phdr64_by_type (parser,
+          R_ELF_PTYPE_NOTE)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_phdr64_note_count (parser, ph), ==, 1);
+    r_assert_cmpptr ((nhdr = r_elf_parser_phdr64_get_note (parser, ph, 0)),
+        !=, NULL);
+    r_assert_cmpuint (nhdr->type, ==, 1);
+    r_assert_cmpstr (r_elf_nhdr64_get_name (nhdr), ==, "GNU");
   }
 }
 
@@ -329,6 +419,83 @@ RTEST (relf, rel, RTEST_FAST)
   }
 
   r_elf_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (relf, note, RTEST_FAST)
+{
+  ruint8 buf[1024];
+  RElfParser * parser;
+  RElf64SHdr * sh, * text;
+  RElf64NHdr * nhdr;
+  rsize sz, dsize = 0;
+
+  sz = build_min_elf64 (buf, R_ELF_DATA2LSB);
+  r_assert_cmpptr ((parser = r_elf_parser_new_from_mem (buf, sz)), !=, NULL);
+
+  r_assert_cmpptr ((sh = r_elf_parser_find_shdr64_by_type (parser,
+        R_ELF_STYPE_NOTE)), !=, NULL);
+  r_assert_cmpstr (r_elf_parser_shdr64_get_name (parser, sh), ==, ".note.test");
+  r_assert_cmpuint (r_elf_parser_notetbl64_note_count (parser, sh), ==, 1);
+  r_assert_cmpptr ((nhdr = r_elf_parser_notetbl64_get_note (parser, sh, 0)),
+      !=, NULL);
+  r_assert_cmpstr (r_elf_nhdr64_get_name (nhdr), ==, "GNU");
+  r_assert_cmpptr (r_elf_nhdr64_get_desc (nhdr, &dsize), !=, NULL);
+  r_assert_cmpuint (dsize, ==, 4);
+
+  /* 32-bit accessors on a 64-bit ELF yield nothing. */
+  r_assert_cmpuint (r_elf_parser_notetbl32_note_count (parser,
+        (RElf32SHdr *) sh), ==, 0);
+  r_assert_cmpptr (r_elf_parser_notetbl32_get_note (parser,
+        (RElf32SHdr *) sh, 0), ==, NULL);
+
+  /* A non-NOTE section reports zero notes and no entry. */
+  r_assert_cmpptr ((text = r_elf_parser_find_shdr64 (parser, ".text", -1)),
+      !=, NULL);
+  r_assert_cmpuint (r_elf_parser_notetbl64_note_count (parser, text), ==, 0);
+  r_assert_cmpptr (r_elf_parser_notetbl64_get_note (parser, text, 0), ==, NULL);
+
+  /* NULL inputs are rejected. */
+  r_assert_cmpptr (r_elf_nhdr64_get_name (NULL), ==, NULL);
+  r_assert_cmpptr (r_elf_nhdr64_get_desc (NULL, &dsize), ==, NULL);
+  r_assert_cmpuint (dsize, ==, 0);
+
+  r_elf_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (relf, note_segment, RTEST_FAST)
+{
+  ruint8 buf[256];
+  int i;
+
+  /* A section-less image exposes its notes only via the PT_NOTE segment; run
+   * both byte orders so the segment-note normalization fallback is covered. */
+  for (i = 0; i < 2; i++) {
+    ruint8 enc = (i == 0) ? R_ELF_DATA2LSB : R_ELF_DATA2MSB;
+    RElfParser * parser;
+    RElf64PHdr * ph;
+    RElf64NHdr * nhdr;
+    ruint8 * desc;
+    rsize dsize = 0;
+    rsize sz = build_min_note_elf64 (buf, enc);
+
+    r_assert_cmpptr ((parser = r_elf_parser_new_from_mem (buf, sz)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_section_header_count (parser), ==, 0);
+    r_assert_cmpptr ((ph = r_elf_parser_find_phdr64_by_type (parser,
+          R_ELF_PTYPE_NOTE)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_phdr64_note_count (parser, ph), ==, 1);
+    r_assert_cmpptr ((nhdr = r_elf_parser_phdr64_get_note (parser, ph, 0)),
+        !=, NULL);
+    r_assert_cmpuint (nhdr->type, ==, R_ELF_NTYPE_PRSTATUS);
+    r_assert_cmpstr (r_elf_nhdr64_get_name (nhdr), ==, "CORE");
+    r_assert_cmpptr ((desc = r_elf_nhdr64_get_desc (nhdr, &dsize)), !=, NULL);
+    r_assert_cmpuint (dsize, ==, 4);
+    r_assert_cmpuint (desc[0], ==, 0x01);
+    r_assert_cmpuint (desc[3], ==, 0x04);
+
+    r_elf_parser_unref (parser);
+  }
 }
 RTEST_END;
 

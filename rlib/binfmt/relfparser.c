@@ -1587,3 +1587,175 @@ r_elf_parser_rel64_get_dst (RElfParser * parser,
 
   return NULL;
 }
+
+/* Notes form a packed stream within a NOTE section: each entry is an
+ * RElf*NHdr (identical for 32/64-bit) followed by the name (namesz bytes) and
+ * descriptor (descsz bytes), each padded to a 4-byte boundary. */
+#define R_ELF_NOTE_ALIGN(x)  (((x) + 3) & ~(rsize)3)
+
+/* Walk the note stream in [data, data+size).  With out_count != NULL, count
+ * all well-formed notes; otherwise return the @p want-th note or NULL. */
+static rpointer
+r_elf_note_walk (ruint8 * data, rsize size, rsize want, rsize * out_count)
+{
+  rsize off = 0, idx = 0;
+
+  while (off + sizeof (RElf32NHdr) <= size) {
+    RElf32NHdr * n = (RElf32NHdr *)(data + off);
+    rsize esz = sizeof (RElf32NHdr) +
+        R_ELF_NOTE_ALIGN ((rsize) n->namesz) + R_ELF_NOTE_ALIGN ((rsize) n->descsz);
+    if (esz < sizeof (RElf32NHdr) || off + esz > size)
+      break;                                /* truncated or overflow */
+    if (out_count == NULL && idx == want)
+      return n;
+    off += esz;
+    idx++;
+  }
+
+  if (out_count != NULL)
+    *out_count = idx;
+  return NULL;
+}
+
+ruint32
+r_elf_parser_notetbl32_note_count (RElfParser * parser, RElf32SHdr * shdr)
+{
+  rsize size, count = 0;
+  ruint8 * data;
+
+  if (parser != NULL && shdr != NULL && shdr->type == R_ELF_STYPE_NOTE &&
+      (data = r_elf_parser_shdr32_get_data (parser, shdr, &size)) != NULL)
+    r_elf_note_walk (data, size, 0, &count);
+
+  return (ruint32) count;
+}
+
+ruint64
+r_elf_parser_notetbl64_note_count (RElfParser * parser, RElf64SHdr * shdr)
+{
+  rsize size, count = 0;
+  ruint8 * data;
+
+  if (parser != NULL && shdr != NULL && shdr->type == R_ELF_STYPE_NOTE &&
+      (data = r_elf_parser_shdr64_get_data (parser, shdr, &size)) != NULL)
+    r_elf_note_walk (data, size, 0, &count);
+
+  return count;
+}
+
+RElf32NHdr *
+r_elf_parser_notetbl32_get_note (RElfParser * parser, RElf32SHdr * shdr, ruint32 idx)
+{
+  rsize size;
+  ruint8 * data;
+
+  if (parser != NULL && shdr != NULL && shdr->type == R_ELF_STYPE_NOTE &&
+      (data = r_elf_parser_shdr32_get_data (parser, shdr, &size)) != NULL)
+    return (RElf32NHdr *) r_elf_note_walk (data, size, idx, NULL);
+
+  return NULL;
+}
+
+RElf64NHdr *
+r_elf_parser_notetbl64_get_note (RElfParser * parser, RElf64SHdr * shdr, ruint64 idx)
+{
+  rsize size;
+  ruint8 * data;
+
+  if (parser != NULL && shdr != NULL && shdr->type == R_ELF_STYPE_NOTE &&
+      (data = r_elf_parser_shdr64_get_data (parser, shdr, &size)) != NULL)
+    return (RElf64NHdr *) r_elf_note_walk (data, size, idx, NULL);
+
+  return NULL;
+}
+
+/* The name and descriptor follow the note header, the descriptor at a 4-byte
+ * offset past the name.  A note obtained from get_note has already been
+ * validated to fit its container, so these derive directly from the header. */
+const rchar *
+r_elf_nhdr32_get_name (RElf32NHdr * nhdr)
+{
+  if (nhdr != NULL && nhdr->namesz > 0)
+    return (const rchar *)(nhdr + 1);
+  return NULL;
+}
+
+const rchar *
+r_elf_nhdr64_get_name (RElf64NHdr * nhdr)
+{
+  if (nhdr != NULL && nhdr->namesz > 0)
+    return (const rchar *)(nhdr + 1);
+  return NULL;
+}
+
+rpointer
+r_elf_nhdr32_get_desc (RElf32NHdr * nhdr, rsize * size)
+{
+  if (size != NULL)
+    *size = (nhdr != NULL) ? nhdr->descsz : 0;
+  if (nhdr == NULL || nhdr->descsz == 0)
+    return NULL;
+  return (ruint8 *)(nhdr + 1) + R_ELF_NOTE_ALIGN ((rsize) nhdr->namesz);
+}
+
+rpointer
+r_elf_nhdr64_get_desc (RElf64NHdr * nhdr, rsize * size)
+{
+  if (size != NULL)
+    *size = (nhdr != NULL) ? nhdr->descsz : 0;
+  if (nhdr == NULL || nhdr->descsz == 0)
+    return NULL;
+  return (ruint8 *)(nhdr + 1) + R_ELF_NOTE_ALIGN ((rsize) nhdr->namesz);
+}
+
+ruint32
+r_elf_parser_phdr32_note_count (RElfParser * parser, RElf32PHdr * phdr)
+{
+  rsize size, count = 0;
+  ruint8 * data;
+
+  if (parser != NULL && phdr != NULL && phdr->type == R_ELF_PTYPE_NOTE &&
+      (data = r_elf_parser_phdr32_get_data (parser, phdr, &size)) != NULL)
+    r_elf_note_walk (data, size, 0, &count);
+
+  return (ruint32) count;
+}
+
+ruint64
+r_elf_parser_phdr64_note_count (RElfParser * parser, RElf64PHdr * phdr)
+{
+  rsize size, count = 0;
+  ruint8 * data;
+
+  if (parser != NULL && phdr != NULL && phdr->type == R_ELF_PTYPE_NOTE &&
+      (data = r_elf_parser_phdr64_get_data (parser, phdr, &size)) != NULL)
+    r_elf_note_walk (data, size, 0, &count);
+
+  return count;
+}
+
+RElf32NHdr *
+r_elf_parser_phdr32_get_note (RElfParser * parser, RElf32PHdr * phdr, ruint32 idx)
+{
+  rsize size;
+  ruint8 * data;
+
+  if (parser != NULL && phdr != NULL && phdr->type == R_ELF_PTYPE_NOTE &&
+      (data = r_elf_parser_phdr32_get_data (parser, phdr, &size)) != NULL)
+    return (RElf32NHdr *) r_elf_note_walk (data, size, idx, NULL);
+
+  return NULL;
+}
+
+RElf64NHdr *
+r_elf_parser_phdr64_get_note (RElfParser * parser, RElf64PHdr * phdr, ruint64 idx)
+{
+  rsize size;
+  ruint8 * data;
+
+  if (parser != NULL && phdr != NULL && phdr->type == R_ELF_PTYPE_NOTE &&
+      (data = r_elf_parser_phdr64_get_data (parser, phdr, &size)) != NULL)
+    return (RElf64NHdr *) r_elf_note_walk (data, size, idx, NULL);
+
+  return NULL;
+}
