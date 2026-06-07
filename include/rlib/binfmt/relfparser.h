@@ -57,7 +57,6 @@
  * time, so all accessors below return native-order values regardless of the
  * file's e_ident[EI_DATA]. */
 /* FIXME: Go over ELF chapter 2 loading and dynamic linking */
-/*    * TODO: Add Note API */
 /*    * TODO: Add program loading and dynamic linking API? */
 
 
@@ -336,6 +335,42 @@ R_API RElf64Sym * r_elf_parser_rela64_get_sym (RElfParser * parser, RElf64SHdr *
 R_API ruint32 * r_elf_parser_rela32_get_dst (RElfParser * parser, RElf32SHdr * shdr, RElf32Rela * rela);
 /** @brief Pointer to the ELF64 location patched by a RELA entry. */
 R_API ruint64 * r_elf_parser_rela64_get_dst (RElfParser * parser, RElf64SHdr * shdr, RElf64Rela * rela);
+/* ELF Section Header / Program Header - note */
+/** @brief Number of note entries in an ELF32 NOTE section. */
+R_API ruint32 r_elf_parser_notetbl32_note_count (RElfParser * parser, RElf32SHdr * shdr);
+/** @brief Number of note entries in an ELF64 NOTE section. */
+R_API ruint64 r_elf_parser_notetbl64_note_count (RElfParser * parser, RElf64SHdr * shdr);
+/**
+ * @brief Note header at @p idx within an ELF32 NOTE section, or @c NULL.
+ *
+ * The entry's @c n_type identifies the payload; @ref r_elf_nhdr32_get_name
+ * and @ref r_elf_nhdr32_get_desc slice the name and descriptor that follow.
+ */
+R_API RElf32NHdr * r_elf_parser_notetbl32_get_note (RElfParser * parser, RElf32SHdr * shdr, ruint32 idx);
+/** @brief Note header at @p idx within an ELF64 NOTE section, or @c NULL. */
+R_API RElf64NHdr * r_elf_parser_notetbl64_get_note (RElfParser * parser, RElf64SHdr * shdr, ruint64 idx);
+/** @brief Number of note entries in an ELF32 PT_NOTE segment. */
+R_API ruint32 r_elf_parser_phdr32_note_count (RElfParser * parser, RElf32PHdr * phdr);
+/** @brief Number of note entries in an ELF64 PT_NOTE segment. */
+R_API ruint64 r_elf_parser_phdr64_note_count (RElfParser * parser, RElf64PHdr * phdr);
+/** @brief Note header at @p idx within an ELF32 PT_NOTE segment, or @c NULL. */
+R_API RElf32NHdr * r_elf_parser_phdr32_get_note (RElfParser * parser, RElf32PHdr * phdr, ruint32 idx);
+/** @brief Note header at @p idx within an ELF64 PT_NOTE segment, or @c NULL. */
+R_API RElf64NHdr * r_elf_parser_phdr64_get_note (RElfParser * parser, RElf64PHdr * phdr, ruint64 idx);
+/** @brief Name string of an ELF32 note (NUL-terminated), or @c NULL when empty. */
+R_API const rchar * r_elf_nhdr32_get_name (RElf32NHdr * nhdr);
+/** @brief Name string of an ELF64 note, or @c NULL when empty. */
+R_API const rchar * r_elf_nhdr64_get_name (RElf64NHdr * nhdr);
+/**
+ * @brief Descriptor payload of an ELF32 note.
+ * @param nhdr  The note header (as returned by a note accessor).
+ * @param size  Out: descriptor size in bytes. Pass @c NULL to discard.
+ * @return Pointer to the descriptor bytes, or @c NULL when empty.
+ */
+R_API rpointer r_elf_nhdr32_get_desc (RElf32NHdr * nhdr, rsize * size);
+/** @brief Descriptor payload of an ELF64 note. */
+R_API rpointer r_elf_nhdr64_get_desc (RElf64NHdr * nhdr, rsize * size);
+
 
 /** @} */
 
