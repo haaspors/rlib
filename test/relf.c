@@ -215,6 +215,23 @@ verify_min_elf64 (RElfParser * parser)
       !=, NULL);
   r_assert_cmpstr (r_elf_parser_symtbl64_sym64_get_name (parser, symtbl, sym),
       ==, "rfunc");
+
+  {
+    RElf64Rel * rel;
+    RElf64SHdr * relsymtbl = NULL;
+
+    r_assert_cmpptr ((sh = r_elf_parser_find_shdr64_by_type (parser,
+          R_ELF_STYPE_REL)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_reltbl64_rel_count (parser, sh), ==, 1);
+    r_assert_cmpptr ((rel = r_elf_parser_reltbl64_get_rel (parser, sh, 0)), !=, NULL);
+    r_assert_cmpuint (rel->offset, ==, 0x8);
+    r_assert_cmpuint (R_ELF64_RELINFO_SYM (rel->info), ==, 1);
+    r_assert_cmpuint (R_ELF64_RELINFO_TYPE (rel->info), ==, R_ELF_RELTYPE_X86_64_PC32);
+    r_assert_cmpptr ((sym = r_elf_parser_rel64_get_sym (parser, sh, rel, &relsymtbl)),
+        !=, NULL);
+    r_assert_cmpstr (r_elf_parser_symtbl64_sym64_get_name (parser, relsymtbl, sym),
+        ==, "rfunc");
+  }
 }
 
 RTEST (relf, endianness, RTEST_FAST)
@@ -246,6 +263,59 @@ RTEST (relf, endianness, RTEST_FAST)
 
   /* The caller's big-endian buffer must be left untouched (we copy). */
   r_assert_cmpint (r_memcmp (be, be_copy, sz_be), ==, 0);
+}
+RTEST_END;
+
+RTEST (relf, rel, RTEST_FAST)
+{
+  ruint8 buf[1024];
+  RElfParser * parser;
+  RElf64SHdr * sh;
+  RElf64Rel * rel;
+  rsize sz;
+
+  sz = build_min_elf64 (buf, R_ELF_DATA2LSB);
+  r_assert_cmpptr ((parser = r_elf_parser_new_from_mem (buf, sz)), !=, NULL);
+
+  /* 32-bit accessors return nothing on a 64-bit ELF. */
+  r_assert_cmpptr (r_elf_parser_find_shdr32_by_type (parser, R_ELF_STYPE_REL),
+      ==, NULL);
+
+  r_assert_cmpptr ((sh = r_elf_parser_find_shdr64_by_type (parser,
+        R_ELF_STYPE_REL)), !=, NULL);
+  r_assert_cmpstr (r_elf_parser_shdr64_get_name (parser, sh), ==, ".rel.text");
+  r_assert_cmpuint (sh->entsize, ==, sizeof (RElf64Rel));
+
+  r_assert_cmpuint (r_elf_parser_reltbl64_rel_count (parser, sh), ==, 1);
+  /* Out-of-range index must not return an entry. */
+  r_assert_cmpptr (r_elf_parser_reltbl64_get_rel (parser, sh, 1), ==, NULL);
+  r_assert_cmpptr ((rel = r_elf_parser_reltbl64_get_rel (parser, sh, 0)), !=, NULL);
+
+  r_assert_cmpuint (rel->offset, ==, 0x8);
+  r_assert_cmpuint (R_ELF64_RELINFO_SYM (rel->info), ==, 1);
+  r_assert_cmpuint (R_ELF64_RELINFO_TYPE (rel->info), ==, R_ELF_RELTYPE_X86_64_PC32);
+
+  /* dst points at the patched location in the linked (.text) section. */
+  r_assert_cmpptr (r_elf_parser_rel64_get_dst (parser, sh, rel), ==,
+      (ruint8 *)r_elf_parser_shdr64_get_data_by_idx (parser, sh->info, NULL)
+        + rel->offset);
+
+  /* The relocation section relocating .text (section index 1): both
+   * .rela.text and .rel.text target it; the first in section order wins. */
+  {
+    RElf64SHdr * rsh;
+    r_assert_cmpptr ((rsh = r_elf_parser_find_reloc_shdr64 (parser, 1)), !=, NULL);
+    r_assert_cmpuint (rsh->info, ==, 1);
+    r_assert_cmpstr (r_elf_parser_shdr64_get_name (parser, rsh), ==, ".rela.text");
+
+    /* A section nothing relocates, the UNDEF index, and a wrong-class lookup
+     * all return NULL. */
+    r_assert_cmpptr (r_elf_parser_find_reloc_shdr64 (parser, 2), ==, NULL);
+    r_assert_cmpptr (r_elf_parser_find_reloc_shdr64 (parser, 0), ==, NULL);
+    r_assert_cmpptr (r_elf_parser_find_reloc_shdr32 (parser, 1), ==, NULL);
+  }
+
+  r_elf_parser_unref (parser);
 }
 RTEST_END;
 
