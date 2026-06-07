@@ -31,9 +31,22 @@ struct RElfParser {
   rauint refcount;
   RMemFile * file;
   rpointer mem;
+  rboolean owns_mem;
   rsize size;
   int elfidx;
 };
+
+/* TRUE when the ELF's e_ident[EI_DATA] byte order differs from the host, so
+ * multi-byte fields must be swapped before they can be read natively. */
+static rboolean
+r_elf_data_needs_swap (ruint8 data)
+{
+#if R_BYTE_ORDER == R_BIG_ENDIAN
+  return data == R_ELF_DATA2LSB;
+#else
+  return data == R_ELF_DATA2MSB;
+#endif
+}
 
 rsize
 r_elf_calc_size (rpointer mem)
@@ -41,21 +54,38 @@ r_elf_calc_size (rpointer mem)
   ruint8 * ident = mem;
   if (ident[R_ELF_IDX_MAG0] == R_ELF_MAG0 && ident[R_ELF_IDX_MAG1] == R_ELF_MAG1 &&
       ident[R_ELF_IDX_MAG2] == R_ELF_MAG2 && ident[R_ELF_IDX_MAG3] == R_ELF_MAG3) {
+    rboolean swap = r_elf_data_needs_swap (ident[R_ELF_IDX_DATA]);
     rsize phend, shend;
 
     switch (ident[R_ELF_IDX_CLASS]) {
       case R_ELF_CLASS32:
         {
           RElf32EHdr * hdr = mem;
-          phend = hdr->phoff + hdr->phentsize * hdr->phnum;
-          shend = hdr->shoff + hdr->shentsize * hdr->shnum;
+          ruint32 phoff = hdr->phoff, shoff = hdr->shoff;
+          ruint16 phentsize = hdr->phentsize, phnum = hdr->phnum;
+          ruint16 shentsize = hdr->shentsize, shnum = hdr->shnum;
+          if (swap) {
+            phoff = RUINT32_BSWAP (phoff); shoff = RUINT32_BSWAP (shoff);
+            phentsize = RUINT16_BSWAP (phentsize); phnum = RUINT16_BSWAP (phnum);
+            shentsize = RUINT16_BSWAP (shentsize); shnum = RUINT16_BSWAP (shnum);
+          }
+          phend = phoff + (rsize)phentsize * phnum;
+          shend = shoff + (rsize)shentsize * shnum;
         }
         break;
       case R_ELF_CLASS64:
         {
           RElf64EHdr * hdr = mem;
-          phend = hdr->phoff + hdr->phentsize * hdr->phnum;
-          shend = hdr->shoff + hdr->shentsize * hdr->shnum;
+          ruint64 phoff = hdr->phoff, shoff = hdr->shoff;
+          ruint16 phentsize = hdr->phentsize, phnum = hdr->phnum;
+          ruint16 shentsize = hdr->shentsize, shnum = hdr->shnum;
+          if (swap) {
+            phoff = RUINT64_BSWAP (phoff); shoff = RUINT64_BSWAP (shoff);
+            phentsize = RUINT16_BSWAP (phentsize); phnum = RUINT16_BSWAP (phnum);
+            shentsize = RUINT16_BSWAP (shentsize); shnum = RUINT16_BSWAP (shnum);
+          }
+          phend = phoff + (rsize)phentsize * phnum;
+          shend = shoff + (rsize)shentsize * shnum;
         }
         break;
       case R_ELF_CLASSNONE:
@@ -129,6 +159,394 @@ _check_elf_header (rpointer mem, rsize size)
   return -1;
 }
 
+/* In-place byte-order swap of each multi-byte field of the fixed-layout ELF
+ * structures.  The 1-byte fields (ident[], st_info, st_other) are left as-is.
+ * Only called for non-native ELFs, on a private copy. */
+static void
+r_elf_swap_ehdr32 (RElf32EHdr * h)
+{
+  h->type      = RUINT16_BSWAP (h->type);
+  h->machine   = RUINT16_BSWAP (h->machine);
+  h->version   = RUINT32_BSWAP (h->version);
+  h->entry     = RUINT32_BSWAP (h->entry);
+  h->phoff     = RUINT32_BSWAP (h->phoff);
+  h->shoff     = RUINT32_BSWAP (h->shoff);
+  h->flags     = RUINT32_BSWAP (h->flags);
+  h->ehsize    = RUINT16_BSWAP (h->ehsize);
+  h->phentsize = RUINT16_BSWAP (h->phentsize);
+  h->phnum     = RUINT16_BSWAP (h->phnum);
+  h->shentsize = RUINT16_BSWAP (h->shentsize);
+  h->shnum     = RUINT16_BSWAP (h->shnum);
+  h->shstrndx  = RUINT16_BSWAP (h->shstrndx);
+}
+
+static void
+r_elf_swap_ehdr64 (RElf64EHdr * h)
+{
+  h->type      = RUINT16_BSWAP (h->type);
+  h->machine   = RUINT16_BSWAP (h->machine);
+  h->version   = RUINT32_BSWAP (h->version);
+  h->entry     = RUINT64_BSWAP (h->entry);
+  h->phoff     = RUINT64_BSWAP (h->phoff);
+  h->shoff     = RUINT64_BSWAP (h->shoff);
+  h->flags     = RUINT32_BSWAP (h->flags);
+  h->ehsize    = RUINT16_BSWAP (h->ehsize);
+  h->phentsize = RUINT16_BSWAP (h->phentsize);
+  h->phnum     = RUINT16_BSWAP (h->phnum);
+  h->shentsize = RUINT16_BSWAP (h->shentsize);
+  h->shnum     = RUINT16_BSWAP (h->shnum);
+  h->shstrndx  = RUINT16_BSWAP (h->shstrndx);
+}
+
+static void
+r_elf_swap_phdr32 (RElf32PHdr * h)
+{
+  h->type   = RUINT32_BSWAP (h->type);
+  h->offset = RUINT32_BSWAP (h->offset);
+  h->vaddr  = RUINT32_BSWAP (h->vaddr);
+  h->paddr  = RUINT32_BSWAP (h->paddr);
+  h->filesz = RUINT32_BSWAP (h->filesz);
+  h->memsz  = RUINT32_BSWAP (h->memsz);
+  h->flags  = RUINT32_BSWAP (h->flags);
+  h->align  = RUINT32_BSWAP (h->align);
+}
+
+static void
+r_elf_swap_phdr64 (RElf64PHdr * h)
+{
+  h->type   = RUINT32_BSWAP (h->type);
+  h->flags  = RUINT32_BSWAP (h->flags);
+  h->offset = RUINT64_BSWAP (h->offset);
+  h->vaddr  = RUINT64_BSWAP (h->vaddr);
+  h->paddr  = RUINT64_BSWAP (h->paddr);
+  h->filesz = RUINT64_BSWAP (h->filesz);
+  h->memsz  = RUINT64_BSWAP (h->memsz);
+  h->align  = RUINT64_BSWAP (h->align);
+}
+
+static void
+r_elf_swap_shdr32 (RElf32SHdr * h)
+{
+  h->name      = RUINT32_BSWAP (h->name);
+  h->type      = RUINT32_BSWAP (h->type);
+  h->flags     = RUINT32_BSWAP (h->flags);
+  h->addr      = RUINT32_BSWAP (h->addr);
+  h->offset    = RUINT32_BSWAP (h->offset);
+  h->size      = RUINT32_BSWAP (h->size);
+  h->link      = RUINT32_BSWAP (h->link);
+  h->info      = RUINT32_BSWAP (h->info);
+  h->addralign = RUINT32_BSWAP (h->addralign);
+  h->entsize   = RUINT32_BSWAP (h->entsize);
+}
+
+static void
+r_elf_swap_shdr64 (RElf64SHdr * h)
+{
+  h->name      = RUINT32_BSWAP (h->name);
+  h->type      = RUINT32_BSWAP (h->type);
+  h->flags     = RUINT64_BSWAP (h->flags);
+  h->addr      = RUINT64_BSWAP (h->addr);
+  h->offset    = RUINT64_BSWAP (h->offset);
+  h->size      = RUINT64_BSWAP (h->size);
+  h->link      = RUINT32_BSWAP (h->link);
+  h->info      = RUINT32_BSWAP (h->info);
+  h->addralign = RUINT64_BSWAP (h->addralign);
+  h->entsize   = RUINT64_BSWAP (h->entsize);
+}
+
+static void
+r_elf_swap_sym32 (RElf32Sym * s)
+{
+  s->name  = RUINT32_BSWAP (s->name);
+  s->value = RUINT32_BSWAP (s->value);
+  s->size  = RUINT32_BSWAP (s->size);
+  s->shndx = RUINT16_BSWAP (s->shndx);
+}
+
+static void
+r_elf_swap_sym64 (RElf64Sym * s)
+{
+  s->name  = RUINT32_BSWAP (s->name);
+  s->shndx = RUINT16_BSWAP (s->shndx);
+  s->value = RUINT64_BSWAP (s->value);
+  s->size  = RUINT64_BSWAP (s->size);
+}
+
+static void
+r_elf_swap_rel32 (RElf32Rel * r)
+{
+  r->offset = RUINT32_BSWAP (r->offset);
+  r->info   = RUINT32_BSWAP (r->info);
+}
+
+static void
+r_elf_swap_rel64 (RElf64Rel * r)
+{
+  r->offset = RUINT64_BSWAP (r->offset);
+  r->info   = RUINT64_BSWAP (r->info);
+}
+
+static void
+r_elf_swap_rela32 (RElf32Rela * r)
+{
+  r->offset = RUINT32_BSWAP (r->offset);
+  r->info   = RUINT32_BSWAP (r->info);
+  r->addend = (rint32) RUINT32_BSWAP ((ruint32) r->addend);
+}
+
+static void
+r_elf_swap_rela64 (RElf64Rela * r)
+{
+  r->offset = RUINT64_BSWAP (r->offset);
+  r->info   = RUINT64_BSWAP (r->info);
+  r->addend = (rint64) RUINT64_BSWAP ((ruint64) r->addend);
+}
+
+static void
+r_elf_swap_dyn32 (RElf32Dyn * d)
+{
+  d->tag    = (rint32) RUINT32_BSWAP ((ruint32) d->tag);
+  d->un.val = (rint32) RUINT32_BSWAP ((ruint32) d->un.val);
+}
+
+static void
+r_elf_swap_dyn64 (RElf64Dyn * d)
+{
+  d->tag    = (rint64) RUINT64_BSWAP ((ruint64) d->tag);
+  d->un.val = (rint64) RUINT64_BSWAP ((ruint64) d->un.val);
+}
+
+/* Swap the multi-byte header fields (namesz/descsz/type) of every note in a
+ * NOTE section's packed stream; the name/descriptor payloads are opaque bytes.
+ * Each field is swapped before its swapped value is used to advance, so the
+ * walk stays correct.  The Nhdr layout is identical for 32- and 64-bit. */
+static void
+r_elf_normalize_notes (ruint8 * data, rsize size)
+{
+  rsize off = 0;
+
+  while (off + sizeof (RElf32NHdr) <= size) {
+    RElf32NHdr * n = (RElf32NHdr *)(data + off);
+    rsize esz;
+    n->namesz = RUINT32_BSWAP (n->namesz);
+    n->descsz = RUINT32_BSWAP (n->descsz);
+    n->type   = RUINT32_BSWAP (n->type);
+    esz = sizeof (RElf32NHdr) +
+        (((rsize) n->namesz + 3) & ~(rsize)3) +
+        (((rsize) n->descsz + 3) & ~(rsize)3);
+    if (esz < sizeof (RElf32NHdr) || off + esz > size)
+      break;
+    off += esz;
+  }
+}
+
+/* Swap the per-entry contents of a section that holds fixed-layout entries
+ * (symbol / relocation tables) or a note stream.  Opaque sections (PROGBITS,
+ * STRTAB, ...) are left untouched.  The section header is already host order. */
+static void
+r_elf_normalize_section32 (ruint8 * base, rsize size, RElf32SHdr * sh)
+{
+  rsize off = sh->offset, sz = sh->size, es = sh->entsize, i, n;
+
+  if (off > size || size - off < sz)
+    return;
+
+  if (sh->type == R_ELF_STYPE_NOTE) {
+    r_elf_normalize_notes (base + off, sz);
+    return;
+  }
+
+  if (es == 0)
+    return;
+  n = sz / es;
+
+  switch (sh->type) {
+    case R_ELF_STYPE_SYMTAB:
+    case R_ELF_STYPE_DYNSYM:
+      for (i = 0; i < n; i++)
+        r_elf_swap_sym32 ((RElf32Sym *)(base + off + i * es));
+      break;
+    case R_ELF_STYPE_REL:
+      for (i = 0; i < n; i++)
+        r_elf_swap_rel32 ((RElf32Rel *)(base + off + i * es));
+      break;
+    case R_ELF_STYPE_RELA:
+      for (i = 0; i < n; i++)
+        r_elf_swap_rela32 ((RElf32Rela *)(base + off + i * es));
+      break;
+    case R_ELF_STYPE_DYNAMIC:
+      for (i = 0; i < n; i++)
+        r_elf_swap_dyn32 ((RElf32Dyn *)(base + off + i * es));
+      break;
+    default:
+      break;
+  }
+}
+
+static void
+r_elf_normalize_section64 (ruint8 * base, rsize size, RElf64SHdr * sh)
+{
+  rsize off = sh->offset, sz = sh->size, es = sh->entsize, i, n;
+
+  if (off > size || size - off < sz)
+    return;
+
+  if (sh->type == R_ELF_STYPE_NOTE) {
+    r_elf_normalize_notes (base + off, sz);
+    return;
+  }
+
+  if (es == 0)
+    return;
+  n = sz / es;
+
+  switch (sh->type) {
+    case R_ELF_STYPE_SYMTAB:
+    case R_ELF_STYPE_DYNSYM:
+      for (i = 0; i < n; i++)
+        r_elf_swap_sym64 ((RElf64Sym *)(base + off + i * es));
+      break;
+    case R_ELF_STYPE_REL:
+      for (i = 0; i < n; i++)
+        r_elf_swap_rel64 ((RElf64Rel *)(base + off + i * es));
+      break;
+    case R_ELF_STYPE_RELA:
+      for (i = 0; i < n; i++)
+        r_elf_swap_rela64 ((RElf64Rela *)(base + off + i * es));
+      break;
+    case R_ELF_STYPE_DYNAMIC:
+      for (i = 0; i < n; i++)
+        r_elf_swap_dyn64 ((RElf64Dyn *)(base + off + i * es));
+      break;
+    default:
+      break;
+  }
+}
+
+static void
+r_elf_normalize_tables32 (ruint8 * base, rsize size)
+{
+  RElf32EHdr * eh = (RElf32EHdr *) base;
+  ruint16 i;
+
+  for (i = 0; i < eh->phnum; i++)
+    r_elf_swap_phdr32 ((RElf32PHdr *)(base + eh->phoff + (rsize)i * eh->phentsize));
+
+  for (i = 0; i < eh->shnum; i++) {
+    RElf32SHdr * sh = (RElf32SHdr *)(base + eh->shoff + (rsize)i * eh->shentsize);
+    r_elf_swap_shdr32 (sh);
+    r_elf_normalize_section32 (base, size, sh);
+  }
+
+  /* A section-less image (e.g. a core dump) carries notes only in PT_NOTE
+   * segments; with sections present, those bytes alias a NOTE section already
+   * normalized above, so only swap segment notes when there are no sections. */
+  if (eh->shnum == 0) {
+    for (i = 0; i < eh->phnum; i++) {
+      RElf32PHdr * ph = (RElf32PHdr *)(base + eh->phoff + (rsize)i * eh->phentsize);
+      if (ph->type == R_ELF_PTYPE_NOTE && ph->offset <= size &&
+          size - ph->offset >= ph->filesz)
+        r_elf_normalize_notes (base + ph->offset, ph->filesz);
+    }
+  }
+}
+
+static void
+r_elf_normalize_tables64 (ruint8 * base, rsize size)
+{
+  RElf64EHdr * eh = (RElf64EHdr *) base;
+  ruint16 i;
+
+  for (i = 0; i < eh->phnum; i++)
+    r_elf_swap_phdr64 ((RElf64PHdr *)(base + eh->phoff + (rsize)i * eh->phentsize));
+
+  for (i = 0; i < eh->shnum; i++) {
+    RElf64SHdr * sh = (RElf64SHdr *)(base + eh->shoff + (rsize)i * eh->shentsize);
+    r_elf_swap_shdr64 (sh);
+    r_elf_normalize_section64 (base, size, sh);
+  }
+
+  /* A section-less image (e.g. a core dump) carries notes only in PT_NOTE
+   * segments; with sections present, those bytes alias a NOTE section already
+   * normalized above, so only swap segment notes when there are no sections. */
+  if (eh->shnum == 0) {
+    for (i = 0; i < eh->phnum; i++) {
+      RElf64PHdr * ph = (RElf64PHdr *)(base + eh->phoff + (rsize)i * eh->phentsize);
+      if (ph->type == R_ELF_PTYPE_NOTE && ph->offset <= size &&
+          size - ph->offset >= ph->filesz)
+        r_elf_normalize_notes (base + ph->offset, ph->filesz);
+    }
+  }
+}
+
+/* Swap a non-native ELF (already copied to private memory) to host order:
+ * header first, then validate, then the program/section tables and the
+ * fixed-layout entries they describe.  Returns the elf index or -1. */
+static int
+r_elf_normalize_copy (rpointer mem, rsize size)
+{
+  ruint8 * ident = mem;
+  int elfidx;
+
+  switch (ident[R_ELF_IDX_CLASS]) {
+    case R_ELF_CLASS32:
+      r_elf_swap_ehdr32 (mem);
+      break;
+    case R_ELF_CLASS64:
+      r_elf_swap_ehdr64 (mem);
+      break;
+    default:
+      return -1;
+  }
+
+  if ((elfidx = _check_elf_header (mem, size)) < 0)
+    return -1;
+
+  if (elfidx == RELF32_IDX)
+    r_elf_normalize_tables32 (mem, size);
+  else
+    r_elf_normalize_tables64 (mem, size);
+
+  return elfidx;
+}
+
+/* Validate the ELF at @mem and pick the memory the parser should read from.
+ * Native-endianness ELFs are used in place (no copy); non-native ones are
+ * copied to private, owned memory normalized to host order. */
+static int
+r_elf_parser_prepare (rpointer mem, rsize size, rpointer * out_mem,
+    rboolean * out_owns)
+{
+  ruint8 * ident = mem;
+
+  *out_mem = mem;
+  *out_owns = FALSE;
+
+  if (size < R_ELF_NIDENT || mem == NULL)
+    return -1;
+  if (!(ident[R_ELF_IDX_MAG0] == R_ELF_MAG0 && ident[R_ELF_IDX_MAG1] == R_ELF_MAG1 &&
+        ident[R_ELF_IDX_MAG2] == R_ELF_MAG2 && ident[R_ELF_IDX_MAG3] == R_ELF_MAG3))
+    return -1;
+
+  if (!r_elf_data_needs_swap (ident[R_ELF_IDX_DATA]))
+    return _check_elf_header (mem, size);
+
+  {
+    rpointer copy = r_memdup (mem, size);
+    int elfidx;
+
+    if (R_UNLIKELY (copy == NULL))
+      return -1;
+    if ((elfidx = r_elf_normalize_copy (copy, size)) < 0) {
+      r_free (copy);
+      return -1;
+    }
+    *out_mem = copy;
+    *out_owns = TRUE;
+    return elfidx;
+  }
+}
+
 static RElfParser *
 r_elf_parser_new_from_mem_file (RMemFile * file)
 {
@@ -138,14 +556,19 @@ r_elf_parser_new_from_mem_file (RMemFile * file)
   if (file != NULL) {
     rpointer mem = r_mem_file_get_mem (file);
     rsize size = r_mem_file_get_size (file);
+    rpointer pmem;
+    rboolean owns;
 
-    if ((elfidx = _check_elf_header (mem, size)) >= 0) {
+    if ((elfidx = r_elf_parser_prepare (mem, size, &pmem, &owns)) >= 0) {
       if (R_LIKELY (ret = r_mem_new (RElfParser))) {
         r_atomic_uint_store (&ret->refcount, 1);
-        ret->file = r_mem_file_ref (file);
-        ret->mem = mem;
+        ret->file = owns ? NULL : r_mem_file_ref (file);
+        ret->mem = pmem;
+        ret->owns_mem = owns;
         ret->size = size;
         ret->elfidx = elfidx;
+      } else if (owns) {
+        r_free (pmem);
       }
     }
   }
@@ -188,14 +611,19 @@ r_elf_parser_new_from_mem (rpointer mem, rsize size)
 {
   RElfParser * ret = NULL;
   int elfidx;
+  rpointer pmem;
+  rboolean owns;
 
-  if ((elfidx = _check_elf_header (mem, size)) >= 0) {
+  if ((elfidx = r_elf_parser_prepare (mem, size, &pmem, &owns)) >= 0) {
     if (R_LIKELY (ret = r_mem_new (RElfParser))) {
       r_atomic_uint_store (&ret->refcount, 1);
       ret->file = NULL;
-      ret->mem = mem;
+      ret->mem = pmem;
+      ret->owns_mem = owns;
       ret->size = size;
       ret->elfidx = elfidx;
+    } else if (owns) {
+      r_free (pmem);
     }
   }
 
@@ -205,6 +633,8 @@ r_elf_parser_new_from_mem (rpointer mem, rsize size)
 static void
 r_elf_parser_free (RElfParser * parser)
 {
+  if (parser->owns_mem)
+    r_free (parser->mem);
   if (parser->file != NULL)
     r_mem_file_unref (parser->file);
   r_free (parser);
