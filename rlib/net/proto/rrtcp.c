@@ -19,6 +19,8 @@
 #include "config.h"
 #include <rlib/net/proto/rrtp.h>
 
+#include <rlib/rstr.h>
+
 #define R_RTCP_MINSIZE                (2 * sizeof (ruint32))
 #define r_rtcp_packet_end(packet) (((const ruint8 *)packet) + r_rtcp_packet_get_length (packet))
 
@@ -557,6 +559,74 @@ r_rtcp_buffer_add_sdes (RBuffer * buf, ruint32 ssrc,
   /* The trailing bytes (terminator + padding) are already zero. */
 
   res = r_rtcp_append (buf, R_RTCP_PT_SDES, 1, body, bodylen);
+  r_free (body);
+  return res;
+}
+
+rboolean
+r_rtcp_buffer_add_bye (RBuffer * buf, const ruint32 * ssrcs, ruint8 nssrc,
+    const rchar * reason)
+{
+  ruint8 * body;
+  rsize bodylen, rlen = 0, off;
+  rboolean res;
+  ruint8 i;
+
+  if (R_UNLIKELY (buf == NULL || nssrc > 0x1f))
+    return FALSE;
+  if (R_UNLIKELY (nssrc > 0 && ssrcs == NULL))
+    return FALSE;
+  if (reason != NULL) {
+    rlen = r_strlen (reason);
+    if (R_UNLIKELY (rlen > 0xff))
+      return FALSE;
+  }
+
+  bodylen = (rsize)nssrc * sizeof (ruint32);
+  if (reason != NULL)               /* length octet + text, padded to 32 bits */
+    bodylen += ((1 + rlen) + 3) & ~(rsize)3;
+  if (R_UNLIKELY ((body = r_malloc0 (bodylen)) == NULL))
+    return FALSE;
+
+  for (i = 0; i < nssrc; i++)
+    r_store_be32 (&body[(rsize)i * sizeof (ruint32)], ssrcs[i]);
+  if (reason != NULL) {
+    off = (rsize)nssrc * sizeof (ruint32);
+    body[off++] = (ruint8) rlen;
+    if (rlen > 0)
+      r_memcpy (&body[off], reason, rlen);
+  }
+
+  res = r_rtcp_append (buf, R_RTCP_PT_BYE, nssrc, body, bodylen);
+  r_free (body);
+  return res;
+}
+
+rboolean
+r_rtcp_buffer_add_app (RBuffer * buf, ruint8 subtype, ruint32 ssrc,
+    const rchar name[4], const ruint8 * data, ruint16 size)
+{
+  ruint8 * body;
+  rsize bodylen;
+  rboolean res;
+
+  if (R_UNLIKELY (buf == NULL || subtype > 0x1f || name == NULL))
+    return FALSE;
+  if (R_UNLIKELY ((size & 0x3) != 0))   /* application data is 32-bit aligned */
+    return FALSE;
+  if (R_UNLIKELY (size > 0 && data == NULL))
+    return FALSE;
+
+  bodylen = 2 * sizeof (ruint32) + size;   /* ssrc + 4-octet name + data */
+  if (R_UNLIKELY ((body = r_malloc0 (bodylen)) == NULL))
+    return FALSE;
+
+  r_store_be32 (&body[0], ssrc);
+  r_memcpy (&body[sizeof (ruint32)], name, 4);
+  if (size > 0)
+    r_memcpy (&body[2 * sizeof (ruint32)], data, size);
+
+  res = r_rtcp_append (buf, R_RTCP_PT_APP, subtype, body, bodylen);
   r_free (body);
   return res;
 }

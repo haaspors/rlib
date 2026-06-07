@@ -348,6 +348,26 @@ R_API rboolean r_rtcp_buffer_add_rr (RBuffer * buf, ruint32 ssrc, const RRTCPRep
  * Builds one chunk (source count 1); call again to describe further sources.
  */
 R_API rboolean r_rtcp_buffer_add_sdes (RBuffer * buf, ruint32 ssrc, const RRTCPSDESItem * items, ruint8 nitems);
+/**
+ * @brief Append a BYE packet.
+ * @param buf     Compound RTCP buffer to append to.
+ * @param ssrcs   Array of @p nssrc leaving SSRCs.
+ * @param nssrc   Number of SSRCs (0..31).
+ * @param reason  Optional NUL-terminated reason-for-leaving (<= 255 bytes), or @c NULL.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_rtcp_buffer_add_bye (RBuffer * buf, const ruint32 * ssrcs, ruint8 nssrc, const rchar * reason);
+/**
+ * @brief Append an APP (application-defined) packet.
+ * @param buf      Compound RTCP buffer to append to.
+ * @param subtype  Application subtype (0..31).
+ * @param ssrc     SSRC/CSRC of the source.
+ * @param name     4-octet application name.
+ * @param data     Application data (@p size bytes), or @c NULL.
+ * @param size     Application data size; must be a multiple of 4.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_rtcp_buffer_add_app (RBuffer * buf, ruint8 subtype, ruint32 ssrc, const rchar name[4], const ruint8 * data, ruint16 size);
 
 /** @brief Map @p buf into @p rtcp for packet iteration. */
 R_API rboolean r_rtcp_buffer_map (RRTCPBuffer * rtcp, RBuffer * buf, RMemMapFlags flags);

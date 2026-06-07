@@ -52,6 +52,73 @@ RTEST (rrtp, is_valid_hdr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcp, bye_no_reason_wire, RTEST_FAST)
+{
+  /* BYE with a single SSRC and no reason string. */
+  static const ruint8 golden[] = {
+    0x81, 0xcb, 0x00, 0x01,                          /* V2 SC1, PT=BYE, len=1 */
+    0x11, 0x11, 0x11, 0x11                           /* ssrc */
+  };
+  ruint32 ssrcs[1] = { 0x11111111 };
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  ruint8 rlen = 0xaa;
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_bye (buf, ssrcs, 1, NULL));
+  r_assert_cmpbufmem (buf, 0, -1, ==, golden, sizeof (golden));
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (golden, sizeof (golden))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_BYE);
+  r_assert_cmpuint (r_rtcp_packet_bye_get_ssrc_count (pkt), ==, 1);
+  r_assert_cmphex (r_rtcp_packet_bye_get_ssrc (pkt, 0), ==, 0x11111111);
+  /* no reason present */
+  r_assert_cmpint (r_rtcp_packet_bye_get_reason (pkt, NULL, 0, &rlen), ==, R_RTCP_PARSE_ZERO);
+  r_assert_cmpuint (rlen, ==, 0);
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtcp, app_wire, RTEST_FAST)
+{
+  static const ruint8 golden[] = {
+    0x83, 0xcc, 0x00, 0x04,                          /* V2 subtype=3, PT=APP, len=4 */
+    0x33, 0x33, 0x33, 0x33,                          /* ssrc */
+    0x50, 0x49, 0x4e, 0x47,                          /* "PING" */
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08   /* data */
+  };
+  static const ruint8 appdata[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  const ruint8 * adata;
+  ruint16 asize = 0;
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_app (buf, 3, 0x33333333, "PING", appdata, sizeof (appdata)));
+  r_assert_cmpbufmem (buf, 0, -1, ==, golden, sizeof (golden));
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (golden, sizeof (golden))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_APP);
+  r_assert_cmpuint (r_rtcp_packet_get_count (pkt), ==, 3);
+  r_assert_cmphex (r_rtcp_packet_app_get_ssrc (pkt), ==, 0x33333333);
+  r_assert_cmpmem (r_rtcp_packet_app_get_name (pkt), ==, "PING", 4);
+  r_assert_cmpptr ((adata = r_rtcp_packet_app_get_data (pkt, &asize)), !=, NULL);
+  r_assert_cmpuint (asize, ==, sizeof (appdata));
+  r_assert_cmpmem (adata, ==, appdata, sizeof (appdata));
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtcp, sdes_two_items_wire, RTEST_FAST)
 {
   /* SDES chunk with two items (CNAME + TOOL). */
@@ -755,6 +822,51 @@ RTEST (rrtcp, write_sdes, RTEST_FAST)
   /* the list terminates */
   r_assert_cmpint (r_rtcp_packet_sdes_chunk_get_next_item (pkt, chunk, &item),
       ==, R_RTCP_PARSE_ZERO);
+
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtcp, write_bye_app, RTEST_FAST)
+{
+  /* Build a BYE (with reason) + APP compound and read it back. */
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  ruint32 ssrcs[2] = { 0x11111111, 0x22222222 };
+  static const rchar reason[] = "bye now";
+  static const ruint8 appdata[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+  rchar rbuf[32];
+  ruint8 rlen = 0;
+  const ruint8 * adata;
+  ruint16 asize = 0;
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_bye (buf, ssrcs, 2, reason));
+  r_assert (r_rtcp_buffer_add_app (buf, 3, 0x33333333, "PING", appdata, sizeof (appdata)));
+
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 2);
+
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_BYE);
+  r_assert_cmpuint (r_rtcp_packet_bye_get_ssrc_count (pkt), ==, 2);
+  r_assert_cmphex (r_rtcp_packet_bye_get_ssrc (pkt, 0), ==, 0x11111111);
+  r_assert_cmphex (r_rtcp_packet_bye_get_ssrc (pkt, 1), ==, 0x22222222);
+  r_assert_cmpint (r_rtcp_packet_bye_get_reason (pkt, rbuf, sizeof (rbuf), &rlen),
+      ==, R_RTCP_PARSE_OK);
+  r_assert_cmpuint (rlen, ==, sizeof (reason) - 1);
+  r_assert_cmpstr (rbuf, ==, reason);
+
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, pkt)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_APP);
+  r_assert_cmpuint (r_rtcp_packet_get_count (pkt), ==, 3);   /* subtype */
+  r_assert_cmphex (r_rtcp_packet_app_get_ssrc (pkt), ==, 0x33333333);
+  r_assert_cmpmem (r_rtcp_packet_app_get_name (pkt), ==, "PING", 4);
+  r_assert_cmpptr ((adata = r_rtcp_packet_app_get_data (pkt, &asize)), !=, NULL);
+  r_assert_cmpuint (asize, ==, sizeof (appdata));
+  r_assert_cmpmem (adata, ==, appdata, sizeof (appdata));
 
   r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
   r_buffer_unref (buf);
