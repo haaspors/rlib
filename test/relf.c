@@ -450,6 +450,145 @@ build_min_load_elf64 (ruint8 * buf, ruint8 data, rsize * slot_off)
   return cur;
 }
 
+static void
+wr_shdr32 (ruint8 * p, rboolean be, rsize name, rsize type, rsize flags,
+    rsize addr, rsize offset, rsize size, rsize link, rsize info,
+    rsize addralign, rsize entsize)
+{
+  w32 (p +  0, be, name);  w32 (p +  4, be, type);   w32 (p +  8, be, flags);
+  w32 (p + 12, be, addr);  w32 (p + 16, be, offset); w32 (p + 20, be, size);
+  w32 (p + 24, be, link);  w32 (p + 28, be, info);   w32 (p + 32, be, addralign);
+  w32 (p + 36, be, entsize);
+}
+
+/* Build a minimal ELF32 (i386) with .text / .symtab / .rela.text / .rel.text /
+ * .note.test / .dynamic / .strtab / .shstrtab, in the byte order named by
+ * @p data.  Gives positive coverage of the 32-bit swap and accessor paths. */
+static rsize
+build_min_elf32 (ruint8 * buf, ruint8 data)
+{
+  const rboolean be = (data == R_ELF_DATA2MSB);
+  static const rchar shstr[] =
+      "\0.text\0.symtab\0.rela.text\0.rel.text\0.note.test\0.dynamic\0.strtab\0.shstrtab";
+  static const rchar symstr[] = "\0rfunc";
+  static const rchar note_name[] = "GNU";
+  static const ruint8 note_desc[] = { 0xca, 0xfe, 0xba, 0xbe };
+  const ruint32 n_text = 1, n_symtab = 7, n_rela = 15, n_rel = 26, n_note = 36,
+      n_dynamic = 47, n_strtab = 56, n_shstrtab = 64;
+  const rsize note_sz =
+      sizeof (RElf32NHdr) + sizeof (note_name) + sizeof (note_desc);
+  rsize off_ph, off_text, off_shstr, off_symstr, off_symtab, off_rela, off_rel,
+      off_note, off_dyn, off_sht, cur;
+  ruint8 * p;
+
+  cur = sizeof (RElf32EHdr);
+  off_ph = cur;     cur += sizeof (RElf32PHdr);
+  off_text = cur;   cur += 4;
+  off_shstr = cur;  cur += sizeof (shstr);
+  off_symstr = cur; cur += sizeof (symstr);
+  cur = (cur + 3) & ~(rsize)3;
+  off_symtab = cur; cur += 2 * sizeof (RElf32Sym);
+  off_rela = cur;   cur += sizeof (RElf32Rela);
+  off_rel = cur;    cur += sizeof (RElf32Rel);
+  off_note = cur;   cur += note_sz;
+  off_dyn = cur;    cur += 2 * sizeof (RElf32Dyn);
+  cur = (cur + 3) & ~(rsize)3;
+  off_sht = cur;    cur += 9 * sizeof (RElf32SHdr);
+
+  r_memset (buf, 0, cur);
+
+  buf[R_ELF_IDX_MAG0] = R_ELF_MAG0; buf[R_ELF_IDX_MAG1] = R_ELF_MAG1;
+  buf[R_ELF_IDX_MAG2] = R_ELF_MAG2; buf[R_ELF_IDX_MAG3] = R_ELF_MAG3;
+  buf[R_ELF_IDX_CLASS] = R_ELF_CLASS32;
+  buf[R_ELF_IDX_DATA] = data;
+  buf[R_ELF_IDX_VERSION] = R_ELF_VER_CURRENT;
+  w16 (buf + 16, be, R_ELF_ETYPE_REL);
+  w16 (buf + 18, be, R_ELF_MACHINE_386);
+  w32 (buf + 20, be, R_ELF_VER_CURRENT);
+  w32 (buf + 24, be, 0);                    /* entry */
+  w32 (buf + 28, be, off_ph);               /* phoff */
+  w32 (buf + 32, be, off_sht);              /* shoff */
+  w32 (buf + 36, be, 0);                    /* flags */
+  w16 (buf + 40, be, sizeof (RElf32EHdr));
+  w16 (buf + 42, be, sizeof (RElf32PHdr));
+  w16 (buf + 44, be, 1);                    /* phnum */
+  w16 (buf + 46, be, sizeof (RElf32SHdr));
+  w16 (buf + 48, be, 9);                    /* shnum */
+  w16 (buf + 50, be, 8);                    /* shstrndx */
+
+  p = buf + off_ph;
+  w32 (p +  0, be, R_ELF_PTYPE_LOAD);
+  w32 (p +  4, be, 0);                      /* offset */
+  w32 (p +  8, be, 0x8048000);              /* vaddr */
+  w32 (p + 12, be, 0x8048000);              /* paddr */
+  w32 (p + 16, be, cur);                    /* filesz */
+  w32 (p + 20, be, cur);                    /* memsz */
+  w32 (p + 24, be, R_ELF_PFLAGS_R | R_ELF_PFLAGS_X);
+  w32 (p + 28, be, 0x1000);
+
+  r_memset (buf + off_text, 0x90, 4);
+  r_memcpy (buf + off_shstr, shstr, sizeof (shstr));
+  r_memcpy (buf + off_symstr, symstr, sizeof (symstr));
+
+  /* .symtab[1] = GLOBAL FUNC "rfunc" in .text */
+  p = buf + off_symtab + sizeof (RElf32Sym);
+  w32 (p +  0, be, 1);                      /* name */
+  w32 (p +  4, be, 0x100);                  /* value */
+  w32 (p +  8, be, 0x20);                   /* size */
+  p[12] = R_ELF_SYMINFO_CREATE (R_ELF_SYMBIND_GLOBAL, R_ELF_SYMTYPE_FUNC);
+  p[13] = R_ELF_SYMOTHER_DEFAULT;
+  w16 (p + 14, be, 1);                      /* shndx -> .text */
+
+  p = buf + off_rela;
+  w32 (p + 0, be, 0x4);
+  w32 (p + 4, be, ((ruint32) 1 << 8) | R_ELF_RELTYPE_386_32);
+  w32 (p + 8, be, 0x9);                     /* addend */
+
+  p = buf + off_rel;
+  w32 (p + 0, be, 0x8);
+  w32 (p + 4, be, ((ruint32) 1 << 8) | R_ELF_RELTYPE_386_PC32);
+
+  p = buf + off_note;
+  w32 (p + 0, be, sizeof (note_name));
+  w32 (p + 4, be, sizeof (note_desc));
+  w32 (p + 8, be, 1);
+  r_memcpy (p + 12, note_name, sizeof (note_name));
+  r_memcpy (p + 16, note_desc, sizeof (note_desc));
+
+  /* .dynamic: DT_SONAME -> "rfunc" in .strtab, DT_NULL */
+  p = buf + off_dyn;
+  w32 (p + 0, be, R_ELF_DTYPE_SONAME); w32 (p + 4, be, 1);
+  w32 (p + 8, be, R_ELF_DTYPE_NULL);   w32 (p + 12, be, 0);
+
+  wr_shdr32 (buf + off_sht + 0 * sizeof (RElf32SHdr), be,
+      0, R_ELF_STYPE_NULL, 0, 0, 0, 0, 0, 0, 0, 0);
+  wr_shdr32 (buf + off_sht + 1 * sizeof (RElf32SHdr), be,
+      n_text, R_ELF_STYPE_PROGBITS, R_ELF_SFLAGS_ALLOC | R_ELF_SFLAGS_EXECINSTR,
+      0, off_text, 4, 0, 0, 1, 0);
+  wr_shdr32 (buf + off_sht + 2 * sizeof (RElf32SHdr), be,
+      n_symtab, R_ELF_STYPE_SYMTAB, 0, 0, off_symtab, 2 * sizeof (RElf32Sym),
+      7, 1, 4, sizeof (RElf32Sym));
+  wr_shdr32 (buf + off_sht + 3 * sizeof (RElf32SHdr), be,
+      n_rela, R_ELF_STYPE_RELA, R_ELF_SFLAGS_INFO_LINK, 0, off_rela,
+      sizeof (RElf32Rela), 2, 1, 4, sizeof (RElf32Rela));
+  wr_shdr32 (buf + off_sht + 4 * sizeof (RElf32SHdr), be,
+      n_rel, R_ELF_STYPE_REL, R_ELF_SFLAGS_INFO_LINK, 0, off_rel,
+      sizeof (RElf32Rel), 2, 1, 4, sizeof (RElf32Rel));
+  wr_shdr32 (buf + off_sht + 5 * sizeof (RElf32SHdr), be,
+      n_note, R_ELF_STYPE_NOTE, 0, 0, off_note, note_sz, 0, 0, 4, 0);
+  wr_shdr32 (buf + off_sht + 6 * sizeof (RElf32SHdr), be,
+      n_dynamic, R_ELF_STYPE_DYNAMIC, R_ELF_SFLAGS_ALLOC, 0, off_dyn,
+      2 * sizeof (RElf32Dyn), 7, 0, 4, sizeof (RElf32Dyn));
+  wr_shdr32 (buf + off_sht + 7 * sizeof (RElf32SHdr), be,
+      n_strtab, R_ELF_STYPE_STRTAB, 0, 0, off_symstr, sizeof (symstr),
+      0, 0, 1, 0);
+  wr_shdr32 (buf + off_sht + 8 * sizeof (RElf32SHdr), be,
+      n_shstrtab, R_ELF_STYPE_STRTAB, 0, 0, off_shstr, sizeof (shstr),
+      0, 0, 1, 0);
+
+  return cur;
+}
+
 /* Assert the parser produced the known field values, regardless of the
  * source byte order. */
 static void
@@ -851,6 +990,93 @@ RTEST (relf, load_malformed, RTEST_FAST)
   if (img != NULL)
     r_elf_image_unref (img);
   r_elf_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (relf, parse32, RTEST_FAST)
+{
+  ruint8 buf[1024];
+  int i;
+
+  /* Positive 32-bit coverage in both byte orders: exercises the *32 swap and
+   * accessor paths the 64-bit fixtures only hit via NULL-return checks. */
+  for (i = 0; i < 2; i++) {
+    ruint8 enc = (i == 0) ? R_ELF_DATA2LSB : R_ELF_DATA2MSB;
+    RElfParser * parser;
+    RElf32EHdr * eh;
+    RElf32PHdr * ph;
+    RElf32SHdr * sh;
+    RElf32Sym * sym;
+    RElf32Rela * rela;
+    RElf32Rel * rel;
+    RElf32NHdr * nhdr;
+    RElf32Dyn * dyn;
+    rsize sz = build_min_elf32 (buf, enc);
+
+    r_assert_cmpptr ((parser = r_elf_parser_new_from_mem (buf, sz)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_get_class (parser), ==, R_ELF_CLASS32);
+    r_assert_cmpptr (r_elf_parser_get_ehdr64 (parser), ==, NULL);
+    r_assert_cmpptr ((eh = r_elf_parser_get_ehdr32 (parser)), !=, NULL);
+    r_assert_cmpuint (eh->machine, ==, R_ELF_MACHINE_386);
+    r_assert_cmpuint (eh->shnum, ==, 9);
+    r_assert_cmpuint (eh->shstrndx, ==, 8);
+
+    r_assert_cmpptr ((ph = r_elf_parser_find_phdr32_by_type (parser,
+          R_ELF_PTYPE_LOAD)), !=, NULL);
+    r_assert_cmpuint (ph->vaddr, ==, 0x8048000);
+    r_assert_cmpptr (r_elf_parser_find_phdr64_by_type (parser,
+          R_ELF_PTYPE_LOAD), ==, NULL);
+
+    r_assert_cmpptr ((sh = r_elf_parser_find_shdr32 (parser, ".text", -1)),
+        !=, NULL);
+    r_assert_cmpuint (sh->type, ==, R_ELF_STYPE_PROGBITS);
+    r_assert_cmpuint (sh->size, ==, 4);
+
+    r_assert_cmpptr ((sh = r_elf_parser_find_shdr32_by_type (parser,
+          R_ELF_STYPE_SYMTAB)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_symtbl32_sym_count (parser, sh), ==, 2);
+    r_assert_cmpptr ((sym = r_elf_parser_symtbl32_get_sym (parser, sh, 1)),
+        !=, NULL);
+    r_assert_cmpstr (r_elf_parser_symtbl32_sym32_get_name (parser, sh, sym),
+        ==, "rfunc");
+    r_assert_cmpuint (sym->value, ==, 0x100);
+    r_assert_cmpuint (sym->size, ==, 0x20);
+    r_assert_cmpuint (R_ELF_SYMINFO_BIND (sym->info), ==, R_ELF_SYMBIND_GLOBAL);
+    r_assert_cmpuint (R_ELF_SYMINFO_TYPE (sym->info), ==, R_ELF_SYMTYPE_FUNC);
+
+    r_assert_cmpptr ((sh = r_elf_parser_find_shdr32_by_type (parser,
+          R_ELF_STYPE_RELA)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_relatbl32_rela_count (parser, sh), ==, 1);
+    r_assert_cmpptr ((rela = r_elf_parser_relatbl32_get_rela (parser, sh, 0)),
+        !=, NULL);
+    r_assert_cmpuint (rela->offset, ==, 0x4);
+    r_assert_cmpuint (R_ELF32_RELINFO_SYM (rela->info), ==, 1);
+    r_assert_cmpint (rela->addend, ==, 0x9);
+
+    r_assert_cmpptr ((sh = r_elf_parser_find_shdr32_by_type (parser,
+          R_ELF_STYPE_REL)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_reltbl32_rel_count (parser, sh), ==, 1);
+    r_assert_cmpptr ((rel = r_elf_parser_reltbl32_get_rel (parser, sh, 0)),
+        !=, NULL);
+    r_assert_cmpuint (rel->offset, ==, 0x8);
+    r_assert_cmpuint (R_ELF32_RELINFO_SYM (rel->info), ==, 1);
+    r_assert_cmpuint (R_ELF32_RELINFO_TYPE (rel->info), ==, R_ELF_RELTYPE_386_PC32);
+
+    r_assert_cmpptr ((sh = r_elf_parser_find_shdr32_by_type (parser,
+          R_ELF_STYPE_NOTE)), !=, NULL);
+    r_assert_cmpuint (r_elf_parser_notetbl32_note_count (parser, sh), ==, 1);
+    r_assert_cmpptr ((nhdr = r_elf_parser_notetbl32_get_note (parser, sh, 0)),
+        !=, NULL);
+    r_assert_cmpstr (r_elf_nhdr32_get_name (nhdr), ==, "GNU");
+
+    r_assert_cmpptr ((sh = r_elf_parser_find_shdr32_by_type (parser,
+          R_ELF_STYPE_DYNAMIC)), !=, NULL);
+    r_assert_cmpptr ((dyn = r_elf_parser_dyntbl32_find_dyn_by_tag (parser, sh,
+          R_ELF_DTYPE_SONAME)), !=, NULL);
+    r_assert_cmpstr (r_elf_parser_dyn32_get_str (parser, sh, dyn), ==, "rfunc");
+
+    r_elf_parser_unref (parser);
+  }
 }
 RTEST_END;
 
