@@ -127,6 +127,17 @@ R_API RBuffer * r_buffer_new_rtp_buffer (RBuffer * payload, ruint8 pad, ruint8 c
 R_API RBuffer * r_buffer_new_rtp_buffer_take (rpointer payload, rsize size, ruint8 pad, ruint8 cc);
 /** @brief Allocate a new RTP buffer with a @p payload-byte payload, @p pad padding and @p cc CSRC entries. */
 R_API RBuffer * r_buffer_new_rtp_buffer_alloc (rsize payload, ruint8 pad, ruint8 cc);
+/**
+ * @brief Allocate a new RTP buffer carrying a header extension.
+ * @param payload  Payload buffer to wrap.
+ * @param pad      Number of trailing padding octets (0 for none).
+ * @param cc       Number of CSRC entries (0..15).
+ * @param profile  The 16-bit profile-defined field of the extension.
+ * @param extdata  Extension payload (@p extsize bytes), or @c NULL to zero-fill.
+ * @param extsize  Extension payload size; must be a multiple of 4 (RFC 3550 5.3.1).
+ * @return New buffer, or @c NULL on bad arguments / allocation failure.
+ */
+R_API RBuffer * r_buffer_new_rtp_buffer_ext (RBuffer * payload, ruint8 pad, ruint8 cc, ruint16 profile, rconstpointer extdata, rsize extsize);
 
 /** @brief Map @p buf into @p rtp for header/payload access. */
 R_API rboolean r_rtp_buffer_map (RRTPBuffer * rtp, RBuffer * buf, RMemMapFlags flags);
@@ -146,6 +157,15 @@ R_API rboolean r_rtp_buffer_has_padding (const RRTPBuffer * rtp);
 R_API ruint8 r_rtp_buffer_get_padding (const RRTPBuffer * rtp);
 /** @brief @c TRUE if the extension bit is set. */
 R_API rboolean r_rtp_buffer_has_extension (const RRTPBuffer * rtp);
+/**
+ * @brief Read the header extension's profile field, data pointer and size.
+ * @param rtp      The mapped RTP buffer.
+ * @param profile  Out: the 16-bit profile-defined field. Pass @c NULL to skip.
+ * @param data     Out: pointer to the extension data (past the 4-byte header).
+ * @param size     Out: extension data size in bytes (a multiple of 4).
+ * @return @c TRUE if an extension is present, else @c FALSE.
+ */
+R_API rboolean r_rtp_buffer_get_extension (const RRTPBuffer * rtp, ruint16 * profile, const ruint8 ** data, ruint16 * size);
 /** @brief @c TRUE if the marker bit is set. */
 R_API rboolean r_rtp_buffer_has_marker (const RRTPBuffer * rtp);
 /** @brief Return the synchronisation source (SSRC) identifier. */
@@ -174,7 +194,6 @@ R_API void r_rtp_buffer_set_seq (RRTPBuffer * rtp, ruint16 seq);
 R_API void r_rtp_buffer_set_timestamp (RRTPBuffer * rtp, ruint32 ts);
 /** @brief Set the @p n-th contributing source (CSRC) identifier. */
 R_API rboolean r_rtp_buffer_set_csrc (RRTPBuffer * rtp, ruint8 n, ruint32 csrc);
-/* TODO: extension */
 
 
 /** @brief Extend a 16-bit sequence number @p seq to a 48-bit index, given the current index @p curidx. */

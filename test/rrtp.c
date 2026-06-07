@@ -52,6 +52,61 @@ RTEST (rrtp, is_valid_hdr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtp, ext_with_csrc_wire, RTEST_FAST)
+{
+  /* RTP packet with both a CSRC entry and a header extension: serialize to
+   * exact wire bytes (constructor + setters) and parse the same bytes back. */
+  static const ruint8 golden[] = {
+    0x91, 0x60, 0x00, 0x01,                          /* V2 X=1 CC=1, PT=96, seq=1 */
+    0x00, 0x00, 0x00, 0x10,                          /* timestamp = 0x10 */
+    0xde, 0xad, 0xbe, 0xef,                          /* ssrc */
+    0x11, 0x22, 0x33, 0x44,                          /* csrc[0] */
+    0xbe, 0xde, 0x00, 0x01,                          /* ext: profile=0xbede, len=1 */
+    0xaa, 0xbb, 0xcc, 0xdd,                          /* ext data */
+    0x01, 0x02                                       /* payload */
+  };
+  static const ruint8 extdata[4] = { 0xaa, 0xbb, 0xcc, 0xdd };
+  static const ruint8 pay[2] = { 0x01, 0x02 };
+  RBuffer * buf, * payload;
+  RRTPBuffer rtp = R_RTP_BUFFER_INIT;
+  ruint16 profile = 0, esize = 0;
+  const ruint8 * edata = NULL;
+
+  /* serialize */
+  r_assert_cmpptr ((payload = r_buffer_new_dup (pay, sizeof (pay))), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer_ext (payload, 0, 1,
+          0xbede, extdata, sizeof (extdata))), !=, NULL);
+  r_buffer_unref (payload);
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_WRITE));
+  r_rtp_buffer_set_pt (&rtp, 96);
+  r_rtp_buffer_set_seq (&rtp, 1);
+  r_rtp_buffer_set_timestamp (&rtp, 0x10);
+  r_rtp_buffer_set_ssrc (&rtp, 0xdeadbeef);
+  r_assert (r_rtp_buffer_set_csrc (&rtp, 0, 0x11223344));
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
+  r_assert_cmpbufmem (buf, 0, -1, ==, golden, sizeof (golden));
+  r_buffer_unref (buf);
+
+  /* deserialize the same bytes */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (golden, sizeof (golden))), !=, NULL);
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtp_buffer_get_csrc_count (&rtp), ==, 1);
+  r_assert_cmphex (r_rtp_buffer_get_csrc (&rtp, 0), ==, 0x11223344);
+  r_assert (r_rtp_buffer_has_extension (&rtp));
+  r_assert (r_rtp_buffer_get_extension (&rtp, &profile, &edata, &esize));
+  r_assert_cmphex (profile, ==, 0xbede);
+  r_assert_cmpuint (esize, ==, sizeof (extdata));
+  r_assert_cmpmem (edata, ==, extdata, sizeof (extdata));
+  r_assert_cmpuint (r_rtp_buffer_get_pt (&rtp), ==, 96);
+  r_assert_cmpuint (r_rtp_buffer_get_seq (&rtp), ==, 1);
+  r_assert_cmphex (r_rtp_buffer_get_ssrc (&rtp), ==, 0xdeadbeef);
+  r_assert_cmpuint (rtp.pay.size, ==, sizeof (pay));
+  r_assert_cmpmem (rtp.pay.data, ==, pay, sizeof (pay));
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtp, new_rtp_buffer, RTEST_FAST)
 {
   RBuffer * buf, * payload;
@@ -237,6 +292,14 @@ RTEST (rrtp, read_ext_hdr_opus_payload, RTEST_FAST)
 
   r_assert (!r_rtp_buffer_has_padding (&rtp));
   r_assert (r_rtp_buffer_has_extension (&rtp));
+  {
+    ruint16 profile = 0, esize = 0;
+    const ruint8 * edata = NULL;
+    r_assert (r_rtp_buffer_get_extension (&rtp, &profile, &edata, &esize));
+    r_assert_cmphex (profile, ==, RUINT16_FROM_BE (*(const ruint16 *)rtp.ext.data));
+    r_assert_cmpuint (esize, ==, rtp.ext.size - 4);
+    r_assert_cmpptr (edata, ==, rtp.ext.data + 4);
+  }
   r_assert (!r_rtp_buffer_has_marker (&rtp));
 
   r_assert_cmpuint (r_rtp_buffer_get_csrc_count (&rtp), ==, 0);
@@ -247,6 +310,40 @@ RTEST (rrtp, read_ext_hdr_opus_payload, RTEST_FAST)
 
   r_assert (r_rtp_buffer_unmap (&rtp, buf));
   r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtp, write_ext_hdr, RTEST_FAST)
+{
+  /* Construct a packet with a header extension and read it back. */
+  RBuffer * buf, * payload;
+  RRTPBuffer rtp = R_RTP_BUFFER_INIT;
+  static const ruint8 extdata[8] = { 0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17 };
+  static const ruint8 pay[4] = { 0xaa, 0xbb, 0xcc, 0xdd };
+  ruint16 profile = 0, esize = 0;
+  const ruint8 * edata = NULL;
+
+  r_assert_cmpptr ((payload = r_buffer_new_dup (pay, sizeof (pay))), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer_ext (payload, 0, 0,
+          0xbede, extdata, sizeof (extdata))), !=, NULL);
+  r_buffer_unref (payload);
+
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
+  r_assert (r_rtp_buffer_has_extension (&rtp));
+  r_assert (r_rtp_buffer_get_extension (&rtp, &profile, &edata, &esize));
+  r_assert_cmphex (profile, ==, 0xbede);
+  r_assert_cmpuint (esize, ==, sizeof (extdata));
+  r_assert_cmpmem (edata, ==, extdata, sizeof (extdata));
+  r_assert_cmpuint (rtp.pay.size, ==, sizeof (pay));
+  r_assert_cmpmem (rtp.pay.data, ==, pay, sizeof (pay));
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
+  r_buffer_unref (buf);
+
+  /* A non-word-aligned extension size is rejected. */
+  r_assert_cmpptr ((payload = r_buffer_new_dup (pay, sizeof (pay))), !=, NULL);
+  r_assert_cmpptr (r_buffer_new_rtp_buffer_ext (payload, 0, 0, 0xbede, extdata, 3),
+      ==, NULL);
+  r_buffer_unref (payload);
 }
 RTEST_END;
 
