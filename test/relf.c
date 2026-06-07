@@ -216,6 +216,87 @@ build_min_note_elf64 (ruint8 * buf, ruint8 data)
   return cur;
 }
 
+/* Build a shared-object-style ELF64 with a PT_DYNAMIC segment plus .dynamic /
+ * .dynstr sections (DT_NEEDED, DT_SONAME, DT_STRTAB, DT_STRSZ, DT_NULL), in
+ * the byte order named by @p data.  Returns the image size. */
+static rsize
+build_min_dyn_elf64 (ruint8 * buf, ruint8 data)
+{
+  const rboolean be = (data == R_ELF_DATA2MSB);
+  static const rchar dynstr[] = "\0libc.so.6\0mylib.so";
+  static const rchar shstr[] = "\0.dynstr\0.dynamic\0.shstrtab";
+  const ruint32 n_needed = 1, n_soname = 11;          /* offsets in dynstr */
+  const ruint32 n_dynstr = 1, n_dynamic = 9, n_shstrtab = 18; /* offsets in shstr */
+  const rsize dynsz = 5 * sizeof (RElf64Dyn);
+  rsize off_ph, off_dynstr, off_dyn, off_shstr, off_sht, cur;
+  ruint8 * p;
+
+  cur = sizeof (RElf64EHdr);
+  off_ph = cur;     cur += sizeof (RElf64PHdr);
+  off_dynstr = cur; cur += sizeof (dynstr);
+  cur = (cur + 7) & ~(rsize)7;
+  off_dyn = cur;    cur += dynsz;
+  off_shstr = cur;  cur += sizeof (shstr);
+  cur = (cur + 7) & ~(rsize)7;
+  off_sht = cur;    cur += 4 * sizeof (RElf64SHdr);
+
+  r_memset (buf, 0, cur);
+
+  buf[R_ELF_IDX_MAG0] = R_ELF_MAG0; buf[R_ELF_IDX_MAG1] = R_ELF_MAG1;
+  buf[R_ELF_IDX_MAG2] = R_ELF_MAG2; buf[R_ELF_IDX_MAG3] = R_ELF_MAG3;
+  buf[R_ELF_IDX_CLASS] = R_ELF_CLASS64;
+  buf[R_ELF_IDX_DATA] = data;
+  buf[R_ELF_IDX_VERSION] = R_ELF_VER_CURRENT;
+  w16 (buf + 16, be, R_ELF_ETYPE_DYN);      /* type */
+  w16 (buf + 18, be, R_ELF_MACHINE_X86_64); /* machine */
+  w32 (buf + 20, be, R_ELF_VER_CURRENT);    /* version */
+  w64 (buf + 32, be, off_ph);               /* phoff */
+  w64 (buf + 40, be, off_sht);              /* shoff */
+  w16 (buf + 52, be, sizeof (RElf64EHdr));  /* ehsize */
+  w16 (buf + 54, be, sizeof (RElf64PHdr));  /* phentsize */
+  w16 (buf + 56, be, 1);                    /* phnum */
+  w16 (buf + 58, be, sizeof (RElf64SHdr));  /* shentsize */
+  w16 (buf + 60, be, 4);                    /* shnum */
+  w16 (buf + 62, be, 3);                    /* shstrndx */
+
+  /* Program header (PT_DYNAMIC) pointing at the .dynamic section */
+  p = buf + off_ph;
+  w32 (p +  0, be, R_ELF_PTYPE_DYNAMIC);    /* type */
+  w32 (p +  4, be, R_ELF_PFLAGS_R | R_ELF_PFLAGS_W); /* flags */
+  w64 (p +  8, be, off_dyn);                /* offset */
+  w64 (p + 16, be, off_dyn);                /* vaddr */
+  w64 (p + 24, be, off_dyn);                /* paddr */
+  w64 (p + 32, be, dynsz);                  /* filesz */
+  w64 (p + 40, be, dynsz);                  /* memsz */
+  w64 (p + 48, be, 8);                      /* align */
+
+  r_memcpy (buf + off_dynstr, dynstr, sizeof (dynstr));
+  r_memcpy (buf + off_shstr, shstr, sizeof (shstr));
+
+  /* .dynamic entries */
+  p = buf + off_dyn;
+  w64 (p +  0, be, R_ELF_DTYPE_NEEDED); w64 (p +  8, be, n_needed);
+  w64 (p + 16, be, R_ELF_DTYPE_SONAME); w64 (p + 24, be, n_soname);
+  w64 (p + 32, be, R_ELF_DTYPE_STRTAB); w64 (p + 40, be, off_dynstr);
+  w64 (p + 48, be, R_ELF_DTYPE_STRSZ);  w64 (p + 56, be, sizeof (dynstr));
+  w64 (p + 64, be, R_ELF_DTYPE_NULL);   w64 (p + 72, be, 0);
+
+  /* section header table */
+  wr_shdr64 (buf + off_sht + 0 * sizeof (RElf64SHdr), be,
+      0, R_ELF_STYPE_NULL, 0, 0, 0, 0, 0, 0, 0, 0);
+  wr_shdr64 (buf + off_sht + 1 * sizeof (RElf64SHdr), be,
+      n_dynstr, R_ELF_STYPE_STRTAB, R_ELF_SFLAGS_ALLOC, 0, off_dynstr,
+      sizeof (dynstr), 0, 0, 1, 0);
+  wr_shdr64 (buf + off_sht + 2 * sizeof (RElf64SHdr), be,
+      n_dynamic, R_ELF_STYPE_DYNAMIC, R_ELF_SFLAGS_WRITE | R_ELF_SFLAGS_ALLOC,
+      0, off_dyn, dynsz, 1, 0, 8, sizeof (RElf64Dyn));
+  wr_shdr64 (buf + off_sht + 3 * sizeof (RElf64SHdr), be,
+      n_shstrtab, R_ELF_STYPE_STRTAB, 0, 0, off_shstr, sizeof (shstr),
+      0, 0, 1, 0);
+
+  return cur;
+}
+
 /* Assert the parser produced the known field values, regardless of the
  * source byte order. */
 static void
@@ -493,6 +574,60 @@ RTEST (relf, note_segment, RTEST_FAST)
     r_assert_cmpuint (dsize, ==, 4);
     r_assert_cmpuint (desc[0], ==, 0x01);
     r_assert_cmpuint (desc[3], ==, 0x04);
+
+    r_elf_parser_unref (parser);
+  }
+}
+RTEST_END;
+
+RTEST (relf, dynamic, RTEST_FAST)
+{
+  ruint8 buf[512];
+  int i;
+
+  /* Run both byte orders so DYNAMIC-entry normalization is covered. */
+  for (i = 0; i < 2; i++) {
+    ruint8 enc = (i == 0) ? R_ELF_DATA2LSB : R_ELF_DATA2MSB;
+    RElfParser * parser;
+    RElf64SHdr * dyn;
+    RElf64Dyn * d;
+    rsize sz = build_min_dyn_elf64 (buf, enc);
+
+    r_assert_cmpptr ((parser = r_elf_parser_new_from_mem (buf, sz)), !=, NULL);
+
+    r_assert_cmpptr ((dyn = r_elf_parser_find_shdr64_by_type (parser,
+          R_ELF_STYPE_DYNAMIC)), !=, NULL);
+    r_assert_cmpstr (r_elf_parser_shdr64_get_name (parser, dyn), ==, ".dynamic");
+    r_assert_cmpuint (r_elf_parser_dyntbl64_dyn_count (parser, dyn), ==, 5);
+
+    r_assert_cmpptr ((d = r_elf_parser_dyntbl64_get_dyn (parser, dyn, 0)),
+        !=, NULL);
+    r_assert_cmpint (d->tag, ==, R_ELF_DTYPE_NEEDED);
+    /* Out-of-range index yields no entry. */
+    r_assert_cmpptr (r_elf_parser_dyntbl64_get_dyn (parser, dyn, 5), ==, NULL);
+
+    /* String-valued tags resolve through the linked .dynstr. */
+    r_assert_cmpptr ((d = r_elf_parser_dyntbl64_find_dyn_by_tag (parser, dyn,
+          R_ELF_DTYPE_SONAME)), !=, NULL);
+    r_assert_cmpstr (r_elf_parser_dyn64_get_str (parser, dyn, d), ==, "mylib.so");
+    r_assert_cmpptr ((d = r_elf_parser_dyntbl64_find_dyn_by_tag (parser, dyn,
+          R_ELF_DTYPE_NEEDED)), !=, NULL);
+    r_assert_cmpstr (r_elf_parser_dyn64_get_str (parser, dyn, d), ==, "libc.so.6");
+
+    /* Integer-valued tag. */
+    r_assert_cmpptr ((d = r_elf_parser_dyntbl64_find_dyn_by_tag (parser, dyn,
+          R_ELF_DTYPE_STRSZ)), !=, NULL);
+    r_assert_cmpuint (d->un.val, ==, 20);
+
+    /* Absent tag and wrong-class lookups yield nothing. */
+    r_assert_cmpptr (r_elf_parser_dyntbl64_find_dyn_by_tag (parser, dyn,
+          R_ELF_DTYPE_RPATH), ==, NULL);
+    r_assert_cmpuint (r_elf_parser_dyntbl32_dyn_count (parser,
+          (RElf32SHdr *) dyn), ==, 0);
+
+    /* PT_DYNAMIC segment is found too. */
+    r_assert_cmpptr (r_elf_parser_find_phdr64_by_type (parser,
+          R_ELF_PTYPE_DYNAMIC), !=, NULL);
 
     r_elf_parser_unref (parser);
   }

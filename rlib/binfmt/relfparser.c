@@ -1759,3 +1759,105 @@ r_elf_parser_phdr64_get_note (RElfParser * parser, RElf64PHdr * phdr, ruint64 id
 
   return NULL;
 }
+
+ruint32
+r_elf_parser_dyntbl32_dyn_count (RElfParser * parser, RElf32SHdr * shdr)
+{
+  if (parser != NULL && shdr != NULL && shdr->entsize >= sizeof (RElf32Dyn) &&
+      shdr->type == R_ELF_STYPE_DYNAMIC)
+    return shdr->size / shdr->entsize;
+
+  return 0;
+}
+
+ruint64
+r_elf_parser_dyntbl64_dyn_count (RElfParser * parser, RElf64SHdr * shdr)
+{
+  if (parser != NULL && shdr != NULL && shdr->entsize >= sizeof (RElf64Dyn) &&
+      shdr->type == R_ELF_STYPE_DYNAMIC)
+    return shdr->size / shdr->entsize;
+
+  return 0;
+}
+
+RElf32Dyn *
+r_elf_parser_dyntbl32_get_dyn (RElfParser * parser, RElf32SHdr * shdr, ruint32 idx)
+{
+  ruint32 count = r_elf_parser_dyntbl32_dyn_count (parser, shdr);
+  if (count > idx) {
+    ruint8 * mem = parser->mem;
+    return (RElf32Dyn *)(mem + shdr->offset + shdr->entsize * idx);
+  }
+
+  return NULL;
+}
+
+RElf64Dyn *
+r_elf_parser_dyntbl64_get_dyn (RElfParser * parser, RElf64SHdr * shdr, ruint64 idx)
+{
+  ruint64 count = r_elf_parser_dyntbl64_dyn_count (parser, shdr);
+  if (count > idx) {
+    ruint8 * mem = parser->mem;
+    return (RElf64Dyn *)(mem + shdr->offset + shdr->entsize * idx);
+  }
+
+  return NULL;
+}
+
+RElf32Dyn *
+r_elf_parser_dyntbl32_find_dyn_by_tag (RElfParser * parser, RElf32SHdr * shdr,
+    rint32 tag)
+{
+  ruint32 i, count = r_elf_parser_dyntbl32_dyn_count (parser, shdr);
+
+  for (i = 0; i < count; i++) {
+    RElf32Dyn * dyn = r_elf_parser_dyntbl32_get_dyn (parser, shdr, i);
+    if (dyn == NULL) break;
+    if (dyn->tag == tag) return dyn;
+    if (dyn->tag == R_ELF_DTYPE_NULL) break;     /* table is NULL-terminated */
+  }
+
+  return NULL;
+}
+
+RElf64Dyn *
+r_elf_parser_dyntbl64_find_dyn_by_tag (RElfParser * parser, RElf64SHdr * shdr,
+    rint64 tag)
+{
+  ruint64 i, count = r_elf_parser_dyntbl64_dyn_count (parser, shdr);
+
+  for (i = 0; i < count; i++) {
+    RElf64Dyn * dyn = r_elf_parser_dyntbl64_get_dyn (parser, shdr, i);
+    if (dyn == NULL) break;
+    if (dyn->tag == tag) return dyn;
+    if (dyn->tag == R_ELF_DTYPE_NULL) break;     /* table is NULL-terminated */
+  }
+
+  return NULL;
+}
+
+const rchar *
+r_elf_parser_dyn32_get_str (RElfParser * parser, RElf32SHdr * shdr, RElf32Dyn * dyn)
+{
+  RElf32SHdr * strtab;
+
+  if (parser != NULL && shdr != NULL && dyn != NULL &&
+      shdr->link != R_ELF_SHN_UNDEF &&
+      (strtab = r_elf_parser_get_shdr32 (parser, shdr->link)) != NULL)
+    return r_elf_parser_strtbl32_get_str (parser, strtab, dyn->un.ptr);
+
+  return NULL;
+}
+
+const rchar *
+r_elf_parser_dyn64_get_str (RElfParser * parser, RElf64SHdr * shdr, RElf64Dyn * dyn)
+{
+  RElf64SHdr * strtab;
+
+  if (parser != NULL && shdr != NULL && dyn != NULL &&
+      shdr->link != R_ELF_SHN_UNDEF &&
+      (strtab = r_elf_parser_get_shdr64 (parser, shdr->link)) != NULL)
+    return r_elf_parser_strtbl64_get_str (parser, strtab, dyn->un.ptr);
+
+  return NULL;
+}
