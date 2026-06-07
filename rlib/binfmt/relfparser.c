@@ -934,6 +934,50 @@ r_elf_parser_find_shdr64_by_type (RElfParser * parser, ruint32 type)
   return NULL;
 }
 
+RElf32SHdr *
+r_elf_parser_find_reloc_shdr32 (RElfParser * parser, ruint32 secidx)
+{
+  RElf32EHdr * ehdr;
+
+  if (secidx != R_ELF_SHN_UNDEF &&
+      (ehdr = r_elf_parser_get_ehdr32 (parser)) != NULL) {
+    ruint16 i;
+    ruint8 * ptr = parser->mem;
+    ptr += ehdr->shoff;
+
+    for (i = 0; i < ehdr->shnum; i++) {
+      RElf32SHdr * shdr = (RElf32SHdr *)(ptr + ehdr->shentsize * i);
+      if ((shdr->type == R_ELF_STYPE_REL || shdr->type == R_ELF_STYPE_RELA) &&
+          shdr->info == secidx)
+        return shdr;
+    }
+  }
+
+  return NULL;
+}
+
+RElf64SHdr *
+r_elf_parser_find_reloc_shdr64 (RElfParser * parser, ruint32 secidx)
+{
+  RElf64EHdr * ehdr;
+
+  if (secidx != R_ELF_SHN_UNDEF &&
+      (ehdr = r_elf_parser_get_ehdr64 (parser)) != NULL) {
+    ruint16 i;
+    ruint8 * ptr = parser->mem;
+    ptr += ehdr->shoff;
+
+    for (i = 0; i < ehdr->shnum; i++) {
+      RElf64SHdr * shdr = (RElf64SHdr *)(ptr + ehdr->shentsize * i);
+      if ((shdr->type == R_ELF_STYPE_REL || shdr->type == R_ELF_STYPE_RELA) &&
+          shdr->info == secidx)
+        return shdr;
+    }
+  }
+
+  return NULL;
+}
+
 rchar *
 r_elf_parser_shdr32_get_name (RElfParser * parser, RElf32SHdr * shdr)
 {
@@ -1355,3 +1399,127 @@ r_elf_parser_rela64_get_dst (RElfParser * parser,
   return NULL;
 }
 
+
+ruint32
+r_elf_parser_reltbl32_rel_count (RElfParser * parser, RElf32SHdr * shdr)
+{
+  if (parser != NULL && shdr != NULL && shdr->entsize >= sizeof (RElf32Rel) &&
+      shdr->type == R_ELF_STYPE_REL)
+    return shdr->size / shdr->entsize;
+
+  return 0;
+}
+
+ruint64
+r_elf_parser_reltbl64_rel_count (RElfParser * parser, RElf64SHdr * shdr)
+{
+  if (parser != NULL && shdr != NULL && shdr->entsize >= sizeof (RElf64Rel) &&
+      shdr->type == R_ELF_STYPE_REL)
+    return shdr->size / shdr->entsize;
+
+  return 0;
+}
+
+RElf32Rel *
+r_elf_parser_reltbl32_get_rel (RElfParser * parser, RElf32SHdr * shdr, ruint32 idx)
+{
+  ruint32 count = r_elf_parser_reltbl32_rel_count (parser, shdr);
+  if (count > idx) {
+    ruint8 * mem = parser->mem;
+    return (RElf32Rel *)(mem + shdr->offset + shdr->entsize * idx);
+  }
+
+  return NULL;
+}
+
+RElf64Rel *
+r_elf_parser_reltbl64_get_rel (RElfParser * parser, RElf64SHdr * shdr, ruint64 idx)
+{
+  ruint64 count = r_elf_parser_reltbl64_rel_count (parser, shdr);
+  if (count > idx) {
+    ruint8 * mem = parser->mem;
+    return (RElf64Rel *)(mem + shdr->offset + shdr->entsize * idx);
+  }
+
+  return NULL;
+}
+
+RElf32Sym *
+r_elf_parser_rel32_get_sym (RElfParser * parser, RElf32SHdr * shdr,
+    RElf32Rel * rel, RElf32SHdr ** symtbl)
+{
+  RElf32SHdr * stbl;
+
+  if (shdr != NULL && shdr->link != R_ELF_SHN_UNDEF) {
+    if ((stbl = r_elf_parser_get_shdr32 (parser, shdr->link)) != NULL) {
+      ruint32 symidx;
+      if (symtbl != NULL)
+        *symtbl = stbl;
+
+      if (rel != NULL && (symidx = R_ELF32_RELINFO_SYM (rel->info)) > 0)
+        return r_elf_parser_symtbl32_get_sym (parser, stbl, symidx);
+    }
+  }
+
+  if (symtbl != NULL)
+    *symtbl = NULL;
+  return NULL;
+}
+
+RElf64Sym *
+r_elf_parser_rel64_get_sym (RElfParser * parser, RElf64SHdr * shdr,
+    RElf64Rel * rel, RElf64SHdr ** symtbl)
+{
+  RElf64SHdr * stbl;
+
+  if (shdr != NULL && shdr->link != R_ELF_SHN_UNDEF) {
+    if ((stbl = r_elf_parser_get_shdr64 (parser, shdr->link)) != NULL) {
+      ruint64 symidx;
+      if (symtbl != NULL)
+        *symtbl = stbl;
+
+      if (rel != NULL && (symidx = R_ELF64_RELINFO_SYM (rel->info)) > 0)
+        return r_elf_parser_symtbl64_get_sym (parser, stbl, symidx);
+    }
+  }
+
+  if (symtbl != NULL)
+    *symtbl = NULL;
+  return NULL;
+}
+
+ruint32 *
+r_elf_parser_rel32_get_dst (RElfParser * parser,
+    RElf32SHdr * shdr, RElf32Rel * rel)
+{
+  if (parser != NULL && shdr != NULL && rel != NULL) {
+    if (shdr->flags & R_ELF_SFLAGS_ALLOC) {
+      return RUINT_TO_POINTER (rel->offset);
+    } else {
+      if (shdr->info != R_ELF_SHN_UNDEF) {
+        return (ruint32 *)((ruint8 *)r_elf_parser_shdr32_get_data_by_idx (parser,
+              shdr->info, NULL) + rel->offset);
+      }
+    }
+  }
+
+  return NULL;
+}
+
+ruint64 *
+r_elf_parser_rel64_get_dst (RElfParser * parser,
+    RElf64SHdr * shdr, RElf64Rel * rel)
+{
+  if (parser != NULL && shdr != NULL && rel != NULL) {
+    if (shdr->flags & R_ELF_SFLAGS_ALLOC) {
+      return RUINT_TO_POINTER (rel->offset);
+    } else {
+      if (shdr->info != R_ELF_SHN_UNDEF) {
+        return (ruint64 *)((ruint8 *)r_elf_parser_shdr64_get_data_by_idx (parser,
+              shdr->info, NULL) + rel->offset);
+      }
+    }
+  }
+
+  return NULL;
+}

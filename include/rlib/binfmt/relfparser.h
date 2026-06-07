@@ -56,9 +56,6 @@
  * normalizes such an image to host byte order on a private copy at parse
  * time, so all accessors below return native-order values regardless of the
  * file's e_ident[EI_DATA]. */
-/* FIXME: Add Rel API */
-/* FIXME: Add high level API: */
-/*    * TODO: Add find corresponding rel/rela section for text/data section */
 /* FIXME: Go over ELF chapter 2 loading and dynamic linking */
 /*    * TODO: Improve Program header API */
 /*    * TODO: Add Note API */
@@ -161,6 +158,14 @@ R_API RElf64SHdr * r_elf_parser_find_shdr64 (RElfParser * parser, const rchar * 
 R_API RElf32SHdr * r_elf_parser_find_shdr32_by_type (RElfParser * parser, ruint32 type);
 /** @brief First ELF64 section header of the given @c sh_type, or @c NULL. */
 R_API RElf64SHdr * r_elf_parser_find_shdr64_by_type (RElfParser * parser, ruint32 type);
+/**
+ * @brief The ELF32 REL or RELA section that relocates section @p secidx
+ * (i.e. its @c sh_info targets that section, as for @c .rel.text /
+ * @c .rela.text relocating @c .text), or @c NULL.
+ */
+R_API RElf32SHdr * r_elf_parser_find_reloc_shdr32 (RElfParser * parser, ruint32 secidx);
+/** @brief The ELF64 REL or RELA section that relocates section @p secidx, or @c NULL. */
+R_API RElf64SHdr * r_elf_parser_find_reloc_shdr64 (RElfParser * parser, ruint32 secidx);
 /** @brief Resolved section name for an ELF32 section header. */
 R_API rchar * r_elf_parser_shdr32_get_name (RElfParser * parser, RElf32SHdr * shdr);
 /** @brief Resolved section name for an ELF64 section header. */
@@ -252,14 +257,38 @@ R_API RElf64Sym * r_elf_parser_symtbl64_find_sym_by_name (RElfParser * parser,
     RElf64SHdr * shdr, const rchar * name, rssize size);
 
 /* ELF Section Header - relocation */
-/*R_API ruint32 r_elf_parser_reltbl32_rel_count (RElfParser * parser, RElf32SHdr * shdr);*/
-/*R_API ruint64 r_elf_parser_reltbl64_rel_count (RElfParser * parser, RElf64SHdr * shdr);*/
-/*R_API RElf32Rel * r_elf_parser_reltbl32_get_rel (RElfParser * parser, RElf32SHdr * shdr, ruint32 idx);*/
-/*R_API RElf64Rel * r_elf_parser_reltbl64_get_rel (RElfParser * parser, RElf64SHdr * shdr, ruint64 idx);*/
-/*R_API RElf32Sym * r_elf_parser_rel32_get_sym (RElfParser * parser, RElf32SHdr * shdr, RElf32Rel * rel, RElf32SHdr ** symtbl)*/;
-/*R_API RElf64Sym * r_elf_parser_rel64_get_sym (RElfParser * parser, RElf64SHdr * shdr, RElf64Rel * rel, RElf64SHdr ** symtbl)*/;
-/*R_API ruint32 * r_elf_parser_rel32_get_dst (RElfParser * parser, RElf32SHdr * shdr, RElf32Rel * rel)*/;
-/*R_API ruint64 * r_elf_parser_rel64_get_dst (RElfParser * parser, RElf64SHdr * shdr, RElf64Rel * rel)*/;
+/** @brief Number of relocations in an ELF32 REL section. */
+R_API ruint32 r_elf_parser_reltbl32_rel_count (RElfParser * parser, RElf32SHdr * shdr);
+/** @brief Number of relocations in an ELF64 REL section. */
+R_API ruint64 r_elf_parser_reltbl64_rel_count (RElfParser * parser, RElf64SHdr * shdr);
+/** @brief ELF32 relocation entry at @p idx within a REL section. */
+R_API RElf32Rel * r_elf_parser_reltbl32_get_rel (RElfParser * parser, RElf32SHdr * shdr, ruint32 idx);
+/** @brief ELF64 relocation entry at @p idx within a REL section. */
+R_API RElf64Rel * r_elf_parser_reltbl64_get_rel (RElfParser * parser, RElf64SHdr * shdr, ruint64 idx);
+/**
+ * @brief Symbol referred to by an ELF32 REL entry.
+ * @param parser  The parser.
+ * @param shdr    REL section containing @p rel.
+ * @param rel     The relocation entry.
+ * @param symtbl  Out: section header of the symbol table @p shdr is
+ *                linked to. Pass @c NULL to discard.
+ */
+R_API RElf32Sym * r_elf_parser_rel32_get_sym (RElfParser * parser, RElf32SHdr * shdr, RElf32Rel * rel, RElf32SHdr ** symtbl);
+/**
+ * @brief Symbol referred to by an ELF64 REL entry.
+ * @param parser  The parser.
+ * @param shdr    REL section containing @p rel.
+ * @param rel     The relocation entry.
+ * @param symtbl  Out: linked symbol-table section.
+ */
+R_API RElf64Sym * r_elf_parser_rel64_get_sym (RElfParser * parser, RElf64SHdr * shdr, RElf64Rel * rel, RElf64SHdr ** symtbl);
+/**
+ * @brief Pointer to the ELF32 location patched by a REL entry
+ * (i.e. the byte position the relocation rewrites).
+ */
+R_API ruint32 * r_elf_parser_rel32_get_dst (RElfParser * parser, RElf32SHdr * shdr, RElf32Rel * rel);
+/** @brief Pointer to the ELF64 location patched by a REL entry. */
+R_API ruint64 * r_elf_parser_rel64_get_dst (RElfParser * parser, RElf64SHdr * shdr, RElf64Rel * rel);
 
 /** @brief Number of relocations in an ELF32 RELA section. */
 R_API ruint32 r_elf_parser_relatbl32_rela_count (RElfParser * parser, RElf32SHdr * shdr);
