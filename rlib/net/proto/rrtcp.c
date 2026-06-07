@@ -516,3 +516,47 @@ r_rtcp_buffer_add_rr (RBuffer * buf, ruint32 ssrc,
   r_free (body);
   return res;
 }
+
+rboolean
+r_rtcp_buffer_add_sdes (RBuffer * buf, ruint32 ssrc,
+    const RRTCPSDESItem * items, ruint8 nitems)
+{
+  ruint8 * body;
+  rsize bodylen, itemsbytes = 0, off;
+  rboolean res;
+  ruint8 i;
+
+  if (R_UNLIKELY (buf == NULL))
+    return FALSE;
+  if (R_UNLIKELY (nitems > 0 && items == NULL))
+    return FALSE;
+  for (i = 0; i < nitems; i++) {
+    if (R_UNLIKELY (items[i].type < R_RTCP_SDES_CNAME ||
+            items[i].type >= R_RTCP_SDES_MAX))
+      return FALSE;
+    if (R_UNLIKELY (items[i].len > 0 && items[i].data == NULL))
+      return FALSE;
+    itemsbytes += 2u + items[i].len;
+  }
+
+  /* chunk = ssrc + items + >=1 null terminator, padded to a 32-bit boundary. */
+  bodylen = sizeof (ruint32) + (((itemsbytes + 1) + 3) & ~(rsize)3);
+  if (R_UNLIKELY ((body = r_malloc0 (bodylen)) == NULL))
+    return FALSE;
+
+  r_store_be32 (&body[0], ssrc);
+  off = sizeof (ruint32);
+  for (i = 0; i < nitems; i++) {
+    body[off++] = (ruint8) items[i].type;
+    body[off++] = items[i].len;
+    if (items[i].len > 0) {
+      r_memcpy (&body[off], items[i].data, items[i].len);
+      off += items[i].len;
+    }
+  }
+  /* The trailing bytes (terminator + padding) are already zero. */
+
+  res = r_rtcp_append (buf, R_RTCP_PT_SDES, 1, body, bodylen);
+  r_free (body);
+  return res;
+}
