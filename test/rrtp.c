@@ -105,6 +105,7 @@ RTEST (rrtp, read_plain_hdr_pcmu_payload, RTEST_FAST)
   r_assert_cmpuint (rtp.hdr.size + rtp.ext.size + rtp.pay.size, ==, sizeof (pkt_rtp_pcmu));
 
   r_assert (!r_rtp_buffer_has_padding (&rtp));
+  r_assert_cmpuint (r_rtp_buffer_get_padding (&rtp), ==, 0);
   r_assert (!r_rtp_buffer_has_extension (&rtp));
   r_assert (r_rtp_buffer_has_marker (&rtp));
 
@@ -133,8 +134,31 @@ RTEST (rrtp, padding_underflow, RTEST_FAST)
   r_assert_cmpptr ((buf = r_buffer_new_dup (pkt, sizeof (pkt))), !=, NULL);
   r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
   r_assert (r_rtp_buffer_has_padding (&rtp));
+  r_assert_cmpuint (r_rtp_buffer_get_padding (&rtp), ==, 0xff);  /* verbatim */
   r_assert_cmpuint (rtp.pay.size, <=, 2);
   r_assert (r_rtp_buffer_unmap (&rtp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtp, padding_count, RTEST_FAST)
+{
+  /* A constructed packet with N padding octets reports N, and the payload
+   * mapping excludes them. */
+  RBuffer * buf, * payload;
+  RRTPBuffer rtp = R_RTP_BUFFER_INIT;
+  ruint8 data[4] = { 1, 2, 3, 4 };
+
+  r_assert_cmpptr ((payload = r_buffer_new_dup (data, sizeof (data))), !=, NULL);
+  r_assert_cmpptr ((buf = r_buffer_new_rtp_buffer (payload, 5, 0)), !=, NULL);
+  r_buffer_unref (payload);
+
+  r_assert (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ));
+  r_assert (r_rtp_buffer_has_padding (&rtp));
+  r_assert_cmpuint (r_rtp_buffer_get_padding (&rtp), ==, 5);
+  r_assert_cmpuint (rtp.pay.size, ==, sizeof (data));
+  r_assert (r_rtp_buffer_unmap (&rtp, buf));
+
   r_buffer_unref (buf);
 }
 RTEST_END;
