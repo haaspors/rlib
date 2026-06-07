@@ -706,14 +706,14 @@ static ruint16
 r_elf_parser_ehdr32_prg_header_count (RElfParser * parser)
 {
   RElf32EHdr * ehdr = r_elf_parser_get_ehdr32 (parser);
-  return ehdr->phnum;
+  return ehdr != NULL ? ehdr->phnum : 0;
 }
 
 static ruint16
 r_elf_parser_ehdr64_prg_header_count (RElfParser * parser)
 {
   RElf64EHdr * ehdr = r_elf_parser_get_ehdr64 (parser);
-  return ehdr->phnum;
+  return ehdr != NULL ? ehdr->phnum : 0;
 }
 
 ruint16
@@ -790,6 +790,70 @@ r_elf_parser_get_base_addr64 (RElfParser * parser)
   }
 
   return 0;
+}
+
+RElf32PHdr *
+r_elf_parser_find_phdr32_by_type (RElfParser * parser, ruint32 type)
+{
+  RElf32EHdr * ehdr;
+
+  if ((ehdr = r_elf_parser_get_ehdr32 (parser)) != NULL) {
+    ruint16 i;
+    for (i = 0; i < ehdr->phnum; i++) {
+      RElf32PHdr * hdr = r_elf_parser_get_phdr32 (parser, i);
+      if (hdr != NULL && hdr->type == type)
+        return hdr;
+    }
+  }
+
+  return NULL;
+}
+
+RElf64PHdr *
+r_elf_parser_find_phdr64_by_type (RElfParser * parser, ruint32 type)
+{
+  RElf64EHdr * ehdr;
+
+  if ((ehdr = r_elf_parser_get_ehdr64 (parser)) != NULL) {
+    ruint16 i;
+    for (i = 0; i < ehdr->phnum; i++) {
+      RElf64PHdr * hdr = r_elf_parser_get_phdr64 (parser, i);
+      if (hdr != NULL && hdr->type == type)
+        return hdr;
+    }
+  }
+
+  return NULL;
+}
+
+rpointer
+r_elf_parser_phdr32_get_data (RElfParser * parser, RElf32PHdr * phdr, rsize * size)
+{
+  if (parser != NULL && phdr != NULL && phdr->offset <= parser->size &&
+      parser->size - phdr->offset >= phdr->filesz) {
+    if (size != NULL)
+      *size = phdr->filesz;
+    return (ruint8 *)parser->mem + phdr->offset;
+  }
+
+  if (size != NULL)
+    *size = 0;
+  return NULL;
+}
+
+rpointer
+r_elf_parser_phdr64_get_data (RElfParser * parser, RElf64PHdr * phdr, rsize * size)
+{
+  if (parser != NULL && phdr != NULL && phdr->offset <= parser->size &&
+      parser->size - phdr->offset >= phdr->filesz) {
+    if (size != NULL)
+      *size = phdr->filesz;
+    return (ruint8 *)parser->mem + phdr->offset;
+  }
+
+  if (size != NULL)
+    *size = 0;
+  return NULL;
 }
 
 static ruint16

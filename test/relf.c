@@ -186,6 +186,19 @@ verify_min_elf64 (RElfParser * parser)
   r_assert_cmpuint (ph->type, ==, R_ELF_PTYPE_LOAD);
   r_assert_cmpuint (ph->vaddr, ==, 0x400000);
   r_assert_cmpuint (ph->align, ==, 0x1000);
+  r_assert_cmpptr (r_elf_parser_find_phdr64_by_type (parser, R_ELF_PTYPE_LOAD),
+      ==, ph);
+  r_assert_cmpptr (r_elf_parser_find_phdr64_by_type (parser, R_ELF_PTYPE_DYNAMIC),
+      ==, NULL);
+  r_assert_cmpptr (r_elf_parser_find_phdr32_by_type (parser, R_ELF_PTYPE_LOAD),
+      ==, NULL);
+  {
+    rsize psz = 0;
+    /* p_offset == 0, so the segment data starts at the ELF header. */
+    r_assert_cmpptr (r_elf_parser_phdr64_get_data (parser, ph, &psz), ==,
+        r_elf_parser_get_elf_header (parser));
+    r_assert_cmpuint (psz, ==, ph->filesz);
+  }
 
   r_assert_cmpptr ((sh = r_elf_parser_find_shdr64 (parser, ".text", -1)), !=, NULL);
   r_assert_cmpuint (sh->type, ==, R_ELF_STYPE_PROGBITS);
@@ -396,7 +409,6 @@ RTEST (relf, phdr, RTEST_FAST)
   r_assert_cmpptr ((parser =
         r_elf_parser_new_from_mem (elf_o, sizeof (elf_o))), !=, NULL);
 
-  /* FIXME: Add elfprg.inc and test properly */
   r_assert_cmpuint (r_elf_parser_prg_header_count (parser), ==, 0);
   r_assert_cmpptr (r_elf_parser_get_prg_header_table (parser), ==, NULL);
   r_assert_cmpptr (r_elf_parser_get_phdr32 (parser, 0), ==, NULL);
