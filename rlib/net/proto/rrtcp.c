@@ -398,3 +398,121 @@ r_rtcp_packet_app_get_data (const RRTCPPacket * packet, ruint16 * size)
   return NULL;
 }
 
+
+/* ------------------------------------------------------------------------- *
+ * RTCP serialization
+ *
+ * Packets are appended to a plain RBuffer (one RMem segment each), producing
+ * a compound buffer with the same on-wire layout the parser above reads back.
+ * ------------------------------------------------------------------------- */
+
+#define R_RTCP_REPORT_BLOCK_SIZE  (6 * sizeof (ruint32))
+
+/* Append [v=2 p=0 c=count | pt | len | body]; bodylen is a whole word count. */
+static rboolean
+r_rtcp_append (RBuffer * buf, ruint8 pt, ruint8 count,
+    const ruint8 * body, rsize bodylen)
+{
+  RRTCPPacket * h;
+  RMem * mem;
+  ruint8 * pkt;
+  rsize total, words;
+  rboolean res;
+
+  if (R_UNLIKELY (buf == NULL || (bodylen & 0x3) != 0))
+    return FALSE;
+  total = sizeof (ruint32) + bodylen;
+  words = total / sizeof (ruint32);
+  if (R_UNLIKELY (words == 0 || words - 1 > 0xffff))
+    return FALSE;
+  if (R_UNLIKELY ((pkt = r_malloc0 (total)) == NULL))
+    return FALSE;
+
+  h = (RRTCPPacket *)pkt;
+  h->v = R_RTP_VERSION;
+  h->p = 0;
+  h->c = count;
+  h->pt = pt;
+  h->len = RUINT16_TO_BE ((ruint16)(words - 1));
+  if (bodylen > 0 && body != NULL)
+    r_memcpy (pkt + sizeof (ruint32), body, bodylen);
+
+  if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, pkt, total, total, 0)) == NULL)) {
+    r_free (pkt);
+    return FALSE;
+  }
+  res = r_buffer_mem_append (buf, mem);
+  r_mem_unref (mem);
+  return res;
+}
+
+static void
+r_rtcp_write_report_block (ruint8 * p, const RRTCPReportBlock * rb)
+{
+  r_store_be32 (&p[0],  rb->ssrc);
+  r_store_be32 (&p[4],  ((ruint32)rb->fractionlost << 24) |
+      ((ruint32)rb->packetslost & 0x00ffffff));
+  r_store_be32 (&p[8],  rb->exthighestseq);
+  r_store_be32 (&p[12], rb->jitter);
+  r_store_be32 (&p[16], rb->lsr);
+  r_store_be32 (&p[20], rb->dlsr);
+}
+
+rboolean
+r_rtcp_buffer_add_sr (RBuffer * buf, const RRTCPSenderInfo * srinfo,
+    const RRTCPReportBlock * rb, ruint8 nrb)
+{
+  ruint8 * body;
+  rsize bodylen;
+  rboolean res;
+  ruint8 i;
+
+  if (R_UNLIKELY (buf == NULL || srinfo == NULL || nrb > 0x1f))
+    return FALSE;
+  if (R_UNLIKELY (nrb > 0 && rb == NULL))
+    return FALSE;
+
+  /* sender info: ssrc + ntp(2 words) + rtptime + packets + bytes = 6 words */
+  bodylen = 6 * sizeof (ruint32) + (rsize)nrb * R_RTCP_REPORT_BLOCK_SIZE;
+  if (R_UNLIKELY ((body = r_malloc0 (bodylen)) == NULL))
+    return FALSE;
+
+  r_store_be32 (&body[0],  srinfo->ssrc);
+  r_store_be64 (&body[4],  srinfo->ntptime);
+  r_store_be32 (&body[12], srinfo->rtptime);
+  r_store_be32 (&body[16], srinfo->packets);
+  r_store_be32 (&body[20], srinfo->bytes);
+  for (i = 0; i < nrb; i++)
+    r_rtcp_write_report_block (&body[24 + (rsize)i * R_RTCP_REPORT_BLOCK_SIZE], &rb[i]);
+
+  res = r_rtcp_append (buf, R_RTCP_PT_SR, nrb, body, bodylen);
+  r_free (body);
+  return res;
+}
+
+rboolean
+r_rtcp_buffer_add_rr (RBuffer * buf, ruint32 ssrc,
+    const RRTCPReportBlock * rb, ruint8 nrb)
+{
+  ruint8 * body;
+  rsize bodylen;
+  rboolean res;
+  ruint8 i;
+
+  if (R_UNLIKELY (buf == NULL || nrb > 0x1f))
+    return FALSE;
+  if (R_UNLIKELY (nrb > 0 && rb == NULL))
+    return FALSE;
+
+  bodylen = sizeof (ruint32) + (rsize)nrb * R_RTCP_REPORT_BLOCK_SIZE;
+  if (R_UNLIKELY ((body = r_malloc0 (bodylen)) == NULL))
+    return FALSE;
+
+  r_store_be32 (&body[0], ssrc);
+  for (i = 0; i < nrb; i++)
+    r_rtcp_write_report_block (&body[4 + (rsize)i * R_RTCP_REPORT_BLOCK_SIZE], &rb[i]);
+
+  res = r_rtcp_append (buf, R_RTCP_PT_RR, nrb, body, bodylen);
+  r_free (body);
+  return res;
+}
