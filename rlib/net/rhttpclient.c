@@ -151,7 +151,7 @@ r_http_client_conn_free (RHttpClientConn * conn)
      * (closing == TRUE); otherwise (pool torn down with the client) close it
      * here, synchronously -- we are not inside an io callback. */
     if (!conn->closing)
-      r_ev_tcp_close (conn->evtcp, NULL, NULL, NULL);
+      r_ev_tcp_abort (conn->evtcp, NULL, NULL, NULL);
     r_ev_tcp_unref (conn->evtcp);
   }
   if (conn->addr != NULL)
@@ -165,7 +165,7 @@ r_http_client_conn_do_close (rpointer data, REvLoop * loop)
   RHttpClientConn * conn = data;
   (void) loop;
 
-  r_ev_tcp_close (conn->evtcp, NULL, NULL, NULL);
+  r_ev_tcp_abort (conn->evtcp, NULL, NULL, NULL);
 }
 
 /* Close conn's socket. Idempotent. @defer is TRUE when called from inside one
@@ -188,7 +188,7 @@ r_http_client_conn_close (RHttpClientConn * conn, rboolean defer)
           r_http_client_conn_do_close, r_http_client_conn_ref (conn),
           r_http_client_conn_unref);
     else
-      r_ev_tcp_close (conn->evtcp, NULL, NULL, NULL);
+      r_ev_tcp_abort (conn->evtcp, NULL, NULL, NULL);
   }
 }
 

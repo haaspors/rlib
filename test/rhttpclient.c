@@ -553,10 +553,10 @@ static void
 r_test_raw_server_free (RTestRawServer * s)
 {
   if (s->conn != NULL) {
-    r_ev_tcp_close (s->conn, NULL, NULL, NULL);
+    r_ev_tcp_abort (s->conn, NULL, NULL, NULL);
     r_ev_tcp_unref (s->conn);
   }
-  r_ev_tcp_close (s->listen, NULL, NULL, NULL);
+  r_ev_tcp_abort (s->listen, NULL, NULL, NULL);
   r_ev_tcp_unref (s->listen);
   r_free (s);
 }
