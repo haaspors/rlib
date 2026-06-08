@@ -52,6 +52,55 @@ RTEST (rrtp, is_valid_hdr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcp, feedback_pli_nack_wire, RTEST_FAST)
+{
+  /* PSFB/PLI (no FCI) followed by RTPFB/Generic-NACK (one FCI entry). */
+  static const ruint8 golden[] = {
+    0x81, 0xce, 0x00, 0x02,                          /* PSFB FMT=PLI, len=2 */
+    0xaa, 0xaa, 0x00, 0x01,                          /* sender */
+    0xbb, 0xbb, 0x00, 0x02,                          /* media */
+    0x81, 0xcd, 0x00, 0x03,                          /* RTPFB FMT=NACK, len=3 */
+    0xaa, 0xaa, 0x00, 0x01,                          /* sender */
+    0xbb, 0xbb, 0x00, 0x02,                          /* media */
+    0x12, 0x34, 0x00, 0xff                           /* FCI: PID, BLP */
+  };
+  ruint8 nackfci[4];
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  const ruint8 * fci;
+  ruint16 fcisize = 0;
+
+  r_store_be16 (&nackfci[0], 0x1234);
+  r_store_be16 (&nackfci[2], 0x00ff);
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_fb (buf, R_RTCP_PT_PSFB, R_RTCP_PSFB_FMT_PLI, 0xaaaa0001, 0xbbbb0002, NULL, 0));
+  r_assert (r_rtcp_buffer_add_fb (buf, R_RTCP_PT_RTPFB, R_RTCP_RTPFB_FMT_NACK, 0xaaaa0001, 0xbbbb0002, nackfci, 4));
+  r_assert_cmpbufmem (buf, 0, -1, ==, golden, sizeof (golden));
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (golden, sizeof (golden))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 2);
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_PSFB);
+  r_assert_cmpuint (r_rtcp_packet_fb_get_fmt (pkt), ==, R_RTCP_PSFB_FMT_PLI);
+  r_assert_cmphex (r_rtcp_packet_fb_get_sender_ssrc (pkt), ==, 0xaaaa0001);
+  r_assert_cmphex (r_rtcp_packet_fb_get_media_ssrc (pkt), ==, 0xbbbb0002);
+  r_rtcp_packet_fb_get_fci (pkt, &fcisize);
+  r_assert_cmpuint (fcisize, ==, 0);
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, pkt)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_RTPFB);
+  r_assert_cmpuint (r_rtcp_packet_fb_get_fmt (pkt), ==, R_RTCP_RTPFB_FMT_NACK);
+  r_assert_cmpptr ((fci = r_rtcp_packet_fb_get_fci (pkt, &fcisize)), !=, NULL);
+  r_assert_cmpuint (fcisize, ==, 4);
+  r_assert_cmpmem (fci, ==, nackfci, 4);
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtcp, bye_no_reason_wire, RTEST_FAST)
 {
   /* BYE with a single SSRC and no reason string. */
@@ -867,6 +916,52 @@ RTEST (rrtcp, write_bye_app, RTEST_FAST)
   r_assert_cmpptr ((adata = r_rtcp_packet_app_get_data (pkt, &asize)), !=, NULL);
   r_assert_cmpuint (asize, ==, sizeof (appdata));
   r_assert_cmpmem (adata, ==, appdata, sizeof (appdata));
+
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtcp, write_feedback, RTEST_FAST)
+{
+  /* A PSFB/PLI (no FCI) and an RTPFB/Generic-NACK (one FCI entry). */
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  ruint8 nackfci[4];
+  const ruint8 * fci;
+  ruint16 fcisize = 0;
+
+  r_store_be16 (&nackfci[0], 0x1234);   /* PID */
+  r_store_be16 (&nackfci[2], 0x00ff);   /* BLP */
+
+  r_assert_cmpptr ((buf = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_fb (buf, R_RTCP_PT_PSFB, R_RTCP_PSFB_FMT_PLI,
+          0xaaaa0001, 0xbbbb0002, NULL, 0));
+  r_assert (r_rtcp_buffer_add_fb (buf, R_RTCP_PT_RTPFB, R_RTCP_RTPFB_FMT_NACK,
+          0xaaaa0001, 0xbbbb0002, nackfci, sizeof (nackfci)));
+  /* invalid: wrong PT and non-word-aligned FCI are rejected */
+  r_assert (!r_rtcp_buffer_add_fb (buf, R_RTCP_PT_SR, 1, 0, 0, NULL, 0));
+  r_assert (!r_rtcp_buffer_add_fb (buf, R_RTCP_PT_RTPFB, 1, 0, 0, nackfci, 3));
+
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 2);
+
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_PSFB);
+  r_assert_cmpuint (r_rtcp_packet_fb_get_fmt (pkt), ==, R_RTCP_PSFB_FMT_PLI);
+  r_assert_cmphex (r_rtcp_packet_fb_get_sender_ssrc (pkt), ==, 0xaaaa0001);
+  r_assert_cmphex (r_rtcp_packet_fb_get_media_ssrc (pkt), ==, 0xbbbb0002);
+  r_rtcp_packet_fb_get_fci (pkt, &fcisize);
+  r_assert_cmpuint (fcisize, ==, 0);
+
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, pkt)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_RTPFB);
+  r_assert_cmpuint (r_rtcp_packet_fb_get_fmt (pkt), ==, R_RTCP_RTPFB_FMT_NACK);
+  r_assert_cmphex (r_rtcp_packet_fb_get_media_ssrc (pkt), ==, 0xbbbb0002);
+  r_assert_cmpptr ((fci = r_rtcp_packet_fb_get_fci (pkt, &fcisize)), !=, NULL);
+  r_assert_cmpuint (fcisize, ==, sizeof (nackfci));
+  r_assert_cmpmem (fci, ==, nackfci, sizeof (nackfci));
 
   r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
   r_buffer_unref (buf);

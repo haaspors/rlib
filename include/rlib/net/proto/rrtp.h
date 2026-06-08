@@ -368,6 +368,18 @@ R_API rboolean r_rtcp_buffer_add_bye (RBuffer * buf, const ruint32 * ssrcs, ruin
  * @return @c TRUE on success.
  */
 R_API rboolean r_rtcp_buffer_add_app (RBuffer * buf, ruint8 subtype, ruint32 ssrc, const rchar name[4], const ruint8 * data, ruint16 size);
+/**
+ * @brief Append a feedback (RTPFB or PSFB) packet (RFC 4585).
+ * @param buf      Compound RTCP buffer to append to.
+ * @param pt       @c R_RTCP_PT_RTPFB or @c R_RTCP_PT_PSFB.
+ * @param fmt      Feedback message type (0..31; see @ref RRTCPRTPFBType / @ref RRTCPPSFBType).
+ * @param sender   SSRC of the feedback sender.
+ * @param media    SSRC of the media source.
+ * @param fci      Feedback Control Information (@p fcisize bytes), or @c NULL.
+ * @param fcisize  FCI size; must be a multiple of 4.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_rtcp_buffer_add_fb (RBuffer * buf, RRTCPPacketType pt, ruint8 fmt, ruint32 sender, ruint32 media, const ruint8 * fci, ruint16 fcisize);
 
 /** @brief Map @p buf into @p rtcp for packet iteration. */
 R_API rboolean r_rtcp_buffer_map (RRTCPBuffer * rtcp, RBuffer * buf, RMemMapFlags flags);
@@ -452,7 +464,37 @@ R_API const rchar * r_rtcp_packet_app_get_name (const RRTCPPacket * packet);
 /** @brief Return the application-defined data of an APP @p packet; @p size receives its length. */
 R_API const ruint8 * r_rtcp_packet_app_get_data (const RRTCPPacket * packet, ruint16 * size);
 
-/* TODO: Feedback */
+
+/* RTCP feedback (RTPFB / PSFB) -- RFC 4585 / 5104.  The feedback message type
+ * (FMT) is carried in the packet's count field; the body is the sender SSRC,
+ * the media-source SSRC and type-specific Feedback Control Information (FCI). */
+/** @brief Transport-layer (RTPFB) feedback message type. */
+typedef enum {
+  R_RTCP_RTPFB_FMT_NACK   = 1,    /**< Generic NACK (RFC 4585). */
+  R_RTCP_RTPFB_FMT_TMMBR  = 3,    /**< Temporary Max Media Bitrate Request (RFC 5104). */
+  R_RTCP_RTPFB_FMT_TMMBN  = 4,    /**< Temporary Max Media Bitrate Notification (RFC 5104). */
+} RRTCPRTPFBType;
+
+/** @brief Payload-specific (PSFB) feedback message type. */
+typedef enum {
+  R_RTCP_PSFB_FMT_PLI   = 1,      /**< Picture Loss Indication (RFC 4585). */
+  R_RTCP_PSFB_FMT_SLI   = 2,      /**< Slice Loss Indication. */
+  R_RTCP_PSFB_FMT_RPSI  = 3,      /**< Reference Picture Selection Indication. */
+  R_RTCP_PSFB_FMT_FIR   = 4,      /**< Full Intra Request (RFC 5104). */
+  R_RTCP_PSFB_FMT_TSTR  = 5,      /**< Temporal-Spatial Trade-off Request. */
+  R_RTCP_PSFB_FMT_TSTN  = 6,      /**< Temporal-Spatial Trade-off Notification. */
+  R_RTCP_PSFB_FMT_VBCM  = 7,      /**< Video Back Channel Message. */
+  R_RTCP_PSFB_FMT_AFB   = 15,     /**< Application Layer Feedback. */
+} RRTCPPSFBType;
+
+/** @brief Feedback message type (FMT) of an RTPFB/PSFB @p packet, else 0. */
+R_API ruint8 r_rtcp_packet_fb_get_fmt (const RRTCPPacket * packet);
+/** @brief SSRC of the feedback packet sender. */
+R_API ruint32 r_rtcp_packet_fb_get_sender_ssrc (const RRTCPPacket * packet);
+/** @brief SSRC of the media source the feedback refers to. */
+R_API ruint32 r_rtcp_packet_fb_get_media_ssrc (const RRTCPPacket * packet);
+/** @brief Pointer to the Feedback Control Information; @p size receives its length. */
+R_API const ruint8 * r_rtcp_packet_fb_get_fci (const RRTCPPacket * packet, ruint16 * size);
 
 R_END_DECLS
 

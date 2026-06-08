@@ -630,3 +630,79 @@ r_rtcp_buffer_add_app (RBuffer * buf, ruint8 subtype, ruint32 ssrc,
   r_free (body);
   return res;
 }
+
+#define r_rtcp_packet_is_fb(p) \
+  (r_rtcp_packet_get_type (p) == R_RTCP_PT_RTPFB || \
+   r_rtcp_packet_get_type (p) == R_RTCP_PT_PSFB)
+
+ruint8
+r_rtcp_packet_fb_get_fmt (const RRTCPPacket * packet)
+{
+  return r_rtcp_packet_is_fb (packet) ? r_rtcp_packet_get_count (packet) : 0;
+}
+
+ruint32
+r_rtcp_packet_fb_get_sender_ssrc (const RRTCPPacket * packet)
+{
+  if (r_rtcp_packet_is_fb (packet) &&
+      r_rtcp_packet_get_length (packet) >= 3 * sizeof (ruint32))
+    return RUINT32_FROM_BE (*(const ruint32 *)&packet->data[0]);
+  return 0;
+}
+
+ruint32
+r_rtcp_packet_fb_get_media_ssrc (const RRTCPPacket * packet)
+{
+  if (r_rtcp_packet_is_fb (packet) &&
+      r_rtcp_packet_get_length (packet) >= 3 * sizeof (ruint32))
+    return RUINT32_FROM_BE (*(const ruint32 *)&packet->data[sizeof (ruint32)]);
+  return 0;
+}
+
+const ruint8 *
+r_rtcp_packet_fb_get_fci (const RRTCPPacket * packet, ruint16 * size)
+{
+  if (r_rtcp_packet_is_fb (packet)) {
+    ruint len = r_rtcp_packet_get_length (packet);
+    if (len >= 3 * sizeof (ruint32)) {
+      if (size != NULL)
+        *size = (ruint16)(len - 3 * sizeof (ruint32));
+      return &packet->data[2 * sizeof (ruint32)];
+    }
+  }
+
+  if (size != NULL)
+    *size = 0;
+  return NULL;
+}
+
+rboolean
+r_rtcp_buffer_add_fb (RBuffer * buf, RRTCPPacketType pt, ruint8 fmt,
+    ruint32 sender, ruint32 media, const ruint8 * fci, ruint16 fcisize)
+{
+  ruint8 * body;
+  rsize bodylen;
+  rboolean res;
+
+  if (R_UNLIKELY (buf == NULL || fmt > 0x1f))
+    return FALSE;
+  if (R_UNLIKELY (pt != R_RTCP_PT_RTPFB && pt != R_RTCP_PT_PSFB))
+    return FALSE;
+  if (R_UNLIKELY ((fcisize & 0x3) != 0))    /* FCI is 32-bit aligned */
+    return FALSE;
+  if (R_UNLIKELY (fcisize > 0 && fci == NULL))
+    return FALSE;
+
+  bodylen = 2 * sizeof (ruint32) + fcisize;  /* sender + media + FCI */
+  if (R_UNLIKELY ((body = r_malloc0 (bodylen)) == NULL))
+    return FALSE;
+
+  r_store_be32 (&body[0], sender);
+  r_store_be32 (&body[sizeof (ruint32)], media);
+  if (fcisize > 0)
+    r_memcpy (&body[2 * sizeof (ruint32)], fci, fcisize);
+
+  res = r_rtcp_append (buf, (ruint8) pt, fmt, body, bodylen);
+  r_free (body);
+  return res;
+}
