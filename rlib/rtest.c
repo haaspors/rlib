@@ -820,37 +820,103 @@ _r_test_win32_log_stack (void)
   r_mutex_unlock (&g__r_test_win32_sym_mutex);
 }
 
+static const rchar *
+_r_test_win32_exception_name (DWORD code)
+{
+  switch (code) {
+    case EXCEPTION_ACCESS_VIOLATION:      return "ACCESS_VIOLATION";
+    case EXCEPTION_IN_PAGE_ERROR:         return "IN_PAGE_ERROR";
+    case EXCEPTION_STACK_OVERFLOW:        return "STACK_OVERFLOW";
+    case EXCEPTION_ILLEGAL_INSTRUCTION:   return "ILLEGAL_INSTRUCTION";
+    case EXCEPTION_PRIV_INSTRUCTION:      return "PRIV_INSTRUCTION";
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:    return "INT_DIVIDE_BY_ZERO";
+    case EXCEPTION_INT_OVERFLOW:          return "INT_OVERFLOW";
+    case EXCEPTION_FLT_DIVIDE_BY_ZERO:    return "FLT_DIVIDE_BY_ZERO";
+    case EXCEPTION_DATATYPE_MISALIGNMENT: return "DATATYPE_MISALIGNMENT";
+    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED: return "ARRAY_BOUNDS_EXCEEDED";
+    default:                              return "exception";
+  }
+}
+
+/* Identify the test in flight for crash diagnostics. */
 static void
-_r_test_win32_err_handler (int sig)
+_r_test_win32_cur_test (const rchar ** suite, const rchar ** name, rsize * __i)
+{
+  *suite = "???"; *name = "???"; *__i = 0;
+  if (g__r_test_nofork_ctx != NULL && g__r_test_nofork_ctx->test != NULL) {
+    *suite = g__r_test_nofork_ctx->test->suite;
+    *name  = g__r_test_nofork_ctx->test->name;
+    *__i   = g__r_test_nofork_ctx->__i;
+  }
+}
+
+/* Marshal the failure to the test runner: longjmp back when we're still on
+ * the test thread, otherwise terminate that thread from this one. */
+static void
+_r_test_win32_abort_current (RTestRunState state)
 {
   if (R_UNLIKELY (g__r_test_nofork_ctx == NULL))
     return;
 
-  R_LOG_ERROR ("Error sig: %d", sig);
+  if (g__r_test_nofork_ctx->thread == r_thread_current ()) {
+    longjmp (g__r_test_nofork_ctx->jb, state);
+  } else {
+    _r_test_nofork_win32_kill_test_thread (state);
+    r_thread_exit (RINT_TO_POINTER (state));
+  }
+}
+
+/* One unmistakable line naming the test, the exception and where it faulted. */
+static void
+_r_test_win32_log_crash (PEXCEPTION_POINTERS ep)
+{
+  PEXCEPTION_RECORD er = ep->ExceptionRecord;
+  const rchar * suite, * name;
+  rsize __i;
+
+  _r_test_win32_cur_test (&suite, &name, &__i);
+
+  if (er->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
+      er->ExceptionCode == EXCEPTION_IN_PAGE_ERROR) {
+    R_LOG_ERROR ("TEST CRASHED: /%s/%s/%"RSIZE_FMT" -- %s %s %p (at %p)",
+        suite, name, __i, _r_test_win32_exception_name (er->ExceptionCode),
+        er->ExceptionInformation[0] == 0 ? "reading" :
+        er->ExceptionInformation[0] == 1 ? "writing" : "executing",
+        (rpointer) er->ExceptionInformation[1], er->ExceptionAddress);
+  } else {
+    R_LOG_ERROR ("TEST CRASHED: /%s/%s/%"RSIZE_FMT" -- %s (0x%08lx at %p)",
+        suite, name, __i, _r_test_win32_exception_name (er->ExceptionCode),
+        (unsigned long) er->ExceptionCode, er->ExceptionAddress);
+  }
+
+  /* The stack walk needs stack of its own; skip it when that is what blew. */
+  if (er->ExceptionCode != EXCEPTION_STACK_OVERFLOW)
+    _r_test_win32_log_stack ();
+}
+
+/* SIGABRT (abort()/assert) -- no EXCEPTION_POINTERS, log what we can. */
+static void
+_r_test_win32_err_handler (int sig)
+{
+  const rchar * suite, * name;
+  rsize __i;
+
+  if (R_UNLIKELY (g__r_test_nofork_ctx == NULL))
+    return;
+
+  _r_test_win32_cur_test (&suite, &name, &__i);
+  R_LOG_ERROR ("TEST ABORTED: /%s/%s/%"RSIZE_FMT" -- signal %d",
+      suite, name, __i, sig);
   _r_test_win32_log_stack ();
 
-  if (g__r_test_nofork_ctx->thread == r_thread_current ()) {
-    longjmp (g__r_test_nofork_ctx->jb, R_TEST_RUN_STATE_ERROR);
-  } else {
-    _r_test_nofork_win32_kill_test_thread (R_TEST_RUN_STATE_ERROR);
-    r_thread_exit (RINT_TO_POINTER (sig));
-  }
+  _r_test_win32_abort_current (R_TEST_RUN_STATE_ERROR);
 }
 
 static LONG WINAPI
 _r_test_win32_exception_filter (PEXCEPTION_POINTERS ep)
 {
-  const rchar * errfile = "???";
-  const rchar * errfunc = "???";
-  ruint errline = 0;
-
-  if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_STACK_OVERFLOW) {
-    r_log (R_LOG_CAT_DEFAULT, R_LOG_LEVEL_ERROR, errfile, errline, errfunc,
-        "exception code: %lu", (unsigned long) ep->ExceptionRecord->ExceptionCode);
-  }
-
-  _r_test_win32_err_handler (SIGSEGV);
-
+  _r_test_win32_log_crash (ep);
+  _r_test_win32_abort_current (R_TEST_RUN_STATE_ERROR);
   return EXCEPTION_CONTINUE_SEARCH;
 }
 #elif defined (R_OS_UNIX)
