@@ -543,6 +543,15 @@ r_http_server_listen (RHttpServer * server, RSocketAddress * addr)
   return FALSE;
 }
 
+RSocketAddress *
+r_http_server_get_local_address (RHttpServer * server)
+{
+  if (R_UNLIKELY (server == NULL) || r_ptr_array_size (server->listen) == 0)
+    return NULL;
+
+  return r_ev_tcp_get_local_address (r_ptr_array_get (server->listen, 0));
+}
+
 typedef struct {
   RRef ref;
   RHttpServer * server;
