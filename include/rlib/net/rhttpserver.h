@@ -97,6 +97,16 @@ R_API rboolean r_http_server_set_handler (RHttpServer * server,
 /** @brief Start accepting connections on @p addr. */
 R_API rboolean r_http_server_listen (RHttpServer * server, RSocketAddress * addr);
 /**
+ * @brief Local address of the server's first listener.
+ *
+ * Useful after listening on an ephemeral port (port 0) to learn the port the
+ * OS actually assigned.
+ *
+ * @return A new @ref RSocketAddress the caller must unref, or @c NULL if the
+ *         server is not listening.
+ */
+R_API RSocketAddress * r_http_server_get_local_address (RHttpServer * server);
+/**
  * @brief Stop the server; @p func fires once shutdown completes.
  * @return Number of sockets (listeners + client connections) being closed.
  */
