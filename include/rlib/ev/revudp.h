@@ -75,6 +75,13 @@ R_API REvUDP * r_ev_udp_new (RSocketFamily family, REvLoop * loop);
 /** @brief Bind to @p address; @p reuse sets @c SO_REUSEADDR. */
 R_API rboolean r_ev_udp_bind (REvUDP * evudp,
     const RSocketAddress * address, rboolean reuse);
+/**
+ * @brief Local address of the bound socket.
+ *
+ * Useful after binding an ephemeral port (port 0) to learn the OS-assigned
+ * port. @return A new @ref RSocketAddress the caller must unref, or @c NULL.
+ */
+R_API RSocketAddress * r_ev_udp_get_local_address (const REvUDP * evudp);
 /** @brief Start receiving datagrams; @p alloc supplies buffers, @p recv delivers them. */
 R_API rboolean r_ev_udp_recv_start (REvUDP * evudp,
     REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
