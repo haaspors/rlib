@@ -171,9 +171,11 @@ RTEST (rsocket, shutdown, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpint (r_socket_shutdown (consock, FALSE, FALSE), ==, R_SOCKET_INVAL);
   r_assert_cmpint (r_socket_shutdown (consock, TRUE, TRUE), ==, R_SOCKET_NOT_CONNECTED);
 
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert_cmpint (r_socket_bind (lissock, addr, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_listen (lissock), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_socket_get_local_address (lissock)), !=, NULL);
 
   r_assert_cmpint (r_socket_connect (consock, addr), ==, R_SOCKET_WOULD_BLOCK);
   r_assert (r_socket_set_blocking (lissock, TRUE));
@@ -218,9 +220,11 @@ RTEST (rsocket, listen_connect_accept, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((addr = r_socket_get_remote_address (lissock)), ==, NULL);
   r_assert_cmpptr ((addr = r_socket_get_remote_address (consock)), ==, NULL);
 
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert_cmpint (r_socket_bind (lissock, addr, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_listen (lissock), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_socket_get_local_address (lissock)), !=, NULL);
 
   r_assert_cmpptr ((accept_thread = r_thread_new (NULL, rsocket_test_accept, lissock)), !=, NULL);
   r_assert_cmpint (r_socket_connect (consock, addr), ==, R_SOCKET_OK);
@@ -256,9 +260,11 @@ RTEST (rsocket, send_recv, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpint (r_socket_shutdown (consock, FALSE, FALSE), ==, R_SOCKET_INVAL);
   r_assert_cmpint (r_socket_shutdown (consock, TRUE, TRUE), ==, R_SOCKET_NOT_CONNECTED);
 
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert_cmpint (r_socket_bind (lissock, addr, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_listen (lissock), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_socket_get_local_address (lissock)), !=, NULL);
 
   r_assert_cmpint (r_socket_connect (consock, addr), ==, R_SOCKET_WOULD_BLOCK);
   r_assert (r_socket_set_blocking (lissock, TRUE));
