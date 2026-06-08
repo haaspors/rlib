@@ -122,8 +122,8 @@ r_http_client_ctx_tcp_response_ready (rpointer data, RHttpResponse * res,
   RHttpClientCtx * ctx = data;
   RBuffer * buf;
 
-  fprintf (stderr, "DIAG310: server response_ready ctx=%p keepalive=%d clients=%"
-      RSIZE_FMT"\n", (void *)ctx, ctx->keepalive,
+  fprintf (stderr, "DIAG310: server response_ready ctx=%p evtcp=%p keepalive=%d"
+      " clients=%"RSIZE_FMT"\n", (void *)ctx, (void *)ctx->evtcp, ctx->keepalive,
       (rsize)r_ptr_array_size (ctx->server->clients)); fflush (stderr);
 
   /* A response on a kept-alive connection must be self-delimiting or the client

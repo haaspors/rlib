@@ -17,6 +17,8 @@
  */
 
 #include "config.h"
+
+#include <stdio.h> /* DIAG #310: fprintf(stderr) markers, revert before merge */
 /* Before rsocket-private.h / rev-private.h: orders <winsock2.h> first. */
 #include "rev-iocp-private.h"
 #include "rev-private.h"
@@ -973,10 +975,10 @@ r_ev_tcp_send_iocb (REvTCP * evtcp)
     res = r_socket_send_message (evtcp->socket, NULL, ctx->buf, &sent);
     R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT" res %d sent %"RSIZE_FMT,
         evtcp->evio.loop, R_EV_IO_ARGS (evtcp), res, sent);
-    if (evtcp->evio.flags & R_EV_IO_CLOSED)   /* DIAG #310 */
-      R_LOG_WARNING ("DIAG310: send_iocb on CLOSED "R_EV_IO_FORMAT
-          " res=%d sent=%"RSIZE_FMT" qsize=%"RSIZE_FMT, R_EV_IO_ARGS (evtcp),
-          res, sent, (rsize) r_queue_size (&evtcp->qsend));
+    fprintf (stderr, "DIAG310: send_iocb evtcp=%p res=%d sent=%"RSIZE_FMT
+        " qsize=%"RSIZE_FMT" closed=%d\n", (void *)evtcp, (int)res, sent,
+        (rsize)r_queue_size (&evtcp->qsend),
+        (evtcp->evio.flags & R_EV_IO_CLOSED) ? 1 : 0); fflush (stderr);
     if (res == R_SOCKET_OK) {
       r_queue_pop (&evtcp->qsend);
       if (ctx->done != NULL)
@@ -1033,6 +1035,7 @@ static void
 r_ev_tcp_send_iocb_ev (rpointer data, REvLoop * loop)
 {
   (void) loop;
+  fprintf (stderr, "DIAG310: send_iocb_ev fired evtcp=%p\n", data); fflush (stderr);
   r_ev_tcp_send_iocb (data);
 }
 #endif
@@ -1244,9 +1247,10 @@ r_ev_tcp_send (REvTCP * evtcp, RBuffer * buf,
     ctx->data = data;
     ctx->datanotify = datanotify;
     r_queue_push (&evtcp->qsend, ctx);
-    if (evtcp->evio.flags & R_EV_IO_CLOSED)   /* DIAG #310 */
-      R_LOG_WARNING ("DIAG310: send queued on CLOSED "R_EV_IO_FORMAT" size=%"
-          RSIZE_FMT, R_EV_IO_ARGS (evtcp), r_buffer_get_size (buf));
+    fprintf (stderr, "DIAG310: send_queue evtcp=%p qsize=%"RSIZE_FMT" size=%"
+        RSIZE_FMT" closed=%d\n", (void *)evtcp,
+        (rsize)r_queue_size (&evtcp->qsend), r_buffer_get_size (buf),
+        (evtcp->evio.flags & R_EV_IO_CLOSED) ? 1 : 0); fflush (stderr);
 
     R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT" buf %p",
         evtcp->evio.loop, R_EV_IO_ARGS (evtcp), buf);
