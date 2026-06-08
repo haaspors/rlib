@@ -1120,6 +1120,44 @@ r_test_run_nofork_cleanup (RTestRunNoForkCtx * ctx)
   ctx->thread = NULL;
 }
 
+/* Body of a single test run: position marker, optional setup, the test, and
+ * optional teardown. Returns the non-aborted outcome; asserts and timeouts
+ * longjmp out past this to the runner's setjmp. */
+static RTestRunState
+_r_test_run_body (const RTest * test, rsize __i, RTestRunNoForkCtx * ctx)
+{
+  _r_test_mark_position (test->name, (ruint)__i, test->suite, FALSE);
+  if (test->setup != NULL)    test->setup (test->fdata);
+  test->func (__i, test->fdata);
+  if (test->teardown != NULL) test->teardown (test->fdata);
+
+  return (ctx->failpos != NULL) ? R_TEST_RUN_STATE_FAILED
+                                : R_TEST_RUN_STATE_SUCCESS;
+}
+
+#if defined (_MSC_VER)
+static LONG
+_r_test_win32_seh_filter (PEXCEPTION_POINTERS ep)
+{
+  _r_test_win32_log_crash (ep);
+  return EXCEPTION_EXECUTE_HANDLER;
+}
+
+/* MSVC catches the hardware fault with SEH and unwinds cleanly, rather than
+ * longjmp-ing out of SetUnhandledExceptionFilter (which skips unwinding and
+ * can leak whatever the faulting test held). gcc/clang lack working __try for
+ * this target and fall back to that filter + longjmp. */
+static RTestRunState
+_r_test_run_guarded (const RTest * test, rsize __i, RTestRunNoForkCtx * ctx)
+{
+  __try {
+    return _r_test_run_body (test, __i, ctx);
+  } __except (_r_test_win32_seh_filter (GetExceptionInformation ())) {
+    return R_TEST_RUN_STATE_ERROR;
+  }
+}
+#endif
+
 RTestRunState
 r_test_run_nofork (const RTest * test, rsize __i, rboolean notimeout,
     RTestLastPos * lastpos, RTestLastPos * failpos, int * pid, int * exitcode)
@@ -1146,16 +1184,11 @@ r_test_run_nofork (const RTest * test, rsize __i, rboolean notimeout,
   ctx.start_ts = r_time_get_ts_monotonic ();
   R_LOG_DEBUG ("About to run: /%s/%s/%"RSIZE_FMT, test->suite, test->name, __i);
   if ((jmpres = setjmp (ctx.jb)) == 0) {
-    _r_test_mark_position (test->name, (ruint)__i, test->suite, FALSE);
-    if (test->setup != NULL)    test->setup (test->fdata);
-    test->func (__i, test->fdata);
-    if (test->teardown != NULL) test->teardown (test->fdata);
-
-    if (ctx.failpos != NULL) {
-      ret = R_TEST_RUN_STATE_FAILED;
-    } else {
-      ret = R_TEST_RUN_STATE_SUCCESS;
-    }
+#if defined (_MSC_VER)
+    ret = _r_test_run_guarded (test, __i, &ctx);
+#else
+    ret = _r_test_run_body (test, __i, &ctx);
+#endif
   } else {
     ret = (RTestRunState)jmpres;
   }
