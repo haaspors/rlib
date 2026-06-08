@@ -86,8 +86,10 @@ RTEST (revtcp, listen_connect_accept_send_recv, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpptr ((client = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
   r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x6363)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_tcp_get_local_address (server)), !=, NULL);
 
   r_assert_cmpint (r_ev_tcp_listen (server, 10, new_connection_ready, &servcli, NULL), ==, R_SOCKET_OK);
   r_assert_cmpptr (servcli, ==, NULL);
@@ -142,8 +144,10 @@ RTEST (revtcp, queued_send_recv, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpptr ((client = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
   r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x6364)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_tcp_get_local_address (server)), !=, NULL);
   r_assert_cmpint (r_ev_tcp_listen (server, 10, new_connection_ready, &servcli, NULL), ==, R_SOCKET_OK);
   r_assert_cmpint (r_ev_tcp_connect (client, addr, client_connected, &conn, NULL), ==, R_SOCKET_WOULD_BLOCK);
   r_socket_address_unref (addr);
@@ -198,8 +202,10 @@ RTEST (revtcp, recv_error_handler, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpptr ((client = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
   r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x6364)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_tcp_get_local_address (server)), !=, NULL);
   r_assert_cmpint (r_ev_tcp_listen (server, 10, new_connection_ready, &servcli, NULL), ==, R_SOCKET_OK);
   r_assert_cmpint (r_ev_tcp_connect (client, addr, client_connected, &conn, NULL), ==, R_SOCKET_WOULD_BLOCK);
   r_socket_address_unref (addr);
@@ -260,8 +266,10 @@ RTEST (revtcp, recv_error_no_handler, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpptr ((client = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
   r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x6365)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_tcp_get_local_address (server)), !=, NULL);
   r_assert_cmpint (r_ev_tcp_listen (server, 10, new_connection_ready, &servcli, NULL), ==, R_SOCKET_OK);
   r_assert_cmpint (r_ev_tcp_connect (client, addr, client_connected, &conn, NULL), ==, R_SOCKET_WOULD_BLOCK);
   r_socket_address_unref (addr);

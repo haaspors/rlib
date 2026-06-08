@@ -20,7 +20,9 @@ RTEST (rhttpserver, listen, RTEST_FAST)
   r_clock_unref (clock);
 
   r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 4242)), !=, NULL);
+  /* Ephemeral port: a fixed port collides with a previous run's socket still
+   * in TIME_WAIT (notably under meson test --repeat). */
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
 
   r_assert (r_http_server_listen (srv, addr));
   r_socket_address_unref (addr);
@@ -205,9 +207,11 @@ RTEST (rhttpserver, keepalive_default_http11, RTEST_FAST | RTEST_SYSTEM)
   r_assert (r_http_server_set_handler (srv, "/", -1,
         r_test_http_simple_status_handler,
         RUINT_TO_POINTER (R_HTTP_STATUS_OK), NULL));
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 4243)),
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
       !=, NULL);
   r_assert (r_http_server_listen (srv, addr));
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_http_server_get_local_address (srv)), !=, NULL);
 
   c.addr = addr;
   r_assert_cmpptr ((thread = r_thread_new (NULL, r_test_persist_client, &c)),
