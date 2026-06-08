@@ -223,11 +223,12 @@ RTEST (revtcp, recv_error_handler, RTEST_FAST | RTEST_SYSTEM)
   r_ev_tcp_set_error_handler (client, error_received, &err, NULL);
   r_assert (r_ev_tcp_recv_start (client, NULL, data_received, &buf, NULL));
 
-  /* Close servcli abruptly so the idle client observes a connection-reset
-   * error rather than EOF. SO_LINGER with a zero timeout makes close send a
-   * TCP RST immediately and deterministically. */
+  /* Abort servcli so the idle client observes a connection-reset error rather
+   * than EOF. SO_LINGER with a zero timeout makes the closing handle send a
+   * TCP RST immediately and deterministically (abort adds no FIN that would
+   * pre-empt it). */
   r_assert (r_socket_set_linger (r_ev_tcp_get_socket (servcli), TRUE, 0));
-  r_assert (r_ev_tcp_close (servcli, NULL, NULL, NULL));
+  r_assert (r_ev_tcp_abort (servcli, NULL, NULL, NULL));
   r_ev_tcp_unref (servcli);
 
   /* Process the deferred close (which sends the RST) and the reset the
@@ -284,7 +285,7 @@ RTEST (revtcp, recv_error_no_handler, RTEST_FAST | RTEST_SYSTEM)
    * deterministic RST from the peer. */
   r_assert (r_ev_tcp_recv_start (client, NULL, eos_received, &eos, NULL));
   r_assert (r_socket_set_linger (r_ev_tcp_get_socket (servcli), TRUE, 0));
-  r_assert (r_ev_tcp_close (servcli, NULL, NULL, NULL));
+  r_assert (r_ev_tcp_abort (servcli, NULL, NULL, NULL));
   r_ev_tcp_unref (servcli);
 
   for (i = 0; i < 16 && !eos; i++)

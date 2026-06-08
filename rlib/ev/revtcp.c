@@ -86,6 +86,14 @@ struct REvTCP {
 
   RQueue qsend;
 
+  /* Graceful close (r_ev_tcp_close): set while the send queue is draining
+   * before the half-close. Once qsend empties (or a send fails) the write
+   * side is shut down and these fire the deferred close. */
+  rboolean closing;
+  REvIOFunc close_cb;
+  rpointer close_data;
+  RDestroyNotify close_datanotify;
+
 #if defined (R_OS_WIN32) && !defined (R_EV_USE_RPOLL)
   /* Completion (proactor) backend: an op is posted, its completion delivers
    * the result. Each in-flight op holds one ref on this REvTCP. */
@@ -115,6 +123,12 @@ static void
 r_ev_tcp_free (REvTCP * evtcp)
 {
   r_queue_clear (&evtcp->qsend, r_ev_tcp_send_ctx_free);
+
+  /* A graceful close that never reached its finalizer (e.g. the last ref was
+   * dropped while the queue was still draining) still owns the caller's close
+   * data; release it so its notify cannot leak. */
+  if (evtcp->close_datanotify != NULL)
+    evtcp->close_datanotify (evtcp->close_data);
 #if defined (R_OS_WIN32) && !defined (R_EV_USE_RPOLL)
   /* No ops can be in flight here: each holds a ref, so the last unref (which
    * brought us here) cannot run while one is outstanding. Release whatever
@@ -142,6 +156,10 @@ r_ev_tcp_free (REvTCP * evtcp)
   r_ev_io_clear (&evtcp->evio);
   r_free (evtcp);
 }
+
+/* Finish a graceful close once its send queue has drained (defined with the
+ * close API below; called from the send-completion paths above it). */
+static void r_ev_tcp_finalize_close (REvTCP * evtcp);
 
 static REvTCP *
 r_ev_tcp_new_with_socket (RSocket * socket, REvLoop * loop)
@@ -456,6 +474,14 @@ r_ev_tcp_iocp_send_complete (REvIOCPOp * op, REvLoop * loop, rsize bytes)
       evtcp->error (evtcp->error_data, evtcp, r_ev_tcp_iocp_status (err));
   }
 
+  /* Graceful close waiting on this queue (r_ev_tcp_close): finish once it has
+   * drained, or once a send failed and the tail can never go out. An aborted
+   * op belongs to a teardown already in progress, so it is left alone. */
+  if (evtcp->closing &&
+      (r_queue_peek (&evtcp->qsend) == NULL ||
+       (err != 0 && err != ERROR_OPERATION_ABORTED)))
+    r_ev_tcp_finalize_close (evtcp);
+
   r_ev_tcp_unref (evtcp);
 }
 
@@ -609,11 +635,14 @@ r_ev_tcp_iocp_connect_complete (REvIOCPOp * op, REvLoop * loop, rsize bytes)
 }
 #endif /* R_OS_WIN32 && !R_EV_USE_RPOLL */
 
-rboolean
-r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotify datanotify)
+/* Tear down all I/O watches, mark the handle closed, and schedule @close_cb.
+ * The underlying socket is released when the last reference drops in
+ * r_ev_tcp_free. Shared by the immediate abort and the graceful-close
+ * finalizer; idempotent with respect to the individual watches. */
+static rboolean
+r_ev_tcp_teardown (REvTCP * evtcp, REvIOFunc close_cb, rpointer data,
+    RDestroyNotify datanotify)
 {
-  R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT,
-      evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
 #if defined (R_OS_WIN32) && !defined (R_EV_USE_RPOLL)
   /* Cancel every in-flight overlapped op on the socket; each completes with
    * ERROR_OPERATION_ABORTED, drops its ref, and the socket is finally closed
@@ -627,8 +656,6 @@ r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotif
     r_task_unref (evtcp->recv_task);
     evtcp->recv_task = NULL;
   }
-  evtcp->evio.flags |= R_EV_IO_CLOSED;
-  return r_ev_io_close ((REvIO *)evtcp, close_cb, data, datanotify);
 #else
   r_ev_tcp_recv_stop (evtcp);
 
@@ -644,11 +671,110 @@ r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotif
     r_ev_io_stop (&evtcp->evio, evtcp->listen_iocb_ctx);
     evtcp->listen_iocb_ctx = NULL;
   }
+#endif
 
-  /* Mark as closed, but close is actually happening in r_socket_free -> FIXME? */
   evtcp->evio.flags |= R_EV_IO_CLOSED;
   return r_ev_io_close ((REvIO *)evtcp, close_cb, data, datanotify);
-#endif
+}
+
+/* Deferred half of the graceful close: runs as a loop callback so the watch
+ * teardown never happens inside the send path's own dispatch. */
+static void
+r_ev_tcp_finalize_teardown (rpointer data, REvLoop * loop)
+{
+  REvTCP * evtcp = data;
+  REvIOFunc close_cb = evtcp->close_cb;
+  rpointer cdata = evtcp->close_data;
+  RDestroyNotify cnotify = evtcp->close_datanotify;
+  (void) loop;
+
+  evtcp->close_cb = NULL;
+  evtcp->close_data = NULL;
+  evtcp->close_datanotify = NULL;
+  r_ev_tcp_teardown (evtcp, close_cb, cdata, cnotify);
+}
+
+/* The send queue has drained (or a send failed) during a graceful close:
+ * half-close the write side so the peer reads end-of-stream, then finish the
+ * teardown. Idempotent -- only the first call, while still closing, acts. */
+static void
+r_ev_tcp_finalize_close (REvTCP * evtcp)
+{
+  if (!evtcp->closing)
+    return;
+  evtcp->closing = FALSE;
+
+  r_io_socket_shutdown (evtcp->evio.handle, FALSE, TRUE);
+  /* Defer the watch teardown: we are called from within the send path, where
+   * stopping the send watcher synchronously would corrupt loop iteration. */
+  r_ev_loop_add_callback (evtcp->evio.loop, FALSE,
+      r_ev_tcp_finalize_teardown, r_ev_tcp_ref (evtcp), r_ev_tcp_unref);
+}
+
+rboolean
+r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotify datanotify)
+{
+  if (R_UNLIKELY (evtcp == NULL)) return FALSE;
+
+  R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT,
+      evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
+
+  /* Already closed, or a graceful close is already draining: nothing to add. */
+  if ((evtcp->evio.flags & R_EV_IO_CLOSED) || evtcp->closing) {
+    if (datanotify != NULL)
+      datanotify (data);
+    return FALSE;
+  }
+
+  /* Receiving stops immediately; only the write side is drained. */
+  r_ev_tcp_recv_stop (evtcp);
+
+  /* With nothing queued there is nothing to flush: half-close and finish now.
+   * Otherwise hand off to the send path, which finalizes once the queue
+   * drains (or a send fails and the tail becomes undeliverable). */
+  if (r_queue_peek (&evtcp->qsend) == NULL) {
+    r_io_socket_shutdown (evtcp->evio.handle, FALSE, TRUE);
+    return r_ev_tcp_teardown (evtcp, close_cb, data, datanotify);
+  }
+
+  evtcp->closing = TRUE;
+  evtcp->close_cb = close_cb;
+  evtcp->close_data = data;
+  evtcp->close_datanotify = datanotify;
+  return TRUE;
+}
+
+rboolean
+r_ev_tcp_abort (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotify datanotify)
+{
+  if (R_UNLIKELY (evtcp == NULL)) return FALSE;
+
+  R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT,
+      evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
+
+  if (evtcp->evio.flags & R_EV_IO_CLOSED) {
+    if (datanotify != NULL)
+      datanotify (data);
+    return FALSE;
+  }
+
+  /* A graceful close may have been mid-drain: drop its deferred state and the
+   * data it was holding before tearing the socket down underneath it. */
+  evtcp->closing = FALSE;
+  if (evtcp->close_datanotify != NULL)
+    evtcp->close_datanotify (evtcp->close_data);
+  evtcp->close_cb = NULL;
+  evtcp->close_data = NULL;
+  evtcp->close_datanotify = NULL;
+
+  /* Discard anything still queued -- abort does not wait to deliver it. */
+  r_queue_clear (&evtcp->qsend, r_ev_tcp_send_ctx_free);
+
+  /* No half-close (FIN) here, deliberately: the connection ends when the
+   * handle is released, honouring the socket's linger setting -- so a caller
+   * that set SO_LINGER to 0 gets the abortive RST it asked for, which a
+   * shutdown(FIN) would pre-empt. */
+  return r_ev_tcp_teardown (evtcp, close_cb, data, datanotify);
 }
 
 RSocket *
@@ -966,7 +1092,7 @@ static void
 r_ev_tcp_send_iocb (REvTCP * evtcp)
 {
   REvTCPSendCtx * ctx;
-  RSocketStatus res;
+  RSocketStatus res = R_SOCKET_OK;
   rsize sent;
 
   while ((ctx = r_queue_peek (&evtcp->qsend)) != NULL) {
@@ -1000,6 +1126,12 @@ r_ev_tcp_send_iocb (REvTCP * evtcp)
       break;
     }
   }
+
+  /* Graceful close waiting on this queue (r_ev_tcp_close): once it has fully
+   * drained -- or a send failed and the tail can never go out -- half-close
+   * and finish. A WOULD_BLOCK leaves the writable watcher armed to resume. */
+  if (evtcp->closing && res != R_SOCKET_WOULD_BLOCK)
+    r_ev_tcp_finalize_close (evtcp);
 }
 
 static void
@@ -1224,6 +1356,14 @@ r_ev_tcp_send (REvTCP * evtcp, RBuffer * buf,
 {
   REvTCPSendCtx * ctx;
   rboolean ret;
+
+  /* The write side is gone once a close has been requested: a graceful close
+   * is draining toward its half-close and an abort has already shut down, so a
+   * late send (e.g. a response produced after the connection was torn down)
+   * has nowhere to go -- and writing the half-closed/reset socket would raise
+   * EPIPE. Drop it rather than queue something that can never be sent. */
+  if ((evtcp->evio.flags & R_EV_IO_CLOSED) || evtcp->closing)
+    return FALSE;
 
   if ((ret = (ctx = r_mem_new (REvTCPSendCtx)) != NULL)) {
     ctx->buf = r_buffer_ref (buf);

@@ -78,8 +78,65 @@ typedef void (*REvTCPErrorFunc) (rpointer data, REvTCP * evtcp, RSocketStatus er
 R_API REvTCP * r_ev_tcp_new (RSocketFamily family, REvLoop * loop);
 /** @brief Create a TCP socket already bound to @p addr. */
 R_API REvTCP * r_ev_tcp_new_bind (const RSocketAddress * addr, REvLoop * loop);
-/** @brief Close the socket; @p close_cb fires once closed. */
+/**
+ * @brief Close the connection gracefully: flush, half-close, then finish.
+ *
+ * Any data already queued with @ref r_ev_tcp_send is flushed to the peer
+ * first; once the send queue is empty the write side is shut down (a TCP
+ * @c FIN, so the peer reads end-of-stream) and the socket is closed.
+ * Because the flush may take several loop iterations, the close is
+ * asynchronous: @p close_cb fires on the loop thread once the socket is
+ * fully closed (the queue drained and the handle released), never before.
+ *
+ * Receiving is stopped immediately -- no further receive callbacks fire and
+ * any unread inbound bytes are discarded; only the *write* side is drained.
+ * If the peer is not reading, a full kernel send buffer can hold the flush
+ * (and therefore @p close_cb) off indefinitely; use @ref r_ev_tcp_abort when
+ * a bounded, immediate teardown matters more than delivering queued bytes.
+ *
+ * Idempotent and safe to call from within the socket's own callbacks. Use
+ * this for an orderly shutdown where the queued bytes must reach the peer
+ * (e.g. a final response before closing a connection).
+ *
+ * @param evtcp       the connection to close; @c NULL is a no-op.
+ * @param close_cb    fired once, after the socket is fully closed; may be
+ *                    @c NULL.
+ * @param data        user data passed to @p close_cb.
+ * @param datanotify  invoked on @p data when the close completes (or is
+ *                    superseded); may be @c NULL.
+ * @return @c TRUE if the close was initiated.
+ *
+ * @sa r_ev_tcp_abort
+ */
 R_API rboolean r_ev_tcp_close (REvTCP * evtcp, REvIOFunc close_cb,
+    rpointer data, RDestroyNotify datanotify);
+/**
+ * @brief Close the connection immediately, discarding queued sends.
+ *
+ * The counterpart to @ref r_ev_tcp_close. Any bytes still queued with
+ * @ref r_ev_tcp_send are dropped unsent, both directions are torn down at
+ * once, and the socket is closed without waiting for a flush. The peer may
+ * observe this as a connection reset rather than an orderly @c FIN.
+ *
+ * Receiving and sending stop immediately. @p close_cb still fires on the
+ * loop thread once the handle is released, but -- unlike the graceful close
+ * -- it is not gated on delivering queued data, so it completes promptly and
+ * cannot stall on a stuck peer.
+ *
+ * Idempotent and safe to call from within the socket's own callbacks. Use
+ * this for connection eviction / error teardown, or wherever pending output
+ * is not worth waiting for.
+ *
+ * @param evtcp       the connection to abort; @c NULL is a no-op.
+ * @param close_cb    fired once, after the socket is closed; may be @c NULL.
+ * @param data        user data passed to @p close_cb.
+ * @param datanotify  invoked on @p data when the close completes; may be
+ *                    @c NULL.
+ * @return @c TRUE if the abort was initiated.
+ *
+ * @sa r_ev_tcp_close
+ */
+R_API rboolean r_ev_tcp_abort (REvTCP * evtcp, REvIOFunc close_cb,
     rpointer data, RDestroyNotify datanotify);
 /** @brief Take a reference (alias for @ref r_ref_ref). */
 #define r_ev_tcp_ref r_ref_ref

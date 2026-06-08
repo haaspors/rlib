@@ -583,7 +583,7 @@ r_http_server_tcp_close (rpointer data, rpointer user)
 
   /* This looks wierd, and yes, no close callback,
    * but rather use ref counting of the ctx object */
-  r_ev_tcp_close (tcp, NULL, r_ref_ref (ctx), r_ref_unref);
+  r_ev_tcp_abort (tcp, NULL, r_ref_ref (ctx), r_ref_unref);
 }
 
 static void
@@ -596,8 +596,9 @@ r_http_server_close_client_ctx (rpointer data, rpointer user)
   /* Close only; the array removal (and the context's last unref) is done by
    * the r_ptr_array_remove_all_full walk that invoked this. Calling
    * r_http_client_ctx_close here would remove the entry mid-walk and drop the
-   * reference twice. */
-  r_ev_tcp_close (cli->evtcp, NULL, r_ref_ref (ctx), r_ref_unref);
+   * reference twice. A forced stop aborts -- it must not block on a slow or
+   * stalled peer the way a graceful flush could. */
+  r_ev_tcp_abort (cli->evtcp, NULL, r_ref_ref (ctx), r_ref_unref);
 }
 
 rsize
