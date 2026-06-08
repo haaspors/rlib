@@ -308,11 +308,18 @@ RTEST (rsocket, sendto_recvfrom, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((sock2 = r_socket_new (R_SOCKET_FAMILY_IPV4,
           R_SOCKET_TYPE_DATAGRAM, R_SOCKET_PROTOCOL_UDP)), !=, NULL);
 
-  r_assert_cmpptr ((addr1 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
-  r_assert_cmpptr ((addr2 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x2222)), !=, NULL);
   r_assert_cmpptr ((srcaddr = r_socket_address_new ()), !=, NULL);
+  /* Ephemeral ports read back from the sockets: fixed UDP ports collide under
+   * meson test --repeat (SO_REUSEPORT can even misroute a datagram to a prior
+   * run's leftover socket). */
+  r_assert_cmpptr ((addr1 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert_cmpptr ((addr2 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert_cmpint (r_socket_bind (sock1, addr1, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_bind (sock2, addr2, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr1);
+  r_socket_address_unref (addr2);
+  r_assert_cmpptr ((addr1 = r_socket_get_local_address (sock1)), !=, NULL);
+  r_assert_cmpptr ((addr2 = r_socket_get_local_address (sock2)), !=, NULL);
 
   /* sendto and recvfrom */
   {
@@ -353,11 +360,18 @@ RTEST (rsocket, sendmsg_recvmsg, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((sock2 = r_socket_new (R_SOCKET_FAMILY_IPV4,
           R_SOCKET_TYPE_DATAGRAM, R_SOCKET_PROTOCOL_UDP)), !=, NULL);
 
-  r_assert_cmpptr ((addr1 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
-  r_assert_cmpptr ((addr2 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x2222)), !=, NULL);
   r_assert_cmpptr ((srcaddr = r_socket_address_new ()), !=, NULL);
+  /* Ephemeral ports read back from the sockets: fixed UDP ports collide under
+   * meson test --repeat (SO_REUSEPORT can even misroute a datagram to a prior
+   * run's leftover socket). */
+  r_assert_cmpptr ((addr1 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert_cmpptr ((addr2 = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert_cmpint (r_socket_bind (sock1, addr1, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_bind (sock2, addr2, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr1);
+  r_socket_address_unref (addr2);
+  r_assert_cmpptr ((addr1 = r_socket_get_local_address (sock1)), !=, NULL);
+  r_assert_cmpptr ((addr2 = r_socket_get_local_address (sock2)), !=, NULL);
 
   /* sendmsg and recvmsg */
   {
