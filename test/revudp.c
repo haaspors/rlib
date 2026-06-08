@@ -48,8 +48,10 @@ RTEST (revudp, bind_recv, RTEST_FAST | RTEST_SYSTEM)
   r_clock_unref (clock);
 
   r_assert_cmpptr ((evudp = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert (r_ev_udp_bind (evudp, addr, TRUE));
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_udp_get_local_address (evudp)), !=, NULL);
 
   r_assert (r_ev_udp_recv_start (evudp, NULL, buffer_recv, &ctx, NULL));
 
@@ -98,8 +100,10 @@ RTEST (revudp, send_recv, RTEST_FAST | RTEST_SYSTEM)
   r_clock_unref (clock);
 
   r_assert_cmpptr ((udp1 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert (r_ev_udp_bind (udp1, addr, TRUE));
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_udp_get_local_address (udp1)), !=, NULL);
 
   r_assert (r_ev_udp_recv_start (udp1, NULL, buffer_recv, &ctx, NULL));
 
@@ -157,8 +161,10 @@ RTEST (revudp, send_recv_multi, RTEST_FAST | RTEST_SYSTEM)
   r_clock_unref (clock);
 
   r_assert_cmpptr ((udp1 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert (r_ev_udp_bind (udp1, addr, TRUE));
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_udp_get_local_address (udp1)), !=, NULL);
   r_assert (r_ev_udp_recv_start (udp1, NULL, buffer_recv, &ctx, NULL));
 
   r_assert_cmpptr ((udp2 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
@@ -204,8 +210,10 @@ RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
   r_clock_unref (clock);
 
   r_assert_cmpptr ((udp1 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
   r_assert (r_ev_udp_bind (udp1, addr, TRUE));
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_udp_get_local_address (udp1)), !=, NULL);
 
   r_assert (r_ev_udp_task_recv_start (udp1, 0, NULL, buffer_recv, &ctx, NULL));
 
