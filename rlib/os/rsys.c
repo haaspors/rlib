@@ -348,9 +348,14 @@ r_sys_cpuset_for_node (RBitset * cpuset, ruint node)
   r_bitset_clear (cpuset);
 #if defined (R_OS_WIN32)
   {
-    ULONGLONG mask;
+    ULONGLONG mask = 0;
     if (node < RUINT8_MAX && GetNumaNodeProcessorMask ((ruchar)node, &mask))
       ret = r_bitset_set_u64_at (cpuset, mask, 0);
+
+    /* A single node owns every online CPU; fall back to that when the
+     * per-node mask query yields nothing (empty mask or failed call). */
+    if (mask == 0 && node == 0 && r_sys_node_count () == 1)
+      ret = r_sys_cpuset_online (cpuset);
   }
 #elif defined (R_OS_LINUX)
   {
