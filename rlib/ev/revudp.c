@@ -145,6 +145,12 @@ r_ev_udp_bind (REvUDP * evudp, const RSocketAddress * address, rboolean reuse)
     r_socket_bind (evudp->socket, address, reuse) == R_SOCKET_OK;
 }
 
+RSocketAddress *
+r_ev_udp_get_local_address (const REvUDP * evudp)
+{
+  return evudp != NULL ? r_socket_get_local_address (evudp->socket) : NULL;
+}
+
 #define R_EV_UDP_BUFFER_SIZE        4096
 
 static RBuffer *
