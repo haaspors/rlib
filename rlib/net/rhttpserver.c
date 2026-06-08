@@ -17,6 +17,8 @@
  */
 
 #include "config.h"
+
+#include <stdio.h> /* DIAG #310: fprintf(stderr) markers, revert before merge */
 #include "../rlib-private.h"
 #include "../ev/rev-private.h"
 #include <rlib/net/rhttpserver.h>
@@ -120,9 +122,9 @@ r_http_client_ctx_tcp_response_ready (rpointer data, RHttpResponse * res,
   RHttpClientCtx * ctx = data;
   RBuffer * buf;
 
-  if (r_ptr_array_size (ctx->server->clients) == 0)   /* DIAG #310: post-stop */
-    R_LOG_WARNING ("DIAG310: response_ready reached post-stop (keepalive=%d)",
-        ctx->keepalive);
+  fprintf (stderr, "DIAG310: server response_ready ctx=%p keepalive=%d clients=%"
+      RSIZE_FMT"\n", (void *)ctx, ctx->keepalive,
+      (rsize)r_ptr_array_size (ctx->server->clients)); fflush (stderr);
 
   /* A response on a kept-alive connection must be self-delimiting or the client
    * cannot tell where it ends (it would wait for a close that never comes).

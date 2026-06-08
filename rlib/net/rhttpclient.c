@@ -231,9 +231,13 @@ r_http_client_conn_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
   (void) evtcp;
 
   /* DIAG #310: did the response/EOF ever reach the client connection? */
-  fprintf (stderr, "DIAG310: client conn_recv conn=%p buf=%p req=%p finished=%d\n",
-      (void *)conn, (void *)buf, (void *)conn->req,
-      conn->req ? (int)conn->req->finished : -1); fflush (stderr);
+  fprintf (stderr, "DIAG310: client conn_recv conn=%p buf=%p bufsz=%"RSIZE_FMT
+      " req=%p finished=%d inbuf=%"RSIZE_FMT" res=%p\n",
+      (void *)conn, (void *)buf, buf != NULL ? r_buffer_get_size (buf) : (rsize)0,
+      (void *)conn->req, conn->req ? (int)conn->req->finished : -1,
+      (conn->req != NULL && conn->req->inbuf != NULL) ?
+          r_buffer_get_size (conn->req->inbuf) : (rsize)0,
+      conn->req != NULL ? (void *)conn->req->res : NULL); fflush (stderr);
   if (conn->req == NULL || conn->req->finished) {
     /* Bytes or EOF on a parked connection: the peer is done with it. */
     r_http_client_conn_evict (conn);
@@ -369,6 +373,9 @@ r_http_client_req_complete (RHttpClientReqCtx * ctx, RHttpClientResult result,
     return;
   ctx->finished = TRUE;
 
+  fprintf (stderr, "DIAG310: req_complete ctx=%p result=%d res=%p\n",
+      (void *)ctx, (int)result, (void *)ctx->res); fflush (stderr);
+
   /* Keep ctx alive across the callback and the array removal below. */
   r_ref_ref (ctx);
 
@@ -409,6 +416,10 @@ r_http_client_req_fail (RHttpClientReqCtx * ctx, RHttpClientResult result,
 {
   if (ctx->finished)
     return;
+
+  fprintf (stderr, "DIAG310: req_fail ctx=%p result=%d reused=%d retried=%d res=%p\n",
+      (void *)ctx, (int)result, ctx->reused, ctx->retried, (void *)ctx->res);
+  fflush (stderr);
 
   if (ctx->reused && !ctx->retried && ctx->res == NULL) {
     RHttpClientConn * conn = ctx->conn;
@@ -568,6 +579,8 @@ r_http_client_req_connect (RHttpClientReqCtx * ctx, rboolean defer)
 {
   RHttpClientConn * conn;
 
+  fprintf (stderr, "DIAG310: req_connect ctx=%p retried=%d\n",
+      (void *)ctx, ctx->retried); fflush (stderr);
   ctx->reused = FALSE;
   if ((conn = r_http_client_conn_new (ctx->client, ctx->dest)) == NULL) {
     r_http_client_req_complete (ctx, R_HTTP_CLIENT_CONNECT_FAILED, defer);
