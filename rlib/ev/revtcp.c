@@ -1006,13 +1006,22 @@ static void
 r_ev_tcp_error_iocb (REvTCP * evtcp)
 {
   RSocketStatus err = r_socket_get_error (evtcp->socket);
-  R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT" err: %d",
+  /* A poll-level error can carry no socket SO_ERROR: the handle went invalid at
+   * the poll layer (e.g. it could not be associated for readiness) rather than
+   * via an I/O op, so r_socket_get_error reads R_SOCKET_OK. Fail the connection
+   * with a generic status anyway -- swallowing it stalls the stream, because
+   * the poll layer re-raises the error on every iteration and nothing tears the
+   * connection down. recv/send run earlier in this same dispatch and their
+   * failure delivery is idempotent (req_fail / teardown), so reporting again
+   * here is harmless. */
+  if (err == R_SOCKET_OK)
+    err = R_SOCKET_ERROR;
+  R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT" err: %d",
       evtcp->evio.loop, R_EV_IO_ARGS (evtcp), err);
-  /* The error may already have been consumed (and reported) by the
-   * recv / send path in this same dispatch; only notify on a still-set
-   * error so the handler isn't called with a stale R_SOCKET_OK. */
-  if (err != R_SOCKET_OK && evtcp->error != NULL)
+  if (evtcp->error != NULL)
     evtcp->error (evtcp->error_data, evtcp, err);
+  else if (evtcp->recv_iocb_ctx != NULL)
+    r_ev_tcp_recv_teardown (evtcp, err);
 }
 
 #if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
