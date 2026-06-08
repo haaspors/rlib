@@ -120,6 +120,10 @@ r_http_client_ctx_tcp_response_ready (rpointer data, RHttpResponse * res,
   RHttpClientCtx * ctx = data;
   RBuffer * buf;
 
+  if (r_ptr_array_size (ctx->server->clients) == 0)   /* DIAG #310: post-stop */
+    R_LOG_WARNING ("DIAG310: response_ready reached post-stop (keepalive=%d)",
+        ctx->keepalive);
+
   /* A response on a kept-alive connection must be self-delimiting or the client
    * cannot tell where it ends (it would wait for a close that never comes).
    * Frame any response that is neither chunked nor already length-delimited --
