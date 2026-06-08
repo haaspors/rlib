@@ -1,8 +1,10 @@
 #include <rlib/rnet.h>
 #include <rlib/rev.h>
 
-/* Each test uses a distinct port: on Windows rtest runs single-process, so a
- * shared port can collide with a previous test's not-yet-torn-down socket. */
+/* Servers here bind an ephemeral port (0) and read back the OS-assigned port
+ * (see r_test_http_listen_ephemeral): a fixed port collides with a previous
+ * run's socket still in TIME_WAIT -- notably under meson test --repeat, and on
+ * Windows where rtest runs single-process. */
 #define R_TEST_HTTP_CLIENT_BODY   "hello from rlib"
 
 typedef struct {
@@ -87,14 +89,31 @@ r_test_http_client_handler (rpointer data, RHttpRequest * req,
   return res;
 }
 
+/* Listen on an ephemeral port (the OS picks it) and return the bound address
+ * the caller must unref. A fixed port collides with the previous run's socket
+ * still in TIME_WAIT -- notably under meson test --repeat and single-process
+ * rtest -- so every server here binds 0 and reads back the real port. */
+static RSocketAddress *
+r_test_http_listen_ephemeral (RHttpServer * srv)
+{
+  RSocketAddress * addr, * bound = NULL;
+
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
+      !=, NULL);
+  if (r_http_server_listen (srv, addr))
+    bound = r_http_server_get_local_address (srv);
+  r_socket_address_unref (addr);
+
+  return bound;
+}
+
 /* Build a listening server with a handler at @p path returning @p status
  * (with a body); the address to connect to is returned in *out. */
 static RHttpServer *
-r_test_http_client_server (REvLoop * loop, ruint16 port, const rchar * path,
+r_test_http_client_server (REvLoop * loop, const rchar * path,
     RHttpStatus status, RSocketAddress ** out)
 {
   RHttpServer * srv;
-  RSocketAddress * addr;
 
   if ((srv = r_http_server_new (loop)) == NULL)
     return NULL;
@@ -102,11 +121,8 @@ r_test_http_client_server (REvLoop * loop, ruint16 port, const rchar * path,
   r_assert (r_http_server_set_handler (srv, path, -1,
         r_test_http_client_handler, RUINT_TO_POINTER (status), NULL));
 
-  addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, port);
-  r_assert_cmpptr (addr, !=, NULL);
-  r_assert (r_http_server_listen (srv, addr));
-
-  *out = addr;
+  *out = r_test_http_listen_ephemeral (srv);
+  r_assert_cmpptr (*out, !=, NULL);
   return srv;
 }
 
@@ -140,7 +156,7 @@ RTEST (rhttpclient, request_get, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_clock_unref (clock);
 
-  r_assert_cmpptr ((srv = r_test_http_client_server (loop, 47654, "/",
+  r_assert_cmpptr ((srv = r_test_http_client_server (loop, "/",
           R_HTTP_STATUS_OK, &addr)), !=, NULL);
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
 
@@ -177,18 +193,21 @@ RTEST (rhttpclient, request_get_uri, RTEST_FAST | RTEST_SYSTEM)
   RHttpResponse * res;
   RSocketAddress * addr;
   RHttpClientResult result;
-  rchar * body;
+  rchar * body, * uri;
 
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_clock_unref (clock);
 
-  r_assert_cmpptr ((srv = r_test_http_client_server (loop, 47664, "/",
+  r_assert_cmpptr ((srv = r_test_http_client_server (loop, "/",
           R_HTTP_STATUS_OK, &addr)), !=, NULL);
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
 
-  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
-          "http://127.0.0.1:47664/", NULL, NULL)), !=, NULL);
+  uri = r_strprintf ("http://127.0.0.1:%u/",
+      r_socket_address_ipv4_get_port (addr));
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET, uri, NULL,
+          NULL)), !=, NULL);
+  r_free (uri);
 
   res = r_test_http_send_uri (loop, client, req, &result);
   r_http_request_unref (req);
@@ -249,7 +268,7 @@ RTEST (rhttpclient, request_not_found, RTEST_FAST | RTEST_SYSTEM)
 
   /* Handler is registered at "/specific"; request an unrelated path so no
    * handler (nor any parent with one) matches -> 404. */
-  r_assert_cmpptr ((srv = r_test_http_client_server (loop, 47655, "/specific",
+  r_assert_cmpptr ((srv = r_test_http_client_server (loop, "/specific",
           R_HTTP_STATUS_OK, &addr)), !=, NULL);
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
 
@@ -358,9 +377,7 @@ RTEST (rhttpclient, request_large_body, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
   r_assert (r_http_server_set_handler (srv, "/", -1,
         r_test_http_client_big_handler, NULL, NULL));
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1,
-          47657)), !=, NULL);
-  r_assert (r_http_server_listen (srv, addr));
+  r_assert_cmpptr ((addr = r_test_http_listen_ephemeral (srv)), !=, NULL);
 
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
   r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
@@ -405,7 +422,7 @@ RTEST (rhttpclient, request_head, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_clock_unref (clock);
 
-  r_assert_cmpptr ((srv = r_test_http_client_server (loop, 47658, "/",
+  r_assert_cmpptr ((srv = r_test_http_client_server (loop, "/",
           R_HTTP_STATUS_OK, &addr)), !=, NULL);
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
 
@@ -461,9 +478,7 @@ RTEST (rhttpclient, server_stop_during_request, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
   r_assert (r_http_server_set_handler (srv, "/", -1,
         r_test_http_client_stop_handler, NULL, NULL));
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1,
-          47659)), !=, NULL);
-  r_assert (r_http_server_listen (srv, addr));
+  r_assert_cmpptr ((addr = r_test_http_listen_ephemeral (srv)), !=, NULL);
 
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
   r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
@@ -513,18 +528,24 @@ r_test_raw_conn_ready (rpointer data, REvTCP * newtcp, REvTCP * listening)
 }
 
 static RTestRawServer *
-r_test_raw_server_new (REvLoop * loop, ruint16 port, const rchar * blob,
+r_test_raw_server_new (REvLoop * loop, const rchar * blob,
     rsize blen, RSocketAddress ** out)
 {
   RTestRawServer * s = r_mem_new0 (RTestRawServer);
+  RSocketAddress * bind;
 
-  *out = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, port);
-  r_assert_cmpptr (*out, !=, NULL);
+  /* Ephemeral port (read back from the listener) -- see the comment on
+   * r_test_http_listen_ephemeral. */
+  r_assert_cmpptr ((bind = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
+      !=, NULL);
   s->blob = blob;
   s->blen = blen;
-  r_assert_cmpptr ((s->listen = r_ev_tcp_new_bind (*out, loop)), !=, NULL);
+  r_assert_cmpptr ((s->listen = r_ev_tcp_new_bind (bind, loop)), !=, NULL);
+  r_socket_address_unref (bind);
   r_assert_cmpint (r_ev_tcp_listen (s->listen, R_SOCKET_DEFAULT_BACKLOG,
         r_test_raw_conn_ready, s, NULL), >=, R_SOCKET_OK);
+  *out = r_ev_tcp_get_local_address (s->listen);
+  r_assert_cmpptr (*out, !=, NULL);
   return s;
 }
 
@@ -541,8 +562,7 @@ r_test_raw_server_free (RTestRawServer * s)
 }
 
 static RHttpClientResult
-r_test_http_client_raw_body (ruint16 port, const rchar * blob,
-    const rchar * expect_body)
+r_test_http_client_raw_body (const rchar * blob, const rchar * expect_body)
 {
   REvLoop * loop;
   RClock * clock;
@@ -557,7 +577,7 @@ r_test_http_client_raw_body (ruint16 port, const rchar * blob,
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_clock_unref (clock);
 
-  raw = r_test_raw_server_new (loop, port, blob, r_strlen (blob), &addr);
+  raw = r_test_raw_server_new (loop, blob, r_strlen (blob), &addr);
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
   r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
           "http://127.0.0.1/", NULL, NULL)), !=, NULL);
@@ -581,15 +601,15 @@ r_test_http_client_raw_body (ruint16 port, const rchar * blob,
 }
 
 static RHttpClientResult
-r_test_http_client_raw (ruint16 port, const rchar * blob)
+r_test_http_client_raw (const rchar * blob)
 {
-  return r_test_http_client_raw_body (port, blob, NULL);
+  return r_test_http_client_raw_body (blob, NULL);
 }
 
 /* A chunked response is decoded back into the reassembled body. */
 RTEST (rhttpclient, response_chunked, RTEST_FAST | RTEST_SYSTEM)
 {
-  r_assert_cmpint (r_test_http_client_raw_body (47660,
+  r_assert_cmpint (r_test_http_client_raw_body (
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
         "4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n", "Wikipedia"),
       ==, R_HTTP_CLIENT_OK);
@@ -599,7 +619,7 @@ RTEST_END;
 /* A response that is not valid HTTP is a parse failure. */
 RTEST (rhttpclient, response_malformed, RTEST_FAST | RTEST_SYSTEM)
 {
-  r_assert_cmpint (r_test_http_client_raw (47661,
+  r_assert_cmpint (r_test_http_client_raw (
         "totally not a http response\r\n\r\n"), ==, R_HTTP_CLIENT_PARSE_FAILED);
 }
 RTEST_END;
@@ -642,10 +662,12 @@ RTEST (rhttpclientsync, request, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpptr ((listen = r_socket_new (R_SOCKET_FAMILY_IPV4,
           R_SOCKET_TYPE_STREAM, R_SOCKET_PROTOCOL_TCP)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1,
-          47662)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
+      !=, NULL);
   r_assert_cmpint (r_socket_bind (listen, addr, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_listen (listen), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_socket_get_local_address (listen)), !=, NULL);
   /* Block in accept until the client connects (the thread starts first). */
   r_assert (r_socket_set_blocking (listen, TRUE));
   r_assert_cmpptr ((thread = r_thread_new (NULL,
@@ -685,21 +707,26 @@ RTEST (rhttpclientsync, request_uri, RTEST_FAST | RTEST_SYSTEM)
   RHttpRequest * req;
   RHttpResponse * res;
   RHttpClientResult result;
-  rchar * body;
+  rchar * body, * uri;
 
   r_assert_cmpptr ((listen = r_socket_new (R_SOCKET_FAMILY_IPV4,
           R_SOCKET_TYPE_STREAM, R_SOCKET_PROTOCOL_TCP)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1,
-          47666)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
+      !=, NULL);
   r_assert_cmpint (r_socket_bind (listen, addr, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_listen (listen), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_socket_get_local_address (listen)), !=, NULL);
   r_assert (r_socket_set_blocking (listen, TRUE));
   r_assert_cmpptr ((thread = r_thread_new (NULL,
           r_test_http_blocking_responder, listen)), !=, NULL);
 
   r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
-  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
-          "http://127.0.0.1:47666/", NULL, NULL)), !=, NULL);
+  uri = r_strprintf ("http://127.0.0.1:%u/",
+      r_socket_address_ipv4_get_port (addr));
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET, uri, NULL,
+          NULL)), !=, NULL);
+  r_free (uri);
 
   res = r_http_client_sync_request (sync, req, &result);
   r_http_request_unref (req);
@@ -794,18 +821,20 @@ r_test_ka_responder (rpointer data)
 }
 
 static RThread *
-r_test_ka_start (RTestKaServer * s, ruint16 port, RSocketAddress ** out)
+r_test_ka_start (RTestKaServer * s, RSocketAddress ** out)
 {
   RSocketAddress * addr;
 
   r_assert_cmpptr ((s->listen = r_socket_new (R_SOCKET_FAMILY_IPV4,
           R_SOCKET_TYPE_STREAM, R_SOCKET_PROTOCOL_TCP)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1,
-          port)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
+      !=, NULL);
   r_assert_cmpint (r_socket_bind (s->listen, addr, TRUE), ==, R_SOCKET_OK);
   r_assert_cmpint (r_socket_listen (s->listen), ==, R_SOCKET_OK);
   r_assert (r_socket_set_blocking (s->listen, TRUE));
-  *out = addr;
+  r_socket_address_unref (addr);
+  *out = r_socket_get_local_address (s->listen);
+  r_assert_cmpptr (*out, !=, NULL);
   return r_thread_new (NULL, r_test_ka_responder, s);
 }
 
@@ -836,7 +865,7 @@ RTEST (rhttpclientsync, keepalive_reuse, RTEST_FAST | RTEST_SYSTEM)
   RSocketAddress * addr;
   RHttpClientSync * sync;
 
-  thread = r_test_ka_start (&s, 47667, &addr);
+  thread = r_test_ka_start (&s, &addr);
   r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
 
   r_test_ka_request (sync, addr);
@@ -863,7 +892,7 @@ RTEST (rhttpclientsync, keepalive_reuse_chunked, RTEST_FAST | RTEST_SYSTEM)
   RSocketAddress * addr;
   RHttpClientSync * sync;
 
-  thread = r_test_ka_start (&s, 47671, &addr);
+  thread = r_test_ka_start (&s, &addr);
   r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
 
   r_test_ka_request (sync, addr);
@@ -889,7 +918,7 @@ RTEST (rhttpclientsync, keepalive_disabled, RTEST_FAST | RTEST_SYSTEM)
   RSocketAddress * addr;
   RHttpClientSync * sync;
 
-  thread = r_test_ka_start (&s, 47670, &addr);
+  thread = r_test_ka_start (&s, &addr);
   r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
   r_assert (r_http_client_sync_get_keepalive (sync));   /* on by default */
   r_http_client_sync_set_keepalive (sync, FALSE);
@@ -919,7 +948,7 @@ RTEST (rhttpclientsync, keepalive_retry_stale, RTEST_FAST | RTEST_SYSTEM)
   RSocketAddress * addr;
   RHttpClientSync * sync;
 
-  thread = r_test_ka_start (&s, 47668, &addr);
+  thread = r_test_ka_start (&s, &addr);
   r_assert_cmpptr ((sync = r_http_client_sync_new ()), !=, NULL);
 
   r_test_ka_request (sync, addr);   /* pools the connection */
@@ -952,7 +981,7 @@ RTEST (rhttpclient, keepalive_idle_timeout, RTEST_FAST | RTEST_SYSTEM)
   RHttpClientResult result;
   int i;
 
-  thread = r_test_ka_start (&s, 47669, &addr);
+  thread = r_test_ka_start (&s, &addr);
   r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
   r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
