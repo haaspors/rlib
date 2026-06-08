@@ -84,6 +84,11 @@ typedef struct {
    * loop wakeup event), which is waited on directly. Owned by the
    * @ref RPollSet that manages this entry. */
   rpointer wsaevent;
+  /* Win32 only: whether @c handle is a socket (waited via its WSAEVENT) or a
+   * directly-waitable handle such as the loop wakeup (waited on bare).
+   * Classified once when the entry is armed; a socket is never waited on as a
+   * raw handle (WaitForMultipleObjectsEx rejects that). */
+  rboolean is_socket;
 #endif
 } RPoll;
 
