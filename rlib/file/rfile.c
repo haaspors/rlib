@@ -329,8 +329,11 @@ r_file_read_int (const rchar * filename, int def)
   RFile * f;
 
   if ((f = r_file_open (filename, "r")) != NULL) {
-    r_file_scanf (f, "%i", NULL, &def);
+    rintmax v = def;
+    r_file_scanf (f, "%"RINTMAX_MODIFIER"i", NULL, &v);
     r_file_unref (f);
+
+    def = (int)v;
   }
 
   return def;
