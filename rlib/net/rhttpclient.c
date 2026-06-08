@@ -18,6 +18,8 @@
 
 #include "config.h"
 #include "../rlib-private.h"
+
+#include <stdio.h> /* DIAG #310: fprintf(stderr) markers, revert before merge */
 #include <rlib/net/rhttpclient.h>
 
 #include <rlib/ev/revtcp.h>
@@ -228,6 +230,10 @@ r_http_client_conn_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
   RHttpClientConn * conn = data;
   (void) evtcp;
 
+  /* DIAG #310: did the response/EOF ever reach the client connection? */
+  fprintf (stderr, "DIAG310: client conn_recv conn=%p buf=%p req=%p finished=%d\n",
+      (void *)conn, (void *)buf, (void *)conn->req,
+      conn->req ? (int)conn->req->finished : -1); fflush (stderr);
   if (conn->req == NULL || conn->req->finished) {
     /* Bytes or EOF on a parked connection: the peer is done with it. */
     r_http_client_conn_evict (conn);
@@ -242,6 +248,9 @@ r_http_client_conn_error (rpointer data, REvTCP * evtcp, RSocketStatus error)
   RHttpClientConn * conn = data;
   (void) evtcp;
 
+  /* DIAG #310: did the client connection see a transport error in a hang? */
+  fprintf (stderr, "DIAG310: client conn_error conn=%p error=%d req=%p\n",
+      (void *)conn, (int)error, (void *)conn->req); fflush (stderr);
   R_LOG_DEBUG ("%p: connection %p socket error (%d)", conn->client, conn,
       (int) error);
   if (conn->req == NULL)
