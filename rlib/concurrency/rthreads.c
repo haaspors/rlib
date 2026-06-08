@@ -417,7 +417,9 @@ r_rwmutex_init (RRWMutex * mutex)
 void
 r_rwmutex_clear (RRWMutex * mutex)
 {
-#if defined (HAVE_PTHREAD_H)
+#if defined (R_OS_WIN32)
+  /* SRWLOCK has no teardown API */
+#elif defined (HAVE_PTHREAD_H)
   pthread_rwlock_destroy ((pthread_rwlock_t *)*mutex);
 #endif
   r_free (*mutex);
@@ -528,7 +530,9 @@ r_cond_init (RCond * cond)
 void
 r_cond_clear (RCond * cond)
 {
-#if defined (HAVE_PTHREAD_H)
+#if defined (R_OS_WIN32)
+  /* CONDITION_VARIABLE has no teardown API */
+#elif defined (HAVE_PTHREAD_H)
   pthread_cond_destroy ((pthread_cond_t *)*cond);
 #endif
   r_free (*cond);
