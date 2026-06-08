@@ -451,13 +451,19 @@ static RHttpResponse *
 r_test_http_client_stop_handler (rpointer data, RHttpRequest * req,
     RSocketAddress * addr, RHttpServer * server)
 {
+  RHttpResponse * res;
   (void) data;
   (void) addr;
 
+  /* DIAG #310: did the server process the request at all in a hanging run? */
+  fprintf (stderr, "DIAG310: stop handler invoked\n"); fflush (stderr);
   /* Stop the server while this connection is still active: exercises the
    * close-with-in-flight-connection teardown path in r_http_server_stop. */
   r_http_server_stop (server, NULL, NULL, NULL);
-  return r_http_response_new (req, R_HTTP_STATUS_OK, NULL, NULL, NULL);
+  res = r_http_response_new (req, R_HTTP_STATUS_OK, NULL, NULL, NULL);
+  fprintf (stderr, "DIAG310: stop handler returning 200 (res=%p)\n",
+      (void *)res); fflush (stderr);
+  return res;
 }
 
 RTEST (rhttpclient, server_stop_during_request, RTEST_FAST | RTEST_SYSTEM)
