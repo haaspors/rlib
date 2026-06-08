@@ -973,6 +973,10 @@ r_ev_tcp_send_iocb (REvTCP * evtcp)
     res = r_socket_send_message (evtcp->socket, NULL, ctx->buf, &sent);
     R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT" res %d sent %"RSIZE_FMT,
         evtcp->evio.loop, R_EV_IO_ARGS (evtcp), res, sent);
+    if (evtcp->evio.flags & R_EV_IO_CLOSED)   /* DIAG #310 */
+      R_LOG_WARNING ("DIAG310: send_iocb on CLOSED "R_EV_IO_FORMAT
+          " res=%d sent=%"RSIZE_FMT" qsize=%"RSIZE_FMT, R_EV_IO_ARGS (evtcp),
+          res, sent, (rsize) r_queue_size (&evtcp->qsend));
     if (res == R_SOCKET_OK) {
       r_queue_pop (&evtcp->qsend);
       if (ctx->done != NULL)
@@ -1240,6 +1244,9 @@ r_ev_tcp_send (REvTCP * evtcp, RBuffer * buf,
     ctx->data = data;
     ctx->datanotify = datanotify;
     r_queue_push (&evtcp->qsend, ctx);
+    if (evtcp->evio.flags & R_EV_IO_CLOSED)   /* DIAG #310 */
+      R_LOG_WARNING ("DIAG310: send queued on CLOSED "R_EV_IO_FORMAT" size=%"
+          RSIZE_FMT, R_EV_IO_ARGS (evtcp), r_buffer_get_size (buf));
 
     R_LOG_TRACE ("loop %p evio "R_EV_IO_FORMAT" buf %p",
         evtcp->evio.loop, R_EV_IO_ARGS (evtcp), buf);
