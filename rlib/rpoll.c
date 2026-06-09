@@ -39,7 +39,7 @@
 #include <windows.h>
 #endif
 #include <errno.h>
-#include <stdlib.h>          /* DIAG #310: getenv gate, revert before merge */
+#include <rlib/os/renv.h>    /* DIAG #310: r_getenv gate, revert before merge */
 #include <rlib/os/rtty.h>    /* DIAG #310: r_printerr, revert before merge */
 
 #define R_LOG_CAT_DEFAULT &rlib_logcat
@@ -166,7 +166,7 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
     /* DIAG #310: env-gated so it only fires in the isolated-repeat CI step,
      * not across the whole noisy suite. Revert before merge. */
     static int diag = -1;
-    if (diag < 0) diag = (getenv ("DIAG310_POLL") != NULL) ? 1 : 0;
+    if (diag < 0) diag = (r_getenv ("DIAG310_POLL") != NULL) ? 1 : 0;
     if (diag) {
       ruint k;
       r_printerr ("DIAG310: r_poll enter count=%u timeout=%lld r=%u w=%u x=%u\n",
