@@ -24,6 +24,7 @@
 #include <rlib/rlog.h>
 #include <rlib/rmem.h>
 #include <rlib/rtime.h>
+#include <rlib/concurrency/rthreads.h>
 
 #ifdef HAVE_POLL_H
 #include <poll.h>
@@ -267,6 +268,28 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
 #error Need either 'poll' or 'select'
 #endif
 
+/* A poll set is owned by a single thread (the loop that drives it); every
+ * mutation must come from that thread. In debug builds, latch the first
+ * mutator's thread and assert the rest match -- this catches accidental
+ * cross-thread (or re-entrant) use, which would silently corrupt the set, with
+ * zero cost in release builds. */
+#ifndef NDEBUG
+static void
+r_poll_set_check_owner (RPollSet * ps)
+{
+  rpointer cur = (rpointer) r_thread_current ();
+  if (ps->owner == NULL) {
+    R_LOG_DEBUG ("RPollSet %p owner latched to thread %p", ps, cur);
+    ps->owner = cur;
+  } else {
+    r_assert (ps->owner == cur);
+  }
+}
+#define R_POLL_SET_CHECK_OWNER(ps)  r_poll_set_check_owner (ps)
+#else
+#define R_POLL_SET_CHECK_OWNER(ps)  R_STMT_START { } R_STMT_END
+#endif
+
 void
 r_poll_set_init (RPollSet * ps, ruint alloc)
 {
@@ -275,6 +298,7 @@ r_poll_set_init (RPollSet * ps, ruint alloc)
   ps->count = 0;
   ps->alloc = MAX (alloc, R_POLL_SET_MIN_INCREASE);
   ps->handles = r_mem_new0_n (RPoll, ps->alloc);
+  ps->owner = NULL;
 }
 
 void
@@ -326,6 +350,7 @@ r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user)
 
   if (R_UNLIKELY (ps == NULL)) return -1;
   if (R_UNLIKELY (handle == R_IO_HANDLE_INVALID)) return -1;
+  R_POLL_SET_CHECK_OWNER (ps);
 
   /* One slot per handle. If this handle is already present -- e.g. a closed fd
    * whose entry has not been pruned yet, and whose value the OS recycled into a
@@ -364,37 +389,42 @@ r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user)
 static rboolean
 r_poll_set_remove_idx (RPollSet * ps, int idx)
 {
-  rpointer key, user;
+  ruint last;
 
   if (R_UNLIKELY (idx < 0)) return FALSE;
   if (R_UNLIKELY ((ruint)idx >= ps->count)) return FALSE;
 
-  key = RIO_HANDLE_TO_POINTER (ps->handles[idx].handle);
-  if (r_hash_table_remove_full (ps->handle_user, key, NULL, &user) == R_HASH_TABLE_OK) {
-    r_hash_table_remove (ps->handle_idx, key);
+  /* Drop the removed handle's two mappings. */
+  r_hash_table_remove (ps->handle_user,
+      RIO_HANDLE_TO_POINTER (ps->handles[idx].handle));
+  r_hash_table_remove (ps->handle_idx,
+      RIO_HANDLE_TO_POINTER (ps->handles[idx].handle));
 
-    if ((ruint)idx < --ps->count) {
-      RPoll * last = &ps->handles[ps->count];
-      rpointer last_user;
-
-      if (r_hash_table_lookup_full (ps->handle_user, RIO_HANDLE_TO_POINTER (last->handle),
-            NULL, &last_user) == R_HASH_TABLE_OK) {
-        r_poll_set_update (ps, (ruint)idx, last->handle, last->events, last_user);
-      } else {
-        return FALSE;
-      }
-    }
-
-    return TRUE;
+  /* Swap the last live entry into the vacated slot. Its handle->user mapping is
+   * unchanged -- only its index moves -- so repoint handle_idx alone. Looking
+   * the user up again and bailing on a miss was the bug: it returned with the
+   * removed handle still in a live slot, stranding a dead fd that select() then
+   * spins on. Finally clear the now-dead tail slot so no duplicate handle
+   * lingers past count for a later find or compaction to trip on. */
+  last = --ps->count;
+  if ((ruint)idx < last) {
+    ps->handles[idx] = ps->handles[last];
+    r_hash_table_insert (ps->handle_idx,
+        RIO_HANDLE_TO_POINTER (ps->handles[idx].handle),
+        RUINT_TO_POINTER ((ruint)idx));
   }
+  ps->handles[last].handle = R_IO_HANDLE_INVALID;
+  ps->handles[last].events = 0;
+  ps->handles[last].revents = 0;
 
-  return FALSE;
+  return TRUE;
 }
 
 rboolean
 r_poll_set_remove (RPollSet * ps, RIOHandle handle)
 {
   if (R_UNLIKELY (ps == NULL)) return FALSE;
+  R_POLL_SET_CHECK_OWNER (ps);
   return r_poll_set_remove_idx (ps, r_poll_set_find (ps, handle));
 }
 
@@ -404,6 +434,7 @@ r_poll_set_modify (RPollSet * ps, RIOHandle handle, rushort events)
   int idx;
 
   if (R_UNLIKELY (ps == NULL)) return FALSE;
+  R_POLL_SET_CHECK_OWNER (ps);
   if ((idx = r_poll_set_find (ps, handle)) < 0)
     return FALSE;
 

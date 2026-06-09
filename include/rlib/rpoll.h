@@ -104,6 +104,8 @@ typedef struct {
   ruint count;                /**< Number of in-use entries. */
   ruint alloc;                /**< Capacity of the @c handles array. */
   RPoll * handles;            /**< Backing array of @c count active entries. */
+  rpointer owner;             /**< Internal: owning thread, asserted in debug
+                                   builds -- a set is single-thread (loop) owned. */
 } RPollSet;
 
 /** @brief Initialise @p ps with an initial capacity of @p alloc entries. */
