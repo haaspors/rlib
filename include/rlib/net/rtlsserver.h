@@ -34,6 +34,7 @@
 #include <rlib/crypto/rkey.h>
 #include <rlib/ev/revloop.h>
 #include <rlib/net/proto/rtls.h>
+#include <rlib/net/rtlssessiontickets.h>
 
 #include <rlib/rbuffer.h>
 #include <rlib/rref.h>
@@ -120,6 +121,15 @@ R_API RTLSServer * r_tls_server_new (const RTLSCallbacks * cb,
 /** @brief Set the server certificate and its private key. */
 R_API RTLSError r_tls_server_set_cert (RTLSServer * server,
     RCryptoCert * cert, RCryptoKey * privkey);
+/**
+ * @brief Attach the shared key store used to seal and open session tickets.
+ *
+ * The server takes a reference to @p keys, so one store can back many servers.
+ * With no store configured the server neither offers nor issues session
+ * tickets. See @ref r_tls_session_tickets.
+ */
+R_API RTLSError r_tls_server_set_session_ticket_keys (RTLSServer * server,
+    RTLSSessionTicketKeys * keys);
 /** @brief Override the server-random (testing / determinism). */
 R_API RTLSError r_tls_server_set_random (RTLSServer * server,
     const ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES]);
