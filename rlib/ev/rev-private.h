@@ -170,11 +170,19 @@ R_API_HIDDEN rboolean r_ev_io_stop (REvIO * evio, rpointer ctx);
 R_API_HIDDEN rboolean r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
     rpointer data, RDestroyNotify datanotify);
 
+/* A callback may tear its own watcher down -- stop the iocb (freeing this node)
+ * or abort+unref the evio outright -- so hold a ref across the dispatch and
+ * capture the next node before invoking, or the iteration would walk freed
+ * memory. */
 #define r_ev_io_invoke_iocb(evio, events)                                     \
   R_STMT_START {                                                              \
-    REvIOCBNode * it;                                                         \
-    for (it = evio->iocbq.head; it != NULL; it = it->next)                    \
+    REvIOCBNode * it, * itnext;                                               \
+    r_ev_io_ref (evio);                                                       \
+    for (it = (evio)->iocbq.head; it != NULL; it = itnext) {                  \
+      itnext = it->next;                                                      \
       it->cb (it->data, events, evio);                                        \
+    }                                                                         \
+    r_ev_io_unref (evio);                                                     \
   } R_STMT_END
 
 
