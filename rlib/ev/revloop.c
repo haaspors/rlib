@@ -639,8 +639,15 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
       r_ev_io_invoke_iocb (dispatch[j].evio, dispatch[j].rev);
     }
 
-    for (j = 0; j < ndead; j++)
-      r_poll_set_remove (&loop->pollset, dead[j]);
+    for (j = 0; j < ndead; j++) {
+      /* A callback during dispatch may have closed this handle and the OS
+       * recycled its value into a brand-new socket that was then added to the
+       * set; only prune it if it is still unowned or owned by a closed evio,
+       * never a live recycled entry. */
+      REvIO * d = r_poll_set_get_user (&loop->pollset, dead[j]);
+      if (d == NULL || R_EV_IO_IS_CLOSED (d))
+        r_poll_set_remove (&loop->pollset, dead[j]);
+    }
   } else {
     R_LOG_ERROR ("r_poll for loop %p failed with error %d", loop, ret);
   }
