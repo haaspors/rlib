@@ -373,6 +373,13 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
   if (ret >= 0) {
     R_LOG_DEBUG ("kevent for loop %p with eventlst of %d events", loop, ret);
+    /* Ref every watcher in the batch up front: a callback may abort and free a
+     * sibling still pending later in this same batch, which would otherwise
+     * dangle. EVFILT_USER carries no watcher (udata == NULL). */
+    for (i = 0; i < ret; i++) {
+      if (events[i].udata != NULL)
+        r_ev_io_ref ((REvIO *) events[i].udata);
+    }
     for (i = 0; i < ret; i++) {
       REvIOEvents rev = 0;
       ev = &events[i];
@@ -410,7 +417,12 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
             continue;
       }
 
-      r_ev_io_invoke_iocb (evio, rev);
+      if (!R_EV_IO_IS_CLOSED (evio))
+        r_ev_io_invoke_iocb (evio, rev);
+    }
+    for (i = 0; i < ret; i++) {
+      if (events[i].udata != NULL)
+        r_ev_io_unref ((REvIO *) events[i].udata);
     }
   } else {
     R_LOG_ERROR ("kevent for loop %p failed with error %d", loop, ret);
@@ -493,6 +505,11 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
 
   if (ret >= 0) {
     R_LOG_DEBUG ("epoll_wait for loop %p with %d events", loop, ret);
+    /* Ref every watcher in the batch up front: a callback may abort and free a
+     * sibling still pending later in this same batch, which would otherwise
+     * dangle. Skip any that a callback has since closed. */
+    for (i = 0; i < ret; i++)
+      r_ev_io_ref ((REvIO *) events[i].data.ptr);
     for (i = 0; i < ret; i++) {
       REvIOEvents rev = 0;
       ev = &events[i];
@@ -503,9 +520,11 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
       if (ev->events & EPOLLIN)   rev |= R_EV_IO_READABLE;
       if (ev->events & EPOLLOUT)  rev |= R_EV_IO_WRITABLE;
 
-      if (R_LIKELY (rev != 0))
+      if (R_LIKELY (rev != 0) && !R_EV_IO_IS_CLOSED (evio))
         r_ev_io_invoke_iocb (evio, rev);
     }
+    for (i = 0; i < ret; i++)
+      r_ev_io_unref ((REvIO *) events[i].data.ptr);
   } else {
     R_LOG_ERROR ("epoll_wait for loop %p failed with error %d", loop, ret);
   }
@@ -626,7 +645,9 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
         continue;
       }
 
-      dispatch[ndispatch].evio = evio;
+      /* Ref the snapshot entry: a callback may abort and free a sibling that is
+       * also queued in this batch, which would otherwise dangle here. */
+      dispatch[ndispatch].evio = r_ev_io_ref (evio);
       dispatch[ndispatch].rev = rev;
       dispatch[ndispatch].handle = handle;
       ndispatch++;
@@ -636,8 +657,11 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
       R_LOG_INFO ("r_poll for loop %p handle %"R_IO_HANDLE_FMT" evio: "R_EV_IO_FORMAT" - %u",
           loop, dispatch[j].handle, R_EV_IO_ARGS (dispatch[j].evio),
           (ruint)dispatch[j].rev);
-      r_ev_io_invoke_iocb (dispatch[j].evio, dispatch[j].rev);
+      if (!R_EV_IO_IS_CLOSED (dispatch[j].evio))
+        r_ev_io_invoke_iocb (dispatch[j].evio, dispatch[j].rev);
     }
+    for (j = 0; j < ndispatch; j++)
+      r_ev_io_unref (dispatch[j].evio);
 
     for (j = 0; j < ndead; j++) {
       /* A callback during dispatch may have closed this handle and the OS

@@ -100,6 +100,107 @@ mark_true (rpointer data)
   *((rboolean *)data) = TRUE;
 }
 
+/* A server holding several recv-armed accepted connections tears the whole set
+ * down -- listener and every client -- from inside one connection's recv
+ * callback (what an HTTP request handler that stops the server does
+ * mid-dispatch). Aborting the other, idle connections from within this dispatch
+ * must remove each from the loop's pollset; a slot left behind points at a freed
+ * watcher and makes the next poll fail. Holds a ref on each so the abort path
+ * (not a final unref) drives teardown. */
+typedef struct {
+  REvTCP *  server;        /* the listener */
+  REvTCP *  accepted[8];   /* server-side accepted connections, recv-armed */
+  rsize     naccepted;
+  rboolean  fired;
+} RTestStopBurst;
+
+static void stop_burst_recv (rpointer data, RBuffer * buf, REvTCP * evtcp);
+
+/* Accept every incoming connection, hold a ref, and recv-arm it so each sits
+ * idle in the loop's pollset until the burst tears the whole set down. */
+static void
+stop_burst_accept (rpointer data, REvTCP * newtcp, REvTCP * listening)
+{
+  RTestStopBurst * b = data;
+  (void) listening;
+  b->accepted[b->naccepted] = r_ev_tcp_ref (newtcp);
+  r_ev_tcp_recv_start (b->accepted[b->naccepted], NULL, stop_burst_recv, b, NULL);
+  b->naccepted++;
+}
+
+static void
+stop_burst_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
+{
+  RTestStopBurst * b = data;
+  rsize i;
+
+  (void) buf;
+  (void) evtcp;
+  if (b->fired)
+    return;
+  b->fired = TRUE;
+
+  /* Tear everything down from inside this dispatch, like r_http_server_stop:
+   * the listener first, then every accepted connection (including this one). */
+  r_ev_tcp_abort (b->server, NULL, NULL, NULL);
+  for (i = 0; i < b->naccepted; i++)
+    r_ev_tcp_abort (b->accepted[i], NULL, NULL, NULL);
+}
+
+RTEST (revtcp, server_stop_burst_during_recv, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RSocketAddress * addr;
+  REvTCP * server;
+  REvTCP * client[3] = { NULL, NULL, NULL };
+  const rsize n = 3;
+  RTestStopBurst burst = { NULL, { NULL }, 0, FALSE };
+  rboolean conn[3] = { FALSE, FALSE, FALSE };
+  rsize i;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_tcp_get_local_address (server)), !=, NULL);
+  burst.server = server;
+  r_assert_cmpint (r_ev_tcp_listen (server, 10, stop_burst_accept, &burst, NULL), ==, R_SOCKET_OK);
+
+  /* Open n connections; the listener accepts and recv-arms each so all sit idle
+   * in the pollset, then send on the last to trigger the burst from its
+   * server-side recv callback. */
+  for (i = 0; i < n; i++)
+    r_assert_cmpptr ((client[i] = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  for (i = 0; i < n; i++)
+    r_assert_cmpint (r_ev_tcp_connect (client[i], addr, client_connected, &conn[i], NULL), ==, R_SOCKET_WOULD_BLOCK);
+  r_socket_address_unref (addr);
+
+  while (burst.naccepted < n)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  /* Send on the last client: its server-side recv callback runs the burst. */
+  r_assert (r_ev_tcp_send_dup (client[n - 1], "go", 2, NULL, NULL, NULL));
+
+  /* The loop must drain to zero -- no orphaned dead fd left spinning select(). */
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+
+  for (i = 0; i < burst.naccepted; i++)
+    r_ev_tcp_unref (burst.accepted[i]);
+  for (i = 0; i < n; i++) {
+    r_ev_tcp_abort (client[i], NULL, NULL, NULL);
+    r_ev_tcp_unref (client[i]);
+  }
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+  r_ev_tcp_unref (server);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
 RTEST (revtcp, listen_connect_accept_send_recv, RTEST_FAST | RTEST_SYSTEM)
 {
   REvLoop * loop;
