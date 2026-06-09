@@ -1245,6 +1245,8 @@ r_tls_server_alert_for_error (RTLSError err)
     case R_TLS_ERROR_INVALID_RECORD:    /* malformed / out-of-spec message */
     case R_TLS_ERROR_CORRUPT_RECORD:
       return R_TLS_ALERT_TYPE_DECODE_ERROR;
+    case R_TLS_ERROR_RECORD_OVERFLOW:   /* fragment longer than the limit */
+      return R_TLS_ALERT_TYPE_RECORD_OVERFLOW;
     case R_TLS_ERROR_HS_VERIFICATION_FAILED:  /* could not verify Finished */
       return R_TLS_ALERT_TYPE_DECRYPT_ERROR;
     case R_TLS_ERROR_VERSION:
@@ -1655,6 +1657,18 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
   if (err >= R_TLS_ERROR_OK) {
     r_tls_server_send_out (server);
   } else {
+    /* A negative err here is a record-layer framing failure from
+     * init_buffer / init_next (a per-message error already sent its own alert
+     * and left err non-negative via the loop's re-init). BUF_TOO_SMALL just
+     * means the record is incomplete -- buffer it and wait for more. Otherwise
+     * surface the matching fatal alert, unless the session already failed. */
+    if (err != R_TLS_ERROR_BUF_TOO_SMALL && server->state != R_TLS_SERVER_ERROR) {
+      /* The failing record never reached the in-loop recordver update; take the
+       * version the parser read so the alert is framed correctly. */
+      if (parser.version != 0)
+        server->recordver = parser.version;
+      r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
+    }
     if (server->inbuf != NULL) {
       r_buffer_unref (server->inbuf);
       server->inbuf = NULL;
