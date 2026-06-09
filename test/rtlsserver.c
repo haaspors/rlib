@@ -2044,3 +2044,189 @@ RTEST_F (rtlsserver, dtls_session_resume, RTEST_FAST)
   r_tls_server_unref (srv2);
 }
 RTEST_END;
+
+/* How r_test_tls_drive_bad_finished should break the client Finished. */
+typedef enum {
+  R_TEST_FIN_BAD_VERIFY,   /* valid record, wrong verify_data -> decrypt_error */
+  R_TEST_FIN_BAD_MAC,      /* tampered ciphertext -> bad_record_mac */
+} RTestFinBreak;
+
+/* Drive a TLS 1.2 RSA handshake against @server up to the client Finished, then
+ * send a deliberately broken Finished so the server emits the corresponding
+ * fatal alert (asserted by the caller via the fixture's error callback). */
+static void
+r_test_tls_drive_bad_finished (RTLSServer * server, RPrng * prng, RQueue * qout,
+    RTestFinBreak how)
+{
+  RCryptoKey * pk;
+  RMsgDigest * md;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RBuffer * buf, * plain, * enc;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RCryptoCipher * ccipher;
+  RHmac * chmac;
+  ruint8 ch[256], rec[128];
+  ruint8 crand[R_TLS_HELLO_RANDOM_BYTES], srand[R_TLS_HELLO_RANDOM_BYTES];
+  ruint8 pms[48], ms[48], kb[128], vd[12], iv[16], sh[64];
+  ruint8 encpms[512], cke[512], fin[64], ccs[16];
+  rsize chlen, hssz, enclen = sizeof (encpms), ckelen, finhs, ccslen, shlen;
+
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((md = r_msg_digest_new_sha256 ()), !=, NULL);
+
+  chlen = r_test_tls_build_client_hello (prng, ch, sizeof (ch),
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, NULL, 0, crand);
+  r_test_tls_server_feed (server, ch, chlen);
+  r_test_tls_hash_record (md, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  r_memcpy (srand, hello.random, sizeof (srand));
+  while (r_tls_parser_init_next (&parser, NULL) == R_TLS_ERROR_OK)
+    r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  pms[0] = 0x03; pms[1] = 0x03;
+  r_prng_fill (prng, pms + 2, sizeof (pms) - 2);
+  r_assert_cmpint (r_crypto_key_encrypt (pk, prng, pms, sizeof (pms), encpms, &enclen),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_tls_write_handshake (cke, sizeof (cke), &hssz, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE, (ruint16)(2 + enclen)), ==, R_TLS_ERROR_OK);
+  r_store_be16 (cke + hssz, (ruint16)enclen);
+  r_memcpy (cke + hssz + 2, encpms, enclen);
+  ckelen = hssz + 2 + enclen;
+  r_test_tls_hash_record (md, cke, ckelen);
+
+  shlen = r_msg_digest_size (md);
+  r_assert (r_msg_digest_get_data (md, sh, shlen, NULL));
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (ms, 48, pms, sizeof (pms),
+        R_STR_WITH_SIZE_ARGS ("master secret"),
+        crand, sizeof (crand), srand, sizeof (srand), NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (kb, sizeof (kb), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("key expansion"),
+        srand, sizeof (srand), crand, sizeof (crand), NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (vd, sizeof (vd), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("client finished"), sh, shlen, NULL), ==, R_TLS_ERROR_OK);
+
+  /* A wrong verify_data still MACs and decrypts cleanly, so the server reaches
+   * the Finished check and rejects it with decrypt_error. */
+  if (how == R_TEST_FIN_BAD_VERIFY)
+    vd[0] ^= 0xff;
+
+  r_assert_cmpptr ((ccipher = r_cipher_aes_128_cbc_new (kb + 40)), !=, NULL);
+  r_assert_cmpptr ((chmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb, 20)), !=, NULL);
+  r_assert_cmpint (r_tls_write_handshake (fin, sizeof (fin), &finhs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_FINISHED, sizeof (vd)), ==, R_TLS_ERROR_OK);
+  r_memcpy (fin + finhs, vd, sizeof (vd));
+  r_assert_cmpptr ((plain = r_buffer_new_wrapped (R_MEM_FLAG_NONE, fin,
+          finhs + sizeof (vd), finhs + sizeof (vd), 0, NULL, NULL)), !=, NULL);
+  r_prng_fill (prng, iv, sizeof (iv));
+  r_assert_cmpptr ((enc = r_tls_encrypt_buffer (plain, 0, ccipher, iv, chmac, FALSE)), !=, NULL);
+  r_buffer_unref (plain);
+
+  r_assert_cmpint (r_tls_write_change_cipher (ccs, sizeof (ccs), &ccslen,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_test_tls_server_feed (server, cke, ckelen);
+  r_test_tls_server_feed (server, ccs, ccslen);
+
+  r_assert (r_buffer_map (enc, &info, R_MEM_MAP_READ));
+  r_assert_cmpuint (info.size, <=, sizeof (rec));
+  r_memcpy (rec, info.data, info.size);
+  /* Flipping a ciphertext byte breaks the record MAC -> bad_record_mac. */
+  if (how == R_TEST_FIN_BAD_MAC)
+    rec[info.size - 1] ^= 0xff;
+  r_test_tls_server_feed (server, rec, info.size);
+  r_buffer_unmap (enc, &info);
+  r_buffer_unref (enc);
+
+  r_hmac_free (chmac);
+  r_crypto_cipher_unref (ccipher);
+  r_memclear_secure (pms, sizeof (pms));
+  r_memclear_secure (ms, sizeof (ms));
+  r_memclear_secure (kb, sizeof (kb));
+  r_msg_digest_free (md);
+  r_crypto_key_unref (pk);
+}
+
+/* A client Finished that decrypts cleanly but carries the wrong verify_data is
+ * a failed handshake cryptographic check -> decrypt_error (RFC 5246 7.2.2). */
+RTEST_F (rtlsserver, tls_alert_finished_decrypt_error, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_drive_bad_finished (fixture->server, fixture->prng, &fixture->qout,
+      R_TEST_FIN_BAD_VERIFY);
+
+  r_assert (fixture->got_error);
+  r_assert (!fixture->hs_done);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_DECRYPT_ERROR);
+}
+RTEST_END;
+
+/* A TLS record that fails decryption / MAC is fatal: bad_record_mac. */
+RTEST_F (rtlsserver, tls_alert_bad_record_mac, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_drive_bad_finished (fixture->server, fixture->prng, &fixture->qout,
+      R_TEST_FIN_BAD_MAC);
+
+  r_assert (fixture->got_error);
+  r_assert (!fixture->hs_done);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
+}
+RTEST_END;
+
+/* Unlike TLS, a DTLS record that fails decryption / MAC is silently discarded
+ * and the association survives (RFC 6347 4.1.2.7): no alert, no error. */
+RTEST_F (rtlsserver, dtls_bad_record_silently_discarded, RTEST_FAST)
+{
+  RCryptoCipher * cipher = NULL;
+  RHmac * hmac = NULL;
+  RMsgDigest * hs_md = NULL;
+  RBuffer * buf;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint8 ms[48];
+  /* DTLS application_data record, epoch 1, seqno 1, with a 32-byte body that
+   * is not a valid ciphertext under the negotiated keys. */
+  ruint8 rec[13 + 32];
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_server_incoming_data (pkt_dtls_client_hallo);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+  r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
+      pkt_dtls_client_hallo, sizeof (pkt_dtls_client_hallo), info.data, info.size,
+      TRUE, FALSE, &cipher, &hmac, &hs_md, ms);
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+  r_assert (fixture->hs_done);
+  r_msg_digest_free (hs_md);
+  r_hmac_free (hmac);
+  r_crypto_cipher_unref (cipher);
+
+  /* Drain the server's flight, then feed the bogus epoch-1 record. */
+  r_queue_clear (&fixture->qout, r_buffer_unref);
+  r_memset (rec, 0, sizeof (rec));
+  rec[0] = R_TLS_CONTENT_TYPE_APPLICATION_DATA;
+  rec[1] = 0xfe; rec[2] = 0xfd;              /* DTLS 1.2 */
+  rec[3] = 0x00; rec[4] = 0x01;              /* epoch 1 */
+  rec[10] = 0x01;                            /* sequence number 1 (48-bit) */
+  rec[11] = 0x00; rec[12] = 0x20;            /* length 32 */
+  r_memset (rec + 13, 0xab, 32);             /* garbage ciphertext */
+  r_test_tls_server_feed (fixture->server, rec, sizeof (rec));
+
+  r_assert (!fixture->got_error);
+  r_assert_cmpptr (r_test_tls_server_queue_agg (&fixture->qout), ==, NULL);
+
+  r_memclear_secure (ms, sizeof (ms));
+}
+RTEST_END;

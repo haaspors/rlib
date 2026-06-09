@@ -1225,6 +1225,34 @@ r_tls_server_send_alert (RTLSServer * server, RTLSAlertType alert)
   r_tls_server_change_state (server, R_TLS_SERVER_ERROR);
 }
 
+/* Map a handshake error to the alert the peer should receive (RFC 5246 7.2.2).
+ * Errors that reflect a local failure rather than peer behaviour (OOM, bad
+ * arguments, encryption failure) fall through to internal_error. */
+static RTLSAlertType
+r_tls_server_alert_for_error (RTLSError err)
+{
+  switch (err) {
+    case R_TLS_ERROR_WRONG_TYPE:        /* message out of turn for its type */
+    case R_TLS_ERROR_WRONG_STATE:       /* message arrived in the wrong state */
+      return R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE;
+    case R_TLS_ERROR_INVALID_MAC:       /* record MAC / AEAD tag check failed */
+      return R_TLS_ALERT_TYPE_BAD_RECORD_MAC;
+    case R_TLS_ERROR_NO_CERTIFICATE:    /* required client certificate missing */
+    case R_TLS_ERROR_HANDSHAKE_FAILURE:
+      return R_TLS_ALERT_TYPE_HANDSHAKE_FAILURE;
+    case R_TLS_ERROR_CORRUPT_CERTIFICATE:
+      return R_TLS_ALERT_TYPE_BAD_CERTIFICATE;
+    case R_TLS_ERROR_INVALID_RECORD:    /* malformed / out-of-spec message */
+    case R_TLS_ERROR_CORRUPT_RECORD:
+      return R_TLS_ALERT_TYPE_DECODE_ERROR;
+    case R_TLS_ERROR_HS_VERIFICATION_FAILED:  /* could not verify Finished */
+      return R_TLS_ALERT_TYPE_DECRYPT_ERROR;
+    case R_TLS_ERROR_VERSION:
+      return R_TLS_ALERT_TYPE_PROTOCOL_VERSION;
+    default:
+      return R_TLS_ALERT_TYPE_INTERNAL_ERROR;
+  }
+}
 
 static RTLSError
 r_tls_server_state_error (RTLSServer * server, const RTLSParser * parser)
@@ -1341,7 +1369,6 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
           R_TLS_SERVER_CHANGE_CIPHER : R_TLS_SERVER_CERTIFICATE);
   }
 
-  /* FIXME: Add proper alert codes for error scenarios */
   switch (err) {
     case R_TLS_ERROR_OK:
       R_LOG_TRACE ("Updating HS hash with ClientHello %u bytes",
@@ -1371,21 +1398,8 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
       if (r_tls_server_write_hello_done (server) == R_TLS_ERROR_OK)
         server->server.msgseq++;
       break;
-    case R_TLS_ERROR_WRONG_TYPE:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
-      break;
-    case R_TLS_ERROR_CORRUPT_RECORD:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_DECODE_ERROR);
-      break;
-    case R_TLS_ERROR_HANDSHAKE_FAILURE:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_HANDSHAKE_FAILURE);
-      break;
-    case R_TLS_ERROR_VERSION:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_PROTOCOL_VERSION);
-      break;
-    case R_TLS_ERROR_WRONG_STATE:
     default:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
+      r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
       break;
   }
 
@@ -1418,23 +1432,11 @@ r_tls_server_state_certificate (RTLSServer * server, const RTLSParser * parser)
       R_LOG_TRACE ("Updating HS hash with ClientCertificate %u bytes",
           (ruint)parser->fragment.size);
       r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
+      break;
     case R_TLS_ERROR_NOT_NEEDED:
       break;
-    case R_TLS_ERROR_NO_CERTIFICATE:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_NO_CERTIFICATE);
-      break;
-    case R_TLS_ERROR_CORRUPT_CERTIFICATE:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_CERTIFICATE);
-      break;
-    case R_TLS_ERROR_INVALID_MAC:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_CERTIFICATE_HASH_VALUE);
-      break;
-    case R_TLS_ERROR_CORRUPT_RECORD:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_DECODE_ERROR);
-      break;
-    case R_TLS_ERROR_WRONG_STATE:
     default:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
+      r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
       break;
   }
 
@@ -1450,7 +1452,6 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
   if ((err = r_tls_server_parse_client_key_exchange (server, parser, pms)) == R_TLS_ERROR_OK)
     err = r_tls_server_change_state (server, R_TLS_SERVER_CHANGE_CIPHER);
 
-  /* FIXME: Add proper alert codes for error scenarios */
   switch (err) {
     case R_TLS_ERROR_OK:
       R_LOG_TRACE ("Updating HS hash with ClientKeyExchange %u bytes",
@@ -1461,12 +1462,8 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
           (err = r_tls_server_expand_master_secret (server)) != R_TLS_ERROR_OK)
         r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
       break;
-    case R_TLS_ERROR_CORRUPT_RECORD:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_DECODE_ERROR);
-      break;
-    case R_TLS_ERROR_WRONG_STATE:
     default:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
+      r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
       break;
   }
 
@@ -1484,7 +1481,6 @@ r_tls_server_state_change_cipher (RTLSServer * server, const RTLSParser * parser
   else
     err = R_TLS_ERROR_WRONG_TYPE;
 
-  /* FIXME: Add proper alert codes for error scenarios */
   switch (err) {
     case R_TLS_ERROR_OK:
       /* enable cipher */
@@ -1493,12 +1489,8 @@ r_tls_server_state_change_cipher (RTLSServer * server, const RTLSParser * parser
       server->client.epoch++;
       server->client.seqno = 0;
       break;
-    case R_TLS_ERROR_CORRUPT_RECORD:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_DECODE_ERROR);
-      break;
-    case R_TLS_ERROR_WRONG_STATE:
     default:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
+      r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
       break;
   }
 
@@ -1536,19 +1528,8 @@ r_tls_server_state_finished (RTLSServer * server, const RTLSParser * parser)
       if (server->cb.handshake_done != NULL)
         server->cb.handshake_done (server->userdata, server);
       break;
-    case R_TLS_ERROR_HANDSHAKE_FAILURE:
-    case R_TLS_ERROR_HS_VERIFICATION_FAILED:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_HANDSHAKE_FAILURE);
-      break;
-    case R_TLS_ERROR_CORRUPT_RECORD:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_DECODE_ERROR);
-      break;
-    case R_TLS_ERROR_WRONG_TYPE:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
-      break;
-    case R_TLS_ERROR_WRONG_STATE:
     default:
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
+      r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
       break;
   }
 
@@ -1631,8 +1612,12 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
     if (!r_tls_parser_is_dtls (&parser) || parser.epoch == server->client.epoch) {
       if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac,
               server->encrypt_then_mac)) != R_TLS_ERROR_OK) {
-        /* A record that fails decrypt / MAC must not be processed. */
+        /* A record that fails decrypt / MAC must not be processed. TLS reports
+         * it as fatal bad_record_mac (RFC 5246 7.2.2); DTLS silently discards
+         * the record and keeps the association (RFC 6347 4.1.2.7). */
         R_LOG_WARNING ("Decryption returned: %d", err);
+        if (!r_tls_parser_is_dtls (&parser))
+          r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
         continue;
       }
     }
