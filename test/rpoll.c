@@ -223,3 +223,67 @@ RTEST (rpollset, add_grow_oom_keeps_set_intact, RTEST_FAST)
 }
 RTEST_END;
 
+/* Re-adding a handle already in the set must update its one slot in place, not
+ * append a second. (A handle reappears when a closed fd's entry lingers and the
+ * OS recycles its value into a new socket.) */
+RTEST (rpollset, re_add_existing_updates_in_place, RTEST_FAST)
+{
+  RPollSet ps;
+
+  r_poll_set_init (&ps, 0);
+
+  r_assert_cmpint (r_poll_set_add (&ps, (RIOHandle)1, R_IO_IN, (rpointer)0xA), ==, 0);
+  r_assert_cmpuint (ps.count, ==, 1);
+
+  /* Same handle again -> same slot, updated user + events, no growth. */
+  r_assert_cmpint (r_poll_set_add (&ps, (RIOHandle)1, R_IO_OUT, (rpointer)0xB), ==, 0);
+  r_assert_cmpuint (ps.count, ==, 1);
+  r_assert_cmpuint (r_hash_table_size (ps.handle_user), ==, 1);
+  r_assert_cmpuint (r_hash_table_size (ps.handle_idx), ==, 1);
+  r_assert_cmpptr (r_poll_set_get_user (&ps, (RIOHandle)1), ==, (rpointer)0xB);
+  r_assert_cmpuint (ps.handles[0].events, ==, R_IO_OUT);
+
+  /* A single remove fully evicts it: no orphaned second slot left behind. */
+  r_assert (r_poll_set_remove (&ps, (RIOHandle)1));
+  r_assert_cmpuint (ps.count, ==, 0);
+  r_assert_cmpint (r_poll_set_find (&ps, (RIOHandle)1), <, 0);
+  r_assert_cmpptr (r_poll_set_get_user (&ps, (RIOHandle)1), ==, NULL);
+
+  r_poll_set_clear (&ps);
+}
+RTEST_END;
+
+/* The #310 shape at the set level: a handle entered and never removed, its fd
+ * value recycled into a new socket and re-added, then the original "pruned".
+ * A blind append would leave a stale handles[] slot for that handle with no
+ * hash entry -- unremovable, and poll() spins on the dead duplicate. With one
+ * slot per handle there is no orphan. */
+RTEST (rpollset, recycled_handle_leaves_no_orphan, RTEST_FAST)
+{
+  RPollSet ps;
+  ruint i;
+  rboolean stale;
+
+  r_poll_set_init (&ps, 0);
+
+  r_assert_cmpint (r_poll_set_add (&ps, (RIOHandle)7, R_IO_IN, (rpointer)0xA), ==, 0);
+  r_assert_cmpint (r_poll_set_add (&ps, (RIOHandle)8, R_IO_IN, (rpointer)0xB), ==, 1);
+  /* fd 7 recycled into a new socket, re-added while the old entry still lingers */
+  r_poll_set_add (&ps, (RIOHandle)7, R_IO_OUT, (rpointer)0xC);
+  r_assert_cmpuint (ps.count, ==, 2);           /* two slots, not three */
+
+  r_assert (r_poll_set_remove (&ps, (RIOHandle)7));
+  r_assert_cmpuint (ps.count, ==, 1);
+  r_assert_cmpint (r_poll_set_find (&ps, (RIOHandle)7), <, 0);
+  r_assert_cmpptr (r_poll_set_get_user (&ps, (RIOHandle)7), ==, NULL);
+  r_assert_cmpptr (r_poll_set_get_user (&ps, (RIOHandle)8), ==, (rpointer)0xB);
+
+  for (i = 0, stale = FALSE; i < ps.count; i++)
+    if (ps.handles[i].handle == (RIOHandle)7)
+      stale = TRUE;
+  r_assert (!stale);                            /* no orphaned slot for 7 */
+
+  r_poll_set_clear (&ps);
+}
+RTEST_END;
+

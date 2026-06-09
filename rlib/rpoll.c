@@ -327,6 +327,20 @@ r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user)
   if (R_UNLIKELY (ps == NULL)) return -1;
   if (R_UNLIKELY (handle == R_IO_HANDLE_INVALID)) return -1;
 
+  /* One slot per handle. If this handle is already present -- e.g. a closed fd
+   * whose entry has not been pruned yet, and whose value the OS recycled into a
+   * new socket -- update that slot in place. Appending a second slot for the
+   * same handle leaves an orphan that remove-by-handle can never reach (it only
+   * unmaps the one the index points at), and select() then spins on the dead
+   * duplicate (WSAENOTSOCK). */
+  {
+    int existing = r_poll_set_find (ps, handle);
+    if (existing >= 0) {
+      r_poll_set_update (ps, (ruint) existing, handle, events, user);
+      return existing;
+    }
+  }
+
   if (ps->count >= ps->alloc) {
     ruint nalloc = ps->alloc;
     RPoll * nhandles;
