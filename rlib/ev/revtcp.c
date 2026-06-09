@@ -66,7 +66,6 @@ struct REvTCP {
   REvIO evio;
 
   RSocket * socket;
-  ruint taskgroup;
 
   REvTCPConnectionReadyFunc connection;
   REvTCPConnectedFunc connected;
@@ -81,8 +80,6 @@ struct REvTCP {
   rpointer connect_iocb_ctx;
   rpointer recv_iocb_ctx;
   rpointer send_iocb_ctx;
-  rauint recv_counter;
-  RTask * recv_task;
 
   RQueue qsend;
 
@@ -101,7 +98,6 @@ struct REvTCP {
   RBuffer * iocp_recv_buf;     /* buffer backing the in-flight WSARecv */
   RMemMapInfo iocp_recv_map;
   rboolean iocp_recv_active;   /* receiving (recv_start, not yet stopped) */
-  rboolean iocp_recv_task;     /* deliver received buffers via a task group */
 
   REvIOCPOp iocp_send;
   RMemMapInfo iocp_send_map;
@@ -308,66 +304,9 @@ r_ev_tcp_iocp_recv_teardown (REvTCP * evtcp, RSocketStatus res)
     evtcp->recv (evtcp->recv_data, NULL, evtcp);
 }
 
-/* Task-group delivery (r_ev_tcp_task_recv_start): the received buffer is
- * processed off the loop thread. The task carries a ref on the buffer and the
- * evtcp, both released (on the task thread) when the context is freed. No loop
- * 'done' callback is used, so the task is not an outstanding loop event -- the
- * re-armed WSARecv keeps the loop alive, and r_ev_tcp_recv_stop waits on the
- * last task. Each task chains on the previous, so they run in order. */
-typedef struct {
-  REvTCP * evtcp;
-  RBuffer * buf;
-} REvTCPRecvTaskCtx;
-
-static void
-r_ev_tcp_iocp_recv_task (rpointer data, RTaskQueue * queue, RTask * task)
-{
-  REvTCPRecvTaskCtx * ctx = data;
-  (void) queue;
-  (void) task;
-  ctx->evtcp->recv (ctx->evtcp->recv_data, ctx->buf, ctx->evtcp);
-}
-
-static void
-r_ev_tcp_iocp_recv_task_free (rpointer data)
-{
-  REvTCPRecvTaskCtx * ctx = data;
-  r_buffer_unref (ctx->buf);
-  r_ev_tcp_unref (ctx->evtcp);
-  r_free (ctx);
-}
-
 static void
 r_ev_tcp_iocp_recv_deliver (REvTCP * evtcp, RBuffer * buf)
 {
-  REvTCPRecvTaskCtx * ctx;
-  RTask * task;
-
-  if (!evtcp->iocp_recv_task) {
-    evtcp->recv (evtcp->recv_data, buf, evtcp);
-    r_buffer_unref (buf);
-    return;
-  }
-
-  /* Populate the context before queuing: the task may start on another thread
-   * the instant it is added. */
-  if ((ctx = r_mem_new (REvTCPRecvTaskCtx)) != NULL) {
-    ctx->evtcp = r_ev_tcp_ref (evtcp);
-    ctx->buf = buf;   /* ownership transferred to the task */
-    if ((task = r_ev_loop_add_task_full (evtcp->evio.loop, evtcp->taskgroup,
-            r_ev_tcp_iocp_recv_task, NULL, ctx, r_ev_tcp_iocp_recv_task_free,
-            evtcp->recv_task, NULL)) != NULL) {
-      if (evtcp->recv_task != NULL)
-        r_task_unref (evtcp->recv_task);
-      evtcp->recv_task = task;
-      return;
-    }
-    /* Queuing failed: undo without releasing buf (delivered inline below). */
-    r_ev_tcp_unref (ctx->evtcp);
-    r_free (ctx);
-  }
-
-  /* Could not offload: process inline rather than drop the data. */
   evtcp->recv (evtcp->recv_data, buf, evtcp);
   r_buffer_unref (buf);
 }
@@ -649,13 +588,6 @@ r_ev_tcp_teardown (REvTCP * evtcp, REvIOFunc close_cb, rpointer data,
    * when the last ref is released in r_ev_tcp_free -> r_socket_unref. */
   evtcp->iocp_recv_active = FALSE;
   CancelIoEx ((HANDLE) evtcp->socket->handle, NULL);
-  /* Task delivery: drain the last dispatched buffer's task, as recv_stop does
-   * -- otherwise closing during task-mode recv leaks the recv_task ref. */
-  if (evtcp->recv_task != NULL) {
-    r_task_wait (evtcp->recv_task);
-    r_task_unref (evtcp->recv_task);
-    evtcp->recv_task = NULL;
-  }
 #else
   r_ev_tcp_recv_stop (evtcp);
 
@@ -1025,10 +957,6 @@ r_ev_tcp_recv_teardown (REvTCP * evtcp, RSocketStatus res)
   r_ev_loop_add_cb_after (evtcp->evio.loop, r_ev_tcp_io_stop_after,
       r_ev_tcp_ref (evtcp), r_ev_tcp_unref, evtcp->recv_iocb_ctx, NULL);
   evtcp->recv_iocb_ctx = NULL;
-  if (evtcp->recv_task != NULL) {
-    r_task_unref (evtcp->recv_task);
-    evtcp->recv_task = NULL;
-  }
 
   if (res != R_SOCKET_OK && evtcp->error != NULL)
     evtcp->error (evtcp->error_data, evtcp, res);
@@ -1042,8 +970,6 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
   RBuffer * buf;
   RSocketStatus res = R_SOCKET_WOULD_BLOCK;
   rsize size;
-
-  r_atomic_uint_store (&evtcp->recv_counter, 0);
 
   do {
     if (R_UNLIKELY (r_socket_is_closed (evtcp->socket)))
@@ -1174,49 +1100,6 @@ r_ev_tcp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
   if (events & R_EV_IO_ERROR) r_ev_tcp_error_iocb ((REvTCP *)evio);
 }
 
-#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
-static void
-r_ev_tcp_recv_iocb_task (rpointer data, RTaskQueue * queue, RTask * task)
-{
-  (void) queue;
-  (void) task;
-  r_ev_tcp_recv_iocb (data);
-}
-#endif
-
-#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
-static void
-r_ev_tcp_task_recv_iocb (REvTCP * evtcp)
-{
-  RTask * task;
-
-  if (r_atomic_uint_fetch_add (&evtcp->recv_counter, 1) > 0)
-    return;
-
-  if ((task = r_ev_loop_add_task_full (evtcp->evio.loop,
-          evtcp->taskgroup, r_ev_tcp_recv_iocb_task, NULL,
-          r_ev_tcp_ref (evtcp), r_ev_tcp_unref, evtcp->recv_task, NULL)) != NULL) {
-    if (evtcp->recv_task != NULL)
-      r_task_unref (evtcp->recv_task);
-    evtcp->recv_task = task;
-  } else {
-    r_ev_tcp_unref (evtcp);
-  }
-}
-#endif
-
-#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
-static void
-r_ev_tcp_task_iocb (rpointer data, REvIOEvents events, REvIO * evio)
-{
-  (void) data;
-
-  if (events & R_EV_IO_READABLE) r_ev_tcp_task_recv_iocb ((REvTCP *)evio);
-  if (events & R_EV_IO_WRITABLE) r_ev_tcp_send_iocb ((REvTCP *)evio);
-  if (events & R_EV_IO_ERROR) r_ev_tcp_error_iocb ((REvTCP *)evio);
-}
-#endif
-
 rboolean
 r_ev_tcp_recv_start (REvTCP * evtcp,
     REvTCPBufferAllocFunc alloc, REvTCPBufferFunc recv,
@@ -1262,57 +1145,6 @@ r_ev_tcp_recv_start (REvTCP * evtcp,
 }
 
 rboolean
-r_ev_tcp_task_recv_start (REvTCP * evtcp, ruint taskgroup,
-    REvTCPBufferAllocFunc alloc, REvTCPBufferFunc recv,
-    rpointer data, RDestroyNotify datanotify)
-{
-  if (R_UNLIKELY (recv == NULL)) return FALSE;
-  if (R_UNLIKELY (evtcp->recv_iocb_ctx != NULL)) return FALSE;
-  if (R_UNLIKELY (!r_ev_io_validate_taskgroup (&evtcp->evio, taskgroup))) return FALSE;
-
-#if defined (R_OS_WIN32) && !defined (R_EV_USE_RPOLL)
-  if (R_UNLIKELY (evtcp->iocp_recv_active)) return FALSE;
-  if (alloc == NULL)
-    alloc = r_ev_tcp_buffer_alloc_default;
-  if (evtcp->recv_datanotify != NULL)
-    evtcp->recv_datanotify (evtcp->recv_data);
-  evtcp->taskgroup = taskgroup;
-  evtcp->alloc = alloc;
-  evtcp->recv = recv;
-  evtcp->recv_data = data;
-  evtcp->recv_datanotify = datanotify;
-  evtcp->iocp_recv_active = TRUE;
-  evtcp->iocp_recv_task = TRUE;
-  if (R_UNLIKELY (!r_ev_tcp_iocp_post_recv (evtcp))) {
-    evtcp->iocp_recv_active = FALSE;
-    evtcp->iocp_recv_task = FALSE;
-    evtcp->recv = NULL;
-    evtcp->recv_datanotify = NULL;
-    if (datanotify != NULL)
-      datanotify (data);
-    return FALSE;
-  }
-  return TRUE;
-#else
-  if ((evtcp->recv_iocb_ctx = r_ev_io_start (&evtcp->evio, R_EV_IO_READABLE,
-      r_ev_tcp_task_iocb, data, datanotify))) {
-    if (alloc == NULL)
-      alloc = r_ev_tcp_buffer_alloc_default;
-
-    evtcp->taskgroup = taskgroup;
-    evtcp->alloc = alloc;
-    evtcp->recv = recv;
-    evtcp->recv_data = data;
-    r_atomic_uint_store (&evtcp->recv_counter, 0);
-    evtcp->recv_task = NULL;
-    return TRUE;
-  }
-
-  return FALSE;
-#endif
-}
-
-rboolean
 r_ev_tcp_recv_stop (REvTCP * evtcp)
 {
 #if defined (R_OS_WIN32) && !defined (R_EV_USE_RPOLL)
@@ -1323,23 +1155,12 @@ r_ev_tcp_recv_stop (REvTCP * evtcp)
   evtcp->iocp_recv_active = FALSE;
   if (evtcp->iocp_recv_buf != NULL)
     CancelIoEx ((HANDLE) evtcp->socket->handle, &evtcp->iocp_recv.overlapped);
-  /* Task delivery: wait for the last dispatched buffer to be processed. */
-  if (evtcp->recv_task != NULL) {
-    r_task_wait (evtcp->recv_task);
-    r_task_unref (evtcp->recv_task);
-    evtcp->recv_task = NULL;
-  }
   return TRUE;
 #else
   rboolean ret;
 
   ret = r_ev_io_stop (&evtcp->evio, evtcp->recv_iocb_ctx);
   evtcp->recv_iocb_ctx = NULL;
-  if (evtcp->recv_task != NULL) {
-    r_task_wait (evtcp->recv_task);
-    r_task_unref (evtcp->recv_task);
-    evtcp->recv_task = NULL;
-  }
 
   return ret;
 #endif
