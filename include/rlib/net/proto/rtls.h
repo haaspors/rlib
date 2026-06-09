@@ -745,6 +745,53 @@ R_API RTLSError r_tls_write_hs_new_session_ticket (rpointer buf, rsize size, rsi
 /** @brief DTLS alias for @ref r_tls_write_hs_new_session_ticket. */
 #define r_dtls_write_hs_new_session_ticket r_tls_write_hs_new_session_ticket
 
+/**
+ * @brief Write a CertificateRequest handshake-message body into @p buf.
+ * @param buf Destination buffer.
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written.
+ * @param certtypes Accepted certificate types (@ref RTLSClientCertificateType).
+ * @param ncerttypes Number of certificate types.
+ * @param signschemes Accepted signature schemes (@ref RTLSSignatureScheme).
+ * @param nsignschemes Number of signature schemes.
+ * @param ca Concatenated accepted-CA distinguished names, or @c NULL.
+ * @param casize Length of @p ca in bytes (0 for an empty CA list).
+ */
+R_API RTLSError r_tls_write_hs_certificate_request (rpointer buf, rsize size, rsize * out,
+    const ruint8 * certtypes, ruint8 ncerttypes,
+    const RTLSSignatureScheme * signschemes, ruint16 nsignschemes,
+    const ruint8 * ca, ruint16 casize);
+/** @brief DTLS alias for @ref r_tls_write_hs_certificate_request. */
+#define r_dtls_write_hs_certificate_request r_tls_write_hs_certificate_request
+
+/**
+ * @brief Write a CertificateVerify handshake-message body into @p buf.
+ * @param buf Destination buffer.
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written.
+ * @param sigscheme Signature scheme of @p sig (@ref RTLSSignatureScheme).
+ * @param sig Signature bytes.
+ * @param sigsize Signature length in bytes.
+ */
+R_API RTLSError r_tls_write_hs_certificate_verify (rpointer buf, rsize size, rsize * out,
+    RTLSSignatureScheme sigscheme, const ruint8 * sig, ruint16 sigsize);
+/** @brief DTLS alias for @ref r_tls_write_hs_certificate_verify. */
+#define r_dtls_write_hs_certificate_verify r_tls_write_hs_certificate_verify
+
+/**
+ * @brief Write a Certificate handshake-message body carrying a single
+ * end-entity certificate (or an empty list when @p der is @c NULL).
+ * @param buf Destination buffer.
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written.
+ * @param der DER-encoded certificate, or @c NULL for an empty Certificate.
+ * @param dersize Length of @p der in bytes.
+ */
+R_API RTLSError r_tls_write_hs_certificate (rpointer buf, rsize size, rsize * out,
+    const ruint8 * der, rsize dersize);
+/** @brief DTLS alias for @ref r_tls_write_hs_certificate. */
+#define r_dtls_write_hs_certificate r_tls_write_hs_certificate
+
 
 /** @brief Write a TLS ChangeCipherSpec record into @p data. */
 R_API RTLSError r_tls_write_change_cipher (rpointer data, rsize size,

@@ -1406,6 +1406,86 @@ r_tls_write_hs_new_session_ticket (rpointer data, rsize size, rsize * out,
 }
 
 RTLSError
+r_tls_write_hs_certificate_request (rpointer data, rsize size, rsize * out,
+    const ruint8 * certtypes, ruint8 ncerttypes,
+    const RTLSSignatureScheme * signschemes, ruint16 nsignschemes,
+    const ruint8 * ca, ruint16 casize)
+{
+  ruint8 * p = data;
+  rsize need = sizeof (ruint8) + (rsize)ncerttypes +
+      sizeof (ruint16) + (rsize)nsignschemes * sizeof (ruint16) +
+      sizeof (ruint16) + (rsize)casize;
+  ruint16 i;
+
+  if (R_UNLIKELY (data == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  *p++ = ncerttypes;
+  if (ncerttypes > 0) { r_memcpy (p, certtypes, ncerttypes); p += ncerttypes; }
+
+  r_store_be16 (p, (ruint16)(nsignschemes * sizeof (ruint16))); p += sizeof (ruint16);
+  for (i = 0; i < nsignschemes; i++) {
+    r_store_be16 (p, (ruint16)signschemes[i]); p += sizeof (ruint16);
+  }
+
+  r_store_be16 (p, casize); p += sizeof (ruint16);
+  if (casize > 0) { r_memcpy (p, ca, casize); p += casize; }
+
+  if (out != NULL)
+    *out = need;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_write_hs_certificate_verify (rpointer data, rsize size, rsize * out,
+    RTLSSignatureScheme sigscheme, const ruint8 * sig, ruint16 sigsize)
+{
+  ruint8 * p = data;
+  rsize need = sizeof (ruint16) + sizeof (ruint16) + (rsize)sigsize;
+
+  if (R_UNLIKELY (data == NULL || sig == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  r_store_be16 (p, (ruint16)sigscheme); p += sizeof (ruint16);
+  r_store_be16 (p, sigsize); p += sizeof (ruint16);
+  r_memcpy (p, sig, sigsize);
+
+  if (out != NULL)
+    *out = need;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_write_hs_certificate (rpointer data, rsize size, rsize * out,
+    const ruint8 * der, rsize dersize)
+{
+  ruint8 * p = data;
+  rsize entrylen = (der != NULL && dersize > 0) ? (3 + dersize) : 0;
+  rsize need = 3 + entrylen;
+
+  if (R_UNLIKELY (data == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  /* certificate_list<0..2^24-1> */
+  *p++ = (ruint8)((entrylen >> 16) & 0xff);
+  *p++ = (ruint8)((entrylen >>  8) & 0xff);
+  *p++ = (ruint8)((entrylen      ) & 0xff);
+  if (entrylen > 0) {
+    *p++ = (ruint8)((dersize >> 16) & 0xff);
+    *p++ = (ruint8)((dersize >>  8) & 0xff);
+    *p++ = (ruint8)((dersize      ) & 0xff);
+    r_memcpy (p, der, dersize);
+  }
+
+  if (out != NULL)
+    *out = need;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_write_change_cipher (rpointer data, rsize size,
     rsize * out, RTLSVersion ver)
 {

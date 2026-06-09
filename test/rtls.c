@@ -943,6 +943,103 @@ RTEST (rtls, write_dtls_change_cipher, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, write_certificate_request, RTEST_FAST)
+{
+  static const ruint8 certtypes[] = { R_TLS_CLIENT_CERT_TYPE_RSA_SIGN };
+  static const RTLSSignatureScheme schemes[] = { R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256 };
+  ruint8 body[64], rec[96];
+  rsize bodylen = sizeof (body), hs, reclen;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHandshakeType hstype;
+  ruint32 hslen;
+  RTLSCertReq req;
+
+  r_assert_cmpint (r_tls_write_hs_certificate_request (body, sizeof (body), &bodylen,
+        certtypes, R_N_ELEMENTS (certtypes), schemes, R_N_ELEMENTS (schemes), NULL, 0),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_write_handshake (rec, sizeof (rec), &hs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, (ruint16)bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (rec + hs, body, bodylen);
+  reclen = hs + bodylen;
+
+  r_assert_cmpint (r_tls_parser_init (&parser, rec, reclen), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_handshake (&parser, &hstype, &hslen), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hstype, ==, R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST);
+  r_assert_cmpint (r_tls_parser_parse_certificate_request (&parser, &req), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (req.certtypecount, ==, 1);
+  r_assert_cmphex (r_tls_cert_req_cert_type (&req, 0), ==, R_TLS_CLIENT_CERT_TYPE_RSA_SIGN);
+  r_assert_cmpuint (req.signschemecount, ==, 1);
+  r_assert_cmphex (r_tls_cert_req_sign_scheme (&req, 0), ==, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256);
+  r_assert_cmpuint (req.cacount, ==, 0);
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
+RTEST (rtls, write_certificate_verify, RTEST_FAST)
+{
+  static const ruint8 sigbytes[] = { 0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03 };
+  ruint8 body[64], rec[96];
+  rsize bodylen = sizeof (body), hs, reclen;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHandshakeType hstype;
+  ruint32 hslen;
+  RTLSSignatureScheme scheme;
+  const ruint8 * sig;
+  ruint16 sigsize;
+
+  r_assert_cmpint (r_tls_write_hs_certificate_verify (body, sizeof (body), &bodylen,
+        R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256, sigbytes, sizeof (sigbytes)), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_write_handshake (rec, sizeof (rec), &hs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, (ruint16)bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (rec + hs, body, bodylen);
+  reclen = hs + bodylen;
+
+  r_assert_cmpint (r_tls_parser_init (&parser, rec, reclen), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_handshake (&parser, &hstype, &hslen), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hstype, ==, R_TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY);
+  r_assert_cmpint (r_tls_parser_parse_certificate_verify (&parser, &scheme, &sig, &sigsize),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (scheme, ==, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256);
+  r_assert_cmpuint (sigsize, ==, sizeof (sigbytes));
+  r_assert_cmpmem (sig, ==, sigbytes, sigsize);
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
+RTEST (rtls, write_certificate, RTEST_FAST)
+{
+  static const ruint8 der[] = { 0x30, 0x05, 0x02, 0x03, 0x0a, 0x0b, 0x0c };
+  ruint8 body[64], rec[96];
+  rsize bodylen = sizeof (body), hs, reclen;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHandshakeType hstype;
+  ruint32 hslen;
+  RTLSCertificate tlscert = R_TLS_CERTIFICATE_INIT;
+
+  r_assert_cmpint (r_tls_write_hs_certificate (body, sizeof (body), &bodylen,
+        der, sizeof (der)), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_write_handshake (rec, sizeof (rec), &hs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CERTIFICATE, (ruint16)bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (rec + hs, body, bodylen);
+  reclen = hs + bodylen;
+
+  r_assert_cmpint (r_tls_parser_init (&parser, rec, reclen), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_handshake (&parser, &hstype, &hslen), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hstype, ==, R_TLS_HANDSHAKE_TYPE_CERTIFICATE);
+  r_assert_cmpint (r_tls_parser_parse_certificate_next (&parser, &tlscert), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (tlscert.len, ==, sizeof (der));
+  r_assert_cmpmem (tlscert.cert, ==, der, sizeof (der));
+  r_assert_cmpint (r_tls_parser_parse_certificate_next (&parser, &tlscert), ==, R_TLS_ERROR_EOB);
+  r_tls_parser_clear (&parser);
+
+  /* An empty Certificate is just the 3-byte zero certificate_list length. */
+  bodylen = sizeof (body);
+  r_assert_cmpint (r_tls_write_hs_certificate (body, sizeof (body), &bodylen, NULL, 0),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (bodylen, ==, 3);
+}
+RTEST_END;
+
 RTEST (rtls, dtls_encrypt, RTEST_FAST)
 {
   static const ruint8 aes_128_cbc_key[] = {
