@@ -186,7 +186,20 @@ jobs:
       - name: Build
         run: meson compile -C build
       - name: Test
-        run: meson test -C build --print-errorlogs --timeout-multiplier 6
+        # DIAG #310 v2 (strip before merge): loop the http suites until the
+        # server_stop hang reproduces (with the probe present + the fix). Each
+        # run is timeout-wrapped so a hung rtest can't run away -- it is killed,
+        # the step fails, and the DIAG310 select() trace up to the wedge is in
+        # the log. Stops at the first hang.
+        shell: bash
+        run: |
+          export PATH="$PWD/build/rlib:$PATH"
+          for i in $(seq 1 300); do
+            echo "=== iter $i ==="
+            timeout 45 ./build/test/rlibtest.exe -f /rhttpclient/* -f /rhttpserver/* \
+              || { echo "=== HUNG/FAILED at iter $i (exit $?) ==="; exit 1; }
+          done
+          echo "=== 300 iterations clean (did not reproduce) ==="
       - name: Upload test logs on failure
         if: failure()
         uses: actions/upload-artifact@v7
