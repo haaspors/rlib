@@ -186,7 +186,10 @@ jobs:
       - name: Build
         run: meson compile -C build
       - name: Test
-        run: meson test -C build --print-errorlogs --timeout-multiplier 6
+        # DIAG #310: repeat the full suite until the ~1% server_stop residual
+        # hangs (--maxfail 1 stops at the first), so the DIAG310 trace up to the
+        # wedge lands in the test log. Revert with the diagnostics before merge.
+        run: meson test -C build --print-errorlogs --timeout-multiplier 6 --repeat 50 --maxfail 1
       - name: Upload test logs on failure
         if: failure()
         uses: actions/upload-artifact@v7
