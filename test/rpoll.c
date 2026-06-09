@@ -344,3 +344,35 @@ RTEST (rpollset, remove_compaction_stays_consistent, RTEST_FAST)
   r_poll_set_clear (&ps);
 }
 RTEST_END;
+
+/* Replays the exact add/remove sequence that strands a handle in the live set
+ * (observed driving the http suite with non-recycling fds): eight handles are
+ * added, then four are removed by handle. The set must stay internally
+ * consistent -- a removed handle must not orphan another that probed past it in
+ * the index map; the bug left a still-present handle unfindable, so the loop
+ * could neither service nor remove its watcher and hung. */
+RTEST (rpollset, remove_sequence_leaves_no_unfindable_handle, RTEST_FAST)
+{
+  RPollSet ps;
+  const RIOHandle h[8] = {
+    (RIOHandle) 0x3,   (RIOHandle) 0x3e8, (RIOHandle) 0x3e9, (RIOHandle) 0x3ea,
+    (RIOHandle) 0x3eb, (RIOHandle) 0x3ec, (RIOHandle) 0x3ed, (RIOHandle) 0x3ee,
+  };
+  ruint i;
+
+  r_poll_set_init (&ps, 0);
+  for (i = 0; i < 8; i++)
+    r_assert_cmpint (r_poll_set_add (&ps, h[i], R_IO_IN, (rpointer) (ruintptr) h[i]), >=, 0);
+
+  r_assert (r_poll_set_remove (&ps, (RIOHandle) 0x3e8));
+  r_assert (r_poll_set_remove (&ps, (RIOHandle) 0x3ea));
+  r_assert (r_poll_set_remove (&ps, (RIOHandle) 0x3ec));
+  r_assert (r_poll_set_remove (&ps, (RIOHandle) 0x3ee));
+
+  r_test_pollset_assert_consistent (&ps);
+  r_assert_cmpint (r_poll_set_find (&ps, (RIOHandle) 0x3ed), >=, 0);
+  r_assert_cmpptr (r_poll_set_get_user (&ps, (RIOHandle) 0x3ed), ==, (rpointer) (ruintptr) 0x3ed);
+
+  r_poll_set_clear (&ps);
+}
+RTEST_END;

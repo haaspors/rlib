@@ -23,6 +23,14 @@
 
 #include <rlib/rmem.h>
 
+/* Open-addressing deletion marks a bucket with a tombstone distinct from EMPTY:
+ * a lookup probe must continue past a removed bucket (it only terminates on
+ * EMPTY), or a removal would truncate the probe chain of another key that had
+ * collided past it -- leaving that key unfindable while still present.
+ * Tombstones are reclaimed on the next resize/rehash. */
+#define R_HASH_DELETED              (R_HASH_EMPTY - 1)
+#define R_HASH_BUCKET_LIVE(h)       ((h) != R_HASH_EMPTY && (h) != R_HASH_DELETED)
+
 typedef struct {
   rpointer key;
   rpointer val;
@@ -33,6 +41,7 @@ struct RHashTable {
   RRef ref;
 
   rsize size;
+  rsize tombs;        /* tombstoned buckets; reclaimed on resize/rehash */
   ruint8 allocidx;
   RHashTableBucket * buckets;
 
@@ -49,19 +58,19 @@ r_hash_table_free (RHashTable * ht)
 
   if (ht->keynotify != NULL && ht->valuenotify != NULL) {
     for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash != R_HASH_EMPTY) {
+      if (R_HASH_BUCKET_LIVE (ht->buckets[i].hash)) {
         ht->keynotify (ht->buckets[i].key);
         ht->valuenotify (ht->buckets[i].val);
       }
     }
   } else if (ht->valuenotify != NULL) {
     for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash != R_HASH_EMPTY)
+      if (R_HASH_BUCKET_LIVE (ht->buckets[i].hash))
         ht->valuenotify (ht->buckets[i].val);
     }
   } else if (ht->keynotify != NULL) {
     for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash != R_HASH_EMPTY)
+      if (R_HASH_BUCKET_LIVE (ht->buckets[i].hash))
         ht->keynotify (ht->buckets[i].key);
     }
   }
@@ -83,11 +92,12 @@ r_hash_table_resize (RHashTable * ht, ruint8 allocidx)
 
   size = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx);
   ht->allocidx = allocidx;
+  ht->tombs = 0;        /* tombstones do not carry over to the fresh table */
 
   for (i = 0; i < size; i++) {
     rsize idx, step = 0;
 
-    if (buckets[i].hash == R_HASH_EMPTY)
+    if (!R_HASH_BUCKET_LIVE (buckets[i].hash))
       continue;
 
     idx = buckets[i].hash % r_hash_size_primes[ht->allocidx];
@@ -113,6 +123,7 @@ r_hash_table_new_full (RHashFunc hash, REqualFunc equal,
     r_ref_init (ret, r_hash_table_free);
 
     ret->size = 0;
+    ret->tombs = 0;
     ret->allocidx = 0;
     size = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ret->allocidx);
     ret->buckets = r_mem_new_n (RHashTableBucket, size);
@@ -143,8 +154,9 @@ static inline rsize
 r_hash_table_hash (RHashTable * ht, rconstpointer key)
 {
   rsize ret = ht->hashfunc (key);
-  if (R_UNLIKELY (ret == R_HASH_EMPTY))
-    ret++;
+  /* Keep clear of both reserved bucket markers (EMPTY and DELETED). */
+  if (R_UNLIKELY (ret == R_HASH_EMPTY || ret == R_HASH_DELETED))
+    ret = R_HASH_DELETED - 1;
   return ret;
 }
 
@@ -179,12 +191,15 @@ r_hash_table_insert (RHashTable * ht, rpointer key, rpointer value)
 
   /* Grow before the table fills. Open addressing needs at least one empty
    * bucket for a probe to terminate -- a fully populated table makes a lookup
-   * of an absent key loop forever -- and probe chains must stay short. Resize
-   * at 3/4 load. */
+   * of an absent key loop forever -- and probe chains must stay short. Count
+   * tombstones toward the load (they still occupy buckets and lengthen probes):
+   * resize at 3/4 occupancy, but only grow if live entries alone are crowding
+   * the table; otherwise rehash at the same size to reclaim the tombstones. */
   {
     rsize cap = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx);
-    if (ht->size >= cap - (cap >> 2))
-      r_hash_table_resize (ht, ht->allocidx + 1);
+    if (ht->size + ht->tombs >= cap - (cap >> 2))
+      r_hash_table_resize (ht,
+          (ht->size >= cap - (cap >> 2)) ? ht->allocidx + 1 : ht->allocidx);
   }
 
   idx = r_hash_table_lookup_bucket (ht, key, &hash);
@@ -248,32 +263,22 @@ r_hash_table_remove_all (RHashTable * ht)
   rsize i, c;
 
   if (R_UNLIKELY (ht == NULL)) return;
-  if (R_UNLIKELY (ht->size == 0)) return;
+  if (R_UNLIKELY (ht->size == 0 && ht->tombs == 0)) return;
 
   c = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx);
 
-  if (ht->keynotify != NULL && ht->valuenotify != NULL) {
-    for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash == R_HASH_EMPTY) continue;
-      ht->keynotify (ht->buckets[i].key);
-      ht->valuenotify (ht->buckets[i].val);
-      ht->buckets[i].hash = R_HASH_EMPTY;
+  for (i = 0; i < c; i++) {
+    if (R_HASH_BUCKET_LIVE (ht->buckets[i].hash)) {
+      if (ht->keynotify != NULL)
+        ht->keynotify (ht->buckets[i].key);
+      if (ht->valuenotify != NULL)
+        ht->valuenotify (ht->buckets[i].val);
     }
-  } else if (ht->valuenotify != NULL) {
-    for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash == R_HASH_EMPTY) continue;
-      ht->valuenotify (ht->buckets[i].val);
-      ht->buckets[i].hash = R_HASH_EMPTY;
-    }
-  } else if (ht->keynotify != NULL) {
-    for (i = 0; i < c; i++) {
-      if (ht->buckets[i].hash == R_HASH_EMPTY) continue;
-      ht->keynotify (ht->buckets[i].key);
-      ht->buckets[i].hash = R_HASH_EMPTY;
-    }
+    ht->buckets[i].hash = R_HASH_EMPTY;
   }
 
   ht->size = 0;
+  ht->tombs = 0;
 }
 
 static void
@@ -283,9 +288,10 @@ r_hash_table_internal_remove (RHashTable * ht, rsize idx)
     ht->keynotify (ht->buckets[idx].key);
   if (ht->valuenotify != NULL)
     ht->valuenotify (ht->buckets[idx].val);
-  ht->buckets[idx].hash = R_HASH_EMPTY;
+  ht->buckets[idx].hash = R_HASH_DELETED;
 
   ht->size--;
+  ht->tombs++;
 }
 
 RHashTableError
@@ -350,9 +356,10 @@ r_hash_table_steal (RHashTable * ht, rconstpointer key,
     *keyout = ht->buckets[idx].key;
   if (valueout != NULL)
     *valueout = ht->buckets[idx].val;
-  ht->buckets[idx].hash = R_HASH_EMPTY;
+  ht->buckets[idx].hash = R_HASH_DELETED;
 
   ht->size--;
+  ht->tombs++;
   return R_HASH_TABLE_OK;
 }
 
@@ -374,7 +381,7 @@ r_hash_table_remove_with_func (RHashTable * ht,
 
   c = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx);
   for (i = 0; i < c; i++) {
-    if (ht->buckets[i].hash != R_HASH_EMPTY &&
+    if (R_HASH_BUCKET_LIVE (ht->buckets[i].hash) &&
         func (ht->buckets[i].key, ht->buckets[i].val, user)) {
       r_hash_table_internal_remove (ht, i);
     }
@@ -393,7 +400,7 @@ r_hash_table_foreach (RHashTable * ht, RKeyValueFunc func, rpointer user)
 
   c = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx);
   for (i = 0; i < c; i++) {
-    if (ht->buckets[i].hash != R_HASH_EMPTY)
+    if (R_HASH_BUCKET_LIVE (ht->buckets[i].hash))
       func (ht->buckets[i].key, ht->buckets[i].val, user);
   }
 

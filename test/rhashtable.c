@@ -301,3 +301,59 @@ RTEST (rhashtable, lookup_absent_str_keys, RTEST_FAST)
   r_hash_table_unref (ht);
 }
 RTEST_END;
+
+/* A removal must not truncate the open-addressing probe chain of another key
+ * that collided past it. Replays the exact insert/remove sequence (handle
+ * values from a stranded pollset) that left a still-present key unfindable. */
+RTEST (rhashtable, remove_preserves_probe_chain, RTEST_FAST)
+{
+  RHashTable * ht;
+  static const rsize keys[8] = { 3, 1000, 1001, 1002, 1003, 1004, 1005, 1006 };
+  rsize i;
+
+  r_assert_cmpptr ((ht = r_hash_table_new (NULL, NULL)), !=, NULL);
+  for (i = 0; i < 8; i++)
+    r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (keys[i]),
+          RUINT_TO_POINTER (keys[i])), ==, R_HASH_TABLE_OK);
+
+  r_assert_cmpint (r_hash_table_remove (ht, RSIZE_TO_POINTER (1000)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_remove (ht, RSIZE_TO_POINTER (1002)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_remove (ht, RSIZE_TO_POINTER (1004)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_remove (ht, RSIZE_TO_POINTER (1006)), ==, R_HASH_TABLE_OK);
+
+  r_assert_cmpuint (r_hash_table_size (ht), ==, 4);
+  /* every key not removed must still resolve */
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht, RSIZE_TO_POINTER (3))), ==, 3);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht, RSIZE_TO_POINTER (1001))), ==, 1001);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht, RSIZE_TO_POINTER (1003))), ==, 1003);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht, RSIZE_TO_POINTER (1005))), ==, 1005);
+
+  r_hash_table_unref (ht);
+}
+RTEST_END;
+
+/* Minimal collision chain: with the default (identity) hash and the initial
+ * 8-bucket table, keys 7/14/21/28 all start at bucket 0 (mod 7) and form one
+ * probe chain. Removing a key in the middle must not make the keys probed past
+ * it unfindable -- the deletion has to leave the chain traversable. */
+RTEST (rhashtable, remove_middle_of_collision_chain, RTEST_FAST)
+{
+  RHashTable * ht;
+
+  r_assert_cmpptr ((ht = r_hash_table_new (NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (7),  RUINT_TO_POINTER (7)),  ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (14), RUINT_TO_POINTER (14)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (21), RUINT_TO_POINTER (21)), ==, R_HASH_TABLE_OK);
+  r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (28), RUINT_TO_POINTER (28)), ==, R_HASH_TABLE_OK);
+
+  r_assert_cmpint (r_hash_table_remove (ht, RSIZE_TO_POINTER (14)), ==, R_HASH_TABLE_OK);
+
+  /* 21 and 28 sit past 14's bucket on the probe chain -- still findable */
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht, RSIZE_TO_POINTER (21))), ==, 21);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht, RSIZE_TO_POINTER (28))), ==, 28);
+  r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht, RSIZE_TO_POINTER (7))),  ==, 7);
+  r_assert_cmpint (r_hash_table_contains (ht, RSIZE_TO_POINTER (14)), ==, R_HASH_TABLE_NOT_FOUND);
+
+  r_hash_table_unref (ht);
+}
+RTEST_END;
