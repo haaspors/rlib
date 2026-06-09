@@ -22,6 +22,13 @@
 
 #include <rlib/rmem.h>
 
+/* Open-addressing deletion marks a bucket with a tombstone distinct from EMPTY:
+ * a lookup probe must continue past a removed bucket (it only terminates on
+ * EMPTY), or a removal would truncate the probe chain of another item that had
+ * collided past it -- leaving that item unfindable while still present.
+ * Tombstones are reclaimed on the next resize/rehash. */
+#define R_HASH_DELETED              (R_HASH_EMPTY - 1)
+#define R_HASH_BUCKET_LIVE(h)       ((h) != R_HASH_EMPTY && (h) != R_HASH_DELETED)
 
 typedef struct {
   rpointer item;
@@ -32,6 +39,7 @@ struct RHashSet {
   RRef ref;
 
   rsize size;
+  rsize tombs;        /* tombstoned buckets; reclaimed on resize/rehash */
   ruint8 allocidx;
   RHashSetBucket * buckets;
 
@@ -46,7 +54,7 @@ r_hash_set_free (RHashSet * hs)
   if (hs->notify != NULL) {
     rsize i, c = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx);
     for (i = 0; i < c; i++) {
-      if (hs->buckets[i].hash != R_HASH_EMPTY)
+      if (R_HASH_BUCKET_LIVE (hs->buckets[i].hash))
         hs->notify (hs->buckets[i].item);
     }
   }
@@ -68,11 +76,12 @@ r_hash_set_resize (RHashSet * hs, ruint8 allocidx)
 
   size = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx);
   hs->allocidx = allocidx;
+  hs->tombs = 0;        /* tombstones do not carry over to the fresh table */
 
   for (i = 0; i < size; i++) {
     rsize idx, step = 0;
 
-    if (buckets[i].hash == R_HASH_EMPTY)
+    if (!R_HASH_BUCKET_LIVE (buckets[i].hash))
       continue;
 
     idx = buckets[i].hash % r_hash_size_primes[hs->allocidx];
@@ -97,6 +106,7 @@ r_hash_set_new_full (RHashFunc hash, REqualFunc equal, RDestroyNotify notify)
     r_ref_init (ret, r_hash_set_free);
 
     ret->size = 0;
+    ret->tombs = 0;
     ret->allocidx = 0;
     size = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ret->allocidx);
     ret->buckets = r_mem_new_n (RHashSetBucket, size);
@@ -126,8 +136,9 @@ static inline rsize
 r_hash_set_hash (RHashSet * hs, rconstpointer item)
 {
   rsize ret = hs->hashfunc (item);
-  if (R_UNLIKELY (ret == R_HASH_EMPTY))
-    ret++;
+  /* Keep clear of both reserved bucket markers (EMPTY and DELETED). */
+  if (R_UNLIKELY (ret == R_HASH_EMPTY || ret == R_HASH_DELETED))
+    ret = R_HASH_DELETED - 1;
   return ret;
 }
 
@@ -160,8 +171,16 @@ r_hash_set_insert (RHashSet * hs, rpointer item)
 
   if (R_UNLIKELY (hs == NULL)) return FALSE;
 
-  if (hs->size >= R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx))
-    r_hash_set_resize (hs, hs->allocidx + 1);
+  /* Resize at 3/4 occupancy so a probe always has an EMPTY bucket to terminate
+   * on (a full table makes an absent-item lookup loop forever). Count tombstones
+   * toward the load; only grow if live items alone are crowding the table,
+   * otherwise rehash at the same size to reclaim the tombstones. */
+  {
+    rsize cap = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx);
+    if (hs->size + hs->tombs >= cap - (cap >> 2))
+      r_hash_set_resize (hs,
+          (hs->size >= cap - (cap >> 2)) ? hs->allocidx + 1 : hs->allocidx);
+  }
 
   idx = r_hash_set_lookup_bucket (hs, item, &hash);
   if (hs->buckets[idx].hash == hash) {
@@ -208,19 +227,20 @@ r_hash_set_contains_full (RHashSet * hs, rconstpointer item,
 void
 r_hash_set_remove_all (RHashSet * hs)
 {
-  if (R_UNLIKELY (hs == NULL)) return;
-  if (R_UNLIKELY (hs->size == 0)) return;
+  rsize i, c;
 
-  if (hs->notify != NULL) {
-    rsize i, c = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx);
-    for (i = 0; i < c; i++) {
-      if (hs->buckets[i].hash == R_HASH_EMPTY) continue;
+  if (R_UNLIKELY (hs == NULL)) return;
+  if (R_UNLIKELY (hs->size == 0 && hs->tombs == 0)) return;
+
+  c = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx);
+  for (i = 0; i < c; i++) {
+    if (R_HASH_BUCKET_LIVE (hs->buckets[i].hash) && hs->notify != NULL)
       hs->notify (hs->buckets[i].item);
-      hs->buckets[i].hash = R_HASH_EMPTY;
-    }
+    hs->buckets[i].hash = R_HASH_EMPTY;
   }
 
   hs->size = 0;
+  hs->tombs = 0;
 }
 
 rboolean
@@ -236,9 +256,10 @@ r_hash_set_remove (RHashSet * hs, rconstpointer item)
 
   if (hs->notify != NULL)
     hs->notify (hs->buckets[idx].item);
-  hs->buckets[idx].hash = R_HASH_EMPTY;
+  hs->buckets[idx].hash = R_HASH_DELETED;
 
   hs->size--;
+  hs->tombs++;
   return TRUE;
 }
 
@@ -258,9 +279,10 @@ r_hash_set_steal (RHashSet * hs, rconstpointer item, rpointer * out)
 
   if (out != NULL)
     *out = hs->buckets[idx].item;
-  hs->buckets[idx].hash = R_HASH_EMPTY;
+  hs->buckets[idx].hash = R_HASH_DELETED;
 
   hs->size--;
+  hs->tombs++;
   return TRUE;
 }
 
@@ -274,7 +296,7 @@ r_hash_set_foreach (RHashSet * hs, RFunc func, rpointer user)
 
   c = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx);
   for (i = 0; i < c; i++) {
-    if (hs->buckets[i].hash != R_HASH_EMPTY)
+    if (R_HASH_BUCKET_LIVE (hs->buckets[i].hash))
       func (hs->buckets[i].item, user);
   }
 
