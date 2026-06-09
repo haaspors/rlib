@@ -1425,3 +1425,622 @@ RTEST_F (rtlsserver, tls_session_ticket_issued, RTEST_FAST)
   r_crypto_key_unref (pk);
 }
 RTEST_END;
+
+/* Build a TLS 1.2 ClientHello offering @suite, empty renegotiation_info, and a
+ * session_ticket extension carrying @ticket (empty when @ticketlen is 0). The
+ * client random is captured into @crand. Returns the record length. */
+static rsize
+r_test_tls_build_client_hello (RPrng * prng, ruint8 * ch, rsize chcap,
+    RTLSCipherSuite suite, const ruint8 * ticket, rsize ticketlen, ruint8 * crand)
+{
+  ruint8 body[512];
+  ruint8 * p = body;
+  ruint8 * extlenp;
+  rsize bodylen, hssz;
+
+  *p++ = 0x03; *p++ = 0x03;
+  r_prng_fill (prng, p, R_TLS_HELLO_RANDOM_BYTES);
+  r_memcpy (crand, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  r_store_be16 (p, 2); p += 2;               /* cipher-suites length */
+  r_store_be16 (p, (ruint16) suite); p += 2;
+  *p++ = 1; *p++ = 0;                        /* compression: null */
+  extlenp = p; p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+  r_store_be16 (p, 1); p += 2; *p++ = 0;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_SESSION_TICKET); p += 2;
+  r_store_be16 (p, (ruint16) ticketlen); p += 2;
+  if (ticketlen > 0) { r_memcpy (p, ticket, ticketlen); p += ticketlen; }
+  r_store_be16 (extlenp, (ruint16) (p - (extlenp + 2)));
+  bodylen = (rsize) (p - body);
+
+  r_assert_cmpint (r_tls_write_handshake (ch, chcap, &hssz, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO, (ruint16) bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (ch + hssz, body, bodylen);
+  return hssz + bodylen;
+}
+
+/* Create a server configured like the fixture's (same callbacks bound to @ctx,
+ * same cert), for the second connection in a resumption test. */
+static RTLSServer *
+r_test_tls_server_new_cfg (rpointer ctx)
+{
+  static const RTLSCallbacks cbs = {
+    NULL, r_tlsserver_test_hs_done, r_tlsserver_test_buffer_out,
+    r_tlsserver_test_buffer_appdata, r_tlsserver_test_error, NULL,
+  };
+  RTLSServer * srv;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((srv = r_tls_server_new (&cbs, ctx, NULL)), !=, NULL);
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_server_set_cert (srv, cert, pk));
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  return srv;
+}
+
+/* Drive a full TLS 1.2 RSA handshake against @server to completion, returning
+ * the negotiated master secret in @ms and a malloc'd copy of the issued ticket
+ * in @ticket_out / @ticketlen_out (caller frees). */
+static void
+r_test_tls_client_issue (RTLSServer * server, RPrng * prng, RQueue * qout,
+    ruint8 ms[48], ruint8 ** ticket_out, rsize * ticketlen_out)
+{
+  RCryptoKey * pk;
+  RMsgDigest * md;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RBuffer * buf, * plain, * enc;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RCryptoCipher * ccipher;
+  RHmac * chmac;
+  RTLSHandshakeType hs;
+  ruint32 l;
+  ruint16 msgseq;
+  ruint8 ch[256];
+  ruint8 crand[R_TLS_HELLO_RANDOM_BYTES], srand[R_TLS_HELLO_RANDOM_BYTES];
+  ruint8 pms[48], kb[128], vd[12], iv[16], sh[64];
+  ruint8 encpms[512], cke[512], fin[64], ccs[16];
+  rsize chlen, hssz, enclen = sizeof (encpms), ckelen, finhs, ccslen, shlen;
+
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((md = r_msg_digest_new_sha256 ()), !=, NULL);
+
+  chlen = r_test_tls_build_client_hello (prng, ch, sizeof (ch),
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, NULL, 0, crand);
+  r_test_tls_server_feed (server, ch, chlen);
+  r_test_tls_hash_record (md, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  r_memcpy (srand, hello.random, sizeof (srand));
+  while (r_tls_parser_init_next (&parser, NULL) == R_TLS_ERROR_OK)
+    r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  pms[0] = 0x03; pms[1] = 0x03;
+  r_prng_fill (prng, pms + 2, sizeof (pms) - 2);
+  r_assert_cmpint (r_crypto_key_encrypt (pk, prng, pms, sizeof (pms), encpms, &enclen),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_tls_write_handshake (cke, sizeof (cke), &hssz, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE, (ruint16)(2 + enclen)), ==, R_TLS_ERROR_OK);
+  r_store_be16 (cke + hssz, (ruint16)enclen);
+  r_memcpy (cke + hssz + 2, encpms, enclen);
+  ckelen = hssz + 2 + enclen;
+  r_test_tls_hash_record (md, cke, ckelen);
+
+  shlen = r_msg_digest_size (md);
+  r_assert (r_msg_digest_get_data (md, sh, shlen, NULL));
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (ms, 48, pms, sizeof (pms),
+        R_STR_WITH_SIZE_ARGS ("master secret"),
+        crand, sizeof (crand), srand, sizeof (srand), NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (kb, sizeof (kb), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("key expansion"),
+        srand, sizeof (srand), crand, sizeof (crand), NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (vd, sizeof (vd), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("client finished"), sh, shlen, NULL), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpptr ((ccipher = r_cipher_aes_128_cbc_new (kb + 40)), !=, NULL);
+  r_assert_cmpptr ((chmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb, 20)), !=, NULL);
+
+  r_assert_cmpint (r_tls_write_handshake (fin, sizeof (fin), &finhs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_FINISHED, sizeof (vd)), ==, R_TLS_ERROR_OK);
+  r_memcpy (fin + finhs, vd, sizeof (vd));
+  r_assert_cmpptr ((plain = r_buffer_new_wrapped (R_MEM_FLAG_NONE, fin,
+          finhs + sizeof (vd), finhs + sizeof (vd), 0, NULL, NULL)), !=, NULL);
+  r_prng_fill (prng, iv, sizeof (iv));
+  r_assert_cmpptr ((enc = r_tls_encrypt_buffer (plain, 0, ccipher, iv, chmac, FALSE)), !=, NULL);
+  r_buffer_unref (plain);
+
+  r_assert_cmpint (r_tls_write_change_cipher (ccs, sizeof (ccs), &ccslen,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_test_tls_server_feed (server, cke, ckelen);
+  r_test_tls_server_feed (server, ccs, ccslen);
+  r_assert (r_buffer_map (enc, &info, R_MEM_MAP_READ));
+  r_test_tls_server_feed (server, info.data, info.size);
+  r_buffer_unmap (enc, &info);
+  r_buffer_unref (enc);
+
+  /* server 2nd flight: NewSessionTicket, CCS, Finished -- capture the ticket */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_parse_handshake_full (&parser, &hs, &l,
+        &msgseq, NULL, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hs, ==, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET);
+  {
+    ruint32 lifetime;
+    const ruint8 * ticket;
+    ruint16 ticketsize;
+
+    r_assert_cmpint (r_tls_parser_parse_new_session_ticket (&parser, &lifetime,
+          &ticket, &ticketsize), ==, R_TLS_ERROR_OK);
+    r_assert_cmpuint (ticketsize, >, 0);
+    *ticket_out = r_memdup (ticket, ticketsize);
+    *ticketlen_out = ticketsize;
+  }
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  r_hmac_free (chmac);
+  r_crypto_cipher_unref (ccipher);
+  r_memclear_secure (pms, sizeof (pms));
+  r_memclear_secure (kb, sizeof (kb));
+  r_msg_digest_free (md);
+  r_crypto_key_unref (pk);
+}
+
+/* Present @ticket to @server (which must share the issuing key store) and drive
+ * the abbreviated handshake to completion: verify the server Finished over
+ * H(CH||SH), then send the client Finished over H(CH||SH||serverFinished). */
+static void
+r_test_tls_client_resume (RTLSServer * server, RPrng * prng, RQueue * qout,
+    const ruint8 ms[48], const ruint8 * ticket, rsize ticketlen)
+{
+  RMsgDigest * md;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RBuffer * buf, * plain, * enc;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RCryptoCipher * ccipher, * scipher;
+  RHmac * chmac, * shmac;
+  ruint8 ch[512];
+  ruint8 crand[R_TLS_HELLO_RANDOM_BYTES], srand[R_TLS_HELLO_RANDOM_BYTES];
+  ruint8 kb[128], vd[12], iv[16], hash[64], svd[12];
+  ruint8 fin[64], ccs[16];
+  rsize chlen, finhs, ccslen, hashsize;
+  const ruint8 * verify_data;
+  rsize verify_size;
+
+  r_assert_cmpptr ((md = r_msg_digest_new_sha256 ()), !=, NULL);
+
+  chlen = r_test_tls_build_client_hello (prng, ch, sizeof (ch),
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, ticket, ticketlen, crand);
+  r_test_tls_server_feed (server, ch, chlen);
+  r_test_tls_hash_record (md, ch, chlen);
+
+  /* resumed server flight: ServerHello, CCS, encrypted Finished (no Certificate) */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (hello.sidlen, >, 0);     /* a session id signals resumption */
+  r_memcpy (srand, hello.random, sizeof (srand));
+  {
+    /* No fresh ticket is issued on resume, so the ServerHello must not promise
+     * one with a session_ticket extension (RFC 5077 3.4). */
+    RTLSHelloExt ext;
+    RTLSError e;
+    for (e = r_tls_hello_msg_extension_first (&hello, &ext); e == R_TLS_ERROR_OK;
+        e = r_tls_hello_msg_extension_next (&hello, &ext))
+      r_assert_cmpuint (ext.type, !=, R_TLS_EXT_TYPE_SESSION_TICKET);
+  }
+
+  /* key block from the resumed master secret and the fresh randoms */
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (kb, sizeof (kb), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("key expansion"),
+        srand, sizeof (srand), crand, sizeof (crand), NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((ccipher = r_cipher_aes_128_cbc_new (kb + 40)), !=, NULL);
+  r_assert_cmpptr ((chmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb, 20)), !=, NULL);
+  r_assert_cmpptr ((scipher = r_cipher_aes_128_cbc_new (kb + 56)), !=, NULL);
+  r_assert_cmpptr ((shmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb + 20, 20)), !=, NULL);
+
+  /* server verify_data is over the transcript through ServerHello */
+  hashsize = r_msg_digest_size (md);
+  r_assert (r_msg_digest_get_data (md, hash, hashsize, NULL));
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (svd, sizeof (svd), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("server finished"), hash, hashsize, NULL), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC);
+
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, scipher, shmac, FALSE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_finished (&parser, &verify_data, &verify_size),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (verify_size, ==, 12);
+  r_assert_cmpint (r_memcmp (verify_data, svd, verify_size), ==, 0);
+  /* fold the server Finished so the client Finished covers it */
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  hashsize = r_msg_digest_size (md);
+  r_assert (r_msg_digest_get_data (md, hash, hashsize, NULL));
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (vd, sizeof (vd), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("client finished"), hash, hashsize, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_write_handshake (fin, sizeof (fin), &finhs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_FINISHED, sizeof (vd)), ==, R_TLS_ERROR_OK);
+  r_memcpy (fin + finhs, vd, sizeof (vd));
+  r_assert_cmpptr ((plain = r_buffer_new_wrapped (R_MEM_FLAG_NONE, fin,
+          finhs + sizeof (vd), finhs + sizeof (vd), 0, NULL, NULL)), !=, NULL);
+  r_prng_fill (prng, iv, sizeof (iv));
+  r_assert_cmpptr ((enc = r_tls_encrypt_buffer (plain, 0, ccipher, iv, chmac, FALSE)), !=, NULL);
+  r_buffer_unref (plain);
+
+  r_assert_cmpint (r_tls_write_change_cipher (ccs, sizeof (ccs), &ccslen,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_test_tls_server_feed (server, ccs, ccslen);
+  r_assert (r_buffer_map (enc, &info, R_MEM_MAP_READ));
+  r_test_tls_server_feed (server, info.data, info.size);
+  r_buffer_unmap (enc, &info);
+  r_buffer_unref (enc);
+
+  r_hmac_free (chmac);
+  r_hmac_free (shmac);
+  r_crypto_cipher_unref (ccipher);
+  r_crypto_cipher_unref (scipher);
+  r_memclear_secure (kb, sizeof (kb));
+  r_msg_digest_free (md);
+}
+
+/* Feed a resume ClientHello (offering @suite + @ticket) and assert the server
+ * runs a full handshake -- a Certificate follows the ServerHello rather than a
+ * ChangeCipherSpec -- i.e. it declined to resume. */
+static void
+r_test_tls_client_resume_assert_full (RTLSServer * server, RPrng * prng,
+    RQueue * qout, RTLSCipherSuite suite, const ruint8 * ticket, rsize ticketlen)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RBuffer * buf;
+  RTLSHandshakeType hs;
+  ruint32 l;
+  ruint16 msgseq;
+  ruint8 ch[512], crand[R_TLS_HELLO_RANDOM_BYTES];
+  rsize chlen;
+
+  chlen = r_test_tls_build_client_hello (prng, ch, sizeof (ch),
+      suite, ticket, ticketlen, crand);
+  r_test_tls_server_feed (server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_parse_handshake_full (&parser, &hs, &l,
+        &msgseq, NULL, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hs, ==, R_TLS_HANDSHAKE_TYPE_CERTIFICATE);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+
+/* End-to-end resumption: issue a ticket via a full handshake, then present it
+ * to a second server sharing the same key store and complete the abbreviated
+ * handshake, with the negotiated parameters preserved. */
+RTEST_F (rtlsserver, tls_session_resume, RTEST_FAST)
+{
+  RTLSServer * srv2;
+  ruint8 ms[48], * ticket = NULL;
+  rsize ticketlen = 0;
+  const RTLSCipherSuiteInfo * csinfo;
+
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_client_issue (fixture->server, fixture->prng, &fixture->qout,
+      ms, &ticket, &ticketlen);
+  r_assert (fixture->hs_done);
+  r_assert_cmpuint (ticketlen, >, 0);
+
+  fixture->hs_done = FALSE;
+  r_queue_clear (&fixture->qout, r_buffer_unref);
+  r_assert_cmpptr ((srv2 = r_test_tls_server_new_cfg (fixture)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (srv2, fixture->ticket_keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srv2, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_resume (srv2, fixture->prng, &fixture->qout, ms, ticket, ticketlen);
+  r_assert (fixture->hs_done);
+  r_assert_cmphex (r_tls_server_get_version (srv2), ==, R_TLS_VERSION_TLS_1_2);
+  r_assert_cmpptr ((csinfo = r_tls_server_get_cipher_suite (srv2)), !=, NULL);
+  r_assert_cmpstr (csinfo->str, ==, "TLS-RSA-WITH-AES-128-CBC-SHA");
+
+  r_free (ticket);
+  r_tls_server_unref (srv2);
+}
+RTEST_END;
+
+/* A ClientHello carrying an unopenable ticket falls back to a full handshake. */
+RTEST_F (rtlsserver, tls_session_resume_bad_ticket, RTEST_FAST)
+{
+  ruint8 garbage[80];
+
+  r_memset (garbage, 0xab, sizeof (garbage));
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_resume_assert_full (fixture->server, fixture->prng, &fixture->qout,
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, garbage, sizeof (garbage));
+  r_assert (!fixture->hs_done);
+}
+RTEST_END;
+
+/* A ticket for a suite the resuming ClientHello no longer offers must not
+ * resume (RFC 5077); the server falls back to a full handshake. */
+RTEST_F (rtlsserver, tls_session_resume_suite_not_offered, RTEST_FAST)
+{
+  RTLSServer * srv2;
+  ruint8 ms[48], * ticket = NULL;
+  rsize ticketlen = 0;
+
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_client_issue (fixture->server, fixture->prng, &fixture->qout,
+      ms, &ticket, &ticketlen);
+  r_assert (fixture->hs_done);
+
+  fixture->hs_done = FALSE;
+  r_queue_clear (&fixture->qout, r_buffer_unref);
+  r_assert_cmpptr ((srv2 = r_test_tls_server_new_cfg (fixture)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (srv2, fixture->ticket_keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srv2, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  /* the ticket is for RSA-AES128-CBC-SHA; this ClientHello offers only SHA256 */
+  r_test_tls_client_resume_assert_full (srv2, fixture->prng, &fixture->qout,
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256, ticket, ticketlen);
+
+  r_free (ticket);
+  r_tls_server_unref (srv2);
+}
+RTEST_END;
+
+/* Build a DTLS 1.2 ClientHello (message_seq 0) offering @suite, empty
+ * renegotiation_info, extended_master_secret (the issuing session used it) and
+ * a session_ticket extension carrying @ticket. Captures the client random. */
+static rsize
+r_test_tls_build_dtls_resume_hello (RPrng * prng, ruint8 * out, rsize outsz,
+    RTLSCipherSuite suite, const ruint8 * ticket, rsize ticketlen, ruint8 * crand)
+{
+  ruint8 body[256];
+  ruint8 * p = body;
+  ruint8 * extlenp;
+  rsize bodylen, hs;
+
+  *p++ = 0xfe; *p++ = 0xfd;                  /* client_version DTLS 1.2 */
+  r_prng_fill (prng, p, R_TLS_HELLO_RANDOM_BYTES);
+  r_memcpy (crand, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  *p++ = 0;                                  /* cookie length */
+  r_store_be16 (p, 2); p += 2;               /* cipher-suites length */
+  r_store_be16 (p, (ruint16) suite); p += 2;
+  *p++ = 1; *p++ = 0;                        /* compression: null */
+  extlenp = p; p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+  r_store_be16 (p, 1); p += 2; *p++ = 0;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET); p += 2;
+  r_store_be16 (p, 0); p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_SESSION_TICKET); p += 2;
+  r_store_be16 (p, (ruint16) ticketlen); p += 2;
+  if (ticketlen > 0) { r_memcpy (p, ticket, ticketlen); p += ticketlen; }
+  r_store_be16 (extlenp, (ruint16) (p - (extlenp + 2)));
+  bodylen = (rsize) (p - body);
+
+  r_assert_cmpint (r_dtls_write_handshake (out, outsz, &hs,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO,
+        (ruint16) bodylen, 0, 0, 0, 0, (ruint32) bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (out + hs, body, bodylen);
+  return hs + bodylen;
+}
+
+/* Present @ticket to a DTLS @server sharing the issuing key store and drive the
+ * abbreviated handshake to completion: verify the server Finished (epoch 1)
+ * over H(CH||SH), then send the client ChangeCipherSpec + Finished. */
+static void
+r_test_tls_dtls_client_resume (RTLSServer * server, RPrng * prng, RQueue * qout,
+    const ruint8 ms[48], const ruint8 * ticket, rsize ticketlen)
+{
+  RMsgDigest * md;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RBuffer * buf, * plain, * encbuf;
+  RCryptoCipher * ccipher, * scipher;
+  RHmac * chmac, * shmac;
+  ruint8 ch[256];
+  ruint8 crand[R_TLS_HELLO_RANDOM_BYTES], srand[R_TLS_HELLO_RANDOM_BYTES];
+  ruint8 kb[128], vd[12], iv[16], hash[64], svd[12];
+  ruint8 finbuf[64], ccsbuf[32];
+  rsize chlen, finhs, ccslen, hashsize;
+  const ruint8 * verify_data;
+  rsize verify_size;
+
+  r_assert_cmpptr ((md = r_msg_digest_new_sha256 ()), !=, NULL);
+
+  chlen = r_test_tls_build_dtls_resume_hello (prng, ch, sizeof (ch),
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, ticket, ticketlen, crand);
+  r_test_tls_server_feed (server, ch, chlen);
+  r_test_tls_hash_record (md, ch, chlen);
+
+  /* resumed server flight: ServerHello, CCS (epoch 0), encrypted Finished
+   * (epoch 1); no Certificate. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpuint (parser.epoch, ==, 0);
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (hello.sidlen, >, 0);     /* a session id signals resumption */
+  r_memcpy (srand, hello.random, sizeof (srand));
+  {
+    /* No fresh ticket is issued on resume, so the ServerHello must not promise
+     * one with a session_ticket extension (RFC 5077 3.4). */
+    RTLSHelloExt ext;
+    RTLSError e;
+    for (e = r_tls_hello_msg_extension_first (&hello, &ext); e == R_TLS_ERROR_OK;
+        e = r_tls_hello_msg_extension_next (&hello, &ext))
+      r_assert_cmpuint (ext.type, !=, R_TLS_EXT_TYPE_SESSION_TICKET);
+  }
+
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (kb, sizeof (kb), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("key expansion"),
+        srand, sizeof (srand), crand, sizeof (crand), NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((ccipher = r_cipher_aes_128_cbc_new (kb + 40)), !=, NULL);
+  r_assert_cmpptr ((chmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb, 20)), !=, NULL);
+  r_assert_cmpptr ((scipher = r_cipher_aes_128_cbc_new (kb + 56)), !=, NULL);
+  r_assert_cmpptr ((shmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb + 20, 20)), !=, NULL);
+
+  hashsize = r_msg_digest_size (md);
+  r_assert (r_msg_digest_get_data (md, hash, hashsize, NULL));
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (svd, sizeof (svd), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("server finished"), hash, hashsize, NULL), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC);
+  r_assert_cmpuint (parser.epoch, ==, 0);
+
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpuint (parser.epoch, ==, 1);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, scipher, shmac, FALSE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_finished (&parser, &verify_data, &verify_size),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (verify_size, ==, 12);
+  r_assert_cmpint (r_memcmp (verify_data, svd, verify_size), ==, 0);
+  /* fold the server Finished so the client Finished covers it */
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  hashsize = r_msg_digest_size (md);
+  r_assert (r_msg_digest_get_data (md, hash, hashsize, NULL));
+  r_assert_cmpint (r_tls_1_2_prf_sha256 (vd, sizeof (vd), ms, 48,
+        R_STR_WITH_SIZE_ARGS ("client finished"), hash, hashsize, NULL), ==, R_TLS_ERROR_OK);
+
+  /* client ChangeCipherSpec (epoch 0) + encrypted Finished (epoch 1, msg_seq 1) */
+  r_assert_cmpint (r_dtls_write_change_cipher (ccsbuf, sizeof (ccsbuf), &ccslen,
+        R_TLS_VERSION_DTLS_1_2, 0, 1), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_dtls_write_handshake (finbuf, sizeof (finbuf), &finhs,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_FINISHED, sizeof (vd),
+        1, 0, 1, 0, sizeof (vd)), ==, R_TLS_ERROR_OK);
+  r_memcpy (finbuf + finhs, vd, sizeof (vd));
+  r_assert_cmpptr ((plain = r_buffer_new_wrapped (R_MEM_FLAG_NONE, finbuf,
+          finhs + sizeof (vd), finhs + sizeof (vd), 0, NULL, NULL)), !=, NULL);
+  r_prng_fill (prng, iv, sizeof (iv));
+  r_assert_cmpptr ((encbuf = r_dtls_encrypt_buffer (plain, ccipher, iv, chmac, FALSE)), !=, NULL);
+  r_buffer_unref (plain);
+
+  r_test_tls_server_feed (server, ccsbuf, ccslen);
+  r_assert (r_tls_server_incoming_data (server, encbuf));
+  r_buffer_unref (encbuf);
+
+  r_hmac_free (chmac);
+  r_hmac_free (shmac);
+  r_crypto_cipher_unref (ccipher);
+  r_crypto_cipher_unref (scipher);
+  r_memclear_secure (kb, sizeof (kb));
+  r_msg_digest_free (md);
+}
+
+/* End-to-end DTLS resumption: a full DTLS handshake issues a ticket, then a
+ * second server sharing the key store resumes from it through the abbreviated
+ * handshake (exercises the DTLS record-header transcript fold). */
+RTEST_F (rtlsserver, dtls_session_resume, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RCryptoCipher * cipher = NULL;
+  RHmac * hmac = NULL;
+  RMsgDigest * hs_md = NULL;
+  RBuffer * buf;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RTLSServer * srv2;
+  ruint8 ms[48], * ticket = NULL;
+  rsize ticketlen = 0;
+  RTLSHandshakeType hs;
+  ruint32 l;
+  ruint16 msgseq;
+
+  /* phase 1: full DTLS handshake issues a ticket */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_server_incoming_data (pkt_dtls_client_hallo);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+  r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
+      pkt_dtls_client_hallo, sizeof (pkt_dtls_client_hallo), info.data, info.size,
+      TRUE, FALSE, &cipher, &hmac, &hs_md, ms);
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+  r_assert (fixture->hs_done);
+
+  /* capture the issued ticket from the server's 2nd flight */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_parse_handshake_full (&parser, &hs, &l,
+        &msgseq, NULL, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hs, ==, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET);
+  {
+    ruint32 lifetime;
+    const ruint8 * tk;
+    ruint16 tksz;
+
+    r_assert_cmpint (r_tls_parser_parse_new_session_ticket (&parser, &lifetime,
+          &tk, &tksz), ==, R_TLS_ERROR_OK);
+    r_assert_cmpuint (tksz, >, 0);
+    ticket = r_memdup (tk, tksz);
+    ticketlen = tksz;
+  }
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+  r_msg_digest_free (hs_md);
+  r_hmac_free (hmac);
+  r_crypto_cipher_unref (cipher);
+
+  /* phase 2: resume on a second server sharing the key store */
+  fixture->hs_done = FALSE;
+  r_queue_clear (&fixture->qout, r_buffer_unref);
+  r_assert_cmpptr ((srv2 = r_test_tls_server_new_cfg (fixture)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (srv2, fixture->ticket_keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srv2, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_dtls_client_resume (srv2, fixture->prng, &fixture->qout, ms, ticket, ticketlen);
+  r_assert (fixture->hs_done);
+  r_assert_cmphex (r_tls_server_get_version (srv2), ==, R_TLS_VERSION_DTLS_1_2);
+
+  r_free (ticket);
+  r_tls_server_unref (srv2);
+}
+RTEST_END;
