@@ -34,6 +34,7 @@ typedef enum {
   R_TLS_SERVER_HELLO,
   R_TLS_SERVER_CERTIFICATE,
   R_TLS_SERVER_KEY_EXCHANGE,
+  R_TLS_SERVER_CERTIFICATE_VERIFY,
   R_TLS_SERVER_CHANGE_CIPHER,
   R_TLS_SERVER_FINISHED,
   R_TLS_SERVER_APPDATA,
@@ -101,6 +102,11 @@ struct RTLSServer {
   RCryptoCert * cert;
   RCryptoKey * privkey;
 
+  RTLSClientCertMode client_cert_mode;  /* mTLS policy; default NONE */
+  rboolean client_cert_received;        /* a non-empty client cert was parsed */
+  RCryptoCert * peer_cert;              /* client leaf cert, ref'd; NULL if none */
+  RCryptoKey * peer_pubkey;             /* client leaf public key, for CertificateVerify */
+
   RBuffer * inbuf;
   RQueue qsend;
 };
@@ -138,6 +144,10 @@ r_tls_server_free (RTLSServer * server)
     r_crypto_cert_unref (server->cert);
   if (server->privkey != NULL)
     r_crypto_key_unref (server->privkey);
+  if (server->peer_cert != NULL)
+    r_crypto_cert_unref (server->peer_cert);
+  if (server->peer_pubkey != NULL)
+    r_crypto_key_unref (server->peer_pubkey);
   if (server->client.hmac != NULL)
     r_hmac_free (server->client.hmac);
   if (server->client.cipher != NULL)
@@ -226,6 +236,24 @@ r_tls_server_set_cert (RTLSServer * server,
   server->privkey = r_crypto_key_ref (privkey);
 
   return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_server_set_client_cert_mode (RTLSServer * server, RTLSClientCertMode mode)
+{
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  /* The mode drives the ServerHello flight (CertificateRequest); fix it first. */
+  if (R_UNLIKELY (server->state > R_TLS_SERVER_HELLO)) return R_TLS_ERROR_WRONG_STATE;
+
+  server->client_cert_mode = mode;
+  return R_TLS_ERROR_OK;
+}
+
+RCryptoCert *
+r_tls_server_get_peer_cert (const RTLSServer * server)
+{
+  if (R_UNLIKELY (server == NULL)) return NULL;
+  return server->peer_cert;
 }
 
 RTLSError
@@ -598,9 +626,57 @@ r_tls_server_write_key_exchange (RTLSServer * server)
 static RTLSError
 r_tls_server_write_cert_req (RTLSServer * server)
 {
-  /* FIXME: Request certificate? */
-  (void) server;
-  return R_TLS_ERROR_NOT_NEEDED;
+  static const ruint8 certtypes[] = { R_TLS_CLIENT_CERT_TYPE_RSA_SIGN };
+  static const RTLSSignatureScheme schemes[] = { R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256 };
+  RBuffer * buf;
+  RTLSError ret;
+  RMemMapInfo info;
+
+  /* Only request a client certificate when mutual TLS is configured. */
+  if (server->client_cert_mode == R_TLS_CLIENT_CERT_MODE_NONE)
+    return R_TLS_ERROR_NOT_NEEDED;
+
+  R_LOG_DEBUG ("%p - server certificate request", server);
+
+  if ((buf = r_tls_server_alloc_buffer (server)) == NULL)
+    return R_TLS_ERROR_OOM;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    rsize hssize, bodylen;
+    ruint8 hdrsize = r_tls_version_is_dtls (server->version) ?
+        R_DTLS_RECORD_HDR_SIZE : R_TLS_RECORD_HDR_SIZE;
+
+    /* cert-type count(1) + types + sig-scheme len(2) + schemes + CA len(2) */
+    bodylen = 1 + R_N_ELEMENTS (certtypes) +
+        2 + R_N_ELEMENTS (schemes) * sizeof (ruint16) + 2;
+    if (r_tls_version_is_dtls (server->version)) {
+      ret = r_dtls_write_handshake (info.data, info.size, &hssize,
+          server->version, R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, (ruint16)bodylen,
+          server->server.epoch, server->server.seqno, server->server.msgseq,
+          0, (ruint32)bodylen);
+    } else {
+      ret = r_tls_write_handshake (info.data, info.size, &hssize,
+          server->version, R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, (ruint16)bodylen);
+    }
+
+    if (ret == R_TLS_ERROR_OK &&
+        (ret = r_tls_write_hs_certificate_request (info.data + hssize,
+            info.size - hssize, &bodylen, certtypes, R_N_ELEMENTS (certtypes),
+            schemes, R_N_ELEMENTS (schemes), NULL, 0)) == R_TLS_ERROR_OK) {
+      r_msg_digest_update (server->hshash, info.data + hdrsize,
+          (hssize + bodylen) - hdrsize);
+      r_buffer_unmap (buf, &info);
+      r_buffer_set_size (buf, hssize + bodylen);
+      ret = r_tls_server_send_record (server, buf);
+    } else {
+      r_buffer_unmap (buf, &info);
+    }
+  } else {
+    ret = R_TLS_ERROR_OOM;
+  }
+
+  r_buffer_unref (buf);
+  return ret;
 }
 
 static RTLSError
@@ -1007,10 +1083,91 @@ static RTLSError
 r_tls_server_parse_client_certificate (RTLSServer * server,
     const RTLSParser * parser)
 {
-  /* TODO: implement */
-  (void) server;
-  (void) parser;
-  return R_TLS_ERROR_NO_CERTIFICATE;
+  RCryptoCert * chain[16];
+  RTLSCertificate tlscert = R_TLS_CERTIFICATE_INIT;
+  ruint n = 0, i;
+  RTLSError err = R_TLS_ERROR_OK;
+
+  while (n < R_N_ELEMENTS (chain) &&
+      r_tls_parser_parse_certificate_next (parser, &tlscert) == R_TLS_ERROR_OK) {
+    if ((chain[n] = r_tls_certificate_get_cert (&tlscert)) != NULL)
+      n++;
+  }
+
+  if (n == 0) {
+    /* TLS 1.2: a client with no suitable certificate sends an empty list rather
+     * than the SSLv3 no_certificate alert. */
+    if (server->client_cert_mode == R_TLS_CLIENT_CERT_MODE_REQUIRE)
+      return R_TLS_ERROR_NO_CERTIFICATE;          /* -> handshake_failure */
+    server->client_cert_received = FALSE;          /* REQUEST: proceed unauthenticated */
+    return R_TLS_ERROR_OK;
+  }
+
+  /* Trust/chain validation is delegated to the caller's verify_cert callback
+   * (as on the client side); keep the leaf for the CertificateVerify check. */
+  if (server->cb.verify_cert != NULL &&
+      !server->cb.verify_cert (server->userdata, chain, n)) {
+    err = R_TLS_ERROR_CORRUPT_CERTIFICATE;         /* -> bad_certificate */
+  } else if ((server->peer_pubkey = r_crypto_cert_get_public_key (chain[0])) == NULL) {
+    err = R_TLS_ERROR_CORRUPT_CERTIFICATE;
+  } else {
+    server->peer_cert = r_crypto_cert_ref (chain[0]);
+    server->client_cert_received = TRUE;
+  }
+
+  for (i = 0; i < n; i++)
+    r_crypto_cert_unref (chain[i]);
+
+  return err;
+}
+
+/* This cut supports RSA client certs with rsa_pkcs1_sha256, whose hash matches
+ * the transcript digest of the supported suites. */
+static rboolean
+r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme, RMsgDigestType * md)
+{
+  switch (scheme) {
+    case R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256:
+      *md = R_MSG_DIGEST_TYPE_SHA256;
+      return TRUE;
+    default:
+      return FALSE;
+  }
+}
+
+/* Verify the client's CertificateVerify: its signature covers the handshake
+ * transcript through ClientKeyExchange (a snapshot of hshash, taken before this
+ * message is folded in). */
+static RTLSError
+r_tls_server_parse_certificate_verify (RTLSServer * server, const RTLSParser * parser)
+{
+  RTLSSignatureScheme scheme;
+  const ruint8 * sig;
+  ruint16 sigsize;
+  RMsgDigestType md;
+  RTLSError err;
+  rsize hashsize;
+  ruint8 * hash;
+
+  if (R_UNLIKELY (server->peer_pubkey == NULL))   /* CertVerify with no cert */
+    return R_TLS_ERROR_WRONG_STATE;
+
+  if ((err = r_tls_parser_parse_certificate_verify (parser, &scheme, &sig, &sigsize))
+        != R_TLS_ERROR_OK)
+    return err;
+  if (!r_tls_sign_scheme_to_md (scheme, &md))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  hashsize = r_msg_digest_size (server->hshash);
+  hash = r_alloca (hashsize);
+  if (!r_msg_digest_get_data (server->hshash, hash, hashsize, NULL))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  if (r_crypto_key_verify (server->peer_pubkey, md, hash, hashsize, sig, sigsize)
+        != R_CRYPTO_OK)
+    return R_TLS_ERROR_HS_VERIFICATION_FAILED;     /* -> decrypt_error */
+
+  return R_TLS_ERROR_OK;
 }
 
 static RTLSError
@@ -1416,13 +1573,13 @@ r_tls_server_state_certificate (RTLSServer * server, const RTLSParser * parser)
   RTLSHandshakeType type;
   if ((err = r_tls_parser_parse_handshake_peek_type (parser, &type)) == R_TLS_ERROR_OK) {
     if (type == R_TLS_HANDSHAKE_TYPE_CERTIFICATE) {
-      if ((err = r_tls_server_parse_client_certificate (server, parser)) == R_TLS_ERROR_OK) {
+      if ((err = r_tls_server_parse_client_certificate (server, parser)) == R_TLS_ERROR_OK)
         err = r_tls_server_change_state (server, R_TLS_SERVER_KEY_EXCHANGE);
-      } else {
-        /* FIXME Error? */
-      }
     } else if (type == R_TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE) {
-      if ((err = r_tls_server_change_state (server, R_TLS_SERVER_KEY_EXCHANGE)) == R_TLS_ERROR_OK)
+      /* Client sent no Certificate at all; fatal when one is required. */
+      if (server->client_cert_mode == R_TLS_CLIENT_CERT_MODE_REQUIRE)
+        err = R_TLS_ERROR_NO_CERTIFICATE;
+      else if ((err = r_tls_server_change_state (server, R_TLS_SERVER_KEY_EXCHANGE)) == R_TLS_ERROR_OK)
         err = R_TLS_ERROR_NOT_NEEDED;
     } else {
       err = R_TLS_ERROR_WRONG_TYPE;
@@ -1452,7 +1609,8 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
   ruint8 pms[48];
 
   if ((err = r_tls_server_parse_client_key_exchange (server, parser, pms)) == R_TLS_ERROR_OK)
-    err = r_tls_server_change_state (server, R_TLS_SERVER_CHANGE_CIPHER);
+    err = r_tls_server_change_state (server, server->client_cert_received ?
+        R_TLS_SERVER_CERTIFICATE_VERIFY : R_TLS_SERVER_CHANGE_CIPHER);
 
   switch (err) {
     case R_TLS_ERROR_OK:
@@ -1470,6 +1628,37 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
   }
 
   r_memclear_secure (pms, sizeof (pms));
+  return err;
+}
+
+static RTLSError
+r_tls_server_state_certificate_verify (RTLSServer * server, const RTLSParser * parser)
+{
+  RTLSError err;
+  RTLSHandshakeType type;
+
+  if ((err = r_tls_parser_parse_handshake_peek_type (parser, &type)) == R_TLS_ERROR_OK) {
+    if (type == R_TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY) {
+      if ((err = r_tls_server_parse_certificate_verify (server, parser)) == R_TLS_ERROR_OK)
+        err = r_tls_server_change_state (server, R_TLS_SERVER_CHANGE_CIPHER);
+    } else {
+      err = R_TLS_ERROR_WRONG_TYPE;
+    }
+  }
+
+  switch (err) {
+    case R_TLS_ERROR_OK:
+      R_LOG_TRACE ("Updating HS hash with CertificateVerify %u bytes",
+          (ruint)parser->fragment.size);
+      /* Fold only after verifying its own signature, so the client Finished
+       * (which covers CertificateVerify) still checks out. */
+      r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
+      break;
+    default:
+      r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
+      break;
+  }
+
   return err;
 }
 
@@ -1577,6 +1766,7 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
     r_tls_server_state_hello,
     r_tls_server_state_certificate,
     r_tls_server_state_key_exchange,
+    r_tls_server_state_certificate_verify,
     r_tls_server_state_change_cipher,
     r_tls_server_state_finished,
     r_tls_server_state_appdata,

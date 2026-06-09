@@ -59,6 +59,8 @@ RTEST_FIXTURE_STRUCT (rtlsserver)
   rboolean hs_done;
   rboolean got_error;
   RTLSAlertType last_alert;
+  ruint peer_cert_seen;        /* times verify_cert was invoked */
+  rboolean reject_peer_cert;   /* make verify_cert reject the chain */
 
   RClock * clock;
   REvLoop * evloop;
@@ -83,6 +85,16 @@ r_tlsserver_test_error (rpointer ctx, RTLSAlertType alert, rpointer session)
   (void) session;
   fixture->got_error = TRUE;
   fixture->last_alert = alert;
+}
+
+static rboolean
+r_tlsserver_test_verify_cert (rpointer ctx, RCryptoCert * const * chain, ruint count)
+{
+  RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
+  (void) chain;
+  (void) count;
+  fixture->peer_cert_seen++;
+  return !fixture->reject_peer_cert;
 }
 
 static rboolean
@@ -111,7 +123,7 @@ RTEST_FIXTURE_SETUP (rtlsserver)
     r_tlsserver_test_buffer_out,
     r_tlsserver_test_buffer_appdata,
     r_tlsserver_test_error,
-    NULL,
+    r_tlsserver_test_verify_cert,
   };
   RCryptoCert * cert;
   RCryptoKey * pk;
@@ -122,6 +134,8 @@ RTEST_FIXTURE_SETUP (rtlsserver)
   fixture->hs_done = FALSE;
   fixture->got_error = FALSE;
   fixture->last_alert = R_TLS_ALERT_TYPE_CLOSE_NOTIFY;
+  fixture->peer_cert_seen = 0;
+  fixture->reject_peer_cert = FALSE;
 
   r_queue_init (&fixture->qout);
   r_queue_init (&fixture->qapp);
@@ -2262,5 +2276,257 @@ RTEST_F (rtlsserver, tls_alert_record_overflow, RTEST_FAST)
   r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_RECORD_OVERFLOW);
   r_tls_parser_clear (&parser);
   r_buffer_unref (buf);
+}
+RTEST_END;
+
+/* How the in-test mTLS client presents its certificate. */
+typedef enum {
+  R_TEST_MTLS_CERT,    /* send a real client Certificate + CertificateVerify */
+  R_TEST_MTLS_EMPTY,   /* send an empty Certificate (no CertificateVerify) */
+} RTestMtlsCert;
+
+/* Drive a full TLS 1.2 RSA handshake presenting a client certificate, so the
+ * server's mutual-TLS path runs. @certmode picks a real or empty client
+ * Certificate; @tamper_cv flips a byte of the CertificateVerify signature. The
+ * caller inspects the fixture (hs_done / got_error / last_alert). */
+static void
+r_test_tls_client_mtls (RTLSServer * server, RPrng * prng, RQueue * qout,
+    RTestMtlsCert certmode, rboolean tamper_cv)
+{
+  RCryptoKey * pk;
+  RCryptoCert * clientcert = NULL;
+  RBuffer * certder = NULL;
+  RMsgDigest * md;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RBuffer * buf, * plain, * enc;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RCryptoCipher * ccipher;
+  RHmac * chmac;
+  ruint8 ch[256];
+  ruint8 crand[R_TLS_HELLO_RANDOM_BYTES], srand[R_TLS_HELLO_RANDOM_BYTES];
+  ruint8 pms[48], kb[128], vd[12], iv[16], sh[64], sig[512];
+  ruint8 encpms[512], certmsg[2048], cke[512], cvmsg[600], fin[64], ccs[16];
+  rsize chlen, hssz, enclen = sizeof (encpms), ckelen, finhs, ccslen, shlen;
+  rsize sigsize = sizeof (sig);
+
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((md = r_msg_digest_new_sha256 ()), !=, NULL);
+
+  chlen = r_test_tls_build_client_hello (prng, ch, sizeof (ch),
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, NULL, 0, crand);
+  r_test_tls_server_feed (server, ch, chlen);
+  r_test_tls_hash_record (md, ch, chlen);
+
+  /* server flight: ServerHello + Certificate + CertificateRequest + HelloDone */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  r_memcpy (srand, hello.random, sizeof (srand));
+  while (r_tls_parser_init_next (&parser, NULL) == R_TLS_ERROR_OK)
+    r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  /* Client Certificate (before ClientKeyExchange). */
+  {
+    const ruint8 * der = NULL;
+    rsize dersize = 0, hs;
+    ruint8 cbody[2048];
+    rsize cbodylen = sizeof (cbody), certmsglen;
+
+    if (certmode == R_TEST_MTLS_CERT) {
+      r_assert_cmpptr ((clientcert = r_pem_parse_cert_from_data (testcertpem, -1)), !=, NULL);
+      r_assert_cmpptr ((certder = r_crypto_cert_get_data_buffer (clientcert)), !=, NULL);
+      r_assert (r_buffer_map (certder, &info, R_MEM_MAP_READ));
+      der = info.data; dersize = info.size;
+    }
+    r_assert_cmpint (r_tls_write_hs_certificate (cbody, sizeof (cbody), &cbodylen,
+          der, dersize), ==, R_TLS_ERROR_OK);
+    if (certder != NULL) r_buffer_unmap (certder, &info);
+    r_assert_cmpint (r_tls_write_handshake (certmsg, sizeof (certmsg), &hs,
+          R_TLS_VERSION_TLS_1_2, R_TLS_HANDSHAKE_TYPE_CERTIFICATE, (ruint16)cbodylen),
+        ==, R_TLS_ERROR_OK);
+    r_memcpy (certmsg + hs, cbody, cbodylen);
+    certmsglen = hs + cbodylen;
+    r_test_tls_server_feed (server, certmsg, certmsglen);
+    r_test_tls_hash_record (md, certmsg, certmsglen);
+  }
+
+  /* ClientKeyExchange */
+  pms[0] = 0x03; pms[1] = 0x03;
+  r_prng_fill (prng, pms + 2, sizeof (pms) - 2);
+  r_assert_cmpint (r_crypto_key_encrypt (pk, prng, pms, sizeof (pms), encpms, &enclen),
+      ==, R_CRYPTO_OK);
+  r_assert_cmpint (r_tls_write_handshake (cke, sizeof (cke), &hssz, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE, (ruint16)(2 + enclen)), ==, R_TLS_ERROR_OK);
+  r_store_be16 (cke + hssz, (ruint16)enclen);
+  r_memcpy (cke + hssz + 2, encpms, enclen);
+  ckelen = hssz + 2 + enclen;
+  r_test_tls_server_feed (server, cke, ckelen);
+  r_test_tls_hash_record (md, cke, ckelen);
+
+  /* master secret + key block (legacy seed; the ClientHello offered no EMS).
+   * The client Finished verify_data must cover CertificateVerify, so it is
+   * computed at the end of this block, after that message is folded. */
+  {
+    ruint8 ms[48];
+    r_assert_cmpint (r_tls_1_2_prf_sha256 (ms, sizeof (ms), pms, sizeof (pms),
+          R_STR_WITH_SIZE_ARGS ("master secret"),
+          crand, sizeof (crand), srand, sizeof (srand), NULL), ==, R_TLS_ERROR_OK);
+    r_assert_cmpint (r_tls_1_2_prf_sha256 (kb, sizeof (kb), ms, sizeof (ms),
+          R_STR_WITH_SIZE_ARGS ("key expansion"),
+          srand, sizeof (srand), crand, sizeof (crand), NULL), ==, R_TLS_ERROR_OK);
+
+    /* CertificateVerify (after CKE): sign the transcript through CKE. */
+    if (certmode == R_TEST_MTLS_CERT) {
+      ruint8 cvhash[64];
+      rsize cvhashlen = r_msg_digest_size (md), hs, cvbodylen;
+      ruint8 cvbody[600];
+
+      r_assert (r_msg_digest_get_data (md, cvhash, cvhashlen, NULL));
+      r_assert_cmpint (r_crypto_key_sign (pk, prng, R_MSG_DIGEST_TYPE_SHA256,
+            cvhash, cvhashlen, sig, &sigsize), ==, R_CRYPTO_OK);
+      if (tamper_cv)
+        sig[0] ^= 0xff;
+      cvbodylen = sizeof (cvbody);
+      r_assert_cmpint (r_tls_write_hs_certificate_verify (cvbody, sizeof (cvbody),
+            &cvbodylen, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256, sig, (ruint16)sigsize),
+          ==, R_TLS_ERROR_OK);
+      r_assert_cmpint (r_tls_write_handshake (cvmsg, sizeof (cvmsg), &hs,
+            R_TLS_VERSION_TLS_1_2, R_TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY,
+            (ruint16)cvbodylen), ==, R_TLS_ERROR_OK);
+      r_memcpy (cvmsg + hs, cvbody, cvbodylen);
+      r_test_tls_server_feed (server, cvmsg, hs + cvbodylen);
+      r_test_tls_hash_record (md, cvmsg, hs + cvbodylen);
+    }
+
+    /* client Finished over the full transcript */
+    shlen = r_msg_digest_size (md);
+    r_assert (r_msg_digest_get_data (md, sh, shlen, NULL));
+    r_assert_cmpint (r_tls_1_2_prf_sha256 (vd, sizeof (vd), ms, sizeof (ms),
+          R_STR_WITH_SIZE_ARGS ("client finished"), sh, shlen, NULL), ==, R_TLS_ERROR_OK);
+    r_memclear_secure (ms, sizeof (ms));
+  }
+
+  r_assert_cmpptr ((ccipher = r_cipher_aes_128_cbc_new (kb + 40)), !=, NULL);
+  r_assert_cmpptr ((chmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb, 20)), !=, NULL);
+  r_assert_cmpint (r_tls_write_handshake (fin, sizeof (fin), &finhs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_FINISHED, sizeof (vd)), ==, R_TLS_ERROR_OK);
+  r_memcpy (fin + finhs, vd, sizeof (vd));
+  r_assert_cmpptr ((plain = r_buffer_new_wrapped (R_MEM_FLAG_NONE, fin,
+          finhs + sizeof (vd), finhs + sizeof (vd), 0, NULL, NULL)), !=, NULL);
+  r_prng_fill (prng, iv, sizeof (iv));
+  r_assert_cmpptr ((enc = r_tls_encrypt_buffer (plain, 0, ccipher, iv, chmac, FALSE)), !=, NULL);
+  r_buffer_unref (plain);
+
+  r_assert_cmpint (r_tls_write_change_cipher (ccs, sizeof (ccs), &ccslen,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_test_tls_server_feed (server, ccs, ccslen);
+  r_assert (r_buffer_map (enc, &info, R_MEM_MAP_READ));
+  r_test_tls_server_feed (server, info.data, info.size);
+  r_buffer_unmap (enc, &info);
+  r_buffer_unref (enc);
+
+  r_hmac_free (chmac);
+  r_crypto_cipher_unref (ccipher);
+  if (certder != NULL) r_buffer_unref (certder);
+  if (clientcert != NULL) r_crypto_cert_unref (clientcert);
+  r_memclear_secure (pms, sizeof (pms));
+  r_memclear_secure (kb, sizeof (kb));
+  r_msg_digest_free (md);
+  r_crypto_key_unref (pk);
+}
+
+/* REQUIRE mode, client presents a valid cert: the handshake completes, the
+ * verify_cert callback saw the chain, and get_peer_cert returns the leaf. */
+RTEST_F (rtlsserver, tls_mtls_require_roundtrip, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server,
+        R_TLS_CLIENT_CERT_MODE_REQUIRE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_mtls (fixture->server, fixture->prng, &fixture->qout,
+      R_TEST_MTLS_CERT, FALSE);
+
+  r_assert (fixture->hs_done);
+  r_assert (!fixture->got_error);
+  r_assert_cmpuint (fixture->peer_cert_seen, ==, 1);
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), !=, NULL);
+}
+RTEST_END;
+
+/* REQUEST mode, client sends an empty Certificate: the handshake completes
+ * unauthenticated and there is no peer cert. */
+RTEST_F (rtlsserver, tls_mtls_request_no_cert, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server,
+        R_TLS_CLIENT_CERT_MODE_REQUEST), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_mtls (fixture->server, fixture->prng, &fixture->qout,
+      R_TEST_MTLS_EMPTY, FALSE);
+
+  r_assert (fixture->hs_done);
+  r_assert (!fixture->got_error);
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), ==, NULL);
+}
+RTEST_END;
+
+/* REQUIRE mode, client sends an empty Certificate: fatal handshake_failure. */
+RTEST_F (rtlsserver, tls_mtls_require_no_cert, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server,
+        R_TLS_CLIENT_CERT_MODE_REQUIRE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_mtls (fixture->server, fixture->prng, &fixture->qout,
+      R_TEST_MTLS_EMPTY, FALSE);
+
+  r_assert (!fixture->hs_done);
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_HANDSHAKE_FAILURE);
+}
+RTEST_END;
+
+/* A CertificateVerify whose signature does not check out is a failed handshake
+ * cryptographic operation: decrypt_error. */
+RTEST_F (rtlsserver, tls_mtls_bad_certificate_verify, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server,
+        R_TLS_CLIENT_CERT_MODE_REQUIRE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_mtls (fixture->server, fixture->prng, &fixture->qout,
+      R_TEST_MTLS_CERT, TRUE);
+
+  r_assert (!fixture->hs_done);
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_DECRYPT_ERROR);
+}
+RTEST_END;
+
+/* When the verify_cert callback rejects the chain, the server aborts with
+ * bad_certificate. */
+RTEST_F (rtlsserver, tls_mtls_verify_cert_rejects, RTEST_FAST)
+{
+  fixture->reject_peer_cert = TRUE;
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server,
+        R_TLS_CLIENT_CERT_MODE_REQUIRE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_mtls (fixture->server, fixture->prng, &fixture->qout,
+      R_TEST_MTLS_CERT, FALSE);
+
+  r_assert (!fixture->hs_done);
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->peer_cert_seen, ==, 1);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_BAD_CERTIFICATE);
 }
 RTEST_END;

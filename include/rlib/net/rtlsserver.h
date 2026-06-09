@@ -95,8 +95,12 @@ typedef void (*RTLSErrorCb) (rpointer ctx, RTLSAlertType alert, rpointer session
  * and for verifying out of band (e.g. SDP fingerprint) after the
  * handshake. The certificates are borrowed; do not unref them.
  *
- * Used by @ref RTLSClient to validate the server certificate (and, in
- * future, by the server for client-certificate / mTLS checks).
+ * Used by @ref RTLSClient to validate the server certificate, and by the
+ * server to validate a client certificate under mutual TLS (see
+ * @ref r_tls_server_set_client_cert_mode). This callback is the trust
+ * decision: the library only checks proof-of-possession (the
+ * CertificateVerify signature), so a @c NULL callback authenticates any
+ * well-formed certificate.
  */
 typedef rboolean (*RTLSCertVerifyCb) (rpointer ctx, RCryptoCert * const * chain, ruint count);
 
@@ -118,9 +122,36 @@ R_API RTLSServer * r_tls_server_new (const RTLSCallbacks * cb,
 /** @brief Drop a reference (alias for @ref r_ref_unref). */
 #define r_tls_server_unref  r_ref_unref
 
+/**
+ * @brief Client-certificate (mutual-TLS) policy.
+ *
+ * Selects whether the server asks the client for a certificate and whether one
+ * is mandatory. When a certificate is presented it is delivered to the
+ * @ref RTLSCertVerifyCb for validation and its CertificateVerify signature is
+ * checked; the verified leaf is then available via
+ * @ref r_tls_server_get_peer_cert.
+ */
+typedef enum {
+  R_TLS_CLIENT_CERT_MODE_NONE = 0,   /**< Do not request a client certificate (default). */
+  R_TLS_CLIENT_CERT_MODE_REQUEST,    /**< Request one; an empty/absent certificate is accepted. */
+  R_TLS_CLIENT_CERT_MODE_REQUIRE,    /**< Require one; an empty/absent certificate aborts the handshake. */
+} RTLSClientCertMode;
+
 /** @brief Set the server certificate and its private key. */
 R_API RTLSError r_tls_server_set_cert (RTLSServer * server,
     RCryptoCert * cert, RCryptoKey * privkey);
+/**
+ * @brief Set the client-certificate (mutual-TLS) policy; defaults to
+ * @ref R_TLS_CLIENT_CERT_MODE_NONE. Must be set before the handshake starts.
+ */
+R_API RTLSError r_tls_server_set_client_cert_mode (RTLSServer * server,
+    RTLSClientCertMode mode);
+/**
+ * @brief The peer (client) leaf certificate presented during a mutual-TLS
+ * handshake, or @c NULL if none was presented. The reference is borrowed
+ * (owned by the session); ref it to outlive the session.
+ */
+R_API RCryptoCert * r_tls_server_get_peer_cert (const RTLSServer * server);
 /**
  * @brief Attach the shared key store used to seal and open session tickets.
  *
