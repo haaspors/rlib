@@ -287,3 +287,60 @@ RTEST (rpollset, recycled_handle_leaves_no_orphan, RTEST_FAST)
 }
 RTEST_END;
 
+
+/* A live pollset must stay internally consistent: handles[], handle_user and
+ * handle_idx in lockstep, no handle in two live slots, and every removed handle
+ * fully gone. The swap-compaction in r_poll_set_remove_idx is where this breaks
+ * (a stranded/duplicated slot is the #310 dead-fd-in-pollset). Heavy handle
+ * reuse mimics recycled fds. */
+static void
+r_test_pollset_assert_consistent (RPollSet * ps)
+{
+  ruint i, j;
+
+  r_assert_cmpuint (r_hash_table_size (ps->handle_user), ==, ps->count);
+  r_assert_cmpuint (r_hash_table_size (ps->handle_idx), ==, ps->count);
+
+  for (i = 0; i < ps->count; i++) {
+    RIOHandle h = ps->handles[i].handle;
+    /* the maps point this handle back at exactly this slot */
+    r_assert_cmpint (r_poll_set_find (ps, h), ==, (int) i);
+    r_assert_cmpptr (r_poll_set_get_user (ps, h), !=, NULL);
+    /* no other live slot holds the same handle */
+    for (j = i + 1; j < ps->count; j++)
+      r_assert_cmpint ((int) (ps->handles[j].handle == h), ==, 0);
+  }
+}
+
+RTEST (rpollset, remove_compaction_stays_consistent, RTEST_FAST)
+{
+  RPollSet ps;
+  ruint round, i;
+
+  r_poll_set_init (&ps, 0);
+
+  for (round = 0; round < 200; round++) {
+    /* Reuse a small handle space so adds keep hitting recycled values. Users
+     * are non-NULL (handle value) so get_user can flag a stranded slot. */
+    ruint n = 6 + (round % 5);
+    for (i = 0; i < n; i++) {
+      RIOHandle h = (RIOHandle) (rsize) (1 + ((round * 7 + i * 3) % 11));
+      r_poll_set_add (&ps, h, R_IO_IN, (rpointer) (rsize) h);
+      r_test_pollset_assert_consistent (&ps);
+    }
+    /* Remove every live entry, alternating front/back to drive the
+     * swap-compaction from both directions. */
+    while (ps.count > 0) {
+      ruint idx = (round & 1) ? 0 : ps.count - 1;
+      RIOHandle dead = ps.handles[idx].handle;
+      r_assert (r_poll_set_remove (&ps, dead));
+      r_assert_cmpint (r_poll_set_find (&ps, dead), <, 0);
+      r_assert_cmpptr (r_poll_set_get_user (&ps, dead), ==, NULL);
+      r_test_pollset_assert_consistent (&ps);
+    }
+    r_assert_cmpuint (ps.count, ==, 0);
+  }
+
+  r_poll_set_clear (&ps);
+}
+RTEST_END;
