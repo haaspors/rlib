@@ -20,6 +20,7 @@
 #include "../rlib-private.h"
 #include <rlib/net/rtlsserver.h>
 
+#include <rlib/crypto/raes.h>
 #include <rlib/crypto/rx509.h>
 
 #include <rlib/data/rqueue.h>
@@ -82,6 +83,8 @@ struct RTLSServer {
   const ruint8 * srtp_mki;
   ruint8 * ticket;
   ruint16 ticketsize;
+  ruint8 ticket_key[16];        /* session-ticket encryption key (STEK) */
+  rboolean ticket_key_set;
 
   RTLSConnectionState client;
   RTLSConnectionState server;
@@ -148,6 +151,7 @@ r_tls_server_free (RTLSServer * server)
   r_queue_clear (&server->qsend, r_buffer_unref);
   /* Scrub key material before releasing the struct. */
   r_memclear_secure (server->mastersecret, sizeof (server->mastersecret));
+  r_memclear_secure (server->ticket_key, sizeof (server->ticket_key));
   r_free (server);
 }
 
@@ -338,7 +342,9 @@ r_tls_server_write_hs_ext_encrypt_then_mac (const RTLSServer * server, ruint8 * 
 static ruint16
 r_tls_server_write_hs_ext_session_ticket (const RTLSServer * server, ruint8 * ptr)
 {
-  if (!server->support_new_session_ticket || server->ticketsize == 0)
+  /* The ticket itself is minted in the final flight (it binds the master
+   * secret), so this only signals that a NewSessionTicket will follow. */
+  if (!server->support_new_session_ticket)
     return 0;
 
   /* NewSessionTicket will come! */
@@ -610,6 +616,63 @@ r_tls_server_write_change_cipher (RTLSServer * server)
   return ret;
 }
 
+/* Mint the opaque session ticket: serialize the session state needed to resume
+ * (format version, protocol version, cipher suite, EMS flag, master secret)
+ * and seal it with AES-128-GCM under a per-server key generated lazily from OS
+ * entropy. The ticket is nonce || ciphertext || tag; only this server can
+ * decrypt it, so its contents stay opaque to the client. */
+static RTLSError
+r_tls_server_create_session_ticket (RTLSServer * server)
+{
+  ruint8 plain[1 + 2 + 2 + 1 + sizeof (server->mastersecret)];
+  ruint8 nonce[12];
+  ruint8 * ticket;
+  rsize ticketsize = sizeof (nonce) + sizeof (plain) + 16;
+  RCryptoCipher * cipher;
+  RCryptoCipherResult cr;
+
+  if (!server->ticket_key_set) {
+    if (!r_rand_entropy_fill (server->ticket_key, sizeof (server->ticket_key)))
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    server->ticket_key_set = TRUE;
+  }
+
+  plain[0] = 1;                                         /* ticket format version */
+  r_store_be16 (&plain[1], (ruint16)server->version);
+  r_store_be16 (&plain[3], (ruint16)server->csinfo->suite);
+  plain[5] = server->support_ext_master_secret ? 1 : 0;
+  r_memcpy (&plain[6], server->mastersecret, sizeof (server->mastersecret));
+
+  if ((cipher = r_cipher_aes_128_gcm_new (server->ticket_key)) == NULL) {
+    r_memclear_secure (plain, sizeof (plain));
+    return R_TLS_ERROR_OOM;
+  }
+  if ((ticket = r_malloc (ticketsize)) == NULL) {
+    r_crypto_cipher_unref (cipher);
+    r_memclear_secure (plain, sizeof (plain));
+    return R_TLS_ERROR_OOM;
+  }
+
+  r_prng_fill (server->prng, nonce, sizeof (nonce));
+  r_memcpy (ticket, nonce, sizeof (nonce));
+  cr = r_crypto_cipher_encrypt_aead (cipher, ticket + sizeof (nonce),
+      sizeof (plain), plain, NULL, 0, nonce, sizeof (nonce),
+      ticket + sizeof (nonce) + sizeof (plain), 16);
+
+  r_crypto_cipher_unref (cipher);
+  r_memclear_secure (plain, sizeof (plain));
+
+  if (cr != R_CRYPTO_CIPHER_OK) {
+    r_free (ticket);
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  }
+
+  r_free (server->ticket);
+  server->ticket = ticket;
+  server->ticketsize = (ruint16)ticketsize;
+  return R_TLS_ERROR_OK;
+}
+
 static RTLSError
 r_tls_server_write_new_session_ticket (RTLSServer * server)
 {
@@ -617,8 +680,12 @@ r_tls_server_write_new_session_ticket (RTLSServer * server)
   RTLSError ret;
   RMemMapInfo info;
 
-  if (!server->support_new_session_ticket || server->ticketsize == 0)
+  if (!server->support_new_session_ticket)
     return R_TLS_ERROR_NOT_NEEDED;
+
+  if (server->ticketsize == 0 &&
+      (ret = r_tls_server_create_session_ticket (server)) != R_TLS_ERROR_OK)
+    return ret;
 
   R_LOG_DEBUG ("%p - server new session ticket", server);
 
@@ -627,6 +694,8 @@ r_tls_server_write_new_session_ticket (RTLSServer * server)
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
     rsize hssize, ntsize;
+    ruint8 hdrsize = r_tls_version_is_dtls (server->version) ?
+        R_DTLS_RECORD_HDR_SIZE : R_TLS_RECORD_HDR_SIZE;
 
     ntsize = sizeof (ruint32) + sizeof (ruint16) + server->ticketsize;
     if (r_tls_version_is_dtls (server->version)) {
@@ -643,6 +712,10 @@ r_tls_server_write_new_session_ticket (RTLSServer * server)
       if ((ret = r_tls_write_hs_new_session_ticket (info.data + hssize,
             info.size - hssize, &ntsize, R_TLS_SESSION_TICKET_LIFETIME,
             server->ticket, server->ticketsize)) == R_TLS_ERROR_OK) {
+        /* The NewSessionTicket precedes the server Finished, so it is part of
+         * that Finished's transcript hash. */
+        r_msg_digest_update (server->hshash, info.data + hdrsize,
+            hssize + ntsize - hdrsize);
         r_buffer_unmap (buf, &info);
         r_buffer_set_size (buf, hssize + ntsize);
 
@@ -897,10 +970,6 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   if (r_tls_hello_msg_has_cipher_suite (&server->hello,
         R_TLS_CS_EMPTY_RENEGOTIATION_INFO_SCSV))
     server->support_renego = TRUE;
-
-  if (server->support_new_session_ticket) {
-    /* FIXME: create session ticket server->ticket, server->ticketsize */
-  }
 
   return R_TLS_ERROR_OK;
 }
