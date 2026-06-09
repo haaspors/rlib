@@ -159,7 +159,7 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
   }
 
   if ((fraglen & 0xc000) > 0) {
-    ret = R_TLS_ERROR_CORRUPT_RECORD;
+    ret = R_TLS_ERROR_RECORD_OVERFLOW;
     goto beach;
   }
   if (!r_buffer_map_byte_range (buf, parser->offset, (rssize)fraglen,

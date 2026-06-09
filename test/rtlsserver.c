@@ -2230,3 +2230,37 @@ RTEST_F (rtlsserver, dtls_bad_record_silently_discarded, RTEST_FAST)
   r_memclear_secure (ms, sizeof (ms));
 }
 RTEST_END;
+
+/* A record whose fragment length exceeds the 2^14 limit is rejected at the
+ * record layer with a fatal record_overflow (RFC 5246 7.2.2). */
+RTEST_F (rtlsserver, tls_alert_record_overflow, RTEST_FAST)
+{
+  /* TLS 1.2 handshake record header claiming a 0x4000-byte fragment. */
+  static const ruint8 pkt[] = { 0x16, 0x03, 0x03, 0x40, 0x00 };
+  RBuffer * buf;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSAlertLevel alevel;
+  RTLSAlertType atype;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  /* A record-layer framing failure is fatal, so incoming_data reports it. */
+  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE, (rpointer)pkt,
+          sizeof (pkt), sizeof (pkt), 0, NULL, NULL)), !=, NULL);
+  r_assert (!r_tls_server_incoming_data (fixture->server, buf));
+  r_buffer_unref (buf);
+
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_RECORD_OVERFLOW);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_RECORD_OVERFLOW);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+RTEST_END;
