@@ -84,7 +84,7 @@ r_hash_set_resize (RHashSet * hs, ruint8 allocidx)
     if (!R_HASH_BUCKET_LIVE (buckets[i].hash))
       continue;
 
-    idx = buckets[i].hash % r_hash_size_primes[hs->allocidx];
+    idx = R_HASH_HOME_BUCKET (buckets[i].hash, hs->allocidx);
     while (hs->buckets[idx].hash != R_HASH_EMPTY) {
       idx += ++step;
       idx &= (R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx) - 1);
@@ -132,6 +132,31 @@ r_hash_set_current_alloc_size (RHashSet * hs)
   return R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx);
 }
 
+/* Diagnostic: the worst-case probe length -- the most occupied buckets a probe
+ * from any home position crosses before reaching an EMPTY (an unsuccessful
+ * lookup's cost). A good home distribution keeps this small. */
+rsize
+r_hash_set_max_probe (RHashSet * hs)
+{
+  rsize size, mask, h, max = 0;
+
+  if (R_UNLIKELY (hs == NULL)) return 0;
+  size = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (hs->allocidx);
+  mask = size - 1;
+
+  for (h = 0; h < size; h++) {
+    rsize idx = h, step = 0, len = 0;
+    while (hs->buckets[idx].hash != R_HASH_EMPTY && len <= size) {
+      len++;
+      idx += ++step;
+      idx &= mask;
+    }
+    if (len > max)
+      max = len;
+  }
+  return max;
+}
+
 static inline rsize
 r_hash_set_hash (RHashSet * hs, rconstpointer item)
 {
@@ -148,7 +173,7 @@ r_hash_set_lookup_bucket (RHashSet * hs, rconstpointer item, rsize * hash)
   rsize idx, step = 0;
 
   *hash = r_hash_set_hash (hs, item);
-  idx = *hash % r_hash_size_primes[hs->allocidx];
+  idx = R_HASH_HOME_BUCKET (*hash, hs->allocidx);
 
   while (hs->buckets[idx].hash != R_HASH_EMPTY) {
     if (hs->buckets[idx].hash == *hash) {

@@ -103,6 +103,9 @@ R_API RHashTable * r_hash_table_new_full (RHashFunc hash, REqualFunc equal,
 R_API rsize r_hash_table_size (RHashTable * ht);
 /** @brief Allocated bucket count; useful for sizing diagnostics. */
 R_API rsize r_hash_table_current_alloc_size (RHashTable * ht);
+/** @brief Worst-case unsuccessful-probe length; diagnostic for home
+ * distribution (small means keys are well spread across the buckets). */
+R_API rsize r_hash_table_max_probe (RHashTable * ht);
 
 /**
  * @brief Insert or replace @c (key, value).

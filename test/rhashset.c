@@ -195,3 +195,24 @@ RTEST (rhashset, remove_all_clears_without_notify, RTEST_FAST)
   r_hash_set_unref (hs);
 }
 RTEST_END;
+
+/* Sequential integer items must spread across the bucket array, not pile into a
+ * contiguous home range that degrades unsuccessful lookups. */
+RTEST (rhashset, sequential_items_stay_well_distributed, RTEST_FAST)
+{
+  RHashSet * hs;
+  rsize i;
+  const rsize n = 5000;
+
+  r_assert_cmpptr ((hs = r_hash_set_new (NULL, NULL)), !=, NULL);
+  for (i = 0; i < n; i++)
+    r_assert (r_hash_set_insert (hs, RSIZE_TO_POINTER (i + 1)));
+
+  r_assert_cmpuint (r_hash_set_max_probe (hs), <=, 48);
+
+  for (i = 0; i < n; i++)
+    r_assert (r_hash_set_contains (hs, RSIZE_TO_POINTER (i + 1)));
+
+  r_hash_set_unref (hs);
+}
+RTEST_END;

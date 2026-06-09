@@ -357,3 +357,28 @@ RTEST (rhashtable, remove_middle_of_collision_chain, RTEST_FAST)
   r_hash_table_unref (ht);
 }
 RTEST_END;
+
+/* Sequential integer keys (counters, ids, fds) must spread across the whole
+ * bucket array, not pile into a contiguous home range that makes unsuccessful
+ * lookups degrade. The worst-case probe length must stay small and bounded
+ * regardless of count. */
+RTEST (rhashtable, sequential_keys_stay_well_distributed, RTEST_FAST)
+{
+  RHashTable * ht;
+  rsize i;
+  const rsize n = 5000;
+
+  r_assert_cmpptr ((ht = r_hash_table_new (NULL, NULL)), !=, NULL);
+  for (i = 0; i < n; i++)
+    r_assert_cmpint (r_hash_table_insert (ht, RSIZE_TO_POINTER (i + 1),
+          RSIZE_TO_POINTER (i + 1)), ==, R_HASH_TABLE_OK);
+
+  r_assert_cmpuint (r_hash_table_max_probe (ht), <=, 48);
+
+  for (i = 0; i < n; i++)
+    r_assert_cmpuint (RPOINTER_TO_UINT (r_hash_table_lookup (ht,
+            RSIZE_TO_POINTER (i + 1))), ==, i + 1);
+
+  r_hash_table_unref (ht);
+}
+RTEST_END;

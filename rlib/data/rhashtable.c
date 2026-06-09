@@ -100,7 +100,7 @@ r_hash_table_resize (RHashTable * ht, ruint8 allocidx)
     if (!R_HASH_BUCKET_LIVE (buckets[i].hash))
       continue;
 
-    idx = buckets[i].hash % r_hash_size_primes[ht->allocidx];
+    idx = R_HASH_HOME_BUCKET (buckets[i].hash, ht->allocidx);
     while (ht->buckets[idx].hash != R_HASH_EMPTY) {
       idx += ++step;
       idx &= (R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx) - 1);
@@ -150,6 +150,31 @@ r_hash_table_current_alloc_size (RHashTable * ht)
   return R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx);
 }
 
+/* Diagnostic: the worst-case probe length -- the most occupied buckets a probe
+ * starting from any home position would cross before reaching an EMPTY (i.e. an
+ * unsuccessful lookup's cost). A good home distribution keeps this small. */
+rsize
+r_hash_table_max_probe (RHashTable * ht)
+{
+  rsize size, mask, h, max = 0;
+
+  if (R_UNLIKELY (ht == NULL)) return 0;
+  size = R_HASH_CONTAINER_ALLOC_IDX_TO_SIZE (ht->allocidx);
+  mask = size - 1;
+
+  for (h = 0; h < size; h++) {
+    rsize idx = h, step = 0, len = 0;
+    while (ht->buckets[idx].hash != R_HASH_EMPTY && len <= size) {
+      len++;
+      idx += ++step;
+      idx &= mask;
+    }
+    if (len > max)
+      max = len;
+  }
+  return max;
+}
+
 static inline rsize
 r_hash_table_hash (RHashTable * ht, rconstpointer key)
 {
@@ -166,7 +191,7 @@ r_hash_table_lookup_bucket (RHashTable * ht, rconstpointer key, rsize * hash)
   rsize idx, step = 0;
 
   *hash = r_hash_table_hash (ht, key);
-  idx = *hash % r_hash_size_primes[ht->allocidx];
+  idx = R_HASH_HOME_BUCKET (*hash, ht->allocidx);
 
   while (ht->buckets[idx].hash != R_HASH_EMPTY) {
     if (ht->buckets[idx].hash == *hash) {
@@ -406,74 +431,3 @@ r_hash_table_foreach (RHashTable * ht, RKeyValueFunc func, rpointer user)
 
   return R_HASH_TABLE_OK;
 }
-
-
-const rsize r_hash_size_primes[RLIB_SIZEOF_SIZE_T * 8 - 2] = {
-                                        7,
-                                       11,
-                                       23,
-                                       47,
-                                       97,
-                                      199,
-                                      409,
-                                      823,
-                                     1741,
-                                     3469,
-                                     6949,
-                                    14033,
-                                    28411,
-                                    57557,
-#if RLIB_SIZEOF_SIZE_T >= 4
-                                   116731,
-                                   236897,
-                                   480881,
-                                   976369,
-                                  1982627,
-                                  4026031,
-                                  8175383,
-                                 16601593,
-                                 33712729,
-                                 68460391,
-                                139022417,
-                                282312799,
-                                573292817,
-                               1164186217,
-                               2364114217,
-                               4294967291,
-#if RLIB_SIZEOF_SIZE_T >= 8
-  RUINT64_CONSTANT (          8589934583),
-  RUINT64_CONSTANT (         17179869143),
-  RUINT64_CONSTANT (         34359738337),
-  RUINT64_CONSTANT (         68719476731),
-  RUINT64_CONSTANT (        137438953447),
-  RUINT64_CONSTANT (        274877906899),
-  RUINT64_CONSTANT (        549755813881),
-  RUINT64_CONSTANT (       1099511627689),
-  RUINT64_CONSTANT (       2199023255531),
-  RUINT64_CONSTANT (       4398046511093),
-  RUINT64_CONSTANT (       8796093022151),
-  RUINT64_CONSTANT (      17592186044399),
-  RUINT64_CONSTANT (      35184372088777),
-  RUINT64_CONSTANT (      70368744177643),
-  RUINT64_CONSTANT (     140737488355213),
-  RUINT64_CONSTANT (     281474976710597),
-  RUINT64_CONSTANT (     562949953421231),
-  RUINT64_CONSTANT (    1125899906842597),
-  RUINT64_CONSTANT (    2251799813685119),
-  RUINT64_CONSTANT (    4503599627370449),
-  RUINT64_CONSTANT (    9007199254740881),
-  RUINT64_CONSTANT (   18014398509481951),
-  RUINT64_CONSTANT (   36028797018963913),
-  RUINT64_CONSTANT (   72057594037927931),
-  RUINT64_CONSTANT (  144115188075855859),
-  RUINT64_CONSTANT (  288230376151711717),
-  RUINT64_CONSTANT (  576460752303423433),
-  RUINT64_CONSTANT ( 1152921504606846883),
-  RUINT64_CONSTANT ( 2305843009213693951),
-  RUINT64_CONSTANT ( 4611686018427387847),
-  RUINT64_CONSTANT ( 9223372036854775783),
-  RUINT64_CONSTANT (18446744073709551557),
-#endif
-#endif
-};
-

@@ -72,6 +72,9 @@ R_API RHashSet * r_hash_set_new_full (RHashFunc hash, REqualFunc equal,
 R_API rsize r_hash_set_size (RHashSet * ht);
 /** @brief Allocated bucket count. */
 R_API rsize r_hash_set_current_alloc_size (RHashSet * ht);
+/** @brief Worst-case unsuccessful-probe length; diagnostic for home
+ * distribution (small means items are well spread across the buckets). */
+R_API rsize r_hash_set_max_probe (RHashSet * ht);
 
 /**
  * @brief Add @p item to the set.
