@@ -770,10 +770,18 @@ r_ev_tcp_abort (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotif
   /* Discard anything still queued -- abort does not wait to deliver it. */
   r_queue_clear (&evtcp->qsend, r_ev_tcp_send_ctx_free);
 
-  /* No half-close (FIN) here, deliberately: the connection ends when the
-   * handle is released, honouring the socket's linger setting -- so a caller
-   * that set SO_LINGER to 0 gets the abortive RST it asked for, which a
-   * shutdown(FIN) would pre-empt. */
+#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
+  /* Reactor (readiness) backends: close the socket now, not at the last unref.
+   * The close is what tells the peer the connection ended -- a FIN, or a RST if
+   * the caller set SO_LINGER to 0 (closesocket honours the linger setting).
+   * Leaving it to free made peer notification depend on the refcount dropping
+   * promptly, which it does not always do; a peer waiting on the close would
+   * then hang. A proactor (completion) backend must NOT do this: its in-flight
+   * overlapped ops hold refs and reference the socket, so the handle can only
+   * be released once they have drained -- hence the deferred close there. */
+  r_socket_close (evtcp->socket);
+#endif
+
   return r_ev_tcp_teardown (evtcp, close_cb, data, datanotify);
 }
 
