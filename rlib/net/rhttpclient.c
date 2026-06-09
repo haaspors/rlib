@@ -20,6 +20,8 @@
 #include "../rlib-private.h"
 #include <rlib/net/rhttpclient.h>
 
+#include <rlib/os/rtty.h> /* DIAG #310: r_printerr markers, revert before merge */
+
 #include <rlib/ev/revtcp.h>
 #include <rlib/ev/revresolve.h>
 
@@ -228,6 +230,9 @@ r_http_client_conn_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
   RHttpClientConn * conn = data;
   (void) evtcp;
 
+  r_printerr ("DIAG310: cli conn_recv conn=%p buf=%p req=%p finished=%d\n",
+      (void *)conn, (void *)buf, (void *)conn->req,
+      conn->req ? (int)conn->req->finished : -1);
   if (conn->req == NULL || conn->req->finished) {
     /* Bytes or EOF on a parked connection: the peer is done with it. */
     r_http_client_conn_evict (conn);
@@ -242,6 +247,8 @@ r_http_client_conn_error (rpointer data, REvTCP * evtcp, RSocketStatus error)
   RHttpClientConn * conn = data;
   (void) evtcp;
 
+  r_printerr ("DIAG310: cli conn_error conn=%p err=%d req=%p\n",
+      (void *)conn, (int)error, (void *)conn->req);
   R_LOG_DEBUG ("%p: connection %p socket error (%d)", conn->client, conn,
       (int) error);
   if (conn->req == NULL)
@@ -256,6 +263,8 @@ r_http_client_conn_connected (rpointer data, REvTCP * evtcp, int status)
   RHttpClientConn * conn = data;
   (void) evtcp;
 
+  r_printerr ("DIAG310: cli conn_connected conn=%p status=%d req=%p\n",
+      (void *) conn, status, (void *) conn->req);
   if (conn->req == NULL)        /* request gone (e.g. torn down); drop conn */
     return;
   if (status != 0) {
@@ -360,6 +369,9 @@ r_http_client_req_complete (RHttpClientReqCtx * ctx, RHttpClientResult result,
     return;
   ctx->finished = TRUE;
 
+  r_printerr ("DIAG310: cli req_complete ctx=%p result=%d\n",
+      (void *)ctx, (int)result);
+
   /* Keep ctx alive across the callback and the array removal below. */
   r_ref_ref (ctx);
 
@@ -400,6 +412,9 @@ r_http_client_req_fail (RHttpClientReqCtx * ctx, RHttpClientResult result,
 {
   if (ctx->finished)
     return;
+
+  r_printerr ("DIAG310: cli req_fail ctx=%p result=%d reused=%d retried=%d\n",
+      (void *)ctx, (int)result, ctx->reused, ctx->retried);
 
   if (ctx->reused && !ctx->retried && ctx->res == NULL) {
     RHttpClientConn * conn = ctx->conn;
@@ -566,6 +581,8 @@ r_http_client_req_connect (RHttpClientReqCtx * ctx, rboolean defer)
   }
   ctx->conn = conn;     /* ctx owns the new connection's reference */
   conn->req = ctx;
+  r_printerr ("DIAG310: cli connect_issued conn=%p evtcp=%p ctx=%p\n",
+      (void *) conn, (void *) conn->evtcp, (void *) ctx);
   if (r_ev_tcp_connect (conn->evtcp, ctx->dest,
         r_http_client_conn_connected, conn, NULL) < R_SOCKET_OK)
     r_http_client_req_complete (ctx, R_HTTP_CLIENT_CONNECT_FAILED, defer);

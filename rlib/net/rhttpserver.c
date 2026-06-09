@@ -19,6 +19,8 @@
 #include "config.h"
 #include "../rlib-private.h"
 #include "../ev/rev-private.h"
+
+#include <rlib/os/rtty.h> /* DIAG #310: r_printerr markers, revert before merge */
 #include <rlib/net/rhttpserver.h>
 
 #include <rlib/ev/revtcp.h>
@@ -120,6 +122,10 @@ r_http_client_ctx_tcp_response_ready (rpointer data, RHttpResponse * res,
   RHttpClientCtx * ctx = data;
   RBuffer * buf;
 
+  r_printerr ("DIAG310: server response_ready ctx=%p evtcp=%p keepalive=%d"
+      " clients=%"RSIZE_FMT"\n", (void *)ctx, (void *)ctx->evtcp, ctx->keepalive,
+      (rsize)r_ptr_array_size (ctx->server->clients));
+
   /* A response on a kept-alive connection must be self-delimiting or the client
    * cannot tell where it ends (it would wait for a close that never comes).
    * Frame any response that is neither chunked nor already length-delimited --
@@ -157,6 +163,9 @@ r_http_client_ctx_process (RHttpClientCtx * ctx)
   RSocketAddress * addr = r_ev_tcp_get_remote_address (ctx->evtcp);
   rboolean ret;
 
+  r_printerr ("DIAG310: server ctx_process ctx=%p evtcp=%p req=%p\n",
+      (void *)ctx, (void *)ctx->evtcp, (void *)ctx->req);
+
   if ((ret = r_http_server_process_request (ctx->server, ctx->req, addr,
       r_http_client_ctx_tcp_response_ready, r_ref_ref (ctx), r_ref_unref))) {
     r_http_request_unref (ctx->req);
@@ -174,6 +183,10 @@ r_http_client_ctx_tcp_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
 {
   RHttpClientCtx * ctx = data;
   RHttpError err;
+
+  r_printerr ("DIAG310: server tcp_recv ctx=%p evtcp=%p buf=%p size=%"
+      RSIZE_FMT" req=%p\n", (void *)ctx, (void *)evtcp, (void *)buf,
+      buf != NULL ? r_buffer_get_size (buf) : (rsize)0, (void *)ctx->req);
 
   if (buf != NULL) {
     R_LOG_TRACE ("%p: Buffer %p on "R_EV_IO_FORMAT" (%"RSIZE_FMT")",
@@ -498,6 +511,8 @@ r_http_server_tcp_connection_ready (rpointer data,
   RHttpServer * server = data;
   RHttpClientCtx * ctx;
 
+  r_printerr ("DIAG310: server accept newtcp=%p listening=%p\n",
+      (void *) newtcp, (void *) listening);
   if ((ctx = r_http_client_ctx_new (server, newtcp)) != NULL) {
     R_LOG_TRACE ("%p: New connection "R_EV_IO_FORMAT" on "R_EV_IO_FORMAT,
         server, R_EV_IO_ARGS (newtcp), R_EV_IO_ARGS (listening));
@@ -591,6 +606,8 @@ r_http_server_close_client_ctx (rpointer data, rpointer user)
 {
   RHttpClientCtx * cli = data;
   RHttpServerStopCtx * ctx = user;
+  r_printerr ("DIAG310: server force-close client ctx=%p evtcp=%p\n",
+      (void *)cli, (void *)cli->evtcp);
   R_LOG_DEBUG ("%p: Force close client socket "R_EV_IO_FORMAT,
       ctx->server, R_EV_IO_ARGS (cli->evtcp));
   /* Close only; the array removal (and the context's last unref) is done by
@@ -607,6 +624,10 @@ r_http_server_stop (RHttpServer * server, RHttpServerStop func,
 {
   RHttpServerStopCtx * ctx;
   rsize ret;
+
+  r_printerr ("DIAG310: server_stop nclients=%"RSIZE_FMT" nlisten=%"RSIZE_FMT
+      "\n", (rsize)r_ptr_array_size (server->clients),
+      (rsize)r_ptr_array_size (server->listen));
 
   if ((ctx = r_mem_new (RHttpServerStopCtx)) != NULL) {
     r_ref_init (ctx, r_http_server_stop_ctx_free);

@@ -19,6 +19,7 @@
 #include "config.h"
 #include "rev-private.h"
 #include <rlib/ev/revwakeup.h>
+#include <rlib/os/rtty.h>    /* DIAG #310: r_printerr, revert before merge */
 
 #include <rlib/rio.h>
 
@@ -79,6 +80,11 @@ r_ev_wakeup_win_socketpair (SOCKET * rd, SOCKET * wr)
   ioctlsocket (c, FIONBIO, &nb);
   *rd = a;
   *wr = c;
+  /* DIAG #310: log the pair so the wakeup's readable fd can be matched against
+   * the r_poll fd-set trace. Revert before merge. */
+  r_printerr ("DIAG310: wakeup_pair rd=%p wr=%p port=%u\n",
+      (void *) (ruintptr) a, (void *) (ruintptr) c,
+      (unsigned) ntohs (addr.sin_port));
   return TRUE;
 
 fail:

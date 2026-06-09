@@ -24,6 +24,7 @@
 
 #include <rlib/rassert.h>
 #include <rlib/concurrency/ratomic.h>
+#include <rlib/os/rtty.h>    /* DIAG #310: r_printerr, revert before merge */
 #include <rlib/rio.h>
 #include <rlib/rmem.h>
 #include <rlib/rpoll.h>
@@ -1221,6 +1222,11 @@ r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
     evio->chglnk = NULL;
   }
   if (R_EV_IO_IS_ADDED (evio)) {
+    r_printerr ("DIAG310: io_close handle=%p evio=%p get_user=%p %s\n",
+        (void *) (ruintptr) evio->handle, (void *) evio,
+        (void *) r_poll_set_get_user (&evio->loop->pollset, evio->handle),
+        r_poll_set_get_user (&evio->loop->pollset, evio->handle) == evio
+          ? "REMOVE" : "SKIP");
     if (r_poll_set_get_user (&evio->loop->pollset, evio->handle) == evio)
       r_poll_set_remove (&evio->loop->pollset, evio->handle);
     evio->flags &= ~R_EV_IO_ADDED;

@@ -39,6 +39,7 @@
 #include <windows.h>
 #endif
 #include <errno.h>
+#include <rlib/os/rtty.h>    /* DIAG #310: r_printerr, revert before merge */
 
 #define R_LOG_CAT_DEFAULT &rlib_logcat
 
@@ -160,7 +161,18 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   }
 
   /* nfds is ignored on Windows; the fd_count fields drive the call. */
-  ret = select (0, (fd_set *) rset, (fd_set *) wset, (fd_set *) xset, ptv);
+  {
+    ruint k;        /* DIAG #310: plain trace, revert before merge */
+    r_printerr ("DIAG310: r_poll enter count=%u timeout=%lld r=%u w=%u x=%u\n",
+        count, (long long) timeout, (unsigned) rset->fd_count,
+        (unsigned) wset->fd_count, (unsigned) xset->fd_count);
+    for (k = 0; k < count; k++)
+      r_printerr ("DIAG310:   fd[%u] sock=%p ev=%x\n", k,
+          (void *) (ruintptr) handles[k].handle, (unsigned) handles[k].events);
+    ret = select (0, (fd_set *) rset, (fd_set *) wset, (fd_set *) xset, ptv);
+    r_printerr ("DIAG310: r_poll exit ret=%d err=%d\n", ret,
+        ret == SOCKET_ERROR ? WSAGetLastError () : 0);
+  }
 
   if (ret == SOCKET_ERROR && WSAGetLastError () == WSAENOTSOCK) {
     /* select() fails atomically if any descriptor is not a socket -- which
@@ -336,6 +348,8 @@ r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user)
   {
     int existing = r_poll_set_find (ps, handle);
     if (existing >= 0) {
+      r_printerr ("DIAG310: ps_add ps=%p handle=%p user=%p REUSE idx=%d\n",
+          (void *) ps, (void *) (ruintptr) handle, user, existing);
       r_poll_set_update (ps, (ruint) existing, handle, events, user);
       return existing;
     }
@@ -357,6 +371,8 @@ r_poll_set_add (RPollSet * ps, RIOHandle handle, rushort events, rpointer user)
   }
 
   idx = ps->count++;
+  r_printerr ("DIAG310: ps_add ps=%p handle=%p user=%p NEW idx=%u count=%u\n",
+      (void *) ps, (void *) (ruintptr) handle, user, idx, ps->count);
   r_poll_set_update (ps, idx, handle, events, user);
   return (int)idx;
 }
@@ -370,6 +386,8 @@ r_poll_set_remove_idx (RPollSet * ps, int idx)
   if (R_UNLIKELY ((ruint)idx >= ps->count)) return FALSE;
 
   key = RIO_HANDLE_TO_POINTER (ps->handles[idx].handle);
+  r_printerr ("DIAG310: ps_remove_idx ps=%p handle=%p idx=%d count=%u\n",
+      (void *) ps, (void *) (ruintptr) ps->handles[idx].handle, idx, ps->count);
   if (r_hash_table_remove_full (ps->handle_user, key, NULL, &user) == R_HASH_TABLE_OK) {
     r_hash_table_remove (ps->handle_idx, key);
 
@@ -377,10 +395,16 @@ r_poll_set_remove_idx (RPollSet * ps, int idx)
       RPoll * last = &ps->handles[ps->count];
       rpointer last_user;
 
+      r_printerr ("DIAG310: ps_remove_idx compact slot=%d <- handle=%p (from %u)\n",
+          idx, (void *) (ruintptr) last->handle, ps->count);
       if (r_hash_table_lookup_full (ps->handle_user, RIO_HANDLE_TO_POINTER (last->handle),
             NULL, &last_user) == R_HASH_TABLE_OK) {
+        r_printerr ("DIAG310: ps_remove_idx compact OK slot=%d <- handle=%p user=%p\n",
+            idx, (void *) (ruintptr) last->handle, last_user);
         r_poll_set_update (ps, (ruint)idx, last->handle, last->events, last_user);
       } else {
+        r_printerr ("DIAG310: ps_remove_idx compact FAIL slot=%d <- handle=%p (no user) -- STALE LEFT\n",
+            idx, (void *) (ruintptr) last->handle);
         return FALSE;
       }
     }
@@ -394,8 +418,12 @@ r_poll_set_remove_idx (RPollSet * ps, int idx)
 rboolean
 r_poll_set_remove (RPollSet * ps, RIOHandle handle)
 {
+  int idx;
   if (R_UNLIKELY (ps == NULL)) return FALSE;
-  return r_poll_set_remove_idx (ps, r_poll_set_find (ps, handle));
+  idx = r_poll_set_find (ps, handle);
+  r_printerr ("DIAG310: ps_remove ps=%p handle=%p found_idx=%d\n",
+      (void *) ps, (void *) (ruintptr) handle, idx);
+  return r_poll_set_remove_idx (ps, idx);
 }
 
 rboolean
