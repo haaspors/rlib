@@ -511,6 +511,8 @@ r_http_server_tcp_connection_ready (rpointer data,
   RHttpServer * server = data;
   RHttpClientCtx * ctx;
 
+  r_printerr ("DIAG310: server accept newtcp=%p listening=%p\n",
+      (void *) newtcp, (void *) listening);
   if ((ctx = r_http_client_ctx_new (server, newtcp)) != NULL) {
     R_LOG_TRACE ("%p: New connection "R_EV_IO_FORMAT" on "R_EV_IO_FORMAT,
         server, R_EV_IO_ARGS (newtcp), R_EV_IO_ARGS (listening));

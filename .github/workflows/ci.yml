@@ -185,10 +185,27 @@ jobs:
         run: meson setup build --buildtype=${{ matrix.buildtype }} -Drpoll=enabled
       - name: Build
         run: meson compile -C build
+      - name: Isolated repeat of server_stop (DIAG #310)
+        # Run the hung test ALONE many times with the r_poll trace enabled
+        # (DIAG310_POLL). If it wedges here it is a self-race + we get a clean
+        # select() trace; if it stays clean the residual is prior-test pollution.
+        # continue-on-error so the full-suite step below still runs either way.
+        shell: bash
+        continue-on-error: true
+        env:
+          DIAG310_POLL: "1"
+        run: |
+          export PATH="$PWD/build/rlib:$PATH"
+          for i in $(seq 1 300); do
+            ./build/test/rlibtest.exe -f /rhttpclient/server_stop_during_request \
+              || { echo "=== isolated HUNG/FAILED at iteration $i ==="; exit 1; }
+          done
+          echo "=== isolated: 300 iterations clean (did NOT reproduce in isolation) ==="
       - name: Test
-        # DIAG #310: repeat the full suite until the ~1% server_stop residual
-        # hangs (--maxfail 1 stops at the first), so the DIAG310 trace up to the
-        # wedge lands in the test log. Revert with the diagnostics before merge.
+        # DIAG #310: repeat the full suite until the server_stop residual hangs
+        # (--maxfail 1 stops at the first), so the DIAG310 connect/accept trace up
+        # to the wedge lands in the test log. r_poll trace left OFF here (it would
+        # drown the full suite). Revert with the diagnostics before merge.
         run: meson test -C build --print-errorlogs --timeout-multiplier 6 --repeat 50 --maxfail 1
       - name: Upload test logs on failure
         if: failure()

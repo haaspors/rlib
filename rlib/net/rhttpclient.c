@@ -263,6 +263,8 @@ r_http_client_conn_connected (rpointer data, REvTCP * evtcp, int status)
   RHttpClientConn * conn = data;
   (void) evtcp;
 
+  r_printerr ("DIAG310: cli conn_connected conn=%p status=%d req=%p\n",
+      (void *) conn, status, (void *) conn->req);
   if (conn->req == NULL)        /* request gone (e.g. torn down); drop conn */
     return;
   if (status != 0) {
@@ -579,6 +581,8 @@ r_http_client_req_connect (RHttpClientReqCtx * ctx, rboolean defer)
   }
   ctx->conn = conn;     /* ctx owns the new connection's reference */
   conn->req = ctx;
+  r_printerr ("DIAG310: cli connect_issued conn=%p evtcp=%p ctx=%p\n",
+      (void *) conn, (void *) conn->evtcp, (void *) ctx);
   if (r_ev_tcp_connect (conn->evtcp, ctx->dest,
         r_http_client_conn_connected, conn, NULL) < R_SOCKET_OK)
     r_http_client_req_complete (ctx, R_HTTP_CLIENT_CONNECT_FAILED, defer);

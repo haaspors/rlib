@@ -39,6 +39,8 @@
 #include <windows.h>
 #endif
 #include <errno.h>
+#include <stdlib.h>          /* DIAG #310: getenv gate, revert before merge */
+#include <rlib/os/rtty.h>    /* DIAG #310: r_printerr, revert before merge */
 
 #define R_LOG_CAT_DEFAULT &rlib_logcat
 
@@ -160,7 +162,25 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   }
 
   /* nfds is ignored on Windows; the fd_count fields drive the call. */
-  ret = select (0, (fd_set *) rset, (fd_set *) wset, (fd_set *) xset, ptv);
+  {
+    /* DIAG #310: env-gated so it only fires in the isolated-repeat CI step,
+     * not across the whole noisy suite. Revert before merge. */
+    static int diag = -1;
+    if (diag < 0) diag = (getenv ("DIAG310_POLL") != NULL) ? 1 : 0;
+    if (diag) {
+      ruint k;
+      r_printerr ("DIAG310: r_poll enter count=%u timeout=%lld r=%u w=%u x=%u\n",
+          count, (long long) timeout, (unsigned) rset->fd_count,
+          (unsigned) wset->fd_count, (unsigned) xset->fd_count);
+      for (k = 0; k < count; k++)
+        r_printerr ("DIAG310:   fd[%u] sock=%p ev=%x\n", k,
+            (void *) (ruintptr) handles[k].handle, (unsigned) handles[k].events);
+    }
+    ret = select (0, (fd_set *) rset, (fd_set *) wset, (fd_set *) xset, ptv);
+    if (diag)
+      r_printerr ("DIAG310: r_poll exit ret=%d err=%d\n", ret,
+          ret == SOCKET_ERROR ? WSAGetLastError () : 0);
+  }
 
   if (ret > 0) {
     for (i = 0; i < count; i++) {
