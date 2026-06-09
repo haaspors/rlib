@@ -3,9 +3,8 @@
 typedef struct {
   RList * buffers;
   RList * addrs;
-  rauint recvd;       /* bumped last in buffer_recv; lets a waiter on another
-                         thread observe delivery and synchronize-with the
-                         writes above (task_recv delivers off the loop thread). */
+  rauint recvd;       /* bumped per delivered datagram; lets a driver loop wait
+                         on the receive count instead of the buffer list. */
 } REvUDPTestRecvCtx;
 
 static void
@@ -188,68 +187,6 @@ RTEST (revudp, send_recv_multi, RTEST_FAST | RTEST_SYSTEM)
   r_ev_loop_unref (loop);
 }
 RTEST_END;
-
-RTEST (revudp, task_recv, RTEST_FAST | RTEST_SYSTEM)
-{
-  REvLoop * loop;
-  RClock * clock;
-  RTaskQueue * tq;
-  RSocketAddress * addr;
-  REvUDP * udp1, * udp2;
-  REvUDPTestRecvCtx ctx;
-  ruint8 sendbuf[512];
-  RBuffer * sentbuf;
-
-  r_memclear (&ctx, sizeof (REvUDPTestRecvCtx));
-  r_memset (sendbuf, 0x42, 512);
-  sentbuf = NULL;
-
-  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
-  r_assert_cmpptr ((tq = r_task_queue_new_pin_on_each_cpu (NULL, 1)), !=, NULL);
-  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, tq)), !=, NULL);
-  r_clock_unref (clock);
-
-  r_assert_cmpptr ((udp1 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
-  r_assert (r_ev_udp_bind (udp1, addr, TRUE));
-  r_socket_address_unref (addr);
-  r_assert_cmpptr ((addr = r_ev_udp_get_local_address (udp1)), !=, NULL);
-
-  r_assert (r_ev_udp_task_recv_start (udp1, 0, NULL, buffer_recv, &ctx, NULL));
-
-  r_assert_cmpptr ((udp2 = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
-  r_assert (r_ev_udp_send_take (udp2, r_memdup (sendbuf, 512), 512, addr, buffer_send_done, &sentbuf, NULL));
-
-  /* Drive the loop until the datagram round-trips (see the note in send_recv).
-   * The recv is delivered on a task-group thread, so wait on the atomic counter
-   * rather than reading the lists directly -- it both signals delivery and
-   * synchronizes-with the worker's writes to ctx. */
-  while (sentbuf == NULL || r_atomic_uint_load (&ctx.recvd) == 0)
-    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
-
-  r_assert (r_ev_udp_recv_stop (udp1));
-
-  r_assert_cmpptr (sentbuf, !=, NULL);
-  r_assert_cmpbufmem (sentbuf, 0, -1, ==, sendbuf, 512);
-
-  r_assert_cmpuint (r_list_len (ctx.buffers), ==, 1);
-  r_assert_cmpuint (r_list_len (ctx.addrs), ==, 1);
-  r_assert_cmpbufmem (ctx.buffers->data, 0, -1, ==, sendbuf, 512);
-
-  r_list_destroy_full (ctx.buffers, r_buffer_unref);
-  r_list_destroy_full (ctx.addrs, r_socket_address_unref);
-
-  r_buffer_unref (sentbuf);
-  r_socket_address_unref (addr);
-  r_ev_udp_unref (udp1);
-  r_ev_udp_unref (udp2);
-  /* Drain the cancelled in-flight recv (see bind_recv). */
-  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
-  r_task_queue_unref (tq);
-  r_ev_loop_unref (loop);
-}
-RTEST_END;
-
 
 static void
 udp_error_received (rpointer data, REvUDP * evudp, RSocketStatus error)

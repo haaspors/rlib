@@ -58,7 +58,6 @@ struct REvUDP {
 
   RSocketFamily family;
   RSocket * socket;
-  ruint taskgroup;
 
   REvUDPBufferAllocFunc alloc;
   REvUDPBufferFunc recv;
@@ -67,8 +66,6 @@ struct REvUDP {
   rpointer error_data;
   RDestroyNotify error_datanotify;
   rpointer recv_iocb_ctx;
-  rauint recv_counter;
-  RTask * recv_task;
 
   RQueue qsend;
 
@@ -83,7 +80,6 @@ struct REvUDP {
   INT iocp_recv_addrlen;
   DWORD iocp_recv_flags;
   rboolean iocp_recv_active;
-  rboolean iocp_recv_task;
   RDestroyNotify recv_datanotify;
 
   REvIOCPOp iocp_send;
@@ -172,7 +168,6 @@ r_ev_udp_recv_iocb (REvUDP * evudp)
   rsize size;
 
   r_memclear (&addr, sizeof (RSocketAddress));
-  r_atomic_uint_store (&evudp->recv_counter, 0);
 
   do {
     if ((buf = evudp->alloc (evudp->recv_data, evudp)) == NULL) {
@@ -250,16 +245,6 @@ r_ev_udp_error_iocb (REvUDP * evudp)
 }
 #endif
 
-#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
-static void
-r_ev_udp_recv_iocb_task (rpointer data, RTaskQueue * queue, RTask * task)
-{
-  (void) queue;
-  (void) task;
-  r_ev_udp_recv_iocb (data);
-}
-#endif
-
 static void
 r_ev_udp_send_iocb_ev (rpointer data, REvLoop * loop)
 {
@@ -276,39 +261,6 @@ r_ev_udp_iocb (rpointer data, REvIOEvents events, REvIO * evio)
   (void) data;
 
   if (events & R_EV_IO_READABLE) r_ev_udp_recv_iocb ((REvUDP *)evio);
-  if (events & R_EV_IO_WRITABLE) r_ev_udp_send_iocb ((REvUDP *)evio);
-  if (events & R_EV_IO_ERROR) r_ev_udp_error_iocb ((REvUDP *)evio);
-}
-#endif
-
-#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
-static void
-r_ev_udp_task_recv_iocb (REvUDP * evudp)
-{
-  RTask * task;
-
-  if (r_atomic_uint_fetch_add (&evudp->recv_counter, 1) > 0)
-    return;
-
-  if ((task = r_ev_loop_add_task_full (evudp->evio.loop,
-          evudp->taskgroup, r_ev_udp_recv_iocb_task, NULL,
-          r_ev_udp_ref (evudp), r_ev_udp_unref, evudp->recv_task, NULL)) != NULL) {
-    if (evudp->recv_task != NULL)
-      r_task_unref (evudp->recv_task);
-    evudp->recv_task = task;
-  } else {
-    r_ev_udp_unref (evudp);
-  }
-}
-#endif
-
-#if !defined (R_OS_WIN32) || defined (R_EV_USE_RPOLL)
-static void
-r_ev_udp_task_iocb (rpointer data, REvIOEvents events, REvIO * evio)
-{
-  (void) data;
-
-  if (events & R_EV_IO_READABLE) r_ev_udp_task_recv_iocb ((REvUDP *)evio);
   if (events & R_EV_IO_WRITABLE) r_ev_udp_send_iocb ((REvUDP *)evio);
   if (events & R_EV_IO_ERROR) r_ev_udp_error_iocb ((REvUDP *)evio);
 }
@@ -353,63 +305,9 @@ r_ev_udp_iocp_result (REvUDP * evudp, REvIOCPOp * op, rsize * bytes)
   return (DWORD) WSAGetLastError ();
 }
 
-/* Task-group delivery: hand the datagram to the task group; the buffer, sender
- * address and the evudp ref are released when the task context is freed. */
-typedef struct {
-  REvUDP * evudp;
-  RBuffer * buf;
-  RSocketAddress * addr;
-} REvUDPRecvTaskCtx;
-
-static void
-r_ev_udp_iocp_recv_task (rpointer data, RTaskQueue * queue, RTask * task)
-{
-  REvUDPRecvTaskCtx * ctx = data;
-  (void) queue;
-  (void) task;
-  ctx->evudp->recv (ctx->evudp->recv_data, ctx->buf, ctx->addr, ctx->evudp);
-}
-
-static void
-r_ev_udp_iocp_recv_task_free (rpointer data)
-{
-  REvUDPRecvTaskCtx * ctx = data;
-  r_socket_address_unref (ctx->addr);
-  r_buffer_unref (ctx->buf);
-  r_ev_udp_unref (ctx->evudp);
-  r_free (ctx);
-}
-
 static void
 r_ev_udp_iocp_recv_deliver (REvUDP * evudp, RBuffer * buf, RSocketAddress * addr)
 {
-  REvUDPRecvTaskCtx * ctx;
-  RTask * task;
-
-  if (!evudp->iocp_recv_task) {
-    evudp->recv (evudp->recv_data, buf, addr, evudp);
-    r_socket_address_unref (addr);
-    r_buffer_unref (buf);
-    return;
-  }
-
-  if ((ctx = r_mem_new (REvUDPRecvTaskCtx)) != NULL) {
-    ctx->evudp = r_ev_udp_ref (evudp);
-    ctx->buf = buf;     /* ownership transferred to the task */
-    ctx->addr = addr;
-    if ((task = r_ev_loop_add_task_full (evudp->evio.loop, evudp->taskgroup,
-            r_ev_udp_iocp_recv_task, NULL, ctx, r_ev_udp_iocp_recv_task_free,
-            evudp->recv_task, NULL)) != NULL) {
-      if (evudp->recv_task != NULL)
-        r_task_unref (evudp->recv_task);
-      evudp->recv_task = task;
-      return;
-    }
-    /* Queuing failed: undo without releasing buf/addr (delivered inline). */
-    r_ev_udp_unref (ctx->evudp);
-    r_free (ctx);
-  }
-
   evudp->recv (evudp->recv_data, buf, addr, evudp);
   r_socket_address_unref (addr);
   r_buffer_unref (buf);
@@ -635,57 +533,6 @@ r_ev_udp_recv_start (REvUDP * evudp,
 }
 
 rboolean
-r_ev_udp_task_recv_start (REvUDP * evudp, ruint taskgroup,
-    REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
-    rpointer data, RDestroyNotify datanotify)
-{
-  if (R_UNLIKELY (recv == NULL)) return FALSE;
-  if (R_UNLIKELY (evudp->recv_iocb_ctx != NULL)) return FALSE;
-  if (R_UNLIKELY (!r_ev_io_validate_taskgroup (&evudp->evio, taskgroup))) return FALSE;
-
-#if defined (R_OS_WIN32) && !defined (R_EV_USE_RPOLL)
-  if (R_UNLIKELY (evudp->iocp_recv_active)) return FALSE;
-  if (alloc == NULL)
-    alloc = r_ev_udp_buffer_alloc_default;
-  if (evudp->recv_datanotify != NULL)
-    evudp->recv_datanotify (evudp->recv_data);
-  evudp->taskgroup = taskgroup;
-  evudp->alloc = alloc;
-  evudp->recv = recv;
-  evudp->recv_data = data;
-  evudp->recv_datanotify = datanotify;
-  evudp->iocp_recv_active = TRUE;
-  evudp->iocp_recv_task = TRUE;
-  if (R_UNLIKELY (!r_ev_udp_iocp_post_recv (evudp))) {
-    evudp->iocp_recv_active = FALSE;
-    evudp->iocp_recv_task = FALSE;
-    evudp->recv = NULL;
-    evudp->recv_datanotify = NULL;
-    if (datanotify != NULL)
-      datanotify (data);
-    return FALSE;
-  }
-  return TRUE;
-#else
-  if ((evudp->recv_iocb_ctx = r_ev_io_start (&evudp->evio, R_EV_IO_READABLE,
-      r_ev_udp_task_iocb, data, datanotify))) {
-    if (alloc == NULL)
-      alloc = r_ev_udp_buffer_alloc_default;
-
-    evudp->taskgroup = taskgroup;
-    evudp->alloc = alloc;
-    evudp->recv = recv;
-    evudp->recv_data = data;
-    r_atomic_uint_store (&evudp->recv_counter, 0);
-    evudp->recv_task = NULL;
-    return TRUE;
-  }
-
-  return FALSE;
-#endif
-}
-
-rboolean
 r_ev_udp_recv_stop (REvUDP * evudp)
 {
 #if defined (R_OS_WIN32) && !defined (R_EV_USE_RPOLL)
@@ -694,21 +541,12 @@ r_ev_udp_recv_stop (REvUDP * evudp)
   evudp->iocp_recv_active = FALSE;
   if (evudp->iocp_recv_buf != NULL)
     CancelIoEx ((HANDLE) evudp->socket->handle, &evudp->iocp_recv.overlapped);
-  if (evudp->recv_task != NULL) {
-    r_task_wait (evudp->recv_task);
-    r_task_unref (evudp->recv_task);
-    evudp->recv_task = NULL;
-  }
   return TRUE;
 #else
   rboolean ret;
 
   ret = r_ev_io_stop (&evudp->evio, evudp->recv_iocb_ctx);
   evudp->recv_iocb_ctx = NULL;
-  if (evudp->recv_task != NULL) {
-    r_task_wait (evudp->recv_task);
-    r_task_unref (evudp->recv_task);
-  }
 
   return ret;
 #endif
