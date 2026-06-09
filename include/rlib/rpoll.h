@@ -40,7 +40,7 @@
  *
  * @ref r_poll takes a flat @ref RPoll array and waits with the host's
  * readiness primitive: @c ppoll() / @c poll() or @c select() on POSIX,
- * and a @c WSAEventSelect + @c WaitForMultipleObjectsEx wait on Windows.
+ * and winsock @c select() on Windows.
  * @ref RPollSet adds bookkeeping for an arbitrary-size set with
  * per-handle user data and constant-time lookups (handle → index,
  * handle → user pointer).
@@ -77,14 +77,6 @@ typedef struct {
   RIOHandle handle;   /**< Handle to poll. */
   rushort events;     /**< Requested events bitmask (@c R_IO_* flags). */
   rushort revents;    /**< Returned events, filled by @ref r_poll. */
-#ifdef R_OS_WIN32
-  /* Win32 only: the WSAEVENT a socket handle is associated with through
-   * WSAEventSelect, so WaitForMultipleObjectsEx waits on socket readiness
-   * rather than the bare socket. NULL for a non-socket handle (e.g. the
-   * loop wakeup event), which is waited on directly. Owned by the
-   * @ref RPollSet that manages this entry. */
-  rpointer wsaevent;
-#endif
 } RPoll;
 
 /**

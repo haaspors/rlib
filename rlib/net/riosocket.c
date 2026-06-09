@@ -82,8 +82,8 @@ r_io_socket (RSocketFamily family, RSocketType type, RSocketProtocol proto)
   RIOHandle ret;
 #ifdef HAVE_WINSOCK2
   /* WSA_FLAG_OVERLAPPED keeps the socket usable with the default IOCP backend's
-   * overlapped ops; it is harmless for the rpoll (WSAEventSelect) opt-out path,
-   * which issues non-overlapped WSARecv/WSASend regardless. */
+   * overlapped ops; it is harmless for the rpoll (select) opt-out path, which
+   * issues non-overlapped WSARecv/WSASend regardless. */
   ret = R_SOCKET_HANDLE_TO_IO_HANDLE (WSASocketW (family, type, proto, NULL, 0,
         WSA_FLAG_OVERLAPPED));
 #elif defined (HAVE_POSIX_SOCKETS)
@@ -323,9 +323,6 @@ r_io_socket_accept (RIOHandle handle, RSocketStatus * res)
   } while (ret == R_IO_HANDLE_INVALID && R_SOCKET_ERRNO == EINTR);
 
   if (ret != R_IO_HANDLE_INVALID) {
-#ifdef HAVE_WINSOCK2
-    WSAEventSelect (R_IO_HANDLE_TO_SOCKET_HANDLE (ret), NULL, 0);
-#endif
 #ifdef R_OS_UNIX
     r_io_unix_set_cloexec (ret, TRUE);
 #endif
