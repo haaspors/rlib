@@ -45,11 +45,7 @@
  *
  * As with @ref r_evtcp, receiving pairs an allocator callback (to
  * supply each datagram's @ref RBuffer) with a receive callback that
- * also reports the sender address. Callbacks fire on the loop thread,
- * except the @c _task_recv_start variant, which dispatches to a task
- * group. Because @ref r_ev_udp_recv_stop drains the last such task from
- * the loop thread, a task-group receive callback must not block on work
- * that needs the loop thread.
+ * also reports the sender address. Callbacks fire on the loop thread.
  *
  * @{
  */
@@ -84,10 +80,6 @@ R_API rboolean r_ev_udp_bind (REvUDP * evudp,
 R_API RSocketAddress * r_ev_udp_get_local_address (const REvUDP * evudp);
 /** @brief Start receiving datagrams; @p alloc supplies buffers, @p recv delivers them. */
 R_API rboolean r_ev_udp_recv_start (REvUDP * evudp,
-    REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
-    rpointer data, RDestroyNotify datanotify);
-/** @brief Like @ref r_ev_udp_recv_start but dispatches received datagrams to @p taskgroup. */
-R_API rboolean r_ev_udp_task_recv_start (REvUDP * evudp, ruint taskgroup,
     REvUDPBufferAllocFunc alloc, REvUDPBufferFunc recv,
     rpointer data, RDestroyNotify datanotify);
 /** @brief Stop receiving. */
