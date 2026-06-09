@@ -500,6 +500,93 @@ RTEST (rhttpclient, server_stop_during_request, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+/* Stopping a server whose connection is idle but still open (the keepalive case)
+ * must force-close it and report it -- distinct from stopping mid-request. */
+RTEST (rhttpclient, server_stop_idle, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RHttpRequest * req;
+  RHttpResponse * res;
+  RSocketAddress * addr;
+  RHttpClientResult result;
+  rsize closed;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_http_client_server (loop, "/",
+          R_HTTP_STATUS_OK, &addr)), !=, NULL);
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+  res = r_test_http_send (loop, client, req, addr, &result);
+  r_http_request_unref (req);
+  r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);   /* completed cleanly */
+  r_assert_cmpptr (res, !=, NULL);
+  r_http_response_unref (res);
+
+  /* The connection is now idle but still open; stop must close it. */
+  closed = r_http_server_stop (srv, NULL, NULL, NULL);
+  r_assert_cmpuint (closed, ==, 1);
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+
+  r_socket_address_unref (addr);
+  r_http_client_unref (client);
+  r_http_server_unref (srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* Stop must force-close every open connection at once, not just one. */
+RTEST (rhttpclient, server_stop_multi_connection, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RSocketAddress * addr;
+  RHttpClient * clients[3];
+  RHttpClientResult result;
+  rsize closed;
+  ruint i;
+  const ruint n = 3;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_http_client_server (loop, "/",
+          R_HTTP_STATUS_OK, &addr)), !=, NULL);
+
+  /* Each client opens its own connection and leaves it open (keepalive). */
+  for (i = 0; i < n; i++) {
+    RHttpRequest * req;
+    RHttpResponse * res;
+    r_assert_cmpptr ((clients[i] = r_http_client_new (loop)), !=, NULL);
+    r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+            "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+    res = r_test_http_send (loop, clients[i], req, addr, &result);
+    r_http_request_unref (req);
+    r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);
+    r_http_response_unref (res);
+  }
+
+  closed = r_http_server_stop (srv, NULL, NULL, NULL);
+  r_assert_cmpuint (closed, ==, n);     /* all closed in one stop */
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+
+  for (i = 0; i < n; i++)
+    r_http_client_unref (clients[i]);
+  r_socket_address_unref (addr);
+  r_http_server_unref (srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
 /* A minimal raw-TCP "server" that sends a fixed byte blob and closes, used to
  * feed the client responses RHttpServer cannot itself produce. */
 typedef struct {
@@ -621,6 +708,17 @@ RTEST (rhttpclient, response_malformed, RTEST_FAST | RTEST_SYSTEM)
 {
   r_assert_cmpint (r_test_http_client_raw (
         "totally not a http response\r\n\r\n"), ==, R_HTTP_CLIENT_PARSE_FAILED);
+}
+RTEST_END;
+
+/* A server that drops the connection mid-response -- promising more body than
+ * it sends -- is a transport failure; the client must not report success on a
+ * short read. */
+RTEST (rhttpclient, response_truncated_body, RTEST_FAST | RTEST_SYSTEM)
+{
+  r_assert_cmpint (r_test_http_client_raw (
+        "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort"),
+      ==, R_HTTP_CLIENT_RECV_FAILED);
 }
 RTEST_END;
 
