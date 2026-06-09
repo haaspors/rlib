@@ -38,9 +38,38 @@ data_counted (rpointer data, RBuffer * buf, REvTCP * evtcp)
     *((rsize *)data) += r_buffer_get_size (buf);
 }
 
-/* The recv-error tests below need a backend that observes an abortive peer
- * close; the rpoll readiness backend cannot, so they are gated off there. */
-#ifndef R_EV_USE_RPOLL
+typedef struct {
+  rsize bytes;
+  rboolean eos;
+} RTestRecvCount;
+
+/* Count received bytes and note end-of-stream (recv NULL -- a clean FIN, or the
+ * fallback delivered when a peer reset arrives with no error handler set). */
+static void
+data_count_eos (rpointer data, RBuffer * buf, REvTCP * evtcp)
+{
+  RTestRecvCount * c = data;
+  (void) evtcp;
+  if (buf == NULL) {
+    c->eos = TRUE;
+    return;
+  }
+  c->bytes += r_buffer_get_size (buf);
+}
+
+/* Accept then immediately close, to churn pollset add/remove. The accept path
+ * drops its own ref after this returns; close holds its own until teardown. */
+static void
+accept_and_close (rpointer data, REvTCP * newtcp, REvTCP * listening)
+{
+  (void) data;
+  (void) listening;
+  r_ev_tcp_close (newtcp, NULL, NULL, NULL);
+}
+
+/* Helpers for the recv-error tests below, gated to the same backends -- see
+ * the comment there for why only a Windows rpoll build is excluded. */
+#if !(defined (R_OS_WIN32) && defined (R_EV_USE_RPOLL))
 static void
 error_received (rpointer data, REvTCP * evtcp, RSocketStatus error)
 {
@@ -178,13 +207,13 @@ RTEST (revtcp, queued_send_recv, RTEST_FAST | RTEST_SYSTEM)
 RTEST_END;
 
 /* These two exercise an abortive close (peer RST) and assert the client
- * observes it promptly. The rpoll readiness backend cannot do this reliably:
- * an abortive RST on a loopback socket is, intermittently, not surfaced by the
- * Windows stack (recv keeps returning WOULDBLOCK) until a multi-second TCP
- * abort timeout. A completion backend (IOCP, the Windows default) pre-posts
- * overlapped reads and observes it promptly, so these run everywhere except a
- * forced rpoll build. */
-#ifndef R_EV_USE_RPOLL
+ * observes it promptly. Every backend manages this except a forced Windows
+ * rpoll build: there, an abortive RST on a loopback socket is intermittently
+ * not surfaced by the Windows stack (recv keeps returning WOULDBLOCK) until a
+ * multi-second TCP abort timeout. Linux poll surfaces it via the recv error,
+ * and the Windows IOCP default pre-posts overlapped reads, so gate the pair off
+ * Windows rpoll only. */
+#if !(defined (R_OS_WIN32) && defined (R_EV_USE_RPOLL))
 RTEST (revtcp, recv_error_handler, RTEST_FAST | RTEST_SYSTEM)
 {
   REvLoop * loop;
@@ -300,7 +329,7 @@ RTEST (revtcp, recv_error_no_handler, RTEST_FAST | RTEST_SYSTEM)
   r_ev_loop_unref (loop);
 }
 RTEST_END;
-#endif /* !R_EV_USE_RPOLL */
+#endif /* !(R_OS_WIN32 && R_EV_USE_RPOLL) */
 
 /* The error handler's data is released (via datanotify) both when it is
  * replaced and when the socket is freed. */
@@ -326,6 +355,238 @@ RTEST (revtcp, error_handler_data_freed, RTEST_FAST)
   r_ev_tcp_unref (evtcp);                                  /* free -> frees data */
   r_assert (freed);
 
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* A graceful close with data still queued must flush every queued byte before
+ * the half-close: the peer receives all of it, then EOF. r_ev_tcp_send only
+ * queues and defers the write, so closing in the same tick leaves the queue
+ * non-empty and exercises the deferred-finalize path (close-with-pending-send),
+ * which no other test reaches. */
+RTEST (revtcp, close_flushes_pending_send, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RSocketAddress * addr;
+  REvTCP * server, * servcli = NULL, * client;
+  rboolean conn = FALSE;
+  RTestRecvCount rc = { 0, FALSE };
+  ruint8 chunk[4096];
+  ruint i;
+  const ruint nsends = 16;
+
+  r_memset (chunk, 0x5a, sizeof (chunk));
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((client = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_tcp_get_local_address (server)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_listen (server, 10, new_connection_ready, &servcli, NULL), ==, R_SOCKET_OK);
+  r_assert_cmpint (r_ev_tcp_connect (client, addr, client_connected, &conn, NULL), ==, R_SOCKET_WOULD_BLOCK);
+  r_socket_address_unref (addr);
+
+  while (servcli == NULL)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+  r_assert (conn);
+  r_assert (r_ev_tcp_close (server, NULL, NULL, NULL));
+  r_ev_tcp_unref (server);
+
+  r_assert (r_ev_tcp_recv_start (servcli, NULL, data_count_eos, &rc, NULL));
+
+  /* Queue, then close in the same tick: the queue is non-empty, so close must
+   * drain it before the half-close. */
+  for (i = 0; i < nsends; i++)
+    r_assert (r_ev_tcp_send_dup (client, chunk, sizeof (chunk), NULL, NULL, NULL));
+  r_assert (r_ev_tcp_close (client, NULL, NULL, NULL));
+
+  while (!rc.eos)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  r_assert_cmpuint (rc.bytes, ==, (rsize)nsends * sizeof (chunk));
+
+  r_assert (r_ev_tcp_close (servcli, NULL, NULL, NULL));
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+  r_ev_tcp_unref (client);
+  r_ev_tcp_unref (servcli);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* abort() discards everything still queued, so the peer must NOT receive the
+ * full payload. Many sends are queued; a completion backend posts only the
+ * head, a readiness backend posts none -- either way the bulk is dropped. */
+RTEST (revtcp, abort_drops_pending_send, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RSocketAddress * addr;
+  REvTCP * server, * servcli = NULL, * client;
+  rboolean conn = FALSE;
+  RTestRecvCount rc = { 0, FALSE };
+  ruint8 chunk[4096];
+  ruint i;
+  const ruint nsends = 32;
+
+  r_memset (chunk, 0x5a, sizeof (chunk));
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((client = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_tcp_get_local_address (server)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_listen (server, 10, new_connection_ready, &servcli, NULL), ==, R_SOCKET_OK);
+  r_assert_cmpint (r_ev_tcp_connect (client, addr, client_connected, &conn, NULL), ==, R_SOCKET_WOULD_BLOCK);
+  r_socket_address_unref (addr);
+
+  while (servcli == NULL)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+  r_assert (conn);
+  r_assert (r_ev_tcp_close (server, NULL, NULL, NULL));
+  r_ev_tcp_unref (server);
+
+  r_assert (r_ev_tcp_recv_start (servcli, NULL, data_count_eos, &rc, NULL));
+
+  for (i = 0; i < nsends; i++)
+    r_assert (r_ev_tcp_send_dup (client, chunk, sizeof (chunk), NULL, NULL, NULL));
+  r_assert (r_ev_tcp_abort (client, NULL, NULL, NULL));
+  /* Drop our ref now: a proactor backend defers the socket close until its
+   * cancelled overlapped ops drain, so the peer only sees the end once the last
+   * ref goes. A reactor backend already closed inside abort. */
+  r_ev_tcp_unref (client);
+
+  while (!rc.eos)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  r_assert_cmpuint (rc.bytes, <, (rsize)nsends * sizeof (chunk));
+
+  r_assert (r_ev_tcp_close (servcli, NULL, NULL, NULL));
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+  r_ev_tcp_unref (servcli);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* Connect, exchange, and tear down repeatedly on one loop. Each round releases
+ * the client and accepted fds, which the OS recycles into the next round --
+ * exercising synchronous pollset removal and the recycled-handle guard. */
+RTEST (revtcp, reconnect_same_loop, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RSocketAddress * addr;
+  REvTCP * server, * servcli = NULL;
+  ruint round, j;
+  const ruint rounds = 6;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_tcp_get_local_address (server)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_listen (server, 10, new_connection_ready, &servcli, NULL), ==, R_SOCKET_OK);
+
+  for (round = 0; round < rounds; round++) {
+    REvTCP * client;
+    rboolean conn = FALSE;
+    RBuffer * buf = NULL;
+
+    servcli = NULL;
+    r_assert_cmpptr ((client = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+    r_assert_cmpint (r_ev_tcp_connect (client, addr, client_connected, &conn, NULL), ==, R_SOCKET_WOULD_BLOCK);
+
+    while (servcli == NULL)
+      r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+    r_assert (conn);
+
+    r_assert (r_ev_tcp_recv_start (servcli, NULL, data_received, &buf, NULL));
+    r_assert (r_ev_tcp_send_dup (client, "x", 1, NULL, NULL, NULL));
+    while (buf == NULL)
+      r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+    r_assert_cmpbufsstr (buf, 0, -1, ==, "x");
+    r_buffer_unref (buf);
+    r_assert (r_ev_tcp_recv_stop (servcli));
+
+    r_assert (r_ev_tcp_close (client, NULL, NULL, NULL));
+    r_assert (r_ev_tcp_close (servcli, NULL, NULL, NULL));
+    r_ev_tcp_unref (client);
+    r_ev_tcp_unref (servcli);
+    /* Process the deferred teardowns so both fds are released (and recyclable)
+     * before the next round. The listener stays active, so a full RUN_LOOP
+     * would never return -- a few non-blocking ticks suffice. */
+    for (j = 0; j < 4; j++)
+      r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+  }
+
+  r_socket_address_unref (addr);
+  r_assert (r_ev_tcp_close (server, NULL, NULL, NULL));
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+  r_ev_tcp_unref (server);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* Hammer connect+teardown on one loop: half the clients are torn down while the
+ * connect is still in flight (half-open teardown), alternating close and abort,
+ * while the server accepts and immediately closes each. The loop must drain to
+ * zero with no hang and no leak. */
+RTEST (revtcp, open_close_churn, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RSocketAddress * addr;
+  REvTCP * server;
+  ruint i;
+  const ruint n = 64;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((server = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_bind (server, addr, TRUE), ==, R_SOCKET_OK);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_ev_tcp_get_local_address (server)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_listen (server, R_SOCKET_DEFAULT_BACKLOG, accept_and_close, NULL, NULL), ==, R_SOCKET_OK);
+
+  for (i = 0; i < n; i++) {
+    REvTCP * client;
+    rboolean conn = FALSE;
+
+    r_assert_cmpptr ((client = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+    r_assert_cmpint (r_ev_tcp_connect (client, addr, client_connected, &conn, NULL), ==, R_SOCKET_WOULD_BLOCK);
+
+    /* Even rounds tear down mid-connect; odd rounds let the handshake settle. */
+    if (i & 1)
+      r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+    if (i & 2)
+      r_assert (r_ev_tcp_abort (client, NULL, NULL, NULL));
+    else
+      r_assert (r_ev_tcp_close (client, NULL, NULL, NULL));
+    r_ev_tcp_unref (client);
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+  }
+
+  r_socket_address_unref (addr);
+  r_assert (r_ev_tcp_close (server, NULL, NULL, NULL));
+  r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
+  r_ev_tcp_unref (server);
   r_ev_loop_unref (loop);
 }
 RTEST_END;
