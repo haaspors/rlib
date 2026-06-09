@@ -19,6 +19,8 @@
 #include "config.h"
 /* Before rsocket-private.h / rev-private.h: orders <winsock2.h> first. */
 #include "rev-iocp-private.h"
+
+#include <rlib/os/rtty.h> /* DIAG #310: r_printerr markers, revert before merge */
 #include "rev-private.h"
 #include "../net/rsocket-private.h"
 #include "../net/rnet-private.h"
@@ -118,6 +120,8 @@ struct REvTCP {
 static void
 r_ev_tcp_free (REvTCP * evtcp)
 {
+  r_printerr ("DIAG310: evtcp_free evtcp=%p sock=%p\n", (void *)evtcp,
+      (void *)(ruintptr)evtcp->evio.handle);
   r_queue_clear (&evtcp->qsend, r_ev_tcp_send_ctx_free);
 
   /* A graceful close that never reached its finalizer (e.g. the last ref was
@@ -681,6 +685,11 @@ r_ev_tcp_abort (REvTCP * evtcp, REvIOFunc close_cb, rpointer data, RDestroyNotif
 {
   if (R_UNLIKELY (evtcp == NULL)) return FALSE;
 
+  r_printerr ("DIAG310: abort evtcp=%p sock=%p closed=%d refcount=%u\n",
+      (void *)evtcp, (void *)(ruintptr)evtcp->evio.handle,
+      (evtcp->evio.flags & R_EV_IO_CLOSED) ? 1 : 0,
+      (ruint)r_ref_refcount (evtcp));
+
   R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT,
       evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
 
@@ -980,6 +989,9 @@ r_ev_tcp_recv_iocb (REvTCP * evtcp)
     }
 
     res = r_socket_receive_message (evtcp->socket, NULL, buf, &size);
+    r_printerr ("DIAG310: recv_iocb sock=%p res=%d size=%"RSIZE_FMT"\n",
+        (void *)(ruintptr)evtcp->evio.handle, (int)res,
+        res == R_SOCKET_OK ? size : (rsize)0);
     switch (res) {
       case R_SOCKET_OK:
         if (size > 0) {
