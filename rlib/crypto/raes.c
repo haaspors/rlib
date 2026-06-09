@@ -356,7 +356,7 @@ r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key)
 
     rk = ret->erk;
     for (i = 0; i < info->keybits / 32; i++)
-      rk[i] = RUINT32_FROM_LE (*((ruint32 *)&key[i * 4]));
+      rk[i] = r_load_le32 (&key[i * 4]);
 
     switch (info->keybits) {
       case 128:
