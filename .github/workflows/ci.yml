@@ -185,23 +185,25 @@ jobs:
         run: meson setup build --buildtype=${{ matrix.buildtype }} -Drpoll=enabled
       - name: Build
         run: meson compile -C build
-      - name: Isolated repeat of server_stop (DIAG #310)
-        # Run the hung test ALONE many times with the r_poll trace enabled
-        # (DIAG310_POLL). If it wedges here it is a self-race + we get a clean
-        # select() trace; if it stays clean the residual is prior-test pollution.
-        # continue-on-error so the full-suite step below still runs either way.
+      - name: HTTP-suite repeat with select trace (DIAG #310)
+        # The residual is a per-connection-setup wedge that needs cross-test
+        # context (isolation of one test stayed clean over 300x). Loop the small
+        # http suites with the r_poll trace on: small enough that the full trace
+        # at the wedge survives gh log retrieval (the full suite truncates), broad
+        # enough to reproduce. Stops (non-zero) at the first hang -> the full-suite
+        # fallback step is then skipped. Revert with the diagnostics before merge.
         shell: bash
-        continue-on-error: true
         env:
           DIAG310_POLL: "1"
         run: |
           export PATH="$PWD/build/rlib:$PATH"
-          for i in $(seq 1 300); do
-            ./build/test/rlibtest.exe -f /rhttpclient/server_stop_during_request \
-              || { echo "=== isolated HUNG/FAILED at iteration $i ==="; exit 1; }
+          for i in $(seq 1 200); do
+            echo "=== http-suite iteration $i ==="
+            ./build/test/rlibtest.exe -f /rhttpclient/* -f /rhttpserver/* \
+              || { echo "=== HTTP-suite HUNG/FAILED at iteration $i ==="; exit 1; }
           done
-          echo "=== isolated: 300 iterations clean (did NOT reproduce in isolation) ==="
-      - name: Test
+          echo "=== http-suite: 200 iterations clean (did NOT reproduce) ==="
+      - name: Test (full-suite fallback)
         # DIAG #310: repeat the full suite until the server_stop residual hangs
         # (--maxfail 1 stops at the first), so the DIAG310 connect/accept trace up
         # to the wedge lands in the test log. r_poll trace left OFF here (it would
