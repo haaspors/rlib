@@ -162,21 +162,7 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   /* nfds is ignored on Windows; the fd_count fields drive the call. */
   ret = select (0, (fd_set *) rset, (fd_set *) wset, (fd_set *) xset, ptv);
 
-  if (ret == SOCKET_ERROR && WSAGetLastError () == WSAENOTSOCK) {
-    /* select() fails atomically if any descriptor is not a socket -- which
-     * happens whenever a socket was closed but its entry is not pruned from the
-     * set yet. Don't fail the whole wait (the loop would never make progress
-     * and never prune it): probe each entry and report the dead ones as errors
-     * so the owner tears them down; the rest re-poll on the next call. */
-    for (i = 0; i < count; i++) {
-      int sotype, solen = (int) sizeof (sotype);
-      if (getsockopt ((SOCKET) (ruintptr) handles[i].handle, SOL_SOCKET,
-            SO_TYPE, (char *)&sotype, &solen) == SOCKET_ERROR) {
-        handles[i].revents = R_IO_ERR;
-        nready++;
-      }
-    }
-  } else if (ret > 0) {
+  if (ret > 0) {
     for (i = 0; i < count; i++) {
       SOCKET s = (SOCKET) (ruintptr) handles[i].handle;
       rushort rev = 0;
@@ -199,8 +185,7 @@ r_poll (RPoll * handles, ruint count, RClockTime timeout)
   r_free (wset);
   r_free (xset);
 
-  /* A genuine error with no dead entry to report stays an error. */
-  return (ret == SOCKET_ERROR && nready == 0) ? -1 : nready;
+  return (ret == SOCKET_ERROR) ? -1 : nready;
 }
 #elif defined (HAVE_SELECT)
 static inline int
