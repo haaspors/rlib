@@ -1023,7 +1023,9 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
     r_tls_client_state_appdata,
     r_tls_client_state_error,
   };
-  RTLSParser parser;
+  /* Zero-init: a record that fails init_buffer never sets parser.buf, and the
+   * post-loop r_tls_parser_clear must not free an uninitialised pointer. */
+  RTLSParser parser = R_TLS_PARSER_INIT;
   RTLSError err;
 
   if (R_UNLIKELY (client == NULL)) return FALSE;
