@@ -73,6 +73,16 @@ R_API RTLSClient * r_tls_client_new (const RTLSCallbacks * cb,
 /** @brief Drop a reference (alias for @ref r_ref_unref). */
 #define r_tls_client_unref  r_ref_unref
 
+/**
+ * @brief Set the client certificate and private key for mutual TLS.
+ *
+ * When the server sends a CertificateRequest the client presents @p cert and
+ * proves possession of it with @p privkey; without this the client answers a
+ * CertificateRequest with an empty certificate. RSA keys with
+ * rsa_pkcs1_sha256 are supported.
+ */
+R_API RTLSError r_tls_client_set_cert (RTLSClient * client,
+    RCryptoCert * cert, RCryptoKey * privkey);
 /** @brief Override the client-random (testing / determinism). */
 R_API RTLSError r_tls_client_set_random (RTLSClient * client,
     const ruint8 clirandom[R_TLS_HELLO_RANDOM_BYTES]);

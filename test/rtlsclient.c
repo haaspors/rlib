@@ -334,3 +334,69 @@ RTEST_F (rtlsclient, tls_verify_cert_reject, RTEST_FAST)
   r_assert (fixture->cli_error);
 }
 RTEST_END;
+
+/* Mutual TLS: the server requires a client certificate, the client presents
+ * one, and the handshake completes with each side holding the other's leaf. */
+static void
+r_test_tls_mtls_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture, RTLSVersion version)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_cert (fixture->client, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server,
+        R_TLS_CLIENT_CERT_MODE_REQUIRE), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng, version),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  /* Each side validated and kept the other's leaf certificate. */
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), !=, NULL);
+  r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), !=, NULL);
+}
+
+RTEST_F (rtlsclient, tls_mtls_loopback, RTEST_FAST)
+{
+  r_test_tls_mtls_loopback (fixture, R_TLS_VERSION_TLS_1_2);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_mtls_loopback, RTEST_FAST)
+{
+  r_test_tls_mtls_loopback (fixture, R_TLS_VERSION_DTLS_1_2);
+}
+RTEST_END;
+
+/* The server requires a client certificate but the client has none: it answers
+ * with an empty Certificate and the server aborts the handshake. */
+RTEST_F (rtlsclient, tls_mtls_require_no_client_cert, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server,
+        R_TLS_CLIENT_CERT_MODE_REQUIRE), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (!fixture->srv_hs_done);
+  r_assert (!fixture->cli_hs_done);
+  r_assert (fixture->srv_error);
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), ==, NULL);
+}
+RTEST_END;
