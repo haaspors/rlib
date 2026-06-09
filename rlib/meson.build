@@ -111,6 +111,7 @@ rlib_sources = [
   'net/rsrtp.c',
   'net/rtlsclient.c',
   'net/rtlsserver.c',
+  'net/rtlssessiontickets.c',
   'os/rproc.c',
   'os/rsignal.c',
   'os/rsys.c',

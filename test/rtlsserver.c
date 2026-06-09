@@ -55,6 +55,7 @@ const rchar testpkpem[] =
 RTEST_FIXTURE_STRUCT (rtlsserver)
 {
   RTLSServer * server;
+  RTLSSessionTicketKeys * ticket_keys;
   rboolean hs_done;
   rboolean got_error;
   RTLSAlertType last_alert;
@@ -132,10 +133,15 @@ RTEST_FIXTURE_SETUP (rtlsserver)
       r_tls_server_set_cert (fixture->server, cert, pk));
   r_crypto_key_unref (pk);
   r_crypto_cert_unref (cert);
+
+  /* Shared key store the ticket-issuing / resuming tests attach to a server;
+   * the fixture leaves it detached so the default server issues no tickets. */
+  r_assert_cmpptr ((fixture->ticket_keys = r_tls_session_ticket_keys_new ()), !=, NULL);
 }
 
 RTEST_FIXTURE_TEARDOWN (rtlsserver)
 {
+  r_tls_session_ticket_keys_unref (fixture->ticket_keys);
   r_tls_server_unref (fixture->server);
 
   r_queue_clear (&fixture->qout, r_buffer_unref);
@@ -450,6 +456,8 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
 
   r_assert_cmpint (r_tls_server_set_random (fixture->server, dtls_server_random),
       ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
   r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
       ==, R_TLS_ERROR_OK);
   r_assert (!fixture->hs_done);
@@ -660,6 +668,8 @@ RTEST_F (rtlsserver, dtls_session_ticket_extension_echoed, RTEST_FAST)
   ruint8 ch[256];
   rsize chlen;
 
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
   r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
       ==, R_TLS_ERROR_OK);
 
@@ -671,6 +681,25 @@ RTEST_F (rtlsserver, dtls_session_ticket_extension_echoed, RTEST_FAST)
 }
 RTEST_END;
 
+/* With no key store configured the server cannot seal a ticket, so even a
+ * ClientHello that offers session_ticket must not draw the extension. */
+RTEST_F (rtlsserver, dtls_session_ticket_no_keys_no_echo, RTEST_FAST)
+{
+  ruint8 ch[256];
+  rsize chlen;
+
+  /* deliberately no r_tls_server_set_session_ticket_keys */
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
+      FALSE, FALSE, FALSE, TRUE, NULL, 0, TRUE);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_test_tls_assert_session_ticket_ext (&fixture->qout, FALSE);
+}
+RTEST_END;
+
 /* A ClientHello that does not offer the session_ticket extension must not draw
  * one in the ServerHello. */
 RTEST_F (rtlsserver, dtls_session_ticket_extension_absent, RTEST_FAST)
@@ -678,6 +707,8 @@ RTEST_F (rtlsserver, dtls_session_ticket_extension_absent, RTEST_FAST)
   ruint8 ch[256];
   rsize chlen;
 
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
   r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
       ==, R_TLS_ERROR_OK);
 
@@ -1265,6 +1296,8 @@ RTEST_F (rtlsserver, tls_session_ticket_issued, RTEST_FAST)
   r_memcpy (ch + hssz, chbody, chbodylen);
   chlen = hssz + chbodylen;
 
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
   r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
       ==, R_TLS_ERROR_OK);
   r_test_tls_server_feed (fixture->server, ch, chlen);
