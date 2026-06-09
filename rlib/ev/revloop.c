@@ -586,7 +586,14 @@ r_ev_loop_io_wait (REvLoop * loop, RClockTime deadline)
             R_EV_IO_ARGS (evio));
       }
     } else if (R_EV_IO_IS_ADDED (evio)) {
-      if (r_poll_set_remove (&loop->pollset, evio->handle)) {
+      /* Only evict the slot if it is still ours. The OS can recycle a closed
+       * handle's value into a new socket whose evio re-adds it (the add path
+       * updates the slot in place); removing it purely by handle here would then
+       * strand that newer evio -- added and active but no longer in the set, so
+       * the loop never polls it yet never drains. Mirror r_ev_io_close's guard. */
+      if (r_poll_set_get_user (&loop->pollset, evio->handle) != evio) {
+        evio->flags &= ~R_EV_IO_ADDED;
+      } else if (r_poll_set_remove (&loop->pollset, evio->handle)) {
         evio->flags &= ~R_EV_IO_ADDED;
       } else {
         R_LOG_ERROR ("Couldn't remove fd: %"R_IO_HANDLE_FMT" evio "R_EV_IO_FORMAT,
@@ -1099,6 +1106,21 @@ r_ev_io_clear (REvIO * evio)
   if (R_EV_IO_IS_CHANGING (evio))
     r_queue_remove_link (&evio->loop->chg, evio->chglnk);
   evio->alnk = evio->chglnk = NULL;
+
+#if defined (USE_RPOLL)
+  /* A watcher must never reach free still in the readiness set: the set keeps
+   * the now-freed evio as a slot's user, which the next poll's prune then
+   * dereferences (and on Windows select() fails outright on the dead fd). Every
+   * orderly close removes the slot first; this is the backstop for any path
+   * that frees a watcher while it is still added. Skip the internal wakeup: it
+   * is embedded in the loop and torn down after the pollset has already been
+   * cleared, so the set is gone by the time it is freed. */
+  if (R_EV_IO_IS_ADDED (evio) && !R_EV_IO_IS_INTERNAL (evio) && evio->loop != NULL) {
+    if (r_poll_set_get_user (&evio->loop->pollset, evio->handle) == evio)
+      r_poll_set_remove (&evio->loop->pollset, evio->handle);
+    evio->flags &= ~R_EV_IO_ADDED;
+  }
+#endif
 
   r_ev_iocb_queue_clear (&evio->iocbq);
 
