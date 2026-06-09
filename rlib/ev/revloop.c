@@ -1208,10 +1208,29 @@ r_ev_io_close (REvIO * evio, REvIOFunc close_cb,
     evio->alnk = NULL;
   }
 
+#if defined (USE_RPOLL)
+  /* Remove the entry from the readiness set now, not via the change queue.
+   * Leaving a closed fd's entry until a later poll trips on it keeps the freed
+   * evio referenced as the entry's user -- a stale-pointer deref in the reactive
+   * prune -- and on Windows makes select() fail with WSAENOTSOCK until it is
+   * pruned. The run loop snapshots its dispatch list before invoking callbacks,
+   * so removing here is safe even from within one. The get_user guard avoids
+   * evicting a newer evio that has already taken over a recycled handle. */
+  if (R_EV_IO_IS_CHANGING (evio)) {
+    r_queue_remove_link (&evio->loop->chg, evio->chglnk);
+    evio->chglnk = NULL;
+  }
+  if (R_EV_IO_IS_ADDED (evio)) {
+    if (r_poll_set_get_user (&evio->loop->pollset, evio->handle) == evio)
+      r_poll_set_remove (&evio->loop->pollset, evio->handle);
+    evio->flags &= ~R_EV_IO_ADDED;
+  }
+#else
   if (R_EV_IO_IS_ACTIVE (evio) || R_EV_IO_IS_INTERNAL (evio)) {
     if (!R_EV_IO_IS_CHANGING (evio))
       evio->chglnk = r_queue_push (&evio->loop->chg, evio);
   }
+#endif
 
   r_cbqueue_push (&evio->loop->acbs, (RFunc)close_cb,
       data, datanotify, r_ev_io_ref (evio), r_ev_io_unref);
