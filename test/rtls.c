@@ -1174,3 +1174,100 @@ RTEST (rtls, parser_decrypt_fragment_shorter_than_iv, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (rtls, write_server_key_exchange_ecdhe, RTEST_FAST)
+{
+  /* A plausible secp256r1 ECPoint (0x04 || X || Y) and a dummy signature. */
+  static const ruint8 point[] = {
+    0x04,
+    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+    0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,
+    0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
+    0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
+    0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
+    0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68,
+    0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78,
+    0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88,
+  };
+  static const ruint8 sigbytes[] = { 0xca, 0xfe, 0xba, 0xbe, 0x55, 0xaa };
+  ruint8 body[256], rec[320];
+  rsize bodylen = sizeof (body), hs, reclen;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHandshakeType hstype;
+  ruint32 hslen;
+  RTLSEcCurveType curve_type;
+  RTLSSupportedGroup named_curve;
+  const ruint8 * gotpoint, * sig, * signed_params;
+  ruint8 pointlen;
+  RTLSSignatureScheme scheme;
+  ruint16 sigsize;
+  rsize signed_params_len;
+
+  r_assert_cmpint (r_tls_write_hs_server_key_exchange_ecdhe (body, sizeof (body), &bodylen,
+        R_TLS_EC_TYPE_NAMED_CURVE, R_TLS_SUPPORTED_GROUP_SECP256R1,
+        point, sizeof (point), R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256,
+        sigbytes, sizeof (sigbytes)), ==, R_TLS_ERROR_OK);
+  /* curve_type(1)+named_curve(2)+plen(1)+point + scheme(2)+siglen(2)+sig */
+  r_assert_cmpuint (bodylen, ==, 1 + 2 + 1 + sizeof (point) + 2 + 2 + sizeof (sigbytes));
+
+  r_assert_cmpint (r_tls_write_handshake (rec, sizeof (rec), &hs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_SERVER_KEY_EXCHANGE, (ruint16)bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (rec + hs, body, bodylen);
+  reclen = hs + bodylen;
+
+  r_assert_cmpint (r_tls_parser_init (&parser, rec, reclen), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_handshake (&parser, &hstype, &hslen), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hstype, ==, R_TLS_HANDSHAKE_TYPE_SERVER_KEY_EXCHANGE);
+  r_assert_cmpint (r_tls_parser_parse_server_key_exchange_ecdhe (&parser, &curve_type,
+        &named_curve, &gotpoint, &pointlen, &scheme, &sig, &sigsize,
+        &signed_params, &signed_params_len), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (curve_type, ==, R_TLS_EC_TYPE_NAMED_CURVE);
+  r_assert_cmphex (named_curve, ==, R_TLS_SUPPORTED_GROUP_SECP256R1);
+  r_assert_cmpuint (pointlen, ==, sizeof (point));
+  r_assert_cmpmem (gotpoint, ==, point, sizeof (point));
+  r_assert_cmphex (scheme, ==, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256);
+  r_assert_cmpuint (sigsize, ==, sizeof (sigbytes));
+  r_assert_cmpmem (sig, ==, sigbytes, sigsize);
+  /* signed_params spans the verbatim ECParameters||ECPoint bytes. */
+  r_assert_cmpuint (signed_params_len, ==, 1 + 2 + 1 + sizeof (point));
+  r_assert_cmphex (signed_params[0], ==, R_TLS_EC_TYPE_NAMED_CURVE);
+  r_assert_cmpmem (signed_params + 4, ==, point, sizeof (point));
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
+RTEST (rtls, parse_client_key_exchange_ecdhe, RTEST_FAST)
+{
+  static const ruint8 point[] = {
+    0x04,
+    0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98,
+    0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8,
+  };
+  ruint8 body[64], rec[96];
+  rsize hs, reclen;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHandshakeType hstype;
+  ruint32 hslen;
+  const ruint8 * gotpoint;
+  ruint8 pointlen;
+
+  /* The client frames the ECDHE CKE body inline: point_len(1) || point. */
+  body[0] = (ruint8)sizeof (point);
+  r_memcpy (body + 1, point, sizeof (point));
+
+  r_assert_cmpint (r_tls_write_handshake (rec, sizeof (rec), &hs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE, (ruint16)(1 + sizeof (point))),
+      ==, R_TLS_ERROR_OK);
+  r_memcpy (rec + hs, body, 1 + sizeof (point));
+  reclen = hs + 1 + sizeof (point);
+
+  r_assert_cmpint (r_tls_parser_init (&parser, rec, reclen), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_handshake (&parser, &hstype, &hslen), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hstype, ==, R_TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE);
+  r_assert_cmpint (r_tls_parser_parse_client_key_exchange_ecdhe (&parser, &gotpoint, &pointlen),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (pointlen, ==, sizeof (point));
+  r_assert_cmpmem (gotpoint, ==, point, sizeof (point));
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;

@@ -18,10 +18,13 @@
 
 #include "config.h"
 #include <rlib/net/proto/rtls.h>
+#include "rtls-private.h"
 
 #include <rlib/rtime.h>
 
 #include <rlib/crypto/rx509.h>
+#include <rlib/crypto/recc.h>
+#include <rlib/crypto/rxdh.h>
 
 static inline ruint32
 _r_parse_u24 (const ruint8 * ptr)
@@ -34,6 +37,98 @@ _r_parse_u48 (const ruint8 * ptr)
 {
   return ((ruint64)ptr[0] << 40) | ((ruint64)ptr[1] << 32) | ((ruint64)ptr[2] << 24) |
          ((ruint64)ptr[3] << 16) | ((ruint64)ptr[4] <<  8) | ((ruint64)ptr[5]);
+}
+
+rboolean
+r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme, RMsgDigestType * md)
+{
+  switch (scheme) {
+    case R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256:
+      *md = R_MSG_DIGEST_TYPE_SHA256;
+      return TRUE;
+    default:
+      return FALSE;
+  }
+}
+
+rboolean
+r_tls_ecdhe_group_to_curve (RTLSSupportedGroup group, REcurveID * curve)
+{
+  switch (group) {
+    case R_TLS_SUPPORTED_GROUP_SECP256R1: *curve = R_ECURVE_ID_SECP256R1; return TRUE;
+    case R_TLS_SUPPORTED_GROUP_X25519:    *curve = R_ECURVE_ID_X25519;    return TRUE;
+    default: return FALSE;
+  }
+}
+
+rboolean
+r_tls_ecdhe_curve_is_montgomery (REcurveID curve)
+{
+  return curve == R_ECURVE_ID_X25519 || curve == R_ECURVE_ID_X448;
+}
+
+RCryptoKey *
+r_tls_ecdhe_keygen (REcurveID curve, RPrng * prng)
+{
+  if (r_tls_ecdhe_curve_is_montgomery (curve))
+    return r_xdh_priv_key_new_gen (curve, prng);
+  return r_ecdh_priv_key_new_gen (curve, prng);
+}
+
+rboolean
+r_tls_ecdhe_point_write (const RCryptoKey * key, REcurveID curve,
+    ruint8 * out, rsize cap, ruint8 * len)
+{
+  rsize sz = cap;
+
+  if (r_tls_ecdhe_curve_is_montgomery (curve)) {
+    const ruint8 * u;
+    rsize usize;
+    if (!r_xdh_key_get_pub_u (key, &u, &usize)) return FALSE;
+    if (usize > cap) return FALSE;
+    r_memcpy (out, u, usize);
+    *len = (ruint8)usize;
+    return TRUE;
+  } else {
+    REcurveAffinePoint q;
+    REcurve params;
+    rboolean ok;
+
+    r_ecurve_point_init (&q);
+    if (!r_ecc_key_get_q (key, &q)) { r_ecurve_point_clear (&q); return FALSE; }
+    if (!r_ecurve_init (&params, curve)) { r_ecurve_point_clear (&q); return FALSE; }
+    ok = r_ecurve_point_to_uncompressed (&q, &params, out, &sz);
+    r_ecurve_clear (&params);
+    r_ecurve_point_clear (&q);
+    if (!ok) return FALSE;
+    *len = (ruint8)sz;
+    return TRUE;
+  }
+}
+
+RCryptoKey *
+r_tls_ecdhe_point_read (REcurveID curve, const ruint8 * point, rsize len)
+{
+  if (r_tls_ecdhe_curve_is_montgomery (curve))
+    return r_xdh_pub_key_new (curve, point, len);
+  return r_ecdh_pub_key_new (curve, point, len);
+}
+
+rboolean
+r_tls_ecdhe_compute (const RCryptoKey * priv, const RCryptoKey * peer,
+    ruint8 * out, rsize cap, rsize * len)
+{
+  rsize sz = cap;
+  RCryptoResult res;
+
+  if (r_xdh_key_get_curve (priv) != R_ECURVE_ID_NONE)
+    res = r_xdh_compute_shared (priv, peer, out, &sz);
+  else
+    res = r_ecdh_compute_shared (priv, peer, out, &sz);
+
+  if (res != R_CRYPTO_OK) return FALSE;
+  *len = sz;
+  return TRUE;
 }
 
 void
@@ -959,6 +1054,93 @@ r_tls_parser_parse_client_key_exchange_rsa (const RTLSParser * parser,
 }
 
 RTLSError
+r_tls_parser_parse_client_key_exchange_ecdhe (const RTLSParser * parser,
+    const ruint8 ** point, ruint8 * pointlen)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end;
+  RTLSError ret;
+  ruint8 len;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_CLIENT_KEY_EXCHANGE))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint8)) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  len = *ptr++;
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + len) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  if (point != NULL)    *point = ptr;
+  if (pointlen != NULL) *pointlen = len;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_parser_parse_server_key_exchange_ecdhe (const RTLSParser * parser,
+    RTLSEcCurveType * curve_type, RTLSSupportedGroup * named_curve,
+    const ruint8 ** point, ruint8 * pointlen,
+    RTLSSignatureScheme * sigscheme, const ruint8 ** sig, ruint16 * sigsize,
+    const ruint8 ** signed_params, rsize * signed_params_len)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end, * params, * pt, * sg;
+  RTLSError ret;
+  RTLSEcCurveType ct;
+  RTLSSupportedGroup nc;
+  RTLSSignatureScheme ss;
+  ruint8 plen;
+  ruint16 slen;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_SERVER_KEY_EXCHANGE))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  params = ptr;
+  /* ECParameters: curve_type(1) + named_curve(2); then ECPoint: len(1) + point */
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint8) + sizeof (ruint16) +
+          sizeof (ruint8)) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  ct = (RTLSEcCurveType)*ptr;
+  ptr += sizeof (ruint8);
+  nc = (RTLSSupportedGroup)r_load_be16 (ptr);
+  ptr += sizeof (ruint16);
+  plen = *ptr++;
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + plen) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  pt = ptr;
+  ptr += plen;
+
+  /* Signature: scheme(2) + len(2) + sig */
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint16) + sizeof (ruint16)) >
+        RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  ss = (RTLSSignatureScheme)r_load_be16 (ptr);
+  ptr += sizeof (ruint16);
+  slen = r_load_be16 (ptr);
+  ptr += sizeof (ruint16);
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + slen) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  sg = ptr;
+
+  if (curve_type != NULL)        *curve_type = ct;
+  if (named_curve != NULL)       *named_curve = nc;
+  if (point != NULL)             *point = pt;
+  if (pointlen != NULL)          *pointlen = plen;
+  if (sigscheme != NULL)         *sigscheme = ss;
+  if (sig != NULL)               *sig = sg;
+  if (sigsize != NULL)           *sigsize = slen;
+  if (signed_params != NULL)     *signed_params = params;
+  if (signed_params_len != NULL) *signed_params_len = RPOINTER_TO_SIZE (pt + plen - params);
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_parser_parse_finished (const RTLSParser * parser,
     const ruint8 ** verify_data, rsize * size)
 {
@@ -1478,6 +1660,37 @@ r_tls_write_hs_certificate (rpointer data, rsize size, rsize * out,
     *p++ = (ruint8)((dersize      ) & 0xff);
     r_memcpy (p, der, dersize);
   }
+
+  if (out != NULL)
+    *out = need;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_write_hs_server_key_exchange_ecdhe (rpointer data, rsize size, rsize * out,
+    RTLSEcCurveType curve_type, RTLSSupportedGroup named_curve,
+    const ruint8 * point, ruint8 pointlen,
+    RTLSSignatureScheme sigscheme, const ruint8 * sig, ruint16 sigsize)
+{
+  ruint8 * p = data;
+  rsize need = sizeof (ruint8) + sizeof (ruint16) + sizeof (ruint8) +
+      (rsize)pointlen + sizeof (ruint16) + sizeof (ruint16) + (rsize)sigsize;
+
+  if (R_UNLIKELY (data == NULL || point == NULL || sig == NULL))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  /* ECParameters */
+  *p++ = (ruint8)curve_type;
+  r_store_be16 (p, (ruint16)named_curve); p += sizeof (ruint16);
+  /* ECPoint */
+  *p++ = pointlen;
+  r_memcpy (p, point, pointlen); p += pointlen;
+  /* Signature */
+  r_store_be16 (p, (ruint16)sigscheme); p += sizeof (ruint16);
+  r_store_be16 (p, sigsize); p += sizeof (ruint16);
+  r_memcpy (p, sig, sigsize);
 
   if (out != NULL)
     *out = need;

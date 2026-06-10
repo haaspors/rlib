@@ -20,6 +20,7 @@
 #include "../rlib-private.h"
 #include <rlib/net/rtlsserver.h>
 #include "rtlssessiontickets-private.h"
+#include "proto/rtls-private.h"
 
 #include <rlib/crypto/rx509.h>
 
@@ -1119,20 +1120,6 @@ r_tls_server_parse_client_certificate (RTLSServer * server,
     r_crypto_cert_unref (chain[i]);
 
   return err;
-}
-
-/* This cut supports RSA client certs with rsa_pkcs1_sha256, whose hash matches
- * the transcript digest of the supported suites. */
-static rboolean
-r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme, RMsgDigestType * md)
-{
-  switch (scheme) {
-    case R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256:
-      *md = R_MSG_DIGEST_TYPE_SHA256;
-      return TRUE;
-    default:
-      return FALSE;
-  }
 }
 
 /* Verify the client's CertificateVerify: its signature covers the handshake

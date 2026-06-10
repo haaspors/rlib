@@ -511,6 +511,44 @@ R_API RTLSError r_tls_parser_parse_certificate_verify (const RTLSParser * parser
 R_API RTLSError r_tls_parser_parse_client_key_exchange_rsa (const RTLSParser * parser,
     const ruint8 ** encprems, rsize * size);
 /**
+ * @brief Parse the current record as an ECDHE ClientKeyExchange.
+ *
+ * The body is an @c ECPoint: a one-byte length followed by the client's
+ * ephemeral public point.
+ *
+ * @param parser Parser positioned on the message.
+ * @param point Out: pointer to the public-point bytes.
+ * @param pointlen Out: public-point length in bytes.
+ */
+R_API RTLSError r_tls_parser_parse_client_key_exchange_ecdhe (const RTLSParser * parser,
+    const ruint8 ** point, ruint8 * pointlen);
+/**
+ * @brief Parse the current record as an ECDHE ServerKeyExchange.
+ *
+ * Decodes the @c ServerECDHParams (a named-curve @c ECParameters plus the
+ * server's ephemeral @c ECPoint) and the trailing signature. The
+ * @p signed_params / @p signed_params_len out-pair returns the verbatim
+ * @c ECParameters||ECPoint span as it appeared on the wire, so the caller can
+ * verify the signature (which covers @c client_random || server_random ||
+ * those bytes) without re-encoding.
+ *
+ * @param parser Parser positioned on the message.
+ * @param curve_type Out: EC curve type (expected @c R_TLS_EC_TYPE_NAMED_CURVE).
+ * @param named_curve Out: the named group (@ref RTLSSupportedGroup).
+ * @param point Out: pointer to the server's public-point bytes.
+ * @param pointlen Out: public-point length in bytes.
+ * @param sigscheme Out: signature scheme of the trailing signature.
+ * @param sig Out: pointer to the signature bytes.
+ * @param sigsize Out: signature length in bytes.
+ * @param signed_params Out: pointer to the signed @c ECParameters||ECPoint span.
+ * @param signed_params_len Out: length of the signed span in bytes.
+ */
+R_API RTLSError r_tls_parser_parse_server_key_exchange_ecdhe (const RTLSParser * parser,
+    RTLSEcCurveType * curve_type, RTLSSupportedGroup * named_curve,
+    const ruint8 ** point, ruint8 * pointlen,
+    RTLSSignatureScheme * sigscheme, const ruint8 ** sig, ruint16 * sigsize,
+    const ruint8 ** signed_params, rsize * signed_params_len);
+/**
  * @brief Parse the current record as a Finished message.
  * @param parser Parser positioned on the message.
  * @param verify_data Out: pointer to the verify-data bytes.
@@ -791,6 +829,30 @@ R_API RTLSError r_tls_write_hs_certificate (rpointer buf, rsize size, rsize * ou
     const ruint8 * der, rsize dersize);
 /** @brief DTLS alias for @ref r_tls_write_hs_certificate. */
 #define r_dtls_write_hs_certificate r_tls_write_hs_certificate
+
+/**
+ * @brief Write an ECDHE ServerKeyExchange handshake-message body into @p buf.
+ *
+ * Emits the @c ServerECDHParams (a named-curve @c ECParameters plus the
+ * server's ephemeral @c ECPoint) followed by the signature that covers
+ * @c client_random || server_random || ECParameters || ECPoint.
+ * @param buf Destination buffer.
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written.
+ * @param curve_type EC curve type (typically @c R_TLS_EC_TYPE_NAMED_CURVE).
+ * @param named_curve The named group (@ref RTLSSupportedGroup).
+ * @param point The server's ephemeral public-point bytes.
+ * @param pointlen Public-point length in bytes.
+ * @param sigscheme Signature scheme of @p sig (@ref RTLSSignatureScheme).
+ * @param sig The signature bytes.
+ * @param sigsize Signature length in bytes.
+ */
+R_API RTLSError r_tls_write_hs_server_key_exchange_ecdhe (rpointer buf, rsize size,
+    rsize * out, RTLSEcCurveType curve_type, RTLSSupportedGroup named_curve,
+    const ruint8 * point, ruint8 pointlen,
+    RTLSSignatureScheme sigscheme, const ruint8 * sig, ruint16 sigsize);
+/** @brief DTLS alias for @ref r_tls_write_hs_server_key_exchange_ecdhe. */
+#define r_dtls_write_hs_server_key_exchange_ecdhe r_tls_write_hs_server_key_exchange_ecdhe
 
 
 /** @brief Write a TLS ChangeCipherSpec record into @p data. */
