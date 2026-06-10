@@ -1265,18 +1265,6 @@ r_tls_server_default_cipher_suites (rpointer ctx, RTLSVersion ver,
   return TRUE;
 }
 
-/* Clamp the attacker-declared entry count of a hello-extension list to what the
- * extension body can actually hold, so a bogus inner length can't drive reads
- * past ext->data[ext->len]. @hdr is the list-length prefix (1 or 2 bytes),
- * @esz the per-entry size. */
-static ruint16
-r_tls_ext_list_count (const RTLSHelloExt * ext, ruint16 declared,
-    rsize hdr, rsize esz)
-{
-  rsize avail = (ext->len > hdr) ? (ext->len - hdr) / esz : 0;
-  return ((rsize)declared < avail) ? declared : (ruint16)avail;
-}
-
 /* Pick a named curve for ECDHE from the ClientHello's supported_groups, gated
  * by the curves we implement. A Weierstrass curve additionally needs the peer
  * to accept uncompressed points (ec_point_formats); per RFC 4492 5.1 an absent
@@ -1296,8 +1284,7 @@ r_tls_server_nego_ecdhe_curve (RTLSServer * server, REcurveID * out)
       r = r_tls_hello_msg_extension_next (&server->hello, &ext)) {
     if (ext.type == R_TLS_EXT_TYPE_EC_POINT_FORMATS) {
       have_uncompressed = FALSE;
-      n = r_tls_ext_list_count (&ext, r_tls_hello_ext_ec_point_format_count (&ext),
-          sizeof (ruint8), sizeof (ruint8));
+      n = r_tls_hello_ext_ec_point_format_count (&ext);
       for (i = 0; i < n; i++) {
         if (r_tls_hello_ext_ec_point_format (&ext, i) ==
             R_TLS_EC_POINT_FORMAT_UNCOMPRESSED) {
@@ -1313,8 +1300,7 @@ r_tls_server_nego_ecdhe_curve (RTLSServer * server, REcurveID * out)
       r == R_TLS_ERROR_OK;
       r = r_tls_hello_msg_extension_next (&server->hello, &ext)) {
     if (ext.type == R_TLS_EXT_TYPE_SUPPORTED_GROUPS) {
-      n = r_tls_ext_list_count (&ext, r_tls_hello_ext_supported_groups_count (&ext),
-          sizeof (ruint16), sizeof (ruint16));
+      n = r_tls_hello_ext_supported_groups_count (&ext);
       for (i = 0; i < n; i++) {
         REcurveID c;
         if (r_tls_ecdhe_group_to_curve (r_tls_hello_ext_supported_group (&ext, i), &c) &&
@@ -1496,8 +1482,7 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
         break;
       case R_TLS_EXT_TYPE_USE_SRTP:
         /* FIXME: Use SRTP cipher suite API */
-        count = r_tls_ext_list_count (&hsext,
-            r_tls_hello_ext_use_srtp_profile_count (&hsext), sizeof (ruint16), sizeof (ruint16));
+        count = r_tls_hello_ext_use_srtp_profile_count (&hsext);
         for (i = 0; i < count; i++) {
           if (r_tls_hello_ext_use_srtp_profile (&hsext, i) == R_SRTP_CS_AES_128_CM_HMAC_SHA1_80) {
             server->dtls_srtp_profile = R_SRTP_CS_AES_128_CM_HMAC_SHA1_80;
@@ -1525,18 +1510,11 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
           RTLSSignatureScheme want = r_tls_sign_scheme_for_key (server->privkey);
           rboolean ok = FALSE;
 
-          /* Bound the scheme count by the actual extension length: the inner
-           * list-length word is attacker-controlled, so it must not drive reads
-           * past hsext.data[hsext.len]. */
-          if (hsext.len >= sizeof (ruint16)) {
-            count = r_tls_hello_ext_sign_scheme_count (&hsext);
-            if (count > (hsext.len - sizeof (ruint16)) / sizeof (ruint16))
-              count = (hsext.len - sizeof (ruint16)) / sizeof (ruint16);
-            for (i = 0; i < count; i++) {
-              if (r_tls_hello_ext_sign_scheme (&hsext, i) == want) {
-                ok = TRUE;
-                break;
-              }
+          count = r_tls_hello_ext_sign_scheme_count (&hsext);
+          for (i = 0; i < count; i++) {
+            if (r_tls_hello_ext_sign_scheme (&hsext, i) == want) {
+              ok = TRUE;
+              break;
             }
           }
           if (!ok)
