@@ -433,7 +433,8 @@ typedef struct {
 
   RKeyExchangeType key_exchange;      /**< Key-exchange family. */
   const RCryptoCipherInfo * cipher;   /**< Payload cipher. */
-  RMsgDigestType mac;                 /**< Record-MAC digest. */
+  RMsgDigestType mac;                 /**< Record-MAC digest (@c NONE for AEAD suites). */
+  RMsgDigestType prf;                 /**< Hash for the TLS 1.2 PRF and handshake transcript. */
 } RTLSCipherSuiteInfo;
 
 /** @brief True iff rlib has an implementation for @p suite. */

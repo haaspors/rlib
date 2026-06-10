@@ -64,7 +64,9 @@ struct RTLSClient {
   RTLSClientDecryptFunc decrypt;
   RTLSPrfFunc prf;
 
-  RMsgDigest * hshash;
+  RMsgDigest * hshash;          /* created once the suite (hence its hash) is known */
+  ruint8 * clienthello;         /* buffered ClientHello body, folded into hshash on ServerHello */
+  rsize clienthellolen;
   ruint8 mastersecret[48];
   ruint8 clirandom[R_TLS_HELLO_RANDOM_BYTES];
   ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES];
@@ -144,6 +146,7 @@ r_tls_client_free (RTLSClient * client)
     r_crypto_cipher_unref (client->server.cipher);
   r_free (client->server.fixediv);
   r_msg_digest_free (client->hshash);
+  r_free (client->clienthello);
 
   if (client->inbuf != NULL)
     r_buffer_unref (client->inbuf);
@@ -479,8 +482,13 @@ r_tls_client_send_hello (RTLSClient * client)
       else
         ret = r_tls_update_handshake_len (info.data, info.size, (ruint16)(size - hssize));
 
-      if (ret == R_TLS_ERROR_OK)
-        r_msg_digest_update (client->hshash, info.data + hdrsize, size - hdrsize);
+      /* Buffer the ClientHello handshake message; it is folded into the
+       * transcript once the ServerHello picks the suite (hence the hash). */
+      if (ret == R_TLS_ERROR_OK) {
+        client->clienthellolen = size - hdrsize;
+        if ((client->clienthello = r_memdup (info.data + hdrsize, client->clienthellolen)) == NULL)
+          ret = R_TLS_ERROR_OOM;
+      }
     }
     r_buffer_unmap (buf, &info);
     r_buffer_set_size (buf, size);
@@ -514,11 +522,9 @@ r_tls_client_start (RTLSClient * client, REvLoop * loop, RPrng * prng,
   client->version = version;
   client->comp = R_TLS_COMPRESSION_NULL;
 
-  /* TLS / DTLS 1.2 use the SHA-256 PRF and handshake-transcript hash for the
-   * RSA-AES-CBC suites the client offers. */
-  client->prf = r_tls_1_2_prf_sha256;
-  if ((client->hshash = r_sha256_new ()) == NULL)
-    return R_TLS_ERROR_OOM;
+  /* The PRF and transcript hash depend on the suite the server selects, which
+   * is not known until its ServerHello. The ClientHello is buffered and the
+   * transcript started in nego_server_hello. */
 
   r_tls_client_change_state (client, R_TLS_CLIENT_SERVER_HELLO);
 
@@ -549,6 +555,18 @@ r_tls_client_nego_server_hello (RTLSClient * client, const RTLSParser * parser)
           (RTLSCipherSuite) r_load_be16 (hello.cs))) == NULL ||
       !r_tls_cipher_suite_is_supported (client->csinfo->suite))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* The suite (hence its PRF / transcript hash) is now known: start the
+   * transcript and fold in the buffered ClientHello. The ServerHello is folded
+   * by the caller right after this returns. */
+  if (R_UNLIKELY (client->hshash != NULL || client->clienthello == NULL))
+    return R_TLS_ERROR_WRONG_STATE;
+  if (!r_tls_prf_and_hash_for (client->csinfo->prf, &client->prf, &client->hshash))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  r_msg_digest_update (client->hshash, client->clienthello, client->clienthellolen);
+  r_free (client->clienthello);     /* folded; no longer needed */
+  client->clienthello = NULL;
+  client->clienthellolen = 0;
 
   /* The key-exchange type is only known once the server picks the suite; the
    * ServerKeyExchange and ClientKeyExchange handling branch on this. */

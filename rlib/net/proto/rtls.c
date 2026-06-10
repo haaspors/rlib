@@ -52,6 +52,25 @@ r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme, RMsgDigestType * md)
 }
 
 rboolean
+r_tls_prf_and_hash_for (RMsgDigestType hash, RTLSPrfFunc * prf, RMsgDigest ** hshash)
+{
+  switch (hash) {
+    case R_MSG_DIGEST_TYPE_SHA256:
+      *prf = r_tls_1_2_prf_sha256;
+      *hshash = r_sha256_new ();
+      break;
+    case R_MSG_DIGEST_TYPE_SHA384:
+      *prf = r_tls_1_2_prf_sha384;
+      *hshash = r_sha384_new ();
+      break;
+    default:
+      return FALSE;
+  }
+
+  return *hshash != NULL;
+}
+
+rboolean
 r_tls_ecdhe_group_to_curve (RTLSSupportedGroup group, REcurveID * curve)
 {
   switch (group) {
