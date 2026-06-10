@@ -71,16 +71,18 @@ RTEST_FIXTURE_STRUCT (rtlsserver)
   RQueue qapp;
 };
 
+/* Pin the suite explicitly: most tests drive the server with hand-rolled RSA
+ * clients and must not follow the library default (ECDHE-first). */
 static rboolean
 r_tlsserver_test_prefer_ecdhe (rpointer ctx, RTLSVersion ver,
     RTLSCipherSuite * cs, rsize * count)
 {
   RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
   (void) ver;
-  if (!fixture->prefer_ecdhe)
-    return FALSE;                /* fall back to the library defaults (RSA) */
   *count = 1;
-  cs[0] = R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256;
+  cs[0] = fixture->prefer_ecdhe ?
+      R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 :
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA;
   return TRUE;
 }
 

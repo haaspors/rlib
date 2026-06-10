@@ -1011,6 +1011,8 @@ r_tls_server_default_cipher_suites (rpointer ctx, RTLSVersion ver,
     RTLSCipherSuite * cs, rsize * count)
 {
   const RTLSCipherSuite preferred[] = {
+    R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+    R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
     R_TLS_CS_RSA_WITH_AES_128_CBC_SHA,
     R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256,
   };
