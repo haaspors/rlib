@@ -190,8 +190,16 @@ R_API RCryptoCert * r_crypto_x509_cert_new_from_buffer (RBuffer * buf) R_ATTR_MA
 
 /** @brief Return the @c version field (v1 / v2 / v3). */
 R_API RX509Version r_crypto_x509_cert_version (const RCryptoCert * cert);
-/** @brief Return the @c serialNumber as a 64-bit integer. */
+/** @brief Return the @c serialNumber as a 64-bit integer (low 64 bits when the
+ *  serial is wider; use @ref r_crypto_x509_cert_serial for the full value). */
 R_API ruint64 r_crypto_x509_cert_serial_number (const RCryptoCert * cert);
+/**
+ * @brief Return the @c serialNumber as raw big-endian magnitude bytes.
+ * @param cert Certificate.
+ * @param size Out: serial length in bytes (up to 20).
+ * @return Pointer to the serial bytes, owned by @p cert.
+ */
+R_API const ruint8 * r_crypto_x509_cert_serial (const RCryptoCert * cert, rsize * size);
 /** @brief Return the issuer Distinguished Name as a string. */
 R_API const rchar * r_crypto_x509_cert_issuer (const RCryptoCert * cert);
 /** @brief Return the subject Distinguished Name as a string. */
