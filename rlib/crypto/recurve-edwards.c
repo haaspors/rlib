@@ -176,7 +176,7 @@ static const REdwardsParams g__edwards_params[] = {
 static void
 r_edwards_mpint_init_from_le (rmpint * mp, const ruint8 * le, rsize n)
 {
-  ruint8 be[64];
+  ruint8 be[64] = { 0 };
   rsize i;
   for (i = 0; i < n; i++)
     be[i] = le[n - 1 - i];

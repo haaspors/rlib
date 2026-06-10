@@ -72,7 +72,7 @@ static const RCryptoAlgoInfo g_ed25519_priv_key_info = {
 static void
 r_ed25519_le_to_mpint (rmpint * mp, const ruint8 * le, rsize n)
 {
-  ruint8 be[64];
+  ruint8 be[64] = { 0 };
   rsize i;
   for (i = 0; i < n; i++)
     be[i] = le[n - 1 - i];
