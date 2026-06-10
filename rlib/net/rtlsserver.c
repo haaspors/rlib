@@ -1253,6 +1253,33 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
       case R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET:
         server->support_ext_master_secret = TRUE;
         break;
+      case R_TLS_EXT_TYPE_SIGNATURE_ALGORITHMS:
+        /* Honour the client's signature_algorithms for the schemes we actually
+         * sign with (ServerKeyExchange on ECDHE suites). If the client offered
+         * the extension but not our certificate's scheme, we cannot satisfy it.
+         * An absent extension means no constraint (RFC 5246 7.4.1.4.1). */
+        if (server->ecdhe && server->privkey != NULL) {
+          RTLSSignatureScheme want = r_tls_sign_scheme_for_key (server->privkey);
+          rboolean ok = FALSE;
+
+          /* Bound the scheme count by the actual extension length: the inner
+           * list-length word is attacker-controlled, so it must not drive reads
+           * past hsext.data[hsext.len]. */
+          if (hsext.len >= sizeof (ruint16)) {
+            count = r_tls_hello_ext_sign_scheme_count (&hsext);
+            if (count > (hsext.len - sizeof (ruint16)) / sizeof (ruint16))
+              count = (hsext.len - sizeof (ruint16)) / sizeof (ruint16);
+            for (i = 0; i < count; i++) {
+              if (r_tls_hello_ext_sign_scheme (&hsext, i) == want) {
+                ok = TRUE;
+                break;
+              }
+            }
+          }
+          if (!ok)
+            return R_TLS_ERROR_HANDSHAKE_FAILURE;
+        }
+        break;
       default:
         break;
     }

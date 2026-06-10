@@ -388,6 +388,17 @@ r_tls_client_write_hs_ext_ec_point_formats (ruint8 * ptr)
 }
 
 static ruint16
+r_tls_client_write_hs_ext_signature_algorithms (ruint8 * ptr)
+{
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_SIGNATURE_ALGORITHMS);
+  r_store_be16 (&ptr[2], 2 + 2 * sizeof (ruint16));   /* list length + 2 schemes */
+  r_store_be16 (&ptr[4], 2 * sizeof (ruint16));       /* scheme list length */
+  r_store_be16 (&ptr[6], (ruint16)R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256);
+  r_store_be16 (&ptr[8], (ruint16)R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256);
+  return 10;
+}
+
+static ruint16
 r_tls_client_write_hs_ext_use_srtp (ruint8 * ptr)
 {
   r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_USE_SRTP);
@@ -467,6 +478,7 @@ r_tls_client_send_hello (RTLSClient * client)
     extsize += r_tls_client_write_hs_ext_encrypt_then_mac (ptr + 2 + extsize);
     extsize += r_tls_client_write_hs_ext_supported_groups (ptr + 2 + extsize);
     extsize += r_tls_client_write_hs_ext_ec_point_formats (ptr + 2 + extsize);
+    extsize += r_tls_client_write_hs_ext_signature_algorithms (ptr + 2 + extsize);
     if (dtls)
       extsize += r_tls_client_write_hs_ext_use_srtp (ptr + 2 + extsize);
     r_store_be16 (ptr, extsize);
