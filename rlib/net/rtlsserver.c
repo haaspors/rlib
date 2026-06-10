@@ -1200,7 +1200,8 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
  * rather than the client/server randoms. The caller must therefore have
  * absorbed the ClientKeyExchange into hshash before calling this. */
 static RTLSError
-r_tls_server_derive_master_secret (RTLSServer * server, const ruint8 pms[48])
+r_tls_server_derive_master_secret (RTLSServer * server,
+    const ruint8 * pms, rsize pmslen)
 {
   RTLSError ret;
 
@@ -1212,11 +1213,11 @@ r_tls_server_derive_master_secret (RTLSServer * server, const ruint8 pms[48])
       return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
     ret = server->prf (server->mastersecret, sizeof (server->mastersecret),
-        pms, 48, R_STR_WITH_SIZE_ARGS ("extended master secret"),
+        pms, pmslen, R_STR_WITH_SIZE_ARGS ("extended master secret"),
         sessionhash, hashsize, NULL);
   } else {
     ret = server->prf (server->mastersecret, sizeof (server->mastersecret),
-        pms, 48, R_STR_WITH_SIZE_ARGS ("master secret"),
+        pms, pmslen, R_STR_WITH_SIZE_ARGS ("master secret"),
         server->hello.random, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         server->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
         NULL);
@@ -1605,7 +1606,7 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
           (ruint)parser->fragment.size);
       /* hash CKE first: the extended-master-secret session hash covers it */
       r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
-      if ((err = r_tls_server_derive_master_secret (server, pms)) != R_TLS_ERROR_OK ||
+      if ((err = r_tls_server_derive_master_secret (server, pms, sizeof (pms))) != R_TLS_ERROR_OK ||
           (err = r_tls_server_expand_master_secret (server)) != R_TLS_ERROR_OK)
         r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
       break;
