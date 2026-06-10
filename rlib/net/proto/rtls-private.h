@@ -38,6 +38,13 @@ R_BEGIN_DECLS
 R_API_HIDDEN rboolean r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme,
     RMsgDigestType * md);
 
+/* Select the TLS 1.2 PRF and a fresh handshake-transcript digest for a cipher
+ * suite's hash (@ref RTLSCipherSuiteInfo.prf): SHA-256 or SHA-384. Writes the
+ * PRF function to @prf and an owned digest (caller frees) to @hshash. Returns
+ * FALSE on an unsupported hash or allocation failure. */
+R_API_HIDDEN rboolean r_tls_prf_and_hash_for (RMsgDigestType hash,
+    RTLSPrfFunc * prf, RMsgDigest ** hshash);
+
 /* ECDHE curve abstraction shared by the TLS/DTLS client and server. The two
  * supported curves take different code paths: secp256r1 is short-Weierstrass
  * (SEC 1 uncompressed point 0x04||X||Y, the recc/ECDH primitives) and x25519

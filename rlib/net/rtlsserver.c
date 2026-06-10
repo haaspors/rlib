@@ -1179,37 +1179,11 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   switch (server->version) {
     case R_TLS_VERSION_DTLS_1_2:
     case R_TLS_VERSION_TLS_1_2:
-      server->prf = r_tls_1_2_prf_sha256;
-      server->hshash = r_sha256_new ();
+      /* The PRF and transcript hash follow the negotiated suite (SHA-256 for
+       * every suite except the AES-256-GCM ones, which are SHA-384). */
+      if (!r_tls_prf_and_hash_for (server->csinfo->prf, &server->prf, &server->hshash))
+        return R_TLS_ERROR_HANDSHAKE_FAILURE;
       break;
-#if 0
-    case R_TLS_VERSION_DTLS_1_0:
-    case R_TLS_VERSION_TLS_1_0:
-      server->prf = r_tls_1_0_prf;
-      break;
-    case R_TLS_VERSION_SSL_3_0:
-      switch (server->csinfo->mac) {
-        case R_MSG_DIGEST_TYPE_SHA256:
-          server->prf = r_tls_1_2_prf_sha256;
-          server->hshash = r_sha256_new ();
-          break;
-        case R_MSG_DIGEST_TYPE_SHA512:
-          server->prf = r_tls_1_2_prf_sha512;
-          server->hshash = r_sha512_new ();
-          break;
-        case R_MSG_DIGEST_TYPE_SHA224:
-          server->prf = r_tls_1_2_prf_sha224;
-          server->hshash = r_sha224_new ();
-          break;
-        case R_MSG_DIGEST_TYPE_SHA384:
-          server->prf = r_tls_1_2_prf_sha384;
-          server->hshash = r_sha384_new ();
-          break;
-        default:
-          return R_TLS_ERROR_WRONG_STATE;
-      }
-      break;
-#endif
     default:
       return R_TLS_ERROR_VERSION;
   }
