@@ -1271,3 +1271,53 @@ RTEST (rtls, parse_client_key_exchange_ecdhe, RTEST_FAST)
   r_tls_parser_clear (&parser);
 }
 RTEST_END;
+
+/* The hello-extension list accessors must clamp their entry count to the
+ * extension's own length, so a bogus inner list-length cannot drive a
+ * consumer's loop past ext->data[ext->len] (ASan would catch the over-read). */
+RTEST (rtls, hello_ext_list_bounds, RTEST_FAST)
+{
+  RTLSHelloExt ext = R_TLS_HELLO_EXT_INIT;
+  ruint16 i, n;
+  /* uint16 list-length prefix declaring 0x7ffe entries, but the extension only
+   * holds two 2-byte entries after the prefix. */
+  static const ruint8 over16[] = { 0xff, 0xfe, 0x00, 0x01, 0x00, 0x02 };
+  /* uint8 list-length prefix declaring 255 formats, only two present. */
+  static const ruint8 over8[] = { 0xff, 0x00, 0x01 };
+  /* A well-formed list that under-declares relative to the buffer. */
+  static const ruint8 fits[] = { 0x00, 0x02, 0x00, 0x01, 0xde, 0xad };
+
+  ext.data = over16;
+  ext.len = sizeof (over16);
+  r_assert_cmpuint (r_tls_hello_ext_sign_scheme_count (&ext), ==, 2);
+  r_assert_cmpuint (r_tls_hello_ext_supported_groups_count (&ext), ==, 2);
+  r_assert_cmpuint (r_tls_hello_ext_use_srtp_profile_count (&ext), ==, 2);
+  /* Looping the getter over the clamped count stays in bounds. */
+  n = r_tls_hello_ext_sign_scheme_count (&ext);
+  for (i = 0; i < n; i++) {
+    (void) r_tls_hello_ext_sign_scheme (&ext, i);
+    (void) r_tls_hello_ext_supported_group (&ext, i);
+    (void) r_tls_hello_ext_use_srtp_profile (&ext, i);
+  }
+
+  ext.data = over8;
+  ext.len = sizeof (over8);
+  n = r_tls_hello_ext_ec_point_format_count (&ext);
+  r_assert_cmpuint (n, ==, 2);
+  for (i = 0; i < n; i++)
+    (void) r_tls_hello_ext_ec_point_format (&ext, i);
+
+  /* A buffer shorter than the length prefix yields zero, not an over-read. */
+  ext.data = over16;
+  ext.len = 0;
+  r_assert_cmpuint (r_tls_hello_ext_sign_scheme_count (&ext), ==, 0);
+  ext.len = 1;
+  r_assert_cmpuint (r_tls_hello_ext_sign_scheme_count (&ext), ==, 0);
+  r_assert_cmpuint (r_tls_hello_ext_ec_point_format_count (&ext), ==, 0);
+
+  /* Well-formed: the declared count is returned, not over-trimmed. */
+  ext.data = fits;
+  ext.len = sizeof (fits);
+  r_assert_cmpuint (r_tls_hello_ext_sign_scheme_count (&ext), ==, 1);
+}
+RTEST_END;

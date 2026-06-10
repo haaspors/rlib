@@ -588,9 +588,15 @@ R_API RTLSError r_tls_hello_msg_extension_next (const RTLSHelloMsg * msg, RTLSHe
 
 /** @name signature_algorithms extension accessors
  *  @{ */
-/** @brief Number of signature schemes in the signature_algorithms extension @p ext. */
+/** @brief Number of signature schemes in the signature_algorithms extension @p ext,
+ * clamped to what @p ext's length can hold (so a bogus inner length is safe). */
 static inline ruint16 r_tls_hello_ext_sign_scheme_count (const RTLSHelloExt * ext)
-{ return r_load_be16 (ext->data) / sizeof (ruint16); }
+{
+  ruint16 avail;
+  if (ext->len < sizeof (ruint16)) return 0;
+  avail = (ruint16) ((ext->len - sizeof (ruint16)) / sizeof (ruint16));
+  return MIN ((ruint16) (r_load_be16 (ext->data) / sizeof (ruint16)), avail);
+}
 /** @brief Return the @p n th signature scheme in @p ext. */
 static inline RTLSSignatureScheme r_tls_hello_ext_sign_scheme (const RTLSHelloExt * ext, int n)
 { return (RTLSSignatureScheme) r_load_be16 (ext->data + (n + 1) * sizeof (ruint16)); }
@@ -598,9 +604,13 @@ static inline RTLSSignatureScheme r_tls_hello_ext_sign_scheme (const RTLSHelloEx
 
 /** @name ec_point_format extension accessors
  *  @{ */
-/** @brief Number of point formats in the ec_point_format extension @p ext. */
+/** @brief Number of point formats in the ec_point_format extension @p ext,
+ * clamped to what @p ext's length can hold (1-byte list prefix). */
 static inline ruint16 r_tls_hello_ext_ec_point_format_count (const RTLSHelloExt * ext)
-{ return ext->data[0]; }
+{
+  if (ext->len < sizeof (ruint8)) return 0;
+  return MIN ((ruint16) ext->data[0], (ruint16) (ext->len - sizeof (ruint8)));
+}
 /** @brief Return the @p n th EC point format in @p ext. */
 static inline RTLSEcPointFormat r_tls_hello_ext_ec_point_format (const RTLSHelloExt * ext, int n)
 { return (RTLSEcPointFormat)ext->data[n+1]; }
@@ -608,9 +618,15 @@ static inline RTLSEcPointFormat r_tls_hello_ext_ec_point_format (const RTLSHello
 
 /** @name supported_groups / elliptic_curves extension accessors
  *  @{ */
-/** @brief Number of named groups in the supported_groups extension @p ext. */
+/** @brief Number of named groups in the supported_groups extension @p ext,
+ * clamped to what @p ext's length can hold. */
 static inline ruint16 r_tls_hello_ext_supported_groups_count (const RTLSHelloExt * ext)
-{ return r_load_be16 (ext->data) / sizeof (ruint16); }
+{
+  ruint16 avail;
+  if (ext->len < sizeof (ruint16)) return 0;
+  avail = (ruint16) ((ext->len - sizeof (ruint16)) / sizeof (ruint16));
+  return MIN ((ruint16) (r_load_be16 (ext->data) / sizeof (ruint16)), avail);
+}
 /** @brief Return the @p n th named group in @p ext. */
 static inline RTLSSupportedGroup r_tls_hello_ext_supported_group (const RTLSHelloExt * ext, int n)
 { return (RTLSSupportedGroup) r_load_be16 (ext->data + (n + 1) * sizeof (ruint16)); }
@@ -618,9 +634,15 @@ static inline RTLSSupportedGroup r_tls_hello_ext_supported_group (const RTLSHell
 
 /** @name use_srtp extension accessors
  *  @{ */
-/** @brief Number of SRTP protection profiles in the use_srtp extension @p ext. */
+/** @brief Number of SRTP protection profiles in the use_srtp extension @p ext,
+ * clamped to what @p ext's length can hold. */
 static inline ruint16 r_tls_hello_ext_use_srtp_profile_count (const RTLSHelloExt * ext)
-{ return r_load_be16 (ext->data) / sizeof (ruint16); }
+{
+  ruint16 avail;
+  if (ext->len < sizeof (ruint16)) return 0;
+  avail = (ruint16) ((ext->len - sizeof (ruint16)) / sizeof (ruint16));
+  return MIN ((ruint16) (r_load_be16 (ext->data) / sizeof (ruint16)), avail);
+}
 /** @brief Return the @p n th SRTP protection profile in @p ext. */
 static inline RSRTPCipherSuite r_tls_hello_ext_use_srtp_profile(const RTLSHelloExt * ext, int n)
 { return (RSRTPCipherSuite) r_load_be16 (ext->data + (n + 1) * sizeof (ruint16)); }
