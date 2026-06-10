@@ -31,6 +31,29 @@
 
 R_BEGIN_DECLS
 
+/* Default cipher-suite preference shared by the client and server, most
+ * preferred first: AEAD (AES-GCM) over CBC, ECDHE (forward secrecy) over static
+ * RSA, ECDSA over RSA authentication within a tier, AES-128 over AES-256,
+ * SHA-256 MAC over SHA-1. The server keeps only the suites its certificate can
+ * authenticate; the client offers all and lets the server choose. */
+#define R_TLS_DEFAULT_CIPHER_SUITES                                            \
+    R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,                              \
+    R_TLS_CS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,                             \
+    R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,                                \
+    R_TLS_CS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,                                \
+    R_TLS_CS_RSA_WITH_AES_128_GCM_SHA256,                                      \
+    R_TLS_CS_RSA_WITH_AES_256_GCM_SHA384,                                      \
+    R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,                             \
+    R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,                               \
+    R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,                                \
+    R_TLS_CS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,                                \
+    R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA,                                   \
+    R_TLS_CS_ECDHE_RSA_WITH_AES_256_CBC_SHA,                                   \
+    R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256,                                      \
+    R_TLS_CS_RSA_WITH_AES_256_CBC_SHA256,                                      \
+    R_TLS_CS_RSA_WITH_AES_128_CBC_SHA,                                         \
+    R_TLS_CS_RSA_WITH_AES_256_CBC_SHA
+
 /* Map a TLS signature scheme to the message-digest its hash uses. This cut
  * only handles rsa_pkcs1_sha256 (SHA-256) - the scheme used for both the mTLS
  * CertificateVerify and the ECDHE ServerKeyExchange signature. Returns FALSE
