@@ -38,6 +38,7 @@ typedef enum {
   R_TLS_CLIENT_CHANGE_CIPHER,       /* await server ChangeCipherSpec */
   R_TLS_CLIENT_FINISHED,            /* await server Finished */
   R_TLS_CLIENT_APPDATA,
+  R_TLS_CLIENT_CLOSED,
   R_TLS_CLIENT_ERROR,
 } RTLSClientState;
 
@@ -1116,6 +1117,14 @@ r_tls_client_state_error (RTLSClient * client, const RTLSParser * parser)
   return R_TLS_ERROR_OK;
 }
 
+/* Once closed (close_notify exchanged) any further record is dropped. */
+static RTLSError
+r_tls_client_state_closed (RTLSClient * client, const RTLSParser * parser)
+{
+  (void) client; (void) parser;
+  return R_TLS_ERROR_OK;
+}
+
 static RTLSError
 r_tls_client_state_server_hello (RTLSClient * client, const RTLSParser * parser)
 {
@@ -1424,6 +1433,7 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
     r_tls_client_state_change_cipher,
     r_tls_client_state_finished,
     r_tls_client_state_appdata,
+    r_tls_client_state_closed,
     r_tls_client_state_error,
   };
   /* Zero-init: a record that fails init_buffer never sets parser.buf, and the
@@ -1474,6 +1484,16 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
           if (client->cb.error != NULL)
             client->cb.error (client->userdata, atype, client);
           r_tls_client_change_state (client, R_TLS_CLIENT_ERROR);
+        } else if (atype == R_TLS_ALERT_TYPE_CLOSE_NOTIFY &&
+            client->state < R_TLS_CLIENT_CLOSED) {
+          /* Respond with our own close_notify (RFC 5246 7.2.1) and surface
+           * the orderly close to the application. */
+          if (r_tls_client_emit_alert (client, R_TLS_ALERT_LEVEL_WARNING,
+                R_TLS_ALERT_TYPE_CLOSE_NOTIFY) == R_TLS_ERROR_OK)
+            r_tls_client_send_out (client);
+          r_tls_client_change_state (client, R_TLS_CLIENT_CLOSED);
+          if (client->cb.closed != NULL)
+            client->cb.closed (client->userdata, client);
         }
       } else {
         r_tls_client_change_state (client, R_TLS_CLIENT_ERROR);
@@ -1543,6 +1563,23 @@ r_tls_client_send_appdata (RTLSClient * client, RBuffer * buffer)
     return FALSE;
 
   r_tls_client_send_out (client);
+  return TRUE;
+}
+
+rboolean
+r_tls_client_close (RTLSClient * client)
+{
+  if (R_UNLIKELY (client == NULL)) return FALSE;
+  /* Only an established session can be cleanly closed; a second call is a
+   * no-op (the state has already advanced past APPDATA). */
+  if (client->state != R_TLS_CLIENT_APPDATA) return FALSE;
+
+  if (r_tls_client_emit_alert (client, R_TLS_ALERT_LEVEL_WARNING,
+        R_TLS_ALERT_TYPE_CLOSE_NOTIFY) != R_TLS_ERROR_OK)
+    return FALSE;
+
+  r_tls_client_send_out (client);
+  r_tls_client_change_state (client, R_TLS_CLIENT_CLOSED);
   return TRUE;
 }
 
