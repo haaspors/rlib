@@ -1246,6 +1246,11 @@ r_tls_parser_parse_certificate_verify (const RTLSParser * parser,
   if (sigscheme != NULL)
     *sigscheme = (RTLSSignatureScheme)r_load_be16 (ptr);
   ptr += sizeof (ruint16);
+  /* The declared signature length must fit the record, or a verify would read
+   * past the fragment. */
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint16) + r_load_be16 (ptr)) >
+        RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
   if (sigsize != NULL)
     *sigsize = r_load_be16 (ptr);
   if (sig != NULL)
