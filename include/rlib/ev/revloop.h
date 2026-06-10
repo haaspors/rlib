@@ -89,6 +89,8 @@ R_API ruint r_ev_loop_run (REvLoop * loop, REvLoopRunMode mode);
 /** @brief Ask a running loop to stop (it returns from @ref r_ev_loop_run). */
 R_API void r_ev_loop_stop (REvLoop * loop);
 
+/** @brief The loop's clock (for timers); borrowed, owned by the loop. */
+R_API RClock * r_ev_loop_get_clock (const REvLoop * loop);
 /** @brief Total iterations the loop has run. */
 R_API rsize r_ev_loop_get_iterations (const REvLoop * loop);
 /** @brief Number of registered idle callbacks. */
