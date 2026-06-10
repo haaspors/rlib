@@ -600,14 +600,12 @@ r_tls_server_write_hs_ext_encrypt_then_mac (const RTLSServer * server, ruint8 * 
 static ruint16
 r_tls_server_write_hs_ext_session_ticket (const RTLSServer * server, ruint8 * ptr)
 {
-  /* The ticket itself is minted in the final flight (it binds the master
-   * secret), so this only signals that a NewSessionTicket will follow.
-   * Without a key store the server can neither seal nor later open a ticket,
-   * so it makes no promise. On a resumed handshake no fresh ticket is issued,
-   * so the extension must not be echoed (RFC 5077 3.4) -- promising a ticket
-   * the abbreviated flight never sends would leave the client waiting. */
-  if (!server->support_new_session_ticket || server->ticket_keys == NULL ||
-      server->resumed)
+  /* Signals that a NewSessionTicket will follow (the ticket itself is minted in
+   * the flight, since it binds the master secret). Without a key store the
+   * server can neither seal nor open a ticket, so it makes no promise. On a
+   * resumed handshake a fresh ticket IS now issued (RFC 5077 3.4), so the
+   * extension is echoed there too. */
+  if (!server->support_new_session_ticket || server->ticket_keys == NULL)
     return 0;
 
   /* NewSessionTicket will come! */
@@ -1082,6 +1080,22 @@ r_tls_server_write_change_cipher (RTLSServer * server)
 #define R_TLS_TICKET_STATE_VERSION    2
 #define R_TLS_TICKET_STATE_SIZE       (1 + 2 + 2 + 1 + 8 + 48)
 
+/* Wall-clock 'now' for ticket issued-at / expiry. A synthetic loop clock drives
+ * it deterministically (tests advance it); a real loop clock is monotonic and
+ * unsuitable for cross-process ticket expiry, so production uses wall-clock. */
+static RClockTime
+r_tls_server_now (const RTLSServer * server)
+{
+  RClock * clock;
+
+  if (server->loop != NULL &&
+      (clock = r_ev_loop_get_clock (server->loop)) != NULL &&
+      r_clock_is_synthetic (clock))
+    return r_clock_get_time (clock);
+
+  return r_time_get_ts_wallclock ();
+}
+
 /* Mint the opaque session ticket: serialize the session state needed to resume
  * and seal it under the shared key store. The ticket stays opaque to the
  * client; only a server sharing the same RTLSSessionTicketKeys can open it. */
@@ -1096,7 +1110,7 @@ r_tls_server_create_session_ticket (RTLSServer * server)
   r_store_be16 (&plain[1], (ruint16)server->version);
   r_store_be16 (&plain[3], (ruint16)server->csinfo->suite);
   plain[5] = server->support_ext_master_secret ? 1 : 0;
-  r_store_be64 (&plain[6], (ruint64)r_time_get_ts_wallclock ());
+  r_store_be64 (&plain[6], (ruint64)r_tls_server_now (server));
   r_memcpy (&plain[14], server->mastersecret, sizeof (server->mastersecret));
 
   if (!r_tls_session_ticket_keys_seal (server->ticket_keys, plain,
@@ -1734,6 +1748,15 @@ r_tls_server_expand_master_secret (RTLSServer * server)
   ruint8 keyblock[256];
   RTLSError ret;
 
+  /* Idempotent: release any keys a prior call installed so a re-expansion
+   * (e.g. a full handshake after a failed resume) never leaks them. */
+  if (server->client.hmac != NULL) { r_hmac_free (server->client.hmac); server->client.hmac = NULL; }
+  if (server->server.hmac != NULL) { r_hmac_free (server->server.hmac); server->server.hmac = NULL; }
+  if (server->client.cipher != NULL) { r_crypto_cipher_unref (server->client.cipher); server->client.cipher = NULL; }
+  if (server->server.cipher != NULL) { r_crypto_cipher_unref (server->server.cipher); server->server.cipher = NULL; }
+  r_free (server->client.fixediv); server->client.fixediv = NULL;
+  r_free (server->server.fixediv); server->server.fixediv = NULL;
+
   if (server->prf (keyblock, sizeof (keyblock),
         server->mastersecret, sizeof (server->mastersecret),
         R_STR_WITH_SIZE_ARGS ("key expansion"),
@@ -1947,7 +1970,14 @@ r_tls_server_state_closed (RTLSServer * server, const RTLSParser * parser)
  * ready to emit the resumed flight; returns TRUE. Any failure -- no / unopenable
  * / expired ticket, or a suite no longer offered -- returns FALSE and leaves the
  * caller to run a full handshake (which issues a fresh ticket). */
-static rboolean
+/* Attempt to resume from a session ticket. Returns R_TLS_ERROR_NOT_NEEDED when
+ * the ClientHello is not resumable (no ticket, or a bad / expired / unusable
+ * one) and no server state was touched -- the caller runs a full handshake.
+ * R_TLS_ERROR_OK means the session was adopted. Any other (negative) result
+ * means a commit step failed after state was mutated: the caller must abort the
+ * handshake rather than fall back (a fallback would re-derive over half-adopted
+ * state). */
+static RTLSError
 r_tls_server_try_resume (RTLSServer * server)
 {
   RTLSHelloExt hsext = R_TLS_HELLO_EXT_INIT;
@@ -1963,7 +1993,7 @@ r_tls_server_try_resume (RTLSServer * server)
   rboolean ems;
 
   if (server->ticket_keys == NULL)
-    return FALSE;
+    return R_TLS_ERROR_NOT_NEEDED;
 
   for (r = r_tls_hello_msg_extension_first (&server->hello, &hsext);
       r == R_TLS_ERROR_OK;
@@ -1975,14 +2005,14 @@ r_tls_server_try_resume (RTLSServer * server)
     }
   }
   if (ticket == NULL || ticketlen == 0)
-    return FALSE;
+    return R_TLS_ERROR_NOT_NEEDED;
 
   if (!r_tls_session_ticket_keys_open (server->ticket_keys, ticket, ticketlen,
         plain, sizeof (plain), &plainlen))
-    return FALSE;
+    return R_TLS_ERROR_NOT_NEEDED;
   if (plainlen != sizeof (plain) || plain[0] != R_TLS_TICKET_STATE_VERSION) {
     r_memclear_secure (plain, sizeof (plain));
-    return FALSE;
+    return R_TLS_ERROR_NOT_NEEDED;
   }
 
   ver = (RTLSVersion) r_load_be16 (&plain[1]);
@@ -1995,8 +2025,8 @@ r_tls_server_try_resume (RTLSServer * server)
    * master secret state must match this ClientHello -- nego_hello has already
    * set support_ext_master_secret from the offered extension, so resuming an
    * EMS session without the extension (or vice versa) is refused as a downgrade
-   * (RFC 7627 5.3). */
-  now = r_time_get_ts_wallclock ();
+   * (RFC 7627 5.3). All these reject as "not resumable": no state mutated yet. */
+  now = r_tls_server_now (server);
   if (ver != server->version ||
       now < issued_at ||
       now - issued_at > (RClockTime) R_TLS_SESSION_TICKET_LIFETIME * R_SECOND ||
@@ -2004,14 +2034,27 @@ r_tls_server_try_resume (RTLSServer * server)
       !r_tls_hello_msg_has_cipher_suite (&server->hello, cs) ||
       (csinfo = r_tls_cipher_suite_get_info (cs)) == NULL) {
     r_memclear_secure (plain, sizeof (plain));
-    return FALSE;
+    return R_TLS_ERROR_NOT_NEEDED;
   }
+
+  /* --- Commit: server state is mutated past here. A failure now aborts the
+   * handshake (returned to the caller), it does not fall back. --- */
 
   /* Adopt the resumed session: the suite comes from the ticket, not this
    * ClientHello's preference-ordered negotiation (RFC 7627 5.1). */
   server->csinfo = csinfo;
   r_memcpy (server->mastersecret, &plain[14], sizeof (server->mastersecret));
   r_memclear_secure (plain, sizeof (plain));
+
+  /* Re-select the PRF and transcript hash for the recovered suite: nego_hello
+   * derived them from the negotiated suite, which the ticket suite may differ
+   * from. The ClientHello is fed to hshash only after this returns (state_hello),
+   * so swapping the hash here is transcript-safe; free the old one first. */
+  if (server->hshash != NULL)
+    r_msg_digest_free (server->hshash);
+  server->hshash = NULL;
+  if (!r_tls_prf_and_hash_for (csinfo->prf, &server->prf, &server->hshash))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
   /* A fresh session id signals the resumed session to the client. Pin the
    * server random now: key expansion below and the ServerHello both consume it,
@@ -2025,11 +2068,11 @@ r_tls_server_try_resume (RTLSServer * server)
 
   /* The master secret comes from the ticket, so expand the key block directly
    * (no derivation from a pre-master secret). */
-  if (r_tls_server_expand_master_secret (server) != R_TLS_ERROR_OK)
-    return FALSE;
+  if ((r = r_tls_server_expand_master_secret (server)) != R_TLS_ERROR_OK)
+    return r;
 
   server->resumed = TRUE;
-  return TRUE;
+  return R_TLS_ERROR_OK;
 }
 
 static RTLSError
@@ -2042,9 +2085,15 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
         server, parser->version, server->hello.version);
     server->hellobuf = r_buffer_ref (parser->buf);
 
-    if ((err = r_tls_server_nego_hello (server, parser->version, server->hello.version)) == R_TLS_ERROR_OK)
-      err = r_tls_server_change_state (server, r_tls_server_try_resume (server) ?
-          R_TLS_SERVER_CHANGE_CIPHER : R_TLS_SERVER_CERTIFICATE);
+    if ((err = r_tls_server_nego_hello (server, parser->version, server->hello.version)) == R_TLS_ERROR_OK) {
+      RTLSError rr = r_tls_server_try_resume (server);
+      if (rr == R_TLS_ERROR_OK)
+        err = r_tls_server_change_state (server, R_TLS_SERVER_CHANGE_CIPHER);
+      else if (rr == R_TLS_ERROR_NOT_NEEDED)
+        err = r_tls_server_change_state (server, R_TLS_SERVER_CERTIFICATE);
+      else
+        err = rr;   /* resume committed then failed: abort, do not fall back */
+    }
   }
 
   switch (err) {
@@ -2055,8 +2104,13 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
 
       if (server->resumed) {
         /* Abbreviated flight: the server Finished is sent now, ahead of the
-         * client's. The client answers with its ChangeCipherSpec + Finished. */
+         * client's. A fresh NewSessionTicket is reissued to refresh the
+         * lifetime (RFC 5077), before the ChangeCipherSpec so it is plaintext
+         * and folded into the server Finished's transcript. The client answers
+         * with its ChangeCipherSpec + Finished. */
         if (r_tls_server_write_hello (server) == R_TLS_ERROR_OK)
+          server->server.msgseq++;
+        if (r_tls_server_write_new_session_ticket (server) == R_TLS_ERROR_OK)
           server->server.msgseq++;
         if (r_tls_server_write_change_cipher (server) == R_TLS_ERROR_OK)
           server->encrypt = r_tls_server_cipher_encrypt;
