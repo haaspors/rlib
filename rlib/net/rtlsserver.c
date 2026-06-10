@@ -45,7 +45,7 @@ typedef enum {
 typedef RTLSError (*RTLSServerStateFunc) (RTLSServer * server, const RTLSParser * parser);
 typedef RBuffer * (*RTLSServerEncryptFunc) (RTLSServer * server, RBuffer * buf);
 typedef RTLSError (*RTLSServerDecryptFunc) (RTLSParser * parser,
-    const RCryptoCipher * cipher, RHmac * mac, rboolean etm);
+    const RCryptoCipher * cipher, RHmac * mac, rboolean etm, const ruint8 * salt);
 
 typedef struct {
   RHmac * hmac;
@@ -178,12 +178,13 @@ r_tls_server_free (RTLSServer * server)
 
 static RTLSError
 r_tls_server_null_decrypt (RTLSParser * parser, const RCryptoCipher * cipher,
-    RHmac * mac, rboolean etm)
+    RHmac * mac, rboolean etm, const ruint8 * salt)
 {
   (void) parser;
   (void) cipher;
   (void) mac;
   (void) etm;
+  (void) salt;
 
   return R_TLS_ERROR_OK;
 }
@@ -315,16 +316,24 @@ static RBuffer *
 r_tls_server_cipher_encrypt (RTLSServer * server, RBuffer * buf)
 {
   RBuffer * ret;
-  ruint8 * iv = r_alloca (server->server.cipher->info->ivsize);
 
   R_LOG_TRACE ("Encrypting buffer %p", buf);
-  r_prng_fill (server->prng, iv, server->server.cipher->info->ivsize);
-  if (r_tls_version_is_dtls (server->version)) {
-    ret = r_dtls_encrypt_buffer (buf,
-        server->server.cipher, iv, server->server.hmac, server->encrypt_then_mac);
+  if (server->server.cipher->info->mode == R_CRYPTO_CIPHER_MODE_GCM) {
+    if (r_tls_version_is_dtls (server->version))
+      ret = r_dtls_encrypt_buffer_aead (buf, server->server.cipher, server->server.fixediv);
+    else
+      ret = r_tls_encrypt_buffer_aead (buf, server->server.seqno,
+          server->server.cipher, server->server.fixediv);
   } else {
-    ret = r_tls_encrypt_buffer (buf, server->server.seqno,
-        server->server.cipher, iv, server->server.hmac, server->encrypt_then_mac);
+    ruint8 * iv = r_alloca (server->server.cipher->info->ivsize);
+    r_prng_fill (server->prng, iv, server->server.cipher->info->ivsize);
+    if (r_tls_version_is_dtls (server->version)) {
+      ret = r_dtls_encrypt_buffer (buf,
+          server->server.cipher, iv, server->server.hmac, server->encrypt_then_mac);
+    } else {
+      ret = r_tls_encrypt_buffer (buf, server->server.seqno,
+          server->server.cipher, iv, server->server.hmac, server->encrypt_then_mac);
+    }
   }
 
   return ret;
@@ -1453,13 +1462,19 @@ r_tls_server_expand_master_secret (RTLSServer * server)
         ret = R_TLS_ERROR_OOM;
     }
 
-    /* IV */
-    if (ret == R_TLS_ERROR_OK && (size = server->csinfo->cipher->ivsize) > 0) {
-      R_LOG_DEBUG ("IV from keyblock of size %u", (ruint)size);
-      server->client.fixediv = r_memdup (ptr, size); ptr += size;
-      server->server.fixediv = r_memdup (ptr, size); ptr += size;
-      if (server->client.fixediv == NULL || server->server.fixediv == NULL)
-        ret = R_TLS_ERROR_OOM;
+    /* IV — for AEAD this is the 4-byte fixed salt (ivsize-8); CBC keeps ivsize
+     * (the explicit IV is per-record). */
+    if (ret == R_TLS_ERROR_OK) {
+      const RCryptoCipherInfo * ci = server->csinfo->cipher;
+      size = (ci->mode == R_CRYPTO_CIPHER_MODE_GCM) ?
+          ci->ivsize - R_TLS_AEAD_EXPLICIT_NONCE_SIZE : ci->ivsize;
+      if (size > 0) {
+        R_LOG_DEBUG ("IV from keyblock of size %u", (ruint)size);
+        server->client.fixediv = r_memdup (ptr, size); ptr += size;
+        server->server.fixediv = r_memdup (ptr, size); ptr += size;
+        if (server->client.fixediv == NULL || server->server.fixediv == NULL)
+          ret = R_TLS_ERROR_OOM;
+      }
     }
   }
 
@@ -1981,7 +1996,7 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
 
     if (!r_tls_parser_is_dtls (&parser) || parser.epoch == server->client.epoch) {
       if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac,
-              server->encrypt_then_mac)) != R_TLS_ERROR_OK) {
+              server->encrypt_then_mac, server->client.fixediv)) != R_TLS_ERROR_OK) {
         /* A record that fails decrypt / MAC must not be processed. TLS reports
          * it as fatal bad_record_mac (RFC 5246 7.2.2); DTLS silently discards
          * the record and keeps the association (RFC 6347 4.1.2.7). */

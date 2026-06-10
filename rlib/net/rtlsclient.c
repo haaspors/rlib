@@ -44,7 +44,7 @@ typedef enum {
 typedef RTLSError (*RTLSClientStateFunc) (RTLSClient * client, const RTLSParser * parser);
 typedef RBuffer * (*RTLSClientEncryptFunc) (RTLSClient * client, RBuffer * buf);
 typedef RTLSError (*RTLSClientDecryptFunc) (RTLSParser * parser,
-    const RCryptoCipher * cipher, RHmac * mac, rboolean etm);
+    const RCryptoCipher * cipher, RHmac * mac, rboolean etm, const ruint8 * salt);
 
 typedef struct {
   RHmac * hmac;
@@ -157,9 +157,9 @@ r_tls_client_free (RTLSClient * client)
 
 static RTLSError
 r_tls_client_null_decrypt (RTLSParser * parser, const RCryptoCipher * cipher,
-    RHmac * mac, rboolean etm)
+    RHmac * mac, rboolean etm, const ruint8 * salt)
 {
-  (void) parser; (void) cipher; (void) mac; (void) etm;
+  (void) parser; (void) cipher; (void) mac; (void) etm; (void) salt;
   return R_TLS_ERROR_OK;
 }
 
@@ -244,15 +244,23 @@ static RBuffer *
 r_tls_client_cipher_encrypt (RTLSClient * client, RBuffer * buf)
 {
   RBuffer * ret;
-  ruint8 * iv = r_alloca (client->client.cipher->info->ivsize);
 
-  r_prng_fill (client->prng, iv, client->client.cipher->info->ivsize);
-  if (r_tls_version_is_dtls (client->version)) {
-    ret = r_dtls_encrypt_buffer (buf,
-        client->client.cipher, iv, client->client.hmac, client->encrypt_then_mac);
+  if (client->client.cipher->info->mode == R_CRYPTO_CIPHER_MODE_GCM) {
+    if (r_tls_version_is_dtls (client->version))
+      ret = r_dtls_encrypt_buffer_aead (buf, client->client.cipher, client->client.fixediv);
+    else
+      ret = r_tls_encrypt_buffer_aead (buf, client->client.seqno,
+          client->client.cipher, client->client.fixediv);
   } else {
-    ret = r_tls_encrypt_buffer (buf, client->client.seqno,
-        client->client.cipher, iv, client->client.hmac, client->encrypt_then_mac);
+    ruint8 * iv = r_alloca (client->client.cipher->info->ivsize);
+    r_prng_fill (client->prng, iv, client->client.cipher->info->ivsize);
+    if (r_tls_version_is_dtls (client->version)) {
+      ret = r_dtls_encrypt_buffer (buf,
+          client->client.cipher, iv, client->client.hmac, client->encrypt_then_mac);
+    } else {
+      ret = r_tls_encrypt_buffer (buf, client->client.seqno,
+          client->client.cipher, iv, client->client.hmac, client->encrypt_then_mac);
+    }
   }
 
   return ret;
@@ -659,11 +667,17 @@ r_tls_client_expand_master_secret (RTLSClient * client)
       if (client->client.cipher == NULL || client->server.cipher == NULL)
         ret = R_TLS_ERROR_OOM;
     }
-    if (ret == R_TLS_ERROR_OK && (size = client->csinfo->cipher->ivsize) > 0) {
-      client->client.fixediv = r_memdup (ptr, size); ptr += size;
-      client->server.fixediv = r_memdup (ptr, size); ptr += size;
-      if (client->client.fixediv == NULL || client->server.fixediv == NULL)
-        ret = R_TLS_ERROR_OOM;
+    /* IV — AEAD takes the 4-byte fixed salt (ivsize-8); CBC keeps ivsize. */
+    if (ret == R_TLS_ERROR_OK) {
+      const RCryptoCipherInfo * ci = client->csinfo->cipher;
+      size = (ci->mode == R_CRYPTO_CIPHER_MODE_GCM) ?
+          ci->ivsize - R_TLS_AEAD_EXPLICIT_NONCE_SIZE : ci->ivsize;
+      if (size > 0) {
+        client->client.fixediv = r_memdup (ptr, size); ptr += size;
+        client->server.fixediv = r_memdup (ptr, size); ptr += size;
+        if (client->client.fixediv == NULL || client->server.fixediv == NULL)
+          ret = R_TLS_ERROR_OOM;
+      }
     }
   }
 
@@ -1430,7 +1444,7 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
 
     if (!r_tls_parser_is_dtls (&parser) || parser.epoch == client->server.epoch) {
       if ((err = client->decrypt (&parser, client->server.cipher, client->server.hmac,
-              client->encrypt_then_mac)) != R_TLS_ERROR_OK) {
+              client->encrypt_then_mac, client->server.fixediv)) != R_TLS_ERROR_OK) {
         R_LOG_WARNING ("Decryption returned: %d", err);
         continue;
       }
