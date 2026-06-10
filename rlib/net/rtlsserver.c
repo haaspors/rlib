@@ -2006,6 +2006,18 @@ r_tls_server_state_appdata (RTLSServer * server, const RTLSParser * parser)
     } else {
       R_LOG_WARNING ("Unable to create view of TLS appdata buffer");
     }
+  } else if (parser->content == R_TLS_CONTENT_TYPE_HANDSHAKE) {
+    RTLSHandshakeType hstype;
+
+    /* A post-handshake ClientHello is a renegotiation attempt. We do not
+     * renegotiate; decline with a warning and keep the session running
+     * (RFC 5246 7.2.1). The caller flushes via send_out after dispatch. */
+    if (r_tls_parser_parse_handshake_peek_type (parser, &hstype) == R_TLS_ERROR_OK &&
+        hstype == R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO)
+      r_tls_server_emit_alert (server, R_TLS_ALERT_LEVEL_WARNING,
+          R_TLS_ALERT_TYPE_NO_RENEGOTIATION);
+    else
+      R_LOG_WARNING ("Received non-app-data record");
   } else {
     R_LOG_WARNING ("Received non-app-data record");
   }
