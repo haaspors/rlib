@@ -571,3 +571,146 @@ RTEST_F (rtlsclient, tls_ecdhe_aes256_loopback, RTEST_FAST)
   r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
 }
 RTEST_END;
+
+/* AEAD (AES-GCM) end to end for one suite/version: handshake completes, the
+ * negotiated suite is the forced GCM suite, and app data round-trips through
+ * the AEAD record path. The SHA-384 suites also exercise the per-suite PRF and
+ * transcript hash. */
+static void
+r_test_tls_gcm_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture,
+    RTLSVersion version, RTLSCipherSuite suite)
+{
+  static const ruint8 c2s[] = { 'g', 'c', 'm', '-', 'p', 'i', 'n', 'g' };
+  static const ruint8 s2c[] = { 'g', 'c', 'm', '-', 'p', 'o', 'n', 'g' };
+  const RTLSCipherSuiteInfo * info;
+  RBuffer * app;
+
+  fixture->force_suite = suite;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng, version),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  r_assert_cmpptr ((info = r_tls_client_get_cipher_suite (fixture->client)), !=, NULL);
+  r_assert_cmpint (info->suite, ==, suite);
+  r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_GCM);
+  r_assert_cmpptr ((info = r_tls_server_get_cipher_suite (fixture->server)), !=, NULL);
+  r_assert_cmpint (info->suite, ==, suite);
+  r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_GCM);
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+}
+
+RTEST_F (rtlsclient, tls_gcm_ecdhe_aes128, RTEST_FAST)
+{
+  r_test_tls_gcm_loopback (fixture, R_TLS_VERSION_TLS_1_2,
+      R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_gcm_ecdhe_aes128, RTEST_FAST)
+{
+  r_test_tls_gcm_loopback (fixture, R_TLS_VERSION_DTLS_1_2,
+      R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls_gcm_ecdhe_aes256_sha384, RTEST_FAST)
+{
+  r_test_tls_gcm_loopback (fixture, R_TLS_VERSION_TLS_1_2,
+      R_TLS_CS_ECDHE_RSA_WITH_AES_256_GCM_SHA384);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_gcm_ecdhe_aes256_sha384, RTEST_FAST)
+{
+  r_test_tls_gcm_loopback (fixture, R_TLS_VERSION_DTLS_1_2,
+      R_TLS_CS_ECDHE_RSA_WITH_AES_256_GCM_SHA384);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls_gcm_rsa_aes128, RTEST_FAST)
+{
+  r_test_tls_gcm_loopback (fixture, R_TLS_VERSION_TLS_1_2,
+      R_TLS_CS_RSA_WITH_AES_128_GCM_SHA256);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_gcm_rsa_aes128, RTEST_FAST)
+{
+  r_test_tls_gcm_loopback (fixture, R_TLS_VERSION_DTLS_1_2,
+      R_TLS_CS_RSA_WITH_AES_128_GCM_SHA256);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls_gcm_rsa_aes256_sha384, RTEST_FAST)
+{
+  r_test_tls_gcm_loopback (fixture, R_TLS_VERSION_TLS_1_2,
+      R_TLS_CS_RSA_WITH_AES_256_GCM_SHA384);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_gcm_rsa_aes256_sha384, RTEST_FAST)
+{
+  r_test_tls_gcm_loopback (fixture, R_TLS_VERSION_DTLS_1_2,
+      R_TLS_CS_RSA_WITH_AES_256_GCM_SHA384);
+}
+RTEST_END;
+
+/* A tampered AEAD record must fail the tag check: complete a GCM handshake,
+ * then flip a byte in a client application-data record before it reaches the
+ * server. The server reports bad_record_mac and never surfaces the payload. */
+RTEST_F (rtlsclient, gcm_tampered_record, RTEST_FAST)
+{
+  static const ruint8 c2s[] = { 's', 'e', 'c', 'r', 'e', 't' };
+  RBuffer * app, * rec;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  fixture->force_suite = R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+
+  /* Client emits one encrypted application-data record. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+
+  /* Corrupt the last byte (inside the GCM tag) before delivering it. */
+  r_assert_cmpptr ((rec = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_assert (r_buffer_map (rec, &info, R_MEM_MAP_RW));
+  info.data[info.size - 1] ^= 0xff;
+  r_buffer_unmap (rec, &info);
+
+  r_tls_server_incoming_data (fixture->server, rec);
+  r_buffer_unref (rec);
+
+  r_assert (fixture->srv_error);
+  r_assert (r_queue_is_empty (&fixture->srv_app));
+}
+RTEST_END;
