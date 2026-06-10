@@ -360,6 +360,39 @@ r_test_tls_build_dtls_client_hello_alpn (RPrng * prng, ruint8 * out, rsize outsz
   return hs + bodylen;
 }
 
+/* A DTLS 1.2 ClientHello (null compression, empty renegotiation_info) carrying
+ * a max_fragment_length extension with the 1-byte @value. */
+static rsize
+r_test_tls_build_dtls_client_hello_mfl (RPrng * prng, ruint8 * out, rsize outsz,
+    ruint8 value)
+{
+  ruint8 body[256];
+  ruint8 * p = body;
+  ruint8 * extlenp;
+  rsize bodylen, hs;
+
+  *p++ = 0xfe; *p++ = 0xfd;
+  r_prng_fill (prng, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  *p++ = 0;                                  /* cookie length (DTLS) */
+  r_store_be16 (p, (ruint16) sizeof (ruint16)); p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_CS_RSA_WITH_AES_128_CBC_SHA); p += 2;
+  *p++ = 1; *p++ = 0;                        /* compression: null */
+  extlenp = p; p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+  r_store_be16 (p, 1); p += 2; *p++ = 0;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_MAX_FRAGMENT_LENGTH); p += 2;
+  r_store_be16 (p, 1); p += 2; *p++ = value;
+  r_store_be16 (extlenp, (ruint16) (p - (extlenp + 2)));
+  bodylen = (rsize) (p - body);
+
+  r_assert_cmpint (r_dtls_write_handshake (out, outsz, &hs,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO,
+        (ruint16) bodylen, 0, 0, 0, 0, (ruint32) bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (out + hs, body, bodylen);
+  return hs + bodylen;
+}
+
 /* Minimal DTLS 1.2 RSA client completing a handshake against the server
  * under test. It mirrors the server's transcript hashing by feeding the
  * same handshake-message fragments, derives the master secret per RFC 7627
@@ -1485,6 +1518,216 @@ RTEST_F (rtlsserver, dtls_alpn_not_configured_ignored, RTEST_FAST)
   r_assert_cmpptr (r_tls_server_get_alpn_selected (fixture->server, &sel), ==, NULL);
   r_assert_cmpuint (sel, ==, 0);
   r_test_tls_assert_alpn_ext (&fixture->qout, NULL, 0);
+}
+RTEST_END;
+
+/* A negotiated max_fragment_length is echoed verbatim in the ServerHello. */
+RTEST_F (rtlsserver, dtls_max_fragment_echoed, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RBuffer * buf;
+  RTLSHelloMsg msg;
+  RTLSHelloExt ext;
+  RTLSError e;
+  rboolean seen = FALSE;
+  ruint8 ch[256];
+  rsize chlen;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  chlen = r_test_tls_build_dtls_client_hello_mfl (fixture->prng, ch, sizeof (ch), 2);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &msg), ==, R_TLS_ERROR_OK);
+  for (e = r_tls_hello_msg_extension_first (&msg, &ext); e == R_TLS_ERROR_OK;
+      e = r_tls_hello_msg_extension_next (&msg, &ext)) {
+    if (ext.type == R_TLS_EXT_TYPE_MAX_FRAGMENT_LENGTH) {
+      seen = TRUE;
+      r_assert_cmpuint (ext.len, ==, 1);
+      r_assert_cmpuint (ext.data[0], ==, 2);
+    }
+  }
+  r_assert (seen);
+  r_assert (!fixture->got_error);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+/* An out-of-range max_fragment_length value aborts with illegal_parameter. */
+RTEST_F (rtlsserver, dtls_max_fragment_invalid_value, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RBuffer * buf;
+  RTLSAlertLevel level = 0;
+  RTLSAlertType type = 0;
+  ruint8 ch[256];
+  rsize chlen;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  chlen = r_test_tls_build_dtls_client_hello_mfl (fixture->prng, ch, sizeof (ch), 5);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &level, &type), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (level, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (type, ==, R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  r_assert (!fixture->hs_done);
+  r_assert (fixture->got_error);
+}
+RTEST_END;
+
+/* With a 512-byte cap negotiated, the 757-byte server Certificate must be
+ * fragmented: no emitted record exceeds the cap, and the Certificate message is
+ * split into contiguous fragments (same msgseq) that reassemble to its full
+ * length. */
+RTEST_F (rtlsserver, dtls_max_fragment_fragments_handshake, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RBuffer * buf;
+  ruint8 ch[256];
+  rsize chlen;
+  RTLSError e;
+  ruint32 cert_msglen = 0, cert_next_off = 0;
+  ruint cert_frags = 0;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  chlen = r_test_tls_build_dtls_client_hello_mfl (fixture->prng, ch, sizeof (ch), 1);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  for (e = r_tls_parser_init_buffer (&parser, buf); e == R_TLS_ERROR_OK;
+      e = r_tls_parser_init_next (&parser, NULL)) {
+    r_assert_cmpuint (parser.fragment.size, <=, 512);
+    if (parser.content == R_TLS_CONTENT_TYPE_HANDSHAKE) {
+      RTLSHandshakeType t;
+      ruint32 mlen = 0, foff = 0, flen = 0;
+      ruint16 mseq = 0;
+
+      if (r_tls_parser_parse_handshake_full (&parser, &t, &mlen, &mseq, &foff, &flen)
+            == R_TLS_ERROR_OK && t == R_TLS_HANDSHAKE_TYPE_CERTIFICATE) {
+        if (cert_frags == 0)
+          cert_msglen = mlen;
+        r_assert_cmpuint (mlen, ==, cert_msglen);     /* same total length */
+        r_assert_cmpuint (foff, ==, cert_next_off);   /* contiguous */
+        cert_next_off += flen;
+        cert_frags++;
+      }
+    }
+  }
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  r_assert_cmpuint (cert_frags, >, 1);                /* it was split */
+  r_assert_cmpuint (cert_next_off, ==, cert_msglen);  /* and reassembles */
+  r_assert (!fixture->got_error);
+}
+RTEST_END;
+
+/* Application data larger than the negotiated cap is split into multiple <=cap
+ * records that reassemble to the original payload. */
+RTEST_F (rtlsserver, dtls_max_fragment_fragments_appdata, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RCryptoCipher * cipher = NULL;
+  RHmac * hmac = NULL;
+  RBuffer * buf, * app;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint8 ch[256], payload[5000], got[5200];
+  rsize chlen, gotlen = 0, i;
+  ruint nrec = 0;
+  RTLSError e;
+
+  for (i = 0; i < sizeof (payload); i++)
+    payload[i] = (ruint8) (i & 0xff);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  /* Cap 4096: the handshake flight fits (no handshake fragmentation), so the
+   * in-test client completes normally; the 5000-byte appdata then splits. */
+  chlen = r_test_tls_build_dtls_client_hello_mfl (fixture->prng, ch, sizeof (ch), 4);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+  r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
+      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac, NULL, NULL, NULL, NULL);
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+  r_assert (fixture->hs_done);
+
+  /* Drop the server's ChangeCipherSpec + Finished flight. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          payload, sizeof (payload), sizeof (payload), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  for (e = r_tls_parser_init_buffer (&parser, buf); e == R_TLS_ERROR_OK;
+      e = r_tls_parser_init_next (&parser, NULL)) {
+    r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_APPLICATION_DATA);
+    r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE, NULL), ==, R_TLS_ERROR_OK);
+    r_assert_cmpuint (parser.fragment.size, <=, 4096);
+    r_assert_cmpuint (gotlen + parser.fragment.size, <=, sizeof (got));
+    r_memcpy (got + gotlen, parser.fragment.data, parser.fragment.size);
+    gotlen += parser.fragment.size;
+    nrec++;
+  }
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  r_assert_cmpuint (nrec, >, 1);
+  r_assert_cmpuint (gotlen, ==, sizeof (payload));
+  r_assert_cmpint (r_memcmp (got, payload, sizeof (payload)), ==, 0);
+
+  r_hmac_free (hmac);
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
+/* An incoming record whose plaintext exceeds the negotiated cap is rejected
+ * with a fatal record_overflow. */
+RTEST_F (rtlsserver, dtls_max_fragment_incoming_overflow, RTEST_FAST)
+{
+  ruint8 ch[256], big[R_DTLS_RECORD_HDR_SIZE + 600];
+  rsize chlen;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  chlen = r_test_tls_build_dtls_client_hello_mfl (fixture->prng, ch, sizeof (ch), 1);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  /* A 600-byte epoch-0 record exceeds the negotiated 512-byte cap. Feed it
+   * directly (r_test_tls_server_feed asserts a TRUE return, but an over-cap
+   * record is rejected, so incoming_data returns FALSE). */
+  r_memclear (big, sizeof (big));
+  big[0] = R_TLS_CONTENT_TYPE_HANDSHAKE;
+  big[1] = 0xfe; big[2] = 0xfd;              /* DTLS 1.2 */
+  big[3] = 0; big[4] = 0;                    /* epoch 0 */
+  big[10] = 1;                               /* sequence number 1 */
+  r_store_be16 (&big[11], 600);              /* fragment length */
+  {
+    RBuffer * rec = r_buffer_new_wrapped (R_MEM_FLAG_NONE, big, sizeof (big),
+        sizeof (big), 0, NULL, NULL);
+    r_assert_cmpptr (rec, !=, NULL);
+    r_tls_server_incoming_data (fixture->server, rec);
+    r_buffer_unref (rec);
+  }
+
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_RECORD_OVERFLOW);
 }
 RTEST_END;
 
