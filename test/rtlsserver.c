@@ -58,6 +58,7 @@ RTEST_FIXTURE_STRUCT (rtlsserver)
   RTLSSessionTicketKeys * ticket_keys;
   rboolean hs_done;
   rboolean got_error;
+  rboolean closed;
   RTLSAlertType last_alert;
   ruint peer_cert_seen;        /* times verify_cert was invoked */
   rboolean reject_peer_cert;   /* make verify_cert reject the chain */
@@ -103,6 +104,14 @@ r_tlsserver_test_error (rpointer ctx, RTLSAlertType alert, rpointer session)
   fixture->last_alert = alert;
 }
 
+static void
+r_tlsserver_test_closed (rpointer ctx, rpointer session)
+{
+  RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
+  (void) session;
+  fixture->closed = TRUE;
+}
+
 static rboolean
 r_tlsserver_test_verify_cert (rpointer ctx, RCryptoCert * const * chain, ruint count)
 {
@@ -140,6 +149,7 @@ RTEST_FIXTURE_SETUP (rtlsserver)
     r_tlsserver_test_buffer_appdata,
     r_tlsserver_test_error,
     r_tlsserver_test_verify_cert,
+    r_tlsserver_test_closed,
   };
   RCryptoCert * cert;
   RCryptoKey * pk;
@@ -149,6 +159,7 @@ RTEST_FIXTURE_SETUP (rtlsserver)
   r_assert_cmpptr ((fixture->evloop = r_ev_loop_new_full (fixture->clock, NULL)), !=, NULL);
   fixture->hs_done = FALSE;
   fixture->got_error = FALSE;
+  fixture->closed = FALSE;
   fixture->last_alert = R_TLS_ALERT_TYPE_CLOSE_NOTIFY;
   fixture->peer_cert_seen = 0;
   fixture->reject_peer_cert = FALSE;
@@ -1129,6 +1140,70 @@ RTEST_F (rtlsserver, dtls_send_appdata, RTEST_FAST)
 }
 RTEST_END;
 
+/* r_tls_server_close cleanly shuts an established session down: it emits an
+ * (encrypted) warning close_notify, refuses further application data, and does
+ * not fire the closed callback (that signals a peer-initiated close). */
+RTEST_F (rtlsserver, dtls_server_close_emits_close_notify, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RCryptoCipher * cipher = NULL;
+  RHmac * hmac = NULL;
+  RBuffer * buf, * app;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint8 ch[256];
+  rsize chlen;
+  RTLSAlertLevel level = 0;
+  RTLSAlertType type = 0;
+  static const ruint8 payload[] = { 'x' };
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
+      FALSE, FALSE, FALSE, TRUE, NULL, 0, FALSE);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+  r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
+      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac, NULL, NULL);
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+  r_assert (fixture->hs_done);
+
+  /* Drop the server's ChangeCipherSpec + Finished flight. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_buffer_unref (buf);
+
+  /* Cleanly close; a second call is a no-op. */
+  r_assert (r_tls_server_close (fixture->server));
+  r_assert (!r_tls_server_close (fixture->server));
+
+  /* The emitted record is an encrypted warning close_notify at epoch 1. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpuint (parser.epoch, ==, 1);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &level, &type), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (level, ==, R_TLS_ALERT_LEVEL_WARNING);
+  r_assert_cmpuint (type, ==, R_TLS_ALERT_TYPE_CLOSE_NOTIFY);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  /* Closed: no further application data, and we initiated so closed never fired. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)payload, sizeof (payload), sizeof (payload), 0, NULL, NULL)), !=, NULL);
+  r_assert (!r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_assert (!fixture->closed);
+  r_assert (!fixture->got_error);
+
+  r_hmac_free (hmac);
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
 /* Over a (non-DTLS) TLS connection the record sequence number is implicit and
  * must advance per record: the client Finished is read seqno 0, the first
  * application_data record is seqno 1. A regression where the server MAC'd
@@ -1498,7 +1573,7 @@ r_test_tls_server_new_cfg (rpointer ctx)
 {
   static const RTLSCallbacks cbs = {
     NULL, r_tlsserver_test_hs_done, r_tlsserver_test_buffer_out,
-    r_tlsserver_test_buffer_appdata, r_tlsserver_test_error, NULL,
+    r_tlsserver_test_buffer_appdata, r_tlsserver_test_error, NULL, NULL,
   };
   RTLSServer * srv;
   RCryptoCert * cert;

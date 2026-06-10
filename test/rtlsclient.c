@@ -82,6 +82,7 @@ RTEST_FIXTURE_STRUCT (rtlsclient)
 
   rboolean srv_hs_done, cli_hs_done;
   rboolean srv_error, cli_error;
+  rboolean srv_closed, cli_closed;
   ruint verify_calls;
   rboolean verify_result;
   RTLSCipherSuite force_suite;   /* pin both endpoints to one suite; NONE = defaults */
@@ -139,6 +140,22 @@ r_tlsclient_test_cli_error (rpointer ctx, RTLSAlertType alert, rpointer session)
   fixture->cli_error = TRUE;
 }
 
+static void
+r_tlsclient_test_srv_closed (rpointer ctx, rpointer session)
+{
+  RTEST_FIXTURE_STRUCT (rtlsclient) * fixture = ctx;
+  (void) session;
+  fixture->srv_closed = TRUE;
+}
+
+static void
+r_tlsclient_test_cli_closed (rpointer ctx, rpointer session)
+{
+  RTEST_FIXTURE_STRUCT (rtlsclient) * fixture = ctx;
+  (void) session;
+  fixture->cli_closed = TRUE;
+}
+
 static rboolean
 r_tlsclient_test_srv_out (rpointer ctx, RBuffer * buf, rpointer session)
 {
@@ -189,6 +206,7 @@ RTEST_FIXTURE_SETUP (rtlsclient)
     r_tlsclient_test_srv_app,
     r_tlsclient_test_srv_error,
     NULL,
+    r_tlsclient_test_srv_closed,
   };
   static RTLSCallbacks clicbs = {
     r_tlsclient_test_prefer_ecdhe,
@@ -197,6 +215,7 @@ RTEST_FIXTURE_SETUP (rtlsclient)
     r_tlsclient_test_cli_app,
     r_tlsclient_test_cli_error,
     r_tlsclient_test_verify_cert,
+    r_tlsclient_test_cli_closed,
   };
   RCryptoCert * cert;
   RCryptoKey * pk;
@@ -207,6 +226,7 @@ RTEST_FIXTURE_SETUP (rtlsclient)
 
   fixture->srv_hs_done = fixture->cli_hs_done = FALSE;
   fixture->srv_error = fixture->cli_error = FALSE;
+  fixture->srv_closed = fixture->cli_closed = FALSE;
   fixture->verify_calls = 0;
   fixture->verify_result = TRUE;
   fixture->force_suite = R_TLS_CS_NONE;
@@ -301,6 +321,76 @@ r_test_tls_assert_appdata (RQueue * q, const ruint8 * data, rsize size)
   r_buffer_unref (buf);
 }
 
+/* Assert @buf is an alert record. The close_notify is emitted post-handshake,
+ * so its body is encrypted (only the record content type is in the clear); the
+ * decrypted warning/close_notify bytes are asserted in the rtlsserver suite. */
+static void
+r_test_tls_assert_alert_record (RBuffer * buf)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_tls_parser_clear (&parser);
+}
+
+/* Drive a handshake, then have one endpoint cleanly close: it emits a warning
+ * close_notify, the peer auto-responds (RFC 5246 7.2.1) and reports the orderly
+ * close through its closed callback, and neither side accepts further app data.
+ * The initiator is not itself notified (it requested the close). */
+static void
+r_test_tls_close_notify (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture,
+    RTLSVersion version, rboolean server_initiates)
+{
+  static const ruint8 payload[] = { 'x' };
+  RBuffer * buf;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng, version),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+
+  if (server_initiates) {
+    r_assert (r_tls_server_close (fixture->server));
+    r_assert (!r_tls_server_close (fixture->server));  /* idempotent: a no-op */
+    /* The server queued exactly its warning close_notify; deliver it. */
+    r_assert_cmpptr ((buf = r_queue_pop (&fixture->srv_out)), !=, NULL);
+    r_test_tls_assert_alert_record (buf);
+    r_tls_client_incoming_data (fixture->client, buf);
+    r_buffer_unref (buf);
+    r_assert (fixture->cli_closed);
+    r_assert (!fixture->cli_error);
+    r_assert (!fixture->srv_closed);                   /* initiator not notified */
+    /* The client auto-responded with its own warning close_notify. */
+    r_assert_cmpptr ((buf = r_queue_pop (&fixture->cli_out)), !=, NULL);
+    r_test_tls_assert_alert_record (buf);
+    r_buffer_unref (buf);
+  } else {
+    r_assert (r_tls_client_close (fixture->client));
+    r_assert (!r_tls_client_close (fixture->client));  /* idempotent: a no-op */
+    r_assert_cmpptr ((buf = r_queue_pop (&fixture->cli_out)), !=, NULL);
+    r_test_tls_assert_alert_record (buf);
+    r_tls_server_incoming_data (fixture->server, buf);
+    r_buffer_unref (buf);
+    r_assert (fixture->srv_closed);
+    r_assert (!fixture->srv_error);
+    r_assert (!fixture->cli_closed);                   /* initiator not notified */
+    r_assert_cmpptr ((buf = r_queue_pop (&fixture->srv_out)), !=, NULL);
+    r_test_tls_assert_alert_record (buf);
+    r_buffer_unref (buf);
+  }
+
+  /* A closed session refuses application data in either direction. */
+  r_assert_cmpptr ((buf = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)payload, sizeof (payload), sizeof (payload), 0, NULL, NULL)), !=, NULL);
+  r_assert (!r_tls_client_send_appdata (fixture->client, buf));
+  r_assert (!r_tls_server_send_appdata (fixture->server, buf));
+  r_buffer_unref (buf);
+}
+
 static void
 r_test_tls_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture, RTLSVersion version)
 {
@@ -354,6 +444,30 @@ RTEST_END;
 RTEST_F (rtlsclient, dtls_loopback, RTEST_FAST)
 {
   r_test_tls_loopback (fixture, R_TLS_VERSION_DTLS_1_2);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls_close_notify_client, RTEST_FAST)
+{
+  r_test_tls_close_notify (fixture, R_TLS_VERSION_TLS_1_2, FALSE);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_close_notify_client, RTEST_FAST)
+{
+  r_test_tls_close_notify (fixture, R_TLS_VERSION_DTLS_1_2, FALSE);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls_close_notify_server, RTEST_FAST)
+{
+  r_test_tls_close_notify (fixture, R_TLS_VERSION_TLS_1_2, TRUE);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_close_notify_server, RTEST_FAST)
+{
+  r_test_tls_close_notify (fixture, R_TLS_VERSION_DTLS_1_2, TRUE);
 }
 RTEST_END;
 
