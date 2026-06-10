@@ -667,6 +667,19 @@ r_tls_server_write_hs_ext_alpn (const RTLSServer * server, ruint8 * ptr)
   return 7 + len;
 }
 
+static ruint16
+r_tls_server_write_hs_ext_max_fragment_length (const RTLSServer * server, ruint8 * ptr)
+{
+  if (server->max_fragment == 0)
+    return 0;
+
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_MAX_FRAGMENT_LENGTH);
+  r_store_be16 (&ptr[2], 1);            /* extension_data is a single byte */
+  ptr[4] = server->max_fragment;        /* echo the negotiated value (1..4) */
+
+  return 5;
+}
+
 static RTLSError
 r_tls_server_write_hello (RTLSServer * server)
 {
@@ -721,6 +734,7 @@ r_tls_server_write_hello (RTLSServer * server)
     extsize += r_tls_server_write_hs_ext_ec_point_formats (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_use_srtp (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_alpn (server, ptr + 2 + extsize);
+    extsize += r_tls_server_write_hs_ext_max_fragment_length (server, ptr + 2 + extsize);
 
     if (extsize > 0) {
       r_store_be16 (ptr, extsize);
@@ -1461,6 +1475,7 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   server->encrypt_then_mac = FALSE;
   server->dtls_srtp_profile = R_SRTP_CS_NONE;
   server->alpn_selected = NULL;
+  server->max_fragment = 0;
 
   for (r = r_tls_hello_msg_extension_first (&server->hello, &hsext);
       r == R_TLS_ERROR_OK;
@@ -1540,6 +1555,14 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
             server->alpn_selected_len = plen;
           }
         }
+        break;
+      case R_TLS_EXT_TYPE_MAX_FRAGMENT_LENGTH:
+        /* RFC 6066: a single byte, 1..4 -> 2^9..2^12. Any other value (or a
+         * malformed length) is illegal. The cap is echoed in the ServerHello
+         * and enforced on both directions. */
+        if (hsext.len != 1 || hsext.data[0] < 1 || hsext.data[0] > 4)
+          return R_TLS_ERROR_ILLEGAL_PARAMETER;
+        server->max_fragment = hsext.data[0];
         break;
       default:
         break;
@@ -2346,6 +2369,15 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
           r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
         continue;
       }
+    }
+
+    /* Honour a negotiated max_fragment_length: a plaintext fragment larger than
+     * the cap is a fatal record_overflow (RFC 6066). */
+    if (server->max_fragment != 0 &&
+        parser.fragment.size > ((rsize) 1u << (8 + server->max_fragment))) {
+      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_RECORD_OVERFLOW);
+      err = R_TLS_ERROR_RECORD_OVERFLOW;
+      break;
     }
 
     /* Count the accepted record. A ChangeCipherSpec resets the read counter
