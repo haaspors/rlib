@@ -61,6 +61,7 @@ RTEST_FIXTURE_STRUCT (rtlsclient)
   rboolean srv_error, cli_error;
   ruint verify_calls;
   rboolean verify_result;
+  rboolean force_ecdhe;          /* offer only ECDHE_RSA on both endpoints */
 
   RClock * clock;
   REvLoop * evloop;
@@ -69,6 +70,19 @@ RTEST_FIXTURE_STRUCT (rtlsclient)
   RQueue srv_out, cli_out;       /* records each side emits */
   RQueue srv_app, cli_app;       /* decrypted application data each side received */
 };
+
+static rboolean
+r_tlsclient_test_prefer_ecdhe (rpointer ctx, RTLSVersion ver,
+    RTLSCipherSuite * cs, rsize * count)
+{
+  RTEST_FIXTURE_STRUCT (rtlsclient) * fixture = ctx;
+  (void) ver;
+  if (!fixture->force_ecdhe)
+    return FALSE;                /* fall back to the library defaults (RSA) */
+  *count = 1;
+  cs[0] = R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256;
+  return TRUE;
+}
 
 static void
 r_tlsclient_test_srv_hs_done (rpointer ctx, rpointer session)
@@ -146,7 +160,7 @@ r_tlsclient_test_verify_cert (rpointer ctx, RCryptoCert * const * chain, ruint c
 RTEST_FIXTURE_SETUP (rtlsclient)
 {
   static RTLSCallbacks srvcbs = {
-    NULL,
+    r_tlsclient_test_prefer_ecdhe,
     r_tlsclient_test_srv_hs_done,
     r_tlsclient_test_srv_out,
     r_tlsclient_test_srv_app,
@@ -154,7 +168,7 @@ RTEST_FIXTURE_SETUP (rtlsclient)
     NULL,
   };
   static RTLSCallbacks clicbs = {
-    NULL,
+    r_tlsclient_test_prefer_ecdhe,
     r_tlsclient_test_cli_hs_done,
     r_tlsclient_test_cli_out,
     r_tlsclient_test_cli_app,
@@ -172,6 +186,7 @@ RTEST_FIXTURE_SETUP (rtlsclient)
   fixture->srv_error = fixture->cli_error = FALSE;
   fixture->verify_calls = 0;
   fixture->verify_result = TRUE;
+  fixture->force_ecdhe = FALSE;
 
   r_queue_init (&fixture->srv_out);
   r_queue_init (&fixture->cli_out);
@@ -398,5 +413,103 @@ RTEST_F (rtlsclient, tls_mtls_require_no_client_cert, RTEST_FAST)
   r_assert (!fixture->cli_hs_done);
   r_assert (fixture->srv_error);
   r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), ==, NULL);
+}
+RTEST_END;
+
+/* ECDHE_RSA end-to-end: both endpoints offer only the ECDHE suite, so the
+ * handshake exercises the ServerKeyExchange signature, the ephemeral ECDH
+ * agreement, and the variable-length premaster on both sides. */
+static void
+r_test_tls_ecdhe_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture, RTLSVersion version)
+{
+  static const ruint8 c2s[] = { 'e', 'c', 'd', 'h', 'e' };
+  static const ruint8 s2c[] = { 'o', 'k' };
+  const RTLSCipherSuiteInfo * info;
+  RBuffer * app;
+
+  fixture->force_ecdhe = TRUE;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng, version),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  /* Forward secrecy: both sides negotiated the ephemeral-ECDH suite. */
+  r_assert_cmpptr ((info = r_tls_client_get_cipher_suite (fixture->client)), !=, NULL);
+  r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_ECDHE_RSA);
+  r_assert_cmpptr ((info = r_tls_server_get_cipher_suite (fixture->server)), !=, NULL);
+  r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_ECDHE_RSA);
+
+  /* Application data round-trips over the established keys. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+}
+
+RTEST_F (rtlsclient, tls_ecdhe_loopback, RTEST_FAST)
+{
+  r_test_tls_ecdhe_loopback (fixture, R_TLS_VERSION_TLS_1_2);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_ecdhe_loopback, RTEST_FAST)
+{
+  r_test_tls_ecdhe_loopback (fixture, R_TLS_VERSION_DTLS_1_2);
+}
+RTEST_END;
+
+/* A duplicated ServerKeyExchange must abort the handshake: the client accepts
+ * exactly one SKE (a second would otherwise replace the ephemeral keys). */
+RTEST_F (rtlsclient, tls_ecdhe_duplicate_ske, RTEST_FAST)
+{
+  RBuffer * buf;
+
+  fixture->force_ecdhe = TRUE;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  /* ClientHello -> server; then replay the server's SKE record to the client. */
+  while ((buf = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_tls_server_incoming_data (fixture->server, buf);
+    r_buffer_unref (buf);
+  }
+  while ((buf = r_queue_pop (&fixture->srv_out)) != NULL) {
+    RTLSParser parser = R_TLS_PARSER_INIT;
+    RTLSHandshakeType type = (RTLSHandshakeType)0;
+    rboolean is_ske;
+
+    r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+    is_ske = r_tls_parser_parse_handshake_peek_type (&parser, &type) == R_TLS_ERROR_OK &&
+        type == R_TLS_HANDSHAKE_TYPE_SERVER_KEY_EXCHANGE;
+    r_tls_parser_clear (&parser);
+
+    r_tls_client_incoming_data (fixture->client, buf);
+    if (is_ske)
+      r_tls_client_incoming_data (fixture->client, buf);
+    r_buffer_unref (buf);
+  }
+
+  r_assert (fixture->cli_error);
+  r_assert (!fixture->cli_hs_done);
 }
 RTEST_END;

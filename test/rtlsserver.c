@@ -61,6 +61,7 @@ RTEST_FIXTURE_STRUCT (rtlsserver)
   RTLSAlertType last_alert;
   ruint peer_cert_seen;        /* times verify_cert was invoked */
   rboolean reject_peer_cert;   /* make verify_cert reject the chain */
+  rboolean prefer_ecdhe;       /* server offers only ECDHE_RSA */
 
   RClock * clock;
   REvLoop * evloop;
@@ -69,6 +70,19 @@ RTEST_FIXTURE_STRUCT (rtlsserver)
   RQueue qout;
   RQueue qapp;
 };
+
+static rboolean
+r_tlsserver_test_prefer_ecdhe (rpointer ctx, RTLSVersion ver,
+    RTLSCipherSuite * cs, rsize * count)
+{
+  RTEST_FIXTURE_STRUCT (rtlsserver) * fixture = ctx;
+  (void) ver;
+  if (!fixture->prefer_ecdhe)
+    return FALSE;                /* fall back to the library defaults (RSA) */
+  *count = 1;
+  cs[0] = R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256;
+  return TRUE;
+}
 
 static void
 r_tlsserver_test_hs_done (rpointer ctx, rpointer session)
@@ -118,7 +132,7 @@ r_tlsserver_test_buffer_appdata (rpointer ctx, RBuffer * buf, rpointer session)
 RTEST_FIXTURE_SETUP (rtlsserver)
 {
   static RTLSCallbacks cbs = {
-    NULL,
+    r_tlsserver_test_prefer_ecdhe,
     r_tlsserver_test_hs_done,
     r_tlsserver_test_buffer_out,
     r_tlsserver_test_buffer_appdata,
@@ -136,6 +150,7 @@ RTEST_FIXTURE_SETUP (rtlsserver)
   fixture->last_alert = R_TLS_ALERT_TYPE_CLOSE_NOTIFY;
   fixture->peer_cert_seen = 0;
   fixture->reject_peer_cert = FALSE;
+  fixture->prefer_ecdhe = FALSE;
 
   r_queue_init (&fixture->qout);
   r_queue_init (&fixture->qapp);
@@ -2528,5 +2543,165 @@ RTEST_F (rtlsserver, tls_mtls_verify_cert_rejects, RTEST_FAST)
   r_assert (fixture->got_error);
   r_assert_cmpuint (fixture->peer_cert_seen, ==, 1);
   r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_BAD_CERTIFICATE);
+}
+RTEST_END;
+
+/* Build a minimal TLS 1.2 ClientHello offering only the ECDHE_RSA suite and a
+ * single supported_group, with uncompressed ec_point_formats. The 32-byte
+ * client random is copied to @clirandom for later signature verification. */
+static rsize
+r_test_tls_build_ecdhe_client_hello (RPrng * prng, RTLSSupportedGroup group,
+    ruint8 * clirandom, ruint8 * out, rsize outsz)
+{
+  ruint8 body[128];
+  ruint8 * p = body;
+  ruint8 * extlenp;
+  rsize bodylen, hs;
+
+  *p++ = 0x03; *p++ = 0x03;                  /* client_version TLS 1.2 */
+  r_prng_fill (prng, p, R_TLS_HELLO_RANDOM_BYTES);
+  r_memcpy (clirandom, p, R_TLS_HELLO_RANDOM_BYTES);
+  p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  r_store_be16 (p, sizeof (ruint16)); p += 2;
+  r_store_be16 (p, (ruint16)R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256); p += 2;
+  *p++ = 1; *p++ = 0;                        /* compression: null */
+  extlenp = p; p += 2;                       /* extensions length placeholder */
+  /* supported_groups: one named group */
+  r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_SUPPORTED_GROUPS); p += 2;
+  r_store_be16 (p, 2 + sizeof (ruint16)); p += 2;
+  r_store_be16 (p, sizeof (ruint16)); p += 2;
+  r_store_be16 (p, (ruint16)group); p += 2;
+  /* ec_point_formats: uncompressed */
+  r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_EC_POINT_FORMATS); p += 2;
+  r_store_be16 (p, 2); p += 2;
+  *p++ = 1; *p++ = R_TLS_EC_POINT_FORMAT_UNCOMPRESSED;
+  r_store_be16 (extlenp, (ruint16)(p - (extlenp + 2)));
+  bodylen = (rsize)(p - body);
+
+  r_assert_cmpint (r_tls_write_handshake (out, outsz, &hs, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO, (ruint16)bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (out + hs, body, bodylen);
+  return hs + bodylen;
+}
+
+/* Drive the server through the ECDHE flight with a hand-built ClientHello and
+ * independently verify the ServerKeyExchange signature against the server's
+ * own certificate -- this validates the server's SKE format and signing
+ * without relying on the rlib client. Runs for the given named group/curve. */
+static void
+r_test_tls_server_ecdhe_ske (RTEST_FIXTURE_STRUCT (rtlsserver) * fixture,
+    RTLSSupportedGroup group, rsize expected_pointlen)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RBuffer * flight;
+  ruint8 ch[256];
+  ruint8 clirandom[R_TLS_HELLO_RANDOM_BYTES];
+  ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES];
+  ruint8 tbs[2 * R_TLS_HELLO_RANDOM_BYTES + 4 + 65];
+  ruint8 hash[64];
+  rsize chlen, tbslen = 0, hashsize;
+  RCryptoCert * leaf;
+  RCryptoKey * pub;
+  RMsgDigest * md;
+  RTLSEcCurveType curve_type;
+  RTLSSupportedGroup named_curve;
+  const ruint8 * point, * sig, * signed_params;
+  ruint8 pointlen;
+  RTLSSignatureScheme scheme;
+  ruint16 sigsize;
+  rsize signed_params_len;
+  RTLSCertificate tlscert = R_TLS_CERTIFICATE_INIT;
+  RTLSHandshakeType hs;
+  ruint32 l;
+
+  fixture->prefer_ecdhe = TRUE;
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_ecdhe_client_hello (fixture->prng, group, clirandom,
+      ch, sizeof (ch));
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+  r_assert (!fixture->got_error);
+
+  r_assert_cmpptr ((flight = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, flight), ==, R_TLS_ERROR_OK);
+
+  /* ServerHello -> server random + negotiated suite. */
+  {
+    RTLSHelloMsg msg;
+    r_assert_cmpint (r_tls_parser_parse_hello (&parser, &msg), ==, R_TLS_ERROR_OK);
+    r_assert_cmphex (r_tls_hello_msg_cipher_suite (&msg, 0), ==,
+        R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256);
+    r_memcpy (servrandom, msg.random, R_TLS_HELLO_RANDOM_BYTES);
+  }
+
+  /* Certificate -> leaf public key for verification. */
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_handshake_full (&parser, &hs, &l, NULL, NULL, NULL),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hs, ==, R_TLS_HANDSHAKE_TYPE_CERTIFICATE);
+  r_assert_cmpint (r_tls_parser_parse_certificate_next (&parser, &tlscert), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((leaf = r_tls_certificate_get_cert (&tlscert)), !=, NULL);
+  r_assert_cmpptr ((pub = r_crypto_cert_get_public_key (leaf)), !=, NULL);
+
+  /* ServerKeyExchange -> parse + verify signature. */
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_handshake_full (&parser, &hs, &l, NULL, NULL, NULL),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hs, ==, R_TLS_HANDSHAKE_TYPE_SERVER_KEY_EXCHANGE);
+  r_assert_cmpint (r_tls_parser_parse_server_key_exchange_ecdhe (&parser, &curve_type,
+        &named_curve, &point, &pointlen, &scheme, &sig, &sigsize,
+        &signed_params, &signed_params_len), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (curve_type, ==, R_TLS_EC_TYPE_NAMED_CURVE);
+  r_assert_cmphex (named_curve, ==, group);
+  r_assert_cmpuint (pointlen, ==, expected_pointlen);
+  r_assert_cmphex (scheme, ==, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256);
+
+  r_memcpy (tbs + tbslen, clirandom, R_TLS_HELLO_RANDOM_BYTES); tbslen += R_TLS_HELLO_RANDOM_BYTES;
+  r_memcpy (tbs + tbslen, servrandom, R_TLS_HELLO_RANDOM_BYTES); tbslen += R_TLS_HELLO_RANDOM_BYTES;
+  r_memcpy (tbs + tbslen, signed_params, signed_params_len); tbslen += signed_params_len;
+
+  r_assert_cmpptr ((md = r_sha256_new ()), !=, NULL);
+  r_msg_digest_update (md, tbs, tbslen);
+  hashsize = r_msg_digest_size (md);
+  r_assert (r_msg_digest_get_data (md, hash, hashsize, NULL));
+  r_msg_digest_free (md);
+
+  r_assert_cmpint (r_crypto_key_verify (pub, R_MSG_DIGEST_TYPE_SHA256, hash, hashsize,
+        sig, sigsize), ==, R_CRYPTO_OK);
+
+  /* A flipped signature byte must fail to verify. */
+  {
+    ruint8 * bad = r_alloca (sigsize);
+    r_memcpy (bad, sig, sigsize);
+    bad[0] ^= 0xff;
+    r_assert_cmpint (r_crypto_key_verify (pub, R_MSG_DIGEST_TYPE_SHA256, hash, hashsize,
+          bad, sigsize), !=, R_CRYPTO_OK);
+  }
+
+  /* ServerHelloDone closes the flight. */
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_handshake_full (&parser, &hs, &l, NULL, NULL, NULL),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hs, ==, R_TLS_HANDSHAKE_TYPE_SERVER_HELLO_DONE);
+
+  r_crypto_key_unref (pub);
+  r_crypto_cert_unref (leaf);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (flight);
+}
+
+RTEST_F (rtlsserver, ecdhe_ske_secp256r1, RTEST_FAST)
+{
+  /* secp256r1 SEC 1 uncompressed point: 0x04 || X(32) || Y(32) = 65 bytes. */
+  r_test_tls_server_ecdhe_ske (fixture, R_TLS_SUPPORTED_GROUP_SECP256R1, 65);
+}
+RTEST_END;
+
+RTEST_F (rtlsserver, ecdhe_ske_x25519, RTEST_FAST)
+{
+  /* x25519 raw u-coordinate: 32 bytes. */
+  r_test_tls_server_ecdhe_ske (fixture, R_TLS_SUPPORTED_GROUP_X25519, 32);
 }
 RTEST_END;
