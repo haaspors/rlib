@@ -92,6 +92,7 @@ struct RTLSServer {
   rsize alpn_count;
   const rchar * alpn_selected;          /* negotiated protocol, points into alpn_protocols */
   rsize alpn_selected_len;
+  ruint8 max_fragment;                  /* negotiated max_fragment_length (RFC 6066): 0 none, else 1..4 */
   ruint8 * ticket;
   ruint16 ticketsize;
   RTLSSessionTicketKeys * ticket_keys;  /* shared STEK store; NULL disables tickets */
@@ -131,6 +132,23 @@ _r_write_u24 (ruint8 * ptr, ruint32 u24)
   *ptr++ = (ruint8)(u24 >> 16) & 0xff;
   *ptr++ = (ruint8)(u24 >>  8) & 0xff;
   *ptr++ = (ruint8)(u24      ) & 0xff;
+}
+
+static inline ruint32
+_r_read_u24 (const ruint8 * ptr)
+{
+  return ((ruint32)ptr[0] << 16) | ((ruint32)ptr[1] << 8) | (ruint32)ptr[2];
+}
+
+static inline void
+_r_write_u48 (ruint8 * ptr, ruint64 u48)
+{
+  *ptr++ = (ruint8)(u48 >> 40) & 0xff;
+  *ptr++ = (ruint8)(u48 >> 32) & 0xff;
+  *ptr++ = (ruint8)(u48 >> 24) & 0xff;
+  *ptr++ = (ruint8)(u48 >> 16) & 0xff;
+  *ptr++ = (ruint8)(u48 >>  8) & 0xff;
+  *ptr++ = (ruint8)(u48      ) & 0xff;
 }
 
 void
@@ -394,7 +412,7 @@ r_tls_server_cipher_encrypt (RTLSServer * server, RBuffer * buf)
 }
 
 static RTLSError
-r_tls_server_send_record (RTLSServer * server, RBuffer * buf)
+r_tls_server_send_record_one (RTLSServer * server, RBuffer * buf)
 {
   RTLSError ret;
   RBuffer * encbuf;
@@ -411,6 +429,130 @@ r_tls_server_send_record (RTLSServer * server, RBuffer * buf)
     ret = R_TLS_ERROR_ENCRYPTION_FAILED;
   }
 
+  return ret;
+}
+
+/* Build and send one record (content type @ct) carrying @body[@bodylen], which
+ * already fits the fragment cap. Uses the current write seqno (DTLS records
+ * carry it in the header; send_record_one then advances it). */
+static RTLSError
+r_tls_server_send_slice (RTLSServer * server, rboolean dtls, ruint8 ct,
+    ruint16 ver, ruint16 epoch, const ruint8 * body, rsize bodylen)
+{
+  RBuffer * rec;
+  RMemMapInfo out = R_MEM_MAP_INFO_INIT;
+  rsize hdrlen = dtls ? R_DTLS_RECORD_HDR_SIZE : R_TLS_RECORD_HDR_SIZE;
+  RTLSError ret = R_TLS_ERROR_OOM;
+
+  if ((rec = r_buffer_new_alloc (NULL, hdrlen + bodylen, NULL)) == NULL)
+    return R_TLS_ERROR_OOM;
+
+  if (r_buffer_map (rec, &out, R_MEM_MAP_WRITE)) {
+    ruint8 * p = out.data;
+
+    p[0] = ct;
+    r_store_be16 (&p[1], ver);
+    if (dtls) {
+      r_store_be16 (&p[3], epoch);
+      _r_write_u48 (&p[5], server->server.seqno);
+      r_store_be16 (&p[11], (ruint16) bodylen);
+    } else {
+      r_store_be16 (&p[3], (ruint16) bodylen);
+    }
+    r_memcpy (p + hdrlen, body, bodylen);
+    r_buffer_unmap (rec, &out);
+    r_buffer_set_size (rec, hdrlen + bodylen);
+    ret = r_tls_server_send_record_one (server, rec);
+  }
+
+  r_buffer_unref (rec);
+  return ret;
+}
+
+/* Send a complete plaintext record, honouring a negotiated max_fragment_length
+ * (RFC 6066): a payload larger than the cap is split into multiple <=cap records
+ * before encryption, each with its own write sequence number. With no cap (or a
+ * record that already fits) the buffer is encrypted and queued unchanged. */
+static RTLSError
+r_tls_server_send_record (RTLSServer * server, RBuffer * buf)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rboolean dtls = r_tls_version_is_dtls (server->version);
+  rsize hdrlen = dtls ? R_DTLS_RECORD_HDR_SIZE : R_TLS_RECORD_HDR_SIZE;
+  rsize cap = server->max_fragment ? ((rsize) 1u << (8 + server->max_fragment)) : 0;
+  RTLSError ret;
+  ruint8 ct;
+  ruint16 ver, epoch = 0;
+  const ruint8 * pay;
+  rsize paylen, off;
+
+  /* Fast path: no cap negotiated, or the record payload already fits. */
+  if (cap == 0 || r_buffer_get_size (buf) <= hdrlen + cap)
+    return r_tls_server_send_record_one (server, buf);
+
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_READ))
+    return R_TLS_ERROR_OOM;
+  ct = info.data[0];
+  ver = r_load_be16 (&info.data[1]);
+  if (dtls)
+    epoch = r_load_be16 (&info.data[3]);
+  pay = info.data + hdrlen;
+  paylen = info.size - hdrlen;
+  ret = R_TLS_ERROR_OK;
+
+  if (dtls && ct == R_TLS_CONTENT_TYPE_HANDSHAKE) {
+    /* DTLS handshake messages are not a byte stream: reframe into <=cap
+     * fragments, each repeating the handshake header with its own
+     * fragment_offset / fragment_length (same message sequence). */
+    const ruint8 * hs = pay;
+    ruint8 hstype = hs[0];
+    ruint32 msglen = _r_read_u24 (&hs[1]);
+    ruint16 msgseq = r_load_be16 (&hs[4]);
+    const ruint8 * mbody = hs + R_DTLS_HS_HDR_SIZE;
+    rsize chunkmax = cap - R_DTLS_HS_HDR_SIZE;
+    ruint32 foff;
+
+    for (foff = 0; foff < msglen && ret == R_TLS_ERROR_OK; foff += (ruint32) chunkmax) {
+      rsize chunk = MIN (chunkmax, msglen - foff);
+      RBuffer * rec;
+      RMemMapInfo out = R_MEM_MAP_INFO_INIT;
+      rsize reclen = R_DTLS_RECORD_HDR_SIZE + R_DTLS_HS_HDR_SIZE + chunk;
+
+      ret = R_TLS_ERROR_OOM;
+      if ((rec = r_buffer_new_alloc (NULL, reclen, NULL)) != NULL) {
+        if (r_buffer_map (rec, &out, R_MEM_MAP_WRITE)) {
+          ruint8 * p = out.data;
+
+          /* Record header: the record carries only this fragment's bytes. */
+          p[0] = R_TLS_CONTENT_TYPE_HANDSHAKE;
+          r_store_be16 (&p[1], ver);
+          r_store_be16 (&p[3], epoch);
+          _r_write_u48 (&p[5], server->server.seqno);
+          r_store_be16 (&p[11], (ruint16) (R_DTLS_HS_HDR_SIZE + chunk));
+          /* Handshake header: the length is the whole message; this fragment
+           * covers [foff, foff+chunk). */
+          p[13] = hstype;
+          _r_write_u24 (&p[14], msglen);
+          r_store_be16 (&p[17], msgseq);
+          _r_write_u24 (&p[19], foff);
+          _r_write_u24 (&p[22], (ruint32) chunk);
+          r_memcpy (p + R_DTLS_RECORD_HDR_SIZE + R_DTLS_HS_HDR_SIZE, mbody + foff, chunk);
+          r_buffer_unmap (rec, &out);
+          r_buffer_set_size (rec, reclen);
+          ret = r_tls_server_send_record_one (server, rec);
+        }
+        r_buffer_unref (rec);
+      }
+    }
+  } else {
+    /* TLS (any content type, a record-layer byte stream) and DTLS
+     * application data: slice the payload into <=cap records. */
+    for (off = 0; off < paylen && ret == R_TLS_ERROR_OK; off += cap)
+      ret = r_tls_server_send_slice (server, dtls, ct, ver, epoch,
+          pay + off, MIN (cap, paylen - off));
+  }
+
+  r_buffer_unmap (buf, &info);
   return ret;
 }
 
