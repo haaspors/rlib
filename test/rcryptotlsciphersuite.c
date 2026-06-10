@@ -16,6 +16,9 @@ RTEST (rtlsciphersuite, is_supported, RTEST_FAST)
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_AES_128_CBC_SHA));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256));
 
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256));
+
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_NULL_MD5));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_NULL_SHA));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_NULL_SHA256));
@@ -38,6 +41,13 @@ RTEST (rtlsciphersuite, get_info, RTEST_FAST)
   r_assert_cmpuint (info->cipher->keybits, ==, 128);
   r_assert_cmpuint (info->cipher->ivsize, ==, 16);
   r_assert_cmpuint (info->cipher->blocksize, ==, R_AES_BLOCK_BYTES);
+  r_assert_cmpint (info->mac, ==, R_MSG_DIGEST_TYPE_SHA256);
+
+  r_assert_cmpptr ((info = r_tls_cipher_suite_get_info (R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256)), !=, NULL);
+  r_assert_cmpint (info->suite, ==, R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256);
+  r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_ECDHE_RSA);
+  r_assert_cmpint (info->cipher->type, ==, R_CRYPTO_CIPHER_ALGO_AES);
+  r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_CBC);
   r_assert_cmpint (info->mac, ==, R_MSG_DIGEST_TYPE_SHA256);
 
   r_assert_cmpptr ((info = r_tls_cipher_suite_get_info (R_TLS_CS_NULL_WITH_NULL_NULL)), !=, NULL);
