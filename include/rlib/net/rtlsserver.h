@@ -173,6 +173,21 @@ R_API RCryptoCert * r_tls_server_get_peer_cert (const RTLSServer * server);
  */
 R_API RTLSError r_tls_server_set_session_ticket_keys (RTLSServer * server,
     RTLSSessionTicketKeys * keys);
+/**
+ * @brief Configure the application protocols the server supports for ALPN
+ * (RFC 7301), in descending order of preference.
+ *
+ * Each @p protocols entry is a NUL-terminated protocol name (e.g. @c "h2",
+ * @c "http/1.1"); names are copied. When a client offers ALPN the server picks
+ * the first configured protocol the client also lists (server preference) and
+ * echoes it in the ServerHello; if none match the handshake aborts with a fatal
+ * @c no_application_protocol alert. With no protocols configured (the default)
+ * the server does not negotiate ALPN. Must be set before the handshake starts.
+ * Returns @c R_TLS_ERROR_INVAL if any name is empty or longer than 255 bytes.
+ * Call with @p count 0 to clear a previously configured list.
+ */
+R_API RTLSError r_tls_server_set_alpn_protocols (RTLSServer * server,
+    const rchar * const * protocols, rsize count);
 /** @brief Override the server-random (testing / determinism). */
 R_API RTLSError r_tls_server_set_random (RTLSServer * server,
     const ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES]);
@@ -209,6 +224,13 @@ R_API const RTLSCipherSuiteInfo * r_tls_server_get_cipher_suite (const RTLSServe
 R_API RSRTPCipherSuite r_tls_server_get_dtls_srtp_profile (const RTLSServer * server);
 /** @brief Negotiated DTLS-SRTP MKI; @p size receives its byte length. */
 R_API const ruint8 * r_tls_server_get_dtls_srtp_mki (const RTLSServer * server, ruint8 * size);
+/**
+ * @brief Negotiated ALPN protocol, or @c NULL if none was negotiated.
+ *
+ * Returns the protocol selected during the handshake (NUL-terminated); @p len,
+ * when non-@c NULL, receives its length. See @ref r_tls_server_set_alpn_protocols.
+ */
+R_API const rchar * r_tls_server_get_alpn_selected (const RTLSServer * server, rsize * len);
 
 R_END_DECLS
 
