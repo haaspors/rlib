@@ -44,11 +44,20 @@ r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme, RMsgDigestType * md)
 {
   switch (scheme) {
     case R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256:
+    case R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256:
       *md = R_MSG_DIGEST_TYPE_SHA256;
       return TRUE;
     default:
       return FALSE;
   }
+}
+
+RTLSSignatureScheme
+r_tls_sign_scheme_for_key (const RCryptoKey * key)
+{
+  return (r_crypto_key_get_algo (key) == R_CRYPTO_ALGO_ECDSA) ?
+      R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256 :
+      R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256;
 }
 
 rboolean

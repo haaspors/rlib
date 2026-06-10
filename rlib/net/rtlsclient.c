@@ -760,8 +760,10 @@ r_tls_client_send_certificate_verify (RTLSClient * client)
   ruint8 hash[64], sig[512];
   rsize hashsize = r_msg_digest_size (client->hshash);
   rsize sigsize = sizeof (sig);
+  RTLSSignatureScheme sigscheme = r_tls_sign_scheme_for_key (client->privkey);
 
-  /* Sign the transcript through ClientKeyExchange (current hshash). */
+  /* Sign the transcript through ClientKeyExchange (current hshash); the scheme
+   * follows the client cert key (RSA or ECDSA), both SHA-256. */
   if (!r_msg_digest_get_data (client->hshash, hash, hashsize, NULL))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   if (r_crypto_key_sign (client->privkey, client->prng, R_MSG_DIGEST_TYPE_SHA256,
@@ -790,7 +792,7 @@ r_tls_client_send_certificate_verify (RTLSClient * client)
 
     if (ret == R_TLS_ERROR_OK &&
         (ret = r_tls_write_hs_certificate_verify (info.data + hssize, info.size - hssize,
-            &bodylen, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256, sig, (ruint16)sigsize)) == R_TLS_ERROR_OK) {
+            &bodylen, sigscheme, sig, (ruint16)sigsize)) == R_TLS_ERROR_OK) {
       r_msg_digest_update (client->hshash, info.data + hdrsize,
           (hssize + bodylen) - hdrsize);
       r_buffer_unmap (buf, &info);
