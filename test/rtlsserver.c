@@ -2267,14 +2267,36 @@ r_test_tls_client_resume (RTLSServer * server, RPrng * prng, RQueue * qout,
   r_assert_cmpuint (hello.sidlen, >, 0);     /* a session id signals resumption */
   r_memcpy (srand, hello.random, sizeof (srand));
   {
-    /* No fresh ticket is issued on resume, so the ServerHello must not promise
-     * one with a session_ticket extension (RFC 5077 3.4). */
+    /* A fresh ticket is reissued on resume, so the ServerHello advertises a
+     * session_ticket extension (RFC 5077 3.4). */
     RTLSHelloExt ext;
     RTLSError e;
+    rboolean seen_st = FALSE;
     for (e = r_tls_hello_msg_extension_first (&hello, &ext); e == R_TLS_ERROR_OK;
         e = r_tls_hello_msg_extension_next (&hello, &ext))
-      r_assert_cmpuint (ext.type, !=, R_TLS_EXT_TYPE_SESSION_TICKET);
+      if (ext.type == R_TLS_EXT_TYPE_SESSION_TICKET)
+        seen_st = TRUE;
+    r_assert (seen_st);
   }
+
+  /* The reissued NewSessionTicket precedes the ChangeCipherSpec; fold it into
+   * the transcript so the server Finished (and ours) cover it. */
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  {
+    RTLSHandshakeType hs;
+    ruint32 l, lifetime;
+    ruint16 mseq, nstlen;
+    const ruint8 * nst;
+
+    r_assert_cmpint (r_tls_parser_parse_handshake_full (&parser, &hs, &l, &mseq,
+          NULL, NULL), ==, R_TLS_ERROR_OK);
+    r_assert_cmphex (hs, ==, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET);
+    r_assert_cmpint (r_tls_parser_parse_new_session_ticket (&parser, &lifetime,
+          &nst, &nstlen), ==, R_TLS_ERROR_OK);
+    r_assert_cmpuint (nstlen, >, 0);          /* a real ticket was reissued */
+  }
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
 
   /* key block from the resumed master secret and the fresh randoms */
   r_assert_cmpint (r_tls_1_2_prf_sha256 (kb, sizeof (kb), ms, 48,
@@ -2285,7 +2307,7 @@ r_test_tls_client_resume (RTLSServer * server, RPrng * prng, RQueue * qout,
   r_assert_cmpptr ((scipher = r_cipher_aes_128_cbc_new (kb + 56)), !=, NULL);
   r_assert_cmpptr ((shmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, kb + 20, 20)), !=, NULL);
 
-  /* server verify_data is over the transcript through ServerHello */
+  /* server verify_data is over the transcript through the NewSessionTicket */
   hashsize = r_msg_digest_size (md);
   r_assert (r_msg_digest_get_data (md, hash, hashsize, NULL));
   r_assert_cmpint (r_tls_1_2_prf_sha256 (svd, sizeof (svd), ms, 48,
@@ -2456,6 +2478,46 @@ RTEST_F (rtlsserver, tls_session_resume_suite_not_offered, RTEST_FAST)
 }
 RTEST_END;
 
+/* A ticket older than its lifetime must not resume; the server falls back to a
+ * full handshake. The fixture's synthetic loop clock drives the ticket's
+ * issued-at and the expiry check, so advancing it past the lifetime forces the
+ * rejection deterministically. */
+RTEST_F (rtlsserver, tls_session_resume_expired, RTEST_FAST)
+{
+  RTLSServer * srv2;
+  ruint8 ms[48], * ticket = NULL;
+  rsize ticketlen = 0;
+
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_client_issue (fixture->server, fixture->prng, &fixture->qout,
+      ms, &ticket, &ticketlen);   /* issued at clock time 0 */
+  r_assert (fixture->hs_done);
+  r_assert_cmpuint (ticketlen, >, 0);
+
+  /* Advance the synthetic clock just past the ticket lifetime. */
+  r_assert (r_test_clock_update_time (fixture->clock,
+        (RClockTime) (R_TLS_SESSION_TICKET_LIFETIME + 1) * R_SECOND));
+
+  fixture->hs_done = FALSE;
+  r_queue_clear (&fixture->qout, r_buffer_unref);
+  r_assert_cmpptr ((srv2 = r_test_tls_server_new_cfg (fixture)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (srv2, fixture->ticket_keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srv2, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_resume_assert_full (srv2, fixture->prng, &fixture->qout,
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, ticket, ticketlen);
+  r_assert (!fixture->hs_done);
+
+  r_free (ticket);
+  r_tls_server_unref (srv2);
+}
+RTEST_END;
+
 /* Build a DTLS 1.2 ClientHello (message_seq 0) offering @suite, empty
  * renegotiation_info, extended_master_secret (the issuing session used it) and
  * a session_ticket extension carrying @ticket. Captures the client random. */
@@ -2533,14 +2595,37 @@ r_test_tls_dtls_client_resume (RTLSServer * server, RPrng * prng, RQueue * qout,
   r_assert_cmpuint (hello.sidlen, >, 0);     /* a session id signals resumption */
   r_memcpy (srand, hello.random, sizeof (srand));
   {
-    /* No fresh ticket is issued on resume, so the ServerHello must not promise
-     * one with a session_ticket extension (RFC 5077 3.4). */
+    /* A fresh ticket is reissued on resume, so the ServerHello advertises a
+     * session_ticket extension (RFC 5077 3.4). */
     RTLSHelloExt ext;
     RTLSError e;
+    rboolean seen_st = FALSE;
     for (e = r_tls_hello_msg_extension_first (&hello, &ext); e == R_TLS_ERROR_OK;
         e = r_tls_hello_msg_extension_next (&hello, &ext))
-      r_assert_cmpuint (ext.type, !=, R_TLS_EXT_TYPE_SESSION_TICKET);
+      if (ext.type == R_TLS_EXT_TYPE_SESSION_TICKET)
+        seen_st = TRUE;
+    r_assert (seen_st);
   }
+
+  /* The reissued NewSessionTicket (epoch 0) precedes the ChangeCipherSpec; fold
+   * it into the transcript so the server Finished (and ours) cover it. */
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpuint (parser.epoch, ==, 0);
+  {
+    RTLSHandshakeType hs;
+    ruint32 l, lifetime;
+    ruint16 mseq, nstlen;
+    const ruint8 * nst;
+
+    r_assert_cmpint (r_tls_parser_parse_handshake_full (&parser, &hs, &l, &mseq,
+          NULL, NULL), ==, R_TLS_ERROR_OK);
+    r_assert_cmphex (hs, ==, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET);
+    r_assert_cmpint (r_tls_parser_parse_new_session_ticket (&parser, &lifetime,
+          &nst, &nstlen), ==, R_TLS_ERROR_OK);
+    r_assert_cmpuint (nstlen, >, 0);
+  }
+  r_msg_digest_update (md, parser.fragment.data, parser.fragment.size);
 
   r_assert_cmpint (r_tls_1_2_prf_sha256 (kb, sizeof (kb), ms, 48,
         R_STR_WITH_SIZE_ARGS ("key expansion"),
