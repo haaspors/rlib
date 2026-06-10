@@ -402,9 +402,13 @@ static rboolean
 r_tls_client_default_cipher_suites (rpointer ctx, RTLSVersion ver,
     RTLSCipherSuite * cs, rsize * count)
 {
-  /* Most preferred first: ECDHE (forward secrecy) over static RSA, SHA-256
-   * MAC over SHA-1, AES-128 over AES-256 as the tiebreak. */
+  /* Most preferred first: AEAD (AES-GCM) over CBC, ECDHE (forward secrecy) over
+   * static RSA, AES-128 over AES-256, SHA-256 MAC over SHA-1 as the tiebreak. */
   const RTLSCipherSuite preferred[] = {
+    R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+    R_TLS_CS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+    R_TLS_CS_RSA_WITH_AES_128_GCM_SHA256,
+    R_TLS_CS_RSA_WITH_AES_256_GCM_SHA384,
     R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
     R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
     R_TLS_CS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
@@ -428,7 +432,7 @@ r_tls_client_send_hello (RTLSClient * client)
   RBuffer * buf;
   RTLSError ret;
   RMemMapInfo info;
-  RTLSCipherSuite cs[8];
+  RTLSCipherSuite cs[16];
   rsize ncs = R_N_ELEMENTS (cs);
   rboolean dtls = r_tls_version_is_dtls (client->version);
 
