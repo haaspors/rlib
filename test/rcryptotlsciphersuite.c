@@ -24,6 +24,12 @@ RTEST (rtlsciphersuite, is_supported, RTEST_FAST)
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_RSA_WITH_AES_256_GCM_SHA384));
 
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA));
+
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_NULL_MD5));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_NULL_SHA));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_NULL_SHA256));
@@ -68,6 +74,18 @@ RTEST (rtlsciphersuite, get_info, RTEST_FAST)
   r_assert_cmpptr ((info = r_tls_cipher_suite_get_info (R_TLS_CS_RSA_WITH_AES_128_GCM_SHA256)), !=, NULL);
   r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_GCM);
   r_assert_cmpint (info->prf, ==, R_MSG_DIGEST_TYPE_SHA256);
+
+  /* ECDHE_ECDSA suite: ECDSA auth (key exchange), GCM cipher, SHA-384 PRF. */
+  r_assert_cmpptr ((info = r_tls_cipher_suite_get_info (R_TLS_CS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384)), !=, NULL);
+  r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_ECDHE_ECDSA);
+  r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_GCM);
+  r_assert_cmpint (info->mac, ==, R_MSG_DIGEST_TYPE_NONE);
+  r_assert_cmpint (info->prf, ==, R_MSG_DIGEST_TYPE_SHA384);
+
+  r_assert_cmpptr ((info = r_tls_cipher_suite_get_info (R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256)), !=, NULL);
+  r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_ECDHE_ECDSA);
+  r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_CBC);
+  r_assert_cmpint (info->mac, ==, R_MSG_DIGEST_TYPE_SHA256);
 
   r_assert_cmpptr ((info = r_tls_cipher_suite_get_info (R_TLS_CS_NULL_WITH_NULL_NULL)), !=, NULL);
   r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_NULL);
@@ -114,17 +132,17 @@ RTEST (rtlsciphersuite, filter, RTEST_FAST)
     R_TLS_CS_RSA_WITH_AES_256_CBC_SHA,
     R_TLS_CS_RSA_WITH_3DES_EDE_CBC_SHA,
   };
-  /* None of these are both supported by us and present in @incoming:
-   * ECDHE_ECDSA-GCM is unsupported; the CBC-SHA256 / NULL suites are supported
+  /* None of these are both supported by us and present in @incoming: the
+   * ChaCha20 suite is unsupported; the CBC-SHA256 / NULL suites are supported
    * but Chrome did not offer them. */
   const RTLSCipherSuite nonsuites[] = {
-    R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, /* Not supported */
+    R_TLS_CS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, /* Not supported */
     R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256,
     R_TLS_CS_RSA_WITH_NULL_MD5,
     R_TLS_CS_NULL_WITH_NULL_NULL,
   };
   const RTLSCipherSuite suites[] = {
-    R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, /* Not supported */
+    R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
     R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
     R_TLS_CS_RSA_WITH_AES_128_CBC_SHA,
     R_TLS_CS_RSA_WITH_NULL_MD5,
@@ -134,8 +152,8 @@ RTEST (rtlsciphersuite, filter, RTEST_FAST)
   r_assert_cmpint (R_TLS_CS_NONE, ==,
       r_tls_cipher_suite_filter (incoming, R_N_ELEMENTS (incoming),
         nonsuites, R_N_ELEMENTS (nonsuites)));
-  /* ECDHE_RSA-GCM is the most-preferred suite both we and Chrome support. */
-  r_assert_cmpint (R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, ==,
+  /* ECDHE_ECDSA-GCM is the most-preferred suite both we and Chrome support. */
+  r_assert_cmpint (R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, ==,
       r_tls_cipher_suite_filter (incoming, R_N_ELEMENTS (incoming),
         suites, R_N_ELEMENTS (suites)));
 }

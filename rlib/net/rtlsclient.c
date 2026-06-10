@@ -402,21 +402,7 @@ static rboolean
 r_tls_client_default_cipher_suites (rpointer ctx, RTLSVersion ver,
     RTLSCipherSuite * cs, rsize * count)
 {
-  /* Most preferred first: AEAD (AES-GCM) over CBC, ECDHE (forward secrecy) over
-   * static RSA, AES-128 over AES-256, SHA-256 MAC over SHA-1 as the tiebreak. */
-  const RTLSCipherSuite preferred[] = {
-    R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-    R_TLS_CS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-    R_TLS_CS_RSA_WITH_AES_128_GCM_SHA256,
-    R_TLS_CS_RSA_WITH_AES_256_GCM_SHA384,
-    R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
-    R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-    R_TLS_CS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-    R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256,
-    R_TLS_CS_RSA_WITH_AES_256_CBC_SHA256,
-    R_TLS_CS_RSA_WITH_AES_128_CBC_SHA,
-    R_TLS_CS_RSA_WITH_AES_256_CBC_SHA,
-  };
+  const RTLSCipherSuite preferred[] = { R_TLS_DEFAULT_CIPHER_SUITES };
 
   (void) ctx; (void) ver;
 
@@ -432,7 +418,7 @@ r_tls_client_send_hello (RTLSClient * client)
   RBuffer * buf;
   RTLSError ret;
   RMemMapInfo info;
-  RTLSCipherSuite cs[16];
+  RTLSCipherSuite cs[24];
   rsize ncs = R_N_ELEMENTS (cs);
   rboolean dtls = r_tls_version_is_dtls (client->version);
 
@@ -582,7 +568,8 @@ r_tls_client_nego_server_hello (RTLSClient * client, const RTLSParser * parser)
 
   /* The key-exchange type is only known once the server picks the suite; the
    * ServerKeyExchange and ClientKeyExchange handling branch on this. */
-  client->ecdhe = (client->csinfo->key_exchange == R_KEY_EXCHANGE_ECDHE_RSA);
+  client->ecdhe = (client->csinfo->key_exchange == R_KEY_EXCHANGE_ECDHE_RSA ||
+      client->csinfo->key_exchange == R_KEY_EXCHANGE_ECDHE_ECDSA);
 
   r_memcpy (client->servrandom, hello.random, R_TLS_HELLO_RANDOM_BYTES);
 
