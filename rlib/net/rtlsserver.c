@@ -1153,7 +1153,21 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   for (i = 0; i < count; i++)
     incoming[i] = (RTLSCipherSuite) r_load_be16 (server->hello.cs + i * sizeof (ruint16));
 
-  /* Compression */
+  /* Compression: we only support null, but the client MUST offer it
+   * (RFC 5246 7.4.1.4). An empty list is malformed; a non-empty list without
+   * null is a well-formed-but-illegal parameter. */
+  {
+    ruint16 ncomp = r_tls_hello_msg_compression_count (&server->hello), c;
+
+    if (ncomp == 0)
+      return R_TLS_ERROR_CORRUPT_RECORD;
+    for (c = 0; c < ncomp; c++) {
+      if (r_tls_hello_msg_compression_method (&server->hello, c) == R_TLS_COMPRESSION_NULL)
+        break;
+    }
+    if (c == ncomp)
+      return R_TLS_ERROR_ILLEGAL_PARAMETER;
+  }
   server->comp = R_TLS_COMPRESSION_NULL;
 
   /* Cipher suite */
@@ -1660,6 +1674,8 @@ r_tls_server_alert_for_error (RTLSError err)
       return R_TLS_ALERT_TYPE_DECODE_ERROR;
     case R_TLS_ERROR_RECORD_OVERFLOW:   /* fragment longer than the limit */
       return R_TLS_ALERT_TYPE_RECORD_OVERFLOW;
+    case R_TLS_ERROR_ILLEGAL_PARAMETER: /* field value out of range */
+      return R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER;
     case R_TLS_ERROR_HS_VERIFICATION_FAILED:  /* could not verify Finished */
       return R_TLS_ALERT_TYPE_DECRYPT_ERROR;
     case R_TLS_ERROR_VERSION:

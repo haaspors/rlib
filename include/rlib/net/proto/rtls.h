@@ -348,6 +348,7 @@ typedef enum {
   R_TLS_ERROR_HS_VERIFICATION_FAILED                    = -0x0f, /**< Handshake verify-data check failed. */
   R_TLS_ERROR_ENCRYPTION_FAILED                         = -0x10, /**< Record encryption failed. */
   R_TLS_ERROR_RECORD_OVERFLOW                           = -0x11, /**< Record fragment length exceeds the limit. */
+  R_TLS_ERROR_ILLEGAL_PARAMETER                         = -0x12, /**< Field value well-formed but out of range. */
 } RTLSError;
 
 /** @brief TLS record compression method (only @c NULL is supported / non-deprecated). */

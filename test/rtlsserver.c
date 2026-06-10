@@ -1278,6 +1278,57 @@ RTEST_F (rtlsserver, dtls_no_renegotiation_warning, RTEST_FAST)
 }
 RTEST_END;
 
+/* A ClientHello whose compression list omits null compression is well-formed
+ * but illegal (RFC 5246 7.4.1.4): the server aborts with illegal_parameter. */
+RTEST_F (rtlsserver, dtls_clienthello_no_null_compression, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RBuffer * buf;
+  RTLSAlertLevel level = 0;
+  RTLSAlertType type = 0;
+  ruint8 body[128], ch[256];
+  ruint8 * p = body;
+  ruint8 * extlenp;
+  rsize bodylen, hs;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  /* DTLS 1.2 ClientHello, compression = [deflate] only (no null). */
+  *p++ = 0xfe; *p++ = 0xfd;
+  r_prng_fill (fixture->prng, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  *p++ = 0;                                  /* cookie length (DTLS) */
+  r_store_be16 (p, (ruint16) sizeof (ruint16)); p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_CS_RSA_WITH_AES_128_CBC_SHA); p += 2;
+  *p++ = 1; *p++ = 1;                        /* compression: deflate only, no null */
+  extlenp = p; p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+  r_store_be16 (p, 1); p += 2; *p++ = 0;
+  r_store_be16 (extlenp, (ruint16) (p - (extlenp + 2)));
+  bodylen = (rsize) (p - body);
+
+  r_assert_cmpint (r_dtls_write_handshake (ch, sizeof (ch), &hs,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO,
+        (ruint16) bodylen, 0, 0, 0, 0, (ruint32) bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (ch + hs, body, bodylen);
+  r_test_tls_server_feed (fixture->server, ch, hs + bodylen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &level, &type), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (level, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (type, ==, R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  r_assert (!fixture->hs_done);
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER);
+}
+RTEST_END;
+
 /* Over a (non-DTLS) TLS connection the record sequence number is implicit and
  * must advance per record: the client Finished is read seqno 0, the first
  * application_data record is seqno 1. A regression where the server MAC'd
