@@ -25,6 +25,11 @@
 
 /* This list should be sorted on preference! */
 static const RTLSCipherSuiteInfo g__r_cipher_suites[] = {
+  { R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, "TLS-ECDHE-RSA-WITH-AES-128-CBC-SHA256",
+    R_KEY_EXCHANGE_ECDHE_RSA, &g__r_crypto_cipher_aes_128_cbc, R_MSG_DIGEST_TYPE_SHA256 },
+  { R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA, "TLS-ECDHE-RSA-WITH-AES-128-CBC-SHA",
+    R_KEY_EXCHANGE_ECDHE_RSA, &g__r_crypto_cipher_aes_128_cbc, R_MSG_DIGEST_TYPE_SHA1 },
+
   { R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, "TLS-RSA-WITH-AES-128-CBC-SHA",
     R_KEY_EXCHANGE_RSA, &g__r_crypto_cipher_aes_128_cbc, R_MSG_DIGEST_TYPE_SHA1 },
   { R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256, "TLS-RSA-WITH-AES-128-CBC-SHA256",
