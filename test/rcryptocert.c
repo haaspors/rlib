@@ -764,3 +764,38 @@ RTEST (rcryptocert, x509_name_constraints_policy_mappings, RTEST_FAST)
 }
 RTEST_END;
 
+
+/* A serial number wider than 64 bits must parse (it previously overflowed the
+ * u64 serial field and the whole certificate was rejected). */
+RTEST (rcryptocert, large_serial_number, RTEST_FAST)
+{
+  static const rchar pem[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBgzCCASmgAwIBAgIQAQIDBAUGBwgJCgsMDQ4PEDAKBggqhkjOPQQDAjAZMRcw\n"
+    "FQYDVQQDDA5ybGliLWJpZ3NlcmlhbDAeFw0yNjA2MTAxNjU4NTNaFw00ODA1MDUx\n"
+    "NjU4NTNaMBkxFzAVBgNVBAMMDnJsaWItYmlnc2VyaWFsMFkwEwYHKoZIzj0CAQYI\n"
+    "KoZIzj0DAQcDQgAEeZzmWbJzB6dXsL7tny2nA0fhap8JgTaeDMtryafQwr5R4aQA\n"
+    "4yPfR0+dF31jaaLvKlWjXLRoBv8clgX+rrPimKNTMFEwHQYDVR0OBBYEFHpcETZT\n"
+    "uc0D232WXkBpwyzhtNlrMB8GA1UdIwQYMBaAFHpcETZTuc0D232WXkBpwyzhtNlr\n"
+    "MA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSAAwRQIhAIs3sQ66PVSEa3Zz\n"
+    "69V8QF/rUyBhZBjU+UbnPyi54i7fAiACsrLc5IeFA+oV63FqXmtbDyAETvj8Dcs7\n"
+    "wagHoyomfA==\n"
+    "-----END CERTIFICATE-----\n";
+  static const ruint8 expected[] = {
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10
+  };
+  RCryptoCert * cert;
+  const ruint8 * serial;
+  rsize size = 0;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (pem, -1)), !=, NULL);
+  r_assert_cmpptr ((serial = r_crypto_x509_cert_serial (cert, &size)), !=, NULL);
+  r_assert_cmpuint (size, ==, sizeof (expected));
+  r_assert_cmpmem (serial, ==, expected, sizeof (expected));
+  /* The 64-bit view returns the low 8 bytes. */
+  r_assert_cmpuint (r_crypto_x509_cert_serial_number (cert), ==,
+      RUINT64_CONSTANT (0x090a0b0c0d0e0f10));
+  r_crypto_cert_unref (cert);
+}
+RTEST_END;

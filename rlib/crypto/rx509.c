@@ -22,6 +22,7 @@
 
 #include <rlib/format/roid.h>
 #include <rlib/data/rlist.h>
+#include <rlib/data/rmpint.h>
 #include <rlib/data/rptrarray.h>
 
 #include <rlib/rmem.h>
@@ -49,7 +50,8 @@ typedef struct {
   RCryptoCert cert;
 
   RX509Version version;
-  ruint64 serial;
+  ruint8 serial[20];            /* raw magnitude, big-endian (RFC 5280: <= 20 octets) */
+  ruint8 seriallen;
   rchar * issuer;
   rchar * subject;
 
@@ -584,6 +586,21 @@ r_crypto_x509_cert_v3_parse_extensions (RCryptoX509Cert * cert,
   return res == R_ASN1_DECODER_EOC;
 }
 
+/* Store a serialNumber INTEGER's raw magnitude (DER leading-zero sign byte
+ * stripped), capped to the buffer; a serial can be up to 20 octets, too wide
+ * for a 64-bit integer. */
+static void
+r_crypto_x509_cert_store_serial (RCryptoX509Cert * cert, const RAsn1BinTLV * tlv)
+{
+  const ruint8 * v = tlv->value;
+  rsize n = tlv->len;
+
+  while (n > 1 && v[0] == 0x00) { v++; n--; }
+  if (n > sizeof (cert->serial)) { v += n - sizeof (cert->serial); n = sizeof (cert->serial); }
+  r_memcpy (cert->serial, v, n);
+  cert->seriallen = (ruint8) n;
+}
+
 static rboolean
 r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
 {
@@ -612,8 +629,10 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
         cert->version = R_X509_VERSION_V1; /* Default value*/
       }
       /* serialNumber */
-      if (r_asn1_bin_tlv_parse_integer_u64 (&tlv, &cert->serial) != R_ASN1_DECODER_OK ||
-          r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK)
+      if (!R_ASN1_BIN_TLV_ID_IS_TAG (&tlv, R_ASN1_ID_INTEGER))
+        goto beach;
+      r_crypto_x509_cert_store_serial (cert, &tlv);
+      if (r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK)
         goto beach;
       /* signature - Skip */
       if (r_asn1_bin_decoder_next (dec, &tlv) != R_ASN1_DECODER_OK)
@@ -1252,8 +1271,15 @@ r_crypto_x509_cert_export (const RCryptoCert * ccert, RAsn1BinEncoder * enc)
       }
 
       /* serialNumber */
-      if (r_asn1_bin_encoder_add_integer_u64 (enc, cert->serial) != R_ASN1_ENCODER_OK)
-        goto beach;
+      {
+        rmpint serial;
+        RAsn1EncoderStatus es;
+        r_mpint_init_binary (&serial, cert->serial, cert->seriallen);
+        es = r_asn1_bin_encoder_add_integer_mpint (enc, &serial);
+        r_mpint_clear (&serial);
+        if (es != R_ASN1_ENCODER_OK)
+          goto beach;
+      }
 
       /* signature algo */
       if (r_asn1_bin_encoder_begin_constructed (enc, id, 0) == R_ASN1_ENCODER_OK) {
@@ -1469,7 +1495,26 @@ r_crypto_x509_cert_version (const RCryptoCert * cert)
 ruint64
 r_crypto_x509_cert_serial_number (const RCryptoCert * cert)
 {
-  return ((const RCryptoX509Cert *)cert)->serial;
+  const RCryptoX509Cert * c = (const RCryptoX509Cert *)cert;
+  ruint64 v = 0;
+  ruint8 i;
+
+  /* Low 64 bits for serials wider than 8 bytes (the full value is available
+   * via r_crypto_x509_cert_serial). */
+  for (i = 0; i < c->seriallen; i++)
+    v = (v << 8) | c->serial[i];
+
+  return v;
+}
+
+const ruint8 *
+r_crypto_x509_cert_serial (const RCryptoCert * cert, rsize * size)
+{
+  const RCryptoX509Cert * c = (const RCryptoX509Cert *)cert;
+
+  if (size != NULL)
+    *size = c->seriallen;
+  return c->serial;
 }
 
 const rchar *
