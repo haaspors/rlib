@@ -1167,19 +1167,36 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
    * curve we can do an ephemeral exchange on, so the filter falls back to a
    * static-RSA suite rather than selecting an unusable ECDHE one. */
   {
-    REcurveID neg_curve;
-    if (r_tls_server_nego_ecdhe_curve (server, &neg_curve)) {
-      server->ecdhe_curve = neg_curve;
-    } else {
-      rsize w = 0, k;
-      for (k = 0; k < psize; k++) {
-        const RTLSCipherSuiteInfo * pi = r_tls_cipher_suite_get_info (preferred[k]);
-        if (pi != NULL && pi->key_exchange == R_KEY_EXCHANGE_ECDHE_RSA)
+    rboolean have_curve = r_tls_server_nego_ecdhe_curve (server, &server->ecdhe_curve);
+    RCryptoAlgorithm certalgo = (server->privkey != NULL) ?
+        r_crypto_key_get_algo (server->privkey) : R_CRYPTO_ALGO_TYPE_COUNT;
+    rsize w = 0, k;
+
+    for (k = 0; k < psize; k++) {
+      const RTLSCipherSuiteInfo * pi = r_tls_cipher_suite_get_info (preferred[k]);
+      RKeyExchangeType kx;
+
+      if (pi == NULL)
+        continue;
+      kx = pi->key_exchange;
+
+      /* The suite's authentication must match the certificate key: ECDHE_ECDSA
+       * needs an ECDSA cert; RSA / ECDHE_RSA need an RSA cert. */
+      if (kx == R_KEY_EXCHANGE_ECDHE_ECDSA) {
+        if (certalgo != R_CRYPTO_ALGO_ECDSA)
           continue;
-        preferred[w++] = preferred[k];
+      } else if (kx == R_KEY_EXCHANGE_RSA || kx == R_KEY_EXCHANGE_ECDHE_RSA) {
+        if (certalgo != R_CRYPTO_ALGO_RSA)
+          continue;
       }
-      psize = w;
+      /* Ephemeral suites need a curve the client offered. */
+      if ((kx == R_KEY_EXCHANGE_ECDHE_RSA || kx == R_KEY_EXCHANGE_ECDHE_ECDSA) &&
+          !have_curve)
+        continue;
+
+      preferred[w++] = preferred[k];
     }
+    psize = w;
   }
 
   if ((cs = r_tls_cipher_suite_filter (incoming, count, preferred, (ruint)psize)) == R_TLS_CS_NONE ||
@@ -1189,7 +1206,8 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   }
 
-  server->ecdhe = (server->csinfo->key_exchange == R_KEY_EXCHANGE_ECDHE_RSA);
+  server->ecdhe = (server->csinfo->key_exchange == R_KEY_EXCHANGE_ECDHE_RSA ||
+      server->csinfo->key_exchange == R_KEY_EXCHANGE_ECDHE_ECDSA);
 
   R_LOG_DEBUG ("%p - cipher site %s", server, server->csinfo->str);
 
