@@ -38,6 +38,11 @@ R_BEGIN_DECLS
 R_API_HIDDEN rboolean r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme,
     RMsgDigestType * md);
 
+/* Choose the TLS 1.2 signature scheme matching a signing key's algorithm:
+ * ecdsa_secp256r1_sha256 for an ECDSA key, rsa_pkcs1_sha256 otherwise. Both
+ * hash with SHA-256, so the caller's transcript/params hash is unchanged. */
+R_API_HIDDEN RTLSSignatureScheme r_tls_sign_scheme_for_key (const RCryptoKey * key);
+
 /* Select the TLS 1.2 PRF and a fresh handshake-transcript digest for a cipher
  * suite's hash (@ref RTLSCipherSuiteInfo.prf): SHA-256 or SHA-384. Writes the
  * PRF function to @prf and an owned digest (caller frees) to @hshash. Returns

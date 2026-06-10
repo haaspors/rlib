@@ -662,6 +662,7 @@ r_tls_server_write_key_exchange (RTLSServer * server)
   ruint8 pointlen;
   RMsgDigest * md;
   RTLSSupportedGroup named_curve;
+  RTLSSignatureScheme sigscheme;
 
   /* Only ephemeral (ECDHE) suites send a ServerKeyExchange; static RSA does
    * not, and the orchestrator only bumps the message sequence when we do. */
@@ -699,6 +700,9 @@ r_tls_server_write_key_exchange (RTLSServer * server)
   }
   r_msg_digest_free (md);
 
+  /* The signature scheme follows the certificate key (RSA or ECDSA); both hash
+   * with SHA-256, so the digest above is unchanged. */
+  sigscheme = r_tls_sign_scheme_for_key (server->privkey);
   if (r_crypto_key_sign (server->privkey, server->prng, R_MSG_DIGEST_TYPE_SHA256,
         hash, hashsize, sig, &sigsize) != R_CRYPTO_OK)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
@@ -728,7 +732,7 @@ r_tls_server_write_key_exchange (RTLSServer * server)
     if (ret == R_TLS_ERROR_OK &&
         (ret = r_tls_write_hs_server_key_exchange_ecdhe (info.data + hssize,
             info.size - hssize, &bodylen, R_TLS_EC_TYPE_NAMED_CURVE, named_curve,
-            point, pointlen, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256,
+            point, pointlen, sigscheme,
             sig, (ruint16)sigsize)) == R_TLS_ERROR_OK) {
       r_msg_digest_update (server->hshash, info.data + hdrsize,
           (hssize + bodylen) - hdrsize);
