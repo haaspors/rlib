@@ -62,6 +62,7 @@ RTEST_FIXTURE_STRUCT (rtlsclient)
   ruint verify_calls;
   rboolean verify_result;
   rboolean force_ecdhe;          /* offer only ECDHE_RSA on both endpoints */
+  rboolean force_rsa;            /* offer only static RSA on both endpoints */
 
   RClock * clock;
   REvLoop * evloop;
@@ -77,10 +78,12 @@ r_tlsclient_test_prefer_ecdhe (rpointer ctx, RTLSVersion ver,
 {
   RTEST_FIXTURE_STRUCT (rtlsclient) * fixture = ctx;
   (void) ver;
-  if (!fixture->force_ecdhe)
-    return FALSE;                /* fall back to the library defaults (RSA) */
+  if (!fixture->force_ecdhe && !fixture->force_rsa)
+    return FALSE;                /* follow the library defaults (ECDHE-first) */
   *count = 1;
-  cs[0] = R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256;
+  cs[0] = fixture->force_ecdhe ?
+      R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 :
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256;
   return TRUE;
 }
 
@@ -187,6 +190,7 @@ RTEST_FIXTURE_SETUP (rtlsclient)
   fixture->verify_calls = 0;
   fixture->verify_result = TRUE;
   fixture->force_ecdhe = FALSE;
+  fixture->force_rsa = FALSE;
 
   r_queue_init (&fixture->srv_out);
   r_queue_init (&fixture->cli_out);
@@ -301,6 +305,9 @@ r_test_tls_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture, RTLSVersion ve
   r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), !=, NULL);
   r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, version);
   r_assert_cmpptr (r_tls_client_get_cipher_suite (fixture->client), !=, NULL);
+  /* Both endpoints default to ECDHE-first: forward secrecy out of the box. */
+  r_assert_cmpint (r_tls_client_get_cipher_suite (fixture->client)->key_exchange,
+      ==, R_KEY_EXCHANGE_ECDHE_RSA);
 
   /* Application data, client -> server. */
   r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
@@ -511,5 +518,27 @@ RTEST_F (rtlsclient, tls_ecdhe_duplicate_ske, RTEST_FAST)
 
   r_assert (fixture->cli_error);
   r_assert (!fixture->cli_hs_done);
+}
+RTEST_END;
+
+/* Static RSA still works end to end when pinned explicitly (the default
+ * preference is ECDHE-first, so this exercises the legacy key exchange). */
+RTEST_F (rtlsclient, tls_rsa_loopback, RTEST_FAST)
+{
+  fixture->force_rsa = TRUE;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert_cmpint (r_tls_client_get_cipher_suite (fixture->client)->key_exchange,
+      ==, R_KEY_EXCHANGE_RSA);
 }
 RTEST_END;
