@@ -319,6 +319,47 @@ r_test_tls_build_dtls_client_hello (RPrng * prng, ruint8 * out, rsize outsz,
   return hs + bodylen;
 }
 
+/* A DTLS 1.2 ClientHello (null compression, empty renegotiation_info) carrying
+ * an ALPN extension advertising @protos (n names). */
+static rsize
+r_test_tls_build_dtls_client_hello_alpn (RPrng * prng, ruint8 * out, rsize outsz,
+    const rchar * const * protos, rsize n)
+{
+  ruint8 body[256];
+  ruint8 * p = body;
+  ruint8 * extlenp, * alpnlenp, * listlenp;
+  rsize bodylen, hs, i;
+
+  *p++ = 0xfe; *p++ = 0xfd;
+  r_prng_fill (prng, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  *p++ = 0;                                  /* cookie length (DTLS) */
+  r_store_be16 (p, (ruint16) sizeof (ruint16)); p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_CS_RSA_WITH_AES_128_CBC_SHA); p += 2;
+  *p++ = 1; *p++ = 0;                        /* compression: null */
+  extlenp = p; p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+  r_store_be16 (p, 1); p += 2; *p++ = 0;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_APPLICATION_LAYER_PROTOCOL_NEGOTIATION); p += 2;
+  alpnlenp = p; p += 2;                       /* ALPN ext data length */
+  listlenp = p; p += 2;                       /* ProtocolNameList length */
+  for (i = 0; i < n; i++) {
+    ruint8 l = (ruint8) r_strlen (protos[i]);
+    *p++ = l;
+    r_memcpy (p, protos[i], l); p += l;
+  }
+  r_store_be16 (listlenp, (ruint16) (p - (listlenp + 2)));
+  r_store_be16 (alpnlenp, (ruint16) (p - (alpnlenp + 2)));
+  r_store_be16 (extlenp, (ruint16) (p - (extlenp + 2)));
+  bodylen = (rsize) (p - body);
+
+  r_assert_cmpint (r_dtls_write_handshake (out, outsz, &hs,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO,
+        (ruint16) bodylen, 0, 0, 0, 0, (ruint32) bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (out + hs, body, bodylen);
+  return hs + bodylen;
+}
+
 /* Minimal DTLS 1.2 RSA client completing a handshake against the server
  * under test. It mirrors the server's transcript hashing by feeding the
  * same handshake-message fragments, derives the master secret per RFC 7627
@@ -706,6 +747,37 @@ r_test_tls_assert_session_ticket_ext (RQueue * qout, rboolean expect)
     }
   }
   r_assert_cmpint (seen, ==, expect);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+
+/* Assert the ServerHello in @qout carries an ALPN extension selecting @expected
+ * (@len bytes), or no ALPN extension at all when @expected is NULL. */
+static void
+r_test_tls_assert_alpn_ext (RQueue * qout, const rchar * expected, rsize len)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RBuffer * buf;
+  RTLSHelloMsg msg;
+  RTLSHelloExt ext;
+  RTLSError e;
+  rboolean seen = FALSE;
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &msg), ==, R_TLS_ERROR_OK);
+  for (e = r_tls_hello_msg_extension_first (&msg, &ext); e == R_TLS_ERROR_OK;
+      e = r_tls_hello_msg_extension_next (&msg, &ext)) {
+    if (ext.type == R_TLS_EXT_TYPE_APPLICATION_LAYER_PROTOCOL_NEGOTIATION) {
+      seen = TRUE;
+      /* ProtocolNameList: list_len(2) + name_len(1) + name. */
+      r_assert_cmpuint (ext.len, ==, 3 + len);
+      r_assert_cmpuint (r_load_be16 (ext.data), ==, 1 + len);
+      r_assert_cmpuint (ext.data[2], ==, len);
+      r_assert_cmpint (r_memcmp (&ext.data[3], expected, len), ==, 0);
+    }
+  }
+  r_assert_cmpint (seen, ==, (expected != NULL));
   r_tls_parser_clear (&parser);
   r_buffer_unref (buf);
 }
@@ -1326,6 +1398,93 @@ RTEST_F (rtlsserver, dtls_clienthello_no_null_compression, RTEST_FAST)
   r_assert (!fixture->hs_done);
   r_assert (fixture->got_error);
   r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER);
+}
+RTEST_END;
+
+/* The server selects the first of its own configured ALPN protocols that the
+ * client also offered (server preference), not the client's first choice, and
+ * echoes it in the ServerHello. */
+RTEST_F (rtlsserver, dtls_alpn_selects_server_preference, RTEST_FAST)
+{
+  static const rchar * srv[] = { "h2", "http/1.1" };
+  static const rchar * cli[] = { "http/1.1", "h2" };
+  ruint8 ch[256];
+  rsize chlen, sel = 0;
+  const rchar * p;
+
+  r_assert_cmpint (r_tls_server_set_alpn_protocols (fixture->server, srv,
+        R_N_ELEMENTS (srv)), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello_alpn (fixture->prng, ch, sizeof (ch),
+      cli, R_N_ELEMENTS (cli));
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert (!fixture->got_error);
+  r_assert_cmpptr ((p = r_tls_server_get_alpn_selected (fixture->server, &sel)), !=, NULL);
+  r_assert_cmpuint (sel, ==, 2);
+  r_assert_cmpint (r_memcmp (p, "h2", 2), ==, 0);
+  r_test_tls_assert_alpn_ext (&fixture->qout, "h2", 2);
+}
+RTEST_END;
+
+/* The client offers ALPN but shares no protocol with the configured server:
+ * the handshake aborts with a fatal no_application_protocol alert. */
+RTEST_F (rtlsserver, dtls_alpn_no_overlap_fatal, RTEST_FAST)
+{
+  static const rchar * srv[] = { "h2" };
+  static const rchar * cli[] = { "http/1.1" };
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RBuffer * buf;
+  RTLSAlertLevel level = 0;
+  RTLSAlertType type = 0;
+  ruint8 ch[256];
+  rsize chlen;
+
+  r_assert_cmpint (r_tls_server_set_alpn_protocols (fixture->server, srv,
+        R_N_ELEMENTS (srv)), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello_alpn (fixture->prng, ch, sizeof (ch),
+      cli, R_N_ELEMENTS (cli));
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &level, &type), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (level, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (type, ==, R_TLS_ALERT_TYPE_NO_APPLICATION_PROTOCOL);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  r_assert (!fixture->hs_done);
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_NO_APPLICATION_PROTOCOL);
+}
+RTEST_END;
+
+/* With no ALPN configured the server ignores the client's offer: no extension
+ * is echoed and the handshake proceeds. */
+RTEST_F (rtlsserver, dtls_alpn_not_configured_ignored, RTEST_FAST)
+{
+  static const rchar * cli[] = { "h2" };
+  ruint8 ch[256];
+  rsize chlen, sel = 1;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello_alpn (fixture->prng, ch, sizeof (ch),
+      cli, R_N_ELEMENTS (cli));
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert (!fixture->got_error);
+  r_assert_cmpptr (r_tls_server_get_alpn_selected (fixture->server, &sel), ==, NULL);
+  r_assert_cmpuint (sel, ==, 0);
+  r_test_tls_assert_alpn_ext (&fixture->qout, NULL, 0);
 }
 RTEST_END;
 
