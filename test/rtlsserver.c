@@ -641,7 +641,7 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
 
   /* The server Finished is encrypted; decrypt it with the keys the client
    * derived from the shared (EMS) master secret. */
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE, NULL), ==, R_TLS_ERROR_OK);
   {
     const ruint8 * verify_data;
     rsize verify_size;
@@ -853,7 +853,7 @@ RTEST_F (rtlsserver, dtls_encrypt_then_mac_handshake, RTEST_FAST)
   r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC);
   r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (parser.epoch, ==, 1);
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, TRUE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, TRUE, NULL), ==, R_TLS_ERROR_OK);
   {
     const ruint8 * verify_data;
     rsize verify_size;
@@ -1117,7 +1117,7 @@ RTEST_F (rtlsserver, dtls_send_appdata, RTEST_FAST)
   r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_APPLICATION_DATA);
   r_assert_cmpuint (parser.epoch, ==, 1);
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (parser.fragment.size, ==, sizeof (appdata));
   r_assert_cmpint (r_memcmp (parser.fragment.data, appdata, sizeof (appdata)), ==, 0);
 
@@ -1431,7 +1431,7 @@ RTEST_F (rtlsserver, tls_session_ticket_issued, RTEST_FAST)
 
   r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, scipher, shmac, FALSE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, scipher, shmac, FALSE, NULL), ==, R_TLS_ERROR_OK);
   {
     const ruint8 * verify_data;
     rsize verify_size;
@@ -1694,7 +1694,7 @@ r_test_tls_client_resume (RTLSServer * server, RPrng * prng, RQueue * qout,
 
   r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, scipher, shmac, FALSE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, scipher, shmac, FALSE, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpint (r_tls_parser_parse_finished (&parser, &verify_data, &verify_size),
       ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (verify_size, ==, 12);
@@ -1960,7 +1960,7 @@ r_test_tls_dtls_client_resume (RTLSServer * server, RPrng * prng, RQueue * qout,
   r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
   r_assert_cmpuint (parser.epoch, ==, 1);
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, scipher, shmac, FALSE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, scipher, shmac, FALSE, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpint (r_tls_parser_parse_finished (&parser, &verify_data, &verify_size),
       ==, R_TLS_ERROR_OK);
   r_assert_cmpuint (verify_size, ==, 12);

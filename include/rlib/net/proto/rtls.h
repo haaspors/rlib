@@ -444,14 +444,15 @@ R_API RBuffer * r_tls_parser_next (RTLSParser * parser);
 R_API void r_tls_parser_clear (RTLSParser * parser);
 
 /**
- * @brief Decrypt and MAC-verify the current record in place.
+ * @brief Decrypt and authenticate the current record in place.
  * @param parser Parser positioned on the record to decrypt.
  * @param cipher Record-protection cipher.
- * @param mac Record MAC, or @c NULL.
+ * @param mac Record MAC, or @c NULL (AEAD / NULL suites).
  * @param etm Use encrypt-then-MAC (RFC 7366) for CBC suites when @c TRUE.
+ * @param salt Fixed write-IV salt for AEAD suites (4 bytes), else ignored.
  */
 R_API RTLSError r_tls_parser_decrypt (RTLSParser * parser,
-    const RCryptoCipher * cipher, RHmac * mac, rboolean etm);
+    const RCryptoCipher * cipher, RHmac * mac, rboolean etm, const ruint8 * salt);
 
 /** @brief @c TRUE if protocol @p version is a DTLS version. */
 #define r_tls_version_is_dtls(version) ((version) > RUINT16_MAX / 2)
@@ -686,6 +687,37 @@ R_API RBuffer * r_tls_encrypt_buffer (RBuffer * buf, ruint64 seqno,
  */
 R_API RBuffer * r_dtls_encrypt_buffer (RBuffer * buf,
     const RCryptoCipher * cipher, const ruint8 * iv, RHmac * hmac, rboolean etm);
+
+/** @brief TLS 1.2 AEAD explicit (per-record) nonce length; the fixed salt is
+ *  the cipher's @c ivsize minus this. */
+#define R_TLS_AEAD_EXPLICIT_NONCE_SIZE   8
+
+/**
+ * @brief Encrypt a TLS record buffer with an AEAD cipher (e.g. AES-GCM).
+ *
+ * Emits @c explicit_nonce(8) || ciphertext || tag; the GCM nonce is
+ * @p salt concatenated with the 8-byte explicit nonce (the record sequence
+ * number), and the additional data is @c seq_num||type||version||plaintext_len.
+ * @param buf Plaintext record payload.
+ * @param seqno Record sequence number (explicit nonce + additional data).
+ * @param cipher AEAD record cipher.
+ * @param salt Fixed 4-byte write-IV salt from key expansion.
+ * @return New buffer holding the protected record, or @c NULL on failure.
+ */
+R_API RBuffer * r_tls_encrypt_buffer_aead (RBuffer * buf, ruint64 seqno,
+    const RCryptoCipher * cipher, const ruint8 * salt);
+/**
+ * @brief Encrypt a DTLS record buffer with an AEAD cipher (e.g. AES-GCM).
+ *
+ * As @ref r_tls_encrypt_buffer_aead, but the explicit nonce and additional-data
+ * sequence are the record's own @c epoch||seqno.
+ * @param buf Plaintext record payload.
+ * @param cipher AEAD record cipher.
+ * @param salt Fixed 4-byte write-IV salt from key expansion.
+ * @return New buffer holding the protected record, or @c NULL on failure.
+ */
+R_API RBuffer * r_dtls_encrypt_buffer_aead (RBuffer * buf,
+    const RCryptoCipher * cipher, const ruint8 * salt);
 
 /**
  * @brief Write a TLS handshake record header into @p data.

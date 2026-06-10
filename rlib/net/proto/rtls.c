@@ -329,6 +329,14 @@ r_tls_parser_next (RTLSParser * parser)
   return ret;
 }
 
+/* TLS 1.2 AEAD record framing (RFC 5246 6.2.3.3 / RFC 5288 3): the 12-byte GCM
+ * nonce is a 4-byte fixed salt (write-IV from key expansion) concatenated with
+ * the 8-byte R_TLS_AEAD_EXPLICIT_NONCE_SIZE nonce carried on the wire ahead of
+ * the ciphertext. */
+#define R_TLS_AEAD_NONCE_SIZE_MAX        12
+/* additional_data = seq_num(8) || type(1) || version(2) || length(2) */
+#define R_TLS_AEAD_AAD_SIZE              13
+
 /* Fill the 13-byte MAC seed prefix: seq_num (epoch+seqno for DTLS) +
  * content type + version + length, where length is the IV+ciphertext size
  * for encrypt-then-MAC (RFC 7366) or the plaintext size for MAC-then-encrypt. */
@@ -424,9 +432,79 @@ r_tls_parser_decrypt_etm (RTLSParser * parser,
   return R_TLS_ERROR_OK;
 }
 
+/* AEAD (e.g. AES-GCM) decrypt: the fragment is explicit_nonce(8) ||
+ * ciphertext || tag(16). The 12-byte GCM nonce is salt(4) || explicit_nonce;
+ * the additional data is the 13-byte seq_num||type||version||plainlen seed.
+ * On a tag mismatch the AEAD reports R_CRYPTO_CIPHER_AUTH_FAILED and the
+ * decrypted buffer is dropped without reaching the caller, so a forged record
+ * never exposes data; the failure maps to R_TLS_ERROR_INVALID_MAC
+ * (-> bad_record_mac). */
+static RTLSError
+r_tls_parser_decrypt_aead (RTLSParser * parser, const RCryptoCipher * cipher,
+    const ruint8 * salt)
+{
+  RBuffer * buf, * replace;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rsize tagsize = cipher->info->blocksize;   /* 16 for GCM */
+  rsize saltsize = cipher->info->ivsize - R_TLS_AEAD_EXPLICIT_NONCE_SIZE; /* 4 */
+  rsize ctlen;
+  ruint8 nonce[R_TLS_AEAD_NONCE_SIZE_MAX];
+  ruint8 aad[R_TLS_AEAD_AAD_SIZE];
+  const ruint8 * ct, * tag;
+  RCryptoCipherResult res;
+
+  if (R_UNLIKELY (salt == NULL)) return R_TLS_ERROR_INVAL;
+  /* The nonce buffer is sized for a 12-byte AEAD nonce (salt + 8). */
+  if (R_UNLIKELY (cipher->info->ivsize != R_TLS_AEAD_NONCE_SIZE_MAX))
+    return R_TLS_ERROR_INVAL;
+  if (parser->fragment.size < R_TLS_AEAD_EXPLICIT_NONCE_SIZE + tagsize)
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  ctlen = parser->fragment.size - R_TLS_AEAD_EXPLICIT_NONCE_SIZE - tagsize;
+  ct = parser->fragment.data + R_TLS_AEAD_EXPLICIT_NONCE_SIZE;
+  tag = ct + ctlen;
+
+  /* GCM nonce = salt || explicit-nonce (the latter taken off the wire) */
+  r_memcpy (nonce, salt, saltsize);
+  r_memcpy (nonce + saltsize, parser->fragment.data, R_TLS_AEAD_EXPLICIT_NONCE_SIZE);
+  /* AAD seq_num is the LOCAL expected receive seqno, length is the plaintext */
+  r_tls_mac_seed (parser, aad, ctlen);
+
+  if ((buf = r_buffer_new_alloc (NULL, ctlen, NULL)) == NULL)
+    return R_TLS_ERROR_OOM;
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_OOM;
+  }
+
+  res = r_crypto_cipher_decrypt_aead (cipher, info.data, ctlen, ct,
+      aad, sizeof (aad), nonce, saltsize + R_TLS_AEAD_EXPLICIT_NONCE_SIZE,
+      (ruint8 *) tag, tagsize);
+  r_buffer_unmap (buf, &info);
+  if (res != R_CRYPTO_CIPHER_OK) {
+    r_buffer_unref (buf);
+    return (res == R_CRYPTO_CIPHER_AUTH_FAILED) ?
+        R_TLS_ERROR_INVALID_MAC : R_TLS_ERROR_CORRUPT_RECORD;
+  }
+
+  replace = r_buffer_replace_byte_range (parser->buf,
+      parser->offset, parser->fragment.size, buf);
+  r_buffer_unref (buf);
+  r_buffer_unmap (parser->buf, &parser->fragment);
+  r_buffer_unref (parser->buf);
+  parser->buf = replace;
+  parser->recsize = parser->offset + ctlen;
+
+  if (!r_buffer_map_byte_range (parser->buf, parser->offset, (rssize)ctlen,
+        &parser->fragment, R_MEM_MAP_READ))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  return R_TLS_ERROR_OK;
+}
+
 RTLSError
 r_tls_parser_decrypt (RTLSParser * parser,
-    const RCryptoCipher * cipher, RHmac * mac, rboolean etm)
+    const RCryptoCipher * cipher, RHmac * mac, rboolean etm, const ruint8 * salt)
 {
   RBuffer * buf, * replace;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
@@ -437,6 +515,9 @@ r_tls_parser_decrypt (RTLSParser * parser,
   if (R_UNLIKELY (cipher == NULL)) return R_TLS_ERROR_INVAL;
   if (R_UNLIKELY (cipher->info->type == R_CRYPTO_CIPHER_ALGO_NULL))
     return R_TLS_ERROR_OK;
+
+  if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_GCM)
+    return r_tls_parser_decrypt_aead (parser, cipher, salt);
 
   if (etm && mac != NULL && cipher->info->mode == R_CRYPTO_CIPHER_MODE_CBC)
     return r_tls_parser_decrypt_etm (parser, cipher, mac);
@@ -749,6 +830,130 @@ r_tls_encrypt_buffer (RBuffer * buf, ruint64 seqno,
         ret = NULL;
       }
     }
+    r_buffer_unmap (buf, &info);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+/* AEAD record builder: emit record hdr || explicit_nonce(8) || ciphertext ||
+ * tag. The 12-byte GCM nonce is @salt(4) || @nonce_explicit(8); @aad is the
+ * 13-byte seq_num||type||version||plainlen seed. */
+static RBuffer *
+_r_tls_encrypt_buffer_aead (const ruint8 * buf, rsize bufsize, rsize hdrsize,
+    const RCryptoCipher * cipher, const ruint8 * salt,
+    const ruint8 * nonce_explicit, const ruint8 * aad)
+{
+  RBuffer * ret = NULL;
+  rsize fraglen = bufsize - hdrsize;
+  rsize tagsize = cipher->info->blocksize;   /* 16 for GCM */
+  rsize saltsize = cipher->info->ivsize - R_TLS_AEAD_EXPLICIT_NONCE_SIZE; /* 4 */
+  rsize reclen = R_TLS_AEAD_EXPLICIT_NONCE_SIZE + fraglen + tagsize;
+
+  /* The nonce buffer is sized for a 12-byte AEAD nonce (salt + 8). */
+  if (R_UNLIKELY (cipher->info->ivsize != R_TLS_AEAD_NONCE_SIZE_MAX))
+    return NULL;
+
+  if ((ret = r_buffer_new_alloc (NULL, hdrsize + reclen, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+    RCryptoCipherResult res;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      ruint8 nonce[R_TLS_AEAD_NONCE_SIZE_MAX];
+      ruint8 * p = info.data;
+
+      /* record hdr with the AEAD record length */
+      r_memcpy (p, buf, hdrsize - 2);
+      p += hdrsize - 2;
+      *p++ = (reclen >> 8) & 0xff;
+      *p++ = (reclen     ) & 0xff;
+
+      /* explicit nonce on the wire, then ciphertext + tag */
+      r_memcpy (p, nonce_explicit, R_TLS_AEAD_EXPLICIT_NONCE_SIZE);
+      p += R_TLS_AEAD_EXPLICIT_NONCE_SIZE;
+
+      r_memcpy (nonce, salt, saltsize);
+      r_memcpy (nonce + saltsize, nonce_explicit, R_TLS_AEAD_EXPLICIT_NONCE_SIZE);
+
+      res = r_crypto_cipher_encrypt_aead (cipher, p, fraglen, buf + hdrsize,
+          aad, R_TLS_AEAD_AAD_SIZE, nonce, saltsize + R_TLS_AEAD_EXPLICIT_NONCE_SIZE,
+          p + fraglen, tagsize);
+
+      r_buffer_unmap (ret, &info);
+    } else {
+      res = R_CRYPTO_CIPHER_INVAL;
+    }
+
+    if (res != R_CRYPTO_CIPHER_OK) {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+/* Build the 13-byte AEAD additional_data: seq_num(8) || type(1) || version(2)
+ * || plainlen(2). @seqnum is the 8-byte big-endian sequence (TLS) or
+ * epoch||seqno (DTLS); @rec points at the record header (type, version). */
+static void
+r_tls_aead_aad (ruint8 aad[R_TLS_AEAD_AAD_SIZE], const ruint8 * seqnum, const ruint8 * rec,
+    rsize plainlen)
+{
+  r_memcpy (aad, seqnum, sizeof (ruint64));
+  aad[0x08] = rec[0];                          /* type */
+  aad[0x09] = rec[1]; aad[0x0a] = rec[2];      /* version */
+  aad[0x0b] = (plainlen >> 8) & 0xff;
+  aad[0x0c] = (plainlen     ) & 0xff;
+}
+
+RBuffer *
+r_tls_encrypt_buffer_aead (RBuffer * buf, ruint64 seqno,
+    const RCryptoCipher * cipher, const ruint8 * salt)
+{
+  RBuffer * ret;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  if (R_UNLIKELY (buf == NULL || cipher == NULL || salt == NULL)) return NULL;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
+    ruint8 nonce_explicit[R_TLS_AEAD_EXPLICIT_NONCE_SIZE];
+    ruint8 aad[R_TLS_AEAD_AAD_SIZE];
+    ruint64 seqbe = RUINT64_TO_BE (seqno);
+
+    r_memcpy (nonce_explicit, &seqbe, sizeof (ruint64));
+    r_tls_aead_aad (aad, nonce_explicit, info.data,
+        info.size - R_TLS_RECORD_HDR_SIZE);
+    ret = _r_tls_encrypt_buffer_aead (info.data, info.size, R_TLS_RECORD_HDR_SIZE,
+        cipher, salt, nonce_explicit, aad);
+    r_buffer_unmap (buf, &info);
+  } else {
+    ret = NULL;
+  }
+
+  return ret;
+}
+
+RBuffer *
+r_dtls_encrypt_buffer_aead (RBuffer * buf, const RCryptoCipher * cipher,
+    const ruint8 * salt)
+{
+  RBuffer * ret;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  if (R_UNLIKELY (buf == NULL || cipher == NULL || salt == NULL)) return NULL;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
+    ruint8 aad[R_TLS_AEAD_AAD_SIZE];
+
+    /* DTLS explicit nonce and AAD seq_num are both the record's epoch||seqno
+     * (info.data + 3). */
+    r_tls_aead_aad (aad, info.data + 3, info.data,
+        info.size - R_DTLS_RECORD_HDR_SIZE);
+    ret = _r_tls_encrypt_buffer_aead (info.data, info.size, R_DTLS_RECORD_HDR_SIZE,
+        cipher, salt, info.data + 3, aad);
     r_buffer_unmap (buf, &info);
   } else {
     ret = NULL;

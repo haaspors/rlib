@@ -690,7 +690,7 @@ RTEST (rtls, pkt_dtls_finished_encrypted, RTEST_FAST)
   r_assert_cmpptr ((cipher = r_cipher_aes_128_cbc_new (aes_128_cbc_key)), !=, NULL);
   r_assert_cmpptr ((hmac = r_hmac_new (R_MSG_DIGEST_TYPE_SHA1, sha1_mac_key, sizeof (sha1_mac_key))), !=, NULL);
 
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE),
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE, NULL),
       ==, R_TLS_ERROR_OK);
 
   r_assert_cmpint (r_tls_parser_parse_finished (&parser, &verify_data, &size),
@@ -1081,7 +1081,7 @@ RTEST (rtls, dtls_encrypt, RTEST_FAST)
   r_assert_cmpint (r_tls_parser_init_buffer (&parser, encbuf), ==, R_TLS_ERROR_OK);
   r_buffer_unref (encbuf);
 
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, FALSE, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpmem (parser.fragment.data, ==, plaintxt + R_DTLS_RECORD_HDR_SIZE,
       parser.fragment.size);
 
@@ -1125,7 +1125,7 @@ RTEST (rtls, dtls_encrypt_then_mac, RTEST_FAST)
   r_buffer_unref (buf);
 
   r_assert_cmpint (r_tls_parser_init_buffer (&parser, encbuf), ==, R_TLS_ERROR_OK);
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, TRUE), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, TRUE, NULL), ==, R_TLS_ERROR_OK);
   r_assert_cmpmem (parser.fragment.data, ==, plaintxt + R_DTLS_RECORD_HDR_SIZE,
       parser.fragment.size);
   r_tls_parser_clear (&parser);
@@ -1141,7 +1141,7 @@ RTEST (rtls, dtls_encrypt_then_mac, RTEST_FAST)
   r_buffer_unmap (encbuf, &info);
 
   r_assert_cmpint (r_tls_parser_init_buffer (&parser, encbuf), ==, R_TLS_ERROR_OK);
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, TRUE), ==, R_TLS_ERROR_INVALID_MAC);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, hmac, TRUE, NULL), ==, R_TLS_ERROR_INVALID_MAC);
   r_tls_parser_clear (&parser);
   r_buffer_unref (encbuf);
 
@@ -1166,7 +1166,7 @@ RTEST (rtls, parser_decrypt_fragment_shorter_than_iv, RTEST_FAST)
   r_assert_cmpptr ((cipher = r_cipher_aes_128_cbc_new (aes_key)), !=, NULL);
   r_assert_cmpint (r_tls_parser_init (&parser, short_record, sizeof (short_record)),
       ==, R_TLS_ERROR_OK);
-  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, NULL, FALSE),
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, cipher, NULL, FALSE, NULL),
       ==, R_TLS_ERROR_CORRUPT_RECORD);
 
   r_tls_parser_clear (&parser);
