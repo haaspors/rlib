@@ -538,7 +538,8 @@ r_tls_client_nego_server_hello (RTLSClient * client, const RTLSParser * parser)
  * hash through ClientKeyExchange; otherwise the client + server randoms. The
  * caller must have absorbed the ClientKeyExchange into hshash first. */
 static RTLSError
-r_tls_client_derive_master_secret (RTLSClient * client, const ruint8 pms[48])
+r_tls_client_derive_master_secret (RTLSClient * client,
+    const ruint8 * pms, rsize pmslen)
 {
   if (client->support_ext_master_secret) {
     rsize hashsize = r_msg_digest_size (client->hshash);
@@ -548,12 +549,12 @@ r_tls_client_derive_master_secret (RTLSClient * client, const ruint8 pms[48])
       return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
     return client->prf (client->mastersecret, sizeof (client->mastersecret),
-        pms, 48, R_STR_WITH_SIZE_ARGS ("extended master secret"),
+        pms, pmslen, R_STR_WITH_SIZE_ARGS ("extended master secret"),
         sessionhash, hashsize, NULL);
   }
 
   return client->prf (client->mastersecret, sizeof (client->mastersecret),
-      pms, 48, R_STR_WITH_SIZE_ARGS ("master secret"),
+      pms, pmslen, R_STR_WITH_SIZE_ARGS ("master secret"),
       client->clirandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
       client->servrandom, (rsize)R_TLS_HELLO_RANDOM_BYTES,
       NULL);
@@ -933,7 +934,7 @@ r_tls_client_send_flight (RTLSClient * client)
     client->client.msgseq++;
 
   if (ret == R_TLS_ERROR_OK)
-    ret = r_tls_client_derive_master_secret (client, pms);
+    ret = r_tls_client_derive_master_secret (client, pms, sizeof (pms));
   r_memclear_secure (pms, sizeof (pms));
   if (ret == R_TLS_ERROR_OK)
     ret = r_tls_client_expand_master_secret (client);
