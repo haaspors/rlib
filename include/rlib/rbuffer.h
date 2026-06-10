@@ -83,10 +83,16 @@ R_API RBuffer * r_buffer_new_alloc (RMemAllocator * allocator, rsize allocsize,
  * @param user        Opaque pointer forwarded to @p usernotify.
  * @param usernotify  Destructor called when the wrapping segment
  *                    is freed; receives @p user.
+ *
+ * @p usernotify runs exactly once whether the buffer is created or creation
+ * fails (so a non-@c NULL @p usernotify must not be paired with the caller
+ * freeing @p data on a @c NULL return).
  */
 R_API RBuffer * r_buffer_new_wrapped (RMemFlags flags, rpointer data,
     rsize allocsize, rsize size, rsize offset, rpointer user, RDestroyNotify usernotify);
-/** @brief Wrap @p data and free it with @ref r_free when the segment dies. */
+/** @brief Wrap @p data and free it with @ref r_free when the segment dies.
+ * Ownership transfers unconditionally: @p data is freed even if creation fails,
+ * so the caller must not free it on a @c NULL return. */
 static inline RBuffer * r_buffer_new_take (rpointer data, rsize size)
 { return r_buffer_new_wrapped (R_MEM_FLAG_NONE, data, size, size, 0, data, r_free); }
 /** @brief Allocate-and-copy @p data, returning a wrapping buffer. */
