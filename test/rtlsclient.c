@@ -52,6 +52,29 @@ static const rchar testpkpem[] =
   "VFwqM04nD9RsYGRKy6NhrA==\r\n"
   "-----END PRIVATE KEY-----\r\n";
 
+/* Self-signed P-256 ECDSA test certificate + matching PKCS#8 key (CN=rlib-ecdsa).
+ * Keep the serial small (the parser stores it as a ruint64) and the validity in
+ * UTCTime range (< year 2050, no GeneralizedTime) when regenerating, or the
+ * certificate will not parse. */
+static const rchar testcertpem_ecdsa[] =
+  "-----BEGIN CERTIFICATE-----\n"
+  "MIIBazCCARKgAwIBAgIBATAKBggqhkjOPQQDAjAVMRMwEQYDVQQDDApybGliLWVj\n"
+  "ZHNhMB4XDTI2MDYxMDE2MzEwNVoXDTQ4MDUwNTE2MzEwNVowFTETMBEGA1UEAwwK\n"
+  "cmxpYi1lY2RzYTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABHmc5lmycwenV7C+\n"
+  "7Z8tpwNH4WqfCYE2ngzLa8mn0MK+UeGkAOMj30dPnRd9Y2mi7ypVo1y0aAb/HJYF\n"
+  "/q6z4pijUzBRMB0GA1UdDgQWBBR6XBE2U7nNA9t9ll5AacMs4bTZazAfBgNVHSME\n"
+  "GDAWgBR6XBE2U7nNA9t9ll5AacMs4bTZazAPBgNVHRMBAf8EBTADAQH/MAoGCCqG\n"
+  "SM49BAMCA0cAMEQCIBbHM2jgY1m9lhDtyIUZJA1Pf8faLunxtb3ysQvorcEyAiAQ\n"
+  "MI/3ana2mn80+oVJfVU6vFEOYVJ84K16whK8g3e7Fg==\n"
+  "-----END CERTIFICATE-----\n";
+
+static const rchar testpkpem_ecdsa[] =
+  "-----BEGIN PRIVATE KEY-----\n"
+  "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgoTATtTsWuzOwzu8p\n"
+  "lD/YJFTfjLKmPB52UDdl6/X+V42hRANCAAR5nOZZsnMHp1ewvu2fLacDR+FqnwmB\n"
+  "Np4My2vJp9DCvlHhpADjI99HT50XfWNpou8qVaNctGgG/xyWBf6us+KY\n"
+  "-----END PRIVATE KEY-----\n";
+
 RTEST_FIXTURE_STRUCT (rtlsclient)
 {
   RTLSServer * server;
@@ -712,5 +735,196 @@ RTEST_F (rtlsclient, gcm_tampered_record, RTEST_FAST)
 
   r_assert (fixture->srv_error);
   r_assert (r_queue_is_empty (&fixture->srv_app));
+}
+RTEST_END;
+
+/* Replace the fixture's default RSA server cert with the ECDSA one. */
+static void
+r_test_tls_use_ecdsa_server_cert (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ecdsa, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ecdsa, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_crypto_key_get_algo (pk), ==, R_CRYPTO_ALGO_ECDSA);
+  r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+}
+
+/* ECDHE_ECDSA end to end with an ECDSA server certificate: the handshake
+ * completes, the negotiated suite authenticates with ECDSA, and app data
+ * round-trips. The SHA-384 GCM suite also exercises the per-suite PRF. */
+static void
+r_test_tls_ecdsa_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture,
+    RTLSVersion version, RTLSCipherSuite suite)
+{
+  static const ruint8 c2s[] = { 'e', 'c', 'd', 's', 'a' };
+  const RTLSCipherSuiteInfo * info;
+  RBuffer * app;
+
+  r_test_tls_use_ecdsa_server_cert (fixture);
+  fixture->force_suite = suite;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng, version),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  r_assert_cmpptr ((info = r_tls_client_get_cipher_suite (fixture->client)), !=, NULL);
+  r_assert_cmpint (info->suite, ==, suite);
+  r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_ECDHE_ECDSA);
+  r_assert_cmpptr ((info = r_tls_server_get_cipher_suite (fixture->server)), !=, NULL);
+  r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_ECDHE_ECDSA);
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
+}
+
+RTEST_F (rtlsclient, tls_ecdsa_gcm128, RTEST_FAST)
+{
+  r_test_tls_ecdsa_loopback (fixture, R_TLS_VERSION_TLS_1_2,
+      R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_ecdsa_gcm128, RTEST_FAST)
+{
+  r_test_tls_ecdsa_loopback (fixture, R_TLS_VERSION_DTLS_1_2,
+      R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls_ecdsa_gcm256_sha384, RTEST_FAST)
+{
+  r_test_tls_ecdsa_loopback (fixture, R_TLS_VERSION_TLS_1_2,
+      R_TLS_CS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_ecdsa_gcm256_sha384, RTEST_FAST)
+{
+  r_test_tls_ecdsa_loopback (fixture, R_TLS_VERSION_DTLS_1_2,
+      R_TLS_CS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls_ecdsa_cbc128_sha256, RTEST_FAST)
+{
+  r_test_tls_ecdsa_loopback (fixture, R_TLS_VERSION_TLS_1_2,
+      R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_ecdsa_cbc128_sha256, RTEST_FAST)
+{
+  r_test_tls_ecdsa_loopback (fixture, R_TLS_VERSION_DTLS_1_2,
+      R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256);
+}
+RTEST_END;
+
+/* With an ECDSA certificate and no forced suite, the default negotiation must
+ * pick an ECDHE_ECDSA suite (the auth gate keeps the RSA/ECDHE_RSA suites out). */
+RTEST_F (rtlsclient, tls_ecdsa_default_negotiation, RTEST_FAST)
+{
+  const RTLSCipherSuiteInfo * info;
+
+  r_test_tls_use_ecdsa_server_cert (fixture);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert_cmpptr ((info = r_tls_client_get_cipher_suite (fixture->client)), !=, NULL);
+  r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_ECDHE_ECDSA);
+}
+RTEST_END;
+
+/* Auth-type mismatch: an ECDSA cert cannot satisfy a forced ECDHE_RSA suite,
+ * and the default RSA cert cannot satisfy a forced ECDHE_ECDSA suite. Either
+ * way negotiation finds no common suite and the handshake aborts. */
+RTEST_F (rtlsclient, tls_ecdsa_cert_rsa_suite_fails, RTEST_FAST)
+{
+  r_test_tls_use_ecdsa_server_cert (fixture);
+  fixture->force_suite = R_TLS_CS_ECDHE_RSA_WITH_AES_128_GCM_SHA256;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (!fixture->cli_hs_done);
+  r_assert (!fixture->srv_hs_done);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls_rsa_cert_ecdsa_suite_fails, RTEST_FAST)
+{
+  fixture->force_suite = R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (!fixture->cli_hs_done);
+  r_assert (!fixture->srv_hs_done);
+}
+RTEST_END;
+
+/* Mutual TLS with ECDSA on both ends: server requires a client cert, both
+ * present ECDSA certs, the handshake completes and each side holds the other's
+ * leaf. Exercises the ECDSA CertificateVerify sign + verify path. */
+RTEST_F (rtlsclient, tls_ecdsa_mutual, RTEST_FAST)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_test_tls_use_ecdsa_server_cert (fixture);
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ecdsa, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ecdsa, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_cert (fixture->client, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server,
+        R_TLS_CLIENT_CERT_MODE_REQUIRE), ==, R_TLS_ERROR_OK);
+  fixture->force_suite = R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), !=, NULL);
+  r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), !=, NULL);
 }
 RTEST_END;
