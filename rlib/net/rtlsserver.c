@@ -1578,8 +1578,10 @@ r_tls_server_parse_finished (RTLSServer * server, const RTLSParser * parser)
 
 static void r_tls_server_send_out (RTLSServer * server);
 
-static void
-r_tls_server_send_alert (RTLSServer * server, RTLSAlertType alert)
+/* Build an alert record and queue it for sending; the caller flushes. */
+static RTLSError
+r_tls_server_emit_alert (RTLSServer * server, RTLSAlertLevel level,
+    RTLSAlertType alert)
 {
   RBuffer * buf;
   RTLSError ret = R_TLS_ERROR_OOM;
@@ -1588,10 +1590,6 @@ r_tls_server_send_alert (RTLSServer * server, RTLSAlertType alert)
    * negotiation). */
   RTLSVersion ver = (server->version != 0) ? server->version : server->recordver;
 
-  R_LOG_WARNING ("Sending alert: 0x%.2x in state (%d)", alert, server->state);
-
-  /* Emit a fatal alert record to the peer. Best-effort: even if it
-   * cannot be built/sent we still report and move to the error state. */
   if ((buf = r_tls_server_alloc_buffer (server)) != NULL) {
     RMemMapInfo info = R_MEM_MAP_INFO_INIT;
 
@@ -1600,11 +1598,9 @@ r_tls_server_send_alert (RTLSServer * server, RTLSAlertType alert)
 
       if (r_tls_version_is_dtls (ver))
         ret = r_dtls_write_alert (info.data, info.size, &sz, ver,
-            server->server.epoch, server->server.seqno,
-            R_TLS_ALERT_LEVEL_FATAL, alert);
+            server->server.epoch, server->server.seqno, level, alert);
       else
-        ret = r_tls_write_alert (info.data, info.size, &sz, ver,
-            R_TLS_ALERT_LEVEL_FATAL, alert);
+        ret = r_tls_write_alert (info.data, info.size, &sz, ver, level, alert);
       r_buffer_unmap (buf, &info);
 
       if (ret == R_TLS_ERROR_OK) {
@@ -1615,7 +1611,20 @@ r_tls_server_send_alert (RTLSServer * server, RTLSAlertType alert)
     r_buffer_unref (buf);
   }
 
-  if (ret != R_TLS_ERROR_OK)
+  return ret;
+}
+
+static void
+r_tls_server_send_alert (RTLSServer * server, RTLSAlertType alert)
+{
+  RTLSError ret;
+
+  R_LOG_WARNING ("Sending alert: 0x%.2x in state (%d)", alert, server->state);
+
+  /* Emit a fatal alert record to the peer. Best-effort: even if it
+   * cannot be built/sent we still report and move to the error state. */
+  if ((ret = r_tls_server_emit_alert (server, R_TLS_ALERT_LEVEL_FATAL, alert))
+      != R_TLS_ERROR_OK)
     R_LOG_WARNING ("Failed to emit alert 0x%.2x: %d", alert, ret);
   else
     /* Flush now: the caller returns an error, skipping the normal

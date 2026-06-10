@@ -298,14 +298,14 @@ r_tls_client_send_out (RTLSClient * client)
   }
 }
 
-static void
-r_tls_client_send_alert (RTLSClient * client, RTLSAlertType alert)
+/* Build an alert record and queue it for sending; the caller flushes. */
+static RTLSError
+r_tls_client_emit_alert (RTLSClient * client, RTLSAlertLevel level,
+    RTLSAlertType alert)
 {
   RBuffer * buf;
   RTLSError ret = R_TLS_ERROR_OOM;
   RTLSVersion ver = (client->version != 0) ? client->version : client->recordver;
-
-  R_LOG_WARNING ("Sending alert: 0x%.2x in state (%d)", alert, client->state);
 
   if ((buf = r_tls_client_alloc_buffer (client)) != NULL) {
     RMemMapInfo info = R_MEM_MAP_INFO_INIT;
@@ -315,11 +315,9 @@ r_tls_client_send_alert (RTLSClient * client, RTLSAlertType alert)
 
       if (r_tls_version_is_dtls (ver))
         ret = r_dtls_write_alert (info.data, info.size, &sz, ver,
-            client->client.epoch, client->client.seqno,
-            R_TLS_ALERT_LEVEL_FATAL, alert);
+            client->client.epoch, client->client.seqno, level, alert);
       else
-        ret = r_tls_write_alert (info.data, info.size, &sz, ver,
-            R_TLS_ALERT_LEVEL_FATAL, alert);
+        ret = r_tls_write_alert (info.data, info.size, &sz, ver, level, alert);
       r_buffer_unmap (buf, &info);
 
       if (ret == R_TLS_ERROR_OK) {
@@ -330,7 +328,16 @@ r_tls_client_send_alert (RTLSClient * client, RTLSAlertType alert)
     r_buffer_unref (buf);
   }
 
-  if (ret == R_TLS_ERROR_OK)
+  return ret;
+}
+
+static void
+r_tls_client_send_alert (RTLSClient * client, RTLSAlertType alert)
+{
+  R_LOG_WARNING ("Sending alert: 0x%.2x in state (%d)", alert, client->state);
+
+  if (r_tls_client_emit_alert (client, R_TLS_ALERT_LEVEL_FATAL, alert)
+      == R_TLS_ERROR_OK)
     r_tls_client_send_out (client);
 
   if (client->cb.error != NULL)
