@@ -9,15 +9,15 @@ RTEST (rtlsciphersuite, is_supported, RTEST_FAST)
   r_assert (!r_tls_cipher_suite_is_supported (R_TLS_CS_ECDH_ECDSA_WITH_NULL_SHA));
   r_assert (!r_tls_cipher_suite_is_supported (R_TLS_CS_ECDH_ECDSA_WITH_AES_128_CBC_SHA));
 
-  r_assert (!r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_AES_256_CBC_SHA));
-  r_assert (!r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_AES_256_CBC_SHA256));
-
   /* We support these TLS cipher suites! Yay*/
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_AES_128_CBC_SHA));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_AES_256_CBC_SHA));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_AES_256_CBC_SHA256));
 
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_RSA_WITH_AES_256_CBC_SHA));
 
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_NULL_MD5));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_RSA_WITH_NULL_SHA));

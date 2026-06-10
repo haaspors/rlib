@@ -61,8 +61,7 @@ RTEST_FIXTURE_STRUCT (rtlsclient)
   rboolean srv_error, cli_error;
   ruint verify_calls;
   rboolean verify_result;
-  rboolean force_ecdhe;          /* offer only ECDHE_RSA on both endpoints */
-  rboolean force_rsa;            /* offer only static RSA on both endpoints */
+  RTLSCipherSuite force_suite;   /* pin both endpoints to one suite; NONE = defaults */
 
   RClock * clock;
   REvLoop * evloop;
@@ -78,12 +77,10 @@ r_tlsclient_test_prefer_ecdhe (rpointer ctx, RTLSVersion ver,
 {
   RTEST_FIXTURE_STRUCT (rtlsclient) * fixture = ctx;
   (void) ver;
-  if (!fixture->force_ecdhe && !fixture->force_rsa)
+  if (fixture->force_suite == R_TLS_CS_NONE)
     return FALSE;                /* follow the library defaults (ECDHE-first) */
   *count = 1;
-  cs[0] = fixture->force_ecdhe ?
-      R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 :
-      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256;
+  cs[0] = fixture->force_suite;
   return TRUE;
 }
 
@@ -189,8 +186,7 @@ RTEST_FIXTURE_SETUP (rtlsclient)
   fixture->srv_error = fixture->cli_error = FALSE;
   fixture->verify_calls = 0;
   fixture->verify_result = TRUE;
-  fixture->force_ecdhe = FALSE;
-  fixture->force_rsa = FALSE;
+  fixture->force_suite = R_TLS_CS_NONE;
 
   r_queue_init (&fixture->srv_out);
   r_queue_init (&fixture->cli_out);
@@ -434,7 +430,7 @@ r_test_tls_ecdhe_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture, RTLSVers
   const RTLSCipherSuiteInfo * info;
   RBuffer * app;
 
-  fixture->force_ecdhe = TRUE;
+  fixture->force_suite = R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256;
 
   r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
       ==, R_TLS_ERROR_OK);
@@ -488,7 +484,7 @@ RTEST_F (rtlsclient, tls_ecdhe_duplicate_ske, RTEST_FAST)
 {
   RBuffer * buf;
 
-  fixture->force_ecdhe = TRUE;
+  fixture->force_suite = R_TLS_CS_ECDHE_RSA_WITH_AES_128_CBC_SHA256;
 
   r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
       ==, R_TLS_ERROR_OK);
@@ -525,7 +521,7 @@ RTEST_END;
  * preference is ECDHE-first, so this exercises the legacy key exchange). */
 RTEST_F (rtlsclient, tls_rsa_loopback, RTEST_FAST)
 {
-  fixture->force_rsa = TRUE;
+  fixture->force_suite = R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256;
 
   r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
       ==, R_TLS_ERROR_OK);
@@ -540,5 +536,38 @@ RTEST_F (rtlsclient, tls_rsa_loopback, RTEST_FAST)
   r_assert (!fixture->srv_error);
   r_assert_cmpint (r_tls_client_get_cipher_suite (fixture->client)->key_exchange,
       ==, R_KEY_EXCHANGE_RSA);
+}
+RTEST_END;
+
+/* AES-256-CBC exercises the wider key expansion (32-byte write keys) over a
+ * full ECDHE handshake with application data. */
+RTEST_F (rtlsclient, tls_ecdhe_aes256_loopback, RTEST_FAST)
+{
+  static const ruint8 c2s[] = { 'a', 'e', 's', '2', '5', '6' };
+  RBuffer * app;
+
+  fixture->force_suite = R_TLS_CS_ECDHE_RSA_WITH_AES_256_CBC_SHA;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert_cmpint (r_tls_client_get_cipher_suite (fixture->client)->suite,
+      ==, R_TLS_CS_ECDHE_RSA_WITH_AES_256_CBC_SHA);
+  r_assert_cmpuint (r_tls_client_get_cipher_suite (fixture->client)->cipher->keybits, ==, 256);
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
 }
 RTEST_END;
