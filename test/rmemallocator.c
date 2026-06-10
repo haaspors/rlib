@@ -241,12 +241,15 @@ RTEST (rmem, wrapped, RTEST_FAST)
   rsize allocsize = 42;
   rpointer data = r_malloc0 (allocsize);
 
+  /* Bad parameters return NULL. Pass a NULL notify so these probes do not
+   * release data -- ownership transfers on entry, so r_free would consume it
+   * (the dedicated release-on-failure behaviour is covered in test/rmem.c). */
   r_assert_cmpptr (r_mem_new_wrapped (R_MEM_FLAG_NONE, NULL, allocsize,
-          24, 4, data, r_free), ==, NULL);
+          24, 4, data, NULL), ==, NULL);
   r_assert_cmpptr (r_mem_new_wrapped (R_MEM_FLAG_NONE, data, 0,
-          24, 4, data, r_free), ==, NULL);
+          24, 4, data, NULL), ==, NULL);
   r_assert_cmpptr (r_mem_new_wrapped (R_MEM_FLAG_NONE, data, allocsize,
-          24, 24, data, r_free), ==, NULL);
+          24, 24, data, NULL), ==, NULL);
   /* This is really just the same as r_mem_new_take () */
   r_assert_cmpptr ((mem = r_mem_new_wrapped (R_MEM_FLAG_NONE, data, allocsize,
           24, 4, data, r_free)), !=, NULL);

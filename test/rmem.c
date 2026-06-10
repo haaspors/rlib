@@ -339,3 +339,47 @@ RTEST (rmem, memclear_secure, RTEST_FAST)
 }
 RTEST_END;
 
+static ruint g__r_test_wrap_notify;
+static void
+r_test_wrap_notify (rpointer user)
+{
+  (void) user;
+  g__r_test_wrap_notify++;
+}
+
+/* r_mem_new_wrapped takes ownership of @data on entry, so the destroy notify
+ * must run exactly once whether the wrapper is created or creation fails -- a
+ * "take" caller does not free on a NULL return, so a missed notify leaks. */
+RTEST (rmem, new_wrapped_releases_on_failure, RTEST_FAST)
+{
+  ruint8 buf[8];
+  RMem * mem;
+
+  /* size + offset exceeds allocsize: creation fails, ownership still released. */
+  g__r_test_wrap_notify = 0;
+  r_assert_cmpptr (r_mem_new_wrapped (R_MEM_FLAG_NONE, buf, sizeof (buf),
+        sizeof (buf), 4, buf, r_test_wrap_notify), ==, NULL);
+  r_assert_cmpuint (g__r_test_wrap_notify, ==, 1);
+
+  /* NULL data is rejected too; the notify still runs (user may be NULL). */
+  g__r_test_wrap_notify = 0;
+  r_assert_cmpptr (r_mem_new_wrapped (R_MEM_FLAG_NONE, NULL, 0, 0, 0,
+        NULL, r_test_wrap_notify), ==, NULL);
+  r_assert_cmpuint (g__r_test_wrap_notify, ==, 1);
+
+  /* A NULL notify (borrowed memory) is simply not called on failure. */
+  g__r_test_wrap_notify = 0;
+  r_assert_cmpptr (r_mem_new_wrapped (R_MEM_FLAG_NONE, buf, sizeof (buf),
+        sizeof (buf), 4, buf, NULL), ==, NULL);
+  r_assert_cmpuint (g__r_test_wrap_notify, ==, 0);
+
+  /* Success path: the notify fires exactly once, at unref -- not twice. */
+  g__r_test_wrap_notify = 0;
+  r_assert_cmpptr ((mem = r_mem_new_wrapped (R_MEM_FLAG_NONE, buf, sizeof (buf),
+        sizeof (buf), 0, buf, r_test_wrap_notify)), !=, NULL);
+  r_assert_cmpuint (g__r_test_wrap_notify, ==, 0);
+  r_mem_unref (mem);
+  r_assert_cmpuint (g__r_test_wrap_notify, ==, 1);
+}
+RTEST_END;
+

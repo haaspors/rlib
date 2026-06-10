@@ -102,10 +102,8 @@ r_rtp_new (RBuffer * payload, ruint8 pad, ruint8 cc, rboolean ext,
     hdr->p = pad > 0 ? 1 : 0;
     hdr->x = ext ? 1 : 0;
     hdr->cc = cc;
-    if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, hdr, size, size, 0)) == NULL)) {
-      r_free (hdr);
-      goto error;
-    }
+    if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, hdr, size, size, 0)) == NULL))
+      goto error;   /* r_mem_new_take owns hdr, even on failure */
 
     res = r_buffer_mem_append (ret, mem);
     r_mem_unref (mem);
@@ -125,10 +123,8 @@ r_rtp_new (RBuffer * payload, ruint8 pad, ruint8 cc, rboolean ext,
       if (extsize > 0 && extdata != NULL)
         r_memcpy (e + sizeof (ruint32), extdata, extsize);
 
-      if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, e, size, size, 0)) == NULL)) {
-        r_free (e);
-        goto error;
-      }
+      if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, e, size, size, 0)) == NULL))
+        goto error;   /* r_mem_new_take owns e, even on failure */
 
       res = r_buffer_mem_append (ret, mem);
       r_mem_unref (mem);
@@ -147,10 +143,8 @@ r_rtp_new (RBuffer * payload, ruint8 pad, ruint8 cc, rboolean ext,
         goto error;
 
       data[size - 1] = pad;
-      if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, data, size, size, 0)) == NULL)) {
-        r_free (data);
-        goto error;
-      }
+      if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, data, size, size, 0)) == NULL))
+        goto error;   /* r_mem_new_take owns data, even on failure */
 
       res = r_buffer_mem_append (ret, mem);
       r_mem_unref (mem);

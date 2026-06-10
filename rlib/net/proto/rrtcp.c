@@ -439,10 +439,8 @@ r_rtcp_append (RBuffer * buf, ruint8 pt, ruint8 count,
   if (bodylen > 0 && body != NULL)
     r_memcpy (pkt + sizeof (ruint32), body, bodylen);
 
-  if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, pkt, total, total, 0)) == NULL)) {
-    r_free (pkt);
-    return FALSE;
-  }
+  if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, pkt, total, total, 0)) == NULL))
+    return FALSE;   /* r_mem_new_take owns pkt, even on failure */
   res = r_buffer_mem_append (buf, mem);
   r_mem_unref (mem);
   return res;

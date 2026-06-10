@@ -365,15 +365,24 @@ r_mem_new_wrapped (RMemFlags flags, rpointer data, rsize allocsize,
 {
   RSystemMem * sysmem;
 
-  if (R_UNLIKELY (data == NULL)) return NULL;
-  if (R_UNLIKELY (size + offset > allocsize)) return NULL;
+  if (R_UNLIKELY (data == NULL || size + offset > allocsize))
+    goto fail;
 
-  if ((sysmem = r_mem_new (RSystemMem)) != NULL) {
-    r_system_mem_init (sysmem, flags, &g__r_mem_allocator_system, NULL,
-        allocsize, size, 0, offset, data, user, usernotify);
-  }
+  if (R_UNLIKELY ((sysmem = r_mem_new (RSystemMem)) == NULL))
+    goto fail;
+
+  r_system_mem_init (sysmem, flags, &g__r_mem_allocator_system, NULL,
+      allocsize, size, 0, offset, data, user, usernotify);
 
   return (RMem *) sysmem;
+
+fail:
+  /* Ownership of @data transferred to us on entry; release it via the notify
+   * even when the wrapper cannot be created, so a "take" caller (which does not
+   * free on a NULL return) never leaks. */
+  if (usernotify != NULL)
+    usernotify (user);
+  return NULL;
 }
 
 RMem *

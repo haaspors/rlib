@@ -167,6 +167,11 @@ typedef struct {
  * @param user       Cookie passed to @p usernotify on free.
  * @param usernotify Destroy callback (may be @c NULL for borrowed memory).
  * @return New @c RMem reference, or @c NULL on allocation failure.
+ *
+ * Ownership of @p data transfers on entry: @p usernotify is invoked exactly
+ * once whether the wrapper is created (when the last reference drops) or
+ * creation fails (before returning @c NULL). Callers must therefore not free
+ * @p data themselves on a @c NULL return.
  */
 R_API RMem * r_mem_new_wrapped (RMemFlags flags, rpointer data, rsize allocsize,
     rsize size, rsize offset, rpointer user, RDestroyNotify usernotify) R_ATTR_WARN_UNUSED_RESULT;
@@ -179,7 +184,9 @@ R_API RMem * r_mem_new_wrapped (RMemFlags flags, rpointer data, rsize allocsize,
  * obtained from @c r_malloc: when the last reference drops the
  * wrapper calls @c r_free on @p data. Equivalent to
  * @c r_mem_new_wrapped @c (flags, data, allocsize, size, offset,
- * data, r_free).
+ * data, r_free). Ownership transfers unconditionally — @p data is
+ * @c r_free'd even if creation fails, so the caller must not free it on a
+ * @c NULL return.
  */
 static inline RMem * r_mem_new_take(RMemFlags flags, rpointer data,
     rsize allocsize, rsize size, rsize offset)

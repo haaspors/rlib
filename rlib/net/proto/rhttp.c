@@ -416,10 +416,8 @@ r_http_msg_add_header (RHttpMsg * msg, const rchar * field, rssize fsize,
   if (R_UNLIKELY (vsize == 0)) return FALSE;
 
   if ((line = r_strprintf ("%.*s: %.*s\r\n\r\n", (int)fsize, field, (int)vsize, value)) == NULL ||
-      (hdr = r_buffer_new_take (line, fsize + 2 + vsize + 4)) == NULL) {
-    r_free (line);
-    return FALSE;
-  }
+      (hdr = r_buffer_new_take (line, fsize + 2 + vsize + 4)) == NULL)
+    return FALSE;   /* line is NULL, or r_buffer_new_take owns it even on failure */
 
   if (msg->hdr != NULL) {
     RBuffer * buf;
