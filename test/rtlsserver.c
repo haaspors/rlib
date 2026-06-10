@@ -335,7 +335,8 @@ static void
 r_test_tls_dtls_client_complete (RTLSServer * server, RPrng * prng,
     const ruint8 * ch, rsize chlen, const ruint8 * srvflight, rsize srvlen,
     rboolean ems, rboolean etm, RCryptoCipher ** srv_cipher, RHmac ** srv_hmac,
-    RMsgDigest ** hs_md, ruint8 * ms_out)
+    RMsgDigest ** hs_md, ruint8 * ms_out,
+    RCryptoCipher ** cli_cipher, RHmac ** cli_hmac)
 {
   RCryptoKey * pk;
   RBuffer * buf;
@@ -442,8 +443,15 @@ r_test_tls_dtls_client_complete (RTLSServer * server, RPrng * prng,
   r_prng_fill (prng, iv, sizeof (iv));
   r_assert_cmpptr ((encbuf = r_dtls_encrypt_buffer (plain, cipher, iv, hmac, etm)), !=, NULL);
   r_buffer_unref (plain);
-  r_hmac_free (hmac);
-  r_crypto_cipher_unref (cipher);
+  /* Hand the client write keys back so the caller can encrypt a later record
+   * (e.g. a renegotiation ClientHello), else free them. */
+  if (cli_cipher != NULL) {
+    *cli_cipher = cipher;
+    *cli_hmac = hmac;
+  } else {
+    r_hmac_free (hmac);
+    r_crypto_cipher_unref (cipher);
+  }
 
   /* ChangeCipherSpec (epoch 0) */
   r_assert_cmpint (r_dtls_write_change_cipher (ccsbuf, sizeof (ccsbuf), &ccslen,
@@ -587,7 +595,7 @@ RTEST_F (rtlsserver, dtls_srtp_valid_handshake, RTEST_FAST)
   r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
   r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
       pkt_dtls_client_hallo, sizeof (pkt_dtls_client_hallo), info.data, info.size,
-      TRUE, FALSE, &cipher, &hmac, &hs_md, ms);
+      TRUE, FALSE, &cipher, &hmac, &hs_md, ms, NULL, NULL);
   r_buffer_unmap (buf, &info);
   r_buffer_unref (buf);
   r_assert (fixture->hs_done);
@@ -800,7 +808,7 @@ RTEST_F (rtlsserver, dtls_handshake_without_ems, RTEST_FAST)
 
   r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
   r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
-      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac, NULL, NULL);
+      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac, NULL, NULL, NULL, NULL);
   r_buffer_unmap (buf, &info);
   r_buffer_unref (buf);
 
@@ -853,7 +861,7 @@ RTEST_F (rtlsserver, dtls_encrypt_then_mac_handshake, RTEST_FAST)
    * hs_done implies the server accepted the EtM-protected client Finished. */
   r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
   r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
-      ch, chlen, info.data, info.size, FALSE, TRUE, &cipher, &hmac, NULL, NULL);
+      ch, chlen, info.data, info.size, FALSE, TRUE, &cipher, &hmac, NULL, NULL, NULL, NULL);
   r_buffer_unmap (buf, &info);
   r_buffer_unref (buf);
   r_assert (fixture->hs_done);
@@ -1109,7 +1117,7 @@ RTEST_F (rtlsserver, dtls_send_appdata, RTEST_FAST)
   r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
   r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
   r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
-      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac, NULL, NULL);
+      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac, NULL, NULL, NULL, NULL);
   r_buffer_unmap (buf, &info);
   r_buffer_unref (buf);
   r_assert (fixture->hs_done);
@@ -1166,7 +1174,7 @@ RTEST_F (rtlsserver, dtls_server_close_emits_close_notify, RTEST_FAST)
   r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
   r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
   r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
-      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac, NULL, NULL);
+      ch, chlen, info.data, info.size, FALSE, FALSE, &cipher, &hmac, NULL, NULL, NULL, NULL);
   r_buffer_unmap (buf, &info);
   r_buffer_unref (buf);
   r_assert (fixture->hs_done);
@@ -1201,6 +1209,72 @@ RTEST_F (rtlsserver, dtls_server_close_emits_close_notify, RTEST_FAST)
 
   r_hmac_free (hmac);
   r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
+/* A post-handshake ClientHello is a renegotiation attempt: the server declines
+ * with a warning no_renegotiation (RFC 5246 7.2.1) and keeps the session up. */
+RTEST_F (rtlsserver, dtls_no_renegotiation_warning, RTEST_FAST)
+{
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RCryptoCipher * scipher = NULL, * ccipher = NULL;
+  RHmac * shmac = NULL, * chmac = NULL;
+  RBuffer * buf, * plain, * enc;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint8 ch[256], reneg[64], iv[16];
+  rsize chlen, hslen;
+  RTLSAlertLevel level = 0;
+  RTLSAlertType type = 0;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_dtls_client_hello (fixture->prng, ch, sizeof (ch),
+      FALSE, FALSE, FALSE, TRUE, NULL, 0, FALSE);
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
+  r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
+      ch, chlen, info.data, info.size, FALSE, FALSE, &scipher, &shmac, NULL, NULL,
+      &ccipher, &chmac);
+  r_buffer_unmap (buf, &info);
+  r_buffer_unref (buf);
+  r_assert (fixture->hs_done);
+
+  /* Drop the server's ChangeCipherSpec + Finished flight. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_buffer_unref (buf);
+
+  /* Encrypt a minimal renegotiation ClientHello (epoch 1) and feed it. The
+   * appdata handler only peeks the handshake type, so an empty body suffices. */
+  r_assert_cmpint (r_dtls_write_handshake (reneg, sizeof (reneg), &hslen,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO, 0,
+        1, 1, 3, 0, 0), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((plain = r_buffer_new_wrapped (R_MEM_FLAG_NONE, reneg, hslen,
+          hslen, 0, NULL, NULL)), !=, NULL);
+  r_prng_fill (fixture->prng, iv, sizeof (iv));
+  r_assert_cmpptr ((enc = r_dtls_encrypt_buffer (plain, ccipher, iv, chmac, FALSE)), !=, NULL);
+  r_buffer_unref (plain);
+  r_assert (r_tls_server_incoming_data (fixture->server, enc));
+  r_buffer_unref (enc);
+
+  /* The reply is an encrypted warning no_renegotiation and the session lives on. */
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, scipher, shmac, FALSE, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &level, &type), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (level, ==, R_TLS_ALERT_LEVEL_WARNING);
+  r_assert_cmpuint (type, ==, R_TLS_ALERT_TYPE_NO_RENEGOTIATION);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+
+  r_assert (fixture->hs_done);
+  r_assert (!fixture->got_error);
+
+  r_hmac_free (shmac); r_crypto_cipher_unref (scipher);
+  r_hmac_free (chmac); r_crypto_cipher_unref (ccipher);
 }
 RTEST_END;
 
@@ -2104,7 +2178,7 @@ RTEST_F (rtlsserver, dtls_session_resume, RTEST_FAST)
   r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
   r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
       pkt_dtls_client_hallo, sizeof (pkt_dtls_client_hallo), info.data, info.size,
-      TRUE, FALSE, &cipher, &hmac, &hs_md, ms);
+      TRUE, FALSE, &cipher, &hmac, &hs_md, ms, NULL, NULL);
   r_buffer_unmap (buf, &info);
   r_buffer_unref (buf);
   r_assert (fixture->hs_done);
@@ -2311,7 +2385,7 @@ RTEST_F (rtlsserver, dtls_bad_record_silently_discarded, RTEST_FAST)
   r_assert (r_buffer_map (buf, &info, R_MEM_MAP_READ));
   r_test_tls_dtls_client_complete (fixture->server, fixture->prng,
       pkt_dtls_client_hallo, sizeof (pkt_dtls_client_hallo), info.data, info.size,
-      TRUE, FALSE, &cipher, &hmac, &hs_md, ms);
+      TRUE, FALSE, &cipher, &hmac, &hs_md, ms, NULL, NULL);
   r_buffer_unmap (buf, &info);
   r_buffer_unref (buf);
   r_assert (fixture->hs_done);
