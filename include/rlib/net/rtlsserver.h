@@ -103,6 +103,17 @@ typedef void (*RTLSErrorCb) (rpointer ctx, RTLSAlertType alert, rpointer session
  * well-formed certificate.
  */
 typedef rboolean (*RTLSCertVerifyCb) (rpointer ctx, RCryptoCert * const * chain, ruint count);
+/**
+ * @brief Callback fired when the peer cleanly closes the session.
+ *
+ * Invoked once when an inbound @c close_notify is received: the session has
+ * sent its own @c close_notify in reply and moved to its closed state, in
+ * which it accepts no further application data. Distinct from
+ * @ref RTLSErrorCb, which signals an aborted (fatal) session. May be @c NULL.
+ * @p session is the @ref RTLSServer or @ref RTLSClient the bundle is attached
+ * to.
+ */
+typedef void (*RTLSClosedCb) (rpointer ctx, rpointer session);
 
 /** @brief Callback bundle wiring a session to its transport and policy. */
 typedef struct {
@@ -112,6 +123,7 @@ typedef struct {
   RTLSBufferCb                  appdata;                 /**< Sink for decrypted application data. */
   RTLSErrorCb                   error;                   /**< Fired on a fatal alert; may be @c NULL. */
   RTLSCertVerifyCb              verify_cert;             /**< Verify the peer certificate chain; may be @c NULL. */
+  RTLSClosedCb                  closed;                  /**< Fired on a peer close_notify; may be @c NULL. */
 } RTLSCallbacks;
 
 /** @brief Create a TLS server with the given callbacks and user context. */
@@ -172,6 +184,16 @@ R_API RTLSError r_tls_server_start (RTLSServer * server, REvLoop * loop,
 R_API rboolean r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer);
 /** @brief Encrypt and send application data through the session. */
 R_API rboolean r_tls_server_send_appdata (RTLSServer * server, RBuffer * buffer);
+/**
+ * @brief Cleanly close an established session.
+ *
+ * Emits a warning @c close_notify alert to the peer and moves the session to
+ * its closed state; @ref r_tls_server_send_appdata refuses thereafter. Returns
+ * @c TRUE if the alert was emitted, @c FALSE if the session was not in its
+ * application-data state (so a second call is a no-op). This does not free the
+ * session — drop the reference with @ref r_tls_server_unref.
+ */
+R_API rboolean r_tls_server_close (RTLSServer * server);
 
 /** @brief Export RFC 5705 keying material for an application label / context. */
 R_API RTLSError r_tls_server_export_keying_material (const RTLSServer * server,

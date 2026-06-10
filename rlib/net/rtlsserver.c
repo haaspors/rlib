@@ -39,6 +39,7 @@ typedef enum {
   R_TLS_SERVER_CHANGE_CIPHER,
   R_TLS_SERVER_FINISHED,
   R_TLS_SERVER_APPDATA,
+  R_TLS_SERVER_CLOSED,
   R_TLS_SERVER_ERROR,
 } RTLSServerState;
 
@@ -1677,6 +1678,16 @@ r_tls_server_state_error (RTLSServer * server, const RTLSParser * parser)
   return R_TLS_ERROR_OK;
 }
 
+/* Once closed (close_notify exchanged) any further record is dropped. */
+static RTLSError
+r_tls_server_state_closed (RTLSServer * server, const RTLSParser * parser)
+{
+  (void) server;
+  (void) parser;
+
+  return R_TLS_ERROR_OK;
+}
+
 /* Attempt an abbreviated (RFC 5077) handshake from a ticket offered in the
  * ClientHello. On success the master secret and negotiated parameters have been
  * recovered from the ticket, the write keys are installed, and the server is
@@ -2026,6 +2037,7 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
     r_tls_server_state_change_cipher,
     r_tls_server_state_finished,
     r_tls_server_state_appdata,
+    r_tls_server_state_closed,
 
     r_tls_server_state_error,
   };
@@ -2083,8 +2095,19 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
       if ((err = r_tls_parser_parse_alert (&parser, &alevel, &atype)) == R_TLS_ERROR_OK) {
         R_LOG_WARNING ("Received Alert, %.2x %.2x", alevel, atype);
 
-        if (alevel == R_TLS_ALERT_LEVEL_FATAL)
+        if (alevel == R_TLS_ALERT_LEVEL_FATAL) {
           err = r_tls_server_change_state (server, R_TLS_SERVER_ERROR);
+        } else if (atype == R_TLS_ALERT_TYPE_CLOSE_NOTIFY &&
+            server->state < R_TLS_SERVER_CLOSED) {
+          /* Respond with our own close_notify (RFC 5246 7.2.1) and surface
+           * the orderly close to the application. */
+          if (r_tls_server_emit_alert (server, R_TLS_ALERT_LEVEL_WARNING,
+                R_TLS_ALERT_TYPE_CLOSE_NOTIFY) == R_TLS_ERROR_OK)
+            r_tls_server_send_out (server);
+          r_tls_server_change_state (server, R_TLS_SERVER_CLOSED);
+          if (server->cb.closed != NULL)
+            server->cb.closed (server->userdata, server);
+        }
       } else {
         R_LOG_WARNING ("Received Alert, unable to parse! %d", err);
 
@@ -2168,6 +2191,23 @@ r_tls_server_send_appdata (RTLSServer * server, RBuffer * buffer)
     return FALSE;
 
   r_tls_server_send_out (server);
+  return TRUE;
+}
+
+rboolean
+r_tls_server_close (RTLSServer * server)
+{
+  if (R_UNLIKELY (server == NULL)) return FALSE;
+  /* Only an established session can be cleanly closed; a second call is a
+   * no-op (the state has already advanced past APPDATA). */
+  if (server->state != R_TLS_SERVER_APPDATA) return FALSE;
+
+  if (r_tls_server_emit_alert (server, R_TLS_ALERT_LEVEL_WARNING,
+        R_TLS_ALERT_TYPE_CLOSE_NOTIFY) != R_TLS_ERROR_OK)
+    return FALSE;
+
+  r_tls_server_send_out (server);
+  r_tls_server_change_state (server, R_TLS_SERVER_CLOSED);
   return TRUE;
 }
 

@@ -98,6 +98,16 @@ R_API RTLSError r_tls_client_start (RTLSClient * client, REvLoop * loop,
 R_API rboolean r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer);
 /** @brief Encrypt and send application data through the session. */
 R_API rboolean r_tls_client_send_appdata (RTLSClient * client, RBuffer * buffer);
+/**
+ * @brief Cleanly close an established session.
+ *
+ * Emits a warning @c close_notify alert to the peer and moves the session to
+ * its closed state; @ref r_tls_client_send_appdata refuses thereafter. Returns
+ * @c TRUE if the alert was emitted, @c FALSE if the session was not in its
+ * application-data state (so a second call is a no-op). This does not free the
+ * session — drop the reference with @ref r_tls_client_unref.
+ */
+R_API rboolean r_tls_client_close (RTLSClient * client);
 
 /** @brief Export RFC 5705 keying material for an application label / context. */
 R_API RTLSError r_tls_client_export_keying_material (const RTLSClient * client,
