@@ -1470,6 +1470,37 @@ r_tls_hello_msg_extension_next (const RTLSHelloMsg * msg, RTLSHelloExt * ext)
   return R_TLS_ERROR_OK;
 }
 
+rboolean
+r_tls_hello_ext_alpn_contains (const RTLSHelloExt * ext,
+    const ruint8 * name, ruint8 len)
+{
+  const ruint8 * p, * end;
+  ruint16 listlen;
+
+  if (R_UNLIKELY (ext == NULL || name == NULL || len == 0))
+    return FALSE;
+  /* ProtocolNameList: uint16 list_len, then { uint8 name_len, name }*.
+   * Keep every step inside the declared extension length. */
+  if (ext->len < sizeof (ruint16))
+    return FALSE;
+  listlen = r_load_be16 (ext->data);
+  if ((rsize) listlen + sizeof (ruint16) > ext->len)
+    return FALSE;
+
+  p = ext->data + sizeof (ruint16);
+  end = p + listlen;
+  while (p < end) {
+    ruint8 nlen = *p++;
+    if (nlen == 0 || p + nlen > end)
+      return FALSE;
+    if (nlen == len && r_memcmp (p, name, len) == 0)
+      return TRUE;
+    p += nlen;
+  }
+
+  return FALSE;
+}
+
 RCryptoCert *
 r_tls_certificate_get_cert (const RTLSCertificate * cert)
 {

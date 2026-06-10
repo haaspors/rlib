@@ -157,6 +157,7 @@ typedef enum {
   R_TLS_ALERT_TYPE_BAD_CERTIFICATE_STATUS_RESPONSE      = 0x71, /* [RFC6066] */
   R_TLS_ALERT_TYPE_BAD_CERTIFICATE_HASH_VALUE           = 0x72, /* [RFC6066] */
   R_TLS_ALERT_TYPE_UNKNOWN_PSK_IDENTITY                 = 0x73, /* [RFC4279] */
+  R_TLS_ALERT_TYPE_NO_APPLICATION_PROTOCOL              = 0x78, /* [RFC7301] */
 } RTLSAlertType;
 
 /** @brief Handshake message type (IANA TLS HandshakeType). */
@@ -349,6 +350,7 @@ typedef enum {
   R_TLS_ERROR_ENCRYPTION_FAILED                         = -0x10, /**< Record encryption failed. */
   R_TLS_ERROR_RECORD_OVERFLOW                           = -0x11, /**< Record fragment length exceeds the limit. */
   R_TLS_ERROR_ILLEGAL_PARAMETER                         = -0x12, /**< Field value well-formed but out of range. */
+  R_TLS_ERROR_NO_APPLICATION_PROTOCOL                   = -0x13, /**< No ALPN protocol in common with the peer. */
 } RTLSError;
 
 /** @brief TLS record compression method (only @c NULL is supported / non-deprecated). */
@@ -629,6 +631,17 @@ static inline ruint8 r_tls_hello_ext_use_srtp_mki_size (const RTLSHelloExt * ext
 static inline const ruint8 * r_tls_hello_ext_use_srtp_mki (const RTLSHelloExt * ext)
 { return &ext->data[sizeof (ruint16) + r_load_be16 (ext->data) + sizeof (ruint8)]; }
 /** @} */
+
+/**
+ * @brief Whether the ALPN extension @p ext advertises the protocol @p name.
+ *
+ * Walks the ALPN @c ProtocolNameList (RFC 7301) strictly within @p ext's
+ * declared length, so a malformed or over-long list never reads past the
+ * extension and simply yields @c FALSE. @p len is the protocol-name length
+ * (1..255).
+ */
+R_API rboolean r_tls_hello_ext_alpn_contains (const RTLSHelloExt * ext,
+    const ruint8 * name, ruint8 len);
 
 
 /** @brief Decode the certificate entry @p cert into an @c RCryptoCert (caller owns the result). */

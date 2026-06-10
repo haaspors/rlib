@@ -88,6 +88,10 @@ struct RTLSServer {
   RSRTPCipherSuite dtls_srtp_profile;
   ruint8 srtp_mki_size;
   const ruint8 * srtp_mki;
+  rchar ** alpn_protocols;              /* configured supported protocols (owned) */
+  rsize alpn_count;
+  const rchar * alpn_selected;          /* negotiated protocol, points into alpn_protocols */
+  rsize alpn_selected_len;
   ruint8 * ticket;
   ruint16 ticketsize;
   RTLSSessionTicketKeys * ticket_keys;  /* shared STEK store; NULL disables tickets */
@@ -156,6 +160,12 @@ r_tls_server_free (RTLSServer * server)
     r_crypto_key_unref (server->peer_pubkey);
   if (server->ecdhe_key != NULL)
     r_crypto_key_unref (server->ecdhe_key);
+  if (server->alpn_protocols != NULL) {
+    rsize i;
+    for (i = 0; i < server->alpn_count; i++)
+      r_free (server->alpn_protocols[i]);
+    r_free (server->alpn_protocols);
+  }
   if (server->client.hmac != NULL)
     r_hmac_free (server->client.hmac);
   if (server->client.cipher != NULL)
@@ -275,6 +285,49 @@ r_tls_server_set_session_ticket_keys (RTLSServer * server,
   if (server->ticket_keys != NULL)
     r_tls_session_ticket_keys_unref (server->ticket_keys);
   server->ticket_keys = r_tls_session_ticket_keys_ref (keys);
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_server_set_alpn_protocols (RTLSServer * server,
+    const rchar * const * protocols, rsize count)
+{
+  rchar ** copy;
+  rsize i;
+
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (protocols == NULL && count > 0)) return R_TLS_ERROR_INVAL;
+  /* ALPN protocol names are opaque<1..255> (RFC 7301). */
+  for (i = 0; i < count; i++) {
+    rsize len = (protocols[i] != NULL) ? r_strlen (protocols[i]) : 0;
+    if (len == 0 || len > 255)
+      return R_TLS_ERROR_INVAL;
+  }
+
+  /* Replace any previously configured list. */
+  if (server->alpn_protocols != NULL) {
+    for (i = 0; i < server->alpn_count; i++)
+      r_free (server->alpn_protocols[i]);
+    r_free (server->alpn_protocols);
+    server->alpn_protocols = NULL;
+    server->alpn_count = 0;
+  }
+  if (count == 0)
+    return R_TLS_ERROR_OK;
+
+  if ((copy = r_mem_new_n (rchar *, count)) == NULL)
+    return R_TLS_ERROR_OOM;
+  for (i = 0; i < count; i++) {
+    if ((copy[i] = r_strdup (protocols[i])) == NULL) {
+      while (i > 0)
+        r_free (copy[--i]);
+      r_free (copy);
+      return R_TLS_ERROR_OOM;
+    }
+  }
+  server->alpn_protocols = copy;
+  server->alpn_count = count;
 
   return R_TLS_ERROR_OK;
 }
@@ -454,6 +507,24 @@ r_tls_server_write_hs_ext_use_srtp (const RTLSServer * server, ruint8 * ptr)
   return 9 + server->srtp_mki_size;
 }
 
+static ruint16
+r_tls_server_write_hs_ext_alpn (const RTLSServer * server, ruint8 * ptr)
+{
+  ruint8 len;
+
+  if (server->alpn_selected == NULL)
+    return 0;
+
+  len = (ruint8) server->alpn_selected_len;
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_APPLICATION_LAYER_PROTOCOL_NEGOTIATION);
+  r_store_be16 (&ptr[2], (ruint16)(3 + len));  /* ProtocolNameList: list_len(2) + name_len(1) + name */
+  r_store_be16 (&ptr[4], (ruint16)(1 + len));  /* list_len: one name_len(1) + name */
+  ptr[6] = len;
+  r_memcpy (&ptr[7], server->alpn_selected, len);
+
+  return 7 + len;
+}
+
 static RTLSError
 r_tls_server_write_hello (RTLSServer * server)
 {
@@ -507,6 +578,7 @@ r_tls_server_write_hello (RTLSServer * server)
     extsize += r_tls_server_write_hs_ext_session_ticket (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_ec_point_formats (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_use_srtp (server, ptr + 2 + extsize);
+    extsize += r_tls_server_write_hs_ext_alpn (server, ptr + 2 + extsize);
 
     if (extsize > 0) {
       r_store_be16 (ptr, extsize);
@@ -1108,6 +1180,7 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   RTLSHelloExt hsext = R_TLS_HELLO_EXT_INIT;
   RTLSError r;
   ruint16 count, i;
+  rboolean alpn_offered = FALSE;
   RTLSCipherSuite preferred[] = {
     R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE,
     R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE, R_TLS_CS_NONE,
@@ -1245,6 +1318,7 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   server->support_ext_master_secret = FALSE;
   server->encrypt_then_mac = FALSE;
   server->dtls_srtp_profile = R_SRTP_CS_NONE;
+  server->alpn_selected = NULL;
 
   for (r = r_tls_hello_msg_extension_first (&server->hello, &hsext);
       r == R_TLS_ERROR_OK;
@@ -1312,10 +1386,28 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
             return R_TLS_ERROR_HANDSHAKE_FAILURE;
         }
         break;
+      case R_TLS_EXT_TYPE_APPLICATION_LAYER_PROTOCOL_NEGOTIATION:
+        /* Select the first of our configured protocols the client also offered
+         * (server preference). With nothing configured we do not participate. */
+        alpn_offered = TRUE;
+        for (i = 0; i < server->alpn_count && server->alpn_selected == NULL; i++) {
+          rsize plen = r_strlen (server->alpn_protocols[i]);
+          if (r_tls_hello_ext_alpn_contains (&hsext,
+                (const ruint8 *) server->alpn_protocols[i], (ruint8) plen)) {
+            server->alpn_selected = server->alpn_protocols[i];
+            server->alpn_selected_len = plen;
+          }
+        }
+        break;
       default:
         break;
     }
   }
+
+  /* The client offered ALPN and we have protocols configured but none matched:
+   * abort (RFC 7301 3.2). With no protocols configured we simply ignore it. */
+  if (alpn_offered && server->alpn_count > 0 && server->alpn_selected == NULL)
+    return R_TLS_ERROR_NO_APPLICATION_PROTOCOL;
 
   /* RFC 5746 3.6: the SCSV signals secure-renegotiation support just like
    * an empty renegotiation_info extension. */
@@ -1676,6 +1768,8 @@ r_tls_server_alert_for_error (RTLSError err)
       return R_TLS_ALERT_TYPE_RECORD_OVERFLOW;
     case R_TLS_ERROR_ILLEGAL_PARAMETER: /* field value out of range */
       return R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER;
+    case R_TLS_ERROR_NO_APPLICATION_PROTOCOL: /* no ALPN protocol in common */
+      return R_TLS_ALERT_TYPE_NO_APPLICATION_PROTOCOL;
     case R_TLS_ERROR_HS_VERIFICATION_FAILED:  /* could not verify Finished */
       return R_TLS_ALERT_TYPE_DECRYPT_ERROR;
     case R_TLS_ERROR_VERSION:
@@ -2287,5 +2381,14 @@ r_tls_server_get_dtls_srtp_mki (const RTLSServer * server, ruint8 * size)
     *size = server->srtp_mki_size;
 
   return server->srtp_mki;
+}
+
+const rchar *
+r_tls_server_get_alpn_selected (const RTLSServer * server, rsize * len)
+{
+  if (len != NULL)
+    *len = (server != NULL) ? server->alpn_selected_len : 0;
+
+  return (server != NULL) ? server->alpn_selected : NULL;
 }
 
