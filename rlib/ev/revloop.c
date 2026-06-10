@@ -849,6 +849,12 @@ r_ev_loop_stop (REvLoop * loop)
   loop->stop_request = TRUE;
 }
 
+RClock *
+r_ev_loop_get_clock (const REvLoop * loop)
+{
+  return loop->clock;
+}
+
 rsize
 r_ev_loop_get_iterations (const REvLoop * loop)
 {
