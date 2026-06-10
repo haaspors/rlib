@@ -753,8 +753,10 @@ r_tls_server_write_key_exchange (RTLSServer * server)
 static RTLSError
 r_tls_server_write_cert_req (RTLSServer * server)
 {
-  static const ruint8 certtypes[] = { R_TLS_CLIENT_CERT_TYPE_RSA_SIGN };
-  static const RTLSSignatureScheme schemes[] = { R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256 };
+  static const ruint8 certtypes[] = {
+    R_TLS_CLIENT_CERT_TYPE_ECDSA_SIGN, R_TLS_CLIENT_CERT_TYPE_RSA_SIGN };
+  static const RTLSSignatureScheme schemes[] = {
+    R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256 };
   RBuffer * buf;
   RTLSError ret;
   RMemMapInfo info;
