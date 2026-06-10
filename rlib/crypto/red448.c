@@ -82,7 +82,7 @@ static const RCryptoAlgoInfo g_ed448_priv_key_info = {
 static void
 r_ed448_le_to_mpint (rmpint * mp, const ruint8 * le, rsize n)
 {
-  ruint8 be[128];
+  ruint8 be[128] = { 0 };
   rsize i;
   for (i = 0; i < n; i++)
     be[i] = le[n - 1 - i];
