@@ -892,8 +892,9 @@ r_pem_block_get_cert (RPemBlock * block)
     return NULL;
 
   if ((data = r_pem_block_decode_base64 (block, &size)) != NULL) {
-    if ((ret = r_crypto_x509_cert_new_take (data, size)) == NULL)
-      r_free (data);
+    /* r_crypto_x509_cert_new_take owns @data unconditionally (it frees the
+     * backing buffer even when parsing fails); do not free it again here. */
+    ret = r_crypto_x509_cert_new_take (data, size);
   } else {
     ret = NULL;
   }
