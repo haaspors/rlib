@@ -108,6 +108,10 @@ struct RTLSServer {
   RCryptoCert * peer_cert;              /* client leaf cert, ref'd; NULL if none */
   RCryptoKey * peer_pubkey;             /* client leaf public key, for CertificateVerify */
 
+  rboolean ecdhe;                       /* an ECDHE suite + curve were negotiated */
+  REcurveID ecdhe_curve;                /* the negotiated named group */
+  RCryptoKey * ecdhe_key;               /* server ephemeral ECDH private key */
+
   RBuffer * inbuf;
   RQueue qsend;
 };
@@ -149,6 +153,8 @@ r_tls_server_free (RTLSServer * server)
     r_crypto_cert_unref (server->peer_cert);
   if (server->peer_pubkey != NULL)
     r_crypto_key_unref (server->peer_pubkey);
+  if (server->ecdhe_key != NULL)
+    r_crypto_key_unref (server->ecdhe_key);
   if (server->client.hmac != NULL)
     r_hmac_free (server->client.hmac);
   if (server->client.cipher != NULL)
@@ -407,6 +413,22 @@ r_tls_server_write_hs_ext_session_ticket (const RTLSServer * server, ruint8 * pt
 }
 
 static ruint16
+r_tls_server_write_hs_ext_ec_point_formats (const RTLSServer * server, ruint8 * ptr)
+{
+  /* Echo a one-entry ec_point_formats (uncompressed) for an ECDHE suite so
+   * the client knows the SKE/CKE points are in SEC 1 uncompressed form. */
+  if (!server->ecdhe)
+    return 0;
+
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_EC_POINT_FORMATS);
+  r_store_be16 (&ptr[2], 2);
+  ptr[4] = 1;                                       /* list length */
+  ptr[5] = R_TLS_EC_POINT_FORMAT_UNCOMPRESSED;
+
+  return 6;
+}
+
+static ruint16
 r_tls_server_write_hs_ext_use_srtp (const RTLSServer * server, ruint8 * ptr)
 {
   if (server->dtls_srtp_profile == R_SRTP_CS_NONE)
@@ -473,6 +495,7 @@ r_tls_server_write_hello (RTLSServer * server)
     extsize += r_tls_server_write_hs_ext_extended_ms (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_encrypt_then_mac (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_session_ticket (server, ptr + 2 + extsize);
+    extsize += r_tls_server_write_hs_ext_ec_point_formats (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_hs_ext_use_srtp (server, ptr + 2 + extsize);
 
     if (extsize > 0) {
@@ -619,9 +642,99 @@ r_tls_server_write_certificate (RTLSServer * server)
 static RTLSError
 r_tls_server_write_key_exchange (RTLSServer * server)
 {
-  /* FIXME: Only for certain (anon/ephemral?) cipher suites? */
-  (void) server;
-  return R_TLS_ERROR_NOT_NEEDED;
+  RBuffer * buf;
+  RTLSError ret;
+  RMemMapInfo info;
+  ruint8 point[65];                     /* SEC 1 uncompressed P-256; x25519 is 32 */
+  ruint8 tbs[2 * R_TLS_HELLO_RANDOM_BYTES + 4 + sizeof (point)];
+  ruint8 hash[64];
+  ruint8 sig[512];
+  rsize tbslen = 0, hashsize, sigsize = sizeof (sig);
+  ruint8 pointlen;
+  RMsgDigest * md;
+  RTLSSupportedGroup named_curve;
+
+  /* Only ephemeral (ECDHE) suites send a ServerKeyExchange; static RSA does
+   * not, and the orchestrator only bumps the message sequence when we do. */
+  if (!server->ecdhe)
+    return R_TLS_ERROR_NOT_NEEDED;
+  if (server->privkey == NULL)
+    return R_TLS_ERROR_NO_CERTIFICATE;
+
+  named_curve = (RTLSSupportedGroup)server->ecdhe_curve;
+
+  if ((server->ecdhe_key = r_tls_ecdhe_keygen (server->ecdhe_curve, server->prng)) == NULL)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if (!r_tls_ecdhe_point_write (server->ecdhe_key, server->ecdhe_curve,
+        point, sizeof (point), &pointlen))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* The signature covers client_random || server_random || ECParameters ||
+   * ECPoint -- not the handshake transcript. */
+  r_memcpy (tbs + tbslen, server->hello.random, R_TLS_HELLO_RANDOM_BYTES);
+  tbslen += R_TLS_HELLO_RANDOM_BYTES;
+  r_memcpy (tbs + tbslen, server->servrandom, R_TLS_HELLO_RANDOM_BYTES);
+  tbslen += R_TLS_HELLO_RANDOM_BYTES;
+  tbs[tbslen++] = R_TLS_EC_TYPE_NAMED_CURVE;
+  r_store_be16 (tbs + tbslen, (ruint16)named_curve); tbslen += sizeof (ruint16);
+  tbs[tbslen++] = pointlen;
+  r_memcpy (tbs + tbslen, point, pointlen); tbslen += pointlen;
+
+  if ((md = r_sha256_new ()) == NULL)
+    return R_TLS_ERROR_OOM;
+  r_msg_digest_update (md, tbs, tbslen);
+  hashsize = r_msg_digest_size (md);
+  if (!r_msg_digest_get_data (md, hash, hashsize, NULL)) {
+    r_msg_digest_free (md);
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  }
+  r_msg_digest_free (md);
+
+  if (r_crypto_key_sign (server->privkey, server->prng, R_MSG_DIGEST_TYPE_SHA256,
+        hash, hashsize, sig, &sigsize) != R_CRYPTO_OK)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  R_LOG_DEBUG ("%p - server key exchange (ECDHE)", server);
+
+  if ((buf = r_tls_server_alloc_buffer (server)) == NULL)
+    return R_TLS_ERROR_OOM;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    rsize hssize, bodylen;
+    ruint8 hdrsize = r_tls_version_is_dtls (server->version) ?
+        R_DTLS_RECORD_HDR_SIZE : R_TLS_RECORD_HDR_SIZE;
+
+    /* curve_type(1)+named_curve(2)+plen(1)+point + scheme(2)+siglen(2)+sig */
+    bodylen = 1 + 2 + 1 + (rsize)pointlen + 2 + 2 + sigsize;
+    if (r_tls_version_is_dtls (server->version)) {
+      ret = r_dtls_write_handshake (info.data, info.size, &hssize,
+          server->version, R_TLS_HANDSHAKE_TYPE_SERVER_KEY_EXCHANGE, (ruint16)bodylen,
+          server->server.epoch, server->server.seqno, server->server.msgseq,
+          0, (ruint32)bodylen);
+    } else {
+      ret = r_tls_write_handshake (info.data, info.size, &hssize,
+          server->version, R_TLS_HANDSHAKE_TYPE_SERVER_KEY_EXCHANGE, (ruint16)bodylen);
+    }
+
+    if (ret == R_TLS_ERROR_OK &&
+        (ret = r_tls_write_hs_server_key_exchange_ecdhe (info.data + hssize,
+            info.size - hssize, &bodylen, R_TLS_EC_TYPE_NAMED_CURVE, named_curve,
+            point, pointlen, R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256,
+            sig, (ruint16)sigsize)) == R_TLS_ERROR_OK) {
+      r_msg_digest_update (server->hshash, info.data + hdrsize,
+          (hssize + bodylen) - hdrsize);
+      r_buffer_unmap (buf, &info);
+      r_buffer_set_size (buf, hssize + bodylen);
+      ret = r_tls_server_send_record (server, buf);
+    } else {
+      r_buffer_unmap (buf, &info);
+    }
+  } else {
+    ret = R_TLS_ERROR_OOM;
+  }
+
+  r_buffer_unref (buf);
+  return ret;
 }
 
 static RTLSError
@@ -911,6 +1024,57 @@ r_tls_server_default_cipher_suites (rpointer ctx, RTLSVersion ver,
   return TRUE;
 }
 
+/* Pick a named curve for ECDHE from the ClientHello's supported_groups, gated
+ * by the curves we implement. A Weierstrass curve additionally needs the peer
+ * to accept uncompressed points (ec_point_formats); per RFC 4492 5.1 an absent
+ * extension implies uncompressed is acceptable. Point formats do not apply to
+ * the Montgomery curves (RFC 8422 5.1.2). Returns the first usable group in
+ * client order, or FALSE if none. */
+static rboolean
+r_tls_server_nego_ecdhe_curve (RTLSServer * server, REcurveID * out)
+{
+  RTLSHelloExt ext = R_TLS_HELLO_EXT_INIT;
+  RTLSError r;
+  rboolean have_uncompressed = TRUE;
+  ruint16 n, i;
+
+  for (r = r_tls_hello_msg_extension_first (&server->hello, &ext);
+      r == R_TLS_ERROR_OK;
+      r = r_tls_hello_msg_extension_next (&server->hello, &ext)) {
+    if (ext.type == R_TLS_EXT_TYPE_EC_POINT_FORMATS) {
+      have_uncompressed = FALSE;
+      n = r_tls_hello_ext_ec_point_format_count (&ext);
+      for (i = 0; i < n; i++) {
+        if (r_tls_hello_ext_ec_point_format (&ext, i) ==
+            R_TLS_EC_POINT_FORMAT_UNCOMPRESSED) {
+          have_uncompressed = TRUE;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  for (r = r_tls_hello_msg_extension_first (&server->hello, &ext);
+      r == R_TLS_ERROR_OK;
+      r = r_tls_hello_msg_extension_next (&server->hello, &ext)) {
+    if (ext.type == R_TLS_EXT_TYPE_SUPPORTED_GROUPS) {
+      n = r_tls_hello_ext_supported_groups_count (&ext);
+      for (i = 0; i < n; i++) {
+        REcurveID c;
+        if (r_tls_ecdhe_group_to_curve (r_tls_hello_ext_supported_group (&ext, i), &c) &&
+            (r_tls_ecdhe_curve_is_montgomery (c) || have_uncompressed)) {
+          *out = c;
+          return TRUE;
+        }
+      }
+      break;
+    }
+  }
+
+  return FALSE;
+}
+
 static RTLSError
 r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion verhi)
 {
@@ -975,12 +1139,33 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
         preferred, &psize);
   }
 
+  /* Drop ECDHE suites from the preference list when the client offered no
+   * curve we can do an ephemeral exchange on, so the filter falls back to a
+   * static-RSA suite rather than selecting an unusable ECDHE one. */
+  {
+    REcurveID neg_curve;
+    if (r_tls_server_nego_ecdhe_curve (server, &neg_curve)) {
+      server->ecdhe_curve = neg_curve;
+    } else {
+      rsize w = 0, k;
+      for (k = 0; k < psize; k++) {
+        const RTLSCipherSuiteInfo * pi = r_tls_cipher_suite_get_info (preferred[k]);
+        if (pi != NULL && pi->key_exchange == R_KEY_EXCHANGE_ECDHE_RSA)
+          continue;
+        preferred[w++] = preferred[k];
+      }
+      psize = w;
+    }
+  }
+
   if ((cs = r_tls_cipher_suite_filter (incoming, count, preferred, (ruint)psize)) == R_TLS_CS_NONE ||
       (server->csinfo = r_tls_cipher_suite_get_info (cs)) == NULL) {
     R_LOG_WARNING ("No common cipher suites (in: %u, preferred: %u)",
         (ruint)count, (ruint)R_N_ELEMENTS (preferred));
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   }
+
+  server->ecdhe = (server->csinfo->key_exchange == R_KEY_EXCHANGE_ECDHE_RSA);
 
   R_LOG_DEBUG ("%p - cipher site %s", server, server->csinfo->str);
 
@@ -1159,12 +1344,33 @@ r_tls_server_parse_certificate_verify (RTLSServer * server, const RTLSParser * p
 
 static RTLSError
 r_tls_server_parse_client_key_exchange (RTLSServer * server,
-    const RTLSParser * parser, ruint8 pms[48])
+    const RTLSParser * parser, ruint8 pms[48], rsize * pmslen)
 {
   const ruint8 * encpms;
   rsize size;
   RTLSError ret;
 
+  if (server->ecdhe) {
+    const ruint8 * point;
+    ruint8 pointlen;
+    RCryptoKey * peer;
+    rboolean ok;
+
+    if ((ret = r_tls_parser_parse_client_key_exchange_ecdhe (parser, &point, &pointlen))
+          != R_TLS_ERROR_OK)
+      return ret;
+    if (server->ecdhe_key == NULL)
+      return R_TLS_ERROR_WRONG_STATE;
+    /* point_read decodes/checks the peer point, compute rejects identity and
+     * zero secrets; the shared secret is the variable-length premaster. */
+    if ((peer = r_tls_ecdhe_point_read (server->ecdhe_curve, point, pointlen)) == NULL)
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    ok = r_tls_ecdhe_compute (server->ecdhe_key, peer, pms, 48, pmslen);
+    r_crypto_key_unref (peer);
+    return ok ? R_TLS_ERROR_OK : R_TLS_ERROR_HANDSHAKE_FAILURE;
+  }
+
+  *pmslen = 48;
   if ((ret = r_tls_parser_parse_client_key_exchange_rsa (parser, &encpms, &size)) == R_TLS_ERROR_OK) {
     ruint8 * out;
 
@@ -1595,8 +1801,9 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
 {
   RTLSError err;
   ruint8 pms[48];
+  rsize pmslen = sizeof (pms);
 
-  if ((err = r_tls_server_parse_client_key_exchange (server, parser, pms)) == R_TLS_ERROR_OK)
+  if ((err = r_tls_server_parse_client_key_exchange (server, parser, pms, &pmslen)) == R_TLS_ERROR_OK)
     err = r_tls_server_change_state (server, server->client_cert_received ?
         R_TLS_SERVER_CERTIFICATE_VERIFY : R_TLS_SERVER_CHANGE_CIPHER);
 
@@ -1606,7 +1813,7 @@ r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
           (ruint)parser->fragment.size);
       /* hash CKE first: the extended-master-secret session hash covers it */
       r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
-      if ((err = r_tls_server_derive_master_secret (server, pms, sizeof (pms))) != R_TLS_ERROR_OK ||
+      if ((err = r_tls_server_derive_master_secret (server, pms, pmslen)) != R_TLS_ERROR_OK ||
           (err = r_tls_server_expand_master_secret (server)) != R_TLS_ERROR_OK)
         r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
       break;
