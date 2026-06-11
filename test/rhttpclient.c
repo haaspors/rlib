@@ -2,6 +2,8 @@
 #include <rlib/rev.h>
 #include <rlib/rcrypto.h>
 
+#include "rtlstestcerts.h"
+
 /* Servers here bind an ephemeral port (0) and read back the OS-assigned port
  * (see r_test_http_listen_ephemeral): a fixed port collides with a previous
  * run's socket still in TIME_WAIT -- notably under meson test --repeat, and on
@@ -1220,6 +1222,7 @@ RTEST (rhttpclient, https_get, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((srv = r_test_http_client_server_tls (loop, "/",
           R_HTTP_STATUS_OK, &addr)), !=, NULL);
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+  r_http_client_set_insecure (client, TRUE);   /* self-signed test cert */
 
   /* https scheme selects TLS; the explicit addr selects the loopback port. */
   r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
@@ -1348,6 +1351,7 @@ RTEST (rhttpclient, https_keepalive_reuse, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((addr = r_http_server_get_local_address (srv)), !=, NULL);
 
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+  r_http_client_set_insecure (client, TRUE);   /* self-signed test cert */
   r_assert (r_http_client_get_keepalive (client));   /* on by default */
 
   /* Two requests to the same destination; the second should reuse the pooled
@@ -1367,6 +1371,208 @@ RTEST (rhttpclient, https_keepalive_reuse, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpuint (pp.n, ==, 2);
   r_assert_cmpuint (pp.ports[0], !=, 0);
   r_assert_cmpuint (pp.ports[0], ==, pp.ports[1]);   /* same socket -> reused */
+
+  r_socket_address_unref (addr);
+  r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* A TLS server presenting the CA-issued leaf (SAN DNS:localhost, IP:127.0.0.1)
+ * from the test PKI, so a client with the root anchored can authenticate it. */
+static RHttpServer *
+r_test_https_pki_server (REvLoop * loop, RSocketAddress ** out)
+{
+  RHttpServer * srv;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RSocketAddress * addr;
+
+  if ((srv = r_http_server_new (loop)) == NULL)
+    return NULL;
+  r_assert (r_http_server_set_handler (srv, "/", -1,
+        r_test_http_client_handler, RUINT_TO_POINTER (R_HTTP_STATUS_OK), NULL));
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (rtest_leaf_root_pem, -1)),
+      !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (rtest_leaf_root_key_pem, -1,
+          NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
+      !=, NULL);
+  r_assert (r_http_server_add_tls_listen_addr (srv, addr, cert, pk));
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_socket_address_unref (addr);
+
+  *out = r_http_server_get_local_address (srv);
+  r_assert_cmpptr (*out, !=, NULL);
+  return srv;
+}
+
+/* Drive one https GET (URI @uri, connecting to @addr) and return the outcome. */
+static RHttpClientResult
+r_test_https_get (REvLoop * loop, RHttpClient * client, const rchar * uri,
+    const RSocketAddress * addr)
+{
+  RHttpRequest * req;
+  RHttpResponse * res;
+  RHttpClientResult result;
+
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET, uri, NULL,
+          NULL)), !=, NULL);
+  res = r_test_http_send (loop, client, req, addr, &result);
+  r_http_request_unref (req);
+  if (res != NULL)
+    r_http_response_unref (res);
+  return result;
+}
+
+/* With the issuing CA anchored, the server certificate authenticates and the
+ * request succeeds. */
+RTEST (rhttpclient, https_verified_trusted, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RTrustStore * store;
+  RSocketAddress * addr;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_https_pki_server (loop, &addr)), !=, NULL);
+  r_assert_cmpptr ((store = r_trust_store_new_certs ()), !=, NULL);
+  r_assert_cmpint (r_trust_store_add_pem (store, rtest_root_pem, -1), ==, 1);
+
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+  r_http_client_set_trust_store (client, store);
+  r_trust_store_unref (store);
+
+  r_assert_cmpint (r_test_https_get (loop, client, "https://127.0.0.1/", addr),
+      ==, R_HTTP_CLIENT_OK);
+
+  r_socket_address_unref (addr);
+  r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* The same server, but the root is not anchored -> the chain is untrusted. */
+RTEST (rhttpclient, https_verified_untrusted, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RTrustStore * store;
+  RSocketAddress * addr;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_https_pki_server (loop, &addr)), !=, NULL);
+  r_assert_cmpptr ((store = r_trust_store_new_certs ()), !=, NULL);   /* empty */
+
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+  r_http_client_set_trust_store (client, store);
+  r_trust_store_unref (store);
+
+  r_assert_cmpint (r_test_https_get (loop, client, "https://127.0.0.1/", addr),
+      ==, R_HTTP_CLIENT_TLS_FAILED);
+
+  r_socket_address_unref (addr);
+  r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* Trusted chain, but the requested host is not in the certificate's SAN. */
+RTEST (rhttpclient, https_verified_host_mismatch, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RTrustStore * store;
+  RSocketAddress * addr;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_https_pki_server (loop, &addr)), !=, NULL);
+  r_assert_cmpptr ((store = r_trust_store_new_certs ()), !=, NULL);
+  r_assert_cmpint (r_trust_store_add_pem (store, rtest_root_pem, -1), ==, 1);
+
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+  r_http_client_set_trust_store (client, store);
+  r_trust_store_unref (store);
+
+  /* Connect to 127.0.0.1 but ask for a host the leaf does not certify. */
+  r_assert_cmpint (r_test_https_get (loop, client,
+        "https://wronghost.invalid/", addr), ==, R_HTTP_CLIENT_TLS_FAILED);
+
+  r_socket_address_unref (addr);
+  r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* No trust store and not insecure -> HTTPS fails closed. */
+RTEST (rhttpclient, https_fail_closed_without_store, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RSocketAddress * addr;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_https_pki_server (loop, &addr)), !=, NULL);
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+
+  r_assert_cmpint (r_test_https_get (loop, client, "https://127.0.0.1/", addr),
+      ==, R_HTTP_CLIENT_TLS_FAILED);
+
+  r_socket_address_unref (addr);
+  r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* A pinned-SPKI trust store authenticates the server by its public key. */
+RTEST (rhttpclient, https_verified_pinned, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RTrustStore * store;
+  RCryptoCert * leaf;
+  RSocketAddress * addr;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_https_pki_server (loop, &addr)), !=, NULL);
+  r_assert_cmpptr ((store = r_trust_store_new_pinned_spki ()), !=, NULL);
+  r_assert_cmpptr ((leaf = r_pem_parse_cert_from_data (rtest_leaf_root_pem, -1)),
+      !=, NULL);
+  r_assert (r_trust_store_pin_cert_spki (store, leaf));
+  r_crypto_cert_unref (leaf);
+
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+  r_http_client_set_trust_store (client, store);
+  r_trust_store_unref (store);
+
+  r_assert_cmpint (r_test_https_get (loop, client, "https://127.0.0.1/", addr),
+      ==, R_HTTP_CLIENT_OK);
 
   r_socket_address_unref (addr);
   r_test_http_client_teardown (loop, client, srv);
