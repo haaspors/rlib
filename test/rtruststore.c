@@ -167,6 +167,63 @@ RTEST (rtruststore, reject_leaf_without_eku, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtruststore, pin_spki_match, RTEST_FAST)
+{
+  RTrustStore * store;
+  RCryptoCert * leaf, * other;
+
+  r_assert_cmpptr ((store = r_trust_store_new_pinned_spki ()), !=, NULL);
+  r_assert_cmpptr ((leaf = cert_of (rtest_leaf_root_pem)), !=, NULL);
+  r_assert (r_trust_store_pin_cert_spki (store, leaf));
+
+  /* The pinned leaf is trusted with no CA chain at all... */
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW, R_X509_EXT_KEY_USAGE_NONE,
+        rtest_leaf_root_pem, NULL, NULL), ==, R_TRUST_OK);
+  /* ...even presented alongside its (now irrelevant) issuer. */
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW, R_X509_EXT_KEY_USAGE_NONE,
+        rtest_leaf_root_pem, rtest_root_pem, NULL), ==, R_TRUST_OK);
+
+  /* A different leaf (different key) does not match the pin. */
+  r_assert_cmpptr ((other = cert_of (rtest_leaf_pem)), !=, NULL);
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW, R_X509_EXT_KEY_USAGE_NONE,
+        rtest_leaf_pem, NULL, NULL), ==, R_TRUST_UNTRUSTED);
+
+  /* Expiry is still enforced for a pinned leaf. */
+  r_assert_cmpint (r_test_verify (store, RTEST_TOO_LATE, R_X509_EXT_KEY_USAGE_NONE,
+        rtest_leaf_root_pem, NULL, NULL), ==, R_TRUST_EXPIRED);
+
+  r_crypto_cert_unref (other);
+  r_crypto_cert_unref (leaf);
+  r_trust_store_unref (store);
+}
+RTEST_END;
+
+/* Only the leaf is pin-matched: presenting the genuine pinned (public)
+ * certificate as a non-leaf entry alongside an unrelated leaf must NOT be
+ * trusted -- otherwise pinning is trivially bypassable. */
+RTEST (rtruststore, pin_rejects_unrelated_leaf, RTEST_FAST)
+{
+  RTrustStore * store;
+  RCryptoCert * inter;
+
+  r_assert_cmpptr ((store = r_trust_store_new_pinned_spki ()), !=, NULL);
+  r_assert_cmpptr ((inter = cert_of (rtest_inter_pem)), !=, NULL);
+  r_assert (r_trust_store_pin_cert_spki (store, inter));
+
+  /* leaf_root is not issued by inter; inter only appears as a non-leaf entry. */
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW, R_X509_EXT_KEY_USAGE_NONE,
+        rtest_leaf_root_pem, rtest_inter_pem, NULL), ==, R_TRUST_UNTRUSTED);
+  /* The leaf itself, pinned, is trusted. */
+  r_assert (r_trust_store_pin_cert_spki (store,
+        (inter = (r_crypto_cert_unref (inter), cert_of (rtest_leaf_root_pem)))));
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW, R_X509_EXT_KEY_USAGE_NONE,
+        rtest_leaf_root_pem, rtest_inter_pem, NULL), ==, R_TRUST_OK);
+
+  r_crypto_cert_unref (inter);
+  r_trust_store_unref (store);
+}
+RTEST_END;
+
 /* A leaf whose extendedKeyUsage is present but lacks serverAuth is rejected
  * when serverAuth is demanded (distinct from an absent EKU). */
 RTEST (rtruststore, reject_leaf_wrong_eku, RTEST_FAST)
@@ -182,6 +239,21 @@ RTEST (rtruststore, reject_leaf_wrong_eku, RTEST_FAST)
   r_trust_store_unref (store);
 }
 RTEST_END;
+
+RTEST (rtruststore, add_raw_spki_pin, RTEST_FAST)
+{
+  RTrustStore * store;
+  ruint8 zero[R_TRUST_SPKI_PIN_SIZE] = { 0, };
+
+  /* A raw pin that matches nothing leaves the chain untrusted. */
+  r_assert_cmpptr ((store = r_trust_store_new_pinned_spki ()), !=, NULL);
+  r_assert (r_trust_store_add_spki_sha256 (store, zero));
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW, R_X509_EXT_KEY_USAGE_NONE,
+        rtest_leaf_root_pem, NULL, NULL), ==, R_TRUST_UNTRUSTED);
+  r_trust_store_unref (store);
+}
+RTEST_END;
+
 
 RTEST (rtruststore, add_pem_bundle_counts, RTEST_FAST)
 {

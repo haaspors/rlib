@@ -43,15 +43,17 @@
  *
  * The store is an abstraction over *where trust comes from*; callers hand it a
  * peer chain (leaf first, exactly as a TLS @c Certificate message carries it)
- * and get a single @ref RTrustResult back.
+ * and get a single @ref RTrustResult back. Two backends ship here:
  *
- * @ref r_trust_store_new_certs builds a store from a set of trust-anchor
- * certificates: the chain is path-built to an anchor and each intermediate hop
- * validated with rlib's own engine: signatures, validity window,
- * @c BasicConstraints (intermediates must be CAs within their
- * @c pathLenConstraint), @c keyUsage (CAs need @c keyCertSign) and an optional
- * leaf @c extendedKeyUsage. The matched anchor is trusted by inclusion (only its
- * validity and pathLen bound the path).
+ * - @ref r_trust_store_new_certs — a set of trust-anchor certificates. The
+ *   chain is path-built to an anchor and each intermediate hop validated with
+ *   rlib's own engine: signatures, validity window, @c BasicConstraints
+ *   (intermediates must be CAs within their @c pathLenConstraint), @c keyUsage
+ *   (CAs need @c keyCertSign) and an optional leaf @c extendedKeyUsage. The
+ *   matched anchor is trusted by inclusion (only its validity and pathLen bound
+ *   the path).
+ * - @ref r_trust_store_new_pinned_spki — certificate pinning: trusted only when
+ *   the leaf's SubjectPublicKeyInfo matches a registered SHA-256 pin.
  *
  * Hostname verification is intentionally *not* part of the store (it is an
  * application-protocol concern); use @ref r_crypto_x509_cert_verify_host on the
@@ -102,6 +104,31 @@ R_API rssize r_trust_store_add_pem (RTrustStore * store, const rchar * pem, rssi
  * @return The number of certificates added, or @c -1 if the file can't be read.
  */
 R_API rssize r_trust_store_add_pem_file (RTrustStore * store, const rchar * filename);
+
+/** @brief Length of an SPKI pin: the SHA-256 of a SubjectPublicKeyInfo. */
+#define R_TRUST_SPKI_PIN_SIZE  32
+
+/**
+ * @brief Create a trust store that pins SubjectPublicKeyInfo (SPKI) hashes.
+ *
+ * A chain is trusted when the leaf certificate's SPKI SHA-256 matches a
+ * registered pin; no chain to a CA is required, and the leaf's validity window
+ * is still enforced (an expired leaf yields @ref R_TRUST_EXPIRED). Only the
+ * leaf is matched -- it is the certificate whose private key the peer proves it
+ * holds -- so an attacker cannot pass by attaching the genuine pinned (public)
+ * certificate to an unrelated leaf. Pinning the key (rather than the whole
+ * certificate) keeps the pin valid across a reissue that reuses the key.
+ * Returns @c NULL on allocation failure.
+ */
+R_API RTrustStore * r_trust_store_new_pinned_spki (void) R_ATTR_MALLOC;
+
+/** @brief Add a SPKI pin: the SHA-256 (@ref R_TRUST_SPKI_PIN_SIZE bytes) of a
+ *  SubjectPublicKeyInfo. */
+R_API rboolean r_trust_store_add_spki_sha256 (RTrustStore * store,
+    const ruint8 sha256[R_TRUST_SPKI_PIN_SIZE]);
+/** @brief Convenience: pin @p cert's public key (computes its SPKI SHA-256). */
+R_API rboolean r_trust_store_pin_cert_spki (RTrustStore * store,
+    const RCryptoCert * cert);
 
 /**
  * @brief Decide whether a peer certificate @p chain is trusted.

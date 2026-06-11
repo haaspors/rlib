@@ -241,3 +241,129 @@ r_trust_store_add_pem_file (RTrustStore * base, const rchar * filename)
   r_free (data);
   return added;
 }
+
+/* --- pinned backend: SubjectPublicKeyInfo SHA-256 pins ------------------- */
+
+typedef struct {
+  RTrustStore base;
+  RPtrArray * pins;         /* ruint8[R_TRUST_SPKI_PIN_SIZE] blobs */
+} RTrustPinned;
+
+/* Hash a certificate's SubjectPublicKeyInfo into @out; FALSE if the key can't
+ * be exported. */
+static rboolean
+r_trust_cert_spki_sha256 (const RCryptoCert * cert,
+    ruint8 out[R_TRUST_SPKI_PIN_SIZE])
+{
+  RCryptoKey * pk;
+  RAsn1BinEncoder * enc;
+  RMsgDigest * md;
+  ruint8 * der;
+  rsize dersize;
+  rboolean ok = FALSE;
+
+  if ((pk = r_crypto_cert_get_public_key (cert)) == NULL)
+    return FALSE;
+  if ((enc = r_asn1_bin_encoder_new (R_ASN1_DER)) != NULL) {
+    if (r_crypto_key_to_asn1 (pk, enc) == R_CRYPTO_OK &&
+        (der = r_asn1_bin_encoder_get_data (enc, &dersize)) != NULL) {
+      if ((md = r_msg_digest_new_sha256 ()) != NULL) {
+        ok = r_msg_digest_update (md, der, dersize) &&
+            r_msg_digest_get_data (md, out, R_TRUST_SPKI_PIN_SIZE, NULL);
+        r_msg_digest_free (md);
+      }
+      r_free (der);
+    }
+    r_asn1_bin_encoder_unref (enc);
+  }
+  r_crypto_key_unref (pk);
+  return ok;
+}
+
+static RTrustResult
+r_trust_pinned_verify (RTrustStore * base, RCryptoCert * const * chain,
+    ruint count, ruint64 now, RX509ExtKeyUsage required_eku)
+{
+  RTrustPinned * store = (RTrustPinned *) base;
+  rsize np = r_ptr_array_size (store->pins);
+  ruint8 spki[R_TRUST_SPKI_PIN_SIZE];
+  rsize p;
+
+  (void) count;
+  (void) required_eku;          /* pinning authenticates the key directly */
+
+  if (!r_trust_cert_time_valid (chain[0], now))
+    return R_TRUST_EXPIRED;
+
+  /* Only the leaf (chain[0]) is the certificate whose private key the peer
+   * proves it holds; the rest of the chain is attacker-suppliable public data.
+   * Matching a pin against a non-leaf certificate would let an attacker present
+   * an unrelated leaf alongside the genuine pinned (public) certificate and be
+   * trusted -- so pin strictly against the leaf. */
+  if (r_trust_cert_spki_sha256 (chain[0], spki)) {
+    for (p = 0; p < np; p++) {
+      if (r_memcmp_ct (r_ptr_array_get (store->pins, p), spki,
+              R_TRUST_SPKI_PIN_SIZE) == 0)
+        return R_TRUST_OK;
+    }
+  }
+
+  return R_TRUST_UNTRUSTED;
+}
+
+static void
+r_trust_pinned_free (RTrustStore * base)
+{
+  RTrustPinned * store = (RTrustPinned *) base;
+  r_ptr_array_unref (store->pins);
+  r_free (store);
+}
+
+RTrustStore *
+r_trust_store_new_pinned_spki (void)
+{
+  RTrustPinned * store;
+
+  if ((store = r_mem_new0 (RTrustPinned)) == NULL)
+    return NULL;
+  r_ref_init (store, r_trust_pinned_free);
+  store->base.verify = r_trust_pinned_verify;
+  if ((store->pins = r_ptr_array_new ()) == NULL) {
+    r_free (store);
+    return NULL;
+  }
+  return &store->base;
+}
+
+rboolean
+r_trust_store_add_spki_sha256 (RTrustStore * base,
+    const ruint8 sha256[R_TRUST_SPKI_PIN_SIZE])
+{
+  RTrustPinned * store = (RTrustPinned *) base;
+  ruint8 * pin;
+
+  if (R_UNLIKELY (base == NULL || base->verify != r_trust_pinned_verify))
+    return FALSE;
+  if (R_UNLIKELY (sha256 == NULL))
+    return FALSE;
+  if ((pin = r_memdup (sha256, R_TRUST_SPKI_PIN_SIZE)) == NULL)
+    return FALSE;
+
+  if (r_ptr_array_add (store->pins, pin, r_free) == R_PTR_ARRAY_INVALID_IDX) {
+    r_free (pin);
+    return FALSE;
+  }
+  return TRUE;
+}
+
+rboolean
+r_trust_store_pin_cert_spki (RTrustStore * base, const RCryptoCert * cert)
+{
+  ruint8 spki[R_TRUST_SPKI_PIN_SIZE];
+
+  if (R_UNLIKELY (cert == NULL))
+    return FALSE;
+  if (!r_trust_cert_spki_sha256 (cert, spki))
+    return FALSE;
+  return r_trust_store_add_spki_sha256 (base, spki);
+}
