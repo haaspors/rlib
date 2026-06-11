@@ -24,6 +24,7 @@
 #include <rlib/data/rlist.h>
 #include <rlib/data/rmpint.h>
 #include <rlib/data/rptrarray.h>
+#include <rlib/net/rsocketaddress.h>
 
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
@@ -1605,6 +1606,90 @@ r_crypto_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy)
   for (it = x509->policies; it != NULL; it = it->next) {
     if (r_str_equals (policy, it->data))
       return TRUE;
+  }
+
+  return FALSE;
+}
+
+/* Match a presented dNSName @pattern against @host (RFC 6125): exact and
+ * case-insensitive, with a single leftmost-label '*' wildcard that matches
+ * exactly one label and never spans a dot. */
+static rboolean
+r_x509_host_match_dns (const rchar * host, const rchar * pattern)
+{
+  if (r_strcasecmp (host, pattern) == 0)
+    return TRUE;
+
+  if (pattern[0] == '*' && pattern[1] == '.') {
+    const rchar * hdot = r_strchr (host, '.');
+    /* host's first label must be non-empty and the remainder must equal the
+     * pattern's suffix (the part from the dot after '*'). */
+    if (hdot != NULL && hdot != host && r_strcasecmp (hdot, pattern + 1) == 0)
+      return TRUE;
+  }
+
+  return FALSE;
+}
+
+/* Render @host as raw IP octets if it is an IPv4/IPv6 literal; returns the
+ * length (4 or 16) or 0 when @host is not an IP literal. */
+static rsize
+r_x509_host_ip_octets (const rchar * host, ruint8 out[16])
+{
+  RSocketAddress * a;
+
+  if ((a = r_socket_address_ipv4_new_from_string (host, 0)) != NULL) {
+    ruint32 v = r_socket_address_ipv4_get_ip (a);   /* host byte order */
+    out[0] = (ruint8)(v >> 24); out[1] = (ruint8)(v >> 16);
+    out[2] = (ruint8)(v >>  8); out[3] = (ruint8) v;
+    r_socket_address_unref (a);
+    return 4;
+  }
+  if ((a = r_socket_address_ipv6_new_from_string (host, 0)) != NULL) {
+    rboolean ok = r_socket_address_ipv6_get_ip_bytes (a, out);
+    r_socket_address_unref (a);
+    return ok ? 16 : 0;
+  }
+  return 0;
+}
+
+rboolean
+r_crypto_x509_cert_verify_host (const RCryptoCert * cert, const rchar * host)
+{
+  ruint8 wantip[16];
+  rsize wantlen, i, n;
+
+  if (R_UNLIKELY (cert == NULL || host == NULL || *host == '\0'))
+    return FALSE;
+
+  n = r_crypto_x509_cert_subject_alt_name_count (cert);
+  wantlen = r_x509_host_ip_octets (host, wantip);
+
+  for (i = 0; i < n; i++) {
+    const RX509GeneralName * gn = r_crypto_x509_cert_subject_alt_name (cert, i);
+
+    if (wantlen > 0) {
+      /* IP literal: match an iPAddress SAN by octets only. */
+      if (r_x509_general_name_type (gn) == R_X509_GENERAL_NAME_IP) {
+        rsize iplen;
+        const ruint8 * ip = r_x509_general_name_as_ip (gn, &iplen);
+        if (ip != NULL && iplen == wantlen &&
+            r_memcmp_ct (ip, wantip, wantlen) == 0)
+          return TRUE;
+      }
+    } else {
+      /* DNS name: match a dNSName SAN (with wildcard). CN is not consulted --
+       * SAN-only matching matches modern TLS clients and is intentional. */
+      if (r_x509_general_name_type (gn) == R_X509_GENERAL_NAME_DNS) {
+        const rchar * dns = r_x509_general_name_as_string (gn);
+        /* Reject a dNSName carrying an embedded NUL: its NUL-terminated form is
+         * shorter than the attested bytes, so "good.example.com\0.evil" must
+         * not be allowed to match "good.example.com". */
+        if (dns != NULL && r_strlen (dns) == gn->rawsize &&
+            r_x509_host_match_dns (host, dns))
+          return TRUE;
+      }
+    }
   }
 
   return FALSE;

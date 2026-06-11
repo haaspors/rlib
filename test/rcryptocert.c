@@ -1,5 +1,9 @@
 #include <rlib/rcrypto.h>
 
+#include "rtlstestcerts.h"
+
+#define cert_of(pem)  r_pem_parse_cert_from_data (pem, -1)
+
 RTEST (rcryptocert, self_signed_x509v3, RTEST_FAST)
 {
   static const ruint8 x509v3[] = {
@@ -799,3 +803,49 @@ RTEST (rcryptocert, large_serial_number, RTEST_FAST)
   r_crypto_cert_unref (cert);
 }
 RTEST_END;
+
+/* r_crypto_x509_cert_verify_host: RFC 6125 SAN matching (DNS + IP, wildcard),
+ * exercised directly on the certificate. */
+RTEST (rcryptocert, x509_verify_host_dns, RTEST_FAST)
+{
+  RCryptoCert * leaf;
+  r_assert_cmpptr ((leaf = cert_of (rtest_leaf_pem)), !=, NULL);
+
+  r_assert (r_crypto_x509_cert_verify_host (leaf, "localhost"));
+  r_assert (r_crypto_x509_cert_verify_host (leaf, "LOCALHOST"));   /* case-insensitive */
+  r_assert (!r_crypto_x509_cert_verify_host (leaf, "example.com"));
+  r_assert (!r_crypto_x509_cert_verify_host (leaf, ""));
+  r_assert (!r_crypto_x509_cert_verify_host (leaf, NULL));
+
+  r_crypto_cert_unref (leaf);
+}
+RTEST_END;
+
+RTEST (rcryptocert, x509_verify_host_ip, RTEST_FAST)
+{
+  RCryptoCert * leaf;
+  r_assert_cmpptr ((leaf = cert_of (rtest_leaf_pem)), !=, NULL);
+
+  r_assert (r_crypto_x509_cert_verify_host (leaf, "127.0.0.1"));
+  r_assert (!r_crypto_x509_cert_verify_host (leaf, "127.0.0.2"));
+  r_assert (!r_crypto_x509_cert_verify_host (leaf, "::1"));        /* no IPv6 SAN */
+
+  r_crypto_cert_unref (leaf);
+}
+RTEST_END;
+
+RTEST (rcryptocert, x509_verify_host_wildcard, RTEST_FAST)
+{
+  RCryptoCert * wild;
+  r_assert_cmpptr ((wild = cert_of (rtest_leaf_wild_pem)), !=, NULL);
+
+  r_assert (r_crypto_x509_cert_verify_host (wild, "a.example.com"));
+  r_assert (r_crypto_x509_cert_verify_host (wild, "A.EXAMPLE.COM"));
+  r_assert (!r_crypto_x509_cert_verify_host (wild, "example.com"));    /* no label */
+  r_assert (!r_crypto_x509_cert_verify_host (wild, "a.b.example.com")); /* spans a dot */
+  r_assert (!r_crypto_x509_cert_verify_host (wild, "a.example.org"));
+
+  r_crypto_cert_unref (wild);
+}
+RTEST_END;
+

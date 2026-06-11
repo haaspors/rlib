@@ -240,6 +240,22 @@ R_API RX509ExtKeyUsage r_crypto_x509_cert_ext_key_usage (const RCryptoCert * cer
  */
 R_API rboolean r_crypto_x509_cert_has_policy (const RCryptoCert * cert, const rchar * policy);
 
+/**
+ * @brief Verify that @p cert is valid for the host name @p host (RFC 6125).
+ *
+ * When @p host is an IPv4 / IPv6 literal it is matched against the
+ * @c iPAddress @c SubjectAltName entries by octet; otherwise it is matched
+ * against the @c dNSName entries, case-insensitively and honouring a single
+ * leftmost-label @c * wildcard (which matches exactly one label). The
+ * deprecated subject @c CN is intentionally not consulted, matching modern TLS
+ * clients. Identity only -- this does not establish trust (see
+ * @ref r_trust_store_verify).
+ *
+ * @return @c TRUE if a SubjectAltName matches @p host.
+ */
+R_API rboolean r_crypto_x509_cert_verify_host (const RCryptoCert * cert,
+    const rchar * host);
+
 /** @brief Number of @c SubjectAltName general names (0 if absent). */
 R_API rsize r_crypto_x509_cert_subject_alt_name_count (const RCryptoCert * cert);
 /**
