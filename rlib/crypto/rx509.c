@@ -67,6 +67,7 @@ typedef struct {
   RX509ExtKeyUsage extKeyUsage;
   RSList * policies;
   rboolean ca;
+  rboolean haspathLen;              /* pathLenConstraint present in basicConstraints */
   rint32 pathLen;
   rint32 requireExplicitPolicy;
   rint32 inhibitPolicyMapping;
@@ -281,6 +282,7 @@ r_crypto_x509_basic_constraints (RCryptoX509Cert * cert,
 
   if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_INTEGER)) {
     r_asn1_bin_tlv_parse_integer_i32 (tlv, &cert->pathLen);
+    cert->haspathLen = TRUE;
     r_asn1_bin_decoder_next (dec, tlv);
   }
   r_asn1_bin_decoder_out (dec, tlv);
@@ -1578,6 +1580,13 @@ rboolean
 r_crypto_x509_cert_is_ca (const RCryptoCert * cert)
 {
   return ((const RCryptoX509Cert *)cert)->ca;
+}
+
+rint32
+r_crypto_x509_cert_path_len (const RCryptoCert * cert)
+{
+  const RCryptoX509Cert * x = (const RCryptoX509Cert *)cert;
+  return x->haspathLen ? x->pathLen : -1;
 }
 
 rboolean
