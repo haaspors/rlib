@@ -1,11 +1,62 @@
 #include <rlib/rnet.h>
 #include <rlib/rev.h>
+#include <rlib/rcrypto.h>
 
 /* Servers here bind an ephemeral port (0) and read back the OS-assigned port
  * (see r_test_http_listen_ephemeral): a fixed port collides with a previous
  * run's socket still in TIME_WAIT -- notably under meson test --repeat, and on
  * Windows where rtest runs single-process. */
 #define R_TEST_HTTP_CLIENT_BODY   "hello from rlib"
+
+static const rchar testcertpem[] =
+  "-----BEGIN CERTIFICATE-----\r\n"
+  "MIIC8TCCAdmgAwIBAgIJALoi/+XOQDHjMA0GCSqGSIb3DQEBCwUAMA8xDTALBgNV\r\n"
+  "BAMMBHJsaWIwHhcNMTYxMTE1MTMzNjI0WhcNMTcxMTE1MTMzNjI0WjAPMQ0wCwYD\r\n"
+  "VQQDDARybGliMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwjolUmQU\r\n"
+  "r9Q2FZ7O3qau+Z6+VvuJROvxzjt1aIQLLO/hF0Ya56BZCZD5aKyqQM//fTm97VTb\r\n"
+  "CQYBaNg03D20XPDIWmr7EdHxYK+YI+jz7DrWqhM4jwSvvteXXXWD7bVdCq+RyveD\r\n"
+  "NrgoGZqL5UCiWS1BWkB9nS/KQtgxrT3hWSOlG1xRh6hfeIy4H2CB3Qk/Q3PHjMcH\r\n"
+  "7CKhCj+ctbqR3r2K3BLL3fgZKnfQdCPsZplN8Ey4hSOc/67NQK/yn/S0JgeHmjb8\r\n"
+  "D5xbaDiOloOHJJg6dm1QU0UuEpiK2Uda0VR6TGu9Ci05h5U3HoV9CbyAGQhmFSem\r\n"
+  "NreAELYv89sMgwIDAQABo1AwTjAdBgNVHQ4EFgQUXFVr3x4Bcglp/MP0ZFEk/Ntz\r\n"
+  "wJYwHwYDVR0jBBgwFoAUXFVr3x4Bcglp/MP0ZFEk/NtzwJYwDAYDVR0TBAUwAwEB\r\n"
+  "/zANBgkqhkiG9w0BAQsFAAOCAQEAL4ZKyDRXP3+Jr/GN+p6WbFW3tHuhxWxy8rMy\r\n"
+  "W7OHX/sHASzJiaEmjtIlPx/7uFFowktEmXyybEmBvYp64UZ2mo2v+CCm+236wPTS\r\n"
+  "gGfpcp9nP2RI0VFdJLHuqWapa5CQJZISRAO/tj7UqflOWBohm04EvmJe53JGEq+4\r\n"
+  "Dk41kC+z3jVPGHG+jR3uYOw7JCmFT+bt4P5EDxGAKe9eoweLHBJ8vlJ7cUdHhBv1\r\n"
+  "BUCMVR86kPZFzHKVQtWNXt26H/khgz7RA/qUSJA17Nk2h0h60b1AbkljkduWWIMZ\r\n"
+  "5B2DUz4MEDUHjppHF9+A2q5ZN+25eOYbrkS5Dq50VPNrvd8dSQ==\r\n"
+  "-----END CERTIFICATE-----\r\n";
+
+static const rchar testpkpem[] =
+  "-----BEGIN PRIVATE KEY-----\r\n"
+  "MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDCOiVSZBSv1DYV\r\n"
+  "ns7epq75nr5W+4lE6/HOO3VohAss7+EXRhrnoFkJkPlorKpAz/99Ob3tVNsJBgFo\r\n"
+  "2DTcPbRc8MhaavsR0fFgr5gj6PPsOtaqEziPBK++15dddYPttV0Kr5HK94M2uCgZ\r\n"
+  "movlQKJZLUFaQH2dL8pC2DGtPeFZI6UbXFGHqF94jLgfYIHdCT9Dc8eMxwfsIqEK\r\n"
+  "P5y1upHevYrcEsvd+Bkqd9B0I+xmmU3wTLiFI5z/rs1Ar/Kf9LQmB4eaNvwPnFto\r\n"
+  "OI6Wg4ckmDp2bVBTRS4SmIrZR1rRVHpMa70KLTmHlTcehX0JvIAZCGYVJ6Y2t4AQ\r\n"
+  "ti/z2wyDAgMBAAECggEABJZzAzsx8eVFUcVqhX/SajsBq/RNDb+0+nYVE97qlKkl\r\n"
+  "2/Lf99ClycAO5BYP/2/qTP7sKYrzkYb+yYcx2HHsrLVTRi94trcKyIndQhvihxXs\r\n"
+  "tB+4Gki2Df/xp1d7QkYiaHo1K2IlS0mWSOSJoWShcRHMlWEolmnmkSWiJsFrbTuL\r\n"
+  "sxB/6lVmD6Bbez/ob5JzK4QBAEREd0QbUCQiDssFvf0nlDmtKrxosLFuu86z0nIR\r\n"
+  "3OKyr9n6IW64r7x7Ccv/5pY3Cmkg0/knF4bi60ssm2byY2TW3wnOT0inVrp0UUQP\r\n"
+  "ex9Dse3izVyMLaeqLh6GCQhLFROE85qslLmOYb56YQKBgQD7HHWdsrNDtkHkXvyz\r\n"
+  "TWi8dPVMVk4/X/G3vPr2nBRHj9MzXX/ZgoFpklMsR/EtKh9LBBh9vY9YnXhIGUrc\r\n"
+  "vwt1PSUIsjUuHBfhxnHxcZEu2ROw18LJmSRp6duZADFcH8ApPFg1dVZ2APyHyS4J\r\n"
+  "tTL/DIeQ6ASq0EENjuO5VgM5PwKBgQDGAiz9c3/1OPZNiENyCYbrqOzduzkoisX7\r\n"
+  "yGYFiJpLdsmrRsztqJktwiDEYYrJoV+AHmKa79Iexp6vvq9gQFN3XvFw6U1XXF5D\r\n"
+  "RtLHHqWgoj9yFIpmVXfcdFICfNdPcVn7NAE0CQBRNgBJGSvRoSeTpOyjVmF9Mu18\r\n"
+  "h2wUK0L3vQKBgBms7kXCmNvKjfA42iPHPXdPiilVBckrGT8NPqfqi5RJm3G8FK97\r\n"
+  "zZmq0YBMltdkYDC+aXap5DdOWpccpu/tRNGm/9tkxVVCoBqAvPPQBeVBYucJGKye\r\n"
+  "UP/XXpHFWEawJGjS9733knCcZzXHF0L82QsFD/N8FcYVZyFow9YWelvnAoGAIj8o\r\n"
+  "FuIOJJSojPpfZ+7b5hB+f08tcKSn34dmldhtj1XJRZVmRkidzbtAvZZ9UahWgys+\r\n"
+  "NLv75JTHx2+8l3IovYGvUq8XUF/Kcepi9EuJrAHD5XBGC7MGmxuHP6Tl/HiHbpot\r\n"
+  "Bxnzcxha7kmrOYOc+71PrGR5UhUn3Bz0BX0CBSUCgYAKxDbgtJ1NZgf33yMQb1BG\r\n"
+  "vgLQWiysO9t1dXFN9YiPsZ1Rkyj9iOdROG47T1ifcrCw45mqBF71COM23zplWz64\r\n"
+  "wUg8Baom8FExrgLtVDeyQO7qkiOoP96r9Fm34Y4Sgv1/oiO9f5KYckMcSig9zCQA\r\n"
+  "VFwqM04nD9RsYGRKy6NhrA==\r\n"
+  "-----END PRIVATE KEY-----\r\n";
 
 typedef struct {
   RHttpResponse * res;
@@ -122,6 +173,37 @@ r_test_http_client_server (REvLoop * loop, const rchar * path,
         r_test_http_client_handler, RUINT_TO_POINTER (status), NULL));
 
   *out = r_test_http_listen_ephemeral (srv);
+  r_assert_cmpptr (*out, !=, NULL);
+  return srv;
+}
+
+/* As r_test_http_client_server, but the listener terminates TLS with the
+ * embedded test cert/key; the bound HTTPS address is returned in *out. */
+static RHttpServer *
+r_test_http_client_server_tls (REvLoop * loop, const rchar * path,
+    RHttpStatus status, RSocketAddress ** out)
+{
+  RHttpServer * srv;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RSocketAddress * addr;
+
+  if ((srv = r_http_server_new (loop)) == NULL)
+    return NULL;
+
+  r_assert (r_http_server_set_handler (srv, path, -1,
+        r_test_http_client_handler, RUINT_TO_POINTER (status), NULL));
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
+      !=, NULL);
+  r_assert (r_http_server_add_tls_listen_addr (srv, addr, cert, pk));
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_socket_address_unref (addr);
+
+  *out = r_http_server_get_local_address (srv);
   r_assert_cmpptr (*out, !=, NULL);
   return srv;
 }
@@ -1114,5 +1196,180 @@ RTEST (rhttpclient, keepalive_idle_timeout, RTEST_FAST | RTEST_SYSTEM)
   r_http_client_unref (client);
   r_ev_loop_unref (loop);
   r_socket_address_unref (addr);
+}
+RTEST_END;
+
+/* End-to-end HTTPS: the client terminates TLS (https URI scheme) against an
+ * RHttpServer TLS listener, both on one loop. */
+RTEST (rhttpclient, https_get, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RHttpRequest * req;
+  RHttpResponse * res;
+  RSocketAddress * addr;
+  RHttpClientResult result;
+  rchar * body;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_http_client_server_tls (loop, "/",
+          R_HTTP_STATUS_OK, &addr)), !=, NULL);
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+
+  /* https scheme selects TLS; the explicit addr selects the loopback port. */
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "https://127.0.0.1/", NULL, NULL)), !=, NULL);
+  r_assert (r_http_request_add_header (req, "Host", -1, "127.0.0.1", -1));
+
+  res = r_test_http_send (loop, client, req, addr, &result);
+  r_http_request_unref (req);
+
+  r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);
+  r_assert_cmpptr (res, !=, NULL);
+  r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_OK);
+  r_assert_cmpstr ((body = r_http_response_get_body (res, NULL)), ==,
+      R_TEST_HTTP_CLIENT_BODY);
+  r_free (body);
+  r_http_response_unref (res);
+
+  r_socket_address_unref (addr);
+  r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* A plaintext (http) request to a TLS listener is not valid TLS: the server
+ * drops it and the request fails rather than completing. */
+RTEST (rhttpclient, http_to_tls_port_fails, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RHttpRequest * req;
+  RHttpResponse * res;
+  RSocketAddress * addr;
+  RHttpClientResult result;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_test_http_client_server_tls (loop, "/",
+          R_HTTP_STATUS_OK, &addr)), !=, NULL);
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+
+  /* http scheme -> plaintext bytes sent to the TLS listener. */
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://127.0.0.1/", NULL, NULL)), !=, NULL);
+  r_assert (r_http_request_add_header (req, "Host", -1, "127.0.0.1", -1));
+
+  res = r_test_http_send (loop, client, req, addr, &result);
+  r_http_request_unref (req);
+
+  r_assert_cmpint (result, !=, R_HTTP_CLIENT_OK);
+  r_assert_cmpptr (res, ==, NULL);
+
+  r_socket_address_unref (addr);
+  r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* Records the peer port of each request the handler serves; two requests on a
+ * reused connection arrive on the same client socket, hence the same port. */
+typedef struct {
+  ruint16 ports[4];
+  ruint n;
+} RTestPeerPorts;
+
+static RHttpResponse *
+r_test_http_peerport_handler (rpointer data, RHttpRequest * req,
+    RSocketAddress * addr, RHttpServer * server)
+{
+  RTestPeerPorts * pp = data;
+  RHttpResponse * res;
+
+  (void) server;
+
+  if (pp->n < R_N_ELEMENTS (pp->ports))
+    pp->ports[pp->n] = r_socket_address_ipv4_get_port (addr);
+  pp->n++;
+
+  if ((res = r_http_response_new (req, R_HTTP_STATUS_OK, NULL, NULL, NULL)) != NULL) {
+    RBuffer * buf = r_buffer_new_dup (R_STR_WITH_SIZE_ARGS (R_TEST_HTTP_CLIENT_BODY));
+    if (buf != NULL) {
+      r_http_response_set_body_buffer_full (res, buf, "text/plain", -1, TRUE);
+      r_buffer_unref (buf);
+    }
+  }
+
+  return res;
+}
+
+/* Two HTTPS requests to one destination reuse a single pooled TLS connection:
+ * the second skips the handshake and lands on the same socket. Proven by the
+ * server seeing both requests arrive from the same peer port. */
+RTEST (rhttpclient, https_keepalive_reuse, RTEST_FAST | RTEST_SYSTEM)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpClient * client;
+  RHttpRequest * req;
+  RHttpResponse * res;
+  RSocketAddress * addr;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RHttpClientResult result;
+  RTestPeerPorts pp = { { 0, }, 0 };
+  ruint i;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
+  r_assert (r_http_server_set_handler (srv, "/", -1,
+        r_test_http_peerport_handler, &pp, NULL));
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
+      !=, NULL);
+  r_assert (r_http_server_add_tls_listen_addr (srv, addr, cert, pk));
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_socket_address_unref (addr);
+  r_assert_cmpptr ((addr = r_http_server_get_local_address (srv)), !=, NULL);
+
+  r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
+  r_assert (r_http_client_get_keepalive (client));   /* on by default */
+
+  /* Two requests to the same destination; the second should reuse the pooled
+   * TLS connection rather than open (and re-handshake) a new one. */
+  for (i = 0; i < 2; i++) {
+    r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+            "https://127.0.0.1/", NULL, NULL)), !=, NULL);
+    r_assert (r_http_request_add_header (req, "Host", -1, "127.0.0.1", -1));
+    res = r_test_http_send (loop, client, req, addr, &result);
+    r_http_request_unref (req);
+    r_assert_cmpint (result, ==, R_HTTP_CLIENT_OK);
+    r_assert_cmpptr (res, !=, NULL);
+    r_assert_cmpint (r_http_response_get_status (res), ==, R_HTTP_STATUS_OK);
+    r_http_response_unref (res);
+  }
+
+  r_assert_cmpuint (pp.n, ==, 2);
+  r_assert_cmpuint (pp.ports[0], !=, 0);
+  r_assert_cmpuint (pp.ports[0], ==, pp.ports[1]);   /* same socket -> reused */
+
+  r_socket_address_unref (addr);
+  r_test_http_client_teardown (loop, client, srv);
+  r_ev_loop_unref (loop);
 }
 RTEST_END;
