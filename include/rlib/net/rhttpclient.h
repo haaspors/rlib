@@ -48,12 +48,17 @@
  * callback on the loop thread. For blocking use without managing a loop,
  * see @ref RHttpClientSync, which owns a private loop and an @ref RHttpClient.
  *
- * Scope is plaintext HTTP/1.1, either to an explicit @ref RSocketAddress or
- * to the host/port derived from the request URI (@ref r_http_client_request),
- * with response bodies framed by @c Content-Length, chunked transfer-encoding
- * or connection close. Persistent connections are reused via a small per-client
- * pool (@ref r_http_client_set_keepalive). Built on the @ref r_http_proto wire
- * codec and @ref r_evtcp.
+ * Scope is HTTP/1.1 over plaintext (@c http) or TLS (@c https), either to an
+ * explicit @ref RSocketAddress or to the host/port derived from the request URI
+ * (@ref r_http_client_request), with response bodies framed by @c Content-Length,
+ * chunked transfer-encoding or connection close. Persistent connections are
+ * reused via a small per-client pool (@ref r_http_client_set_keepalive). Built
+ * on the @ref r_http_proto wire codec and @ref r_evtcp.
+ *
+ * @warning HTTPS is not yet authenticated: the server certificate is accepted
+ * unconditionally (rlib has no certificate trust store or hostname matching),
+ * so the connection is encrypted but open to an active man-in-the-middle. Do
+ * not use it to carry secrets over an untrusted network.
  *
  * @{
  */
@@ -71,6 +76,7 @@ typedef enum {
   R_HTTP_CLIENT_SEND_FAILED,    /**< Could not send the request. */
   R_HTTP_CLIENT_RECV_FAILED,    /**< Transport error, or closed before the body completed. */
   R_HTTP_CLIENT_PARSE_FAILED,   /**< Malformed response, or unsupported framing (chunked / tunnel). */
+  R_HTTP_CLIENT_TLS_FAILED,     /**< TLS handshake failed or the session was aborted by an alert. */
 } RHttpClientResult;
 
 /**
@@ -115,8 +121,14 @@ R_API RClockTimeDiff r_http_client_get_idle_timeout (RHttpClient * client);
 
 /**
  * @brief Asynchronously send @p req to @p addr and deliver the response.
+ *
+ * The connection target is @p addr, but TLS is selected by @p req's URI scheme:
+ * an @c https request is terminated with TLS (see the group warning on
+ * certificate verification), an @c http request is plaintext. @p addr chooses
+ * where to connect; the scheme chooses whether to encrypt.
+ *
  * @param client The client.
- * @param req    The request to send.
+ * @param req    The request to send; its URI scheme selects plaintext vs TLS.
  * @param addr   Peer address to connect to.
  * @param cb     Invoked with the outcome on the loop thread.
  * @param data   User pointer passed to @p cb.
@@ -135,10 +147,11 @@ R_API rboolean r_http_client_request_to_addr (RHttpClient * client, RHttpRequest
  *
  * Derives the host and port from the request URI (@ref r_http_request_get_uri),
  * resolves them on the loop via the asynchronous resolver (never blocking the
- * loop thread), then connects to the first resolved address. The port defaults
- * to 80 for the @c http scheme when the URI omits it. Only plaintext targets
- * are supported: a missing host, or a URI with no port and a non-@c http
- * scheme, is rejected.
+ * loop thread), then connects to the first resolved address. An @c https scheme
+ * terminates the connection with TLS (see the group warning on certificate
+ * verification). When the URI omits the port it defaults to 80 for @c http and
+ * 443 for @c https; a missing host, or a URI with no port and a scheme that is
+ * neither @c http nor @c https, is rejected.
  *
  * @param client The client.
  * @param req    The request to send; its URI selects the target.
@@ -183,8 +196,12 @@ R_API RClockTimeDiff r_http_client_sync_get_idle_timeout (RHttpClientSync * clie
 
 /**
  * @brief Send @p req to @p addr and block until the response arrives.
+ *
+ * As with @ref r_http_client_request_to_addr, @p addr is the connection target
+ * while @p req's URI scheme selects plaintext (@c http) vs TLS (@c https).
+ *
  * @param client The blocking client.
- * @param req    The request to send.
+ * @param req    The request to send; its URI scheme selects plaintext vs TLS.
  * @param addr   Peer address to connect to.
  * @param result If non-@c NULL, receives the request outcome.
  * @return The response (caller @ref r_http_response_unref's it) on success,

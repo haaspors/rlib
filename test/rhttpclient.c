@@ -226,8 +226,9 @@ RTEST (rhttpclient, request_get_uri, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-/* A non-http scheme with no explicit port has no usable target: the request
- * is rejected before it starts (FALSE), so notify is never called. */
+/* A scheme that is neither http nor https with no explicit port has no usable
+ * target: the request is rejected before it starts (FALSE), so notify is never
+ * called. */
 RTEST (rhttpclient, request_uri_unsupported, RTEST_FAST | RTEST_SYSTEM)
 {
   REvLoop * loop;
@@ -241,7 +242,7 @@ RTEST (rhttpclient, request_uri_unsupported, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpptr ((client = r_http_client_new (loop)), !=, NULL);
   r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
-          "https://127.0.0.1/", NULL, NULL)), !=, NULL);
+          "ftp://127.0.0.1/", NULL, NULL)), !=, NULL);
 
   r_assert (!r_http_client_request (client, req, r_test_http_send_cb, NULL, NULL));
 
