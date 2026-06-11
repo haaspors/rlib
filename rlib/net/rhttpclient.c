@@ -25,6 +25,8 @@
 
 #include <rlib/net/rsocket.h>
 #include <rlib/net/rtlsclient.h>
+#include <rlib/crypto/rtruststore.h>
+#include <rlib/crypto/rx509.h>
 #include <rlib/data/rptrarray.h>
 
 #include <rlib/rrand.h>
@@ -52,6 +54,8 @@ struct RHttpClient {
   rboolean keepalive;
   RClockTimeDiff idle_timeout;
   RPrng * prng;         /* lazily created on the first HTTPS request */
+  RTrustStore * trust;  /* anchors/pins for HTTPS server verification */
+  rboolean insecure;    /* skip certificate verification (opt-in) */
 };
 
 struct RHttpClientReqCtx {
@@ -374,24 +378,46 @@ r_http_client_tls_closed (rpointer data, rpointer session)
   r_http_client_conn_deliver (conn, NULL);   /* close_notify == end-of-stream */
 }
 
-/*
- * ============================ SECURITY TODO =============================
- * verify_cert is NULL, so the server certificate is accepted UNCONDITIONALLY:
- * the handshake is not authenticated -- any certificate (self-signed, expired,
- * wrong host) is trusted, leaving HTTPS open to active man-in-the-middle.
- * rlib has no certificate trust store and no hostname matching yet; this is a
- * functional-only HTTPS client. Before this is fit for untrusted networks, a
- * trust store (CA bundle / system trust) plus RFC 6125 hostname verification
- * must be wired into verify_cert.
- * ========================================================================
- */
+/* Authenticate the server certificate: the configured trust store must accept
+ * the chain for TLS server use, and the leaf must match the request's host.
+ * With no trust store the connection fails closed unless the client was put in
+ * insecure mode. */
+static rboolean
+r_http_client_tls_verify (rpointer data, RCryptoCert * const * chain, ruint count)
+{
+  RHttpClientConn * conn = data;
+  RHttpClient * client = conn->client;
+  rchar * host = NULL;
+  rboolean ok;
+
+  if (client->insecure)
+    return TRUE;
+  if (client->trust == NULL)
+    return FALSE;
+
+  if (r_trust_store_verify (client->trust, chain, count, r_time_get_unix_time (),
+        R_X509_EXT_KEY_USAGE_SERVER_AUTH) != R_TRUST_OK)
+    return FALSE;
+
+  if (conn->req != NULL && conn->req->req != NULL) {
+    RUri * uri = r_http_request_get_uri (conn->req->req);
+    if (uri != NULL) {
+      host = r_uri_get_hostname (uri);
+      r_uri_unref (uri);
+    }
+  }
+  ok = (host != NULL) && r_crypto_x509_cert_verify_host (chain[0], host);
+  r_free (host);
+  return ok;
+}
+
 static const RTLSCallbacks g__r_http_client_tls_callbacks = {
   NULL,                                  /* preferred_cipher_suites (defaults) */
   r_http_client_tls_handshake_done,      /* handshake_done */
   r_http_client_tls_out,                 /* out */
   r_http_client_tls_appdata,             /* appdata */
   r_http_client_tls_error,               /* error */
-  NULL,                                  /* verify_cert -- see SECURITY TODO */
+  r_http_client_tls_verify,              /* verify_cert */
   r_http_client_tls_closed,              /* closed */
 };
 
@@ -899,6 +925,8 @@ r_http_client_free (RHttpClient * client)
   r_ptr_array_unref (client->reqs);
   if (client->prng != NULL)
     r_prng_unref (client->prng);
+  if (client->trust != NULL)
+    r_trust_store_unref (client->trust);
   r_ev_loop_unref (client->loop);
   r_free (client);
 }
@@ -920,6 +948,8 @@ r_http_client_new (REvLoop * loop)
     ret->keepalive = TRUE;
     ret->idle_timeout = R_HTTP_CLIENT_IDLE_TIMEOUT;
     ret->prng = NULL;
+    ret->trust = NULL;
+    ret->insecure = FALSE;
 
     R_LOG_INFO ("New HTTP client %p", ret);
   } else {
@@ -953,6 +983,30 @@ RClockTimeDiff
 r_http_client_get_idle_timeout (RHttpClient * client)
 {
   return client != NULL ? client->idle_timeout : 0;
+}
+
+void
+r_http_client_set_trust_store (RHttpClient * client, RTrustStore * store)
+{
+  if (R_UNLIKELY (client == NULL)) return;
+  if (store != NULL)
+    r_trust_store_ref (store);
+  if (client->trust != NULL)
+    r_trust_store_unref (client->trust);
+  client->trust = store;
+}
+
+void
+r_http_client_set_insecure (RHttpClient * client, rboolean insecure)
+{
+  if (R_UNLIKELY (client == NULL)) return;
+  client->insecure = insecure;
+}
+
+rboolean
+r_http_client_get_insecure (RHttpClient * client)
+{
+  return client != NULL ? client->insecure : FALSE;
 }
 
 
@@ -1027,6 +1081,20 @@ RClockTimeDiff
 r_http_client_sync_get_idle_timeout (RHttpClientSync * sync)
 {
   return sync != NULL ? r_http_client_get_idle_timeout (sync->client) : 0;
+}
+
+void
+r_http_client_sync_set_trust_store (RHttpClientSync * sync, RTrustStore * store)
+{
+  if (R_UNLIKELY (sync == NULL)) return;
+  r_http_client_set_trust_store (sync->client, store);
+}
+
+void
+r_http_client_sync_set_insecure (RHttpClientSync * sync, rboolean insecure)
+{
+  if (R_UNLIKELY (sync == NULL)) return;
+  r_http_client_set_insecure (sync->client, insecure);
 }
 
 static void

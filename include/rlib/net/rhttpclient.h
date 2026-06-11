@@ -35,6 +35,7 @@
 #include <rlib/ev/revloop.h>
 
 #include <rlib/net/rsocketaddress.h>
+#include <rlib/crypto/rtruststore.h>
 
 /**
  * @defgroup r_http_client HTTP client
@@ -55,10 +56,13 @@
  * reused via a small per-client pool (@ref r_http_client_set_keepalive). Built
  * on the @ref r_http_proto wire codec and @ref r_evtcp.
  *
- * @warning HTTPS is not yet authenticated: the server certificate is accepted
- * unconditionally (rlib has no certificate trust store or hostname matching),
- * so the connection is encrypted but open to an active man-in-the-middle. Do
- * not use it to carry secrets over an untrusted network.
+ * HTTPS connections authenticate the server: set a trust store with
+ * @ref r_http_client_set_trust_store (a CA-anchor or pinning
+ * @ref RTrustStore) and the leaf is checked against the request's host
+ * (@ref r_crypto_x509_cert_verify_host). With no trust store configured an
+ * HTTPS request fails closed; @ref r_http_client_set_insecure deliberately
+ * disables verification (encrypted but unauthenticated) for testing or
+ * self-signed peers.
  *
  * @{
  */
@@ -120,12 +124,29 @@ R_API void r_http_client_set_idle_timeout (RHttpClient * client, RClockTimeDiff 
 R_API RClockTimeDiff r_http_client_get_idle_timeout (RHttpClient * client);
 
 /**
+ * @brief Set the trust store used to authenticate HTTPS server certificates
+ * (referenced); pass @c NULL to clear it. With no trust store an HTTPS request
+ * fails unless @ref r_http_client_set_insecure is set.
+ */
+R_API void r_http_client_set_trust_store (RHttpClient * client, RTrustStore * store);
+/**
+ * @brief Disable (or re-enable) HTTPS certificate verification.
+ *
+ * When enabled the server certificate and host name are not checked: the
+ * connection is encrypted but unauthenticated. Intended for tests and
+ * self-signed peers, not untrusted networks.
+ */
+R_API void r_http_client_set_insecure (RHttpClient * client, rboolean insecure);
+/** @brief Whether certificate verification is disabled (see @ref r_http_client_set_insecure). */
+R_API rboolean r_http_client_get_insecure (RHttpClient * client);
+
+/**
  * @brief Asynchronously send @p req to @p addr and deliver the response.
  *
  * The connection target is @p addr, but TLS is selected by @p req's URI scheme:
- * an @c https request is terminated with TLS (see the group warning on
- * certificate verification), an @c http request is plaintext. @p addr chooses
- * where to connect; the scheme chooses whether to encrypt.
+ * an @c https request is terminated with TLS (see @ref r_http_client_set_trust_store
+ * for certificate verification), an @c http request is plaintext. @p addr
+ * chooses where to connect; the scheme chooses whether to encrypt.
  *
  * @param client The client.
  * @param req    The request to send; its URI scheme selects plaintext vs TLS.
@@ -148,8 +169,8 @@ R_API rboolean r_http_client_request_to_addr (RHttpClient * client, RHttpRequest
  * Derives the host and port from the request URI (@ref r_http_request_get_uri),
  * resolves them on the loop via the asynchronous resolver (never blocking the
  * loop thread), then connects to the first resolved address. An @c https scheme
- * terminates the connection with TLS (see the group warning on certificate
- * verification). When the URI omits the port it defaults to 80 for @c http and
+ * terminates the connection with TLS (see @ref r_http_client_set_trust_store
+ * for certificate verification). When the URI omits the port it defaults to 80 for @c http and
  * 443 for @c https; a missing host, or a URI with no port and a scheme that is
  * neither @c http nor @c https, is rejected.
  *
@@ -193,6 +214,10 @@ R_API rboolean r_http_client_sync_get_keepalive (RHttpClientSync * client);
 R_API void r_http_client_sync_set_idle_timeout (RHttpClientSync * client, RClockTimeDiff timeout);
 /** @brief @ref r_http_client_get_idle_timeout on the underlying client. */
 R_API RClockTimeDiff r_http_client_sync_get_idle_timeout (RHttpClientSync * client);
+/** @brief @ref r_http_client_set_trust_store on the underlying client. */
+R_API void r_http_client_sync_set_trust_store (RHttpClientSync * client, RTrustStore * store);
+/** @brief @ref r_http_client_set_insecure on the underlying client. */
+R_API void r_http_client_sync_set_insecure (RHttpClientSync * client, rboolean insecure);
 
 /**
  * @brief Send @p req to @p addr and block until the response arrives.
