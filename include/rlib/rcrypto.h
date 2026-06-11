@@ -117,6 +117,7 @@
 #include <rlib/crypto/rsrtpciphersuite.h>
 #include <rlib/crypto/rtlsciphersuite.h>
 #include <rlib/crypto/rx509.h>
+#include <rlib/crypto/rtruststore.h>
 
 #endif /* __R_CRYPTO_H__ */
 

@@ -74,6 +74,7 @@ rlib_sources = [
   'crypto/rsrtpciphersuite.c',
   'crypto/rtlsciphersuite.c',
   'crypto/rx509.c',
+  'crypto/rtruststore.c',
   'data/rbitset.c',
   'data/rdirtree.c',
   'data/rhashfuncs.c',

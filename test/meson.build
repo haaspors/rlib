@@ -20,6 +20,7 @@ rlibtest_sources = [
   'rcrc.c',
   'rcryptocert.c',
   'rcryptocipher.c',
+  'rtruststore.c',
   'rcryptohmac.c',
   'rcryptokey.c',
   'rcryptopem.c',
