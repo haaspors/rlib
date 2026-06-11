@@ -100,7 +100,7 @@ r_test_http_listen_ephemeral (RHttpServer * srv)
 
   r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)),
       !=, NULL);
-  if (r_http_server_listen (srv, addr))
+  if (r_http_server_add_listen_addr (srv, addr))
     bound = r_http_server_get_local_address (srv);
   r_socket_address_unref (addr);
 

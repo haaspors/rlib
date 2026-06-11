@@ -35,6 +35,8 @@
 #include <rlib/ev/revloop.h>
 
 #include <rlib/net/rsocketaddress.h>
+#include <rlib/crypto/rcert.h>
+#include <rlib/crypto/rkey.h>
 
 /**
  * @defgroup r_http_server HTTP server
@@ -44,7 +46,7 @@
  * dispatches requests to pattern-matched handlers.
  *
  * Register one or more handlers with @ref r_http_server_set_handler
- * (each bound to a path pattern), then @ref r_http_server_listen on a
+ * (each bound to a path pattern), then @ref r_http_server_add_listen_addr on a
  * socket address. Each request invokes the matching
  * @ref RHttpRequestHandler, which returns the @ref RHttpResponse to
  * send. Requests can also be injected directly via
@@ -94,8 +96,20 @@ R_API rboolean r_http_server_set_handler (RHttpServer * server,
   const rchar * pattern, rssize size, RHttpRequestHandler handler,
   rpointer data, RDestroyNotify notify);
 
-/** @brief Start accepting connections on @p addr. */
-R_API rboolean r_http_server_listen (RHttpServer * server, RSocketAddress * addr);
+/** @brief Add a plaintext (HTTP) listening address; may be called repeatedly. */
+R_API rboolean r_http_server_add_listen_addr (RHttpServer * server,
+    RSocketAddress * addr);
+/**
+ * @brief Add a TLS (HTTPS) listening address terminated with @p cert / @p privkey.
+ *
+ * Each accepted connection runs a per-connection TLS handshake before any HTTP
+ * is parsed. @p cert and @p privkey are referenced and apply to this listener
+ * only, so distinct addresses may serve distinct certificates. May be combined
+ * freely with @ref r_http_server_add_listen_addr on one server (e.g. HTTP on
+ * port 80 and HTTPS on port 443).
+ */
+R_API rboolean r_http_server_add_tls_listen_addr (RHttpServer * server,
+    RSocketAddress * addr, RCryptoCert * cert, RCryptoKey * privkey);
 /**
  * @brief Local address of the server's first listener.
  *

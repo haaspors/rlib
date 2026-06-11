@@ -22,10 +22,12 @@
 #include <rlib/net/rhttpserver.h>
 
 #include <rlib/ev/revtcp.h>
+#include <rlib/net/rtlsserver.h>
 
 #include <rlib/data/rdirtree.h>
 #include <rlib/data/rptrarray.h>
 
+#include <rlib/rrand.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
@@ -37,12 +39,19 @@ struct RHttpServer {
 
   RPtrArray * clients;
   RPtrArray * listen;
+
+  /* Per-listener TLS config (cert/key) for HTTPS listeners, plus the shared
+   * PRNG every per-connection RTLSServer draws from. */
+  RPtrArray * tls_listeners;
+  RPrng * prng;
 };
 
 typedef struct {
   RRef ref;
   RHttpServer * server;
   REvTCP * evtcp;
+
+  RTLSServer * tls;     /* per-connection TLS engine; NULL for plaintext */
 
   RHttpRequest * req;
   rssize bodysize;
@@ -69,6 +78,8 @@ r_http_client_ctx_free (RHttpClientCtx * ctx)
     r_buffer_unref (ctx->inbuf);
   if (ctx->req != NULL)
     r_http_request_unref (ctx->req);
+  if (ctx->tls != NULL)
+    r_tls_server_unref (ctx->tls);
 
   r_ev_tcp_unref (ctx->evtcp);
   r_http_server_unref (ctx->server);
@@ -141,7 +152,17 @@ r_http_client_ctx_tcp_response_ready (rpointer data, RHttpResponse * res,
         server, buf, R_EV_IO_ARGS (ctx->evtcp), ctx->keepalive ? "keepalive" : "close");
     R_LOG_BUF_DUMP (R_LOG_LEVEL_TRACE, buf);
 
-    if (!ctx->keepalive) {
+    if (ctx->tls != NULL) {
+      /* send_appdata flushes encrypted records via the out callback. On close,
+       * the queued response + close_notify drain through r_ev_tcp_close's
+       * graceful flush before the FIN. This runs from the deferred handler
+       * callback, not the recv chain, so closing here is safe. */
+      r_tls_server_send_appdata (ctx->tls, buf);
+      if (!ctx->keepalive) {
+        r_tls_server_close (ctx->tls);
+        r_http_client_ctx_close (ctx, NULL, NULL);
+      }
+    } else if (!ctx->keepalive) {
       r_ev_tcp_send (ctx->evtcp, buf, r_http_client_ctx_response_sent,
           r_ref_ref (ctx), r_ref_unref);
     } else {
@@ -313,6 +334,9 @@ r_http_server_free (RHttpServer * server)
   r_ev_loop_unref (server->loop);
   r_ptr_array_unref (server->clients);
   r_ptr_array_unref (server->listen);
+  r_ptr_array_unref (server->tls_listeners);
+  if (server->prng != NULL)
+    r_prng_unref (server->prng);
   r_free (server);
 }
 
@@ -332,6 +356,9 @@ r_http_server_new (REvLoop * loop)
 
     ret->clients = r_ptr_array_new_sized (1024);
     ret->listen = r_ptr_array_new ();
+
+    ret->tls_listeners = r_ptr_array_new ();
+    ret->prng = NULL;
 
     R_LOG_INFO ("New HTTP server %p", ret);
   } else {
@@ -491,6 +518,126 @@ r_http_server_process_request (RHttpServer * server,
   return FALSE;
 }
 
+/* --- TLS termination (HTTPS) ---------------------------------------------
+ * A per-connection RTLSServer sits between the socket and the HTTP parser:
+ *   socket recv -> r_tls_server_incoming_data -> appdata -> the HTTP parser;
+ *   HTTP response -> r_tls_server_send_appdata -> out -> socket send.
+ * The bundle's userdata is the RHttpClientCtx (a back-pointer; the ctx owns the
+ * RTLSServer, hence a NULL destroy-notify on r_tls_server_new). */
+
+/* Cert/key for one HTTPS listener; the server owns these in tls_listeners and
+ * passes one (borrowed) as the accept callback's data. */
+typedef struct {
+  RHttpServer * server;
+  RCryptoCert * cert;
+  RCryptoKey * privkey;
+} RHttpTLSListener;
+
+static void
+r_http_tls_listener_free (rpointer data)
+{
+  RHttpTLSListener * l = data;
+  r_crypto_cert_unref (l->cert);
+  r_crypto_key_unref (l->privkey);
+  r_free (l);
+}
+
+static rboolean
+r_http_client_ctx_tls_out (rpointer data, RBuffer * buf, rpointer session)
+{
+  RHttpClientCtx * ctx = data;
+  (void) session;
+
+  /* Borrowed buffer: the send path queues its own reference. */
+  r_ev_tcp_send_and_forget (ctx->evtcp, buf);
+  return TRUE;
+}
+
+static rboolean
+r_http_client_ctx_tls_appdata (rpointer data, RBuffer * buf, rpointer session)
+{
+  RHttpClientCtx * ctx = data;
+  (void) session;
+
+  /* Decrypted bytes flow into the same parser the plaintext path uses. */
+  r_http_client_ctx_tcp_recv (ctx, buf, ctx->evtcp);
+  return TRUE;
+}
+
+static void
+r_http_client_ctx_tls_error (rpointer data, RTLSAlertType alert, rpointer session)
+{
+  RHttpClientCtx * ctx = data;
+  (void) alert;
+  (void) session;
+
+  r_http_client_ctx_close (ctx, NULL, NULL);
+}
+
+static void
+r_http_client_ctx_tls_closed (rpointer data, rpointer session)
+{
+  RHttpClientCtx * ctx = data;
+  (void) session;
+
+  r_http_client_ctx_close (ctx, NULL, NULL);
+}
+
+static const RTLSCallbacks g__r_http_tls_callbacks = {
+  NULL,                              /* preferred_cipher_suites (defaults) */
+  NULL,                              /* handshake_done (appdata drives parsing) */
+  r_http_client_ctx_tls_out,         /* out */
+  r_http_client_ctx_tls_appdata,     /* appdata */
+  r_http_client_ctx_tls_error,       /* error */
+  NULL,                              /* verify_cert (no client cert) */
+  r_http_client_ctx_tls_closed,      /* closed */
+};
+
+static void
+r_http_client_ctx_tls_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
+{
+  RHttpClientCtx * ctx = data;
+  (void) evtcp;
+
+  if (buf == NULL) {
+    r_http_client_ctx_close (ctx, NULL, NULL);
+    return;
+  }
+
+  /* incoming_data synchronously fires out (handshake records) and appdata
+   * (decrypted bytes -> parser), and may tear the connection down via the
+   * error/closed callbacks; hold a reference so the ctx survives the chain. */
+  r_ref_ref (ctx);
+  r_tls_server_incoming_data (ctx->tls, buf);
+  r_ref_unref (ctx);
+}
+
+static void
+r_http_server_tcp_connection_ready_tls (rpointer data,
+    REvTCP * newtcp, REvTCP * listening)
+{
+  RHttpTLSListener * l = data;
+  RHttpServer * server = l->server;
+  RHttpClientCtx * ctx;
+
+  if ((ctx = r_http_client_ctx_new (server, newtcp)) != NULL &&
+      (ctx->tls = r_tls_server_new (&g__r_http_tls_callbacks, ctx, NULL)) != NULL &&
+      r_tls_server_set_cert (ctx->tls, l->cert, l->privkey) == R_TLS_ERROR_OK &&
+      r_tls_server_start (ctx->tls, server->loop, server->prng) == R_TLS_ERROR_OK &&
+      r_ev_tcp_recv_start (newtcp, NULL, r_http_client_ctx_tls_recv, ctx, NULL)) {
+    R_LOG_TRACE ("%p: New TLS connection "R_EV_IO_FORMAT" on "R_EV_IO_FORMAT,
+        server, R_EV_IO_ARGS (newtcp), R_EV_IO_ARGS (listening));
+    r_ptr_array_add (server->clients, ctx, r_ref_unref);
+  } else if (ctx != NULL) {
+    R_LOG_WARNING ("%p: New TLS connection "R_EV_IO_FORMAT" setup failed",
+        server, R_EV_IO_ARGS (newtcp));
+    r_ref_unref (ctx);
+  } else {
+    R_LOG_WARNING ("%p: New TLS connection "R_EV_IO_FORMAT" OOM", server,
+        R_EV_IO_ARGS (newtcp));
+  }
+}
+
 static void
 r_http_server_tcp_connection_ready (rpointer data,
     REvTCP * newtcp, REvTCP * listening)
@@ -517,8 +664,12 @@ r_http_server_tcp_connection_ready (rpointer data,
   }
 }
 
-rboolean
-r_http_server_listen (RHttpServer * server, RSocketAddress * addr)
+/* @accept_data is borrowed by the accept callback; the caller keeps it alive
+ * for as long as the listener (the server owns plaintext data implicitly and
+ * TLS listener configs via tls_listeners). */
+static rboolean
+r_http_server_do_listen (RHttpServer * server, RSocketAddress * addr,
+    REvTCPConnectionReadyFunc accept_cb, rpointer accept_data)
 {
   REvTCP * tcp;
   rchar * addrstr;
@@ -527,7 +678,7 @@ r_http_server_listen (RHttpServer * server, RSocketAddress * addr)
 
   if ((tcp = r_ev_tcp_new_bind (addr, server->loop)) != NULL) {
     if (r_ev_tcp_listen (tcp, R_SOCKET_DEFAULT_BACKLOG,
-          r_http_server_tcp_connection_ready, server, NULL) >= R_SOCKET_OK) {
+          accept_cb, accept_data, NULL) >= R_SOCKET_OK) {
       if (r_ptr_array_add (server->listen, tcp, r_ev_tcp_unref) != R_PTR_ARRAY_INVALID_IDX) {
         R_LOG_INFO ("%p: TCP listen %s", server, addrstr);
         r_free (addrstr);
@@ -541,6 +692,44 @@ r_http_server_listen (RHttpServer * server, RSocketAddress * addr)
   R_LOG_ERROR ("%p: Failed for %s", server, addrstr);
   r_free (addrstr);
   return FALSE;
+}
+
+rboolean
+r_http_server_add_listen_addr (RHttpServer * server, RSocketAddress * addr)
+{
+  return r_http_server_do_listen (server, addr,
+      r_http_server_tcp_connection_ready, server);
+}
+
+rboolean
+r_http_server_add_tls_listen_addr (RHttpServer * server, RSocketAddress * addr,
+    RCryptoCert * cert, RCryptoKey * privkey)
+{
+  RHttpTLSListener * l;
+
+  if (R_UNLIKELY (server == NULL)) return FALSE;
+  if (R_UNLIKELY (cert == NULL || privkey == NULL)) {
+    R_LOG_ERROR ("%p: add_tls_listen_addr needs a cert and key", server);
+    return FALSE;
+  }
+
+  if (server->prng == NULL && (server->prng = r_prng_new_mt ()) == NULL)
+    return FALSE;
+
+  if ((l = r_mem_new (RHttpTLSListener)) == NULL)
+    return FALSE;
+  l->server = server;
+  l->cert = r_crypto_cert_ref (cert);
+  l->privkey = r_crypto_key_ref (privkey);
+
+  if (!r_http_server_do_listen (server, addr,
+        r_http_server_tcp_connection_ready_tls, l)) {
+    r_http_tls_listener_free (l);
+    return FALSE;
+  }
+
+  r_ptr_array_add (server->tls_listeners, l, r_http_tls_listener_free);
+  return TRUE;
 }
 
 RSocketAddress *
