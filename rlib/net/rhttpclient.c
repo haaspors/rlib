@@ -24,8 +24,10 @@
 #include <rlib/ev/revresolve.h>
 
 #include <rlib/net/rsocket.h>
+#include <rlib/net/rtlsclient.h>
 #include <rlib/data/rptrarray.h>
 
+#include <rlib/rrand.h>
 #include <rlib/ruri.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
@@ -49,6 +51,7 @@ struct RHttpClient {
   RPtrArray * idle;     /* idle RHttpClientConn, scanned by destination addr */
   rboolean keepalive;
   RClockTimeDiff idle_timeout;
+  RPrng * prng;         /* lazily created on the first HTTPS request */
 };
 
 struct RHttpClientReqCtx {
@@ -69,6 +72,7 @@ struct RHttpClientReqCtx {
   RDestroyNotify notify;
 
   RSocketAddress * dest;  /* connect target; keys reuse and drives the retry */
+  rboolean tls;           /* HTTPS: terminate the connection with TLS */
   rboolean reused;        /* running on a pooled connection */
   rboolean retried;       /* a stale-connection retry has already happened */
   rboolean finished;
@@ -82,6 +86,7 @@ struct RHttpClientConn {
   RRef ref;
   RHttpClient * client;       /* borrowed */
   REvTCP * evtcp;
+  RTLSClient * tls;           /* per-connection TLS engine; NULL for plaintext */
   RSocketAddress * addr;      /* destination key */
   RHttpClientReqCtx * req;    /* current request, or NULL when idle */
   RClockEntry * timer;        /* idle-eviction timer, set only when idle */
@@ -154,6 +159,8 @@ r_http_client_conn_free (RHttpClientConn * conn)
       r_ev_tcp_abort (conn->evtcp, NULL, NULL, NULL);
     r_ev_tcp_unref (conn->evtcp);
   }
+  if (conn->tls != NULL)
+    r_tls_client_unref (conn->tls);
   if (conn->addr != NULL)
     r_socket_address_unref (conn->addr);
   r_free (conn);
@@ -222,18 +229,38 @@ r_http_client_conn_idle_timeout (rpointer data, REvLoop * loop)
  * connection is idle in the pool -- treated as a peer close that evicts it. */
 static void r_http_client_req_recv_data (RHttpClientReqCtx * ctx, RBuffer * buf);
 
+/* Route one plaintext/decrypted chunk (or EOS, @buf == NULL) to the current
+ * request, or -- on a parked connection the peer is done with -- evict it. */
+static void
+r_http_client_conn_deliver (RHttpClientConn * conn, RBuffer * buf)
+{
+  if (conn->req == NULL || conn->req->finished) {
+    r_http_client_conn_evict (conn);
+    return;
+  }
+  r_http_client_req_recv_data (conn->req, buf);
+}
+
 static void
 r_http_client_conn_recv (rpointer data, RBuffer * buf, REvTCP * evtcp)
 {
   RHttpClientConn * conn = data;
   (void) evtcp;
 
-  if (conn->req == NULL || conn->req->finished) {
-    /* Bytes or EOF on a parked connection: the peer is done with it. */
-    r_http_client_conn_evict (conn);
-    return;
+  if (conn->tls != NULL) {
+    if (buf == NULL) {
+      r_http_client_conn_deliver (conn, NULL);   /* transport end-of-stream */
+      return;
+    }
+    /* Ciphertext: incoming_data synchronously fires appdata (-> parser) and may
+     * tear the connection down via the error/closed callbacks; hold a reference
+     * so the conn survives the chain. */
+    r_http_client_conn_ref (conn);
+    r_tls_client_incoming_data (conn->tls, buf);
+    r_http_client_conn_unref (conn);
+  } else {
+    r_http_client_conn_deliver (conn, buf);
   }
-  r_http_client_req_recv_data (conn->req, buf);
 }
 
 static void
@@ -265,11 +292,111 @@ r_http_client_conn_connected (rpointer data, REvTCP * evtcp, int status)
     return;
   }
 
+  if (conn->tls != NULL) {
+    /* Arm recv before the handshake so the server's records are received, then
+     * drive the ClientHello; the request is sent once handshake_done fires. */
+    if (!conn->recving) {
+      if (!r_ev_tcp_recv_start (conn->evtcp, NULL, r_http_client_conn_recv,
+              conn, NULL)) {
+        r_http_client_req_fail (conn->req, R_HTTP_CLIENT_RECV_FAILED, TRUE);
+        return;
+      }
+      conn->recving = TRUE;
+    }
+    if (r_tls_client_start (conn->tls, conn->client->loop, conn->client->prng,
+            R_TLS_VERSION_TLS_1_2) != R_TLS_ERROR_OK) {
+      r_http_client_req_fail (conn->req, R_HTTP_CLIENT_TLS_FAILED, TRUE);
+      return;
+    }
+    return;
+  }
+
   r_http_client_req_send (conn->req, TRUE);
 }
 
+/* --- TLS termination (HTTPS) ---------------------------------------------
+ * A per-connection RTLSClient filters the socket: ciphertext recv ->
+ * incoming_data -> appdata (decrypted) -> the existing response parser; the
+ * serialized request -> send_appdata -> out -> socket send. The callback
+ * userdata is the RHttpClientConn (a back-pointer; the conn owns the
+ * RTLSClient, hence the NULL destroy-notify on r_tls_client_new). */
+
+static rboolean
+r_http_client_tls_out (rpointer data, RBuffer * buf, rpointer session)
+{
+  RHttpClientConn * conn = data;
+  (void) session;
+
+  /* Borrowed buffer: the send path queues its own reference. */
+  r_ev_tcp_send_and_forget (conn->evtcp, buf);
+  return TRUE;
+}
+
+static void
+r_http_client_tls_handshake_done (rpointer data, rpointer session)
+{
+  RHttpClientConn * conn = data;
+  (void) session;
+
+  if (conn->req != NULL)
+    r_http_client_req_send (conn->req, TRUE);
+}
+
+static rboolean
+r_http_client_tls_appdata (rpointer data, RBuffer * buf, rpointer session)
+{
+  RHttpClientConn * conn = data;
+  (void) session;
+
+  r_http_client_conn_deliver (conn, buf);
+  return TRUE;
+}
+
+static void
+r_http_client_tls_error (rpointer data, RTLSAlertType alert, rpointer session)
+{
+  RHttpClientConn * conn = data;
+  (void) alert;
+  (void) session;
+
+  if (conn->req != NULL)
+    r_http_client_req_fail (conn->req, R_HTTP_CLIENT_TLS_FAILED, TRUE);
+  else
+    r_http_client_conn_evict (conn);
+}
+
+static void
+r_http_client_tls_closed (rpointer data, rpointer session)
+{
+  RHttpClientConn * conn = data;
+  (void) session;
+
+  r_http_client_conn_deliver (conn, NULL);   /* close_notify == end-of-stream */
+}
+
+/*
+ * ============================ SECURITY TODO =============================
+ * verify_cert is NULL, so the server certificate is accepted UNCONDITIONALLY:
+ * the handshake is not authenticated -- any certificate (self-signed, expired,
+ * wrong host) is trusted, leaving HTTPS open to active man-in-the-middle.
+ * rlib has no certificate trust store and no hostname matching yet; this is a
+ * functional-only HTTPS client. Before this is fit for untrusted networks, a
+ * trust store (CA bundle / system trust) plus RFC 6125 hostname verification
+ * must be wired into verify_cert.
+ * ========================================================================
+ */
+static const RTLSCallbacks g__r_http_client_tls_callbacks = {
+  NULL,                                  /* preferred_cipher_suites (defaults) */
+  r_http_client_tls_handshake_done,      /* handshake_done */
+  r_http_client_tls_out,                 /* out */
+  r_http_client_tls_appdata,             /* appdata */
+  r_http_client_tls_error,               /* error */
+  NULL,                                  /* verify_cert -- see SECURITY TODO */
+  r_http_client_tls_closed,              /* closed */
+};
+
 static RHttpClientConn *
-r_http_client_conn_new (RHttpClient * client, RSocketAddress * addr)
+r_http_client_conn_new (RHttpClient * client, RSocketAddress * addr, rboolean tls)
 {
   RHttpClientConn * conn;
 
@@ -283,6 +410,11 @@ r_http_client_conn_new (RHttpClient * client, RSocketAddress * addr)
     r_http_client_conn_unref (conn);
     return NULL;
   }
+  if (tls && (conn->tls = r_tls_client_new (&g__r_http_client_tls_callbacks,
+          conn, NULL)) == NULL) {
+    r_http_client_conn_unref (conn);
+    return NULL;
+  }
   r_ev_tcp_set_error_handler (conn->evtcp, r_http_client_conn_error, conn, NULL);
   return conn;
 }
@@ -290,14 +422,16 @@ r_http_client_conn_new (RHttpClient * client, RSocketAddress * addr)
 /* Take a live pooled connection to @addr out of the pool for reuse, or NULL.
  * The returned connection carries the reference the pool held. */
 static RHttpClientConn *
-r_http_client_pool_acquire (RHttpClient * client, const RSocketAddress * addr)
+r_http_client_pool_acquire (RHttpClient * client, const RSocketAddress * addr,
+    rboolean tls)
 {
   rsize i = 0;
 
   while (i < r_ptr_array_size (client->idle)) {
     RHttpClientConn * conn = r_ptr_array_get (client->idle, i);
 
-    if (conn->closing || !r_socket_address_is_equal (conn->addr, addr)) {
+    if (conn->closing || (conn->tls != NULL) != tls ||
+        !r_socket_address_is_equal (conn->addr, addr)) {
       i++;
       continue;
     }
@@ -538,7 +672,10 @@ r_http_client_req_send (RHttpClientReqCtx * ctx, rboolean defer)
     r_http_client_req_fail (ctx, R_HTTP_CLIENT_SEND_FAILED, defer);
     return;
   }
-  r_ev_tcp_send_and_forget (conn->evtcp, buf);
+  if (conn->tls != NULL)
+    r_tls_client_send_appdata (conn->tls, buf);   /* encrypt -> out -> socket */
+  else
+    r_ev_tcp_send_and_forget (conn->evtcp, buf);
   r_buffer_unref (buf);
 
   /* The recv watch is bound to the connection for its whole life; a reused
@@ -560,7 +697,13 @@ r_http_client_req_connect (RHttpClientReqCtx * ctx, rboolean defer)
   RHttpClientConn * conn;
 
   ctx->reused = FALSE;
-  if ((conn = r_http_client_conn_new (ctx->client, ctx->dest)) == NULL) {
+  /* The TLS handshake draws randomness from a lazily created, client-owned PRNG. */
+  if (ctx->tls && ctx->client->prng == NULL &&
+      (ctx->client->prng = r_prng_new_mt ()) == NULL) {
+    r_http_client_req_complete (ctx, R_HTTP_CLIENT_TLS_FAILED, defer);
+    return;
+  }
+  if ((conn = r_http_client_conn_new (ctx->client, ctx->dest, ctx->tls)) == NULL) {
     r_http_client_req_complete (ctx, R_HTTP_CLIENT_CONNECT_FAILED, defer);
     return;
   }
@@ -575,7 +718,8 @@ r_http_client_req_connect (RHttpClientReqCtx * ctx, rboolean defer)
 static void
 r_http_client_req_dispatch (RHttpClientReqCtx * ctx, rboolean defer)
 {
-  RHttpClientConn * conn = r_http_client_pool_acquire (ctx->client, ctx->dest);
+  RHttpClientConn * conn = r_http_client_pool_acquire (ctx->client, ctx->dest,
+      ctx->tls);
 
   if (conn != NULL) {
     ctx->conn = conn;   /* acquire transferred the pool's reference to us */
@@ -608,6 +752,24 @@ r_http_client_req_ctx_new (RHttpClient * client, RHttpRequest * req,
   return ctx;
 }
 
+/* TRUE if the request URI's scheme is https (selects TLS termination). */
+static rboolean
+r_http_request_uri_is_https (RHttpRequest * req)
+{
+  RUri * uri;
+  rchar * scheme;
+  rboolean tls = FALSE;
+
+  if ((uri = r_http_request_get_uri (req)) != NULL) {
+    if ((scheme = r_uri_get_scheme (uri)) != NULL) {
+      tls = (r_strcasecmp (scheme, "https") == 0);
+      r_free (scheme);
+    }
+    r_uri_unref (uri);
+  }
+  return tls;
+}
+
 rboolean
 r_http_client_request_to_addr (RHttpClient * client, RHttpRequest * req,
     const RSocketAddress * addr,
@@ -620,6 +782,7 @@ r_http_client_request_to_addr (RHttpClient * client, RHttpRequest * req,
 
   if ((ctx = r_http_client_req_ctx_new (client, req, cb, data, notify)) == NULL)
     return FALSE;
+  ctx->tls = r_http_request_uri_is_https (req);
   if ((ctx->dest = r_socket_address_copy (addr)) == NULL) {
     ctx->cb = NULL;     /* not committed: notify must not run */
     ctx->notify = NULL;
@@ -668,6 +831,7 @@ r_http_client_request (RHttpClient * client, RHttpRequest * req,
   RUri * uri;
   rchar * host, * scheme;
   ruint16 port;
+  rboolean tls;
   rchar service[8];
   RResolveHints hints = { R_SOCKET_FAMILY_NONE, R_SOCKET_TYPE_STREAM,
       R_SOCKET_PROTOCOL_DEFAULT };
@@ -683,9 +847,14 @@ r_http_client_request (RHttpClient * client, RHttpRequest * req,
   port = r_uri_get_port (uri);
   r_uri_unref (uri);
 
-  /* Fall back to the scheme's default port; only plaintext http is targeted. */
-  if (port == 0 && scheme != NULL && r_strcasecmp (scheme, "http") == 0)
-    port = 80;
+  /* http and https are supported; fall back to the scheme's default port. */
+  tls = (scheme != NULL && r_strcasecmp (scheme, "https") == 0);
+  if (port == 0 && scheme != NULL) {
+    if (tls)
+      port = 443;
+    else if (r_strcasecmp (scheme, "http") == 0)
+      port = 80;
+  }
   r_free (scheme);
   if (R_UNLIKELY (host == NULL || port == 0)) {
     r_free (host);
@@ -697,6 +866,7 @@ r_http_client_request (RHttpClient * client, RHttpRequest * req,
     r_free (host);
     return FALSE;
   }
+  ctx->tls = tls;
 
   /* Committed: the array owns ctx and every outcome is delivered via cb. */
   r_ptr_array_add (client->reqs, ctx, r_ref_unref);
@@ -727,6 +897,8 @@ r_http_client_free (RHttpClient * client)
    * (conn_free, synchronous close -- we are not inside an io callback here). */
   r_ptr_array_unref (client->idle);
   r_ptr_array_unref (client->reqs);
+  if (client->prng != NULL)
+    r_prng_unref (client->prng);
   r_ev_loop_unref (client->loop);
   r_free (client);
 }
@@ -747,6 +919,7 @@ r_http_client_new (REvLoop * loop)
     ret->idle = r_ptr_array_new ();
     ret->keepalive = TRUE;
     ret->idle_timeout = R_HTTP_CLIENT_IDLE_TIMEOUT;
+    ret->prng = NULL;
 
     R_LOG_INFO ("New HTTP client %p", ret);
   } else {
