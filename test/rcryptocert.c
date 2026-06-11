@@ -849,3 +849,21 @@ RTEST (rcryptocert, x509_verify_host_wildcard, RTEST_FAST)
 }
 RTEST_END;
 
+/* r_crypto_x509_cert_path_len: the BasicConstraints pathLenConstraint, or -1
+ * when absent. */
+RTEST (rcryptocert, x509_path_len, RTEST_FAST)
+{
+  RCryptoCert * root, * inter, * leaf;
+  r_assert_cmpptr ((root = cert_of (rtest_root_pem)), !=, NULL);
+  r_assert_cmpptr ((inter = cert_of (rtest_inter_pem)), !=, NULL);
+  r_assert_cmpptr ((leaf = cert_of (rtest_leaf_pem)), !=, NULL);
+
+  r_assert_cmpint (r_crypto_x509_cert_path_len (root), ==, 1);    /* pathlen:1 */
+  r_assert_cmpint (r_crypto_x509_cert_path_len (inter), ==, 0);   /* pathlen:0 */
+  r_assert_cmpint (r_crypto_x509_cert_path_len (leaf), ==, -1);   /* absent */
+
+  r_crypto_cert_unref (root);
+  r_crypto_cert_unref (inter);
+  r_crypto_cert_unref (leaf);
+}
+RTEST_END;

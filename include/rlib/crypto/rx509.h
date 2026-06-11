@@ -308,6 +308,14 @@ R_API rboolean r_crypto_x509_cert_policy_mapping (const RCryptoCert * cert, rsiz
  * is set.
  */
 R_API rboolean r_crypto_x509_cert_is_ca (const RCryptoCert * cert);
+/**
+ * @brief Return the @c BasicConstraints @c pathLenConstraint, or @c -1 when it
+ * is absent (no path-length limit).
+ *
+ * The constraint bounds the number of non-self-issued intermediate CA
+ * certificates that may follow this certificate in a valid chain.
+ */
+R_API rint32 r_crypto_x509_cert_path_len (const RCryptoCert * cert);
 /** @brief True iff issuer DN equals subject DN. */
 R_API rboolean r_crypto_x509_cert_is_self_issued (const RCryptoCert * cert);
 /**
