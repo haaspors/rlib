@@ -2,6 +2,8 @@
 #include <rlib/rev.h>
 #include <rlib/rcrypto.h>
 
+#include "rtlstestcerts.h"
+
 static const rchar testcertpem[] =
   "-----BEGIN CERTIFICATE-----\r\n"
   "MIIC8TCCAdmgAwIBAgIJALoi/+XOQDHjMA0GCSqGSIb3DQEBCwUAMA8xDTALBgNV\r\n"
@@ -518,6 +520,285 @@ RTEST (rhttpserver, https_rejects_plaintext, RTEST_FAST | RTEST_SYSTEM)
   r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
   r_http_server_unref (srv);
   r_socket_address_unref (addr);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
+/* --- mutual TLS (client certificate verification) ------------------------ */
+
+typedef struct {
+  rchar * peer_subject;   /* subject DN the handler saw, or NULL */
+  rboolean handled;
+} RTestMtls;
+
+static RHttpResponse *
+r_test_mtls_handler (rpointer data, RHttpRequest * req, RSocketAddress * addr,
+    RHttpServer * server)
+{
+  RTestMtls * m = data;
+  RCryptoCert * peer = r_http_server_get_peer_cert (server, req);
+  (void) addr;
+
+  m->handled = TRUE;
+  if (peer != NULL)
+    m->peer_subject = r_strdup (r_crypto_x509_cert_subject (peer));
+  return r_http_response_new (req, R_HTTP_STATUS_OK, NULL, NULL, NULL);
+}
+
+/* Drive one mutual-TLS attempt on a loopback loop: a server presenting the PKI
+ * leaf (chaining to the test root) in client-cert @p mode with @p trust_pem
+ * anchored (NULL = empty store), and a client presenting @p cli_cert_pem /
+ * @p cli_key_pem (NULL = no client certificate). Reports whether the GET was
+ * answered and the client subject the handler observed. */
+static void
+r_test_mtls_run (RTLSClientCertMode mode, rboolean configure_store,
+    const rchar * trust_pem, const rchar * cli_cert_pem, const rchar * cli_key_pem,
+    rboolean * got_response, rchar ** peer_subject)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RTrustStore * trust;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RSocketAddress * addr;
+  RTestMtls m = { NULL, FALSE };
+  RTestTLSClient c = { NULL, NULL, NULL, NULL, NULL, R_TLS_VERSION_UNKNOWN, NULL,
+      FALSE, FALSE };
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
+  r_assert (r_http_server_set_handler (srv, "/", -1, r_test_mtls_handler, &m, NULL));
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (rtest_leaf_root_pem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (rtest_leaf_root_key_pem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert (r_http_server_add_tls_listen_addr (srv, addr, cert, pk));
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_socket_address_unref (addr);
+
+  r_http_server_set_client_cert_mode (srv, mode);
+  /* configure_store == FALSE leaves the server with no client trust store,
+   * exercising the fail-closed path. */
+  if (configure_store) {
+    r_assert_cmpptr ((trust = r_trust_store_new_certs ()), !=, NULL);
+    if (trust_pem != NULL)
+      r_assert_cmpint (r_trust_store_add_pem (trust, trust_pem, -1), ==, 1);
+    r_http_server_set_client_trust_store (srv, trust);
+    r_trust_store_unref (trust);
+  }
+
+  r_assert_cmpptr ((addr = r_http_server_get_local_address (srv)), !=, NULL);
+
+  r_assert_cmpptr ((c.prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((c.resp = r_buffer_new ()), !=, NULL);
+  r_assert_cmpptr ((c.tls = r_tls_client_new (&g_test_tls_client_cbs, &c, NULL)), !=, NULL);
+  if (cli_cert_pem != NULL) {
+    RCryptoCert * cc = r_pem_parse_cert_from_data (cli_cert_pem, -1);
+    RCryptoKey * ck = r_pem_parse_key_from_data (cli_key_pem, -1, NULL, 0);
+    r_assert_cmpptr (cc, !=, NULL);
+    r_assert_cmpptr (ck, !=, NULL);
+    r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_client_set_cert (c.tls, cc, ck));
+    r_crypto_key_unref (ck);
+    r_crypto_cert_unref (cc);
+  }
+  c.loop = loop;
+  r_assert_cmpptr ((c.tcp = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_connect (c.tcp, addr,
+        r_test_tls_client_connected, &c, NULL), >=, R_SOCKET_OK);
+
+  while (!c.got_response && !c.eos)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  *got_response = c.got_response;
+  *peer_subject = m.peer_subject;   /* ownership transferred to caller */
+
+  r_ev_tcp_close (c.tcp, NULL, NULL, NULL);
+  r_ev_tcp_unref (c.tcp);
+  r_tls_client_unref (c.tls);
+  r_buffer_unref (c.resp);
+  r_prng_unref (c.prng);
+
+  r_http_server_stop (srv, NULL, NULL, NULL);
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+  r_http_server_unref (srv);
+  r_socket_address_unref (addr);
+  r_ev_loop_unref (loop);
+}
+
+/* A trusted client certificate (clientAuth, chains to the anchored root) is
+ * accepted under REQUIRE, and the handler sees the verified subject. */
+RTEST (rhttpserver, mtls_trusted_client, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE;
+  rchar * subject = NULL;
+
+  r_test_mtls_run (R_TLS_CLIENT_CERT_MODE_REQUIRE, TRUE, rtest_root_pem,
+      rtest_leaf_clientauth_pem, rtest_leaf_clientauth_key_pem, &got, &subject);
+
+  r_assert (got);
+  r_assert_cmpptr (subject, !=, NULL);
+  r_assert_cmpstr (subject, ==, "CN=rlib Test Client");
+  r_free (subject);
+}
+RTEST_END;
+
+/* REQUIRE with no client certificate aborts the handshake. */
+RTEST (rhttpserver, mtls_missing_client_cert, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE;
+  rchar * subject = NULL;
+
+  r_test_mtls_run (R_TLS_CLIENT_CERT_MODE_REQUIRE, TRUE, rtest_root_pem,
+      NULL, NULL, &got, &subject);
+
+  r_assert (!got);
+  r_assert_cmpptr (subject, ==, NULL);
+}
+RTEST_END;
+
+/* A client certificate lacking the clientAuth EKU is rejected. */
+RTEST (rhttpserver, mtls_wrong_eku, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE;
+  rchar * subject = NULL;
+
+  /* leaf_root carries serverAuth, not clientAuth. */
+  r_test_mtls_run (R_TLS_CLIENT_CERT_MODE_REQUIRE, TRUE, rtest_root_pem,
+      rtest_leaf_root_pem, rtest_leaf_root_key_pem, &got, &subject);
+
+  r_assert (!got);
+  r_assert_cmpptr (subject, ==, NULL);
+}
+RTEST_END;
+
+/* A client certificate that does not chain to the configured anchor is
+ * rejected (empty trust store). */
+RTEST (rhttpserver, mtls_untrusted_client, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE;
+  rchar * subject = NULL;
+
+  r_test_mtls_run (R_TLS_CLIENT_CERT_MODE_REQUIRE, TRUE, NULL,
+      rtest_leaf_clientauth_pem, rtest_leaf_clientauth_key_pem, &got, &subject);
+
+  r_assert (!got);
+  r_assert_cmpptr (subject, ==, NULL);
+}
+RTEST_END;
+
+/* REQUEST mode serves a client that presents no certificate (unauthenticated);
+ * the handler sees no peer certificate. */
+RTEST (rhttpserver, mtls_request_optional, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE;
+  rchar * subject = NULL;
+
+  r_test_mtls_run (R_TLS_CLIENT_CERT_MODE_REQUEST, TRUE, rtest_root_pem,
+      NULL, NULL, &got, &subject);
+
+  r_assert (got);
+  r_assert_cmpptr (subject, ==, NULL);
+}
+RTEST_END;
+
+/* REQUEST mode with a trusted client certificate: the connection is served and
+ * the handler sees the verified peer certificate. */
+RTEST (rhttpserver, mtls_request_with_cert, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE;
+  rchar * subject = NULL;
+
+  r_test_mtls_run (R_TLS_CLIENT_CERT_MODE_REQUEST, TRUE, rtest_root_pem,
+      rtest_leaf_clientauth_pem, rtest_leaf_clientauth_key_pem, &got, &subject);
+
+  r_assert (got);
+  r_assert_cmpptr (subject, !=, NULL);
+  r_assert_cmpstr (subject, ==, "CN=rlib Test Client");
+  r_free (subject);
+}
+RTEST_END;
+
+/* REQUIRE with no trust store configured fails closed: a presented, otherwise
+ * valid client certificate is rejected because nothing anchors it. */
+RTEST (rhttpserver, mtls_require_no_trust_store, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE;
+  rchar * subject = NULL;
+
+  r_test_mtls_run (R_TLS_CLIENT_CERT_MODE_REQUIRE, FALSE, NULL,
+      rtest_leaf_clientauth_pem, rtest_leaf_clientauth_key_pem, &got, &subject);
+
+  r_assert (!got);
+  r_assert_cmpptr (subject, ==, NULL);
+}
+RTEST_END;
+
+typedef struct {
+  RHttpRequest * other;     /* a request that is not the one being handled */
+  rboolean null_for_req;    /* get_peer_cert (server, req) was NULL */
+  rboolean null_for_other;  /* get_peer_cert (server, other) was NULL */
+} RTestPeerCertNull;
+
+static RHttpResponse *
+r_test_peer_cert_null_handler (rpointer data, RHttpRequest * req,
+    RSocketAddress * addr, RHttpServer * server)
+{
+  RTestPeerCertNull * p = data;
+  (void) addr;
+
+  /* An injected request never carries a peer certificate, and a request other
+   * than the one in flight must not borrow this handler's (absent) cert. */
+  p->null_for_req = r_http_server_get_peer_cert (server, req) == NULL;
+  p->null_for_other = r_http_server_get_peer_cert (server, p->other) == NULL;
+  return r_http_response_new (req, R_HTTP_STATUS_OK, NULL, NULL, NULL);
+}
+
+/* r_http_server_get_peer_cert returns NULL outside any handler, and inside a
+ * handler for both an injected (certificate-less) request and a mismatched
+ * request handle. */
+RTEST (rhttpserver, get_peer_cert_null, RTEST_FAST)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RHttpRequest * req, * other;
+  RHttpResponse * res = NULL;
+  RTestPeerCertNull p = { NULL, FALSE, FALSE };
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
+
+  /* Called outside any handler: no request is in flight. */
+  r_assert_cmpptr ((other = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://example.org", NULL, NULL)), !=, NULL);
+  r_assert_cmpptr (r_http_server_get_peer_cert (srv, other), ==, NULL);
+
+  p.other = other;
+  r_assert (r_http_server_set_handler (srv, "/", -1,
+        r_test_peer_cert_null_handler, &p, NULL));
+
+  r_assert_cmpptr ((req = r_http_request_new (R_HTTP_METHOD_GET,
+          "http://example.org", NULL, NULL)), !=, NULL);
+  r_assert (r_http_server_process_request (srv, req, NULL,
+        r_test_http_response_ready, &res, NULL));
+  r_http_request_unref (req);
+
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+  r_assert_cmpptr (res, !=, NULL);
+  r_assert (p.null_for_req);
+  r_assert (p.null_for_other);
+
+  r_http_response_unref (res);
+  r_http_request_unref (other);
+  r_http_server_unref (srv);
   r_ev_loop_unref (loop);
 }
 RTEST_END;

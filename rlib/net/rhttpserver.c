@@ -23,6 +23,8 @@
 
 #include <rlib/ev/revtcp.h>
 #include <rlib/net/rtlsserver.h>
+#include <rlib/crypto/rtruststore.h>
+#include <rlib/crypto/rx509.h>
 
 #include <rlib/data/rdirtree.h>
 #include <rlib/data/rptrarray.h>
@@ -30,6 +32,9 @@
 #include <rlib/rrand.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
+#include <rlib/rtime.h>
+
+typedef struct RHttpServerHandlerCtx RHttpServerHandlerCtx;
 
 struct RHttpServer {
   RRef ref;
@@ -44,6 +49,13 @@ struct RHttpServer {
    * PRNG every per-connection RTLSServer draws from. */
   RPtrArray * tls_listeners;
   RPrng * prng;
+
+  /* Mutual TLS: request and verify a client certificate against client_trust. */
+  RTrustStore * client_trust;
+  RTLSClientCertMode client_cert_mode;
+  /* The handler context being dispatched, so r_http_server_get_peer_cert
+   * can reach the connection's verified client certificate. */
+  RHttpServerHandlerCtx * cur;
 };
 
 typedef struct {
@@ -70,6 +82,10 @@ r_http_server_init (void)
   r_log_category_register (&httpsrvcat);
 }
 
+
+static rboolean r_http_server_process_request_full (RHttpServer * server,
+    RHttpRequest * req, RSocketAddress * addr, RCryptoCert * peer_cert,
+    RHttpResponseReady ready, rpointer data, RDestroyNotify notify);
 
 static void
 r_http_client_ctx_free (RHttpClientCtx * ctx)
@@ -176,10 +192,11 @@ static rboolean
 r_http_client_ctx_process (RHttpClientCtx * ctx)
 {
   RSocketAddress * addr = r_ev_tcp_get_remote_address (ctx->evtcp);
+  RCryptoCert * peer = ctx->tls != NULL ? r_tls_server_get_peer_cert (ctx->tls) : NULL;
   rboolean ret;
 
-  if ((ret = r_http_server_process_request (ctx->server, ctx->req, addr,
-      r_http_client_ctx_tcp_response_ready, r_ref_ref (ctx), r_ref_unref))) {
+  if ((ret = r_http_server_process_request_full (ctx->server, ctx->req, addr,
+      peer, r_http_client_ctx_tcp_response_ready, r_ref_ref (ctx), r_ref_unref))) {
     r_http_request_unref (ctx->req);
     ctx->req = NULL;
   }
@@ -337,6 +354,8 @@ r_http_server_free (RHttpServer * server)
   r_ptr_array_unref (server->tls_listeners);
   if (server->prng != NULL)
     r_prng_unref (server->prng);
+  if (server->client_trust != NULL)
+    r_trust_store_unref (server->client_trust);
   r_free (server);
 }
 
@@ -359,6 +378,9 @@ r_http_server_new (REvLoop * loop)
 
     ret->tls_listeners = r_ptr_array_new ();
     ret->prng = NULL;
+    ret->client_trust = NULL;
+    ret->client_cert_mode = R_TLS_CLIENT_CERT_MODE_NONE;
+    ret->cur = NULL;
 
     R_LOG_INFO ("New HTTP server %p", ret);
   } else {
@@ -413,17 +435,18 @@ r_http_server_set_handler (RHttpServer * server,
   return TRUE;
 }
 
-typedef struct {
+struct RHttpServerHandlerCtx {
   RHttpRequestHandler handler;
   RHttpServer * server;
   RHttpRequest * req;
   RSocketAddress * addr;
+  RCryptoCert * peer_cert;   /* verified client cert (mTLS), or NULL */
   rpointer handlerdata;
 
   RHttpResponseReady ready;
   rpointer data;
   RDestroyNotify notify;
-} RHttpServerHandlerCtx;
+};
 
 static void
 r_http_server_handler_ctx_free (rpointer data)
@@ -435,6 +458,8 @@ r_http_server_handler_ctx_free (rpointer data)
     r_http_request_unref (ctx->req);
   if (ctx->addr != NULL)
     r_socket_address_unref (ctx->addr);
+  if (ctx->peer_cert != NULL)
+    r_crypto_cert_unref (ctx->peer_cert);
   if (ctx->notify != NULL)
     ctx->notify (ctx->data);
 
@@ -450,7 +475,14 @@ r_http_server_request_handler (rpointer data, REvLoop * loop)
   (void) loop;
 
   if (ctx->handler != NULL) {
-    if ((res = ctx->handler (ctx->handlerdata, ctx->req, ctx->addr, ctx->server)) == NULL) {
+    /* Publish this context so the handler can reach the connection's verified
+     * client certificate via r_http_server_get_peer_cert. Save/restore in
+     * case a handler injects a nested request synchronously. */
+    RHttpServerHandlerCtx * prev = ctx->server->cur;
+    ctx->server->cur = ctx;
+    res = ctx->handler (ctx->handlerdata, ctx->req, ctx->addr, ctx->server);
+    ctx->server->cur = prev;
+    if (res == NULL) {
       R_LOG_FIXME ("%p: Request %p handled with %p, but no response",
           ctx->server, ctx->req, ctx->handler);
       res = r_http_response_new (ctx->req, R_HTTP_STATUS_INTERNAL_SERVER_ERROR,
@@ -466,9 +498,9 @@ r_http_server_request_handler (rpointer data, REvLoop * loop)
     r_http_response_unref (res);
 }
 
-rboolean
-r_http_server_process_request (RHttpServer * server,
-    RHttpRequest * req, RSocketAddress * addr,
+static rboolean
+r_http_server_process_request_full (RHttpServer * server,
+    RHttpRequest * req, RSocketAddress * addr, RCryptoCert * peer_cert,
     RHttpResponseReady ready, rpointer data, RDestroyNotify notify)
 {
   RUri * uri;
@@ -488,6 +520,7 @@ r_http_server_process_request (RHttpServer * server,
     ctx->server = server;
     ctx->req = r_http_request_ref (req);
     ctx->addr = addr != NULL ? r_socket_address_ref (addr) : NULL;
+    ctx->peer_cert = peer_cert != NULL ? r_crypto_cert_ref (peer_cert) : NULL;
     ctx->ready = ready;
     ctx->data = data;
     ctx->notify = notify;
@@ -516,6 +549,23 @@ r_http_server_process_request (RHttpServer * server,
 
   R_LOG_WARNING ("%p: Request %p not processed", server, req);
   return FALSE;
+}
+
+rboolean
+r_http_server_process_request (RHttpServer * server,
+    RHttpRequest * req, RSocketAddress * addr,
+    RHttpResponseReady ready, rpointer data, RDestroyNotify notify)
+{
+  return r_http_server_process_request_full (server, req, addr, NULL,
+      ready, data, notify);
+}
+
+RCryptoCert *
+r_http_server_get_peer_cert (RHttpServer * server, RHttpRequest * req)
+{
+  if (R_UNLIKELY (server == NULL) || server->cur == NULL)
+    return NULL;
+  return (server->cur->req == req) ? server->cur->peer_cert : NULL;
 }
 
 /* --- TLS termination (HTTPS) ---------------------------------------------
@@ -583,13 +633,31 @@ r_http_client_ctx_tls_closed (rpointer data, rpointer session)
   r_http_client_ctx_close (ctx, NULL, NULL);
 }
 
+/* Mutual TLS: only fires when the client presents a certificate. Validate the
+ * chain against the server's client trust store for TLS client use. With no
+ * trust store configured this fails closed (so REQUIRE rejects every client
+ * until one is set). Client identity (the subject) is the application's concern
+ * -- see r_http_server_get_peer_cert -- so no hostname check here. */
+static rboolean
+r_http_client_ctx_tls_verify_peer (rpointer data,
+    RCryptoCert * const * chain, ruint count)
+{
+  RHttpClientCtx * ctx = data;
+  RTrustStore * trust = ctx->server->client_trust;
+
+  if (trust == NULL)
+    return FALSE;
+  return r_trust_store_verify (trust, chain, count, r_time_get_unix_time (),
+      R_X509_EXT_KEY_USAGE_CLIENT_AUTH) == R_TRUST_OK;
+}
+
 static const RTLSCallbacks g__r_http_tls_callbacks = {
   NULL,                              /* preferred_cipher_suites (defaults) */
   NULL,                              /* handshake_done (appdata drives parsing) */
   r_http_client_ctx_tls_out,         /* out */
   r_http_client_ctx_tls_appdata,     /* appdata */
   r_http_client_ctx_tls_error,       /* error */
-  NULL,                              /* verify_cert (no client cert) */
+  r_http_client_ctx_tls_verify_peer, /* verify_cert (mutual TLS) */
   r_http_client_ctx_tls_closed,      /* closed */
 };
 
@@ -623,6 +691,7 @@ r_http_server_tcp_connection_ready_tls (rpointer data,
   if ((ctx = r_http_client_ctx_new (server, newtcp)) != NULL &&
       (ctx->tls = r_tls_server_new (&g__r_http_tls_callbacks, ctx, NULL)) != NULL &&
       r_tls_server_set_cert (ctx->tls, l->cert, l->privkey) == R_TLS_ERROR_OK &&
+      r_tls_server_set_client_cert_mode (ctx->tls, server->client_cert_mode) == R_TLS_ERROR_OK &&
       r_tls_server_start (ctx->tls, server->loop, server->prng) == R_TLS_ERROR_OK &&
       r_ev_tcp_recv_start (newtcp, NULL, r_http_client_ctx_tls_recv, ctx, NULL)) {
     R_LOG_TRACE ("%p: New TLS connection "R_EV_IO_FORMAT" on "R_EV_IO_FORMAT,
@@ -730,6 +799,30 @@ r_http_server_add_tls_listen_addr (RHttpServer * server, RSocketAddress * addr,
 
   r_ptr_array_add (server->tls_listeners, l, r_http_tls_listener_free);
   return TRUE;
+}
+
+void
+r_http_server_set_client_cert_mode (RHttpServer * server, RTLSClientCertMode mode)
+{
+  if (R_UNLIKELY (server == NULL)) return;
+  server->client_cert_mode = mode;
+}
+
+RTLSClientCertMode
+r_http_server_get_client_cert_mode (RHttpServer * server)
+{
+  return server != NULL ? server->client_cert_mode : R_TLS_CLIENT_CERT_MODE_NONE;
+}
+
+void
+r_http_server_set_client_trust_store (RHttpServer * server, RTrustStore * store)
+{
+  if (R_UNLIKELY (server == NULL)) return;
+  if (store != NULL)
+    r_trust_store_ref (store);
+  if (server->client_trust != NULL)
+    r_trust_store_unref (server->client_trust);
+  server->client_trust = store;
 }
 
 RSocketAddress *
