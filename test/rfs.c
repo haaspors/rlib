@@ -167,3 +167,56 @@ RTEST (rfs, is_symlink, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rfs, dir_enumerate, RTEST_FAST | RTEST_SYSTEM)
+{
+  static const rchar * const expect[] = { "alpha", "beta", "gamma" };
+  rboolean seen[R_N_ELEMENTS (expect)] = { FALSE };
+  rchar * tmpdir, * p;
+  RFsDir * dir;
+  const rchar * name;
+  ruint i, count = 0;
+
+  /* Opening a path that does not exist fails. */
+  r_assert_cmpptr ((tmpdir = r_fs_path_new_tmpfile ()), !=, NULL);
+  r_assert_cmpptr (r_fs_dir_open (tmpdir), ==, NULL);
+
+  r_assert (r_fs_mkdir (tmpdir, 0777));
+
+  /* An empty directory yields no entries (". " / ".." are filtered). */
+  r_assert_cmpptr ((dir = r_fs_dir_open (tmpdir)), !=, NULL);
+  r_assert_cmpptr (r_fs_dir_read_next (dir), ==, NULL);
+  r_fs_dir_close (dir);
+
+  for (i = 0; i < R_N_ELEMENTS (expect); i++) {
+    r_assert_cmpptr ((p = r_fs_path_build (tmpdir, expect[i], NULL)), !=, NULL);
+    r_assert (r_file_write_all (p, expect[i], r_strlen (expect[i])));
+    r_assert (r_fs_test_is_regular (p));
+    r_free (p);
+  }
+
+  /* Enumeration returns exactly the created set, in any order, no duplicates. */
+  r_assert_cmpptr ((dir = r_fs_dir_open (tmpdir)), !=, NULL);
+  while ((name = r_fs_dir_read_next (dir)) != NULL) {
+    r_assert_cmpstr (name, !=, ".");
+    r_assert_cmpstr (name, !=, "..");
+    for (i = 0; i < R_N_ELEMENTS (expect) && !r_str_equals (name, expect[i]); i++) ;
+    r_assert_cmpuint (i, <, R_N_ELEMENTS (expect));   /* nothing unexpected */
+    r_assert (!seen[i]);                              /* no duplicate */
+    seen[i] = TRUE;
+    count++;
+  }
+  r_fs_dir_close (dir);
+
+  r_assert_cmpuint (count, ==, R_N_ELEMENTS (expect));
+  for (i = 0; i < R_N_ELEMENTS (expect); i++)
+    r_assert (seen[i]);
+
+  /* Opening a regular file (not a directory) fails. */
+  r_assert_cmpptr ((p = r_fs_path_build (tmpdir, expect[0], NULL)), !=, NULL);
+  r_assert_cmpptr (r_fs_dir_open (p), ==, NULL);
+  r_free (p);
+
+  r_free (tmpdir);
+}
+RTEST_END;
+

@@ -10,6 +10,7 @@
 #mesondefine HAVE_WINDOWS_H
 #mesondefine HAVE_UNISTD_H
 #mesondefine HAVE_ALLOCA_H
+#mesondefine HAVE_DIRENT_H
 #mesondefine HAVE_SCHED_H
 #mesondefine HAVE_FCNTL_H
 #mesondefine HAVE_ARPA_INET_H

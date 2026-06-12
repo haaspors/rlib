@@ -122,6 +122,26 @@ R_API rboolean r_fs_mkdir (const rchar * path, int mode);
 /** @brief Create @p path and any missing parent directories (@c mkdir @c -p). */
 R_API rboolean r_fs_mkdir_full (const rchar * path, int mode);
 
+/** @brief Opaque directory-enumeration handle. */
+typedef struct RFsDir RFsDir;
+/**
+ * @brief Open directory @p path for enumeration.
+ * @return A new @ref RFsDir to be closed with @ref r_fs_dir_close, or @c NULL if
+ *         @p path is not an accessible directory.
+ */
+R_API RFsDir * r_fs_dir_open (const rchar * path) R_ATTR_MALLOC;
+/**
+ * @brief Return the next entry name in @p dir, or @c NULL once exhausted.
+ *
+ * The @c "." and @c ".." entries are skipped; the order is unspecified. The
+ * returned string is owned by @p dir and stays valid only until the next
+ * @ref r_fs_dir_read_next or @ref r_fs_dir_close call -- copy it if it must
+ * outlive that.
+ */
+R_API const rchar * r_fs_dir_read_next (RFsDir * dir);
+/** @brief Close a directory opened with @ref r_fs_dir_open. */
+R_API void r_fs_dir_close (RFsDir * dir);
+
 /**
  * @brief Create a symbolic link at @p linkpath pointing to @p target.
  * @param target   Path the link refers to (need not exist; may be relative).
