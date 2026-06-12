@@ -213,9 +213,12 @@ R_API runichar2 * r_utf8_to_utf16_dup (const rchar * src, rssize srcsize,
     RUnicodeResult * res, rsize * retsize, rchar ** endptr) R_ATTR_MALLOC;
 /**
  * @brief Allocate and decode UTF-16 @p src as UTF-8.
+ *
+ * @p srcsize is the number of UTF-16 code units, or @c -1 to treat @p src as
+ * NUL-terminated (mirrors @ref r_utf8_to_utf16_dup).
  * @return Freshly allocated UTF-8 buffer, or NULL on failure.
  */
-R_API rchar * r_utf16_to_utf8_dup (const runichar2 * src, rsize srcsize,
+R_API rchar * r_utf16_to_utf8_dup (const runichar2 * src, rssize srcsize,
     RUnicodeResult * res, rsize * retsize, runichar2 ** endptr) R_ATTR_MALLOC;
 
 /**

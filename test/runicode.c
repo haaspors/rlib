@@ -50,6 +50,15 @@ RTEST (runicode, utf16_to_utf8, RTEST_FAST)
   r_assert_cmpint (res, ==, R_UNICODE_INVALID_CODE_POINT);
   r_assert_cmpuint (u8len, ==, 2);
   r_assert_cmpptr (utf16end, ==, utf16 + 2);
+
+  /* srcsize == -1 treats src as NUL-terminated (mirrors r_utf8_to_utf16_dup). */
+  utf16[0] = 0x61; utf16[1] = 0x62; utf16[2] = 0x63; utf16[3] = 0;
+  r_assert_cmpptr ((utf8 = r_utf16_to_utf8_dup (utf16, -1, &res, &u8len, &utf16end)), !=, NULL);
+  r_assert_cmpint (res, ==, R_UNICODE_OK);
+  r_assert_cmpstr (utf8, ==, "abc");
+  r_assert_cmpuint (u8len, ==, 3);
+  r_assert_cmpptr (utf16end, ==, utf16 + 3);
+  r_free (utf8);
 }
 RTEST_END;
 
