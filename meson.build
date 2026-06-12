@@ -260,6 +260,7 @@ check_headers = [
   'windows.h',
   'unistd.h',
   'alloca.h',
+  'dirent.h',
   'dlfcn.h',
   'link.h',
   'sched.h',

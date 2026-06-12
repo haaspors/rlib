@@ -33,6 +33,9 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#ifdef HAVE_DIRENT_H
+#include <dirent.h>
+#endif
 
 #if defined (HAVE_WINDOWS_H)
 #include <rlib/charset/runicode.h>
@@ -626,5 +629,118 @@ r_fs_path_is_absolute (const rchar * path)
 #else
   return R_IS_DIR_SEP (path[0]);
 #endif
+}
+
+struct RFsDir {
+#if defined (R_OS_WIN32)
+  HANDLE h;
+  WIN32_FIND_DATAW fd;
+  rboolean pending;       /* fd already holds an entry not yet returned */
+  rchar * name;           /* UTF-8 of the most recent entry (owned) */
+#elif defined (HAVE_DIRENT_H)
+  DIR * d;
+#else
+  int unused;
+#endif
+};
+
+RFsDir *
+r_fs_dir_open (const rchar * path)
+{
+#if defined (R_OS_WIN32)
+  RFsDir * dir;
+  runichar2 * upattern;
+  rchar * pattern;
+  HANDLE h;
+
+  if (R_UNLIKELY (path == NULL || path[0] == 0))
+    return NULL;
+
+  /* FindFirstFileW enumerates the directory's contents via a "<path>\*"
+   * wildcard; a non-directory path makes it fail, matching opendir. */
+  pattern = r_strprintf ("%s%s*", path,
+      R_IS_DIR_SEP (path[r_strlen (path) - 1]) ? "" : R_DIR_SEP_STR);
+  upattern = r_utf8_to_utf16_dup (pattern, -1, NULL, NULL, NULL);
+  r_free (pattern);
+  if (upattern == NULL)
+    return NULL;
+
+  dir = r_mem_new0 (RFsDir);
+  h = FindFirstFileW (upattern, &dir->fd);
+  r_free (upattern);
+  if (h == INVALID_HANDLE_VALUE) {
+    r_free (dir);
+    return NULL;
+  }
+  dir->h = h;
+  dir->pending = TRUE;
+  return dir;
+#elif defined (HAVE_DIRENT_H)
+  RFsDir * dir;
+  DIR * d;
+
+  if (R_UNLIKELY (path == NULL))
+    return NULL;
+  if ((d = opendir (path)) == NULL)
+    return NULL;
+
+  dir = r_mem_new0 (RFsDir);
+  dir->d = d;
+  return dir;
+#else
+  (void) path;
+  return NULL;
+#endif
+}
+
+const rchar *
+r_fs_dir_read_next (RFsDir * dir)
+{
+  if (R_UNLIKELY (dir == NULL))
+    return NULL;
+#if defined (R_OS_WIN32)
+  for (;;) {
+    if (dir->pending)
+      dir->pending = FALSE;
+    else if (!FindNextFileW (dir->h, &dir->fd))
+      return NULL;
+
+    /* Skip "." and "..". */
+    if (dir->fd.cFileName[0] == L'.' && (dir->fd.cFileName[1] == 0 ||
+          (dir->fd.cFileName[1] == L'.' && dir->fd.cFileName[2] == 0)))
+      continue;
+
+    r_free (dir->name);
+    dir->name = r_utf16_to_utf8_dup (dir->fd.cFileName, -1, NULL, NULL, NULL);
+    return dir->name;
+  }
+#elif defined (HAVE_DIRENT_H)
+  {
+    struct dirent * de;
+    while ((de = readdir (dir->d)) != NULL) {
+      if (de->d_name[0] == '.' && (de->d_name[1] == 0 ||
+            (de->d_name[1] == '.' && de->d_name[2] == 0)))
+        continue;
+      return de->d_name;
+    }
+    return NULL;
+  }
+#else
+  return NULL;
+#endif
+}
+
+void
+r_fs_dir_close (RFsDir * dir)
+{
+  if (R_UNLIKELY (dir == NULL))
+    return;
+#if defined (R_OS_WIN32)
+  FindClose (dir->h);
+  r_free (dir->name);
+#elif defined (HAVE_DIRENT_H)
+  closedir (dir->d);
+#endif
+  r_free (dir);
 }
 
