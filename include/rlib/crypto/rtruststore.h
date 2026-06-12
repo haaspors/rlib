@@ -105,6 +105,22 @@ R_API rssize r_trust_store_add_pem (RTrustStore * store, const rchar * pem, rssi
  */
 R_API rssize r_trust_store_add_pem_file (RTrustStore * store, const rchar * filename);
 
+/**
+ * @brief Create a trust store populated from the operating system's CA bundle.
+ *
+ * On Unix the @c SSL_CERT_FILE (a single PEM bundle) and @c SSL_CERT_DIR (a
+ * directory of PEM files) environment variables take precedence, in that order;
+ * with neither set, the well-known bundle files and CA directories are probed in
+ * turn and the first that yields at least one anchor wins. The result is a
+ * certs-backed store (as @ref r_trust_store_new_certs), so further anchors may
+ * be added to it.
+ *
+ * @return A populated store the caller must unref, or @c NULL if no system
+ *         trust source was found or the platform exposes no file-based CA
+ *         bundle (e.g. Windows, where the native certificate store applies).
+ */
+R_API RTrustStore * r_trust_store_new_system (void) R_ATTR_MALLOC;
+
 /** @brief Length of an SPKI pin: the SHA-256 of a SubjectPublicKeyInfo. */
 #define R_TRUST_SPKI_PIN_SIZE  32
 

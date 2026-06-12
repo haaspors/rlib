@@ -25,7 +25,9 @@
 #include <rlib/crypto/rpem.h>
 #include <rlib/data/rptrarray.h>
 #include <rlib/file/rfile.h>
+#include <rlib/file/rfs.h>
 #include <rlib/format/rasn1.h>
+#include <rlib/os/renv.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
@@ -240,6 +242,83 @@ r_trust_store_add_pem_file (RTrustStore * base, const rchar * filename)
   added = r_trust_store_add_pem (base, (const rchar *) data, (rssize) size);
   r_free (data);
   return added;
+}
+
+/* --- system trust: load the OS CA bundle / directory --------------------- */
+
+#if defined (R_OS_UNIX)
+/* Concatenated CA bundles, probed in order (first with anchors wins). */
+static const rchar * const g__r_trust_system_bundles[] = {
+  "/etc/ssl/certs/ca-certificates.crt",   /* Debian, Ubuntu, Arch, ... */
+  "/etc/pki/tls/certs/ca-bundle.crt",     /* RHEL, Fedora, ... */
+  "/etc/ssl/cert.pem",                    /* Alpine, BSD, ... */
+  "/etc/ssl/ca-bundle.pem",               /* openSUSE */
+};
+/* CA directories (hashed symlinks or plain PEM files), probed in order. */
+static const rchar * const g__r_trust_system_dirs[] = {
+  "/etc/ssl/certs",
+  "/etc/pki/tls/certs",
+};
+
+/* Add every regular file under @dirpath that parses as PEM certificate(s).
+ * Returns the number of anchors added, or -1 if the directory can't be read. */
+static rssize
+r_trust_store_add_dir (RTrustStore * store, const rchar * dirpath)
+{
+  RFsDir * dir;
+  const rchar * name;
+  rssize total = 0;
+
+  if ((dir = r_fs_dir_open (dirpath)) == NULL)
+    return -1;
+  while ((name = r_fs_dir_read_next (dir)) != NULL) {
+    rchar * path = r_fs_path_build (dirpath, name, NULL);
+    if (path != NULL) {
+      /* A non-certificate file just adds nothing; ignore the failure. */
+      if (!r_fs_test_is_directory (path)) {
+        rssize added = r_trust_store_add_pem_file (store, path);
+        if (added > 0)
+          total += added;
+      }
+      r_free (path);
+    }
+  }
+  r_fs_dir_close (dir);
+  return total;
+}
+#endif
+
+RTrustStore *
+r_trust_store_new_system (void)
+{
+#if defined (R_OS_UNIX)
+  RTrustStore * store;
+  const rchar * env;
+  rssize added = 0;
+  rsize i;
+
+  if ((store = r_trust_store_new_certs ()) == NULL)
+    return NULL;
+
+  if ((env = r_getenv ("SSL_CERT_FILE")) != NULL) {
+    added = r_trust_store_add_pem_file (store, env);
+  } else if ((env = r_getenv ("SSL_CERT_DIR")) != NULL) {
+    added = r_trust_store_add_dir (store, env);
+  } else {
+    for (i = 0; i < R_N_ELEMENTS (g__r_trust_system_bundles) && added <= 0; i++)
+      added = r_trust_store_add_pem_file (store, g__r_trust_system_bundles[i]);
+    for (i = 0; i < R_N_ELEMENTS (g__r_trust_system_dirs) && added <= 0; i++)
+      added = r_trust_store_add_dir (store, g__r_trust_system_dirs[i]);
+  }
+
+  if (added <= 0) {
+    r_trust_store_unref (store);
+    return NULL;
+  }
+  return store;
+#else
+  return NULL;
+#endif
 }
 
 /* --- pinned backend: SubjectPublicKeyInfo SHA-256 pins ------------------- */
