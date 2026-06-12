@@ -35,8 +35,10 @@
 #include <rlib/ev/revloop.h>
 
 #include <rlib/net/rsocketaddress.h>
+#include <rlib/net/rtlsserver.h>
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rkey.h>
+#include <rlib/crypto/rtruststore.h>
 
 /**
  * @defgroup r_http_server HTTP server
@@ -51,6 +53,10 @@
  * @ref RHttpRequestHandler, which returns the @ref RHttpResponse to
  * send. Requests can also be injected directly via
  * @ref r_http_server_process_request, bypassing the listener.
+ *
+ * HTTPS listeners (@ref r_http_server_add_tls_listen_addr) can additionally
+ * require a client certificate (mutual TLS) via
+ * @ref r_http_server_set_client_cert_mode.
  *
  * Built on the @ref r_http_proto wire codec.
  *
@@ -110,6 +116,42 @@ R_API rboolean r_http_server_add_listen_addr (RHttpServer * server,
  */
 R_API rboolean r_http_server_add_tls_listen_addr (RHttpServer * server,
     RSocketAddress * addr, RCryptoCert * cert, RCryptoKey * privkey);
+
+/**
+ * @brief Enable mutual TLS: request (or require) a client certificate on HTTPS
+ * connections.
+ *
+ * Default @ref R_TLS_CLIENT_CERT_MODE_NONE. With @c REQUEST or @c REQUIRE,
+ * configure a client trust store via @ref r_http_server_set_client_trust_store;
+ * a presented certificate is validated against it (for TLS client use) and an
+ * untrusted one aborts the handshake. With no trust store set, every presented
+ * certificate is rejected, so @c REQUIRE admits no client until one is
+ * configured.
+ */
+R_API void r_http_server_set_client_cert_mode (RHttpServer * server,
+    RTLSClientCertMode mode);
+/** @brief The configured client-certificate mode (see
+ *  @ref r_http_server_set_client_cert_mode). */
+R_API RTLSClientCertMode r_http_server_get_client_cert_mode (RHttpServer * server);
+/**
+ * @brief Set the trust store used to validate client certificates under mutual
+ * TLS (referenced); pass @c NULL to clear it. See
+ * @ref r_http_server_set_client_cert_mode.
+ */
+R_API void r_http_server_set_client_trust_store (RHttpServer * server,
+    RTrustStore * store);
+/**
+ * @brief The verified client certificate for the request currently being
+ * handled, or @c NULL.
+ *
+ * Only meaningful when called from within an @ref RHttpRequestHandler for a
+ * request that arrived over a mutual-TLS connection; returns @c NULL otherwise
+ * (plaintext, no client certificate, or called outside a handler). The returned
+ * reference is borrowed; @ref r_crypto_cert_ref it to outlive the request.
+ */
+R_API RCryptoCert * r_http_server_get_peer_cert (RHttpServer * server,
+    RHttpRequest * req);
+
 /**
  * @brief Local address of the server's first listener.
  *

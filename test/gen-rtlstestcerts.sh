@@ -9,7 +9,10 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 
-DAYS=36525   # ~100 years, so the validity window covers "now" far into the future
+# Fixed validity window (not generation-date-relative), so the certs are valid
+# regardless of the build host's clock and the unit-test timestamps stay stable.
+NOT_BEFORE=20150101000000Z
+NOT_AFTER=21250101000000Z
 
 gen_key () { openssl genrsa -out "$1.key" 2048 2>/dev/null; }
 
@@ -19,11 +22,13 @@ issue () {
   openssl req -new -key "$1.key" -out "$1.csr" -subj "/CN=$4" 2>/dev/null
   printf '%s\n' "$3" > "$1.ext"
   openssl x509 -req -in "$1.csr" -CA "$2.crt" -CAkey "$2.key" -CAcreateserial \
-    -out "$1.crt" -days "$DAYS" -sha256 -extfile "$1.ext" 2>/dev/null
+    -out "$1.crt" -not_before "$NOT_BEFORE" -not_after "$NOT_AFTER" \
+    -sha256 -extfile "$1.ext" 2>/dev/null
 }
 
 gen_key root
-openssl req -new -x509 -key root.key -out root.crt -days "$DAYS" -sha256 \
+openssl req -new -x509 -key root.key -out root.crt -sha256 \
+  -not_before "$NOT_BEFORE" -not_after "$NOT_AFTER" \
   -subj "/CN=rlib Test Root CA" \
   -addext "basicConstraints=critical,CA:TRUE,pathlen:1" \
   -addext "keyUsage=critical,keyCertSign,cRLSign" 2>/dev/null
@@ -47,7 +52,7 @@ subjectAltName=DNS:*.example.com"                                        "*.exam
 issue leaf_clientauth root        "basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature
 extendedKeyUsage=clientAuth
-subjectAltName=DNS:localhost,IP:127.0.0.1"                               "localhost"
+subjectAltName=DNS:localhost,IP:127.0.0.1"                               "rlib Test Client"
 issue inter_noksign root          "basicConstraints=critical,CA:TRUE
 keyUsage=critical,digitalSignature"                                      "rlib Test Inter NoKeyCertSign"
 issue leaf_noksign  inter_noksign "basicConstraints=critical,CA:FALSE
@@ -75,10 +80,11 @@ emit () {  # emit <c-name> <pem-file>
 /* Test PKI for trust-store / hostname / pinning tests.
  *
  * Generated with openssl: a 2048-bit RSA root CA (pathlen:1), an intermediate
- * CA (pathlen:0) and leaf certs, with a ~100-year validity window from their
- * generation date. Leaves carry SAN DNS:localhost + IP:127.0.0.1 and
- * extendedKeyUsage serverAuth unless their name says otherwise. Regenerate via
- * test/gen-rtlstestcerts.sh.
+ * CA (pathlen:0) and leaf certs, all with a fixed 2015-01-01..2125-01-01
+ * validity window (independent of the build host's clock). Leaves carry SAN
+ * DNS:localhost + IP:127.0.0.1 and extendedKeyUsage serverAuth unless their name
+ * says otherwise; leaf_clientauth is the client (CN=rlib Test Client, clientAuth).
+ * Regenerate via test/gen-rtlstestcerts.sh.
  */
 #ifndef __R_TEST_TLS_TEST_CERTS_H__
 #define __R_TEST_TLS_TEST_CERTS_H__
@@ -97,7 +103,8 @@ HDR
   emit rtest_subinter_pem      subinter.crt
   emit rtest_leaf_sub_pem      leaf_sub.crt
   emit rtest_leaf_wild_pem     leaf_wild.crt
-  emit rtest_leaf_clientauth_pem leaf_clientauth.crt
+  emit rtest_leaf_clientauth_pem     leaf_clientauth.crt
+  emit rtest_leaf_clientauth_key_pem leaf_clientauth.key
   echo "#endif /* __R_TEST_TLS_TEST_CERTS_H__ */"
 } > "$OUT"
 
