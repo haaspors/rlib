@@ -268,3 +268,86 @@ RTEST (rtruststore, add_pem_bundle_counts, RTEST_FAST)
   r_trust_store_unref (store);
 }
 RTEST_END;
+
+/* The file-based system trust backend is Unix-only; on Windows the native
+ * certificate store applies and r_trust_store_new_system returns NULL. */
+#if defined (R_OS_UNIX)
+/* r_trust_store_new_system honours $SSL_CERT_FILE and yields a store anchored to
+ * the named bundle; a missing or certificate-less bundle yields NULL. */
+RTEST (rtruststore, system_env_file, RTEST_FAST | RTEST_SYSTEM)
+{
+  RTrustStore * store;
+  rchar * bundle;
+
+  r_assert_cmpptr ((bundle = r_fs_path_new_tmpfile ()), !=, NULL);
+  r_assert (r_file_write_all (bundle, rtest_root_pem, r_strlen (rtest_root_pem)));
+  r_unsetenv ("SSL_CERT_DIR");
+  r_assert (r_setenv ("SSL_CERT_FILE", bundle, TRUE));
+
+  r_assert_cmpptr ((store = r_trust_store_new_system ()), !=, NULL);
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW,
+        R_X509_EXT_KEY_USAGE_SERVER_AUTH, rtest_leaf_root_pem, NULL, NULL),
+      ==, R_TRUST_OK);
+  r_trust_store_unref (store);
+
+  /* A file that exists but carries no certificate -> NULL. */
+  r_assert (r_file_write_all (bundle, "not a certificate\n", 18));
+  r_assert_cmpptr (r_trust_store_new_system (), ==, NULL);
+
+  /* A missing file -> NULL. */
+  r_assert (r_setenv ("SSL_CERT_FILE", "/nonexistent/rlib-test/ca.pem", TRUE));
+  r_assert_cmpptr (r_trust_store_new_system (), ==, NULL);
+
+  r_unsetenv ("SSL_CERT_FILE");
+  r_free (bundle);
+}
+RTEST_END;
+
+/* r_trust_store_new_system honours $SSL_CERT_DIR, loading every certificate file
+ * in the directory; an empty directory yields NULL. */
+RTEST (rtruststore, system_env_dir, RTEST_FAST | RTEST_SYSTEM)
+{
+  RTrustStore * store;
+  rchar * dir, * empty, * pem;
+
+  r_assert_cmpptr ((dir = r_fs_path_new_tmpfile ()), !=, NULL);
+  r_assert (r_fs_mkdir (dir, 0777));
+  r_assert_cmpptr ((pem = r_fs_path_build (dir, "root.pem", NULL)), !=, NULL);
+  r_assert (r_file_write_all (pem, rtest_root_pem, r_strlen (rtest_root_pem)));
+
+  r_unsetenv ("SSL_CERT_FILE");
+  r_assert (r_setenv ("SSL_CERT_DIR", dir, TRUE));
+
+  r_assert_cmpptr ((store = r_trust_store_new_system ()), !=, NULL);
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW,
+        R_X509_EXT_KEY_USAGE_SERVER_AUTH, rtest_leaf_root_pem, NULL, NULL),
+      ==, R_TRUST_OK);
+  r_trust_store_unref (store);
+
+  /* An empty directory contributes no anchors -> NULL. */
+  r_assert_cmpptr ((empty = r_fs_path_new_tmpfile ()), !=, NULL);
+  r_assert (r_fs_mkdir (empty, 0777));
+  r_assert (r_setenv ("SSL_CERT_DIR", empty, TRUE));
+  r_assert_cmpptr (r_trust_store_new_system (), ==, NULL);
+
+  r_unsetenv ("SSL_CERT_DIR");
+  r_free (pem);
+  r_free (dir);
+  r_free (empty);
+}
+RTEST_END;
+
+/* The no-environment probe path: with neither variable set it either finds the
+ * host CA bundle or returns NULL, but must not crash or leak (exercises the
+ * well-known bundle/directory probe lists). */
+RTEST (rtruststore, system_probe, RTEST_FAST | RTEST_SYSTEM)
+{
+  RTrustStore * store;
+
+  r_unsetenv ("SSL_CERT_FILE");
+  r_unsetenv ("SSL_CERT_DIR");
+  if ((store = r_trust_store_new_system ()) != NULL)
+    r_trust_store_unref (store);
+}
+RTEST_END;
+#endif /* R_OS_UNIX */
