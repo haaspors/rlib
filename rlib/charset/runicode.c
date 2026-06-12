@@ -295,23 +295,33 @@ runichar2
 }
 
 rchar *
-r_utf16_to_utf8_dup (const runichar2 * src, rsize srcsize,
+r_utf16_to_utf8_dup (const runichar2 * src, rssize srcsize,
     RUnicodeResult * res, rsize * retsize, runichar2 ** endptr)
 {
   rchar * ret;
   RUnicodeResult r;
-  rsize dstsize;
+  rsize dstsize, n;
 
-  if (R_UNLIKELY (src == NULL || srcsize == 0)) {
+  if (R_UNLIKELY (src == NULL)) {
+    if (res != NULL) *res = R_UNICODE_INVAL;
+    return NULL;
+  }
+  if (srcsize < 0) {
+    n = 0;
+    while (src[n] != 0) n++;
+  } else {
+    n = (rsize) srcsize;
+  }
+  if (R_UNLIKELY (n == 0)) {
     if (res != NULL) *res = R_UNICODE_INVAL;
     return NULL;
   }
 
-  dstsize = (srcsize + 1) * 4;
+  dstsize = (n + 1) * 4;
 
   /* Converting from UTF16 limits to 0x0 - 0x10ffff meaning max 4byte UTF-8 */
   if ((ret = r_mem_new_n (rchar, dstsize)) != NULL) {
-    if ((r = r_utf16_to_utf8 (ret, dstsize, src, srcsize, retsize, endptr)) != R_UNICODE_OK) {
+    if ((r = r_utf16_to_utf8 (ret, dstsize, src, n, retsize, endptr)) != R_UNICODE_OK) {
       r_free (ret);
       ret = NULL;
     }
