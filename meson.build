@@ -236,11 +236,13 @@ librt = cc.find_library('rt', required : false)
 
 # Windows system libraries, linked uniformly for MSVC and mingw via meson
 # (rather than MSVC-only `#pragma comment(lib, ...)`): ws2_32 for sockets,
-# dbghelp for the test framework's stack traces.
+# dbghelp for the test framework's stack traces, crypt32 for the system trust
+# store (CertGetCertificateChain et al.).
 if host_machine.system() == 'windows'
   libwin = [
     cc.find_library('ws2_32'),
     cc.find_library('dbghelp'),
+    cc.find_library('crypt32'),
   ]
 else
   libwin = []
