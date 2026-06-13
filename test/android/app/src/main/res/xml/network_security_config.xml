@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Trust the platform system anchors plus the bundled test root. The default
+     X509TrustManager (TrustManagerFactory with a null KeyStore) reflects this
+     config, so a leaf chaining to androidtest_root verifies OK while a leaf under
+     the un-bundled foreign root does not. -->
+<network-security-config>
+    <base-config>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/androidtest_root" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

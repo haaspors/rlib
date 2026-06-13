@@ -1,0 +1,9 @@
+# Gradle / AGP build output
+.gradle/
+build/
+app/build/
+local.properties
+
+# Native bridge dropped in from the meson build (built per-ABI in CI / locally),
+# not source.
+app/src/main/jniLibs/

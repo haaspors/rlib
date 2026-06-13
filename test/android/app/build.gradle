@@ -1,0 +1,28 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'no.neat.rlib.trusttest'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'no.neat.rlib.trusttest'
+        minSdk 24
+        targetSdk 34
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    // The native bridge is built by meson (NDK) and dropped into
+    // src/main/jniLibs/<abi>/ before the Gradle build -- there is nothing for
+    // Gradle to compile, it only packages the prebuilt .so.
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
+}

@@ -123,3 +123,15 @@ rlibtest = executable('rlibtest',
 
 test('rlib test', rlibtest)
 
+if host_machine.system() == 'android'
+  # JNI bridge for the instrumented trust-store test (test/android). meson builds
+  # the .so -- Gradle/AGP cannot drive meson -- and the Gradle harness packages it
+  # into the instrumentation APK. jni.h comes from the NDK sysroot.
+  shared_library('rtruststore_androidtest',
+    'android/jni/rtruststore_androidtest.c',
+    include_directories : inc,
+    dependencies : [ libm, libdl, libthread, librt ],
+    link_with : librlib,
+    install : false)
+endif
+
