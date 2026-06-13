@@ -18,6 +18,7 @@ Platforms
 * Linux
 * Darwin (OSX)
 * Windows
+* Android
 * ...
 
 Features
