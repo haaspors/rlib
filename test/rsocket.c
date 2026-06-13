@@ -115,6 +115,7 @@ RTEST (rsocket, connect_would_block, RTEST_FAST | RTEST_SYSTEM)
 {
   RSocket * socket;
   RSocketAddress * addr;
+  RSocketStatus res;
 
   r_assert_cmpptr ((socket = r_socket_new (R_SOCKET_FAMILY_IPV4,
           R_SOCKET_TYPE_STREAM, R_SOCKET_PROTOCOL_TCP)), !=, NULL);
@@ -124,12 +125,16 @@ RTEST (rsocket, connect_would_block, RTEST_FAST | RTEST_SYSTEM)
 
   r_assert_cmpint (r_socket_connect (socket, NULL), ==, R_SOCKET_INVAL);
 
-  /* Sockets should be created in non-blocking mode, so this should block! */
+  /* A non-blocking connect to a closed port may report progress (WOULD_BLOCK)
+   * or be refused synchronously -- loopback often refuses immediately
+   * (CONN_REFUSED); both are valid, but it never succeeds. Only the in-progress
+   * case leaves the socket "connecting", and it is never "connected". */
   r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0x4242)), !=, NULL);
-  /* FIXME: This might actually connect with OK on some systems... */
-  r_assert_cmpint (r_socket_connect (socket, addr), ==, R_SOCKET_WOULD_BLOCK);
+  res = r_socket_connect (socket, addr);
   r_socket_address_unref (addr);
-  r_assert (r_socket_is_connecting (socket));
+  r_assert_cmpint (res, !=, R_SOCKET_OK);
+  if (res == R_SOCKET_WOULD_BLOCK)
+    r_assert (r_socket_is_connecting (socket));
   r_assert (!r_socket_is_connected (socket));
 
   r_assert_cmpint (r_socket_close (socket), ==, R_SOCKET_OK);
