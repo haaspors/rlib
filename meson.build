@@ -248,6 +248,15 @@ else
   libwin = []
 endif
 
+# macOS frameworks: Security + CoreFoundation back the system trust store
+# (SecTrustEvaluateWithError against the keychain anchors).
+if host_machine.system() == 'darwin'
+  libmac = dependency('appleframeworks',
+    modules : [ 'Security', 'CoreFoundation' ])
+else
+  libmac = dependency('', required : false)
+endif
+
 
 # HEADERS
 req_headers = [

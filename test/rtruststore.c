@@ -269,9 +269,10 @@ RTEST (rtruststore, add_pem_bundle_counts, RTEST_FAST)
 }
 RTEST_END;
 
-/* The file-based system trust backend is Unix-only; on Windows the native
- * certificate store applies and r_trust_store_new_system returns NULL. */
-#if defined (R_OS_UNIX)
+/* The file-based system trust backend covers Unix platforms without a native
+ * verifier; Windows (CryptoAPI) and Darwin (Security framework) delegate to the
+ * OS instead and are exercised by system_native_untrusted below. */
+#if defined (R_OS_UNIX) && !defined (R_OS_DARWIN)
 /* r_trust_store_new_system honours $SSL_CERT_FILE and yields a store anchored to
  * the named bundle; a missing or certificate-less bundle yields NULL. */
 RTEST (rtruststore, system_env_file, RTEST_FAST | RTEST_SYSTEM)
@@ -350,9 +351,9 @@ RTEST (rtruststore, system_probe, RTEST_FAST | RTEST_SYSTEM)
     r_trust_store_unref (store);
 }
 RTEST_END;
-#endif /* R_OS_UNIX */
+#endif /* R_OS_UNIX && !R_OS_DARWIN */
 
-#if defined (R_OS_WIN32)
+#if defined (R_OS_WIN32) || defined (R_OS_DARWIN)
 /* The native system verifier delegates to the OS. It rejects a complete chain
  * whose self-signed root is not a system anchor (the test PKI is not), without
  * the caller supplying any anchors. */
@@ -367,4 +368,4 @@ RTEST (rtruststore, system_native_untrusted, RTEST_FAST | RTEST_SYSTEM)
   r_trust_store_unref (store);
 }
 RTEST_END;
-#endif /* R_OS_WIN32 */
+#endif /* R_OS_WIN32 || R_OS_DARWIN */
