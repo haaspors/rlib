@@ -112,9 +112,12 @@ r_io_unix_set_nonblocking (RIOHandle handle, rboolean set)
   do {
     res = fcntl (handle, F_GETFL);
   } while (res < 0 && errno == EINTR);
+  if (res < 0)
+    return FALSE;
 
-  if (!!(res & O_NONBLOCK) != !!set)
-    return 0;
+  /* Already in the desired state -- nothing to change. */
+  if (!!(res & O_NONBLOCK) == !!set)
+    return TRUE;
 
   if (set)
     res |= O_NONBLOCK;
