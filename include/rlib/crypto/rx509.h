@@ -256,6 +256,23 @@ R_API rboolean r_crypto_x509_cert_has_policy (const RCryptoCert * cert, const rc
 R_API rboolean r_crypto_x509_cert_verify_host (const RCryptoCert * cert,
     const rchar * host);
 
+/**
+ * @brief Match a host name @p host against a single @c dNSName @p pattern
+ * (RFC 6125).
+ *
+ * Case-insensitive exact match, plus a single leftmost-label @c * wildcard in
+ * @p pattern that matches exactly one label and never spans a dot (so
+ * @c *.example.com matches @c a.example.com but neither @c example.com nor
+ * @c a.b.example.com). This is the same matching
+ * @ref r_crypto_x509_cert_verify_host applies to @c dNSName SANs, exposed for
+ * callers that match a name against a configured pattern (e.g. SNI virtual-host
+ * selection). Identity only -- it does not establish trust.
+ *
+ * @return @c TRUE if @p host matches @p pattern.
+ */
+R_API rboolean r_crypto_x509_host_match_dns (const rchar * host,
+    const rchar * pattern);
+
 /** @brief Number of @c SubjectAltName general names (0 if absent). */
 R_API rsize r_crypto_x509_cert_subject_alt_name_count (const RCryptoCert * cert);
 /**
