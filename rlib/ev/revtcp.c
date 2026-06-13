@@ -844,7 +844,15 @@ r_ev_tcp_connect (REvTCP * evtcp, const RSocketAddress * address,
     evtcp->connected = connected;
     R_LOG_DEBUG ("loop %p evio "R_EV_IO_FORMAT, evtcp->evio.loop, R_EV_IO_ARGS (evtcp));
     if ((evtcp->connect_iocb_ctx = r_ev_io_start (&evtcp->evio, R_EV_IO_WRITABLE,
-        r_ev_tcp_connected_cb, data, datanotify)) == NULL) {
+        r_ev_tcp_connected_cb, data, datanotify)) != NULL) {
+      /* connect() may complete immediately (loopback often does, returning
+       * R_SOCKET_OK) or be in progress (R_SOCKET_WOULD_BLOCK); either way the
+       * result is delivered through @connected once the socket is writable -- an
+       * already-connected socket is writable on the next iteration. Report
+       * WOULD_BLOCK uniformly, matching the IOCP backend, so callers always
+       * await the callback rather than special-casing a synchronous connect. */
+      ret = R_SOCKET_WOULD_BLOCK;
+    } else {
       /* Could not watch the connecting socket; report failure to the
        * caller (connected will not fire) rather than crash. */
       R_LOG_ERROR ("loop %p evio "R_EV_IO_FORMAT,
