@@ -285,6 +285,70 @@ jobs:
           name: buildlog-android-${{ matrix.abi }}-${{ matrix.buildtype }}
           path: build/meson-logs/
 
+  android-instrumented:
+    name: Android instrumented / x86_64
+    # rlib's instrumented Android tests (test/android): they run inside a real app
+    # process (ART VM) on an emulator, covering behaviour the bare rlibtest
+    # emulator run cannot -- anything that needs a JavaVM or the app sandbox. meson
+    # cross-builds the native bridge(s); Gradle packages them into the
+    # instrumentation APK and runs it.
+    # Scheduled / on-demand only (like full-tests): the Gradle + APK +
+    # instrumentation run is heavier than the bare rlibtest job, so it stays off
+    # the per-PR critical path.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up JDK 17
+        # AGP 8.5 needs JDK 17; the runner's default JDK drifts, so pin it.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up the Android SDK
+        # Puts sdkmanager on PATH and accepts licenses (the runner does not expose
+        # it by default).
+        uses: android-actions/setup-android@v3
+      - name: Install dependencies
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/*google*.list
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build
+      - name: Install the SDK packages AGP needs
+        run: yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
+      - name: Add NDK toolchain to PATH
+        run: echo "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Build the JNI bridge (x86_64) and stage it for Gradle
+        # Link rlib statically so the bridge .so is self-contained -- only
+        # librlib's objects are needed and there is no librlib.so to also package.
+        run: |
+          meson setup build-jni --cross-file cross/android-x86_64.ini --buildtype=debugoptimized -Ddefault_library=static
+          meson compile -C build-jni rtruststore_androidtest
+          mkdir -p test/android/app/src/main/jniLibs/x86_64
+          cp build-jni/test/librtruststore_androidtest.so test/android/app/src/main/jniLibs/x86_64/
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run the instrumented trust-store tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          disable-animations: true
+          # connectedAndroidTest installs the app + test APK on the emulator and
+          # runs the instrumentation; it exits non-zero on any test failure.
+          script: cd test/android && ./gradlew --no-daemon connectedAndroidTest
+      - name: Upload reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: androidtest-reports
+          path: test/android/app/build/reports/androidTests/
+
   sanitizers:
     name: Sanitizers / ${{ matrix.name }}
     runs-on: ubuntu-latest
