@@ -85,8 +85,10 @@ RTEST (rsocket, listen, RTEST_FAST | RTEST_SYSTEM)
           R_SOCKET_TYPE_DATAGRAM, R_SOCKET_PROTOCOL_UDP)), !=, NULL);
   r_assert (!r_socket_is_listening (socket));
 
-  /* wrong socket type */
-  r_assert_cmpint (r_socket_listen (socket), ==, R_SOCKET_INVALID_OP);
+  /* listen() on a datagram socket must fail; the exact errno (hence status) is
+   * platform-dependent -- EOPNOTSUPP on mainline Linux, something else on bionic
+   * -- so assert only that it is rejected, not the specific code. */
+  r_assert_cmpint (r_socket_listen (socket), !=, R_SOCKET_OK);
   r_assert_cmpint (r_socket_close (socket), ==, R_SOCKET_OK);
   r_socket_unref (socket);
 
