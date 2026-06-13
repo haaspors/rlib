@@ -37,6 +37,9 @@
 #endif
 #include <windows.h>
 #include <wincrypt.h>
+#elif defined (R_OS_DARWIN)
+#include <CoreFoundation/CoreFoundation.h>
+#include <Security/Security.h>
 #endif
 
 /* A path no longer than this many certificates can be built; TLS chains are
@@ -254,7 +257,9 @@ r_trust_store_add_pem_file (RTrustStore * base, const rchar * filename)
 
 /* --- system trust: load the OS CA bundle / directory --------------------- */
 
-#if defined (R_OS_UNIX)
+/* The file-based backend is for Unix platforms without a native verifier;
+ * Darwin uses the Security framework below, not these probe lists. */
+#if defined (R_OS_UNIX) && !defined (R_OS_DARWIN)
 /* Concatenated CA bundles, probed in order (first with anchors wins). */
 static const rchar * const g__r_trust_system_bundles[] = {
   "/etc/ssl/certs/ca-certificates.crt",   /* Debian, Ubuntu, Arch, ... */
@@ -294,7 +299,7 @@ r_trust_store_add_dir (RTrustStore * store, const rchar * dirpath)
   r_fs_dir_close (dir);
   return total;
 }
-#endif /* R_OS_UNIX */
+#endif /* R_OS_UNIX && !R_OS_DARWIN */
 
 /* The native-verifier backends below hold no anchors of their own: the OS owns
  * the trust decision, so verify hands the presented chain to the platform. */
@@ -427,11 +432,105 @@ r_trust_system_new_win32 (void)
 }
 #endif /* R_OS_WIN32 */
 
+#if defined (R_OS_DARWIN)
+static RTrustResult
+r_trust_system_verify_darwin (RTrustStore * base, RCryptoCert * const * chain,
+    ruint count, ruint64 now, RX509ExtKeyUsage required_eku)
+{
+  CFMutableArrayRef certs;
+  SecPolicyRef policy;
+  SecTrustRef trust = NULL;
+  CFErrorRef err = NULL;
+  CFDateRef date;
+  OSStatus st;
+  RTrustResult ret = R_TRUST_UNTRUSTED;
+  ruint i;
+  (void) base;
+
+  if ((certs = CFArrayCreateMutable (NULL, (CFIndex) count,
+          &kCFTypeArrayCallBacks)) == NULL)
+    return R_TRUST_INVALID;
+
+  /* The chain is leaf first; SecTrust takes the leaf as element 0. */
+  for (i = 0; i < count; i++) {
+    rsize derlen;
+    ruint8 * der = r_crypto_cert_dup_data (chain[i], &derlen);
+    CFDataRef data;
+    SecCertificateRef cert;
+    if (der == NULL)
+      continue;
+    data = CFDataCreate (NULL, der, (CFIndex) derlen);
+    r_free (der);
+    if (data == NULL)
+      continue;
+    cert = SecCertificateCreateWithData (NULL, data);
+    CFRelease (data);
+    if (cert != NULL) {
+      CFArrayAppendValue (certs, cert);
+      CFRelease (cert);
+    }
+  }
+  if (CFArrayGetCount (certs) == 0) {
+    CFRelease (certs);
+    return R_TRUST_INVALID;
+  }
+
+  /* The SSL policy's server flag selects the server-auth EKU (client otherwise);
+   * no hostname (the application's concern). NONE -> basic X.509 (any EKU). */
+  if (required_eku == R_X509_EXT_KEY_USAGE_NONE)
+    policy = SecPolicyCreateBasicX509 ();
+  else
+    policy = SecPolicyCreateSSL (
+        required_eku != R_X509_EXT_KEY_USAGE_CLIENT_AUTH, NULL);
+  if (policy == NULL) {
+    CFRelease (certs);
+    return R_TRUST_INVALID;
+  }
+
+  st = SecTrustCreateWithCertificates (certs, policy, &trust);
+  CFRelease (policy);
+  CFRelease (certs);
+  if (st != errSecSuccess || trust == NULL)
+    return R_TRUST_INVALID;
+
+  /* Pin the evaluation time (CFAbsoluteTime is seconds since 2001-01-01). */
+  date = CFDateCreate (NULL,
+      (CFAbsoluteTime) ((double) now - kCFAbsoluteTimeIntervalSince1970));
+  if (date != NULL) {
+    SecTrustSetVerifyDate (trust, date);
+    CFRelease (date);
+  }
+
+  /* The native verifier is coarse: trusted or not. */
+  if (SecTrustEvaluateWithError (trust, &err))
+    ret = R_TRUST_OK;
+  else if (err != NULL)
+    CFRelease (err);
+
+  CFRelease (trust);
+  return ret;
+}
+
+static RTrustStore *
+r_trust_system_new_darwin (void)
+{
+  RTrustStore * store;
+
+  if ((store = r_mem_new0 (RTrustStore)) == NULL)
+    return NULL;
+  r_ref_init (store, r_trust_system_free);
+  store->verify = r_trust_system_verify_darwin;
+  return store;
+}
+#endif /* R_OS_DARWIN */
+
 RTrustStore *
 r_trust_store_new_system (void)
 {
 #if defined (R_OS_WIN32)
   return r_trust_system_new_win32 ();
+#elif defined (R_OS_DARWIN)
+  return r_trust_system_new_darwin ();
 #elif defined (R_OS_UNIX)
   RTrustStore * store;
   const rchar * env;
