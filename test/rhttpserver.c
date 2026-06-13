@@ -738,6 +738,223 @@ RTEST (rhttpserver, mtls_require_no_trust_store, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+/* Drive one HTTPS attempt against a server with SNI virtual hosts. The default
+ * listener serves CN=rlib (client-cert NONE); vhost "localhost" and the wildcard
+ * "*.example.com" both serve the CN=localhost PKI leaf, but the wildcard
+ * additionally REQUIREs a client cert anchored at the test root. Reports whether
+ * the GET was answered, the server cert the client saw, and the client subject
+ * the handler observed. */
+static void
+r_test_vhost_run (RTLSClientCertMode server_mode, const rchar * sni,
+    const rchar * cli_cert_pem, const rchar * cli_key_pem,
+    rboolean * got_response, rchar ** server_subject, rchar ** client_subject)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RTrustStore * trust;
+  RCryptoCert * cert, * peer;
+  RCryptoKey * pk;
+  RSocketAddress * addr;
+  RTestMtls m = { NULL, FALSE };
+  RTestTLSClient c = { NULL, NULL, NULL, NULL, NULL, R_TLS_VERSION_UNKNOWN, NULL,
+      FALSE, FALSE };
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
+  r_assert (r_http_server_set_handler (srv, "/", -1, r_test_mtls_handler, &m, NULL));
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert (r_http_server_add_tls_listen_addr (srv, addr, cert, pk));
+  r_socket_address_unref (addr);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (rtest_leaf_root_pem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (rtest_leaf_root_key_pem, -1, NULL, 0)), !=, NULL);
+  r_assert (r_http_server_add_vhost (srv, "localhost", cert, pk));
+  r_assert (r_http_server_add_vhost (srv, "*.example.com", cert, pk));
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_assert_cmpptr ((trust = r_trust_store_new_certs ()), !=, NULL);
+  r_assert_cmpint (r_trust_store_add_pem (trust, rtest_root_pem, -1), ==, 1);
+  /* whole-server policy: the "localhost" vhost (no per-vhost mTLS) inherits it */
+  r_http_server_set_client_cert_mode (srv, server_mode);
+  if (server_mode != R_TLS_CLIENT_CERT_MODE_NONE)
+    r_http_server_set_client_trust_store (srv, trust);
+  /* the wildcard vhost overrides with its own REQUIRE + trust */
+  r_assert (r_http_server_set_vhost_client_cert_mode (srv, "*.example.com",
+        R_TLS_CLIENT_CERT_MODE_REQUIRE));
+  r_assert (r_http_server_set_vhost_client_trust_store (srv, "*.example.com", trust));
+  r_trust_store_unref (trust);
+
+  r_assert_cmpptr ((addr = r_http_server_get_local_address (srv)), !=, NULL);
+
+  r_assert_cmpptr ((c.prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((c.resp = r_buffer_new ()), !=, NULL);
+  r_assert_cmpptr ((c.tls = r_tls_client_new (&g_test_tls_client_cbs, &c, NULL)), !=, NULL);
+  if (sni != NULL)
+    r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_client_set_server_name (c.tls, sni));
+  if (cli_cert_pem != NULL) {
+    RCryptoCert * cc = r_pem_parse_cert_from_data (cli_cert_pem, -1);
+    RCryptoKey * ck = r_pem_parse_key_from_data (cli_key_pem, -1, NULL, 0);
+    r_assert_cmpptr (cc, !=, NULL);
+    r_assert_cmpptr (ck, !=, NULL);
+    r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_client_set_cert (c.tls, cc, ck));
+    r_crypto_key_unref (ck);
+    r_crypto_cert_unref (cc);
+  }
+  c.loop = loop;
+  r_assert_cmpptr ((c.tcp = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_connect (c.tcp, addr,
+        r_test_tls_client_connected, &c, NULL), >=, R_SOCKET_OK);
+
+  while (!c.got_response && !c.eos)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  *got_response = c.got_response;
+  *client_subject = m.peer_subject;   /* ownership transferred to caller */
+  *server_subject = ((peer = r_tls_client_get_peer_cert (c.tls)) != NULL) ?
+      r_strdup (r_crypto_x509_cert_subject (peer)) : NULL;
+
+  r_ev_tcp_close (c.tcp, NULL, NULL, NULL);
+  r_ev_tcp_unref (c.tcp);
+  r_tls_client_unref (c.tls);
+  r_buffer_unref (c.resp);
+  r_prng_unref (c.prng);
+
+  r_http_server_stop (srv, NULL, NULL, NULL);
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+  r_http_server_unref (srv);
+  r_socket_address_unref (addr);
+  r_ev_loop_unref (loop);
+}
+
+/* SNI matching an exact vhost selects that vhost's certificate. */
+RTEST (rhttpserver, vhost_sni_exact, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE; rchar * srv = NULL, * cli = NULL;
+  r_test_vhost_run (R_TLS_CLIENT_CERT_MODE_NONE, "localhost", NULL, NULL, &got, &srv, &cli);
+  r_assert (got);
+  r_assert_cmpstr (srv, ==, "CN=localhost");
+  r_assert_cmpptr (cli, ==, NULL);   /* this vhost requests no client cert */
+  r_free (srv); r_free (cli);
+}
+RTEST_END;
+
+/* SNI matching no vhost falls back to the listener certificate. */
+RTEST (rhttpserver, vhost_sni_fallback, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE; rchar * srv = NULL, * cli = NULL;
+  r_test_vhost_run (R_TLS_CLIENT_CERT_MODE_NONE, "unknown.host", NULL, NULL, &got, &srv, &cli);
+  r_assert (got);
+  r_assert_cmpstr (srv, ==, "CN=rlib");
+  r_free (srv); r_free (cli);
+}
+RTEST_END;
+
+/* No SNI uses the listener certificate and the whole-server (NONE) policy. */
+RTEST (rhttpserver, vhost_no_sni_default, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE; rchar * srv = NULL, * cli = NULL;
+  r_test_vhost_run (R_TLS_CLIENT_CERT_MODE_NONE, NULL, NULL, NULL, &got, &srv, &cli);
+  r_assert (got);
+  r_assert_cmpstr (srv, ==, "CN=rlib");
+  r_free (srv); r_free (cli);
+}
+RTEST_END;
+
+/* A wildcard vhost is matched and enforces its own REQUIRE policy: a trusted
+ * client certificate is accepted and reaches the handler. */
+RTEST (rhttpserver, vhost_wildcard_mtls_trusted, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE; rchar * srv = NULL, * cli = NULL;
+  r_test_vhost_run (R_TLS_CLIENT_CERT_MODE_NONE, "api.example.com", rtest_leaf_clientauth_pem,
+      rtest_leaf_clientauth_key_pem, &got, &srv, &cli);
+  r_assert (got);
+  r_assert_cmpstr (srv, ==, "CN=localhost");
+  r_assert_cmpstr (cli, ==, "CN=rlib Test Client");
+  r_free (srv); r_free (cli);
+}
+RTEST_END;
+
+/* The wildcard vhost REQUIREs a client cert, so a connection without one fails
+ * even though the default listener policy is NONE. */
+RTEST (rhttpserver, vhost_wildcard_mtls_missing_cert, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE; rchar * srv = NULL, * cli = NULL;
+  r_test_vhost_run (R_TLS_CLIENT_CERT_MODE_NONE, "api.example.com", NULL, NULL, &got, &srv, &cli);
+  r_assert (!got);
+  r_assert_cmpptr (cli, ==, NULL);
+  r_free (srv); r_free (cli);
+}
+RTEST_END;
+
+/* A vhost with no per-vhost mTLS inherits the whole-server REQUIRE + trust:
+ * a trusted client cert is required and reaches the handler. (The old
+ * NONE-default would have requested no cert -> the handler would see none.) */
+RTEST (rhttpserver, vhost_inherits_whole_server_mtls, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE; rchar * srv = NULL, * cli = NULL;
+  r_test_vhost_run (R_TLS_CLIENT_CERT_MODE_REQUIRE, "localhost",
+      rtest_leaf_clientauth_pem, rtest_leaf_clientauth_key_pem, &got, &srv, &cli);
+  r_assert (got);
+  r_assert_cmpstr (srv, ==, "CN=localhost");
+  r_assert_cmpstr (cli, ==, "CN=rlib Test Client");
+  r_free (srv); r_free (cli);
+}
+RTEST_END;
+
+/* The inherited REQUIRE is enforced: a connection to that vhost without a client
+ * certificate is rejected. */
+RTEST (rhttpserver, vhost_inherits_require_rejects_no_cert, RTEST_FAST | RTEST_SYSTEM)
+{
+  rboolean got = FALSE; rchar * srv = NULL, * cli = NULL;
+  r_test_vhost_run (R_TLS_CLIENT_CERT_MODE_REQUIRE, "localhost", NULL, NULL,
+      &got, &srv, &cli);
+  r_assert (!got);
+  r_assert_cmpptr (cli, ==, NULL);
+  r_free (srv); r_free (cli);
+}
+RTEST_END;
+
+/* Vhost host names are case-insensitive: a case-variant is a duplicate, and the
+ * config setters find a vhost regardless of case. */
+RTEST (rhttpserver, vhost_host_case_insensitive, RTEST_FAST)
+{
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+  r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (rtest_leaf_root_pem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (rtest_leaf_root_key_pem, -1, NULL, 0)), !=, NULL);
+
+  r_assert (r_http_server_add_vhost (srv, "Example.com", cert, pk));
+  r_assert (!r_http_server_add_vhost (srv, "example.COM", cert, pk)); /* dup */
+  r_assert (r_http_server_set_vhost_client_cert_mode (srv, "EXAMPLE.com",
+        R_TLS_CLIENT_CERT_MODE_REQUIRE));                             /* found */
+  r_assert (!r_http_server_set_vhost_client_cert_mode (srv, "other.com",
+        R_TLS_CLIENT_CERT_MODE_REQUIRE));                            /* absent */
+
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_http_server_unref (srv);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
 typedef struct {
   RHttpRequest * other;     /* a request that is not the one being handled */
   rboolean null_for_req;    /* get_peer_cert (server, req) was NULL */
