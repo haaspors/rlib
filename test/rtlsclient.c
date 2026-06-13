@@ -1,6 +1,8 @@
 #include <rlib/rnet.h>
 #include <rlib/rcrypto.h>
 
+#include "rtlstestcerts.h"
+
 /* Self-signed test certificate + matching RSA private key (CN=rlib). */
 static const rchar testcertpem[] =
   "-----BEGIN CERTIFICATE-----\r\n"
@@ -86,6 +88,11 @@ RTEST_FIXTURE_STRUCT (rtlsclient)
   ruint verify_calls;
   rboolean verify_result;
   RTLSCipherSuite force_suite;   /* pin both endpoints to one suite; NONE = defaults */
+
+  rboolean sni_cb_called;        /* server's SNI selection cb fired */
+  rchar sni_seen[128];           /* SNI host the server's cb received ("" if NULL) */
+  RCryptoCert * sni_cert;        /* cert the cb installs for the SNI host, or NULL */
+  RCryptoKey * sni_key;
 
   RClock * clock;
   REvLoop * evloop;
@@ -197,6 +204,21 @@ r_tlsclient_test_verify_cert (rpointer ctx, RCryptoCert * const * chain, ruint c
   return fixture->verify_result;
 }
 
+/* Server-side SNI selection: record the requested name and, if the fixture has
+ * one staged, install a per-name certificate for this connection. */
+static RTLSError
+r_tlsclient_test_sni (rpointer ctx, const rchar * name, rpointer session)
+{
+  RTEST_FIXTURE_STRUCT (rtlsclient) * fixture = ctx;
+  fixture->sni_cb_called = TRUE;
+  if (name != NULL)
+    r_strncpy (fixture->sni_seen, name, sizeof (fixture->sni_seen));
+  if (fixture->sni_cert != NULL)
+    return r_tls_server_set_cert ((RTLSServer *) session,
+        fixture->sni_cert, fixture->sni_key);
+  return R_TLS_ERROR_OK;
+}
+
 RTEST_FIXTURE_SETUP (rtlsclient)
 {
   static RTLSCallbacks srvcbs = {
@@ -230,6 +252,10 @@ RTEST_FIXTURE_SETUP (rtlsclient)
   fixture->verify_calls = 0;
   fixture->verify_result = TRUE;
   fixture->force_suite = R_TLS_CS_NONE;
+  fixture->sni_cb_called = FALSE;
+  fixture->sni_seen[0] = '\0';
+  fixture->sni_cert = NULL;
+  fixture->sni_key = NULL;
 
   r_queue_init (&fixture->srv_out);
   r_queue_init (&fixture->cli_out);
@@ -249,6 +275,10 @@ RTEST_FIXTURE_SETUP (rtlsclient)
 
 RTEST_FIXTURE_TEARDOWN (rtlsclient)
 {
+  if (fixture->sni_cert != NULL)
+    r_crypto_cert_unref (fixture->sni_cert);
+  if (fixture->sni_key != NULL)
+    r_crypto_key_unref (fixture->sni_key);
   r_tls_client_unref (fixture->client);
   r_tls_server_unref (fixture->server);
 
@@ -444,6 +474,84 @@ RTEST_END;
 RTEST_F (rtlsclient, dtls_loopback, RTEST_FAST)
 {
   r_test_tls_loopback (fixture, R_TLS_VERSION_DTLS_1_2);
+}
+RTEST_END;
+
+/* The client offers SNI; the server's selection callback sees the name and
+ * installs a per-name certificate, which the client then receives. */
+RTEST_F (rtlsclient, sni_selects_cert, RTEST_FAST)
+{
+  RCryptoCert * peer;
+
+  r_assert_cmpptr ((fixture->sni_cert =
+      r_pem_parse_cert_from_data (rtest_leaf_root_pem, -1)), !=, NULL);
+  r_assert_cmpptr ((fixture->sni_key =
+      r_pem_parse_key_from_data (rtest_leaf_root_key_pem, -1, NULL, 0)), !=, NULL);
+
+  r_assert_cmpint (r_tls_server_set_server_name_cb (fixture->server,
+      r_tlsclient_test_sni), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_set_server_name (fixture->client,
+      "host.example.com"), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop,
+      fixture->prng), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop,
+      fixture->prng, R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (fixture->sni_cb_called);
+  r_assert_cmpstr (fixture->sni_seen, ==, "host.example.com");
+  /* the server exposes the requested name, and presented the selected cert */
+  r_assert_cmpstr (r_tls_server_get_server_name (fixture->server), ==,
+      "host.example.com");
+  r_assert_cmpptr ((peer = r_tls_client_get_peer_cert (fixture->client)), !=, NULL);
+  r_assert_cmpstr (r_crypto_x509_cert_subject (peer), ==, "CN=localhost");
+}
+RTEST_END;
+
+/* No SNI: the callback still fires (with a NULL name) and the default cert
+ * stands; the server-name getter reports NULL. */
+RTEST_F (rtlsclient, sni_absent_keeps_default, RTEST_FAST)
+{
+  RCryptoCert * peer;
+
+  r_assert_cmpint (r_tls_server_set_server_name_cb (fixture->server,
+      r_tlsclient_test_sni), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop,
+      fixture->prng), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop,
+      fixture->prng, R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (fixture->sni_cb_called);
+  r_assert_cmpstr (fixture->sni_seen, ==, "");
+  r_assert_cmpptr (r_tls_server_get_server_name (fixture->server), ==, NULL);
+  r_assert_cmpptr ((peer = r_tls_client_get_peer_cert (fixture->client)), !=, NULL);
+  r_assert_cmpstr (r_crypto_x509_cert_subject (peer), ==, "CN=rlib");
+}
+RTEST_END;
+
+/* An over-long SNI host is rejected (it would not fit a host name / the record);
+ * a 255-byte name is accepted. */
+RTEST_F (rtlsclient, sni_name_length_capped, RTEST_FAST)
+{
+  rchar name[300];
+  rsize i;
+
+  for (i = 0; i < sizeof (name) - 1; i++)
+    name[i] = 'a';
+
+  name[256] = '\0';   /* 256 bytes -> rejected */
+  r_assert_cmpint (r_tls_client_set_server_name (fixture->client, name), ==,
+      R_TLS_ERROR_INVAL);
+  name[255] = '\0';   /* 255 bytes -> accepted */
+  r_assert_cmpint (r_tls_client_set_server_name (fixture->client, name), ==,
+      R_TLS_ERROR_OK);
 }
 RTEST_END;
 
