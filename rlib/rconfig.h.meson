@@ -44,6 +44,7 @@
 #mesondefine R_OS_WIN32
 #mesondefine R_OS_UNIX
 #mesondefine R_OS_LINUX
+#mesondefine R_OS_ANDROID
 #mesondefine R_OS_BSD
 #mesondefine R_OS_DARWIN
 #mesondefine R_OS_RTEMS
