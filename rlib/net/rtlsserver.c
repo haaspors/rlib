@@ -92,6 +92,8 @@ struct RTLSServer {
   rsize alpn_count;
   const rchar * alpn_selected;          /* negotiated protocol, points into alpn_protocols */
   rsize alpn_selected_len;
+  rchar * sni;                          /* SNI host_name from the ClientHello (owned), or NULL */
+  RTLSServerNameCb server_name_cb;      /* picks cert/policy for the SNI host; may be NULL */
   ruint8 max_fragment;                  /* negotiated max_fragment_length (RFC 6066): 0 none, else 1..4 */
   ruint8 * ticket;
   ruint16 ticketsize;
@@ -184,6 +186,7 @@ r_tls_server_free (RTLSServer * server)
       r_free (server->alpn_protocols[i]);
     r_free (server->alpn_protocols);
   }
+  r_free (server->sni);
   if (server->client.hmac != NULL)
     r_hmac_free (server->client.hmac);
   if (server->client.cipher != NULL)
@@ -286,11 +289,28 @@ r_tls_server_set_client_cert_mode (RTLSServer * server, RTLSClientCertMode mode)
   return R_TLS_ERROR_OK;
 }
 
+RTLSError
+r_tls_server_set_server_name_cb (RTLSServer * server, RTLSServerNameCb cb)
+{
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (server->state > R_TLS_SERVER_HELLO)) return R_TLS_ERROR_WRONG_STATE;
+
+  server->server_name_cb = cb;
+  return R_TLS_ERROR_OK;
+}
+
 RCryptoCert *
 r_tls_server_get_peer_cert (const RTLSServer * server)
 {
   if (R_UNLIKELY (server == NULL)) return NULL;
   return server->peer_cert;
+}
+
+const rchar *
+r_tls_server_get_server_name (const RTLSServer * server)
+{
+  if (R_UNLIKELY (server == NULL)) return NULL;
+  return server->sni;
 }
 
 RTLSError
@@ -1556,6 +1576,22 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
           return R_TLS_ERROR_ILLEGAL_PARAMETER;
         server->max_fragment = hsext.data[0];
         break;
+      case R_TLS_EXT_TYPE_SERVER_NAME:
+        /* RFC 6066: ServerNameList<1..> of { NameType(1), HostName<1..> }. Keep
+         * the first host_name entry. SNI is advisory, so a malformed list is
+         * ignored rather than fatal (bounds are still checked). */
+        if (hsext.len >= 2) {
+          ruint16 listlen = r_load_be16 (hsext.data);
+          if ((rsize) listlen + 2 <= hsext.len && listlen >= 3 &&
+              hsext.data[2] == 0 /* host_name */) {
+            ruint16 namelen = r_load_be16 (hsext.data + 3);
+            if ((rsize) namelen + 3 <= (rsize) listlen) {
+              r_free (server->sni);
+              server->sni = r_strndup ((const rchar *) (hsext.data + 5), namelen);
+            }
+          }
+        }
+        break;
       default:
         break;
     }
@@ -2086,6 +2122,13 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
     server->hellobuf = r_buffer_ref (parser->buf);
 
     if ((err = r_tls_server_nego_hello (server, parser->version, server->hello.version)) == R_TLS_ERROR_OK) {
+      /* SNI is now known; let the app pick the cert / client-cert policy for the
+       * requested name before the server flight. state is still SERVER_HELLO, so
+       * the callback may call r_tls_server_set_cert / _set_client_cert_mode. */
+      if (server->server_name_cb != NULL)
+        err = server->server_name_cb (server->userdata, server->sni, server);
+    }
+    if (err == R_TLS_ERROR_OK) {
       RTLSError rr = r_tls_server_try_resume (server);
       if (rr == R_TLS_ERROR_OK)
         err = r_tls_server_change_state (server, R_TLS_SERVER_CHANGE_CIPHER);

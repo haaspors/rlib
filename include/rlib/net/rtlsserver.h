@@ -114,6 +114,26 @@ typedef rboolean (*RTLSCertVerifyCb) (rpointer ctx, RCryptoCert * const * chain,
  * to.
  */
 typedef void (*RTLSClosedCb) (rpointer ctx, rpointer session);
+/**
+ * @brief Callback selecting the certificate / policy for the requested SNI host
+ * (server only).
+ *
+ * Fired during the handshake once the ClientHello has been parsed, with the
+ * @c server_name (SNI) host the client requested (@c NULL if it sent none).
+ * @p session is the @ref RTLSServer; the callback may call
+ * @ref r_tls_server_set_cert and @ref r_tls_server_set_client_cert_mode on it to
+ * configure this connection for the named host. Return @ref R_TLS_ERROR_OK to
+ * proceed, or an error to abort the handshake. May be @c NULL.
+ *
+ * Applies to full handshakes only: a resumed (abbreviated) session reuses the
+ * original session's certificate and verified peer, so a per-name policy is not
+ * re-applied on resumption. If a per-name client-cert requirement must hold
+ * across resumption, do not enable session tickets
+ * (@ref r_tls_server_set_session_ticket_keys). Also keep the selected key's type
+ * consistent with the offered one: the signature scheme is negotiated from the
+ * cert set before this callback runs.
+ */
+typedef RTLSError (*RTLSServerNameCb) (rpointer ctx, const rchar * name, rpointer session);
 
 /** @brief Callback bundle wiring a session to its transport and policy. */
 typedef struct {
@@ -159,11 +179,29 @@ R_API RTLSError r_tls_server_set_cert (RTLSServer * server,
 R_API RTLSError r_tls_server_set_client_cert_mode (RTLSServer * server,
     RTLSClientCertMode mode);
 /**
+ * @brief Set a callback that selects the certificate / policy by SNI host name.
+ *
+ * Invoked during the handshake once the ClientHello is parsed (see
+ * @ref RTLSServerNameCb), letting the server pick the certificate and
+ * client-certificate policy for the requested name. Must be set before the
+ * handshake starts; @c NULL clears it.
+ */
+R_API RTLSError r_tls_server_set_server_name_cb (RTLSServer * server,
+    RTLSServerNameCb cb);
+/**
  * @brief The peer (client) leaf certificate presented during a mutual-TLS
  * handshake, or @c NULL if none was presented. The reference is borrowed
  * (owned by the session); ref it to outlive the session.
  */
 R_API RCryptoCert * r_tls_server_get_peer_cert (const RTLSServer * server);
+/**
+ * @brief The host requested in the ClientHello @c server_name (SNI) extension,
+ * or @c NULL if the client sent none.
+ *
+ * Borrowed (owned by the session). Valid once the ClientHello has been
+ * processed -- e.g. inside an @ref RTLSServerNameCb, or after the handshake.
+ */
+R_API const rchar * r_tls_server_get_server_name (const RTLSServer * server);
 /**
  * @brief Attach the shared key store used to seal and open session tickets.
  *
