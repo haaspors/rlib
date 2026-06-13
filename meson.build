@@ -71,6 +71,13 @@ elif host_machine.system() == 'windows'
 elif host_machine.system() == 'linux'
   rconf.set('R_OS_UNIX', 1)
   rconf.set('R_OS_LINUX', 1)
+elif host_machine.system() == 'android'
+  # Android runs the Linux kernel on the bionic libc: keep R_OS_LINUX so the
+  # epoll / eventfd / pthread paths are selected, and add R_OS_ANDROID for the
+  # bionic-specific divergences (no /etc/ssl trust store, restricted affinity).
+  rconf.set('R_OS_UNIX', 1)
+  rconf.set('R_OS_LINUX', 1)
+  rconf.set('R_OS_ANDROID', 1)
 elif host_machine.system() == 'darwin'
   rconf.set('R_OS_UNIX', 1)
   rconf.set('R_OS_BSD', 1)
@@ -295,7 +302,7 @@ check_headers = [
   'sys/event.h',
 ]
 
-if host_machine.system() == 'linux'
+if host_machine.system() == 'linux' or host_machine.system() == 'android'
   check_headers += [
     'sys/eventfd.h',
     'sys/prctl.h',
