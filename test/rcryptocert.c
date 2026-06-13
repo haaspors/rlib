@@ -849,6 +849,27 @@ RTEST (rcryptocert, x509_verify_host_wildcard, RTEST_FAST)
 }
 RTEST_END;
 
+/* r_crypto_x509_host_match_dns: the dNSName matcher exposed for SNI vhost
+ * selection -- same RFC 6125 semantics, a host against a single pattern. */
+RTEST (rcryptocert, x509_host_match_dns, RTEST_FAST)
+{
+  r_assert (r_crypto_x509_host_match_dns ("example.com", "example.com"));
+  r_assert (r_crypto_x509_host_match_dns ("Example.COM", "example.com")); /* case */
+  r_assert (!r_crypto_x509_host_match_dns ("example.org", "example.com"));
+
+  r_assert (r_crypto_x509_host_match_dns ("a.example.com", "*.example.com"));
+  r_assert (r_crypto_x509_host_match_dns ("A.EXAMPLE.COM", "*.example.com"));
+  r_assert (!r_crypto_x509_host_match_dns ("example.com", "*.example.com"));     /* no label */
+  r_assert (!r_crypto_x509_host_match_dns ("a.b.example.com", "*.example.com")); /* spans dot */
+  r_assert (!r_crypto_x509_host_match_dns ("a.example.org", "*.example.com"));
+
+  r_assert (!r_crypto_x509_host_match_dns (NULL, "example.com"));
+  r_assert (!r_crypto_x509_host_match_dns ("example.com", NULL));
+  r_assert (!r_crypto_x509_host_match_dns ("", "example.com"));
+  r_assert (!r_crypto_x509_host_match_dns ("example.com", ""));
+}
+RTEST_END;
+
 /* r_crypto_x509_cert_path_len: the BasicConstraints pathLenConstraint, or -1
  * when absent. */
 RTEST (rcryptocert, x509_path_len, RTEST_FAST)

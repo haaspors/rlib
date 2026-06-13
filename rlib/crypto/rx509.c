@@ -1640,6 +1640,15 @@ r_x509_host_match_dns (const rchar * host, const rchar * pattern)
   return FALSE;
 }
 
+rboolean
+r_crypto_x509_host_match_dns (const rchar * host, const rchar * pattern)
+{
+  if (R_UNLIKELY (host == NULL || pattern == NULL ||
+        *host == '\0' || *pattern == '\0'))
+    return FALSE;
+  return r_x509_host_match_dns (host, pattern);
+}
+
 /* Render @host as raw IP octets if it is an IPv4/IPv6 literal; returns the
  * length (4 or 16) or 0 when @host is not an IP literal. */
 static rsize
