@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Minimal host app for the instrumented trust-store test. It carries no code;
+     the network security config bundles the test root as a trust anchor so the
+     platform X509TrustManager (which rlib's Android backend delegates to) trusts
+     leaves under it. The instrumentation runs in this app's process. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:label="rlib trusttest"
+        android:networkSecurityConfig="@xml/network_security_config" />
+
+</manifest>
