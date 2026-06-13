@@ -223,6 +223,40 @@ jobs:
           name: buildlog-windows-mingw-${{ matrix.buildtype }}
           path: build/meson-logs/
 
+  android:
+    name: Android NDK / ${{ matrix.abi }} / ${{ matrix.buildtype }}
+    # Cross-compile each Android ABI with the NDK so the bionic build (no glibc,
+    # no /etc/ssl, restricted affinity) keeps compiling. Build-only: running the
+    # suite needs an emulator, tracked separately. armv7a is also the only 32-bit
+    # target in the matrix, so it guards the 32-bit pointer/time_t paths.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [aarch64, x86_64, armv7a]
+        buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install dependencies
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/*google*.list
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build
+      - name: Add NDK toolchain to PATH
+        # The GitHub Ubuntu image ships the NDK; expose its per-target clang
+        # wrappers (the cross files name aarch64-linux-android24-clang etc.).
+        run: echo "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Configure
+        run: meson setup build --cross-file cross/android-${{ matrix.abi }}.ini --buildtype=${{ matrix.buildtype }}
+      - name: Build
+        run: meson compile -C build
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: buildlog-android-${{ matrix.abi }}-${{ matrix.buildtype }}
+          path: build/meson-logs/
+
   sanitizers:
     name: Sanitizers / ${{ matrix.name }}
     runs-on: ubuntu-latest
