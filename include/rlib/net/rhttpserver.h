@@ -140,6 +140,44 @@ R_API RTLSClientCertMode r_http_server_get_client_cert_mode (RHttpServer * serve
  */
 R_API void r_http_server_set_client_trust_store (RHttpServer * server,
     RTrustStore * store);
+
+/**
+ * @brief Add an SNI virtual host: serve @p cert / @p privkey to clients that
+ * request @p host in the TLS @c server_name extension.
+ *
+ * @p host is matched against the SNI name with the same exact / leftmost-label
+ * @c * wildcard semantics as @ref r_crypto_x509_host_match_dns (so
+ * @c *.example.com serves any single sub-label). Exact hosts win over wildcards;
+ * a connection whose SNI matches no vhost (or that sends none) falls back to the
+ * listener certificate and the whole-server client-cert policy. A vhost
+ * **inherits** the whole-server client-cert mode and trust store until overridden
+ * with @ref r_http_server_set_vhost_client_cert_mode /
+ * @ref r_http_server_set_vhost_client_trust_store, so adding a vhost never
+ * silently weakens a server-wide requirement. @p cert and @p privkey are
+ * referenced. Host matching is case-insensitive.
+ *
+ * @return @c FALSE on bad arguments, if @p host is already registered, or on
+ *         allocation failure.
+ */
+R_API rboolean r_http_server_add_vhost (RHttpServer * server,
+    const rchar * host, RCryptoCert * cert, RCryptoKey * privkey);
+/**
+ * @brief Set the client-certificate (mutual-TLS) policy for the vhost @p host
+ * (added via @ref r_http_server_add_vhost); the per-host counterpart of
+ * @ref r_http_server_set_client_cert_mode. Overrides the inherited whole-server
+ * mode for this host. @return @c FALSE if @p host is unknown.
+ */
+R_API rboolean r_http_server_set_vhost_client_cert_mode (RHttpServer * server,
+    const rchar * host, RTLSClientCertMode mode);
+/**
+ * @brief Set the trust store validating client certificates for the vhost
+ * @p host (referenced; @c NULL clears it); the per-host counterpart of
+ * @ref r_http_server_set_client_trust_store. Overrides the inherited whole-server
+ * trust store for this host. @return @c FALSE if @p host is unknown.
+ */
+R_API rboolean r_http_server_set_vhost_client_trust_store (RHttpServer * server,
+    const rchar * host, RTrustStore * store);
+
 /**
  * @brief The verified client certificate for the request currently being
  * handled, or @c NULL.

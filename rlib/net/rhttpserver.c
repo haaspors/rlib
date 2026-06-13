@@ -35,6 +35,7 @@
 #include <rlib/rtime.h>
 
 typedef struct RHttpServerHandlerCtx RHttpServerHandlerCtx;
+typedef struct RHttpVhost RHttpVhost;
 
 struct RHttpServer {
   RRef ref;
@@ -53,6 +54,11 @@ struct RHttpServer {
   /* Mutual TLS: request and verify a client certificate against client_trust. */
   RTrustStore * client_trust;
   RTLSClientCertMode client_cert_mode;
+  /* SNI virtual hosts (RHttpVhost*), matched against the ClientHello server_name
+   * to pick a per-host cert + client-cert policy; NULL until the first is added.
+   * A connection with no SNI or no match uses the listener cert + the
+   * whole-server client_trust/client_cert_mode above. */
+  RPtrArray * vhosts;
   /* The handler context being dispatched, so r_http_server_get_peer_cert
    * can reach the connection's verified client certificate. */
   RHttpServerHandlerCtx * cur;
@@ -64,6 +70,7 @@ typedef struct {
   REvTCP * evtcp;
 
   RTLSServer * tls;     /* per-connection TLS engine; NULL for plaintext */
+  RHttpVhost * vhost;   /* SNI-selected vhost for this connection, or NULL */
 
   RHttpRequest * req;
   rssize bodysize;
@@ -356,6 +363,8 @@ r_http_server_free (RHttpServer * server)
     r_prng_unref (server->prng);
   if (server->client_trust != NULL)
     r_trust_store_unref (server->client_trust);
+  if (server->vhosts != NULL)
+    r_ptr_array_unref (server->vhosts);
   r_free (server);
 }
 
@@ -380,6 +389,7 @@ r_http_server_new (REvLoop * loop)
     ret->prng = NULL;
     ret->client_trust = NULL;
     ret->client_cert_mode = R_TLS_CLIENT_CERT_MODE_NONE;
+    ret->vhosts = NULL;
     ret->cur = NULL;
 
     R_LOG_INFO ("New HTTP server %p", ret);
@@ -592,6 +602,73 @@ r_http_tls_listener_free (rpointer data)
   r_free (l);
 }
 
+/* One SNI virtual host: a cert/key plus an optional per-host client-cert policy.
+ * @host is the match pattern (exact name or a leftmost-label "*" wildcard). */
+struct RHttpVhost {
+  rchar * host;
+  RCryptoCert * cert;
+  RCryptoKey * privkey;
+  /* Per-host mTLS policy. Each field is used only when its has_* flag is set;
+   * otherwise the connection inherits the whole-server policy, so adding a vhost
+   * never silently weakens a server-wide requirement. */
+  rboolean has_client_cert_mode;
+  RTLSClientCertMode client_cert_mode;
+  rboolean has_client_trust;
+  RTrustStore * client_trust;
+};
+
+static void
+r_http_vhost_free (rpointer data)
+{
+  RHttpVhost * v = data;
+  r_free (v->host);
+  r_crypto_cert_unref (v->cert);
+  r_crypto_key_unref (v->privkey);
+  if (v->client_trust != NULL)
+    r_trust_store_unref (v->client_trust);
+  r_free (v);
+}
+
+/* Look up the vhost for an SNI @name: exact matches win over wildcard patterns. */
+static RHttpVhost *
+r_http_server_vhost_lookup (RHttpServer * server, const rchar * name)
+{
+  rsize i, n;
+
+  if (server->vhosts == NULL || name == NULL)
+    return NULL;
+  n = r_ptr_array_size (server->vhosts);
+  for (i = 0; i < n; i++) {
+    RHttpVhost * v = r_ptr_array_get (server->vhosts, i);
+    if (r_strcasecmp (v->host, name) == 0)
+      return v;
+  }
+  for (i = 0; i < n; i++) {
+    RHttpVhost * v = r_ptr_array_get (server->vhosts, i);
+    if (v->host[0] == '*' && r_crypto_x509_host_match_dns (name, v->host))
+      return v;
+  }
+  return NULL;
+}
+
+/* Find a vhost by configured host (for dup-detection and the config setters).
+ * Case-insensitive to match r_http_server_vhost_lookup, since host names are. */
+static RHttpVhost *
+r_http_server_vhost_find (RHttpServer * server, const rchar * host)
+{
+  rsize i, n;
+
+  if (server->vhosts == NULL || host == NULL)
+    return NULL;
+  n = r_ptr_array_size (server->vhosts);
+  for (i = 0; i < n; i++) {
+    RHttpVhost * v = r_ptr_array_get (server->vhosts, i);
+    if (r_strcasecmp (v->host, host) == 0)
+      return v;
+  }
+  return NULL;
+}
+
 static rboolean
 r_http_client_ctx_tls_out (rpointer data, RBuffer * buf, rpointer session)
 {
@@ -643,12 +720,43 @@ r_http_client_ctx_tls_verify_peer (rpointer data,
     RCryptoCert * const * chain, ruint count)
 {
   RHttpClientCtx * ctx = data;
-  RTrustStore * trust = ctx->server->client_trust;
+  /* Verify against the SNI-selected vhost's trust store when it set one,
+   * otherwise the whole-server store (inherit / no vhost matched). */
+  RTrustStore * trust = (ctx->vhost != NULL && ctx->vhost->has_client_trust) ?
+      ctx->vhost->client_trust : ctx->server->client_trust;
 
   if (trust == NULL)
     return FALSE;
   return r_trust_store_verify (trust, chain, count, r_time_get_unix_time (),
       R_X509_EXT_KEY_USAGE_CLIENT_AUTH) == R_TRUST_OK;
+}
+
+/* SNI selection: when the requested host matches a configured vhost, install its
+ * cert + client-cert policy for this connection (verify_peer then uses the
+ * vhost's trust). No SNI or no match keeps the listener cert + whole-server
+ * policy already set in r_http_server_tcp_connection_ready_tls. */
+static RTLSError
+r_http_client_ctx_tls_sni (rpointer data, const rchar * name, rpointer session)
+{
+  RHttpClientCtx * ctx = data;
+  RHttpVhost * v;
+  RTLSClientCertMode mode;
+  RTLSError err;
+
+  if ((v = r_http_server_vhost_lookup (ctx->server, name)) == NULL)
+    return R_TLS_ERROR_OK;
+
+  /* The vhost's own mode if set, otherwise the whole-server one (inherit). */
+  mode = v->has_client_cert_mode ? v->client_cert_mode : ctx->server->client_cert_mode;
+
+  if ((err = r_tls_server_set_cert ((RTLSServer *) session, v->cert,
+          v->privkey)) != R_TLS_ERROR_OK)
+    return err;
+  if ((err = r_tls_server_set_client_cert_mode ((RTLSServer *) session,
+          mode)) != R_TLS_ERROR_OK)
+    return err;
+  ctx->vhost = v;
+  return R_TLS_ERROR_OK;
 }
 
 static const RTLSCallbacks g__r_http_tls_callbacks = {
@@ -692,6 +800,8 @@ r_http_server_tcp_connection_ready_tls (rpointer data,
       (ctx->tls = r_tls_server_new (&g__r_http_tls_callbacks, ctx, NULL)) != NULL &&
       r_tls_server_set_cert (ctx->tls, l->cert, l->privkey) == R_TLS_ERROR_OK &&
       r_tls_server_set_client_cert_mode (ctx->tls, server->client_cert_mode) == R_TLS_ERROR_OK &&
+      (server->vhosts == NULL ||
+          r_tls_server_set_server_name_cb (ctx->tls, r_http_client_ctx_tls_sni) == R_TLS_ERROR_OK) &&
       r_tls_server_start (ctx->tls, server->loop, server->prng) == R_TLS_ERROR_OK &&
       r_ev_tcp_recv_start (newtcp, NULL, r_http_client_ctx_tls_recv, ctx, NULL)) {
     R_LOG_TRACE ("%p: New TLS connection "R_EV_IO_FORMAT" on "R_EV_IO_FORMAT,
@@ -823,6 +933,71 @@ r_http_server_set_client_trust_store (RHttpServer * server, RTrustStore * store)
   if (server->client_trust != NULL)
     r_trust_store_unref (server->client_trust);
   server->client_trust = store;
+}
+
+rboolean
+r_http_server_add_vhost (RHttpServer * server, const rchar * host,
+    RCryptoCert * cert, RCryptoKey * privkey)
+{
+  RHttpVhost * v;
+
+  if (R_UNLIKELY (server == NULL || host == NULL || *host == '\0')) return FALSE;
+  if (R_UNLIKELY (cert == NULL || privkey == NULL)) {
+    R_LOG_ERROR ("%p: add_vhost needs a cert and key", server);
+    return FALSE;
+  }
+  if (R_UNLIKELY (r_http_server_vhost_find (server, host) != NULL)) {
+    R_LOG_ERROR ("%p: vhost '%s' already added", server, host);
+    return FALSE;
+  }
+
+  if (server->vhosts == NULL && (server->vhosts = r_ptr_array_new ()) == NULL)
+    return FALSE;
+  if ((v = r_mem_new0 (RHttpVhost)) == NULL)
+    return FALSE;
+  if ((v->host = r_strdup (host)) == NULL) {
+    r_free (v);
+    return FALSE;
+  }
+  v->cert = r_crypto_cert_ref (cert);
+  v->privkey = r_crypto_key_ref (privkey);
+  /* has_* flags default FALSE (r_mem_new0): the vhost inherits the whole-server
+   * client-cert policy until a per-vhost setter overrides it. */
+
+  r_ptr_array_add (server->vhosts, v, r_http_vhost_free);
+  return TRUE;
+}
+
+rboolean
+r_http_server_set_vhost_client_cert_mode (RHttpServer * server,
+    const rchar * host, RTLSClientCertMode mode)
+{
+  RHttpVhost * v;
+
+  if (R_UNLIKELY (server == NULL)) return FALSE;
+  if ((v = r_http_server_vhost_find (server, host)) == NULL)
+    return FALSE;
+  v->client_cert_mode = mode;
+  v->has_client_cert_mode = TRUE;
+  return TRUE;
+}
+
+rboolean
+r_http_server_set_vhost_client_trust_store (RHttpServer * server,
+    const rchar * host, RTrustStore * store)
+{
+  RHttpVhost * v;
+
+  if (R_UNLIKELY (server == NULL)) return FALSE;
+  if ((v = r_http_server_vhost_find (server, host)) == NULL)
+    return FALSE;
+  if (store != NULL)
+    r_trust_store_ref (store);
+  if (v->client_trust != NULL)
+    r_trust_store_unref (v->client_trust);
+  v->client_trust = store;
+  v->has_client_trust = TRUE;
+  return TRUE;
 }
 
 RSocketAddress *
