@@ -108,18 +108,35 @@ R_API rssize r_trust_store_add_pem_file (RTrustStore * store, const rchar * file
 /**
  * @brief Create a trust store populated from the operating system's CA bundle.
  *
- * On Unix the @c SSL_CERT_FILE (a single PEM bundle) and @c SSL_CERT_DIR (a
- * directory of PEM files) environment variables take precedence, in that order;
- * with neither set, the well-known bundle files and CA directories are probed in
- * turn and the first that yields at least one anchor wins. The result is a
+ * Windows (CryptoAPI), macOS (Security framework) and Android (the Java
+ * @c X509TrustManager over JNI) return a native-verifier store that delegates
+ * the decision to the OS rather than path-building with rlib's engine; on
+ * Android, call @ref r_trust_store_set_java_vm first. On other Unix the
+ * @c SSL_CERT_FILE (a single PEM bundle) and @c SSL_CERT_DIR (a directory of PEM
+ * files) environment variables take precedence, in that order; with neither set,
+ * the well-known bundle files and CA directories are probed in turn and the
+ * first that yields at least one anchor wins. The file-backed result is a
  * certs-backed store (as @ref r_trust_store_new_certs), so further anchors may
  * be added to it.
  *
- * @return A populated store the caller must unref, or @c NULL if no system
- *         trust source was found or the platform exposes no file-based CA
- *         bundle (e.g. Windows, where the native certificate store applies).
+ * @return A store the caller must unref, or @c NULL if no system trust source
+ *         was found (or, on Android, no JavaVM has been registered).
  */
 R_API RTrustStore * r_trust_store_new_system (void) R_ATTR_MALLOC;
+
+#if defined (R_OS_ANDROID)
+/**
+ * @brief Register the process @c JavaVM that @ref r_trust_store_new_system uses
+ * to reach the Android trust manager (Android only).
+ *
+ * Android exposes trust only through the Java @c X509TrustManager, so the native
+ * backend needs a @c JavaVM to obtain a @c JNIEnv. Call this once during startup,
+ * typically from the @c JNI_OnLoad of the @c .so that links rlib, before any
+ * @ref r_trust_store_new_system. @p vm is the @c JavaVM* (typed @c rpointer so
+ * the public header stays free of @c jni.h).
+ */
+R_API void r_trust_store_set_java_vm (rpointer vm);
+#endif
 
 /** @brief Length of an SPKI pin: the SHA-256 of a SubjectPublicKeyInfo. */
 #define R_TRUST_SPKI_PIN_SIZE  32

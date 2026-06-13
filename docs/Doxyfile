@@ -87,6 +87,7 @@ PREDEFINED              = R_API= \
                           R_ATTR_WARN_UNUSED= \
                           R_UNLIKELY(x)=x \
                           R_LIKELY(x)=x \
+                          R_OS_ANDROID \
                           RLIB_DOXYGEN
 
 # Paths shown in the generated docs are stripped of the build-system

@@ -272,7 +272,7 @@ RTEST_END;
 /* The file-based system trust backend covers Unix platforms without a native
  * verifier; Windows (CryptoAPI) and Darwin (Security framework) delegate to the
  * OS instead and are exercised by system_native_untrusted below. */
-#if defined (R_OS_UNIX) && !defined (R_OS_DARWIN)
+#if defined (R_OS_UNIX) && !defined (R_OS_DARWIN) && !defined (R_OS_ANDROID)
 /* r_trust_store_new_system honours $SSL_CERT_FILE and yields a store anchored to
  * the named bundle; a missing or certificate-less bundle yields NULL. */
 RTEST (rtruststore, system_env_file, RTEST_FAST | RTEST_SYSTEM)
@@ -369,3 +369,17 @@ RTEST (rtruststore, system_native_untrusted, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 #endif /* R_OS_WIN32 || R_OS_DARWIN */
+
+#if defined (R_OS_ANDROID)
+/* Android reaches trust only through the Java X509TrustManager, so the backend
+ * needs a process JavaVM registered via r_trust_store_set_java_vm. This bare
+ * native test binary has no VM, so new_system fails closed and returns NULL
+ * rather than a store that would reject every chain at verify time. The actual
+ * JNI delegation needs a real VM and is exercised by an instrumented test. */
+RTEST (rtruststore, system_android_requires_java_vm, RTEST_FAST | RTEST_SYSTEM)
+{
+  r_trust_store_set_java_vm (NULL);
+  r_assert_cmpptr (r_trust_store_new_system (), ==, NULL);
+}
+RTEST_END;
+#endif /* R_OS_ANDROID */

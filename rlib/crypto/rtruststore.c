@@ -40,6 +40,8 @@
 #elif defined (R_OS_DARWIN)
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
+#elif defined (R_OS_ANDROID)
+#include <jni.h>
 #endif
 
 /* A path no longer than this many certificates can be built; TLS chains are
@@ -258,8 +260,9 @@ r_trust_store_add_pem_file (RTrustStore * base, const rchar * filename)
 /* --- system trust: load the OS CA bundle / directory --------------------- */
 
 /* The file-based backend is for Unix platforms without a native verifier;
- * Darwin uses the Security framework below, not these probe lists. */
-#if defined (R_OS_UNIX) && !defined (R_OS_DARWIN)
+ * Darwin (Security framework) and Android (JNI) delegate to the OS below, not
+ * to these probe lists. */
+#if defined (R_OS_UNIX) && !defined (R_OS_DARWIN) && !defined (R_OS_ANDROID)
 /* Concatenated CA bundles, probed in order (first with anchors wins). */
 static const rchar * const g__r_trust_system_bundles[] = {
   "/etc/ssl/certs/ca-certificates.crt",   /* Debian, Ubuntu, Arch, ... */
@@ -303,7 +306,7 @@ r_trust_store_add_dir (RTrustStore * store, const rchar * dirpath)
 
 /* The native-verifier backends below hold no anchors of their own: the OS owns
  * the trust decision, so verify hands the presented chain to the platform. */
-#if defined (R_OS_WIN32) || defined (R_OS_DARWIN)
+#if defined (R_OS_WIN32) || defined (R_OS_DARWIN) || defined (R_OS_ANDROID)
 static void
 r_trust_system_free (RTrustStore * store)
 {
@@ -524,6 +527,172 @@ r_trust_system_new_darwin (void)
 }
 #endif /* R_OS_DARWIN */
 
+#if defined (R_OS_ANDROID)
+/* The app must hand rlib its JavaVM (typically from JNI_OnLoad) before the
+ * system trust store can be used: Android exposes trust only through the Java
+ * X509TrustManager, reached over JNI. */
+static JavaVM * g__r_trust_jvm = NULL;
+
+void
+r_trust_store_set_java_vm (rpointer vm)
+{
+  g__r_trust_jvm = (JavaVM *) vm;
+}
+
+/* Wrap @der (DER bytes, @len long) as a java.security.cert.X509Certificate via
+ * CertificateFactory; returns a local ref or NULL (with a pending exception). */
+static jobject
+r_trust_android_make_cert (JNIEnv * env, jobject cf, jmethodID gen,
+    jclass bais_cls, jmethodID bais_ctor, const ruint8 * der, rsize len)
+{
+  jbyteArray bytes;
+  jobject bais, cert;
+
+  if ((bytes = (*env)->NewByteArray (env, (jsize) len)) == NULL)
+    return NULL;
+  (*env)->SetByteArrayRegion (env, bytes, 0, (jsize) len, (const jbyte *) der);
+  if ((bais = (*env)->NewObject (env, bais_cls, bais_ctor, bytes)) == NULL) {
+    (*env)->DeleteLocalRef (env, bytes);
+    return NULL;
+  }
+  cert = (*env)->CallObjectMethod (env, cf, gen, bais);
+  (*env)->DeleteLocalRef (env, bytes);
+  (*env)->DeleteLocalRef (env, bais);
+  return cert;
+}
+
+/* Delegate validation to the platform default X509TrustManager, which applies
+ * the app's trust policy: the system anchors always, plus user / enterprise
+ * anchors when the app's network security config opts in. The verify date can't
+ * be pinned through this API, so @now is not honoured and the verdict is coarse
+ * (trusted or not). A structural JNI failure fails closed. */
+static RTrustResult
+r_trust_system_verify_android (RTrustStore * base, RCryptoCert * const * chain,
+    ruint count, ruint64 now, RX509ExtKeyUsage required_eku)
+{
+  JavaVM * vm = g__r_trust_jvm;
+  JNIEnv * env = NULL;
+  rboolean attached = FALSE;
+  RTrustResult ret = R_TRUST_INVALID;
+  jclass cf_cls, x509_cls, bais_cls, tmf_cls, x509tm_cls;
+  jmethodID m, bais_ctor;
+  jobject cf, tmf, x509tm = NULL;
+  jobjectArray jchain, tms;
+  jstring s;
+  ruint i;
+  jsize n, j;
+  (void) base;
+  (void) now;
+
+  if (vm == NULL)
+    return R_TRUST_INVALID;
+  if ((*vm)->GetEnv (vm, (void **) &env, JNI_VERSION_1_6) == JNI_EDETACHED) {
+    if ((*vm)->AttachCurrentThread (vm, &env, NULL) != JNI_OK)
+      return R_TRUST_INVALID;
+    attached = TRUE;
+  }
+  if (env == NULL)
+    return R_TRUST_INVALID;
+  if ((*env)->PushLocalFrame (env, (jsize) (count + 24)) != 0) {
+    if ((*env)->ExceptionCheck (env)) (*env)->ExceptionClear (env);
+    goto detach;
+  }
+
+  /* CertificateFactory cf = CertificateFactory.getInstance("X.509"); */
+  if ((cf_cls = (*env)->FindClass (env, "java/security/cert/CertificateFactory")) == NULL) goto pop;
+  if ((m = (*env)->GetStaticMethodID (env, cf_cls, "getInstance",
+          "(Ljava/lang/String;)Ljava/security/cert/CertificateFactory;")) == NULL) goto pop;
+  s = (*env)->NewStringUTF (env, "X.509");
+  cf = (*env)->CallStaticObjectMethod (env, cf_cls, m, s);
+  if ((*env)->ExceptionCheck (env) || cf == NULL) goto fail;
+  if ((m = (*env)->GetMethodID (env, cf_cls, "generateCertificate",
+          "(Ljava/io/InputStream;)Ljava/security/cert/Certificate;")) == NULL) goto pop;
+
+  /* X509Certificate[] chain, leaf first, built from the DER inputs. */
+  if ((x509_cls = (*env)->FindClass (env, "java/security/cert/X509Certificate")) == NULL) goto pop;
+  if ((bais_cls = (*env)->FindClass (env, "java/io/ByteArrayInputStream")) == NULL) goto pop;
+  if ((bais_ctor = (*env)->GetMethodID (env, bais_cls, "<init>", "([B)V")) == NULL) goto pop;
+  if ((jchain = (*env)->NewObjectArray (env, (jsize) count, x509_cls, NULL)) == NULL) goto pop;
+  for (i = 0; i < count; i++) {
+    rsize derlen;
+    ruint8 * der = r_crypto_cert_dup_data (chain[i], &derlen);
+    jobject cert;
+    if (der == NULL) goto pop;
+    cert = r_trust_android_make_cert (env, cf, m, bais_cls, bais_ctor, der, derlen);
+    r_free (der);
+    if ((*env)->ExceptionCheck (env) || cert == NULL) goto fail;
+    (*env)->SetObjectArrayElement (env, jchain, (jsize) i, cert);
+    (*env)->DeleteLocalRef (env, cert);
+  }
+
+  /* The default TrustManagerFactory's first X509TrustManager carries the app's
+   * trust policy (null KeyStore = platform default). */
+  if ((tmf_cls = (*env)->FindClass (env, "javax/net/ssl/TrustManagerFactory")) == NULL) goto pop;
+  if ((m = (*env)->GetStaticMethodID (env, tmf_cls, "getDefaultAlgorithm",
+          "()Ljava/lang/String;")) == NULL) goto pop;
+  s = (*env)->CallStaticObjectMethod (env, tmf_cls, m);
+  if ((*env)->ExceptionCheck (env) || s == NULL) goto fail;
+  if ((m = (*env)->GetStaticMethodID (env, tmf_cls, "getInstance",
+          "(Ljava/lang/String;)Ljavax/net/ssl/TrustManagerFactory;")) == NULL) goto pop;
+  tmf = (*env)->CallStaticObjectMethod (env, tmf_cls, m, s);
+  if ((*env)->ExceptionCheck (env) || tmf == NULL) goto fail;
+  if ((m = (*env)->GetMethodID (env, tmf_cls, "init", "(Ljava/security/KeyStore;)V")) == NULL) goto pop;
+  (*env)->CallVoidMethod (env, tmf, m, NULL);
+  if ((*env)->ExceptionCheck (env)) goto fail;
+  if ((m = (*env)->GetMethodID (env, tmf_cls, "getTrustManagers",
+          "()[Ljavax/net/ssl/TrustManager;")) == NULL) goto pop;
+  tms = (*env)->CallObjectMethod (env, tmf, m);
+  if ((*env)->ExceptionCheck (env) || tms == NULL) goto fail;
+  if ((x509tm_cls = (*env)->FindClass (env, "javax/net/ssl/X509TrustManager")) == NULL) goto pop;
+  n = (*env)->GetArrayLength (env, tms);
+  for (j = 0; j < n; j++) {
+    jobject tm = (*env)->GetObjectArrayElement (env, tms, j);
+    if (tm != NULL && (*env)->IsInstanceOf (env, tm, x509tm_cls)) { x509tm = tm; break; }
+    (*env)->DeleteLocalRef (env, tm);
+  }
+  if (x509tm == NULL) goto pop;
+
+  /* checkServerTrusted / checkClientTrusted throws on an untrusted chain. The
+   * authType is a placeholder (we are not in a handshake; the platform uses it
+   * only for legacy chain cleaning). */
+  if ((m = (*env)->GetMethodID (env, x509tm_cls,
+          (required_eku == R_X509_EXT_KEY_USAGE_CLIENT_AUTH) ? "checkClientTrusted" : "checkServerTrusted",
+          "([Ljava/security/cert/X509Certificate;Ljava/lang/String;)V")) == NULL) goto pop;
+  s = (*env)->NewStringUTF (env, "RSA");
+  (*env)->CallVoidMethod (env, x509tm, m, jchain, s);
+  ret = (*env)->ExceptionCheck (env) ? R_TRUST_UNTRUSTED : R_TRUST_OK;
+  goto pop;
+
+fail:
+  ret = R_TRUST_UNTRUSTED;
+pop:
+  if ((*env)->ExceptionCheck (env))
+    (*env)->ExceptionClear (env);
+  (*env)->PopLocalFrame (env, NULL);
+detach:
+  if (attached)
+    (*vm)->DetachCurrentThread (vm);
+  return ret;
+}
+
+static RTrustStore *
+r_trust_system_new_android (void)
+{
+  RTrustStore * store;
+
+  /* Without a JavaVM there is no way to reach the trust manager; fail here, as
+   * documented, rather than return a store that rejects every chain at verify. */
+  if (g__r_trust_jvm == NULL)
+    return NULL;
+
+  if ((store = r_mem_new0 (RTrustStore)) == NULL)
+    return NULL;
+  r_ref_init (store, r_trust_system_free);
+  store->verify = r_trust_system_verify_android;
+  return store;
+}
+#endif /* R_OS_ANDROID */
+
 RTrustStore *
 r_trust_store_new_system (void)
 {
@@ -531,6 +700,8 @@ r_trust_store_new_system (void)
   return r_trust_system_new_win32 ();
 #elif defined (R_OS_DARWIN)
   return r_trust_system_new_darwin ();
+#elif defined (R_OS_ANDROID)
+  return r_trust_system_new_android ();
 #elif defined (R_OS_UNIX)
   RTrustStore * store;
   const rchar * env;
