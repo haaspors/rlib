@@ -49,6 +49,15 @@
 
 #if defined (HAVE_POSIX_SOCKETS)
 #include <sys/socket.h>
+/* glibc pulls these in transitively via <sys/socket.h>/<netdb.h>; bionic does
+ * not, so the IPPROTO_* / IP_* / IPV6_* socket-option constants need them
+ * included explicitly. */
+#ifdef HAVE_NETINET_IN_H
+#include <netinet/in.h>
+#endif
+#ifdef HAVE_ARPA_INET_H
+#include <arpa/inet.h>
+#endif
 #ifdef HAVE_NETDB_H
 #include <netdb.h>
 #endif
