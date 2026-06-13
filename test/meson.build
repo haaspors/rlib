@@ -114,6 +114,11 @@ rlibtest = executable('rlibtest',
   include_directories : inc,
   dependencies : [ libm, libdl, libthread, librt ],
   link_with : librlib,
+  # On Android the .rtest-section walker can't run (bionic has no dlinfo before
+  # API 30), so the runner falls back to dlsym'ing the _r_test_sym* pointers --
+  # which only reach .dynsym if the executable is linked --export-dynamic. The
+  # other platforms locate the section directly and don't need it.
+  export_dynamic : host_machine.system() == 'android',
   install : false)
 
 test('rlib test', rlibtest)
