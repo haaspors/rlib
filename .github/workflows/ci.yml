@@ -226,9 +226,10 @@ jobs:
   android:
     name: Android NDK / ${{ matrix.abi }} / ${{ matrix.buildtype }}
     # Cross-compile each Android ABI with the NDK so the bionic build (no glibc,
-    # no /etc/ssl, restricted affinity) keeps compiling. Build-only: running the
-    # suite needs an emulator, tracked separately. armv7a is also the only 32-bit
-    # target in the matrix, so it guards the 32-bit pointer/time_t paths.
+    # no /etc/ssl, restricted affinity) keeps compiling. armv7a is the only
+    # 32-bit target in the matrix, so it guards the 32-bit pointer/time_t paths.
+    # The x86_64 cell additionally runs the suite on an emulator (the only ABI
+    # the x86_64 runner can execute); the ARM cells stay build-only.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -247,9 +248,36 @@ jobs:
         # wrappers (the cross files name aarch64-linux-android24-clang etc.).
         run: echo "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
       - name: Configure
-        run: meson setup build --cross-file cross/android-${{ matrix.abi }}.ini --buildtype=${{ matrix.buildtype }}
+        # x86_64 builds static so the emulator gets a self-contained binary (no
+        # librlib.so to push); the ARM cells build the default shared library.
+        run: meson setup build --cross-file cross/android-${{ matrix.abi }}.ini --buildtype=${{ matrix.buildtype }} ${{ matrix.abi == 'x86_64' && '-Ddefault_library=static' || '' }}
       - name: Build
         run: meson compile -C build
+      - name: Enable KVM
+        if: matrix.abi == 'x86_64'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run the suite on the emulator
+        if: matrix.abi == 'x86_64'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          disable-animations: true
+          # Push the self-contained binary and run it; bionic needs TMPDIR set
+          # (there is no /tmp on Android). The action runs each script line as a
+          # separate shell, so keep every step a single line. Require a non-zero
+          # pass count so a zero-test run cannot pass on "0 failed, 0 errors".
+          script: |
+            adb push build/test/rlibtest /data/local/tmp/rlibtest
+            adb shell chmod 755 /data/local/tmp/rlibtest
+            adb shell "cd /data/local/tmp && TMPDIR=/data/local/tmp ./rlibtest" 2>&1 | tee emu.log || true
+            tail -20 emu.log
+            grep -qE "[1-9][0-9]* passed, 0 failed, 0 errors" emu.log
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v7
