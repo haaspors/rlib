@@ -26,6 +26,9 @@ RTEST (rsys, cpuset, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+/* NUMA topology: Android restricts /sys node access and exposes no real NUMA,
+ * so node/nodeset/topology discovery doesn't work there. */
+#if !defined (R_OS_ANDROID)
 RTEST (rsys, cpuset_for_node, RTEST_FAST | RTEST_SYSTEM)
 {
   RBitset * cpuset;
@@ -144,6 +147,7 @@ RTEST (rsys, topology, RTEST_FAST | RTEST_SYSTEM)
   r_sys_topology_unref (topo);
 }
 RTEST_END;
+#endif /* !R_OS_ANDROID */
 
 RTEST (rsys, topology_node_capabilities, RTEST_FAST | RTEST_SYSTEM)
 {
