@@ -227,7 +227,8 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
   rpointer ret = NULL;
   rpointer sym = NULL;
 #ifdef HAVE_LINK_H
-  struct link_map * lmap;
+  /* NULL unless dlinfo fills it; bionic has <link.h> but no dlinfo. */
+  struct link_map * lmap = NULL;
 #endif
 
   if (R_UNLIKELY (mod == NULL)) return NULL;
@@ -238,7 +239,10 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
 #ifdef HAVE_DLINFO
   if (dlinfo (mod, RTLD_DI_LINKMAP, &lmap) == 0)
     sym = lmap->l_ld;
-#else
+#elif !defined (R_OS_ANDROID)
+  /* Where dlinfo is absent, treating the dlopen handle as a struct link_map is
+   * a glibc-ism: bionic's handle is opaque, so the deref crashes. Skip it on
+   * Android and fall through to dlsym / the caller's magic-symbol scan. */
   sym = ((struct link_map *)mod)->l_ld;
 #endif
 #endif
@@ -258,7 +262,7 @@ r_module_find_section (RMODULE mod, const rchar * name, rssize nsize,
       if (info.dli_fname != NULL && *info.dli_fname != 0)
         fn = r_strdup (info.dli_fname);
 #ifdef HAVE_LINK_H
-      else if (lmap->l_name != NULL && *lmap->l_name != 0)
+      else if (lmap != NULL && lmap->l_name != NULL && *lmap->l_name != 0)
         fn = r_strdup (lmap->l_name);
 #endif
       else
