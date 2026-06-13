@@ -31,6 +31,14 @@
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
+#if defined (R_OS_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <wincrypt.h>
+#endif
+
 /* A path no longer than this many certificates can be built; TLS chains are
  * tiny and this also caps the index bitmask used during path-building. */
 #define R_TRUST_MAX_CHAIN  16
@@ -286,12 +294,145 @@ r_trust_store_add_dir (RTrustStore * store, const rchar * dirpath)
   r_fs_dir_close (dir);
   return total;
 }
+#endif /* R_OS_UNIX */
+
+/* The native-verifier backends below hold no anchors of their own: the OS owns
+ * the trust decision, so verify hands the presented chain to the platform. */
+#if defined (R_OS_WIN32) || defined (R_OS_DARWIN)
+static void
+r_trust_system_free (RTrustStore * store)
+{
+  r_free (store);
+}
 #endif
+
+#if defined (R_OS_WIN32)
+/* Map the required leaf EKU to the CryptoAPI usage OID (NULL = any). */
+static LPCSTR
+r_trust_win32_eku_oid (RX509ExtKeyUsage eku)
+{
+  switch (eku) {
+    case R_X509_EXT_KEY_USAGE_CLIENT_AUTH: return szOID_PKIX_KP_CLIENT_AUTH;
+    case R_X509_EXT_KEY_USAGE_SERVER_AUTH: return szOID_PKIX_KP_SERVER_AUTH;
+    default:                               return NULL;
+  }
+}
+
+static RTrustResult
+r_trust_system_verify_win32 (RTrustStore * base, RCryptoCert * const * chain,
+    ruint count, ruint64 now, RX509ExtKeyUsage required_eku)
+{
+  HCERTSTORE extra;
+  PCCERT_CONTEXT leaf = NULL;
+  PCCERT_CHAIN_CONTEXT chainctx = NULL;
+  CERT_CHAIN_PARA chainpara;
+  LPCSTR ekuoid = r_trust_win32_eku_oid (required_eku);
+  LPSTR usageoids[1];
+  FILETIME ft;
+  ruint64 ticks;
+  ruint i;
+  RTrustResult ret = R_TRUST_UNTRUSTED;
+  (void) base;
+
+  if ((extra = CertOpenStore (CERT_STORE_PROV_MEMORY, X509_ASN_ENCODING,
+          (HCRYPTPROV_LEGACY) NULL, 0, NULL)) == NULL)
+    return R_TRUST_INVALID;
+
+  /* Load the presented chain (leaf first) into an in-memory store; the leaf is
+   * the certificate to build a chain for, the rest are candidate intermediates. */
+  for (i = 0; i < count; i++) {
+    rsize derlen;
+    ruint8 * der = r_crypto_cert_dup_data (chain[i], &derlen);
+    PCCERT_CONTEXT ctx = NULL;
+    if (der == NULL)
+      continue;
+    if (CertAddEncodedCertificateToStore (extra, X509_ASN_ENCODING, der,
+          (DWORD) derlen, CERT_STORE_ADD_ALWAYS, (i == 0) ? &leaf : &ctx) &&
+        ctx != NULL)
+      CertFreeCertificateContext (ctx);
+    r_free (der);
+  }
+  if (leaf == NULL) {
+    CertCloseStore (extra, 0);
+    return R_TRUST_INVALID;
+  }
+
+  /* now (Unix seconds) -> FILETIME (100ns ticks since 1601; epoch gap 11644473600s). */
+  ticks = ((ruint64) now + 11644473600ULL) * 10000000ULL;
+  ft.dwLowDateTime = (DWORD) (ticks & 0xffffffffULL);
+  ft.dwHighDateTime = (DWORD) (ticks >> 32);
+
+  ZeroMemory (&chainpara, sizeof (chainpara));
+  chainpara.cbSize = sizeof (chainpara);
+  chainpara.RequestedUsage.dwType = USAGE_MATCH_TYPE_AND;
+  if (ekuoid != NULL) {
+    usageoids[0] = (LPSTR) ekuoid;
+    chainpara.RequestedUsage.Usage.cUsageIdentifier = 1;
+    chainpara.RequestedUsage.Usage.rgpszUsageIdentifier = usageoids;
+  }
+
+  /* No revocation: the rlib and macOS backends don't do it, and it would add a
+   * network round-trip. Hostname is the application's concern, so the SSL policy
+   * runs with no server name. */
+  if (CertGetCertificateChain (NULL, leaf, &ft, extra, &chainpara, 0, NULL,
+        &chainctx)) {
+    DWORD err = chainctx->TrustStatus.dwErrorStatus;
+    if (err == CERT_TRUST_NO_ERROR) {
+      CERT_CHAIN_POLICY_PARA polpara;
+      CERT_CHAIN_POLICY_STATUS polstatus;
+      SSL_EXTRA_CERT_CHAIN_POLICY_PARA sslpara;
+
+      ZeroMemory (&sslpara, sizeof (sslpara));
+      sslpara.cbSize = sizeof (sslpara);
+      sslpara.dwAuthType = (required_eku == R_X509_EXT_KEY_USAGE_CLIENT_AUTH)
+          ? AUTHTYPE_CLIENT : AUTHTYPE_SERVER;
+      ZeroMemory (&polpara, sizeof (polpara));
+      polpara.cbSize = sizeof (polpara);
+      polpara.pvExtraPolicyPara = &sslpara;
+      ZeroMemory (&polstatus, sizeof (polstatus));
+      polstatus.cbSize = sizeof (polstatus);
+
+      if (CertVerifyCertificateChainPolicy (CERT_CHAIN_POLICY_SSL, chainctx,
+            &polpara, &polstatus))
+        ret = (polstatus.dwError == 0) ? R_TRUST_OK : R_TRUST_UNTRUSTED;
+      else
+        ret = R_TRUST_INVALID;
+    } else if (err & (CERT_TRUST_IS_NOT_TIME_VALID | CERT_TRUST_CTL_IS_NOT_TIME_VALID)) {
+      ret = R_TRUST_EXPIRED;
+    } else if (err & CERT_TRUST_IS_NOT_VALID_FOR_USAGE) {
+      ret = R_TRUST_BAD_USAGE;
+    } else {
+      ret = R_TRUST_UNTRUSTED;
+    }
+    CertFreeCertificateChain (chainctx);
+  } else {
+    ret = R_TRUST_INVALID;
+  }
+
+  CertFreeCertificateContext (leaf);
+  CertCloseStore (extra, 0);
+  return ret;
+}
+
+static RTrustStore *
+r_trust_system_new_win32 (void)
+{
+  RTrustStore * store;
+
+  if ((store = r_mem_new0 (RTrustStore)) == NULL)
+    return NULL;
+  r_ref_init (store, r_trust_system_free);
+  store->verify = r_trust_system_verify_win32;
+  return store;
+}
+#endif /* R_OS_WIN32 */
 
 RTrustStore *
 r_trust_store_new_system (void)
 {
-#if defined (R_OS_UNIX)
+#if defined (R_OS_WIN32)
+  return r_trust_system_new_win32 ();
+#elif defined (R_OS_UNIX)
   RTrustStore * store;
   const rchar * env;
   rssize added = 0;

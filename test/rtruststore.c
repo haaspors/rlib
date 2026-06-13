@@ -351,3 +351,20 @@ RTEST (rtruststore, system_probe, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 #endif /* R_OS_UNIX */
+
+#if defined (R_OS_WIN32)
+/* The native system verifier delegates to the OS. It rejects a complete chain
+ * whose self-signed root is not a system anchor (the test PKI is not), without
+ * the caller supplying any anchors. */
+RTEST (rtruststore, system_native_untrusted, RTEST_FAST | RTEST_SYSTEM)
+{
+  RTrustStore * store;
+
+  r_assert_cmpptr ((store = r_trust_store_new_system ()), !=, NULL);
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW,
+        R_X509_EXT_KEY_USAGE_SERVER_AUTH, rtest_leaf_root_pem, rtest_root_pem,
+        NULL), ==, R_TRUST_UNTRUSTED);
+  r_trust_store_unref (store);
+}
+RTEST_END;
+#endif /* R_OS_WIN32 */
