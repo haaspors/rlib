@@ -83,6 +83,15 @@ R_API RTLSClient * r_tls_client_new (const RTLSCallbacks * cb,
  */
 R_API RTLSError r_tls_client_set_cert (RTLSClient * client,
     RCryptoCert * cert, RCryptoKey * privkey);
+/**
+ * @brief Offer @p host in the ClientHello @c server_name (SNI) extension.
+ *
+ * Lets the server select a certificate (and policy) for the requested name --
+ * see @ref r_tls_server_get_server_name. Pass @c NULL to clear. Must be called
+ * before @ref r_tls_client_start. @p host is copied.
+ */
+R_API RTLSError r_tls_client_set_server_name (RTLSClient * client,
+    const rchar * host);
 /** @brief Override the client-random (testing / determinism). */
 R_API RTLSError r_tls_client_set_random (RTLSClient * client,
     const ruint8 clirandom[R_TLS_HELLO_RANDOM_BYTES]);

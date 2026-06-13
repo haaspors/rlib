@@ -98,6 +98,8 @@ struct RTLSClient {
   RCryptoKey * privkey;        /* own private key for mTLS, or NULL */
   rboolean cert_requested;     /* server sent a CertificateRequest */
 
+  rchar * server_name;         /* SNI host to offer in the ClientHello, or NULL */
+
   rboolean ecdhe;                  /* an ECDHE suite was negotiated */
   REcurveID ecdhe_curve;           /* the server-selected named group */
   RCryptoKey * ecdhe_key;          /* client ephemeral ECDH private key */
@@ -132,6 +134,7 @@ r_tls_client_free (RTLSClient * client)
     r_crypto_cert_unref (client->cert);
   if (client->privkey != NULL)
     r_crypto_key_unref (client->privkey);
+  r_free (client->server_name);
   if (client->ecdhe_key != NULL)
     r_crypto_key_unref (client->ecdhe_key);
   if (client->ecdhe_server_pub != NULL)
@@ -215,6 +218,22 @@ r_tls_client_set_cert (RTLSClient * client, RCryptoCert * cert, RCryptoKey * pri
     r_crypto_key_unref (client->privkey);
   client->cert = r_crypto_cert_ref (cert);
   client->privkey = r_crypto_key_ref (privkey);
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_client_set_server_name (RTLSClient * client, const rchar * host)
+{
+  if (R_UNLIKELY (client == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (client->state != R_TLS_CLIENT_INITIAL)) return R_TLS_ERROR_WRONG_STATE;
+  /* The name is copied verbatim into one ClientHello record; a DNS host name is
+   * at most 255 bytes (RFC 1035). Reject anything longer rather than risk the
+   * record buffer / overflow the 16-bit extension length fields. */
+  if (R_UNLIKELY (host != NULL && r_strlen (host) > 255)) return R_TLS_ERROR_INVAL;
+
+  r_free (client->server_name);
+  client->server_name = (host != NULL) ? r_strdup (host) : NULL;
 
   return R_TLS_ERROR_OK;
 }
@@ -406,6 +425,21 @@ r_tls_client_write_hs_ext_signature_algorithms (ruint8 * ptr)
   return 10;
 }
 
+/* server_name (SNI, RFC 6066): a ServerNameList with one host_name entry.
+ * Offered only when a name was set via r_tls_client_set_server_name. */
+static ruint16
+r_tls_client_write_hs_ext_server_name (ruint8 * ptr, const rchar * name)
+{
+  rsize namelen = r_strlen (name);
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_SERVER_NAME);
+  r_store_be16 (&ptr[2], (ruint16)(5 + namelen));    /* extension_data length */
+  r_store_be16 (&ptr[4], (ruint16)(3 + namelen));    /* ServerNameList length */
+  ptr[6] = 0;                                         /* NameType: host_name */
+  r_store_be16 (&ptr[7], (ruint16)namelen);          /* HostName length */
+  r_memcpy (&ptr[9], name, namelen);
+  return (ruint16)(9 + namelen);
+}
+
 static ruint16
 r_tls_client_write_hs_ext_use_srtp (ruint8 * ptr)
 {
@@ -487,6 +521,8 @@ r_tls_client_send_hello (RTLSClient * client)
     extsize += r_tls_client_write_hs_ext_supported_groups (ptr + 2 + extsize);
     extsize += r_tls_client_write_hs_ext_ec_point_formats (ptr + 2 + extsize);
     extsize += r_tls_client_write_hs_ext_signature_algorithms (ptr + 2 + extsize);
+    if (client->server_name != NULL)
+      extsize += r_tls_client_write_hs_ext_server_name (ptr + 2 + extsize, client->server_name);
     if (dtls)
       extsize += r_tls_client_write_hs_ext_use_srtp (ptr + 2 + extsize);
     r_store_be16 (ptr, extsize);
