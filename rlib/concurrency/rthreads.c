@@ -929,7 +929,13 @@ r_thread_get_affinity (const RThread * thread, RBitset * cpuset)
       return TRUE;
     }
   }
+#else
+  (void) thread;
+  (void) cpuset;
 #endif
+#else
+  (void) thread;
+  (void) cpuset;
 #endif
   return FALSE;
 }
@@ -983,7 +989,13 @@ r_thread_set_affinity (RThread * thread, const RBitset * cpuset)
     }
   }
   return TRUE;
+#else
+  (void) thread;
+  (void) cpuset;
 #endif
+#else
+  (void) thread;
+  (void) cpuset;
 #endif
   return FALSE;
 }
