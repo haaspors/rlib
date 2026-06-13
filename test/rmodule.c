@@ -10,7 +10,9 @@ RTEST (rmodule, self_open_close, RTEST_FAST)
 }
 RTEST_END;
 
-#if defined (__ELF__) || defined (__MACH__)
+/* find_section returns NULL on Android (bionic has no dlinfo before API 30, so
+ * the runner uses the dlsym fallback instead); don't assert it finds the section. */
+#if (defined (__ELF__) || defined (__MACH__)) && !defined (R_OS_ANDROID)
 RTEST (rmodule, find_section, RTEST_FAST)
 {
   RMODULE mod;

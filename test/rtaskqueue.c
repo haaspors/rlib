@@ -273,6 +273,8 @@ RTEST (rtaskqueue, cancel_task, RTEST_FAST)
 }
 RTEST_END;
 
+/* NUMA-pinned task groups depend on node topology, which Android doesn't expose. */
+#if !defined (R_OS_ANDROID)
 RTEST (rtaskqueue, group_numa_node, RTEST_FAST)
 {
   RTaskQueue * tq;
@@ -312,6 +314,7 @@ RTEST (rtaskqueue, pin_on_cpu_group_numa_node, RTEST_FAST)
   r_task_queue_unref (tq);
 }
 RTEST_END;
+#endif /* !R_OS_ANDROID */
 
 RTEST (rtaskqueue, pin_on_each_cpu, RTEST_FAST)
 {

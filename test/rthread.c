@@ -86,7 +86,8 @@ RTEST_F (rthread, new_with_affinity, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpptr ((t = r_thread_new_full ("rthread-test", cpuset,
           rthread_test_wait_thread_func, fixture)), !=, NULL);
   r_cond_wait (&fixture->cond, &fixture->mutex); /* Wait for thread to start. */
-#if defined (R_OS_LINUX)
+/* Android restricts sched_setaffinity, so affinity is a no-op there. */
+#if defined (R_OS_LINUX) && !defined (R_OS_ANDROID)
   r_assert (r_thread_get_affinity (t, cpuset));
   r_assert_cmpuint (r_bitset_popcount (cpuset), ==, 1);
   r_assert (r_bitset_is_bit_set (cpuset, first));
@@ -116,7 +117,8 @@ RTEST_F (rthread, get_name, RTEST_FAST)
 }
 RTEST_END;
 
-#ifndef R_OS_DARWIN
+/* Android restricts sched_{get,set}affinity for the app sandbox. */
+#if !defined (R_OS_DARWIN) && !defined (R_OS_ANDROID)
 RTEST_F (rthread, get_affinity, RTEST_FAST | RTEST_SYSTEM)
 {
   RThread * t;
