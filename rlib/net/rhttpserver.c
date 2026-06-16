@@ -615,6 +615,9 @@ struct RHttpVhost {
   RTLSClientCertMode client_cert_mode;
   rboolean has_client_trust;
   RTrustStore * client_trust;
+  /* Per-host cipher-suite preference (owned copy); NULL = library defaults. */
+  RTLSCipherSuite * ciphers;
+  rsize cipher_count;
 };
 
 static void
@@ -626,6 +629,7 @@ r_http_vhost_free (rpointer data)
   r_crypto_key_unref (v->privkey);
   if (v->client_trust != NULL)
     r_trust_store_unref (v->client_trust);
+  r_free (v->ciphers);
   r_free (v);
 }
 
@@ -759,8 +763,25 @@ r_http_client_ctx_tls_sni (rpointer data, const rchar * name, rpointer session)
   return R_TLS_ERROR_OK;
 }
 
+/* Offer the SNI-selected vhost's cipher preference, if it set one. The SNI
+ * callback runs before cipher negotiation, so ctx->vhost is already resolved
+ * here; with no per-vhost list (or no vhost) we fall back to the defaults. */
+static rboolean
+r_http_client_ctx_tls_prefer_ciphers (rpointer data, RTLSVersion ver,
+    RTLSCipherSuite * cs, rsize * count)
+{
+  RHttpClientCtx * ctx = data;
+  (void) ver;
+
+  if (ctx->vhost == NULL || ctx->vhost->ciphers == NULL)
+    return FALSE;
+  *count = MIN (*count, ctx->vhost->cipher_count);
+  r_memcpy (cs, ctx->vhost->ciphers, *count * sizeof (RTLSCipherSuite));
+  return TRUE;
+}
+
 static const RTLSCallbacks g__r_http_tls_callbacks = {
-  NULL,                              /* preferred_cipher_suites (defaults) */
+  r_http_client_ctx_tls_prefer_ciphers, /* preferred_cipher_suites (per-vhost) */
   NULL,                              /* handshake_done (appdata drives parsing) */
   r_http_client_ctx_tls_out,         /* out */
   r_http_client_ctx_tls_appdata,     /* appdata */
@@ -997,6 +1018,26 @@ r_http_server_set_vhost_client_trust_store (RHttpServer * server,
     r_trust_store_unref (v->client_trust);
   v->client_trust = store;
   v->has_client_trust = TRUE;
+  return TRUE;
+}
+
+rboolean
+r_http_server_set_vhost_cipher_suites (RHttpServer * server, const rchar * host,
+    const RTLSCipherSuite * suites, rsize count)
+{
+  RHttpVhost * v;
+  RTLSCipherSuite * copy = NULL;
+
+  if (R_UNLIKELY (server == NULL)) return FALSE;
+  if ((v = r_http_server_vhost_find (server, host)) == NULL)
+    return FALSE;
+  if (suites != NULL && count > 0 &&
+      (copy = r_memdup (suites, count * sizeof (RTLSCipherSuite))) == NULL)
+    return FALSE;
+
+  r_free (v->ciphers);
+  v->ciphers = copy;
+  v->cipher_count = (copy != NULL) ? count : 0;
   return TRUE;
 }
 

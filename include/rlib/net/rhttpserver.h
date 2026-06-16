@@ -177,6 +177,18 @@ R_API rboolean r_http_server_set_vhost_client_cert_mode (RHttpServer * server,
  */
 R_API rboolean r_http_server_set_vhost_client_trust_store (RHttpServer * server,
     const rchar * host, RTrustStore * store);
+/**
+ * @brief Set the cipher-suite preference (server order) for the vhost @p host,
+ * applied when a connection's SNI selects it.
+ *
+ * @p suites is copied (@p count entries). The negotiated suite is the server's
+ * first preference the client also offers and that the vhost's certificate key
+ * supports; an empty intersection fails the handshake. Pass @c NULL / @c 0 to
+ * clear it and fall back to the library defaults. @return @c FALSE if @p host is
+ * unknown (or on allocation failure).
+ */
+R_API rboolean r_http_server_set_vhost_cipher_suites (RHttpServer * server,
+    const rchar * host, const RTLSCipherSuite * suites, rsize count);
 
 /**
  * @brief The verified client certificate for the request currently being
