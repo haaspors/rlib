@@ -1350,6 +1350,39 @@ r_tls_server_nego_ecdhe_curve (RTLSServer * server, REcurveID * out)
   return FALSE;
 }
 
+/* Pull the SNI host_name out of the ClientHello into server->sni, before
+ * negotiation, so a server_name callback can select the cert (and per-host
+ * cipher preference) it drives. RFC 6066: ServerNameList<1..> of
+ * { NameType(1), HostName<1..> }; keep the first host_name entry. SNI is
+ * advisory, so a malformed list is ignored rather than fatal (bounds checked). */
+static void
+r_tls_server_parse_sni (RTLSServer * server)
+{
+  RTLSHelloExt hsext = R_TLS_HELLO_EXT_INIT;
+  RTLSError r;
+
+  for (r = r_tls_hello_msg_extension_first (&server->hello, &hsext);
+      r == R_TLS_ERROR_OK;
+      r = r_tls_hello_msg_extension_next (&server->hello, &hsext)) {
+    ruint16 listlen, namelen;
+
+    if (hsext.type != R_TLS_EXT_TYPE_SERVER_NAME)
+      continue;
+    if (hsext.len < 2)
+      break;
+    listlen = r_load_be16 (hsext.data);
+    if ((rsize) listlen + 2 <= hsext.len && listlen >= 3 &&
+        hsext.data[2] == 0 /* host_name */) {
+      namelen = r_load_be16 (hsext.data + 3);
+      if ((rsize) namelen + 3 <= (rsize) listlen) {
+        r_free (server->sni);
+        server->sni = r_strndup ((const rchar *) (hsext.data + 5), namelen);
+      }
+    }
+    break;
+  }
+}
+
 static RTLSError
 r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion verhi)
 {
@@ -1394,6 +1427,19 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   }
 
   R_LOG_DEBUG ("%p - ver %.4x", server, server->version);
+
+  /* Resolve SNI and let the application select the certificate / policy for the
+   * requested host now -- before cipher negotiation below -- so the chosen cert
+   * key and any per-host cipher preference (the preferred_cipher_suites callback,
+   * which sees the SNI from here on) drive suite selection. state is still
+   * R_TLS_SERVER_HELLO, so the callback may call r_tls_server_set_cert /
+   * _set_client_cert_mode. A callback error aborts the handshake. */
+  r_tls_server_parse_sni (server);
+  if (server->server_name_cb != NULL) {
+    RTLSError snierr = server->server_name_cb (server->userdata, server->sni, server);
+    if (snierr != R_TLS_ERROR_OK)
+      return snierr;
+  }
 
   if (R_UNLIKELY (server->hello.cslen == 0 || (server->hello.cslen & 1)))
     return R_TLS_ERROR_CORRUPT_RECORD;
@@ -1576,22 +1622,7 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
           return R_TLS_ERROR_ILLEGAL_PARAMETER;
         server->max_fragment = hsext.data[0];
         break;
-      case R_TLS_EXT_TYPE_SERVER_NAME:
-        /* RFC 6066: ServerNameList<1..> of { NameType(1), HostName<1..> }. Keep
-         * the first host_name entry. SNI is advisory, so a malformed list is
-         * ignored rather than fatal (bounds are still checked). */
-        if (hsext.len >= 2) {
-          ruint16 listlen = r_load_be16 (hsext.data);
-          if ((rsize) listlen + 2 <= hsext.len && listlen >= 3 &&
-              hsext.data[2] == 0 /* host_name */) {
-            ruint16 namelen = r_load_be16 (hsext.data + 3);
-            if ((rsize) namelen + 3 <= (rsize) listlen) {
-              r_free (server->sni);
-              server->sni = r_strndup ((const rchar *) (hsext.data + 5), namelen);
-            }
-          }
-        }
-        break;
+      /* server_name (SNI) is parsed earlier, in r_tls_server_parse_sni. */
       default:
         break;
     }
@@ -2121,14 +2152,9 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
         server, parser->version, server->hello.version);
     server->hellobuf = r_buffer_ref (parser->buf);
 
+    /* nego_hello resolves SNI and fires the server_name callback (cert / policy
+     * / per-host cipher selection) before choosing the cipher suite. */
     if ((err = r_tls_server_nego_hello (server, parser->version, server->hello.version)) == R_TLS_ERROR_OK) {
-      /* SNI is now known; let the app pick the cert / client-cert policy for the
-       * requested name before the server flight. state is still SERVER_HELLO, so
-       * the callback may call r_tls_server_set_cert / _set_client_cert_mode. */
-      if (server->server_name_cb != NULL)
-        err = server->server_name_cb (server->userdata, server->sni, server);
-    }
-    if (err == R_TLS_ERROR_OK) {
       RTLSError rr = r_tls_server_try_resume (server);
       if (rr == R_TLS_ERROR_OK)
         err = r_tls_server_change_state (server, R_TLS_SERVER_CHANGE_CIPHER);
