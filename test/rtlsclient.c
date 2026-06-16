@@ -555,6 +555,36 @@ RTEST_F (rtlsclient, sni_name_length_capped, RTEST_FAST)
 }
 RTEST_END;
 
+/* The SNI hook runs before cipher negotiation, so installing an ECDSA cert for
+ * the requested host makes the server negotiate an ECDHE_ECDSA suite (the client
+ * offers both ECDSA and RSA) -- i.e. the SNI-selected cert's key type drives the
+ * cipher choice. The fixture default cert is RSA, so without the early hook the
+ * suite would have been chosen against the wrong key. */
+RTEST_F (rtlsclient, sni_cert_key_type_drives_cipher, RTEST_FAST)
+{
+  r_assert_cmpptr ((fixture->sni_cert =
+      r_pem_parse_cert_from_data (testcertpem_ecdsa, -1)), !=, NULL);
+  r_assert_cmpptr ((fixture->sni_key =
+      r_pem_parse_key_from_data (testpkpem_ecdsa, -1, NULL, 0)), !=, NULL);
+
+  r_assert_cmpint (r_tls_server_set_server_name_cb (fixture->server,
+      r_tlsclient_test_sni), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_set_server_name (fixture->client,
+      "ecdsa.example.com"), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop,
+      fixture->prng), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop,
+      fixture->prng, R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert_cmpint (r_tls_client_get_cipher_suite (fixture->client)->key_exchange,
+      ==, R_KEY_EXCHANGE_ECDHE_ECDSA);
+}
+RTEST_END;
+
 RTEST_F (rtlsclient, tls_close_notify_client, RTEST_FAST)
 {
   r_test_tls_close_notify (fixture, R_TLS_VERSION_TLS_1_2, FALSE);

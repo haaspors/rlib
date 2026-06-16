@@ -125,13 +125,12 @@ typedef void (*RTLSClosedCb) (rpointer ctx, rpointer session);
  * configure this connection for the named host. Return @ref R_TLS_ERROR_OK to
  * proceed, or an error to abort the handshake. May be @c NULL.
  *
- * Applies to full handshakes only: a resumed (abbreviated) session reuses the
- * original session's certificate and verified peer, so a per-name policy is not
- * re-applied on resumption. If a per-name client-cert requirement must hold
- * across resumption, do not enable session tickets
- * (@ref r_tls_server_set_session_ticket_keys). Also keep the selected key's type
- * consistent with the offered one: the signature scheme is negotiated from the
- * cert set before this callback runs.
+ * Runs before cipher negotiation, so the selected certificate (its key type) and
+ * any per-connection cipher preference drive suite selection. Applies to full
+ * handshakes only: a resumed (abbreviated) session reuses the original session's
+ * certificate and verified peer, so a per-name policy is not re-applied on
+ * resumption. If a per-name client-cert requirement must hold across resumption,
+ * do not enable session tickets (@ref r_tls_server_set_session_ticket_keys).
  */
 typedef RTLSError (*RTLSServerNameCb) (rpointer ctx, const rchar * name, rpointer session);
 
