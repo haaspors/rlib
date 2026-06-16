@@ -40,6 +40,15 @@ static const RTLSCipherSuiteInfo g__r_cipher_suites[] = {
   { R_TLS_CS_RSA_WITH_AES_256_GCM_SHA384, "TLS-RSA-WITH-AES-256-GCM-SHA384",
     R_KEY_EXCHANGE_RSA, &g__r_crypto_cipher_aes_256_gcm, R_MSG_DIGEST_TYPE_NONE, R_MSG_DIGEST_TYPE_SHA384 },
 
+  /* TLS 1.3 (RFC 8446): AEAD + hash only; the key exchange is negotiated via
+   * key_share, so key_exchange is NULL (not bound by the suite). The hash drives
+   * the HKDF key schedule and the handshake transcript. ChaCha20-Poly1305
+   * (0x1303) awaits a Poly1305 implementation. */
+  { R_TLS_CS_AES_128_GCM_SHA256, "TLS-AES-128-GCM-SHA256",
+    R_KEY_EXCHANGE_NULL, &g__r_crypto_cipher_aes_128_gcm, R_MSG_DIGEST_TYPE_NONE, R_MSG_DIGEST_TYPE_SHA256 },
+  { R_TLS_CS_AES_256_GCM_SHA384, "TLS-AES-256-GCM-SHA384",
+    R_KEY_EXCHANGE_NULL, &g__r_crypto_cipher_aes_256_gcm, R_MSG_DIGEST_TYPE_NONE, R_MSG_DIGEST_TYPE_SHA384 },
+
   { R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256, "TLS-ECDHE-ECDSA-WITH-AES-128-CBC-SHA256",
     R_KEY_EXCHANGE_ECDHE_ECDSA, &g__r_crypto_cipher_aes_128_cbc, R_MSG_DIGEST_TYPE_SHA256, R_MSG_DIGEST_TYPE_SHA256 },
   { R_TLS_CS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA, "TLS-ECDHE-ECDSA-WITH-AES-128-CBC-SHA",
