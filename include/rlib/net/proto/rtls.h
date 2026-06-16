@@ -679,26 +679,6 @@ static inline RTLSSignatureScheme r_tls_cert_req_sign_scheme (const RTLSCertReq 
 { return (RTLSSignatureScheme) r_load_be16 (req->signscheme + n * sizeof (ruint16)); }
 /** @} */
 
-/** @brief TLS pseudo-random function: expand @p secret into @p dst, fed a @c NULL-terminated list of seed chunks. */
-typedef RTLSError (*RTLSPrfFunc) (ruint8 * dst, rsize dsize,
-    const ruint8 * secret, rsize secsize, ...);
-
-/** @brief TLS 1.0 / 1.1 PRF (MD5+SHA1) over a @c NULL-terminated seed list. */
-R_API RTLSError r_tls_1_0_prf (ruint8 * dst, rsize dsize,
-    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
-/** @brief TLS 1.2 PRF based on HMAC-SHA-224 over a @c NULL-terminated seed list. */
-R_API RTLSError r_tls_1_2_prf_sha224 (ruint8 * dst, rsize dsize,
-    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
-/** @brief TLS 1.2 PRF based on HMAC-SHA-256 over a @c NULL-terminated seed list. */
-R_API RTLSError r_tls_1_2_prf_sha256 (ruint8 * dst, rsize dsize,
-    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
-/** @brief TLS 1.2 PRF based on HMAC-SHA-384 over a @c NULL-terminated seed list. */
-R_API RTLSError r_tls_1_2_prf_sha384 (ruint8 * dst, rsize dsize,
-    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
-/** @brief TLS 1.2 PRF based on HMAC-SHA-512 over a @c NULL-terminated seed list. */
-R_API RTLSError r_tls_1_2_prf_sha512 (ruint8 * dst, rsize dsize,
-    const ruint8 * secret, rsize secsize, ...) R_ATTR_NULL_TERMINATED;
-
 
 /**
  * @brief Encrypt and MAC a TLS record buffer.
