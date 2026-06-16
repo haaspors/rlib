@@ -23,6 +23,7 @@
 #endif
 
 #include <rlib/net/proto/rtls.h>
+#include <rlib/net/proto/rtls12.h>
 #include <rlib/crypto/recurve.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rmsgdigest.h>
