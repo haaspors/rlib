@@ -955,6 +955,78 @@ RTEST (rhttpserver, vhost_host_case_insensitive, RTEST_FAST)
 }
 RTEST_END;
 
+/* A vhost can restrict its cipher suites: a client whose SNI selects it
+ * negotiates from that list (a static-RSA suite here) rather than the ECDHE
+ * default the listener would otherwise pick. */
+RTEST (rhttpserver, vhost_cipher_suites, RTEST_FAST | RTEST_SYSTEM)
+{
+  static const RTLSCipherSuite only[] = { R_TLS_CS_RSA_WITH_AES_128_GCM_SHA256 };
+  REvLoop * loop;
+  RClock * clock;
+  RHttpServer * srv;
+  RSocketAddress * addr;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RTestTLSClient c = { NULL, NULL, NULL, NULL, NULL, R_TLS_VERSION_UNKNOWN, NULL,
+      FALSE, FALSE };
+
+  r_assert_cmpptr ((clock = r_test_clock_new (FALSE)), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new_full (clock, NULL)), !=, NULL);
+  r_clock_unref (clock);
+
+  r_assert_cmpptr ((srv = r_http_server_new (loop)), !=, NULL);
+  r_assert (r_http_server_set_handler (srv, "/", -1,
+        r_test_http_simple_status_handler, RUINT_TO_POINTER (R_HTTP_STATUS_OK), NULL));
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 0)), !=, NULL);
+  r_assert (r_http_server_add_tls_listen_addr (srv, addr, cert, pk));
+  r_socket_address_unref (addr);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (rtest_leaf_root_pem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (rtest_leaf_root_key_pem, -1, NULL, 0)), !=, NULL);
+  r_assert (r_http_server_add_vhost (srv, "static.example.com", cert, pk));
+  r_assert (r_http_server_set_vhost_cipher_suites (srv, "static.example.com",
+        only, R_N_ELEMENTS (only)));
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_assert_cmpptr ((addr = r_http_server_get_local_address (srv)), !=, NULL);
+
+  r_assert_cmpptr ((c.prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((c.resp = r_buffer_new ()), !=, NULL);
+  r_assert_cmpptr ((c.tls = r_tls_client_new (&g_test_tls_client_cbs, &c, NULL)), !=, NULL);
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_client_set_server_name (c.tls, "static.example.com"));
+  c.loop = loop;
+  r_assert_cmpptr ((c.tcp = r_ev_tcp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert_cmpint (r_ev_tcp_connect (c.tcp, addr,
+        r_test_tls_client_connected, &c, NULL), >=, R_SOCKET_OK);
+
+  while (!c.got_response && !c.eos)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  r_assert (c.got_response);
+  r_assert_cmpptr (c.cipher, !=, NULL);
+  /* The default would be ECDHE-first; the vhost restricted it to static RSA. */
+  r_assert_cmpint (c.cipher->key_exchange, ==, R_KEY_EXCHANGE_RSA);
+
+  r_ev_tcp_close (c.tcp, NULL, NULL, NULL);
+  r_ev_tcp_unref (c.tcp);
+  r_tls_client_unref (c.tls);
+  r_buffer_unref (c.resp);
+  r_prng_unref (c.prng);
+  r_http_server_stop (srv, NULL, NULL, NULL);
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP);
+  r_http_server_unref (srv);
+  r_socket_address_unref (addr);
+  r_ev_loop_unref (loop);
+}
+RTEST_END;
+
 typedef struct {
   RHttpRequest * other;     /* a request that is not the one being handled */
   rboolean null_for_req;    /* get_peer_cert (server, req) was NULL */
