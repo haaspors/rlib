@@ -395,6 +395,12 @@ typedef enum {
   R_TLS_CS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256        = 0xccac, /* TLS & DTLS [RFC7905] */
   R_TLS_CS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256          = 0xccad, /* TLS & DTLS [RFC7905] */
   R_TLS_CS_RSA_PSK_WITH_CHACHA20_POLY1305_SHA256          = 0xccae, /* TLS & DTLS [RFC7905] */
+
+  /* TLS 1.3 (RFC 8446): the suite names only the AEAD + hash; the key exchange
+   * is negotiated separately (key_share), so these carry no "WITH" family. */
+  R_TLS_CS_AES_128_GCM_SHA256                             = 0x1301, /* TLS & DTLS [RFC8446] */
+  R_TLS_CS_AES_256_GCM_SHA384                             = 0x1302, /* TLS & DTLS [RFC8446] */
+  R_TLS_CS_CHACHA20_POLY1305_SHA256                       = 0x1303, /* TLS & DTLS [RFC8446] */
 } RTLSCipherSuite;
 
 /**
