@@ -1321,3 +1321,42 @@ RTEST (rtls, hello_ext_list_bounds, RTEST_FAST)
   r_assert_cmpuint (r_tls_hello_ext_sign_scheme_count (&ext), ==, 1);
 }
 RTEST_END;
+
+RTEST (rtls, hello_ext_supported_versions, RTEST_FAST)
+{
+  RTLSHelloExt ext = R_TLS_HELLO_EXT_INIT;
+  /* ClientHello form: uint8 list-length, then ProtocolVersion (uint16)*:
+   * { TLS 1.3, TLS 1.2 }. */
+  static const ruint8 ch[] = { 0x04, 0x03, 0x04, 0x03, 0x03 };
+  /* ServerHello / HelloRetryRequest form: a single selected version. */
+  static const ruint8 sh[] = { 0x03, 0x04 };
+  /* list-length prefix over-declaring relative to the extension length. */
+  static const ruint8 over[] = { 0xfe, 0x03, 0x04 };
+
+  ext.data = ch;
+  ext.len = sizeof (ch);
+  r_assert_cmpuint (r_tls_hello_ext_supported_versions_count (&ext), ==, 2);
+  r_assert_cmphex (r_tls_hello_ext_supported_version (&ext, 0), ==, R_TLS_VERSION_TLS_1_3);
+  r_assert_cmphex (r_tls_hello_ext_supported_version (&ext, 1), ==, R_TLS_VERSION_TLS_1_2);
+  r_assert (r_tls_hello_ext_supported_versions_contains (&ext, R_TLS_VERSION_TLS_1_3));
+  r_assert (r_tls_hello_ext_supported_versions_contains (&ext, R_TLS_VERSION_TLS_1_2));
+  r_assert (!r_tls_hello_ext_supported_versions_contains (&ext, R_TLS_VERSION_TLS_1_0));
+
+  ext.data = sh;
+  ext.len = sizeof (sh);
+  r_assert_cmphex (r_tls_hello_ext_selected_version (&ext), ==, R_TLS_VERSION_TLS_1_3);
+
+  /* An over-long list prefix never reads past the extension. */
+  ext.data = over;
+  ext.len = sizeof (over);
+  r_assert_cmpuint (r_tls_hello_ext_supported_versions_count (&ext), ==, 1);
+  r_assert (!r_tls_hello_ext_supported_versions_contains (&ext, R_TLS_VERSION_TLS_1_3));
+
+  /* Buffers shorter than the prefix yield empty / unknown, not an over-read. */
+  ext.len = 0;
+  r_assert_cmpuint (r_tls_hello_ext_supported_versions_count (&ext), ==, 0);
+  r_assert_cmphex (r_tls_hello_ext_selected_version (&ext), ==, R_TLS_VERSION_UNKNOWN);
+  r_assert (!r_tls_hello_ext_supported_versions_contains (&ext, R_TLS_VERSION_TLS_1_3));
+  r_assert (!r_tls_hello_ext_supported_versions_contains (NULL, R_TLS_VERSION_TLS_1_3));
+}
+RTEST_END;

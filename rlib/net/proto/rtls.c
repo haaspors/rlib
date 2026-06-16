@@ -1482,6 +1482,34 @@ r_tls_hello_ext_alpn_contains (const RTLSHelloExt * ext,
   return FALSE;
 }
 
+rboolean
+r_tls_hello_ext_supported_versions_contains (const RTLSHelloExt * ext,
+    RTLSVersion version)
+{
+  const ruint8 * p, * end;
+  ruint8 listlen;
+
+  if (R_UNLIKELY (ext == NULL))
+    return FALSE;
+  /* supported_versions: uint8 list_len, then ProtocolVersion (uint16)*.
+   * Keep every step inside the declared extension length. */
+  if (ext->len < sizeof (ruint8))
+    return FALSE;
+  listlen = ext->data[0];
+  if ((rsize) listlen + sizeof (ruint8) > ext->len)
+    return FALSE;
+
+  p = ext->data + sizeof (ruint8);
+  end = p + listlen;
+  while (p + sizeof (ruint16) <= end) {
+    if ((RTLSVersion) r_load_be16 (p) == version)
+      return TRUE;
+    p += sizeof (ruint16);
+  }
+
+  return FALSE;
+}
+
 RCryptoCert *
 r_tls_certificate_get_cert (const RTLSCertificate * cert)
 {
