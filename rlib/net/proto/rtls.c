@@ -1510,6 +1510,55 @@ r_tls_hello_ext_supported_versions_contains (const RTLSHelloExt * ext,
   return FALSE;
 }
 
+/* Read one KeyShareEntry { NamedGroup group; opaque key_exchange<1..2^16-1>; }
+ * at @p p, keeping the whole record inside [@p p, @p end). */
+static RTLSError
+r_tls_key_share_entry_read (const ruint8 * p, const ruint8 * end,
+    RTLSKeyShareEntry * entry)
+{
+  ruint16 klen;
+
+  if (R_UNLIKELY (p + 2 * sizeof (ruint16) > end))
+    return R_TLS_ERROR_EOB;
+  klen = r_load_be16 (p + sizeof (ruint16));
+  if (R_UNLIKELY (p + 2 * sizeof (ruint16) + klen > end))
+    return R_TLS_ERROR_EOB;
+
+  entry->start = p;
+  entry->group = (RTLSSupportedGroup) r_load_be16 (p);
+  entry->len = klen;
+  entry->key = p + 2 * sizeof (ruint16);
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_hello_ext_key_share_first (const RTLSHelloExt * ext, RTLSKeyShareEntry * entry)
+{
+  if (R_UNLIKELY (ext == NULL || entry == NULL)) return R_TLS_ERROR_INVAL;
+  /* KeyShareClientHello: uint16 client_shares_len, then KeyShareEntry*. */
+  if (R_UNLIKELY (ext->len < sizeof (ruint16))) return R_TLS_ERROR_EOB;
+  return r_tls_key_share_entry_read (ext->data + sizeof (ruint16),
+      ext->data + ext->len, entry);
+}
+
+RTLSError
+r_tls_hello_ext_key_share_next (const RTLSHelloExt * ext, RTLSKeyShareEntry * entry)
+{
+  if (R_UNLIKELY (ext == NULL || entry == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (entry->start == NULL || entry->key == NULL))
+    return r_tls_hello_ext_key_share_first (ext, entry);
+  return r_tls_key_share_entry_read (entry->key + entry->len,
+      ext->data + ext->len, entry);
+}
+
+RTLSError
+r_tls_hello_ext_key_share_server (const RTLSHelloExt * ext, RTLSKeyShareEntry * entry)
+{
+  if (R_UNLIKELY (ext == NULL || entry == NULL)) return R_TLS_ERROR_INVAL;
+  /* KeyShareServerHello carries a single entry with no list prefix. */
+  return r_tls_key_share_entry_read (ext->data, ext->data + ext->len, entry);
+}
+
 RCryptoCert *
 r_tls_certificate_get_cert (const RTLSCertificate * cert)
 {

@@ -1360,3 +1360,56 @@ RTEST (rtls, hello_ext_supported_versions, RTEST_FAST)
   r_assert (!r_tls_hello_ext_supported_versions_contains (NULL, R_TLS_VERSION_TLS_1_3));
 }
 RTEST_END;
+
+RTEST (rtls, hello_ext_key_share, RTEST_FAST)
+{
+  RTLSHelloExt ext = R_TLS_HELLO_EXT_INIT;
+  RTLSKeyShareEntry entry = R_TLS_KEY_SHARE_ENTRY_INIT;
+  /* ClientHello form: uint16 client_shares_len, then KeyShareEntry records.
+   * Two entries: X25519 (4-byte key) and SECP256R1 (2-byte key). */
+  static const ruint8 ch[] = {
+    0x00, 0x0e,                               /* client_shares length = 14 */
+    0x00, 0x1d, 0x00, 0x04, 0xaa, 0xbb, 0xcc, 0xdd, /* X25519, 4-byte key */
+    0x00, 0x17, 0x00, 0x02, 0xee, 0xff        /* SECP256R1, 2-byte key */
+  };
+  /* ServerHello form: a single entry, no list prefix. */
+  static const ruint8 sh[] = { 0x00, 0x1d, 0x00, 0x02, 0x12, 0x34 };
+  /* HelloRetryRequest form: just the selected group. */
+  static const ruint8 hrr[] = { 0x00, 0x17 };
+  /* key_exchange length over-declaring relative to the extension. */
+  static const ruint8 over[] = { 0x00, 0x06, 0x00, 0x1d, 0xff, 0xff, 0x00 };
+
+  ext.data = ch;
+  ext.len = sizeof (ch);
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_hello_ext_key_share_first (&ext, &entry));
+  r_assert_cmphex (entry.group, ==, R_TLS_SUPPORTED_GROUP_X25519);
+  r_assert_cmpuint (entry.len, ==, 4);
+  r_assert_cmphex (entry.key[0], ==, 0xaa);
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_hello_ext_key_share_next (&ext, &entry));
+  r_assert_cmphex (entry.group, ==, R_TLS_SUPPORTED_GROUP_SECP256R1);
+  r_assert_cmpuint (entry.len, ==, 2);
+  r_assert_cmphex (entry.key[0], ==, 0xee);
+  r_assert_cmpint (R_TLS_ERROR_EOB, ==, r_tls_hello_ext_key_share_next (&ext, &entry));
+
+  ext.data = sh;
+  ext.len = sizeof (sh);
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_hello_ext_key_share_server (&ext, &entry));
+  r_assert_cmphex (entry.group, ==, R_TLS_SUPPORTED_GROUP_X25519);
+  r_assert_cmpuint (entry.len, ==, 2);
+  r_assert_cmphex (entry.key[1], ==, 0x34);
+
+  ext.data = hrr;
+  ext.len = sizeof (hrr);
+  r_assert_cmphex (r_tls_hello_ext_key_share_group (&ext), ==, R_TLS_SUPPORTED_GROUP_SECP256R1);
+
+  /* An over-long key_exchange length never reads past the extension. */
+  ext.data = over;
+  ext.len = sizeof (over);
+  r_assert_cmpint (R_TLS_ERROR_EOB, ==, r_tls_hello_ext_key_share_first (&ext, &entry));
+
+  /* Buffers shorter than a prefix / header yield EOB, not an over-read. */
+  ext.len = 1;
+  r_assert_cmpint (R_TLS_ERROR_EOB, ==, r_tls_hello_ext_key_share_first (&ext, &entry));
+  r_assert_cmpint (R_TLS_ERROR_INVAL, ==, r_tls_hello_ext_key_share_first (NULL, &entry));
+}
+RTEST_END;
