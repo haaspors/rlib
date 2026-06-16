@@ -423,6 +423,16 @@ typedef struct {
 /** @brief Static initialiser for an empty @ref RTLSHelloExt. */
 #define R_TLS_HELLO_EXT_INIT                { NULL, 0, 0, NULL }
 
+/** @brief One parsed KeyShareEntry from a key_share extension (RFC 8446). */
+typedef struct {
+  const ruint8 *  start;   /**< @brief First octet of the entry (its group field). */
+  RTLSSupportedGroup group;/**< @brief Named group (@ref RTLSSupportedGroup). */
+  ruint16         len;     /**< @brief key_exchange length in bytes. */
+  const ruint8 *  key;     /**< @brief Pointer to the key_exchange octets. */
+} RTLSKeyShareEntry;
+/** @brief Static initialiser for an empty @ref RTLSKeyShareEntry. */
+#define R_TLS_KEY_SHARE_ENTRY_INIT          { NULL, 0, 0, NULL }
+
 /** @brief One certificate entry from a Certificate handshake message. */
 typedef struct {
   const ruint8 * start;    /**< @brief First octet of the entry (its length field). */
@@ -707,6 +717,31 @@ R_API rboolean r_tls_hello_ext_alpn_contains (const RTLSHelloExt * ext,
  */
 R_API rboolean r_tls_hello_ext_supported_versions_contains (const RTLSHelloExt * ext,
     RTLSVersion version);
+
+/** @name key_share extension accessors (RFC 8446)
+ *  @{ */
+/**
+ * @brief Read the first KeyShareEntry of a ClientHello key_share extension @p ext.
+ *
+ * Walks the @c KeyShareClientHello list (a uint16 length prefix then
+ * @c KeyShareEntry records) strictly within @p ext's declared length.
+ * @return @c R_TLS_ERROR_OK, or @c R_TLS_ERROR_EOB once the list is exhausted or
+ *  truncated, or @c R_TLS_ERROR_INVAL on a @c NULL argument.
+ */
+R_API RTLSError r_tls_hello_ext_key_share_first (const RTLSHelloExt * ext,
+    RTLSKeyShareEntry * entry);
+/** @brief Advance @p entry to the next ClientHello KeyShareEntry; restarts from
+ * the first entry when @p entry is empty. @see r_tls_hello_ext_key_share_first */
+R_API RTLSError r_tls_hello_ext_key_share_next (const RTLSHelloExt * ext,
+    RTLSKeyShareEntry * entry);
+/** @brief Read the single @c KeyShareEntry of a ServerHello key_share extension @p ext. */
+R_API RTLSError r_tls_hello_ext_key_share_server (const RTLSHelloExt * ext,
+    RTLSKeyShareEntry * entry);
+/** @brief The group a HelloRetryRequest key_share extension @p ext selects, or
+ * group @c 0 (unassigned) if malformed. */
+static inline RTLSSupportedGroup r_tls_hello_ext_key_share_group (const RTLSHelloExt * ext)
+{ return (RTLSSupportedGroup) (ext->len >= sizeof (ruint16) ? r_load_be16 (ext->data) : 0); }
+/** @} */
 
 
 /** @brief Decode the certificate entry @p cert into an @c RCryptoCert (caller owns the result). */
