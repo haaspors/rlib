@@ -58,6 +58,7 @@
 #include <rlib/net/proto/rsdp.h>
 #include <rlib/net/proto/rstun.h>
 #include <rlib/net/proto/rtls.h>
+#include <rlib/net/proto/rtls13.h>
 
 #endif /* __R_NET_H__ */
 
