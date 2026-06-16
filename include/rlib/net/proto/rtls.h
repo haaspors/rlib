@@ -668,6 +668,25 @@ static inline const ruint8 * r_tls_hello_ext_use_srtp_mki (const RTLSHelloExt * 
 { return &ext->data[sizeof (ruint16) + r_load_be16 (ext->data) + sizeof (ruint8)]; }
 /** @} */
 
+/** @name supported_versions extension accessors (RFC 8446)
+ *  @{ */
+/** @brief Number of versions a ClientHello supported_versions extension @p ext
+ * offers, clamped to what @p ext's length can hold (1-byte list prefix). */
+static inline ruint16 r_tls_hello_ext_supported_versions_count (const RTLSHelloExt * ext)
+{
+  if (ext->len < sizeof (ruint8)) return 0;
+  return MIN ((ruint16) (ext->data[0] / sizeof (ruint16)),
+      (ruint16) ((ext->len - sizeof (ruint8)) / sizeof (ruint16)));
+}
+/** @brief Return the @p n th version offered by a ClientHello supported_versions @p ext. */
+static inline RTLSVersion r_tls_hello_ext_supported_version (const RTLSHelloExt * ext, int n)
+{ return (RTLSVersion) r_load_be16 (ext->data + sizeof (ruint8) + n * sizeof (ruint16)); }
+/** @brief The single version a ServerHello / HelloRetryRequest selects in its
+ * supported_versions @p ext, or @c R_TLS_VERSION_UNKNOWN if malformed. */
+static inline RTLSVersion r_tls_hello_ext_selected_version (const RTLSHelloExt * ext)
+{ return ext->len >= sizeof (ruint16) ? (RTLSVersion) r_load_be16 (ext->data) : R_TLS_VERSION_UNKNOWN; }
+/** @} */
+
 /**
  * @brief Whether the ALPN extension @p ext advertises the protocol @p name.
  *
@@ -678,6 +697,16 @@ static inline const ruint8 * r_tls_hello_ext_use_srtp_mki (const RTLSHelloExt * 
  */
 R_API rboolean r_tls_hello_ext_alpn_contains (const RTLSHelloExt * ext,
     const ruint8 * name, ruint8 len);
+
+/**
+ * @brief Whether a ClientHello supported_versions extension @p ext offers @p version.
+ *
+ * Walks the @c ProtocolVersion list (RFC 8446) strictly within @p ext's declared
+ * length, so a malformed or over-long list never reads past the extension and
+ * simply yields @c FALSE.
+ */
+R_API rboolean r_tls_hello_ext_supported_versions_contains (const RTLSHelloExt * ext,
+    RTLSVersion version);
 
 
 /** @brief Decode the certificate entry @p cert into an @c RCryptoCert (caller owns the result). */
