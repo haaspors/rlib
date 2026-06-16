@@ -64,6 +64,50 @@ R_API rboolean r_kdf_pbkdf2 (RMsgDigestType prf,
     const ruint8 * salt, rsize saltlen,
     ruint iterations, ruint8 * out, rsize outlen);
 
+/**
+ * @brief HKDF-Extract (RFC 5869, section 2.2).
+ *
+ * Compute the pseudorandom key @c PRK = @c HMAC-Hash(salt, IKM) from input
+ * keying material @p ikm, condensing its entropy for @ref r_hkdf_expand.
+ *
+ * @param hash    Digest backing the HMAC (e.g. @c R_MSG_DIGEST_TYPE_SHA256).
+ * @param salt    Optional salt; may be @c NULL (with @p saltlen 0), which is
+ *                equivalent to a string of @c HashLen zeros.
+ * @param saltlen Length of @p salt in bytes.
+ * @param ikm     Input keying material; may be empty but not @c NULL.
+ * @param ikmlen  Length of @p ikm in bytes.
+ * @param prk     Destination for the PRK, exactly
+ *                @ref r_msg_digest_type_size (@p hash) bytes.
+ * @return @c TRUE on success; @c FALSE on invalid arguments (a required
+ *         @c NULL pointer or a @p hash with no fixed output size).
+ */
+R_API rboolean r_hkdf_extract (RMsgDigestType hash,
+    const ruint8 * salt, rsize saltlen,
+    const ruint8 * ikm, rsize ikmlen, ruint8 * prk);
+
+/**
+ * @brief HKDF-Expand (RFC 5869, section 2.3).
+ *
+ * Expand a pseudorandom key @p prk (typically from @ref r_hkdf_extract) and an
+ * optional @p info context into @p outlen output bytes.
+ *
+ * @param hash    Digest backing the HMAC; must match the one used to extract.
+ * @param prk     Pseudorandom key; should be at least @c HashLen bytes.
+ * @param prklen  Length of @p prk in bytes.
+ * @param info    Optional context/application info; may be @c NULL (with
+ *                @p infolen 0).
+ * @param infolen Length of @p info in bytes.
+ * @param out     Destination buffer for @p outlen bytes.
+ * @param outlen  Number of bytes to derive; must be > 0 and at most
+ *                @c 255 * @c HashLen.
+ * @return @c TRUE on success; @c FALSE on invalid arguments (a required
+ *         @c NULL pointer, zero or oversized @p outlen, or a @p hash with no
+ *         fixed output size).
+ */
+R_API rboolean r_hkdf_expand (RMsgDigestType hash,
+    const ruint8 * prk, rsize prklen,
+    const ruint8 * info, rsize infolen, ruint8 * out, rsize outlen);
+
 R_END_DECLS
 
 /** @} */
