@@ -167,7 +167,9 @@ typedef enum {
   R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO                     = 0x01, /* [RFC5246] */
   R_TLS_HANDSHAKE_TYPE_SERVER_HELLO                     = 0x02, /* [RFC5246] */
   R_TLS_HANDSHAKE_TYPE_HELLO_VERIFY_REQUEST             = 0x03, /* [RFC6347] */
-  R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET               = 0x04, /* [RFC4507] */
+  R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET               = 0x04, /* [RFC4507][RFC8446] */
+  R_TLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA                = 0x05, /* [RFC8446] */
+  R_TLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS             = 0x08, /* [RFC8446] */
   R_TLS_HANDSHAKE_TYPE_CERTIFICATE                      = 0x0b, /* [RFC5246] */
   R_TLS_HANDSHAKE_TYPE_SERVER_KEY_EXCHANGE              = 0x0c, /* [RFC5246] */
   R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST              = 0x0d, /* [RFC5246] */
@@ -178,6 +180,8 @@ typedef enum {
   R_TLS_HANDSHAKE_TYPE_CERTIFICATE_URL                  = 0x15, /* [RFC6066] */
   R_TLS_HANDSHAKE_TYPE_CERTIFICATE_STATUS               = 0x16, /* [RFC6066] */
   R_TLS_HANDSHAKE_TYPE_SUPPLEMENTAL_DATA                = 0x17, /* [RFC4680] */
+  R_TLS_HANDSHAKE_TYPE_KEY_UPDATE                       = 0x18, /* [RFC8446] */
+  R_TLS_HANDSHAKE_TYPE_MESSAGE_HASH                     = 0xfe, /* [RFC8446] */
 } RTLSHandshakeType;
 
 /** @brief TLS extension type (IANA TLS ExtensionType). */
@@ -211,6 +215,16 @@ typedef enum {
   R_TLS_EXT_TYPE_TOKEN_BINDING                          = 0x0018, /* (TEMPORARY - registered 2016-02-04, expires 2017-02-04) [draft-ietf-tokbind-negotiation] */
   R_TLS_EXT_TYPE_CACHED_INFO                            = 0x0019, /* [RFC7924] */
   R_TLS_EXT_TYPE_SESSION_TICKET                         = 0x0023, /* [RFC4507] */
+  R_TLS_EXT_TYPE_PRE_SHARED_KEY                         = 0x0029, /* [RFC8446] */
+  R_TLS_EXT_TYPE_EARLY_DATA                             = 0x002a, /* [RFC8446] */
+  R_TLS_EXT_TYPE_SUPPORTED_VERSIONS                     = 0x002b, /* [RFC8446] */
+  R_TLS_EXT_TYPE_COOKIE                                 = 0x002c, /* [RFC8446] */
+  R_TLS_EXT_TYPE_PSK_KEY_EXCHANGE_MODES                 = 0x002d, /* [RFC8446] */
+  R_TLS_EXT_TYPE_CERTIFICATE_AUTHORITIES                = 0x002f, /* [RFC8446] */
+  R_TLS_EXT_TYPE_OID_FILTERS                            = 0x0030, /* [RFC8446] */
+  R_TLS_EXT_TYPE_POST_HANDSHAKE_AUTH                    = 0x0031, /* [RFC8446] */
+  R_TLS_EXT_TYPE_SIGNATURE_ALGORITHMS_CERT              = 0x0032, /* [RFC8446] */
+  R_TLS_EXT_TYPE_KEY_SHARE                              = 0x0033, /* [RFC8446] */
   R_TLS_EXT_TYPE_RENEGOTIATION_INFO                     = 0xff01, /* [RFC5746] */
 } RTLSExtensionType;
 
