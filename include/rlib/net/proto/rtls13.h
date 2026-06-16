@@ -29,6 +29,8 @@
 
 #include <rlib/rtypes.h>
 #include <rlib/crypto/rmsgdigest.h>
+#include <rlib/crypto/rcipher.h>
+#include <rlib/net/proto/rtls.h>
 
 /**
  * @addtogroup r_tls_proto
@@ -76,6 +78,78 @@ R_API rboolean r_tls13_expand_label (RMsgDigestType hash,
 R_API rboolean r_tls13_derive_secret (RMsgDigestType hash,
     const ruint8 * secret, const rchar * label, rsize labellen,
     const ruint8 * transcript_hash, ruint8 * out);
+
+/** @brief AEAD authentication tag size for the 1.3 cipher suites, in bytes. */
+#define R_TLS13_AEAD_TAG_SIZE     16
+/** @brief Maximum AEAD record-nonce length, in bytes. */
+#define R_TLS13_AEAD_NONCE_MAX    16
+
+/**
+ * @brief Build the per-record AEAD nonce (RFC 8446, section 5.3).
+ *
+ * The 64-bit record @p seq is encoded big-endian, left-padded with zeros to
+ * @p ivlen bytes, and XORed with the static write-IV @p iv.
+ *
+ * @param iv     Static write-IV from the key schedule; @p ivlen bytes.
+ * @param ivlen  Nonce length (the AEAD's IV size); 1..@c R_TLS13_AEAD_NONCE_MAX.
+ * @param seq    Record sequence number.
+ * @param nonce  Destination for the @p ivlen-byte nonce.
+ * @return @c TRUE on success; @c FALSE on invalid arguments.
+ */
+R_API rboolean r_tls13_aead_nonce (const ruint8 * iv, rsize ivlen,
+    ruint64 seq, ruint8 * nonce);
+
+/**
+ * @brief Protect a 1.3 record (RFC 8446, section 5.2).
+ *
+ * Appends the inner content type to @p content to form the @c TLSInnerPlaintext,
+ * then AEAD-seals it with @p cipher under the nonce derived from @p iv and @p seq,
+ * the @c additional_data being the @c TLSCiphertext record header. The resulting
+ * @c encrypted_record (ciphertext followed by a @c R_TLS13_AEAD_TAG_SIZE tag) is
+ * written to @p out; the caller frames it behind a 5-byte record header.
+ *
+ * @param cipher     AEAD cipher keyed with the write traffic key.
+ * @param iv         Static write-IV; @p ivlen bytes.
+ * @param ivlen      Nonce length.
+ * @param seq        Record sequence number.
+ * @param type       Real content type of @p content (@ref RTLSContentType).
+ * @param content    Plaintext payload; @p contentlen bytes.
+ * @param contentlen Payload length.
+ * @param out        Destination for the @c encrypted_record.
+ * @param outsize    Capacity of @p out in bytes.
+ * @param outlen     Out: bytes written to @p out.
+ * @return @c TRUE on success; @c FALSE on invalid arguments, too-small @p out,
+ *  or a cipher failure.
+ */
+R_API rboolean r_tls13_record_protect (const RCryptoCipher * cipher,
+    const ruint8 * iv, rsize ivlen, ruint64 seq,
+    RTLSContentType type, const ruint8 * content, rsize contentlen,
+    ruint8 * out, rsize outsize, rsize * outlen);
+
+/**
+ * @brief Unprotect a 1.3 record (RFC 8446, section 5.2).
+ *
+ * AEAD-opens @p record (the @c encrypted_record), strips the optional trailing
+ * zero padding and the inner content-type byte, and yields the plaintext and its
+ * real content type.
+ *
+ * @param cipher  AEAD cipher keyed with the read traffic key.
+ * @param iv      Static read-IV; @p ivlen bytes.
+ * @param ivlen   Nonce length.
+ * @param seq     Record sequence number.
+ * @param record  The @c encrypted_record (ciphertext + tag); @p reclen bytes.
+ * @param reclen  Length of @p record.
+ * @param out     Destination for the recovered plaintext.
+ * @param outsize Capacity of @p out in bytes.
+ * @param outlen  Out: plaintext length written to @p out.
+ * @param type    Out: recovered content type (@ref RTLSContentType).
+ * @return @c TRUE on success; @c FALSE on invalid arguments, authentication
+ *  failure, an all-zero (typeless) plaintext, or too-small @p out.
+ */
+R_API rboolean r_tls13_record_unprotect (const RCryptoCipher * cipher,
+    const ruint8 * iv, rsize ivlen, ruint64 seq,
+    const ruint8 * record, rsize reclen,
+    ruint8 * out, rsize outsize, rsize * outlen, RTLSContentType * type);
 
 R_END_DECLS
 
