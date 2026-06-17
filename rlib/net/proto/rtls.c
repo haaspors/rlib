@@ -1135,6 +1135,74 @@ r_tls_parser_parse_certificate_next (const RTLSParser * parser,
   return R_TLS_ERROR_EOB;
 }
 
+/* Position @cert on a TLS 1.3 CertificateEntry. With @first (or an empty
+ * @cert) it skips the certificate_request_context and the certificate_list
+ * length and returns the first entry; otherwise it steps past the current
+ * entry's cert_data and its trailing Extension list to the next entry. */
+static RTLSError
+r_tls_certificate13_walk (const RTLSParser * parser, RTLSCertificate * cert,
+    rboolean first)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end, * entry;
+  RTLSError ret;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_CERTIFICATE))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  if (first || cert->start == NULL) {
+    ruint8 ctxlen;
+    /* certificate_request_context<0..2^8-1> */
+    if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint8)) > RPOINTER_TO_SIZE (end)))
+      return R_TLS_ERROR_CORRUPT_RECORD;
+    ctxlen = *ptr++;
+    ptr += ctxlen;
+    /* certificate_list<0..2^24-1> length */
+    if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + (24 / 8)) > RPOINTER_TO_SIZE (end)))
+      return R_TLS_ERROR_CORRUPT_RECORD;
+    ptr += (24 / 8);
+    entry = ptr;
+  } else {
+    /* Step over the current entry's cert_data, then its Extension list. */
+    const ruint8 * p = cert->cert + cert->len;
+    ruint16 extlen;
+    if (RPOINTER_TO_SIZE (p + sizeof (ruint16)) > RPOINTER_TO_SIZE (end))
+      return R_TLS_ERROR_EOB;
+    extlen = r_load_be16 (p);
+    entry = p + sizeof (ruint16) + extlen;
+  }
+
+  /* A CertificateEntry needs cert_data<3>, its bytes, and an extensions<2>. */
+  if (RPOINTER_TO_SIZE (entry + (24 / 8)) > RPOINTER_TO_SIZE (end))
+    return R_TLS_ERROR_EOB;
+  cert->start = entry;
+  cert->len = _r_parse_u24 (entry);
+  cert->cert = entry + (24 / 8);
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (cert->cert + cert->len + sizeof (ruint16)) >
+        RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_parser_parse_certificate13_first (const RTLSParser * parser,
+    RTLSCertificate * cert)
+{
+  if (R_UNLIKELY (cert == NULL)) return R_TLS_ERROR_INVAL;
+  return r_tls_certificate13_walk (parser, cert, TRUE);
+}
+
+RTLSError
+r_tls_parser_parse_certificate13_next (const RTLSParser * parser,
+    RTLSCertificate * cert)
+{
+  if (R_UNLIKELY (cert == NULL)) return R_TLS_ERROR_INVAL;
+  return r_tls_certificate13_walk (parser, cert, FALSE);
+}
+
 RTLSError
 r_tls_parser_parse_certificate_request (const RTLSParser * parser,
     RTLSCertReq * req)
@@ -1876,6 +1944,75 @@ r_tls_write_hs_certificate (rpointer data, rsize size, rsize * out,
 
   if (out != NULL)
     *out = need;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_write_hs_encrypted_extensions (rpointer data, rsize size, rsize * out,
+    const ruint8 * exts, ruint16 extslen)
+{
+  ruint8 * p = data;
+  rsize need = sizeof (ruint16) + (rsize)extslen;
+
+  if (R_UNLIKELY (data == NULL || (exts == NULL && extslen != 0)))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  r_store_be16 (p, extslen); p += sizeof (ruint16);
+  if (extslen > 0)
+    r_memcpy (p, exts, extslen);
+
+  if (out != NULL)
+    *out = need;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_write_hs_certificate13 (rpointer data, rsize size, rsize * out,
+    const ruint8 * der, rsize dersize)
+{
+  ruint8 * p = data;
+  /* One CertificateEntry = cert_data<3> | cert | extensions<2>. */
+  rsize entrylen = (der != NULL && dersize > 0) ? (3 + dersize + 2) : 0;
+  rsize need = 1 + 3 + entrylen;   /* context<1>=0 | certificate_list<3> | entries */
+
+  if (R_UNLIKELY (data == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  *p++ = 0x00;   /* certificate_request_context<0..2^8-1>: empty */
+
+  /* certificate_list<0..2^24-1> */
+  *p++ = (ruint8)((entrylen >> 16) & 0xff);
+  *p++ = (ruint8)((entrylen >>  8) & 0xff);
+  *p++ = (ruint8)((entrylen      ) & 0xff);
+  if (entrylen > 0) {
+    *p++ = (ruint8)((dersize >> 16) & 0xff);
+    *p++ = (ruint8)((dersize >>  8) & 0xff);
+    *p++ = (ruint8)((dersize      ) & 0xff);
+    r_memcpy (p, der, dersize); p += dersize;
+    r_store_be16 (p, 0);   /* extensions<0..2^16-1>: empty */
+  }
+
+  if (out != NULL)
+    *out = need;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_write_hs_finished (rpointer data, rsize size, rsize * out,
+    const ruint8 * verify_data, rsize vdlen)
+{
+  if (R_UNLIKELY (data == NULL || verify_data == NULL || vdlen == 0))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < vdlen)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  r_memcpy (data, verify_data, vdlen);
+
+  if (out != NULL)
+    *out = vdlen;
 
   return R_TLS_ERROR_OK;
 }

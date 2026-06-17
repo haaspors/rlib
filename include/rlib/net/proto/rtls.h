@@ -510,6 +510,22 @@ R_API RTLSError r_tls_parser_parse_handshake_full (const RTLSParser * parser,
 R_API RTLSError r_tls_parser_parse_hello (const RTLSParser * parser, RTLSHelloMsg * msg);
 /** @brief Parse the next certificate entry of a Certificate message into @p cert. */
 R_API RTLSError r_tls_parser_parse_certificate_next (const RTLSParser * parser, RTLSCertificate * cert);
+/**
+ * @brief Read the first certificate entry of a TLS 1.3 Certificate message.
+ *
+ * The 1.3 Certificate (RFC 8446, section 4.4.2) leads with a
+ * @c certificate_request_context and gives each @c CertificateEntry a trailing
+ * @c Extension list, so the 1.2 @ref r_tls_parser_parse_certificate_next would
+ * misparse it. @p cert points into the record buffer.
+ * @return @c R_TLS_ERROR_OK, @c R_TLS_ERROR_EOB once the list is exhausted, or
+ *  an error on a malformed message.
+ */
+R_API RTLSError r_tls_parser_parse_certificate13_first (const RTLSParser * parser,
+    RTLSCertificate * cert);
+/** @brief Advance @p cert to the next TLS 1.3 CertificateEntry, skipping the
+ * current entry's extensions. @see r_tls_parser_parse_certificate13_first */
+R_API RTLSError r_tls_parser_parse_certificate13_next (const RTLSParser * parser,
+    RTLSCertificate * cert);
 /** @brief Parse the current record as a CertificateRequest into @p req. */
 R_API RTLSError r_tls_parser_parse_certificate_request (const RTLSParser * parser, RTLSCertReq * req);
 /**
@@ -955,6 +971,48 @@ R_API RTLSError r_tls_write_hs_certificate (rpointer buf, rsize size, rsize * ou
     const ruint8 * der, rsize dersize);
 /** @brief DTLS alias for @ref r_tls_write_hs_certificate. */
 #define r_dtls_write_hs_certificate r_tls_write_hs_certificate
+
+/**
+ * @brief Write an EncryptedExtensions handshake-message body (RFC 8446, 4.3.1).
+ * @param buf Destination buffer.
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written.
+ * @param exts Concatenated extensions, or @c NULL for an empty list.
+ * @param extslen Length of @p exts in bytes (0 for an empty list).
+ */
+R_API RTLSError r_tls_write_hs_encrypted_extensions (rpointer buf, rsize size,
+    rsize * out, const ruint8 * exts, ruint16 extslen);
+
+/**
+ * @brief Write a TLS 1.3 Certificate handshake-message body (RFC 8446, 4.4.2).
+ *
+ * Emits an empty @c certificate_request_context and a @c certificate_list of a
+ * single end-entity @p der entry with an empty @c Extension list (or an empty
+ * list when @p der is @c NULL). Distinct from the 1.2
+ * @ref r_tls_write_hs_certificate, which has neither the context nor per-entry
+ * extensions.
+ * @param buf Destination buffer.
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written.
+ * @param der DER-encoded certificate, or @c NULL for an empty Certificate.
+ * @param dersize Length of @p der in bytes.
+ */
+R_API RTLSError r_tls_write_hs_certificate13 (rpointer buf, rsize size, rsize * out,
+    const ruint8 * der, rsize dersize);
+
+/**
+ * @brief Write a Finished handshake-message body (RFC 8446, 4.4.4).
+ *
+ * The body is the @p verify_data verbatim (its length is the cipher-suite hash
+ * length); the caller frames the handshake header.
+ * @param buf Destination buffer.
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written.
+ * @param verify_data The Finished verify_data.
+ * @param vdlen Length of @p verify_data in bytes.
+ */
+R_API RTLSError r_tls_write_hs_finished (rpointer buf, rsize size, rsize * out,
+    const ruint8 * verify_data, rsize vdlen);
 
 /**
  * @brief Write an ECDHE ServerKeyExchange handshake-message body into @p buf.
