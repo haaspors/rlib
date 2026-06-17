@@ -679,6 +679,145 @@ RTEST (rrsa, sign_verify_hash_roundtrip, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrsa, pss_sign_verify_roundtrip, RTEST_FAST)
+{
+  /* RSASSA-PSS round-trip (sLen = hLen, MGF1-SHA256) on a 1024-bit key, both via
+   * the explicit entry points and via the r_crypto_key_* dispatch with the key's
+   * padding set to PKCS#1 v2.1. PSS is randomized, so two signatures over the
+   * same digest differ yet both verify. */
+  rmpint n, e, d;
+  RCryptoKey * key;
+  RPrng * prng;
+  ruint8 hash[32];
+  ruint8 sig1[128], sig2[128];
+  rsize sigsize1 = sizeof (sig1), sigsize2 = sizeof (sig2);
+  rsize i;
+
+  for (i = 0; i < sizeof (hash); i++)
+    hash[i] = (ruint8) (i * 7 + 1);
+
+  r_mpint_init_str (&n,
+      "0x00aa18aba43b50deef38598faf87d2ab634e4571c130a9bca7b878267414faab8b47"
+      "1bd8965f5c9fc3818485eaf529c26246f3055064a8de19c8c338be5496cbaeb059dc0b"
+      "358143b44a35449eb264113121a455bd7fde3fac919e94b56fb9bb4f651cdb23ead439"
+      "d6cd523eb08191e75b35fd13a7419b3090f24787bd4f4e1967", NULL, 16);
+  r_mpint_init_str (&d,
+      "0x1628e4a39ebea86c8df0cd11572691017cfefb14ea1c12e1dedc7856032dad0f9612"
+      "00a38684f0a36dca30102e2464989d19a805933794c7d329ebc890089d3c4c6f602766"
+      "e5d62add74e82e490bbf92f6a482153853031be2844a700557b97673e727cd1316d3e6"
+      "fa7fc991d4227366ec552cbe90d367ef2e2e79fe66d26311", NULL, 16);
+  r_mpint_init_str (&e, "65537", NULL, 10);
+
+  r_assert_cmpptr ((key = r_rsa_priv_key_new (&n, &e, &d)), !=, NULL);
+  r_assert_cmpptr ((prng = r_rand_prng_new ()), !=, NULL);
+
+  r_assert_cmpuint (r_rsa_pss_sign_hash (key, prng, R_MSG_DIGEST_TYPE_SHA256,
+        hash, sizeof (hash), sig1, &sigsize1), ==, R_CRYPTO_OK);
+  r_assert_cmpuint (sigsize1, ==, 128);
+  r_assert_cmpuint (r_rsa_pss_verify_hash (key, R_MSG_DIGEST_TYPE_SHA256,
+        hash, sizeof (hash), sig1, sigsize1), ==, R_CRYPTO_OK);
+
+  /* A fresh signature uses a fresh salt: different bytes, still valid. */
+  r_assert_cmpuint (r_rsa_pss_sign_hash (key, prng, R_MSG_DIGEST_TYPE_SHA256,
+        hash, sizeof (hash), sig2, &sigsize2), ==, R_CRYPTO_OK);
+  r_assert (r_memcmp (sig1, sig2, sizeof (sig1)) != 0);
+  r_assert_cmpuint (r_rsa_pss_verify_hash (key, R_MSG_DIGEST_TYPE_SHA256,
+        hash, sizeof (hash), sig2, sigsize2), ==, R_CRYPTO_OK);
+
+  /* A flipped signature byte fails. */
+  sig1[64] ^= 0x01;
+  r_assert_cmpuint (r_rsa_pss_verify_hash (key, R_MSG_DIGEST_TYPE_SHA256,
+        hash, sizeof (hash), sig1, sigsize1), ==, R_CRYPTO_VERIFY_FAILED);
+  sig1[64] ^= 0x01;
+
+  /* A different digest fails. */
+  hash[0] ^= 0x01;
+  r_assert_cmpuint (r_rsa_pss_verify_hash (key, R_MSG_DIGEST_TYPE_SHA256,
+        hash, sizeof (hash), sig1, sigsize1), ==, R_CRYPTO_VERIFY_FAILED);
+  hash[0] ^= 0x01;
+
+  /* Same path through the algorithm dispatch (padding = PKCS#1 v2.1 = PSS). */
+  r_assert (r_rsa_priv_key_set_padding (key, R_RSA_PADDING_PKCS1_V21));
+  sigsize1 = sizeof (sig1);
+  r_assert_cmpuint (r_crypto_key_sign (key, prng, R_MSG_DIGEST_TYPE_SHA256,
+        hash, sizeof (hash), sig1, &sigsize1), ==, R_CRYPTO_OK);
+  r_assert_cmpuint (r_crypto_key_verify (key, R_MSG_DIGEST_TYPE_SHA256,
+        hash, sizeof (hash), sig1, sigsize1), ==, R_CRYPTO_OK);
+
+  r_mpint_clear (&n);
+  r_mpint_clear (&d);
+  r_mpint_clear (&e);
+
+  r_prng_unref (prng);
+  r_crypto_key_unref (key);
+}
+RTEST_END;
+
+RTEST (rrsa, pss_verify_openssl_kat, RTEST_FAST)
+{
+  /* Interop known-answer: a SHA-256 RSASSA-PSS signature produced by OpenSSL 3
+   * (rsa_pss_saltlen:digest) over a 2048-bit key. Verifying foreign bytes pins
+   * the MGF1 / salt-length / encoding to be wire-compatible -- something a
+   * self-consistent round-trip cannot catch. Only the public key is needed. */
+  static const ruint8 mhash[32] = {
+      0x90, 0xec, 0x7d, 0x20, 0xf6, 0xc5, 0x32, 0x3a, 0x3a, 0x10, 0x13, 0x1b,
+      0x89, 0x3d, 0x04, 0x3a, 0xd1, 0x84, 0xc2, 0x75, 0xe7, 0x02, 0xed, 0x4f,
+      0x2d, 0x6a, 0xa9, 0xd3, 0x47, 0x8d, 0x14, 0x64 };
+  static const ruint8 sig[256] = {
+      0x71, 0x5a, 0xbf, 0x4e, 0x4a, 0xde, 0xaf, 0x10, 0xef, 0x4d, 0x1d, 0xd5,
+      0xd6, 0xb5, 0xc1, 0xc7, 0xb5, 0xa0, 0x32, 0xa2, 0x2f, 0xc1, 0x5c, 0xd4,
+      0x27, 0xa3, 0x48, 0x50, 0xd2, 0xe1, 0x87, 0xfc, 0x35, 0xa4, 0x2c, 0x9c,
+      0x70, 0x1b, 0x56, 0x70, 0x69, 0x61, 0xd6, 0x08, 0xdd, 0x5f, 0x87, 0xc2,
+      0x38, 0xc8, 0x92, 0x2f, 0x28, 0x3c, 0x66, 0x34, 0x9f, 0xd0, 0x6d, 0x58,
+      0xaf, 0x60, 0x6e, 0x92, 0xf9, 0x0f, 0x62, 0x86, 0xd4, 0x26, 0x99, 0x37,
+      0x9c, 0x90, 0x33, 0x39, 0x80, 0x66, 0xa1, 0x21, 0x18, 0x38, 0xdb, 0xea,
+      0xf7, 0x2a, 0x65, 0x95, 0x91, 0x22, 0x32, 0x2f, 0x2f, 0xdb, 0x8c, 0x77,
+      0xee, 0x45, 0x20, 0x87, 0x8d, 0xe3, 0xa8, 0xf5, 0xa7, 0x46, 0xe0, 0x5b,
+      0xed, 0x30, 0xd1, 0x40, 0x84, 0x74, 0x49, 0x2e, 0x23, 0xc6, 0xe7, 0xe7,
+      0x7b, 0x69, 0xa8, 0x41, 0x8c, 0x3a, 0xe7, 0xb5, 0xcf, 0xf3, 0x38, 0xf6,
+      0x28, 0x09, 0xe1, 0x32, 0x9f, 0xaf, 0x9f, 0xd8, 0x5c, 0xb5, 0xe6, 0x60,
+      0x12, 0x2c, 0xbc, 0x78, 0xb2, 0x0a, 0xb1, 0xb5, 0x14, 0x5d, 0xe0, 0xdd,
+      0xbd, 0xfb, 0x5d, 0xf7, 0x22, 0x31, 0x0b, 0x69, 0x8f, 0x7c, 0x61, 0xa8,
+      0x5a, 0x2d, 0x95, 0xf7, 0x6a, 0xcc, 0x77, 0x2a, 0x58, 0x50, 0xc7, 0xf3,
+      0xb2, 0x92, 0x65, 0xd0, 0xfc, 0x70, 0x6c, 0x28, 0xbc, 0x87, 0xc4, 0xb1,
+      0xa7, 0xb7, 0x68, 0xa9, 0x37, 0x1c, 0xfd, 0x18, 0x7a, 0xb7, 0xb9, 0x60,
+      0x03, 0xdf, 0x3e, 0x3b, 0x57, 0xf4, 0x4f, 0x42, 0x93, 0xfd, 0x89, 0x5a,
+      0xd4, 0xae, 0xc9, 0x12, 0x20, 0x97, 0x86, 0xdd, 0x84, 0xcc, 0x1d, 0x70,
+      0xc5, 0xd4, 0x97, 0xbf, 0x3c, 0x9f, 0x22, 0x35, 0x7b, 0x26, 0xa6, 0xfb,
+      0x78, 0x40, 0x0f, 0x2c, 0x8e, 0x61, 0xb7, 0xc7, 0xb6, 0x87, 0xd1, 0x6b,
+      0x7c, 0x51, 0xbd, 0x1e };
+  rmpint n, e;
+  RCryptoKey * pub;
+  ruint8 bad[32];
+
+  r_mpint_init_str (&n,
+      "0xC405FBFCA050EA5F8321D3853A52730080BF088B3BD0316F565E61E3BCAA40EA"
+      "380AB0706FB477A3EDE56A296738A0F57E4CD498C24CB4B333041DBDC0B5E84BF"
+      "910ADDEC7D18177F977CA36DBA959485AAF9027A19347266ED9696E57C6AAAAD"
+      "B3D1BAFD149D80346BD396012CAFFD6AD01CC6B16819944741089CAA159AD5E2"
+      "074FEDCDEB5AE8B14888676B983060FDFF02F22CFDBA4DD3BB5BDA25695EE5F4E"
+      "5D2CCC2C79CE57460D02443EB3470DE7580A39B83FDFEE9A93F54797B6199FB7"
+      "FD48DA5041FF807B28A51F0C694D9CAC8EE8472D02D19973061F6E8BEDF3C2D8"
+      "46B63631869D7DFA7156904DA41784CD4039A8E6299EAB4D0B2FA20A53A6AD", NULL, 16);
+  r_mpint_init_str (&e, "65537", NULL, 10);
+
+  r_assert_cmpptr ((pub = r_rsa_pub_key_new (&n, &e)), !=, NULL);
+
+  r_assert_cmpuint (r_rsa_pss_verify_hash (pub, R_MSG_DIGEST_TYPE_SHA256,
+        mhash, sizeof (mhash), sig, sizeof (sig)), ==, R_CRYPTO_OK);
+
+  /* A different digest must not verify against this signature. */
+  r_memcpy (bad, mhash, sizeof (bad));
+  bad[0] ^= 0x01;
+  r_assert_cmpuint (r_rsa_pss_verify_hash (pub, R_MSG_DIGEST_TYPE_SHA256,
+        bad, sizeof (bad), sig, sizeof (sig)), ==, R_CRYPTO_VERIFY_FAILED);
+
+  r_mpint_clear (&n);
+  r_mpint_clear (&e);
+  r_crypto_key_unref (pub);
+}
+RTEST_END;
+
 RTEST (rrsa, verify_msg_malformed_no_zero_separator, RTEST_FAST)
 {
   /* Construct a signature whose decrypted EM is 00 01 ff..ff with no zero

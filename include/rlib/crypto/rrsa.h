@@ -360,6 +360,44 @@ R_API RCryptoResult r_rsa_pkcs1v1_5_verify_msg_with_hash (const RCryptoKey * key
 R_API RCryptoResult r_rsa_pkcs1v1_5_verify_hash (const RCryptoKey * key,
     rconstpointer hash, rsize hashsize, rconstpointer sig, rsize sigsize);
 
+/**
+ * @brief RSASSA-PSS sign over a precomputed digest (RFC 8017, section 8.1).
+ *
+ * EMSA-PSS-ENCODE then RSASP1 over @p hash, the @c mHash already produced by
+ * @p mdtype. The mask-generation function is MGF1 with the same @p mdtype and
+ * the salt length equals the digest length (@c sLen = @c hLen) -- the profile
+ * TLS 1.3 @c rsa_pss_rsae_* uses. @p prng supplies the random salt and the
+ * blinding factor, so it must be cryptographically secure.
+ *
+ * @param key Private RSA key.
+ * @param prng Cryptographically secure PRNG for the salt / blinding.
+ * @param mdtype Digest that produced @p hash (also the MGF1 hash).
+ * @param hash The @c mHash bytes; must be @p mdtype's digest length.
+ * @param hashsize Length of @p hash.
+ * @param sig Destination for the signature (modulus length).
+ * @param sigsize In: capacity of @p sig; out: bytes written.
+ */
+R_API RCryptoResult r_rsa_pss_sign_hash (const RCryptoKey * key, RPrng * prng,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
+    rpointer sig, rsize * sigsize);
+
+/**
+ * @brief RSASSA-PSS verify over a precomputed digest (RFC 8017, section 8.1).
+ *
+ * Counterpart to @ref r_rsa_pss_sign_hash: RSAVP1 then EMSA-PSS-VERIFY, MGF1
+ * under @p mdtype with @c sLen = @c hLen.
+ *
+ * @param key Public (or private) RSA key.
+ * @param mdtype Digest that produced @p hash (also the MGF1 hash).
+ * @param hash The @c mHash bytes; must be @p mdtype's digest length.
+ * @param hashsize Length of @p hash.
+ * @param sig The signature to verify.
+ * @param sigsize Length of @p sig.
+ */
+R_API RCryptoResult r_rsa_pss_verify_hash (const RCryptoKey * key,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
+    rconstpointer sig, rsize sigsize);
+
 R_END_DECLS
 
 /** @} */
