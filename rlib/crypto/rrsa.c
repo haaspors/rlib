@@ -113,8 +113,7 @@ r_rsa_sign (const RCryptoKey * key, RPrng * prng, RMsgDigestType mdtype,
       return r_rsa_pkcs1v1_5_sign_msg_hash (key, prng,
           mdtype, hash, hashsize, sig, sigsize);
     case R_RSA_PADDING_PKCS1_V21:
-      /*return r_rsa_oaep_sign_msg_hash (key, prng,
-          mdtype, hash, hashsize, sig, sigsize);*/
+      return r_rsa_pss_sign_hash (key, prng, mdtype, hash, hashsize, sig, sigsize);
     default:
       return R_CRYPTO_NOT_AVAILABLE;
   }
@@ -129,7 +128,7 @@ r_rsa_verify (const RCryptoKey * key,
     case R_RSA_PADDING_PKCS1_V15:
       return r_rsa_pkcs1v1_5_verify_msg_with_hash (key, mdtype, hash, hashsize, sig, sigsize);
     case R_RSA_PADDING_PKCS1_V21:
-      /*return r_rsa_oaep_decrypt (key, data, size, out, outsize);*/
+      return r_rsa_pss_verify_hash (key, mdtype, hash, hashsize, sig, sigsize);
     default:
       return R_CRYPTO_NOT_AVAILABLE;
   }
@@ -1515,5 +1514,240 @@ r_rsa_pkcs1v1_5_verify_hash (const RCryptoKey * key,
   }
 
   return ret;
+}
+
+/* MGF1 (RFC 8017, B.2.1): mask = T_0 || T_1 || ... where
+ * T_i = Hash(seed || I2OSP(i, 4)), truncated to @masklen octets. */
+static rboolean
+r_rsa_mgf1 (RMsgDigestType mdtype, const ruint8 * seed, rsize seedlen,
+    ruint8 * mask, rsize masklen)
+{
+  RMsgDigest * md;
+  rsize hlen = r_msg_digest_type_size (mdtype);
+  rsize done = 0;
+  ruint32 counter;
+  ruint8 * digest;
+
+  if (R_UNLIKELY (hlen == 0))
+    return FALSE;
+
+  digest = r_alloca (hlen);
+  for (counter = 0; done < masklen; counter++) {
+    ruint8 cbuf[4];
+    rboolean ok;
+    rsize n;
+
+    cbuf[0] = (ruint8) (counter >> 24);
+    cbuf[1] = (ruint8) (counter >> 16);
+    cbuf[2] = (ruint8) (counter >> 8);
+    cbuf[3] = (ruint8) counter;
+
+    if ((md = r_msg_digest_new (mdtype)) == NULL)
+      return FALSE;
+    ok = r_msg_digest_update (md, seed, seedlen) &&
+         r_msg_digest_update (md, cbuf, sizeof (cbuf)) &&
+         r_msg_digest_get_data (md, digest, hlen, NULL);
+    r_msg_digest_free (md);
+    if (!ok)
+      return FALSE;
+
+    n = MIN (hlen, masklen - done);
+    r_memcpy (mask + done, digest, n);
+    done += n;
+  }
+
+  return TRUE;
+}
+
+/* EMSA-PSS-ENCODE (RFC 8017, 9.1.1) with sLen = hLen and MGF1(@mdtype).
+ * @mhash is the message digest; @em receives @emlen octets (the encoded
+ * message for an @embits-bit representative). */
+static RCryptoResult
+r_rsa_emsa_pss_encode (RPrng * prng, RMsgDigestType mdtype,
+    const ruint8 * mhash, rsize hlen, rsize embits, ruint8 * em, rsize emlen)
+{
+  static const ruint8 zeros8[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  rsize slen = hlen, dblen, nbits;
+  ruint8 * salt, * db, * dbmask, * h;
+  RMsgDigest * md;
+  rboolean ok;
+  rsize i;
+
+  /* emLen must hold maskedDB(dblen) || H(hlen) || 0xbc, and DB must hold
+   * PS || 0x01 || salt. */
+  if (R_UNLIKELY (emlen < hlen + slen + 2))
+    return R_CRYPTO_BUFFER_TOO_SMALL;
+  dblen = emlen - hlen - 1;
+
+  salt = r_alloca (slen);
+  if (R_UNLIKELY (!r_prng_fill (prng, salt, slen)))
+    return R_CRYPTO_ERROR;
+
+  /* H = Hash(0x00^8 || mHash || salt), written in place at em + dblen. */
+  h = em + dblen;
+  if ((md = r_msg_digest_new (mdtype)) == NULL)
+    return R_CRYPTO_NOT_AVAILABLE;
+  ok = r_msg_digest_update (md, zeros8, sizeof (zeros8)) &&
+       r_msg_digest_update (md, mhash, hlen) &&
+       r_msg_digest_update (md, salt, slen) &&
+       r_msg_digest_get_data (md, h, hlen, NULL);
+  r_msg_digest_free (md);
+  if (R_UNLIKELY (!ok))
+    return R_CRYPTO_SIGN_FAILED;
+
+  /* DB = 0x00^(dblen-slen-1) || 0x01 || salt. */
+  db = r_alloca (dblen);
+  r_memset (db, 0, dblen - slen - 1);
+  db[dblen - slen - 1] = 0x01;
+  r_memcpy (db + dblen - slen, salt, slen);
+
+  /* maskedDB = DB xor MGF1(H, dblen), written to em[0..dblen). */
+  dbmask = r_alloca (dblen);
+  if (R_UNLIKELY (!r_rsa_mgf1 (mdtype, h, hlen, dbmask, dblen)))
+    return R_CRYPTO_SIGN_FAILED;
+  for (i = 0; i < dblen; i++)
+    em[i] = db[i] ^ dbmask[i];
+
+  /* Clear the leftmost 8*emLen - emBits bits of the leftmost octet. */
+  nbits = 8 * emlen - embits;
+  if (nbits > 0)
+    em[0] &= (ruint8) (0xff >> nbits);
+
+  em[emlen - 1] = 0xbc;
+  return R_CRYPTO_OK;
+}
+
+/* EMSA-PSS-VERIFY (RFC 8017, 9.1.2), counterpart of the encode above. */
+static RCryptoResult
+r_rsa_emsa_pss_verify (RMsgDigestType mdtype, const ruint8 * mhash, rsize hlen,
+    rsize embits, const ruint8 * em, rsize emlen)
+{
+  static const ruint8 zeros8[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  rsize slen = hlen, dblen, nbits;
+  const ruint8 * maskeddb, * h, * salt;
+  ruint8 * db, * dbmask, * hprime;
+  RMsgDigest * md;
+  rboolean ok;
+  rsize i;
+
+  if (R_UNLIKELY (emlen < hlen + slen + 2))
+    return R_CRYPTO_VERIFY_FAILED;
+  if (em[emlen - 1] != 0xbc)
+    return R_CRYPTO_VERIFY_FAILED;
+
+  dblen = emlen - hlen - 1;
+  maskeddb = em;
+  h = em + dblen;
+
+  /* The leftmost 8*emLen - emBits bits of maskedDB must be zero. */
+  nbits = 8 * emlen - embits;
+  if (nbits > 0 && (maskeddb[0] & (ruint8) (0xff << (8 - nbits))) != 0)
+    return R_CRYPTO_VERIFY_FAILED;
+
+  /* DB = maskedDB xor MGF1(H, dblen), then clear the same leftmost bits. */
+  dbmask = r_alloca (dblen);
+  if (R_UNLIKELY (!r_rsa_mgf1 (mdtype, h, hlen, dbmask, dblen)))
+    return R_CRYPTO_VERIFY_FAILED;
+  db = r_alloca (dblen);
+  for (i = 0; i < dblen; i++)
+    db[i] = maskeddb[i] ^ dbmask[i];
+  if (nbits > 0)
+    db[0] &= (ruint8) (0xff >> nbits);
+
+  /* DB must be 0x00^(dblen-slen-1) || 0x01 || salt. */
+  for (i = 0; i < dblen - slen - 1; i++)
+    if (db[i] != 0)
+      return R_CRYPTO_VERIFY_FAILED;
+  if (db[dblen - slen - 1] != 0x01)
+    return R_CRYPTO_VERIFY_FAILED;
+  salt = db + dblen - slen;
+
+  /* H' = Hash(0x00^8 || mHash || salt) must equal H. */
+  hprime = r_alloca (hlen);
+  if ((md = r_msg_digest_new (mdtype)) == NULL)
+    return R_CRYPTO_NOT_AVAILABLE;
+  ok = r_msg_digest_update (md, zeros8, sizeof (zeros8)) &&
+       r_msg_digest_update (md, mhash, hlen) &&
+       r_msg_digest_update (md, salt, slen) &&
+       r_msg_digest_get_data (md, hprime, hlen, NULL);
+  r_msg_digest_free (md);
+  if (R_UNLIKELY (!ok))
+    return R_CRYPTO_VERIFY_FAILED;
+
+  return (r_memcmp (hprime, h, hlen) == 0) ? R_CRYPTO_OK : R_CRYPTO_VERIFY_FAILED;
+}
+
+RCryptoResult
+r_rsa_pss_sign_hash (const RCryptoKey * key, RPrng * prng,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
+    rpointer sig, rsize * sigsize)
+{
+  rsize k, modbits, embits, emlen, hlen;
+  ruint8 * em;
+
+  if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_RSA)) return R_CRYPTO_WRONG_TYPE;
+  if (R_UNLIKELY (key->type != R_CRYPTO_PRIVATE_KEY)) return R_CRYPTO_WRONG_TYPE;
+  if (R_UNLIKELY (prng == NULL || hash == NULL || sig == NULL || sigsize == NULL))
+    return R_CRYPTO_INVAL;
+
+  hlen = r_msg_digest_type_size (mdtype);
+  if (R_UNLIKELY (hlen == 0 || hashsize != hlen))
+    return R_CRYPTO_INVAL;
+
+  modbits = r_crypto_key_get_bitsize (key);
+  k = modbits / 8;
+  embits = modbits - 1;
+  emlen = (embits + 7) / 8;
+  if (R_UNLIKELY (*sigsize < k))
+    return R_CRYPTO_BUFFER_TOO_SMALL;
+  if (R_UNLIKELY (emlen > k || emlen < hlen + hlen + 2))
+    return R_CRYPTO_BUFFER_TOO_SMALL;
+
+  /* Build EM right-aligned in a k-octet buffer (leading zeros when
+   * emLen < k), then apply the RSA private-key primitive. */
+  em = r_alloca (k);
+  r_memset (em, 0, k - emlen);
+  if (r_rsa_emsa_pss_encode (prng, mdtype, hash, hlen, embits,
+          em + (k - emlen), emlen) != R_CRYPTO_OK)
+    return R_CRYPTO_SIGN_FAILED;
+
+  if (r_rsa_raw_decrypt_internal ((const RRsaPrivKey *) key, prng, em, sig, k)
+        != R_CRYPTO_OK)
+    return R_CRYPTO_SIGN_FAILED;
+
+  *sigsize = k;
+  return R_CRYPTO_OK;
+}
+
+RCryptoResult
+r_rsa_pss_verify_hash (const RCryptoKey * key,
+    RMsgDigestType mdtype, rconstpointer hash, rsize hashsize,
+    rconstpointer sig, rsize sigsize)
+{
+  rsize k, modbits, embits, emlen, hlen;
+  ruint8 * em;
+
+  if (R_UNLIKELY (key == NULL)) return R_CRYPTO_INVAL;
+  if (R_UNLIKELY (key->algo->algo != R_CRYPTO_ALGO_RSA)) return R_CRYPTO_WRONG_TYPE;
+  if (R_UNLIKELY (hash == NULL || sig == NULL)) return R_CRYPTO_INVAL;
+
+  hlen = r_msg_digest_type_size (mdtype);
+  if (R_UNLIKELY (hlen == 0 || hashsize != hlen))
+    return R_CRYPTO_INVAL;
+
+  modbits = r_crypto_key_get_bitsize (key);
+  k = modbits / 8;
+  embits = modbits - 1;
+  emlen = (embits + 7) / 8;
+  if (R_UNLIKELY (sigsize != k || emlen > k))
+    return R_CRYPTO_VERIFY_FAILED;
+
+  em = r_alloca (k);
+  if (r_rsa_raw_encrypt_internal ((const RRsaPubKey *) key, sig, em, k)
+        != R_CRYPTO_OK)
+    return R_CRYPTO_VERIFY_FAILED;
+
+  return r_rsa_emsa_pss_verify (mdtype, hash, hlen, embits, em + (k - emlen), emlen);
 }
 
