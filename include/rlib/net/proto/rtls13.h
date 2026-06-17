@@ -151,6 +151,153 @@ R_API rboolean r_tls13_record_unprotect (const RCryptoCipher * cipher,
     const ruint8 * record, rsize reclen,
     ruint8 * out, rsize outsize, rsize * outlen, RTLSContentType * type);
 
+/** @brief Largest TLS 1.3 secret / digest, in bytes (SHA-384). */
+#define R_TLS13_SECRET_MAX        48
+
+/**
+ * @brief Per-direction installed TLS 1.3 record keys (RFC 8446, section 7.3).
+ *
+ * Holds the AEAD cipher keyed with a traffic key, its static IV, and the
+ * record sequence number, which restarts at zero whenever a new traffic key is
+ * installed (handshake then application).
+ */
+typedef struct {
+  RCryptoCipher * cipher;             /**< @brief AEAD keyed with the traffic key. */
+  ruint8 iv[R_TLS13_AEAD_NONCE_MAX];  /**< @brief Static write/read IV. */
+  rsize ivlen;                        /**< @brief IV length in bytes. */
+  ruint64 seq;                        /**< @brief Record counter; resets on rekey. */
+} RTLS13RecordKeys;
+/** @brief Static initialiser for an empty @ref RTLS13RecordKeys. */
+#define R_TLS13_RECORD_KEYS_INIT    { NULL, { 0, }, 0, 0 }
+
+/**
+ * @brief TLS 1.3 1-RTT key schedule (RFC 8446, section 7.1).
+ *
+ * Carries the extract/derive secrets, hash-agnostic so the same struct serves
+ * the SHA-256 (@c TLS_AES_128_GCM_SHA256) and SHA-384
+ * (@c TLS_AES_256_GCM_SHA384) cipher suites. Drive it with
+ * @ref r_tls13_schedule_init, then @ref r_tls13_schedule_handshake (after the
+ * ServerHello) and @ref r_tls13_schedule_master (after the server Finished).
+ */
+typedef struct {
+  RMsgDigestType hash;                /**< @brief Cipher-suite hash. */
+  rsize hlen;                         /**< @brief @p hash output length. */
+  ruint8 early[R_TLS13_SECRET_MAX];      /**< @brief Early Secret. */
+  ruint8 handshake[R_TLS13_SECRET_MAX];  /**< @brief Handshake Secret. */
+  ruint8 master[R_TLS13_SECRET_MAX];     /**< @brief Master Secret. */
+  ruint8 chs[R_TLS13_SECRET_MAX];        /**< @brief client_handshake_traffic_secret. */
+  ruint8 shs[R_TLS13_SECRET_MAX];        /**< @brief server_handshake_traffic_secret. */
+  ruint8 cap[R_TLS13_SECRET_MAX];        /**< @brief client_application_traffic_secret_0. */
+  ruint8 sap[R_TLS13_SECRET_MAX];        /**< @brief server_application_traffic_secret_0. */
+} RTLS13Schedule;
+
+/**
+ * @brief Initialise the key schedule and compute the Early Secret.
+ *
+ * With no PSK the Early Secret is @c HKDF-Extract(0, 0^HashLen).
+ *
+ * @param sched Schedule to initialise.
+ * @param hash  Cipher-suite hash (SHA-256 / SHA-384).
+ * @return @c TRUE on success; @c FALSE on an unsupported hash.
+ */
+R_API rboolean r_tls13_schedule_init (RTLS13Schedule * sched, RMsgDigestType hash);
+
+/**
+ * @brief Derive the Handshake Secret and the handshake-traffic secrets.
+ *
+ * @c Handshake = HKDF-Extract(Derive-Secret(Early, "derived", ""), ECDHE);
+ * the @c "c hs traffic" / @c "s hs traffic" secrets are bound to
+ * @p transcript_hash = @c Transcript-Hash(ClientHello..ServerHello).
+ *
+ * @param sched           Schedule, already @ref r_tls13_schedule_init.
+ * @param ecdhe           The (EC)DHE shared secret.
+ * @param ecdhelen        Length of @p ecdhe.
+ * @param transcript_hash @c Transcript-Hash(ClientHello..ServerHello); @c HashLen bytes.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_tls13_schedule_handshake (RTLS13Schedule * sched,
+    const ruint8 * ecdhe, rsize ecdhelen, const ruint8 * transcript_hash);
+
+/**
+ * @brief Derive the Master Secret and the application-traffic secrets.
+ *
+ * @c Master = HKDF-Extract(Derive-Secret(Handshake, "derived", ""), 0^HashLen);
+ * the @c "c ap traffic" / @c "s ap traffic" secrets are bound to
+ * @p transcript_hash = @c Transcript-Hash(ClientHello..server Finished).
+ *
+ * @param sched           Schedule, already @ref r_tls13_schedule_handshake.
+ * @param transcript_hash @c Transcript-Hash(ClientHello..server Finished); @c HashLen bytes.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_tls13_schedule_master (RTLS13Schedule * sched,
+    const ruint8 * transcript_hash);
+
+/**
+ * @brief Derive the @c "key" / @c "iv" traffic keys from a traffic secret.
+ *
+ * Instantiates @p out->cipher for @p info keyed with
+ * @c HKDF-Expand-Label(secret, "key", "", keylen) and fills the static IV from
+ * @c HKDF-Expand-Label(secret, "iv", "", info->ivsize); @c out->seq is reset to 0.
+ *
+ * @param hash   Cipher-suite hash.
+ * @param secret A traffic secret (@c HashLen bytes).
+ * @param info   AEAD cipher descriptor (e.g. AES-128-GCM).
+ * @param out    Receives the keyed cipher, IV and zeroed sequence number.
+ * @return @c TRUE on success; @c FALSE on a derivation or cipher failure.
+ */
+R_API rboolean r_tls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
+    const RCryptoCipherInfo * info, RTLS13RecordKeys * out);
+
+/**
+ * @brief Derive a Finished key from a handshake-traffic secret.
+ *
+ * @c finished_key = HKDF-Expand-Label(secret, "finished", "", HashLen).
+ *
+ * @param hash   Cipher-suite hash.
+ * @param secret The handshake-traffic secret (@c HashLen bytes).
+ * @param out    Destination for the @c HashLen-byte Finished key.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_tls13_finished_key (RMsgDigestType hash, const ruint8 * secret,
+    ruint8 * out);
+
+/**
+ * @brief Compute Finished verify_data (RFC 8446, section 4.4.4).
+ *
+ * @c verify_data = HMAC(finished_key, Transcript-Hash(...)).
+ *
+ * @param hash            Cipher-suite hash.
+ * @param finished_key    A Finished key from @ref r_tls13_finished_key.
+ * @param transcript_hash The bound transcript hash; @c HashLen bytes.
+ * @param out             Destination for the @c HashLen-byte verify_data.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_tls13_verify_data (RMsgDigestType hash,
+    const ruint8 * finished_key, const ruint8 * transcript_hash, ruint8 * out);
+
+/** @brief Largest CertificateVerify signed content for the 1.3 hashes, in bytes. */
+#define R_TLS13_CERT_VERIFY_TBS_MAX   (64 + 33 + 1 + R_TLS13_SECRET_MAX)
+
+/**
+ * @brief Build the CertificateVerify signed content (RFC 8446, section 4.4.3).
+ *
+ * @c 0x20*64 || context_string || 0x00 || @p transcript_hash, where the context
+ * is @c "TLS 1.3, server CertificateVerify" (@p server @c TRUE) or
+ * @c "...client...". The caller hashes this with the signature scheme's digest
+ * and signs / verifies it.
+ *
+ * @param server          @c TRUE for the server context string, else the client's.
+ * @param transcript_hash The bound transcript hash.
+ * @param thlen           Length of @p transcript_hash.
+ * @param out             Destination buffer.
+ * @param outsize         Capacity of @p out (see @ref R_TLS13_CERT_VERIFY_TBS_MAX).
+ * @param outlen          Out: bytes written.
+ * @return @c TRUE on success; @c FALSE on a @c NULL argument or too-small @p out.
+ */
+R_API rboolean r_tls13_cert_verify_tbs (rboolean server,
+    const ruint8 * transcript_hash, rsize thlen,
+    ruint8 * out, rsize outsize, rsize * outlen);
+
 R_END_DECLS
 
 /** @} */

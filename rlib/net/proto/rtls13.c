@@ -20,6 +20,7 @@
 #include <rlib/net/proto/rtls13.h>
 
 #include <rlib/crypto/rkdf.h>
+#include <rlib/crypto/rhmac.h>
 #include <rlib/rmem.h>
 #include <rlib/rstr.h>
 
@@ -176,5 +177,177 @@ r_tls13_record_unprotect (const RCryptoCipher * cipher,
 
   *type = (RTLSContentType) out[i];
   *outlen = (rsize) i;
+  return TRUE;
+}
+
+/* Transcript-Hash("") = Hash of the empty message, the context Derive-Secret
+ * binds the "derived" step to. */
+static rboolean
+r_tls13_empty_transcript (RMsgDigestType hash, ruint8 * out, rsize hlen)
+{
+  RMsgDigest * md;
+  rboolean ok;
+
+  if ((md = r_msg_digest_new (hash)) == NULL)
+    return FALSE;
+  ok = r_msg_digest_get_data (md, out, hlen, NULL);
+  r_msg_digest_free (md);
+  return ok;
+}
+
+rboolean
+r_tls13_schedule_init (RTLS13Schedule * sched, RMsgDigestType hash)
+{
+  ruint8 zero[R_TLS13_SECRET_MAX];
+  rsize hlen = r_msg_digest_type_size (hash);
+
+  if (R_UNLIKELY (sched == NULL || hlen == 0 || hlen > R_TLS13_SECRET_MAX))
+    return FALSE;
+
+  sched->hash = hash;
+  sched->hlen = hlen;
+
+  /* Early Secret = HKDF-Extract(0, 0^HashLen): no PSK. */
+  r_memset (zero, 0, hlen);
+  return r_hkdf_extract (hash, NULL, 0, zero, hlen, sched->early);
+}
+
+rboolean
+r_tls13_schedule_handshake (RTLS13Schedule * sched, const ruint8 * ecdhe,
+    rsize ecdhelen, const ruint8 * transcript_hash)
+{
+  ruint8 emptyhash[R_TLS13_SECRET_MAX], derived[R_TLS13_SECRET_MAX];
+
+  if (R_UNLIKELY (sched == NULL || ecdhe == NULL || ecdhelen == 0 ||
+        transcript_hash == NULL))
+    return FALSE;
+
+  /* derived = Derive-Secret(Early, "derived", ""). */
+  if (!r_tls13_empty_transcript (sched->hash, emptyhash, sched->hlen) ||
+      !r_tls13_derive_secret (sched->hash, sched->early,
+          R_STR_WITH_SIZE_ARGS ("derived"), emptyhash, derived))
+    return FALSE;
+
+  /* Handshake Secret = HKDF-Extract(derived, ECDHE). */
+  if (!r_hkdf_extract (sched->hash, derived, sched->hlen, ecdhe, ecdhelen,
+        sched->handshake))
+    return FALSE;
+
+  return r_tls13_derive_secret (sched->hash, sched->handshake,
+            R_STR_WITH_SIZE_ARGS ("c hs traffic"), transcript_hash, sched->chs) &&
+         r_tls13_derive_secret (sched->hash, sched->handshake,
+            R_STR_WITH_SIZE_ARGS ("s hs traffic"), transcript_hash, sched->shs);
+}
+
+rboolean
+r_tls13_schedule_master (RTLS13Schedule * sched, const ruint8 * transcript_hash)
+{
+  ruint8 emptyhash[R_TLS13_SECRET_MAX], derived[R_TLS13_SECRET_MAX];
+  ruint8 zero[R_TLS13_SECRET_MAX];
+
+  if (R_UNLIKELY (sched == NULL || transcript_hash == NULL))
+    return FALSE;
+
+  /* Master Secret = HKDF-Extract(Derive-Secret(Handshake, "derived", ""), 0). */
+  if (!r_tls13_empty_transcript (sched->hash, emptyhash, sched->hlen) ||
+      !r_tls13_derive_secret (sched->hash, sched->handshake,
+          R_STR_WITH_SIZE_ARGS ("derived"), emptyhash, derived))
+    return FALSE;
+
+  r_memset (zero, 0, sched->hlen);
+  if (!r_hkdf_extract (sched->hash, derived, sched->hlen, zero, sched->hlen,
+        sched->master))
+    return FALSE;
+
+  return r_tls13_derive_secret (sched->hash, sched->master,
+            R_STR_WITH_SIZE_ARGS ("c ap traffic"), transcript_hash, sched->cap) &&
+         r_tls13_derive_secret (sched->hash, sched->master,
+            R_STR_WITH_SIZE_ARGS ("s ap traffic"), transcript_hash, sched->sap);
+}
+
+rboolean
+r_tls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
+    const RCryptoCipherInfo * info, RTLS13RecordKeys * out)
+{
+  ruint8 key[32];
+  rsize keylen;
+
+  if (R_UNLIKELY (secret == NULL || info == NULL || out == NULL))
+    return FALSE;
+  keylen = info->keybits / 8;
+  if (R_UNLIKELY (keylen == 0 || keylen > sizeof (key) ||
+        info->ivsize == 0 || info->ivsize > R_TLS13_AEAD_NONCE_MAX))
+    return FALSE;
+
+  if (!r_tls13_expand_label (hash, secret, R_STR_WITH_SIZE_ARGS ("key"),
+          NULL, 0, key, keylen) ||
+      !r_tls13_expand_label (hash, secret, R_STR_WITH_SIZE_ARGS ("iv"),
+          NULL, 0, out->iv, info->ivsize)) {
+    r_memclear (key, sizeof (key));
+    return FALSE;
+  }
+
+  out->cipher = r_crypto_cipher_new (info, key);
+  r_memclear (key, sizeof (key));
+  if (R_UNLIKELY (out->cipher == NULL))
+    return FALSE;
+  out->ivlen = info->ivsize;
+  out->seq = 0;
+  return TRUE;
+}
+
+rboolean
+r_tls13_finished_key (RMsgDigestType hash, const ruint8 * secret, ruint8 * out)
+{
+  rsize hlen = r_msg_digest_type_size (hash);
+
+  if (R_UNLIKELY (secret == NULL || out == NULL || hlen == 0))
+    return FALSE;
+
+  return r_tls13_expand_label (hash, secret, R_STR_WITH_SIZE_ARGS ("finished"),
+      NULL, 0, out, hlen);
+}
+
+rboolean
+r_tls13_verify_data (RMsgDigestType hash, const ruint8 * finished_key,
+    const ruint8 * transcript_hash, ruint8 * out)
+{
+  RHmac * hmac;
+  rsize hlen = r_msg_digest_type_size (hash);
+  rboolean ok;
+
+  if (R_UNLIKELY (finished_key == NULL || transcript_hash == NULL ||
+        out == NULL || hlen == 0))
+    return FALSE;
+
+  if ((hmac = r_hmac_new (hash, finished_key, hlen)) == NULL)
+    return FALSE;
+  ok = r_hmac_update (hmac, transcript_hash, hlen) &&
+       r_hmac_get_data (hmac, out, hlen, NULL);
+  r_hmac_free (hmac);
+  return ok;
+}
+
+rboolean
+r_tls13_cert_verify_tbs (rboolean server, const ruint8 * transcript_hash,
+    rsize thlen, ruint8 * out, rsize outsize, rsize * outlen)
+{
+  /* RFC 8446 4.4.3: 64 octets of 0x20, the context string, a single 0x00, and
+   * the transcript hash. The two context strings are both 33 bytes. */
+  static const rchar ctx_server[] = "TLS 1.3, server CertificateVerify";
+  static const rchar ctx_client[] = "TLS 1.3, client CertificateVerify";
+  const rchar * ctx = server ? ctx_server : ctx_client;
+  rsize ctxlen = 33;  /* sizeof - 1, both strings */
+  rsize n = 64 + ctxlen + 1 + thlen;
+
+  if (R_UNLIKELY (transcript_hash == NULL || out == NULL || outlen == NULL ||
+        thlen == 0 || outsize < n))
+    return FALSE;
+
+  r_memset (out, 0x20, 64);
+  r_memcpy (out + 64, ctx, ctxlen);
+  out[64 + ctxlen] = 0x00;
+  r_memcpy (out + 64 + ctxlen + 1, transcript_hash, thlen);
+  *outlen = n;
   return TRUE;
 }

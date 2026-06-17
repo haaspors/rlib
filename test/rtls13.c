@@ -120,3 +120,88 @@ RTEST (rtls13, record_protect_roundtrip, R_TEST_TYPE_FAST)
   r_crypto_cipher_unref (cipher);
 }
 RTEST_END;
+
+RTEST (rtls13, key_schedule_rfc8448, R_TEST_TYPE_FAST)
+{
+  /* The Simple 1-RTT Handshake of RFC 8448, section 3
+   * (TLS_AES_128_GCM_SHA256): drive the full key schedule from the ECDHE shared
+   * secret and the ClientHello..ServerHello transcript hash, and check every
+   * derived secret / traffic key against the published values. */
+  static const ruint8 ecdhe[32] = {
+    0x8b, 0xd4, 0x05, 0x4f, 0xb5, 0x5b, 0x9d, 0x63, 0xfd, 0xfb, 0xac, 0xf9,
+    0xf0, 0x4b, 0x9f, 0x0d, 0x35, 0xe6, 0xd6, 0x3f, 0x53, 0x75, 0x63, 0xef,
+    0xd4, 0x62, 0x72, 0x90, 0x0f, 0x89, 0x49, 0x2d };
+  static const ruint8 th_ch_sh[32] = {
+    0x86, 0x0c, 0x06, 0xed, 0xc0, 0x78, 0x58, 0xee, 0x8e, 0x78, 0xf0, 0xe7,
+    0x42, 0x8c, 0x58, 0xed, 0xd6, 0xb4, 0x3f, 0x2c, 0xa3, 0xe6, 0xe9, 0x5f,
+    0x02, 0xed, 0x06, 0x3c, 0xf0, 0xe1, 0xca, 0xd8 };
+  RTLS13Schedule sched;
+  RTLS13RecordKeys rk = R_TLS13_RECORD_KEYS_INIT;
+  const RCryptoCipherInfo * info;
+  ruint8 finkey[32], vd[32];
+
+  r_assert (r_tls13_schedule_init (&sched, R_MSG_DIGEST_TYPE_SHA256));
+  r_assert_cmpmem (sched.early, ==,
+      "\x33\xad\x0a\x1c\x60\x7e\xc0\x3b\x09\xe6\xcd\x98\x93\x68\x0c\xe2"
+      "\x10\xad\xf3\x00\xaa\x1f\x26\x60\xe1\xb2\x2e\x10\xf1\x70\xf9\x2a", 32);
+
+  r_assert (r_tls13_schedule_handshake (&sched, ecdhe, sizeof (ecdhe), th_ch_sh));
+  r_assert_cmpmem (sched.handshake, ==,
+      "\x1d\xc8\x26\xe9\x36\x06\xaa\x6f\xdc\x0a\xad\xc1\x2f\x74\x1b\x01"
+      "\x04\x6a\xa6\xb9\x9f\x69\x1e\xd2\x21\xa9\xf0\xca\x04\x3f\xbe\xac", 32);
+  r_assert_cmpmem (sched.chs, ==,
+      "\xb3\xed\xdb\x12\x6e\x06\x7f\x35\xa7\x80\xb3\xab\xf4\x5e\x2d\x8f"
+      "\x3b\x1a\x95\x07\x38\xf5\x2e\x96\x00\x74\x6a\x0e\x27\xa5\x5a\x21", 32);
+  r_assert_cmpmem (sched.shs, ==,
+      "\xb6\x7b\x7d\x69\x0c\xc1\x6c\x4e\x75\xe5\x42\x13\xcb\x2d\x37\xb4"
+      "\xe9\xc9\x12\xbc\xde\xd9\x10\x5d\x42\xbe\xfd\x59\xd3\x91\xad\x38", 32);
+
+  /* Server handshake-traffic key / IV. */
+  r_assert_cmpptr ((info = r_crypto_cipher_find_by_type (
+          R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_GCM, 128)), !=, NULL);
+  r_assert (r_tls13_traffic_keys (R_MSG_DIGEST_TYPE_SHA256, sched.shs, info, &rk));
+  r_assert_cmpptr (rk.cipher, !=, NULL);
+  r_assert_cmpuint (rk.ivlen, ==, 12);
+  r_assert_cmpuint (rk.seq, ==, 0);
+  r_assert_cmpmem (rk.iv, ==, "\x5d\x31\x3e\xb2\x67\x12\x76\xee\x13\x00\x0b\x30", 12);
+  r_crypto_cipher_unref (rk.cipher);
+
+  /* Server Finished key + a verify_data over the CH..SH transcript hash
+   * (independently HMAC-computed). */
+  r_assert (r_tls13_finished_key (R_MSG_DIGEST_TYPE_SHA256, sched.shs, finkey));
+  r_assert_cmpmem (finkey, ==,
+      "\x00\x8d\x3b\x66\xf8\x16\xea\x55\x9f\x96\xb5\x37\xe8\x85\xc3\x1f"
+      "\xc0\x68\xbf\x49\x2c\x65\x2f\x01\xf2\x88\xa1\xd8\xcd\xc1\x9f\xc8", 32);
+  r_assert (r_tls13_verify_data (R_MSG_DIGEST_TYPE_SHA256, finkey, th_ch_sh, vd));
+  r_assert_cmpmem (vd, ==,
+      "\x2b\x47\x34\x88\xb0\xe9\xd7\x08\x5d\x0b\xff\x61\xac\xdd\x4e\xfe"
+      "\x3b\x04\x05\x4b\x30\x6c\x39\x96\x35\x21\x55\xba\x24\xb5\x03\x87", 32);
+}
+RTEST_END;
+
+RTEST (rtls13, cert_verify_tbs, R_TEST_TYPE_FAST)
+{
+  ruint8 th[32], out[R_TLS13_CERT_VERIFY_TBS_MAX];
+  rsize outlen = 0, i;
+
+  for (i = 0; i < sizeof (th); i++)
+    th[i] = (ruint8) i;
+
+  r_assert (r_tls13_cert_verify_tbs (TRUE, th, sizeof (th),
+        out, sizeof (out), &outlen));
+  r_assert_cmpuint (outlen, ==, 64 + 33 + 1 + sizeof (th));
+  for (i = 0; i < 64; i++)
+    r_assert_cmphex (out[i], ==, 0x20);
+  r_assert_cmpmem (out + 64, ==, "TLS 1.3, server CertificateVerify", 33);
+  r_assert_cmphex (out[97], ==, 0x00);
+  r_assert_cmpmem (out + 98, ==, th, sizeof (th));
+
+  /* Client context string differs only in that one word. */
+  r_assert (r_tls13_cert_verify_tbs (FALSE, th, sizeof (th),
+        out, sizeof (out), &outlen));
+  r_assert_cmpmem (out + 64, ==, "TLS 1.3, client CertificateVerify", 33);
+
+  /* Too-small output is rejected. */
+  r_assert (!r_tls13_cert_verify_tbs (TRUE, th, sizeof (th), out, 10, &outlen));
+}
+RTEST_END;
