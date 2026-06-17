@@ -284,6 +284,83 @@ RTEST (rtls, parse_dtls_certificate, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, write_hs_encrypted_extensions, RTEST_FAST)
+{
+  ruint8 buf[16];
+  rsize out = 0;
+
+  /* Empty list: just a uint16 length of 0. */
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_write_hs_encrypted_extensions (buf, sizeof (buf), &out, NULL, 0));
+  r_assert_cmpuint (out, ==, 2);
+  r_assert_cmphex (buf[0], ==, 0x00);
+  r_assert_cmphex (buf[1], ==, 0x00);
+
+  /* A 3-byte payload is length-prefixed verbatim. */
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_hs_encrypted_extensions (
+        buf, sizeof (buf), &out, (const ruint8 *) "\xab\xcd\xef", 3));
+  r_assert_cmpuint (out, ==, 5);
+  r_assert_cmpmem (buf, ==, "\x00\x03\xab\xcd\xef", 5);
+
+  r_assert_cmpint (R_TLS_ERROR_BUF_TOO_SMALL, ==,
+      r_tls_write_hs_encrypted_extensions (buf, 1, &out, NULL, 0));
+}
+RTEST_END;
+
+RTEST (rtls, write_hs_finished, RTEST_FAST)
+{
+  static const ruint8 vd[32] = {
+    0x2b, 0x47, 0x34, 0x88, 0xb0, 0xe9, 0xd7, 0x08 };
+  ruint8 buf[32];
+  rsize out = 0;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_write_hs_finished (buf, sizeof (buf), &out, vd, sizeof (vd)));
+  r_assert_cmpuint (out, ==, sizeof (vd));
+  r_assert_cmpmem (buf, ==, vd, sizeof (vd));
+
+  r_assert_cmpint (R_TLS_ERROR_BUF_TOO_SMALL, ==,
+      r_tls_write_hs_finished (buf, 8, &out, vd, sizeof (vd)));
+}
+RTEST_END;
+
+RTEST (rtls, write_parse_certificate13_roundtrip, RTEST_FAST)
+{
+  /* Build a TLS 1.3 Certificate record around a stand-in DER blob and read the
+   * single entry back with the 1.3 parser, which must skip the leading
+   * certificate_request_context and the trailing per-entry extensions. */
+  static const ruint8 der[] = {
+    0x30, 0x82, 0x01, 0x0a, 0xde, 0xad, 0xbe, 0xef, 0x11, 0x22, 0x33, 0x44 };
+  ruint8 rec[64];
+  rsize hssize = 0, bodylen = 0;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSCertificate tlscert = R_TLS_CERTIFICATE_INIT;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_handshake (rec, sizeof (rec),
+        &hssize, R_TLS_VERSION_TLS_1_3, R_TLS_HANDSHAKE_TYPE_CERTIFICATE, 0));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_hs_certificate13 (
+        rec + hssize, sizeof (rec) - hssize, &bodylen, der, sizeof (der)));
+  /* context(1) + list<3> + entry{ cert<3> + der + ext<2> }. */
+  r_assert_cmpuint (bodylen, ==, 1 + 3 + (3 + sizeof (der) + 2));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_update_handshake_len (rec, sizeof (rec), (ruint16) bodylen));
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_init (&parser, rec, hssize + bodylen));
+  r_assert_cmpuint (parser.version, ==, R_TLS_VERSION_TLS_1_3);
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_parse_certificate13_first (&parser, &tlscert));
+  r_assert_cmpuint (tlscert.len, ==, sizeof (der));
+  r_assert_cmpmem (tlscert.cert, ==, der, sizeof (der));
+  /* Only one entry: the next walk reports end-of-buffer. */
+  r_assert_cmpint (R_TLS_ERROR_EOB, ==,
+      r_tls_parser_parse_certificate13_next (&parser, &tlscert));
+
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
 RTEST (rtls, parse_dtls_certificate_request, RTEST_FAST)
 {
   static const ruint8 pkt_dtls_certificate_request[] = {
