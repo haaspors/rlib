@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include <rlib/net/proto/rtls.h>
+#include <rlib/net/proto/rtls13.h>
 #include "rtls-private.h"
 
 #include <rlib/rtime.h>
@@ -486,6 +487,58 @@ r_tls_parser_decrypt_aead (RTLSParser * parser, const RCryptoCipher * cipher,
   parser->recsize = parser->offset + ctlen;
 
   if (!r_buffer_map_byte_range (parser->buf, parser->offset, (rssize)ctlen,
+        &parser->fragment, R_MEM_MAP_READ))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_parser_unprotect13 (RTLSParser * parser, const RCryptoCipher * cipher,
+    const ruint8 * iv, rsize ivlen, ruint64 seq)
+{
+  RBuffer * buf, * replace;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rsize plainlen = 0;
+  RTLSContentType inner;
+
+  if (R_UNLIKELY (parser == NULL || cipher == NULL || iv == NULL))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (parser->fragment.size <= R_TLS13_AEAD_TAG_SIZE))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  /* The recovered plaintext is shorter than the encrypted_record: it loses the
+   * tag, the inner content-type byte and any zero padding. */
+  if ((buf = r_buffer_new_alloc (NULL, parser->fragment.size, NULL)) == NULL)
+    return R_TLS_ERROR_OOM;
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_OOM;
+  }
+
+  if (!r_tls13_record_unprotect (cipher, iv, ivlen, seq,
+        parser->fragment.data, parser->fragment.size,
+        info.data, info.size, &plainlen, &inner)) {
+    r_buffer_unmap (buf, &info);
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_INVALID_MAC;
+  }
+  r_buffer_unmap (buf, &info);
+  r_buffer_set_size (buf, plainlen);
+
+  /* Swap the encrypted fragment for the recovered plaintext and re-point the
+   * parser at it with the inner content type, as r_tls_parser_decrypt_aead
+   * does for the 1.2 AEAD path. */
+  replace = r_buffer_replace_byte_range (parser->buf,
+      parser->offset, parser->fragment.size, buf);
+  r_buffer_unref (buf);
+  r_buffer_unmap (parser->buf, &parser->fragment);
+  r_buffer_unref (parser->buf);
+  parser->buf = replace;
+  parser->recsize = parser->offset + plainlen;
+  parser->content = inner;
+
+  if (!r_buffer_map_byte_range (parser->buf, parser->offset, (rssize)plainlen,
         &parser->fragment, R_MEM_MAP_READ))
     return R_TLS_ERROR_BUF_TOO_SMALL;
 

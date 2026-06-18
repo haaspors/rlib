@@ -21,8 +21,10 @@
 #include <rlib/net/rtlsserver.h>
 #include "rtlssessiontickets-private.h"
 #include "proto/rtls-private.h"
+#include <rlib/net/proto/rtls13.h>
 
 #include <rlib/crypto/rx509.h>
+#include <rlib/crypto/rrsa.h>
 
 #include <rlib/data/rqueue.h>
 
@@ -120,6 +122,17 @@ struct RTLSServer {
   REcurveID ecdhe_curve;                /* the negotiated named group */
   RCryptoKey * ecdhe_key;               /* server ephemeral ECDH private key */
 
+  /* TLS 1.3 state (separate from the <=1.2 fields above; see proto/rtls13). */
+  rboolean tls13;                       /* TLS 1.3 was negotiated */
+  RTLS13Schedule sched13;               /* 1-RTT key schedule */
+  RTLS13RecordKeys rk_write, rk_read;   /* installed 1.3 record keys */
+  const RCryptoCipherInfo * cs13_cipher;/* AEAD for the 1.3 suite */
+  RTLSCipherSuite cs13_suite;           /* 0x1301 / 0x1302 */
+  RMsgDigestType cs13_hash;             /* SHA-256 / SHA-384 */
+  RTLSSupportedGroup ks_group;          /* selected key_share group */
+  RCryptoKey * ks_peer_pub;             /* client key_share public key */
+  RTLSSignatureScheme cv_scheme;        /* CertificateVerify signature scheme */
+
   RBuffer * inbuf;
   RQueue qsend;
 };
@@ -180,6 +193,12 @@ r_tls_server_free (RTLSServer * server)
     r_crypto_key_unref (server->peer_pubkey);
   if (server->ecdhe_key != NULL)
     r_crypto_key_unref (server->ecdhe_key);
+  if (server->ks_peer_pub != NULL)
+    r_crypto_key_unref (server->ks_peer_pub);
+  if (server->rk_write.cipher != NULL)
+    r_crypto_cipher_unref (server->rk_write.cipher);
+  if (server->rk_read.cipher != NULL)
+    r_crypto_cipher_unref (server->rk_read.cipher);
   if (server->alpn_protocols != NULL) {
     rsize i;
     for (i = 0; i < server->alpn_count; i++)
@@ -205,6 +224,7 @@ r_tls_server_free (RTLSServer * server)
   r_queue_clear (&server->qsend, r_buffer_unref);
   /* Scrub key material before releasing the struct. */
   r_memclear_secure (server->mastersecret, sizeof (server->mastersecret));
+  r_memclear_secure (&server->sched13, sizeof (server->sched13));
   r_free (server);
 }
 
@@ -1383,6 +1403,444 @@ r_tls_server_parse_sni (RTLSServer * server)
   }
 }
 
+/* ---- TLS 1.3 (RFC 8446) 1-RTT handshake ------------------------------- */
+
+static rboolean
+r_tls_server_find_ext (const RTLSServer * server, RTLSExtensionType type,
+    RTLSHelloExt * out)
+{
+  RTLSHelloExt e = R_TLS_HELLO_EXT_INIT;
+  RTLSError r;
+
+  for (r = r_tls_hello_msg_extension_first (&server->hello, &e);
+      r == R_TLS_ERROR_OK;
+      r = r_tls_hello_msg_extension_next (&server->hello, &e)) {
+    if (e.type == (ruint16) type) {
+      *out = e;
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+/* Detect and negotiate TLS 1.3 from the parsed ClientHello. Returns
+ * R_TLS_ERROR_NOT_NEEDED when 1.3 is not selected, so the caller falls through
+ * to the <=1.2 negotiation; otherwise it commits to 1.3 (or fails). */
+static RTLSError
+r_tls_server_nego_hello13 (RTLSServer * server)
+{
+  RTLSHelloExt sv = R_TLS_HELLO_EXT_INIT, ks = R_TLS_HELLO_EXT_INIT;
+  RTLSKeyShareEntry entry = R_TLS_KEY_SHARE_ENTRY_INIT;
+  RTLSCipherSuite cs13 = R_TLS_CS_NONE;
+  RCryptoAlgorithm certalgo;
+  RTLSError r;
+  REcurveID curve;
+  ruint16 i, ncs;
+
+  if (!r_tls_server_find_ext (server, R_TLS_EXT_TYPE_SUPPORTED_VERSIONS, &sv) ||
+      !r_tls_hello_ext_supported_versions_contains (&sv, R_TLS_VERSION_TLS_1_3))
+    return R_TLS_ERROR_NOT_NEEDED;
+
+  /* Committed to 1.3: this cut needs a server certificate (no PSK). */
+  if (R_UNLIKELY (server->privkey == NULL || server->cert == NULL))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* Cipher suite: the first 1.3 suite the client offered that we support. */
+  ncs = (ruint16) (server->hello.cslen / sizeof (ruint16));
+  for (i = 0; i < ncs; i++) {
+    RTLSCipherSuite c =
+        (RTLSCipherSuite) r_load_be16 (server->hello.cs + i * sizeof (ruint16));
+    if (c == R_TLS_CS_AES_128_GCM_SHA256 || c == R_TLS_CS_AES_256_GCM_SHA384) {
+      cs13 = c;
+      break;
+    }
+  }
+  /* The 1.3 suites carry a table entry (key_exchange NULL, the AEAD cipher and
+   * the HKDF/transcript hash); record it as the negotiated suite so the public
+   * accessors report it, and take the cipher and hash from it. */
+  if ((server->csinfo = r_tls_cipher_suite_get_info (cs13)) == NULL ||
+      server->csinfo->cipher == NULL)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  server->cs13_suite = cs13;
+  server->cs13_cipher = server->csinfo->cipher;
+  server->cs13_hash = server->csinfo->prf;
+
+  /* key_share: the first offered entry on a curve we support. A
+   * HelloRetryRequest when none overlaps is out of scope (issue #372). */
+  if (!r_tls_server_find_ext (server, R_TLS_EXT_TYPE_KEY_SHARE, &ks))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  for (r = r_tls_hello_ext_key_share_first (&ks, &entry); r == R_TLS_ERROR_OK;
+      r = r_tls_hello_ext_key_share_next (&ks, &entry)) {
+    if (r_tls_ecdhe_group_to_curve (entry.group, &curve)) {
+      server->ks_group = entry.group;
+      server->ecdhe_curve = curve;
+      server->ks_peer_pub = r_tls_ecdhe_point_read (curve, entry.key, entry.len);
+      break;
+    }
+  }
+  if (server->ks_peer_pub == NULL)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* CertificateVerify scheme follows the certificate key (both hash SHA-256). */
+  certalgo = r_crypto_key_get_algo (server->privkey);
+  if (certalgo == R_CRYPTO_ALGO_ECDSA)
+    server->cv_scheme = R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256;
+  else if (certalgo == R_CRYPTO_ALGO_RSA)
+    server->cv_scheme = R_TLS_SIGN_SCHEME_RSA_PSS_SHA256;
+  else
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* Echo the client's legacy_session_id in the ServerHello. */
+  server->session_id_len =
+      MIN (server->hello.sidlen, (ruint8) sizeof (server->session_id));
+  if (server->session_id_len > 0)
+    r_memcpy (server->session_id, server->hello.sid, server->session_id_len);
+
+  if ((server->hshash = r_msg_digest_new (server->cs13_hash)) == NULL)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  server->comp = R_TLS_COMPRESSION_NULL;
+  server->version = R_TLS_VERSION_TLS_1_3;
+  server->tls13 = TRUE;
+  return R_TLS_ERROR_OK;
+}
+
+/* ServerHello supported_versions: selects 0x0304. */
+static ruint16
+r_tls_server_write_ext13_supported_versions (ruint8 * p)
+{
+  r_store_be16 (p, R_TLS_EXT_TYPE_SUPPORTED_VERSIONS);
+  r_store_be16 (p + 2, sizeof (ruint16));
+  r_store_be16 (p + 4, R_TLS_VERSION_TLS_1_3);
+  return 6;
+}
+
+/* ServerHello key_share: the single server KeyShareEntry. */
+static ruint16
+r_tls_server_write_ext13_key_share (RTLSServer * server, ruint8 * p)
+{
+  ruint8 point[256], plen = 0;
+
+  if (!r_tls_ecdhe_point_write (server->ecdhe_key, server->ecdhe_curve,
+        point, sizeof (point), &plen))
+    return 0;
+  r_store_be16 (p, R_TLS_EXT_TYPE_KEY_SHARE);
+  r_store_be16 (p + 2, (ruint16) (2 * sizeof (ruint16) + plen));
+  r_store_be16 (p + 4, (ruint16) server->ks_group);
+  r_store_be16 (p + 6, plen);
+  r_memcpy (p + 8, point, plen);
+  return (ruint16) (8 + plen);
+}
+
+static RTLSError
+r_tls_server_write_hello13 (RTLSServer * server)
+{
+  RBuffer * buf;
+  RTLSError ret;
+  RMemMapInfo info;
+
+  if ((buf = r_tls_server_alloc_buffer (server)) == NULL)
+    return R_TLS_ERROR_OOM;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    ruint8 * ptr;
+    rsize hssize, size = 0;
+    ruint16 extsize = 0;
+
+    if (!server->servrandompinned) {
+      r_tls_generate_hello_random (server->servrandom, server->prng);
+      server->servrandompinned = TRUE;
+    }
+
+    /* legacy_record_version / legacy_version stay 0x0303; the real version is
+     * carried by the supported_versions extension below. */
+    ret = r_tls_write_handshake (info.data, info.size, &hssize,
+        R_TLS_VERSION_TLS_1_2, R_TLS_HANDSHAKE_TYPE_SERVER_HELLO, 0);
+    ptr = info.data + hssize;
+    if (ret == R_TLS_ERROR_OK)
+      ret = r_tls_write_hs_server_hello (ptr, info.size - hssize, &size,
+          R_TLS_VERSION_TLS_1_2, server->servrandom,
+          server->session_id, server->session_id_len,
+          server->cs13_suite, server->comp);
+    ptr += size;
+
+    extsize += r_tls_server_write_ext13_supported_versions (ptr + 2 + extsize);
+    extsize += r_tls_server_write_ext13_key_share (server, ptr + 2 + extsize);
+    r_store_be16 (ptr, extsize);
+    ptr += extsize + 2;
+
+    size = RPOINTER_TO_SIZE (ptr) - RPOINTER_TO_SIZE (info.data);
+    if (ret == R_TLS_ERROR_OK)
+      ret = r_tls_update_handshake_len (info.data, info.size,
+          (ruint16) (size - hssize));
+    if (ret == R_TLS_ERROR_OK)
+      r_msg_digest_update (server->hshash, info.data + R_TLS_RECORD_HDR_SIZE,
+          size - R_TLS_RECORD_HDR_SIZE);
+    r_buffer_unmap (buf, &info);
+    r_buffer_set_size (buf, size);
+
+    if (ret == R_TLS_ERROR_OK)
+      ret = r_tls_server_send_record (server, buf);
+  } else {
+    ret = R_TLS_ERROR_OOM;
+  }
+
+  r_buffer_unref (buf);
+  return ret;
+}
+
+/* AEAD-protect @plain[@plainlen] (real content type @ct) under the current
+ * write key and queue the application_data record. */
+static RTLSError
+r_tls_server_protect_record13 (RTLSServer * server, RTLSContentType ct,
+    const ruint8 * plain, rsize plainlen)
+{
+  RBuffer * rec;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rsize cap = R_TLS_RECORD_HDR_SIZE + plainlen + 1 + R_TLS13_AEAD_TAG_SIZE;
+  rsize enclen = 0;
+  RTLSError ret = R_TLS_ERROR_OOM;
+
+  if ((rec = r_buffer_new_alloc (NULL, cap, NULL)) == NULL)
+    return R_TLS_ERROR_OOM;
+  if (r_buffer_map (rec, &info, R_MEM_MAP_WRITE)) {
+    ruint8 * p = info.data;
+    if (r_tls13_record_protect (server->rk_write.cipher,
+            server->rk_write.iv, server->rk_write.ivlen, server->rk_write.seq,
+            ct, plain, plainlen,
+            p + R_TLS_RECORD_HDR_SIZE, info.size - R_TLS_RECORD_HDR_SIZE, &enclen)) {
+      p[0] = (ruint8) R_TLS_CONTENT_TYPE_APPLICATION_DATA;
+      r_store_be16 (p + 1, R_TLS_VERSION_TLS_1_2);
+      r_store_be16 (p + 3, (ruint16) enclen);
+      r_buffer_unmap (rec, &info);
+      r_buffer_set_size (rec, R_TLS_RECORD_HDR_SIZE + enclen);
+      if (r_queue_push (&server->qsend, rec) != NULL) {
+        server->rk_write.seq++;
+        rec = NULL;   /* queue owns it now */
+        ret = R_TLS_ERROR_OK;
+      } else {
+        ret = R_TLS_ERROR_QUEUE_FULL;
+      }
+    } else {
+      r_buffer_unmap (rec, &info);
+      ret = R_TLS_ERROR_ENCRYPTION_FAILED;
+    }
+  }
+
+  if (rec != NULL)
+    r_buffer_unref (rec);
+  return ret;
+}
+
+/* Frame @body[@bodylen] as a handshake message, fold it into the transcript,
+ * and send it protected with the current write key. */
+static RTLSError
+r_tls_server_send_hs13 (RTLSServer * server, RTLSHandshakeType type,
+    const ruint8 * body, rsize bodylen)
+{
+  rsize msglen = R_TLS_HS_HDR_SIZE + bodylen;
+  ruint8 * msg;
+  RTLSError ret;
+
+  if ((msg = r_malloc (msglen)) == NULL)
+    return R_TLS_ERROR_OOM;
+  msg[0] = (ruint8) type;
+  msg[1] = (ruint8) ((bodylen >> 16) & 0xff);
+  msg[2] = (ruint8) ((bodylen >>  8) & 0xff);
+  msg[3] = (ruint8) ((bodylen      ) & 0xff);
+  r_memcpy (msg + R_TLS_HS_HDR_SIZE, body, bodylen);
+
+  r_msg_digest_update (server->hshash, msg, msglen);
+  ret = r_tls_server_protect_record13 (server, R_TLS_CONTENT_TYPE_HANDSHAKE,
+      msg, msglen);
+
+  r_free (msg);
+  return ret;
+}
+
+/* Install a fresh traffic key, releasing any previously installed cipher. */
+static rboolean
+r_tls_server_install_keys13 (RTLSServer * server, RTLS13RecordKeys * rk,
+    const ruint8 * secret)
+{
+  if (rk->cipher != NULL) {
+    r_crypto_cipher_unref (rk->cipher);
+    rk->cipher = NULL;
+  }
+  return r_tls13_traffic_keys (server->cs13_hash, secret, server->cs13_cipher, rk);
+}
+
+/* Sign the CertificateVerify content with the negotiated scheme. */
+static RTLSError
+r_tls_server_sign_certificate_verify13 (RTLSServer * server,
+    const ruint8 * th, rsize hlen, ruint8 * sig, rsize * siglen)
+{
+  ruint8 tbs[R_TLS13_CERT_VERIFY_TBS_MAX], digest[R_TLS13_SECRET_MAX];
+  rsize tbslen = 0, dlen;
+  RMsgDigest * md;
+  rboolean ok;
+
+  if (!r_tls13_cert_verify_tbs (TRUE, th, hlen, tbs, sizeof (tbs), &tbslen))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* Both ecdsa_secp256r1_sha256 and rsa_pss_rsae_sha256 hash with SHA-256,
+   * independent of the cipher-suite hash. */
+  if ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_SHA256)) == NULL)
+    return R_TLS_ERROR_OOM;
+  dlen = r_msg_digest_size (md);
+  ok = r_msg_digest_update (md, tbs, tbslen) &&
+       r_msg_digest_get_data (md, digest, dlen, NULL);
+  r_msg_digest_free (md);
+  if (!ok)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  if (server->cv_scheme == R_TLS_SIGN_SCHEME_RSA_PSS_SHA256)
+    r_rsa_priv_key_set_padding (server->privkey, R_RSA_PADDING_PKCS1_V21);
+  if (r_crypto_key_sign (server->privkey, server->prng, R_MSG_DIGEST_TYPE_SHA256,
+        digest, dlen, sig, siglen) != R_CRYPTO_OK)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  return R_TLS_ERROR_OK;
+}
+
+/* Send the encrypted server flight (EncryptedExtensions, Certificate,
+ * CertificateVerify, Finished) and derive the application secrets. The
+ * ServerHello goes out in the clear first. */
+static RTLSError
+r_tls_server_write_flight13 (RTLSServer * server)
+{
+  ruint8 ecdhe[64], th[R_TLS13_SECRET_MAX];
+  ruint8 sig[512], finkey[R_TLS13_SECRET_MAX], vd[R_TLS13_SECRET_MAX];
+  ruint8 body[4096];
+  rsize ecdhelen = 0, siglen = sizeof (sig), bodylen = 0;
+  rsize hlen = r_msg_digest_type_size (server->cs13_hash);
+  RBuffer * certbuf;
+  RMemMapInfo certinfo = R_MEM_MAP_INFO_INIT;
+  RTLSError ret;
+
+  /* 1. ServerHello (plaintext); generate the server ephemeral first. */
+  if ((server->ecdhe_key = r_tls_ecdhe_keygen (server->ecdhe_curve, server->prng)) == NULL)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if ((ret = r_tls_server_write_hello13 (server)) != R_TLS_ERROR_OK)
+    return ret;
+
+  /* 2. Handshake secrets, bound to Transcript-Hash(ClientHello..ServerHello). */
+  if (!r_msg_digest_get_data (server->hshash, th, hlen, NULL))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if (!r_tls_ecdhe_compute (server->ecdhe_key, server->ks_peer_pub,
+        ecdhe, sizeof (ecdhe), &ecdhelen))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if (!r_tls13_schedule_init (&server->sched13, server->cs13_hash) ||
+      !r_tls13_schedule_handshake (&server->sched13, ecdhe, ecdhelen, th)) {
+    r_memclear_secure (ecdhe, sizeof (ecdhe));
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  }
+  r_memclear_secure (ecdhe, sizeof (ecdhe));
+
+  /* 3. Install handshake-traffic keys (server writes shs, reads chs). */
+  if (!r_tls_server_install_keys13 (server, &server->rk_write, server->sched13.shs) ||
+      !r_tls_server_install_keys13 (server, &server->rk_read, server->sched13.chs))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* 4. EncryptedExtensions (empty in this cut). */
+  if ((ret = r_tls_write_hs_encrypted_extensions (body, sizeof (body),
+          &bodylen, NULL, 0)) != R_TLS_ERROR_OK)
+    return ret;
+  if ((ret = r_tls_server_send_hs13 (server,
+          R_TLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, body, bodylen)) != R_TLS_ERROR_OK)
+    return ret;
+
+  /* 5. Certificate (single leaf). */
+  if ((certbuf = r_crypto_cert_get_data_buffer (server->cert)) == NULL)
+    return R_TLS_ERROR_NO_CERTIFICATE;
+  if (!r_buffer_map (certbuf, &certinfo, R_MEM_MAP_READ)) {
+    r_buffer_unref (certbuf);
+    return R_TLS_ERROR_OOM;
+  }
+  ret = r_tls_write_hs_certificate13 (body, sizeof (body), &bodylen,
+      certinfo.data, certinfo.size);
+  r_buffer_unmap (certbuf, &certinfo);
+  r_buffer_unref (certbuf);
+  if (ret != R_TLS_ERROR_OK)
+    return ret;
+  if ((ret = r_tls_server_send_hs13 (server,
+          R_TLS_HANDSHAKE_TYPE_CERTIFICATE, body, bodylen)) != R_TLS_ERROR_OK)
+    return ret;
+
+  /* 6. CertificateVerify over Transcript-Hash(ClientHello..Certificate). */
+  if (!r_msg_digest_get_data (server->hshash, th, hlen, NULL))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if ((ret = r_tls_server_sign_certificate_verify13 (server, th, hlen,
+          sig, &siglen)) != R_TLS_ERROR_OK)
+    return ret;
+  if ((ret = r_tls_write_hs_certificate_verify (body, sizeof (body), &bodylen,
+          server->cv_scheme, sig, (ruint16) siglen)) != R_TLS_ERROR_OK)
+    return ret;
+  if ((ret = r_tls_server_send_hs13 (server,
+          R_TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY, body, bodylen)) != R_TLS_ERROR_OK)
+    return ret;
+
+  /* 7. server Finished over Transcript-Hash(ClientHello..CertificateVerify). */
+  if (!r_msg_digest_get_data (server->hshash, th, hlen, NULL))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if (!r_tls13_finished_key (server->cs13_hash, server->sched13.shs, finkey) ||
+      !r_tls13_verify_data (server->cs13_hash, finkey, th, vd))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if ((ret = r_tls_write_hs_finished (body, sizeof (body), &bodylen,
+          vd, hlen)) != R_TLS_ERROR_OK)
+    return ret;
+  if ((ret = r_tls_server_send_hs13 (server,
+          R_TLS_HANDSHAKE_TYPE_FINISHED, body, bodylen)) != R_TLS_ERROR_OK)
+    return ret;
+
+  /* 8. Application secrets, bound to Transcript-Hash(..server Finished). The
+   * client Finished still arrives under the client handshake-traffic key, so
+   * the read key is not switched yet. */
+  if (!r_msg_digest_get_data (server->hshash, th, hlen, NULL))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if (!r_tls13_schedule_master (&server->sched13, th))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  return R_TLS_ERROR_OK;
+}
+
+/* Verify the client Finished and switch to application-traffic keys. */
+static RTLSError
+r_tls_server_finished13 (RTLSServer * server, const RTLSParser * parser)
+{
+  const ruint8 * vd;
+  rsize vdsize;
+  ruint8 th[R_TLS13_SECRET_MAX], finkey[R_TLS13_SECRET_MAX], expect[R_TLS13_SECRET_MAX];
+  rsize hlen = r_msg_digest_type_size (server->cs13_hash);
+  RTLSHandshakeType type;
+  RTLSError err;
+
+  if ((err = r_tls_parser_parse_handshake_peek_type (parser, &type)) != R_TLS_ERROR_OK)
+    return err;
+  if (type != R_TLS_HANDSHAKE_TYPE_FINISHED)
+    return R_TLS_ERROR_WRONG_TYPE;
+  if ((err = r_tls_parser_parse_finished (parser, &vd, &vdsize)) != R_TLS_ERROR_OK)
+    return err;
+
+  /* The client Finished verify_data covers the transcript through the server
+   * Finished -- the same hash the application secrets were bound to. */
+  if (!r_msg_digest_get_data (server->hshash, th, hlen, NULL) ||
+      !r_tls13_finished_key (server->cs13_hash, server->sched13.chs, finkey) ||
+      !r_tls13_verify_data (server->cs13_hash, finkey, th, expect))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if (vdsize != hlen || r_memcmp (vd, expect, hlen) != 0)
+    return R_TLS_ERROR_HS_VERIFICATION_FAILED;
+
+  /* Switch to application-traffic keys (server writes sap, reads cap). */
+  if (!r_tls_server_install_keys13 (server, &server->rk_write, server->sched13.sap) ||
+      !r_tls_server_install_keys13 (server, &server->rk_read, server->sched13.cap))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  return R_TLS_ERROR_OK;
+}
+
+/* ----------------------------------------------------------------------- */
+
 static RTLSError
 r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion verhi)
 {
@@ -1428,6 +1886,16 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
 
   R_LOG_DEBUG ("%p - ver %.4x", server, server->version);
 
+  /* Detect a TLS 1.3 offer (supported_versions) before resolving SNI, so the
+   * server_name callback sees the version that will actually be negotiated. The
+   * full 1.3 negotiation runs after SNI (it needs the selected certificate). */
+  if (!r_tls_version_is_dtls (server->version)) {
+    RTLSHelloExt sv = R_TLS_HELLO_EXT_INIT;
+    if (r_tls_server_find_ext (server, R_TLS_EXT_TYPE_SUPPORTED_VERSIONS, &sv) &&
+        r_tls_hello_ext_supported_versions_contains (&sv, R_TLS_VERSION_TLS_1_3))
+      server->version = R_TLS_VERSION_TLS_1_3;
+  }
+
   /* Resolve SNI and let the application select the certificate / policy for the
    * requested host now -- before cipher negotiation below -- so the chosen cert
    * key and any per-host cipher preference (the preferred_cipher_suites callback,
@@ -1439,6 +1907,14 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
     RTLSError snierr = server->server_name_cb (server->userdata, server->sni, server);
     if (snierr != R_TLS_ERROR_OK)
       return snierr;
+  }
+
+  /* A ClientHello selecting TLS 1.3 (supported_versions) takes the 1.3 path;
+   * NOT_NEEDED means it did not, so fall through to the <=1.2 negotiation. */
+  if (!r_tls_version_is_dtls (server->version)) {
+    RTLSError r13 = r_tls_server_nego_hello13 (server);
+    if (r13 != R_TLS_ERROR_NOT_NEEDED)
+      return r13;
   }
 
   if (R_UNLIKELY (server->hello.cslen == 0 || (server->hello.cslen & 1)))
@@ -1930,6 +2406,15 @@ r_tls_server_emit_alert (RTLSServer * server, RTLSAlertLevel level,
    * negotiation). */
   RTLSVersion ver = (server->version != 0) ? server->version : server->recordver;
 
+  /* Once 1.3 write keys are installed, alerts are AEAD-protected as
+   * application_data (RFC 8446 5); only the pre-key handshake alerts are
+   * plaintext. */
+  if (server->tls13 && server->rk_write.cipher != NULL) {
+    ruint8 body[2] = { (ruint8) level, (ruint8) alert };
+    return r_tls_server_protect_record13 (server, R_TLS_CONTENT_TYPE_ALERT,
+        body, sizeof (body));
+  }
+
   if ((buf = r_tls_server_alloc_buffer (server)) != NULL) {
     RMemMapInfo info = R_MEM_MAP_INFO_INIT;
 
@@ -2155,13 +2640,19 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
     /* nego_hello resolves SNI and fires the server_name callback (cert / policy
      * / per-host cipher selection) before choosing the cipher suite. */
     if ((err = r_tls_server_nego_hello (server, parser->version, server->hello.version)) == R_TLS_ERROR_OK) {
-      RTLSError rr = r_tls_server_try_resume (server);
-      if (rr == R_TLS_ERROR_OK)
-        err = r_tls_server_change_state (server, R_TLS_SERVER_CHANGE_CIPHER);
-      else if (rr == R_TLS_ERROR_NOT_NEEDED)
-        err = r_tls_server_change_state (server, R_TLS_SERVER_CERTIFICATE);
-      else
-        err = rr;   /* resume committed then failed: abort, do not fall back */
+      if (server->tls13) {
+        /* The 1.3 flight is written below, after the ClientHello is folded into
+         * the transcript; state advances there. No session resumption (PSK is
+         * out of scope, issue #373). */
+      } else {
+        RTLSError rr = r_tls_server_try_resume (server);
+        if (rr == R_TLS_ERROR_OK)
+          err = r_tls_server_change_state (server, R_TLS_SERVER_CHANGE_CIPHER);
+        else if (rr == R_TLS_ERROR_NOT_NEEDED)
+          err = r_tls_server_change_state (server, R_TLS_SERVER_CERTIFICATE);
+        else
+          err = rr;   /* resume committed then failed: abort, do not fall back */
+      }
     }
   }
 
@@ -2170,6 +2661,15 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
       R_LOG_TRACE ("Updating HS hash with ClientHello %u bytes",
           (ruint)parser->fragment.size);
       r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
+
+      if (server->tls13) {
+        /* Send ServerHello..Finished, then await the client Finished. */
+        if ((err = r_tls_server_write_flight13 (server)) == R_TLS_ERROR_OK)
+          err = r_tls_server_change_state (server, R_TLS_SERVER_FINISHED);
+        if (err != R_TLS_ERROR_OK)
+          r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
+        break;
+      }
 
       if (server->resumed) {
         /* Abbreviated flight: the server Finished is sent now, ahead of the
@@ -2335,6 +2835,20 @@ r_tls_server_state_finished (RTLSServer * server, const RTLSParser * parser)
 {
   RTLSError err;
 
+  if (server->tls13) {
+    if ((err = r_tls_server_finished13 (server, parser)) == R_TLS_ERROR_OK)
+      err = r_tls_server_change_state (server, R_TLS_SERVER_APPDATA);
+    if (err == R_TLS_ERROR_OK) {
+      r_msg_digest_free (server->hshash);
+      server->hshash = NULL;
+      if (server->cb.handshake_done != NULL)
+        server->cb.handshake_done (server->userdata, server);
+    } else {
+      r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
+    }
+    return err;
+  }
+
   if ((err = r_tls_server_parse_finished (server, parser)) == R_TLS_ERROR_OK)
     err = r_tls_server_change_state (server, R_TLS_SERVER_APPDATA);
 
@@ -2454,21 +2968,41 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
      * correctly even before the version is negotiated. */
     server->recordver = parser.version;
 
-    /* TLS carries no explicit record sequence number; feed the running read
-     * counter to the MAC. (DTLS reads epoch/seqno from the record header.) */
-    if (!r_tls_parser_is_dtls (&parser))
-      parser.seqno = server->client.seqno;
-
-    if (!r_tls_parser_is_dtls (&parser) || parser.epoch == server->client.epoch) {
-      if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac,
-              server->encrypt_then_mac, server->client.fixediv)) != R_TLS_ERROR_OK) {
-        /* A record that fails decrypt / MAC must not be processed. TLS reports
-         * it as fatal bad_record_mac (RFC 5246 7.2.2); DTLS silently discards
-         * the record and keeps the association (RFC 6347 4.1.2.7). */
-        R_LOG_WARNING ("Decryption returned: %d", err);
-        if (!r_tls_parser_is_dtls (&parser))
-          r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
+    if (server->tls13) {
+      /* TLS 1.3: a middlebox-compat ChangeCipherSpec is ignored entirely
+       * (RFC 8446 5). Once read keys are installed, the peer's records are
+       * AEAD-protected application_data; the ClientHello before that is
+       * plaintext and passes through to the state handler. */
+      if (parser.content == R_TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC)
         continue;
+      if (server->rk_read.cipher != NULL &&
+          parser.content == R_TLS_CONTENT_TYPE_APPLICATION_DATA) {
+        if ((err = r_tls_parser_unprotect13 (&parser, server->rk_read.cipher,
+                server->rk_read.iv, server->rk_read.ivlen,
+                server->rk_read.seq)) != R_TLS_ERROR_OK) {
+          R_LOG_WARNING ("1.3 record unprotect returned: %d", err);
+          r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
+          continue;
+        }
+        server->rk_read.seq++;
+      }
+    } else {
+      /* TLS carries no explicit record sequence number; feed the running read
+       * counter to the MAC. (DTLS reads epoch/seqno from the record header.) */
+      if (!r_tls_parser_is_dtls (&parser))
+        parser.seqno = server->client.seqno;
+
+      if (!r_tls_parser_is_dtls (&parser) || parser.epoch == server->client.epoch) {
+        if ((err = server->decrypt (&parser, server->client.cipher, server->client.hmac,
+                server->encrypt_then_mac, server->client.fixediv)) != R_TLS_ERROR_OK) {
+          /* A record that fails decrypt / MAC must not be processed. TLS reports
+           * it as fatal bad_record_mac (RFC 5246 7.2.2); DTLS silently discards
+           * the record and keeps the association (RFC 6347 4.1.2.7). */
+          R_LOG_WARNING ("Decryption returned: %d", err);
+          if (!r_tls_parser_is_dtls (&parser))
+            r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
+          continue;
+        }
       }
     }
 
@@ -2558,6 +3092,16 @@ r_tls_server_send_appdata (RTLSServer * server, RBuffer * buffer)
   /* Application data may only flow once the handshake has finished. */
   if (R_UNLIKELY (server->state != R_TLS_SERVER_APPDATA)) return FALSE;
   if (R_UNLIKELY (!r_buffer_map (buffer, &in, R_MEM_MAP_READ))) return FALSE;
+
+  if (server->tls13) {
+    ret = r_tls_server_protect_record13 (server,
+        R_TLS_CONTENT_TYPE_APPLICATION_DATA, in.data, in.size);
+    r_buffer_unmap (buffer, &in);
+    if (ret != R_TLS_ERROR_OK)
+      return FALSE;
+    r_tls_server_send_out (server);
+    return TRUE;
+  }
 
   dtls = r_tls_version_is_dtls (server->version);
   recsize = (dtls ? R_DTLS_RECORD_HDR_SIZE : R_TLS_RECORD_HDR_SIZE) + in.size;
