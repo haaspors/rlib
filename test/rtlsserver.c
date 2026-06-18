@@ -2428,6 +2428,81 @@ RTEST_F (rtlsserver, tls_session_resume, RTEST_FAST)
 }
 RTEST_END;
 
+/* A ticket still opens after the key store rotates, as long as its sealing key
+ * is still in the retained current+recent set (#348). */
+RTEST_F (rtlsserver, tls_session_resume_after_rotation, RTEST_FAST)
+{
+  RTLSServer * srv2;
+  ruint8 ms[48], * ticket = NULL;
+  rsize ticketlen = 0;
+
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_client_issue (fixture->server, fixture->prng, &fixture->qout,
+      ms, &ticket, &ticketlen);
+  r_assert (fixture->hs_done);
+
+  /* Two rotations leave the ticket's key as the oldest retained key (the store
+   * keeps the active key plus two recent ones). */
+  r_assert (r_tls_session_ticket_keys_rotate (fixture->ticket_keys));
+  r_assert (r_tls_session_ticket_keys_rotate (fixture->ticket_keys));
+
+  fixture->hs_done = FALSE;
+  r_queue_clear (&fixture->qout, r_buffer_unref);
+  r_assert_cmpptr ((srv2 = r_test_tls_server_new_cfg (fixture)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (srv2, fixture->ticket_keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srv2, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_resume (srv2, fixture->prng, &fixture->qout, ms, ticket, ticketlen);
+  r_assert (fixture->hs_done);
+
+  r_free (ticket);
+  r_tls_server_unref (srv2);
+}
+RTEST_END;
+
+/* Once the sealing key rotates out of the retained set, the ticket can no
+ * longer be opened and the server falls back to a full handshake (#348). */
+RTEST_F (rtlsserver, tls_session_resume_rotated_out, RTEST_FAST)
+{
+  RTLSServer * srv2;
+  ruint8 ms[48], * ticket = NULL;
+  rsize ticketlen = 0;
+  ruint i;
+
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_client_issue (fixture->server, fixture->prng, &fixture->qout,
+      ms, &ticket, &ticketlen);
+  r_assert (fixture->hs_done);
+
+  /* Three rotations push the ticket's key past the retained set. */
+  for (i = 0; i < 3; i++)
+    r_assert (r_tls_session_ticket_keys_rotate (fixture->ticket_keys));
+
+  fixture->hs_done = FALSE;
+  r_queue_clear (&fixture->qout, r_buffer_unref);
+  r_assert_cmpptr ((srv2 = r_test_tls_server_new_cfg (fixture)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (srv2, fixture->ticket_keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srv2, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_client_resume_assert_full (srv2, fixture->prng, &fixture->qout,
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, ticket, ticketlen);
+  r_assert (!fixture->hs_done);
+
+  r_free (ticket);
+  r_tls_server_unref (srv2);
+}
+RTEST_END;
+
 /* A ClientHello carrying an unopenable ticket falls back to a full handshake. */
 RTEST_F (rtlsserver, tls_session_resume_bad_ticket, RTEST_FAST)
 {
