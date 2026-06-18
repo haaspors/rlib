@@ -481,6 +481,25 @@ R_API void r_tls_parser_clear (RTLSParser * parser);
 R_API RTLSError r_tls_parser_decrypt (RTLSParser * parser,
     const RCryptoCipher * cipher, RHmac * mac, rboolean etm, const ruint8 * salt);
 
+/**
+ * @brief Unprotect the current TLS 1.3 record in place (RFC 8446, section 5.2).
+ *
+ * AEAD-opens the @c application_data record's @c encrypted_record with @p cipher
+ * under the nonce from @p iv and @p seq, then re-points the parser at the
+ * recovered @c TLSInnerPlaintext with @c parser->content set to the inner
+ * content type.
+ *
+ * @param parser Parser positioned on the protected record.
+ * @param cipher AEAD cipher keyed with the read traffic key.
+ * @param iv Static read-IV; @p ivlen bytes.
+ * @param ivlen Nonce length.
+ * @param seq Record sequence number for this read key.
+ * @return @c R_TLS_ERROR_OK, or @c R_TLS_ERROR_INVALID_MAC on authentication
+ *  failure / a malformed plaintext.
+ */
+R_API RTLSError r_tls_parser_unprotect13 (RTLSParser * parser,
+    const RCryptoCipher * cipher, const ruint8 * iv, rsize ivlen, ruint64 seq);
+
 /** @brief @c TRUE if protocol @p version is a DTLS version. */
 #define r_tls_version_is_dtls(version) ((version) > RUINT16_MAX / 2)
 /** @brief @c TRUE if @p parser holds a DTLS record. */
