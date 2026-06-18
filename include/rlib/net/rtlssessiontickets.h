@@ -65,6 +65,21 @@ R_API RTLSSessionTicketKeys * r_tls_session_ticket_keys_new (void) R_ATTR_MALLOC
 /** @brief Decrement the refcount; scrubs and frees the key material at zero. */
 #define r_tls_session_ticket_keys_unref  r_ref_unref
 
+/**
+ * @brief Rotate the store: promote a fresh random key to active and age the
+ * oldest out.
+ *
+ * New tickets seal under the fresh key; tickets sealed under the previous keys
+ * still open until those keys age out of the retained set, so a caller can
+ * rotate on a schedule without invalidating live tickets. Safe to call
+ * concurrently with ticket sealing / opening.
+ *
+ * @param keys The key store.
+ * @return @c TRUE on success; @c FALSE on a @c NULL store or an entropy failure
+ *   (the existing keys are left untouched).
+ */
+R_API rboolean r_tls_session_ticket_keys_rotate (RTLSSessionTicketKeys * keys);
+
 R_END_DECLS
 
 /** @} */
