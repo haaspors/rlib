@@ -298,6 +298,42 @@ R_API rboolean r_tls13_cert_verify_tbs (rboolean server,
     const ruint8 * transcript_hash, rsize thlen,
     ruint8 * out, rsize outsize, rsize * outlen);
 
+/**
+ * @brief Write the special HelloRetryRequest random (RFC 8446, section 4.1.3).
+ *
+ * A HelloRetryRequest is a ServerHello whose @c random is the fixed value
+ * @c SHA-256("HelloRetryRequest"); this fills @p out with it.
+ *
+ * @param out Destination for the @ref R_TLS_HELLO_RANDOM_BYTES-byte value.
+ */
+R_API void r_tls13_hello_retry_random (ruint8 * out);
+
+/**
+ * @brief Whether a ServerHello @p random is the HelloRetryRequest sentinel.
+ * @param random A ServerHello random field; @ref R_TLS_HELLO_RANDOM_BYTES bytes.
+ * @return @c TRUE if @p random equals @c SHA-256("HelloRetryRequest").
+ */
+R_API rboolean r_tls13_random_is_hrr (const ruint8 * random);
+
+/**
+ * @brief Build the synthetic @c message_hash handshake message (RFC 8446, 4.4.1).
+ *
+ * When a HelloRetryRequest is used the transcript replaces the first
+ * ClientHello with @c Handshake(message_hash) carrying @c Hash(ClientHello1):
+ * the handshake header (@c message_hash type @c 0xfe and a 3-byte length) over a
+ * body of @c Hash(@p msg). The caller folds the result into the transcript.
+ *
+ * @param hash   Cipher-suite hash.
+ * @param msg    The first ClientHello (handshake header + body).
+ * @param msglen Length of @p msg.
+ * @param out    Destination for the @c message_hash handshake message.
+ * @param outsize Capacity of @p out (at least @c 4 + HashLen).
+ * @param outlen  Out: bytes written (@c 4 + HashLen).
+ * @return @c TRUE on success; @c FALSE on invalid arguments / too-small @p out.
+ */
+R_API rboolean r_tls13_message_hash (RMsgDigestType hash,
+    const ruint8 * msg, rsize msglen, ruint8 * out, rsize outsize, rsize * outlen);
+
 R_END_DECLS
 
 /** @} */

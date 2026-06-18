@@ -205,3 +205,51 @@ RTEST (rtls13, cert_verify_tbs, R_TEST_TYPE_FAST)
   r_assert (!r_tls13_cert_verify_tbs (TRUE, th, sizeof (th), out, 10, &outlen));
 }
 RTEST_END;
+
+RTEST (rtls13, hello_retry_random, R_TEST_TYPE_FAST)
+{
+  ruint8 r[32], other[32];
+  rsize i;
+
+  /* SHA-256("HelloRetryRequest") (RFC 8446 4.1.3). */
+  r_tls13_hello_retry_random (r);
+  r_assert_cmpmem (r, ==,
+      "\xcf\x21\xad\x74\xe5\x9a\x61\x11\xbe\x1d\x8c\x02\x1e\x65\xb8\x91"
+      "\xc2\xa2\x11\x16\x7a\xbb\x8c\x5e\x07\x9e\x09\xe2\xc8\xa8\x33\x9c", 32);
+  r_assert (r_tls13_random_is_hrr (r));
+
+  for (i = 0; i < sizeof (other); i++)
+    other[i] = (ruint8) i;
+  r_assert (!r_tls13_random_is_hrr (other));
+  r_assert (!r_tls13_random_is_hrr (NULL));
+}
+RTEST_END;
+
+RTEST (rtls13, message_hash, R_TEST_TYPE_FAST)
+{
+  static const ruint8 ch1[] = { 0x01, 0x00, 0x00, 0x04, 0xde, 0xad, 0xbe, 0xef };
+  ruint8 out[4 + 64], expect[32];
+  rsize outlen = 0;
+  RMsgDigest * md;
+
+  r_assert (r_tls13_message_hash (R_MSG_DIGEST_TYPE_SHA256, ch1, sizeof (ch1),
+        out, sizeof (out), &outlen));
+  /* message_hash handshake header: type 0xfe, 3-byte length = HashLen. */
+  r_assert_cmpuint (outlen, ==, 4 + 32);
+  r_assert_cmphex (out[0], ==, R_TLS_HANDSHAKE_TYPE_MESSAGE_HASH);
+  r_assert_cmphex (out[1], ==, 0x00);
+  r_assert_cmphex (out[2], ==, 0x00);
+  r_assert_cmphex (out[3], ==, 32);
+
+  /* The body is SHA-256(ch1). */
+  r_assert_cmpptr ((md = r_msg_digest_new_sha256 ()), !=, NULL);
+  r_assert (r_msg_digest_update (md, ch1, sizeof (ch1)));
+  r_assert (r_msg_digest_get_data (md, expect, sizeof (expect), NULL));
+  r_msg_digest_free (md);
+  r_assert_cmpmem (out + 4, ==, expect, 32);
+
+  /* Too-small output is rejected. */
+  r_assert (!r_tls13_message_hash (R_MSG_DIGEST_TYPE_SHA256, ch1, sizeof (ch1),
+        out, 4, &outlen));
+}
+RTEST_END;

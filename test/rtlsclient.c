@@ -552,6 +552,17 @@ RTEST_F (rtlsclient, tls13_loopback_aes256, RTEST_FAST)
 }
 RTEST_END;
 
+/* The server requires secp256r1 but the client offers an x25519 key_share, so
+ * the server answers with a HelloRetryRequest and the client retries with a
+ * secp256r1 share. The handshake can only complete if the retry worked. */
+RTEST_F (rtlsclient, tls13_loopback_hrr, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
+        R_TLS_SUPPORTED_GROUP_SECP256R1), ==, R_TLS_ERROR_OK);
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
 /* In 1.3, alerts after the handshake are AEAD-protected (RFC 8446 5): the
  * server's close_notify goes out as an application_data record, the client
  * decrypts it, reports the orderly close and auto-responds with its own
