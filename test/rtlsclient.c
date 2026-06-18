@@ -465,9 +465,129 @@ r_test_tls_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture, RTLSVersion ve
   r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
 }
 
+/* TLS 1.3 1-RTT loopback. The 1.3 suites have no entry in the 1.2-shaped
+ * cipher-suite table, so get_cipher_suite is NULL here; we assert the handshake
+ * completes, the negotiated version, the peer certificate, and an
+ * application-data round-trip in both directions. */
+static void
+r_test_tls13_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
+{
+  static const ruint8 c2s[] = { 'h', 'e', 'l', 'l', 'o', ' ', '1', '.', '3' };
+  static const ruint8 s2c[] = { 'h', 'i', ' ', '1', '.', '3' };
+  RBuffer * app;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  r_assert_cmpuint (fixture->verify_calls, ==, 1);
+  r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), !=, NULL);
+  r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, R_TLS_VERSION_TLS_1_3);
+  /* The negotiated 1.3 suite is reported (it has a cipher-suite table entry). */
+  r_assert_cmpptr (r_tls_client_get_cipher_suite (fixture->client), !=, NULL);
+  r_assert (r_tls_client_get_cipher_suite (fixture->client)->suite ==
+        R_TLS_CS_AES_128_GCM_SHA256 ||
+      r_tls_client_get_cipher_suite (fixture->client)->suite ==
+        R_TLS_CS_AES_256_GCM_SHA384);
+
+  /* Application data, client -> server. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
+
+  /* Application data, server -> client. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+}
+
 RTEST_F (rtlsclient, tls_loopback, RTEST_FAST)
 {
   r_test_tls_loopback (fixture, R_TLS_VERSION_TLS_1_2);
+}
+RTEST_END;
+
+/* RSA server certificate: 1.3 CertificateVerify uses rsa_pss_rsae_sha256. */
+RTEST_F (rtlsclient, tls13_loopback_rsa, RTEST_FAST)
+{
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+/* ECDSA server certificate: 1.3 CertificateVerify uses ecdsa_secp256r1_sha256. */
+RTEST_F (rtlsclient, tls13_loopback_ecdsa, RTEST_FAST)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ecdsa, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ecdsa, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+/* Force AES_256_GCM_SHA384 to exercise the SHA-384 key schedule end to end. */
+RTEST_F (rtlsclient, tls13_loopback_aes256, RTEST_FAST)
+{
+  fixture->force_suite = R_TLS_CS_AES_256_GCM_SHA384;
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+/* In 1.3, alerts after the handshake are AEAD-protected (RFC 8446 5): the
+ * server's close_notify goes out as an application_data record, the client
+ * decrypts it, reports the orderly close and auto-responds with its own
+ * protected close_notify. */
+RTEST_F (rtlsclient, tls13_close_notify, RTEST_FAST)
+{
+  RBuffer * buf;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+
+  r_assert (r_tls_server_close (fixture->server));
+  r_assert_cmpptr ((buf = r_queue_pop (&fixture->srv_out)), !=, NULL);
+  /* Protected: the record carries application_data, not a cleartext alert. */
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_APPLICATION_DATA);
+  r_tls_parser_clear (&parser);
+
+  r_tls_client_incoming_data (fixture->client, buf);
+  r_buffer_unref (buf);
+  r_assert (fixture->cli_closed);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_closed);   /* the initiator is not itself notified */
+
+  /* The client auto-responded with its own protected close_notify. */
+  r_assert_cmpptr ((buf = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_APPLICATION_DATA);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
 }
 RTEST_END;
 
