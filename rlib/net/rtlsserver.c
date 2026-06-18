@@ -130,8 +130,12 @@ struct RTLSServer {
   RTLSCipherSuite cs13_suite;           /* 0x1301 / 0x1302 */
   RMsgDigestType cs13_hash;             /* SHA-256 / SHA-384 */
   RTLSSupportedGroup ks_group;          /* selected key_share group */
+  RTLSSupportedGroup ks_pref_group;     /* group to require via HRR, or 0 */
   RCryptoKey * ks_peer_pub;             /* client key_share public key */
   RTLSSignatureScheme cv_scheme;        /* CertificateVerify signature scheme */
+  rboolean hrr_sent;                    /* a HelloRetryRequest was sent */
+  ruint8 cookie[32];                    /* cookie issued in the HRR */
+  ruint8 cookielen;
 
   RBuffer * inbuf;
   RQueue qsend;
@@ -344,6 +348,19 @@ r_tls_server_set_session_ticket_keys (RTLSServer * server,
     r_tls_session_ticket_keys_unref (server->ticket_keys);
   server->ticket_keys = r_tls_session_ticket_keys_ref (keys);
 
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_server_set_key_share_group (RTLSServer * server, RTLSSupportedGroup group)
+{
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (server->state > R_TLS_SERVER_HELLO)) return R_TLS_ERROR_WRONG_STATE;
+
+  /* A configured group is required of TLS 1.3 clients: if a ClientHello does
+   * not carry a key_share for it the server answers with a HelloRetryRequest.
+   * group 0 (the default) accepts the client's first offered key_share. */
+  server->ks_pref_group = group;
   return R_TLS_ERROR_OK;
 }
 
@@ -1423,6 +1440,43 @@ r_tls_server_find_ext (const RTLSServer * server, RTLSExtensionType type,
   return FALSE;
 }
 
+/* Whether the ClientHello's supported_groups lists @group. */
+static rboolean
+r_tls_server_client_offers_group (const RTLSServer * server,
+    RTLSSupportedGroup group)
+{
+  RTLSHelloExt sg = R_TLS_HELLO_EXT_INIT;
+  ruint16 n, i;
+
+  if (!r_tls_server_find_ext (server, R_TLS_EXT_TYPE_SUPPORTED_GROUPS, &sg))
+    return FALSE;
+  n = r_tls_hello_ext_supported_groups_count (&sg);
+  for (i = 0; i < n; i++)
+    if (r_tls_hello_ext_supported_group (&sg, i) == group)
+      return TRUE;
+  return FALSE;
+}
+
+/* Read the client's key_share for @group (on @curve) into a public key, or NULL
+ * when the client offered no share for that group. */
+static RCryptoKey *
+r_tls_server_read_key_share (const RTLSServer * server,
+    RTLSSupportedGroup group, REcurveID curve)
+{
+  RTLSHelloExt ks = R_TLS_HELLO_EXT_INIT;
+  RTLSKeyShareEntry entry = R_TLS_KEY_SHARE_ENTRY_INIT;
+  RTLSError r;
+
+  if (!r_tls_server_find_ext (server, R_TLS_EXT_TYPE_KEY_SHARE, &ks))
+    return NULL;
+  for (r = r_tls_hello_ext_key_share_first (&ks, &entry); r == R_TLS_ERROR_OK;
+      r = r_tls_hello_ext_key_share_next (&ks, &entry)) {
+    if (entry.group == group)
+      return r_tls_ecdhe_point_read (curve, entry.key, entry.len);
+  }
+  return NULL;
+}
+
 /* Detect and negotiate TLS 1.3 from the parsed ClientHello. Returns
  * R_TLS_ERROR_NOT_NEEDED when 1.3 is not selected, so the caller falls through
  * to the <=1.2 negotiation; otherwise it commits to 1.3 (or fails). */
@@ -1465,21 +1519,35 @@ r_tls_server_nego_hello13 (RTLSServer * server)
   server->cs13_cipher = server->csinfo->cipher;
   server->cs13_hash = server->csinfo->prf;
 
-  /* key_share: the first offered entry on a curve we support. A
-   * HelloRetryRequest when none overlaps is out of scope (issue #372). */
-  if (!r_tls_server_find_ext (server, R_TLS_EXT_TYPE_KEY_SHARE, &ks))
-    return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  for (r = r_tls_hello_ext_key_share_first (&ks, &entry); r == R_TLS_ERROR_OK;
-      r = r_tls_hello_ext_key_share_next (&ks, &entry)) {
-    if (r_tls_ecdhe_group_to_curve (entry.group, &curve)) {
-      server->ks_group = entry.group;
-      server->ecdhe_curve = curve;
-      server->ks_peer_pub = r_tls_ecdhe_point_read (curve, entry.key, entry.len);
-      break;
+  /* key_share / group selection. A configured preferred group is required of
+   * the client: use the client's share for it, or leave ks_peer_pub NULL to
+   * signal a HelloRetryRequest if the client lists the group (supported_groups)
+   * without a share. With no preference, pick the first offered share on a
+   * curve we support. */
+  if (server->ks_pref_group != 0) {
+    if (!r_tls_ecdhe_group_to_curve (server->ks_pref_group, &curve))
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    server->ks_group = server->ks_pref_group;
+    server->ecdhe_curve = curve;
+    server->ks_peer_pub = r_tls_server_read_key_share (server, server->ks_group, curve);
+    if (server->ks_peer_pub == NULL &&
+        !r_tls_server_client_offers_group (server, server->ks_group))
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;   /* client cannot do the group */
+  } else {
+    if (!r_tls_server_find_ext (server, R_TLS_EXT_TYPE_KEY_SHARE, &ks))
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    for (r = r_tls_hello_ext_key_share_first (&ks, &entry); r == R_TLS_ERROR_OK;
+        r = r_tls_hello_ext_key_share_next (&ks, &entry)) {
+      if (r_tls_ecdhe_group_to_curve (entry.group, &curve)) {
+        server->ks_group = entry.group;
+        server->ecdhe_curve = curve;
+        server->ks_peer_pub = r_tls_ecdhe_point_read (curve, entry.key, entry.len);
+        break;
+      }
     }
+    if (server->ks_peer_pub == NULL)
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
   }
-  if (server->ks_peer_pub == NULL)
-    return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
   /* CertificateVerify scheme follows the certificate key (both hash SHA-256). */
   certalgo = r_crypto_key_get_algo (server->privkey);
@@ -1530,6 +1598,110 @@ r_tls_server_write_ext13_key_share (RTLSServer * server, ruint8 * p)
   r_store_be16 (p + 6, plen);
   r_memcpy (p + 8, point, plen);
   return (ruint16) (8 + plen);
+}
+
+/* HelloRetryRequest key_share: the selected group only, no key_exchange. */
+static ruint16
+r_tls_server_write_ext13_key_share_hrr (RTLSServer * server, ruint8 * p)
+{
+  r_store_be16 (p, R_TLS_EXT_TYPE_KEY_SHARE);
+  r_store_be16 (p + 2, sizeof (ruint16));
+  r_store_be16 (p + 4, (ruint16) server->ks_group);
+  return 6;
+}
+
+/* cookie extension carrying the server-issued cookie (RFC 8446 4.2.2). */
+static ruint16
+r_tls_server_write_ext13_cookie (RTLSServer * server, ruint8 * p)
+{
+  r_store_be16 (p, R_TLS_EXT_TYPE_COOKIE);
+  r_store_be16 (p + 2, (ruint16) (sizeof (ruint16) + server->cookielen));
+  r_store_be16 (p + 4, server->cookielen);
+  r_memcpy (p + 6, server->cookie, server->cookielen);
+  return (ruint16) (6 + server->cookielen);
+}
+
+/* Write a HelloRetryRequest: a ServerHello with the HRR-sentinel random asking
+ * the client to retry with a key_share for server->ks_group, plus a cookie. */
+static RTLSError
+r_tls_server_write_hrr (RTLSServer * server)
+{
+  RBuffer * buf;
+  RTLSError ret;
+  RMemMapInfo info;
+
+  if ((buf = r_tls_server_alloc_buffer (server)) == NULL)
+    return R_TLS_ERROR_OOM;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    ruint8 * ptr;
+    rsize hssize, size = 0;
+    ruint16 extsize = 0;
+    ruint8 hrr_random[R_TLS_HELLO_RANDOM_BYTES];
+
+    r_tls13_hello_retry_random (hrr_random);
+    ret = r_tls_write_handshake (info.data, info.size, &hssize,
+        R_TLS_VERSION_TLS_1_2, R_TLS_HANDSHAKE_TYPE_SERVER_HELLO, 0);
+    ptr = info.data + hssize;
+    if (ret == R_TLS_ERROR_OK)
+      ret = r_tls_write_hs_server_hello (ptr, info.size - hssize, &size,
+          R_TLS_VERSION_TLS_1_2, hrr_random,
+          server->session_id, server->session_id_len,
+          server->cs13_suite, server->comp);
+    ptr += size;
+
+    extsize += r_tls_server_write_ext13_supported_versions (ptr + 2 + extsize);
+    extsize += r_tls_server_write_ext13_key_share_hrr (server, ptr + 2 + extsize);
+    extsize += r_tls_server_write_ext13_cookie (server, ptr + 2 + extsize);
+    r_store_be16 (ptr, extsize);
+    ptr += extsize + 2;
+
+    size = RPOINTER_TO_SIZE (ptr) - RPOINTER_TO_SIZE (info.data);
+    if (ret == R_TLS_ERROR_OK)
+      ret = r_tls_update_handshake_len (info.data, info.size,
+          (ruint16) (size - hssize));
+    if (ret == R_TLS_ERROR_OK)
+      r_msg_digest_update (server->hshash, info.data + R_TLS_RECORD_HDR_SIZE,
+          size - R_TLS_RECORD_HDR_SIZE);
+    r_buffer_unmap (buf, &info);
+    r_buffer_set_size (buf, size);
+
+    if (ret == R_TLS_ERROR_OK)
+      ret = r_tls_server_send_record (server, buf);
+  } else {
+    ret = R_TLS_ERROR_OOM;
+  }
+
+  r_buffer_unref (buf);
+  return ret;
+}
+
+/* Validate the second ClientHello after a HelloRetryRequest: it must echo our
+ * cookie and now carry a key_share for the group we asked for. */
+static RTLSError
+r_tls_server_nego_hello13_retry (RTLSServer * server)
+{
+  RTLSHelloExt ck = R_TLS_HELLO_EXT_INIT;
+  REcurveID curve;
+
+  if (server->cookielen > 0) {
+    const ruint8 * cookie;
+    ruint16 cookielen;
+    if (!r_tls_server_find_ext (server, R_TLS_EXT_TYPE_COOKIE, &ck))
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    cookie = r_tls_hello_ext_cookie (&ck, &cookielen);
+    if (cookie == NULL || cookielen != server->cookielen ||
+        r_memcmp (cookie, server->cookie, cookielen) != 0)
+      return R_TLS_ERROR_ILLEGAL_PARAMETER;
+  }
+
+  if (!r_tls_ecdhe_group_to_curve (server->ks_group, &curve))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  server->ks_peer_pub = r_tls_server_read_key_share (server, server->ks_group, curve);
+  if (server->ks_peer_pub == NULL)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;   /* still no usable share: no second HRR */
+
+  return R_TLS_ERROR_OK;
 }
 
 static RTLSError
@@ -2632,7 +2804,22 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
 {
   RTLSError err;
 
-  if ((err = r_tls_parser_parse_hello (parser, &server->hello)) == R_TLS_ERROR_OK) {
+  if ((err = r_tls_parser_parse_hello (parser, &server->hello)) == R_TLS_ERROR_OK &&
+      server->hrr_sent) {
+    /* Second ClientHello after our HelloRetryRequest. The transcript already
+     * holds message_hash(CH1) || HelloRetryRequest, so validate the retry, fold
+     * CH2 and run the 1.3 flight. */
+    if ((err = r_tls_server_nego_hello13_retry (server)) == R_TLS_ERROR_OK) {
+      r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
+      if ((err = r_tls_server_write_flight13 (server)) == R_TLS_ERROR_OK)
+        err = r_tls_server_change_state (server, R_TLS_SERVER_FINISHED);
+    }
+    if (err != R_TLS_ERROR_OK)
+      r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
+    return err;
+  }
+
+  if (err == R_TLS_ERROR_OK) {
     R_LOG_DEBUG ("%p - client hello parsed record ver %.4x, hello ver %.4x",
         server, parser->version, server->hello.version);
     server->hellobuf = r_buffer_ref (parser->buf);
@@ -2658,6 +2845,30 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
 
   switch (err) {
     case R_TLS_ERROR_OK:
+      if (server->tls13 && server->ks_peer_pub == NULL) {
+        /* The client did not offer a key_share for the required group: answer
+         * with a HelloRetryRequest. Per RFC 8446 4.4.1 the transcript replaces
+         * the first ClientHello with message_hash(CH1); issue a cookie the
+         * retry must echo. */
+        ruint8 mh[4 + R_TLS13_SECRET_MAX];
+        rsize mhlen = 0;
+        server->cookielen = (ruint8) sizeof (server->cookie);
+        if (!r_prng_fill (server->prng, server->cookie, server->cookielen) ||
+            !r_tls13_message_hash (server->cs13_hash, parser->fragment.data,
+                parser->fragment.size, mh, sizeof (mh), &mhlen)) {
+          err = R_TLS_ERROR_HANDSHAKE_FAILURE;
+        } else {
+          r_msg_digest_update (server->hshash, mh, mhlen);
+          if ((err = r_tls_server_write_hrr (server)) == R_TLS_ERROR_OK)
+            server->server.msgseq++;
+        }
+        if (err == R_TLS_ERROR_OK)
+          server->hrr_sent = TRUE;
+        else
+          r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
+        break;
+      }
+
       R_LOG_TRACE ("Updating HS hash with ClientHello %u bytes",
           (ruint)parser->fragment.size);
       r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);

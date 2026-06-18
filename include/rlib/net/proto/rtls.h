@@ -778,6 +778,27 @@ static inline RTLSSupportedGroup r_tls_hello_ext_key_share_group (const RTLSHell
 { return (RTLSSupportedGroup) (ext->len >= sizeof (ruint16) ? r_load_be16 (ext->data) : 0); }
 /** @} */
 
+/** @name cookie extension accessor (RFC 8446)
+ *  @{ */
+/**
+ * @brief Read the cookie carried by a cookie extension @p ext (RFC 8446 4.2.2).
+ *
+ * The extension data is @c opaque cookie<1..2^16-1>: a uint16 length then the
+ * cookie bytes, clamped to @p ext's declared length.
+ * @param ext The cookie extension.
+ * @param len Out: cookie length in bytes.
+ * @return Pointer to the cookie bytes, or @c NULL if malformed (with @p len 0).
+ */
+static inline const ruint8 * r_tls_hello_ext_cookie (const RTLSHelloExt * ext, ruint16 * len)
+{
+  ruint16 l;
+  if (ext->len < sizeof (ruint16)) { *len = 0; return NULL; }
+  l = r_load_be16 (ext->data);
+  *len = MIN (l, (ruint16) (ext->len - sizeof (ruint16)));
+  return ext->data + sizeof (ruint16);
+}
+/** @} */
+
 
 /** @brief Decode the certificate entry @p cert into an @c RCryptoCert (caller owns the result). */
 R_API RCryptoCert * r_tls_certificate_get_cert (const RTLSCertificate * cert);

@@ -351,3 +351,54 @@ r_tls13_cert_verify_tbs (rboolean server, const ruint8 * transcript_hash,
   *outlen = n;
   return TRUE;
 }
+
+/* SHA-256("HelloRetryRequest"), the ServerHello.random of a HelloRetryRequest. */
+static const ruint8 r_tls13_hrr_random[32] = {
+  0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c, 0x02,
+  0x1e, 0x65, 0xb8, 0x91, 0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e,
+  0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c
+};
+
+void
+r_tls13_hello_retry_random (ruint8 * out)
+{
+  if (R_LIKELY (out != NULL))
+    r_memcpy (out, r_tls13_hrr_random, sizeof (r_tls13_hrr_random));
+}
+
+rboolean
+r_tls13_random_is_hrr (const ruint8 * random)
+{
+  return random != NULL &&
+      r_memcmp (random, r_tls13_hrr_random, sizeof (r_tls13_hrr_random)) == 0;
+}
+
+rboolean
+r_tls13_message_hash (RMsgDigestType hash, const ruint8 * msg, rsize msglen,
+    ruint8 * out, rsize outsize, rsize * outlen)
+{
+  RMsgDigest * md;
+  rsize hlen = r_msg_digest_type_size (hash);
+  rboolean ok;
+
+  if (R_UNLIKELY (msg == NULL || out == NULL || outlen == NULL ||
+        hlen == 0 || outsize < 4 + hlen))
+    return FALSE;
+
+  /* Handshake header: message_hash type, then a 3-byte length of HashLen. */
+  out[0] = (ruint8) R_TLS_HANDSHAKE_TYPE_MESSAGE_HASH;
+  out[1] = 0x00;
+  out[2] = 0x00;
+  out[3] = (ruint8) hlen;
+
+  if ((md = r_msg_digest_new (hash)) == NULL)
+    return FALSE;
+  ok = r_msg_digest_update (md, msg, msglen) &&
+       r_msg_digest_get_data (md, out + 4, hlen, NULL);
+  r_msg_digest_free (md);
+  if (!ok)
+    return FALSE;
+
+  *outlen = 4 + hlen;
+  return TRUE;
+}

@@ -116,6 +116,10 @@ struct RTLSClient {
   RMsgDigestType cs13_hash;             /* SHA-256 / SHA-384 */
   RTLSSupportedGroup ks_group;          /* offered key_share group */
   ruint8 flight13_step;                 /* sub-step within the encrypted flight */
+  rboolean hrr_received;                /* a HelloRetryRequest was processed */
+  rboolean hrr_just_sent;              /* the retry ClientHello was just sent */
+  ruint8 cookie[256];                   /* cookie echoed in the retry ClientHello */
+  ruint16 cookielen;
 
   RBuffer * inbuf;
   RQueue qsend;
@@ -540,8 +544,19 @@ r_tls_client_write_hs_ext_key_share13 (RTLSClient * client, ruint8 * ptr)
   return (ruint16) (10 + plen);
 }
 
+/* ClientHello cookie echo: returns the HelloRetryRequest's cookie verbatim. */
+static ruint16
+r_tls_client_write_hs_ext_cookie (RTLSClient * client, ruint8 * ptr)
+{
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_COOKIE);
+  r_store_be16 (&ptr[2], (ruint16) (sizeof (ruint16) + client->cookielen));
+  r_store_be16 (&ptr[4], client->cookielen);
+  r_memcpy (&ptr[6], client->cookie, client->cookielen);
+  return (ruint16) (6 + client->cookielen);
+}
+
 static RTLSError
-r_tls_client_send_hello (RTLSClient * client)
+r_tls_client_send_hello (RTLSClient * client, rboolean retry)
 {
   RBuffer * buf;
   RTLSError ret;
@@ -581,9 +596,13 @@ r_tls_client_send_hello (RTLSClient * client)
       cs[1] = R_TLS_CS_AES_256_GCM_SHA384;
       ncs = 2;
     }
-    client->ks_group = R_TLS_SUPPORTED_GROUP_X25519;
-    if (!r_tls_ecdhe_group_to_curve (client->ks_group, &client->ecdhe_curve))
-      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    /* On a retry the group + ephemeral were re-selected for the
+     * HelloRetryRequest's group; keep them. */
+    if (!retry) {
+      client->ks_group = R_TLS_SUPPORTED_GROUP_X25519;
+      if (!r_tls_ecdhe_group_to_curve (client->ks_group, &client->ecdhe_curve))
+        return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    }
     if (client->ecdhe_key == NULL &&
         (client->ecdhe_key = r_tls_ecdhe_keygen (client->ecdhe_curve, client->prng)) == NULL)
       return R_TLS_ERROR_HANDSHAKE_FAILURE;
@@ -625,6 +644,8 @@ r_tls_client_send_hello (RTLSClient * client)
       extsize += r_tls_client_write_hs_ext_signature_algorithms13 (ptr + 2 + extsize);
       extsize += r_tls_client_write_hs_ext_supported_versions13 (ptr + 2 + extsize);
       extsize += r_tls_client_write_hs_ext_key_share13 (client, ptr + 2 + extsize);
+      if (retry && client->cookielen > 0)
+        extsize += r_tls_client_write_hs_ext_cookie (client, ptr + 2 + extsize);
       if (client->server_name != NULL)
         extsize += r_tls_client_write_hs_ext_server_name (ptr + 2 + extsize, client->server_name);
     } else {
@@ -650,12 +671,18 @@ r_tls_client_send_hello (RTLSClient * client)
       else
         ret = r_tls_update_handshake_len (info.data, info.size, (ruint16)(size - hssize));
 
-      /* Buffer the ClientHello handshake message; it is folded into the
-       * transcript once the ServerHello picks the suite (hence the hash). */
       if (ret == R_TLS_ERROR_OK) {
-        client->clienthellolen = size - hdrsize;
-        if ((client->clienthello = r_memdup (info.data + hdrsize, client->clienthellolen)) == NULL)
-          ret = R_TLS_ERROR_OOM;
+        if (retry) {
+          /* The retry ClientHello is folded straight into the live transcript
+           * (which already holds message_hash(CH1) || HelloRetryRequest). */
+          r_msg_digest_update (client->hshash, info.data + hdrsize, size - hdrsize);
+        } else {
+          /* Buffer the first ClientHello; it is folded once the ServerHello
+           * picks the suite (hence the hash). */
+          client->clienthellolen = size - hdrsize;
+          if ((client->clienthello = r_memdup (info.data + hdrsize, client->clienthellolen)) == NULL)
+            ret = R_TLS_ERROR_OOM;
+        }
       }
     }
     r_buffer_unmap (buf, &info);
@@ -697,7 +724,7 @@ r_tls_client_start (RTLSClient * client, REvLoop * loop, RPrng * prng,
 
   r_tls_client_change_state (client, R_TLS_CLIENT_SERVER_HELLO);
 
-  if (r_tls_client_send_hello (client) != R_TLS_ERROR_OK)
+  if (r_tls_client_send_hello (client, FALSE) != R_TLS_ERROR_OK)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   client->client.msgseq++;
   r_tls_client_send_out (client);
@@ -814,6 +841,10 @@ r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hell
   if (hello->cslen != sizeof (ruint16))
     return R_TLS_ERROR_CORRUPT_RECORD;
   cs = (RTLSCipherSuite) r_load_be16 (hello->cs);
+  /* After a HelloRetryRequest the ServerHello must keep the suite the HRR
+   * committed to (RFC 8446 4.1.4); a changed suite is illegal_parameter. */
+  if (client->hrr_received && cs != client->cs13_suite)
+    return R_TLS_ERROR_ILLEGAL_PARAMETER;
   /* The 1.3 suites carry a table entry (key_exchange NULL, the AEAD cipher and
    * the HKDF/transcript hash); record it as the negotiated suite so the public
    * accessors report it, and take the cipher and hash from it. */
@@ -838,15 +869,19 @@ r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hell
   r_memcpy (client->servrandom, hello->random, R_TLS_HELLO_RANDOM_BYTES);
 
   /* Start the transcript on the suite hash and fold the buffered ClientHello;
-   * the caller folds the ServerHello right after this returns. */
-  if (R_UNLIKELY (client->hshash != NULL || client->clienthello == NULL))
-    return R_TLS_ERROR_WRONG_STATE;
-  if ((client->hshash = r_msg_digest_new (client->cs13_hash)) == NULL)
-    return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  r_msg_digest_update (client->hshash, client->clienthello, client->clienthellolen);
-  r_free (client->clienthello);
-  client->clienthello = NULL;
-  client->clienthellolen = 0;
+   * the caller folds the ServerHello right after this returns. After a
+   * HelloRetryRequest the transcript (message_hash(CH1) || HRR || CH2) is
+   * already established, so leave it. */
+  if (!client->hrr_received) {
+    if (R_UNLIKELY (client->hshash != NULL || client->clienthello == NULL))
+      return R_TLS_ERROR_WRONG_STATE;
+    if ((client->hshash = r_msg_digest_new (client->cs13_hash)) == NULL)
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    r_msg_digest_update (client->hshash, client->clienthello, client->clienthellolen);
+    r_free (client->clienthello);
+    client->clienthello = NULL;
+    client->clienthellolen = 0;
+  }
 
   client->flight13_step = 0;
   client->tls13 = TRUE;
@@ -877,6 +912,102 @@ r_tls_client_setup_keys13 (RTLSClient * client)
   if (!r_tls_client_install_keys13 (client, &client->rk_read, client->sched13.shs) ||
       !r_tls_client_install_keys13 (client, &client->rk_write, client->sched13.chs))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  return R_TLS_ERROR_OK;
+}
+
+/* Handle a HelloRetryRequest (a ServerHello carrying the HRR-sentinel random):
+ * rewrite the transcript to message_hash(CH1) || HRR, regenerate the key_share
+ * for the group the server selected, and send the second ClientHello. */
+static RTLSError
+r_tls_client_handle_hrr (RTLSClient * client, const RTLSHelloMsg * hello,
+    const RTLSParser * parser)
+{
+  RTLSHelloExt ext, sv = R_TLS_HELLO_EXT_INIT, ks = R_TLS_HELLO_EXT_INIT,
+      ck = R_TLS_HELLO_EXT_INIT;
+  rboolean have_sv = FALSE, have_ks = FALSE, have_ck = FALSE;
+  RTLSSupportedGroup selected;
+  RTLSCipherSuite cs;
+  REcurveID curve;
+  ruint8 mh[4 + R_TLS13_SECRET_MAX];
+  rsize mhlen = 0;
+  RTLSError r;
+
+  /* Only one HelloRetryRequest is permitted (RFC 8446 4.1.4). */
+  if (client->hrr_received)
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  for (r = r_tls_hello_msg_extension_first (hello, &ext); r == R_TLS_ERROR_OK;
+      r = r_tls_hello_msg_extension_next (hello, &ext)) {
+    if (ext.type == R_TLS_EXT_TYPE_SUPPORTED_VERSIONS) { sv = ext; have_sv = TRUE; }
+    else if (ext.type == R_TLS_EXT_TYPE_KEY_SHARE) { ks = ext; have_ks = TRUE; }
+    else if (ext.type == R_TLS_EXT_TYPE_COOKIE) { ck = ext; have_ck = TRUE; }
+  }
+  if (!have_sv || r_tls_hello_ext_selected_version (&sv) != R_TLS_VERSION_TLS_1_3)
+    return R_TLS_ERROR_VERSION;
+  if (!have_ks)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* The selected group must be one we support and must differ from the one we
+   * already sent a share for (otherwise the server should not have retried). */
+  selected = r_tls_hello_ext_key_share_group (&ks);
+  if (!r_tls_ecdhe_group_to_curve (selected, &curve) || selected == client->ks_group)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* Cipher suite from the HelloRetryRequest. */
+  if (hello->cslen != sizeof (ruint16))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  cs = (RTLSCipherSuite) r_load_be16 (hello->cs);
+  if ((client->csinfo = r_tls_cipher_suite_get_info (cs)) == NULL ||
+      client->csinfo->cipher == NULL ||
+      (cs != R_TLS_CS_AES_128_GCM_SHA256 && cs != R_TLS_CS_AES_256_GCM_SHA384))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  client->cs13_suite = cs;
+  client->cs13_cipher = client->csinfo->cipher;
+  client->cs13_hash = client->csinfo->prf;
+
+  /* Stash the cookie to echo in the retry. */
+  if (have_ck) {
+    ruint16 clen;
+    const ruint8 * c = r_tls_hello_ext_cookie (&ck, &clen);
+    if (c == NULL || clen > sizeof (client->cookie))
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    r_memcpy (client->cookie, c, clen);
+    client->cookielen = clen;
+  }
+
+  /* Regenerate the (EC)DHE share for the selected group. */
+  client->ks_group = selected;
+  client->ecdhe_curve = curve;
+  if (client->ecdhe_key != NULL) {
+    r_crypto_key_unref (client->ecdhe_key);
+    client->ecdhe_key = NULL;
+  }
+  if ((client->ecdhe_key = r_tls_ecdhe_keygen (curve, client->prng)) == NULL)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* Transcript rewrite (RFC 8446 4.4.1): the first ClientHello is replaced by
+   * message_hash(CH1), then the HelloRetryRequest is folded. */
+  if (R_UNLIKELY (client->hshash != NULL || client->clienthello == NULL))
+    return R_TLS_ERROR_WRONG_STATE;
+  if ((client->hshash = r_msg_digest_new (client->cs13_hash)) == NULL)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if (!r_tls13_message_hash (client->cs13_hash, client->clienthello,
+        client->clienthellolen, mh, sizeof (mh), &mhlen))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  r_msg_digest_update (client->hshash, mh, mhlen);
+  r_free (client->clienthello);
+  client->clienthello = NULL;
+  client->clienthellolen = 0;
+  r_msg_digest_update (client->hshash, parser->fragment.data, parser->fragment.size);
+
+  client->tls13 = TRUE;
+  client->hrr_received = TRUE;
+
+  /* Send the second ClientHello; it folds itself into the live transcript. */
+  if ((r = r_tls_client_send_hello (client, TRUE)) != R_TLS_ERROR_OK)
+    return r;
+  client->client.msgseq++;
+  client->hrr_just_sent = TRUE;
   return R_TLS_ERROR_OK;
 }
 
@@ -1056,6 +1187,12 @@ r_tls_client_nego_server_hello (RTLSClient * client, const RTLSParser * parser)
 
   if ((r = r_tls_parser_parse_hello (parser, &hello)) != R_TLS_ERROR_OK)
     return r;
+
+  /* A ServerHello carrying the HelloRetryRequest sentinel random is a retry
+   * request: rewrite the transcript and send a second ClientHello. */
+  if (client->version == R_TLS_VERSION_TLS_1_3 &&
+      r_tls13_random_is_hrr (hello.random))
+    return r_tls_client_handle_hrr (client, &hello, parser);
 
   /* A 1.3-capable client checks supported_versions before the legacy version,
    * which a 1.3 ServerHello pins to 0x0303. */
@@ -1635,12 +1772,20 @@ r_tls_client_state_server_hello (RTLSClient * client, const RTLSParser * parser)
   if ((err = r_tls_parser_parse_handshake_peek_type (parser, &type)) == R_TLS_ERROR_OK) {
     if (type != R_TLS_HANDSHAKE_TYPE_SERVER_HELLO)
       err = R_TLS_ERROR_WRONG_TYPE;
-    else if ((err = r_tls_client_nego_server_hello (client, parser)) == R_TLS_ERROR_OK)
+    else if ((err = r_tls_client_nego_server_hello (client, parser)) == R_TLS_ERROR_OK &&
+             !client->hrr_just_sent)
       err = r_tls_client_change_state (client, R_TLS_CLIENT_CERTIFICATE);
   }
 
   switch (err) {
     case R_TLS_ERROR_OK:
+      if (client->hrr_just_sent) {
+        /* A HelloRetryRequest was processed and the second ClientHello sent;
+         * the transcript was rewritten there. Stay in this state to await the
+         * real ServerHello. */
+        client->hrr_just_sent = FALSE;
+        break;
+      }
       r_msg_digest_update (client->hshash, parser->fragment.data, parser->fragment.size);
       /* With the ServerHello folded, the 1.3 handshake secrets can be derived
        * and the handshake-traffic keys installed. */

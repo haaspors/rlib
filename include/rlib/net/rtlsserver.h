@@ -211,6 +211,18 @@ R_API const rchar * r_tls_server_get_server_name (const RTLSServer * server);
 R_API RTLSError r_tls_server_set_session_ticket_keys (RTLSServer * server,
     RTLSSessionTicketKeys * keys);
 /**
+ * @brief Require a specific (EC)DHE group of TLS 1.3 clients (RFC 8446).
+ *
+ * When set, a TLS 1.3 ClientHello that does not carry a @c key_share for
+ * @p group is answered with a HelloRetryRequest asking for it (provided the
+ * client lists @p group in @c supported_groups); the client then retries with a
+ * matching share. With @p group 0 (the default) the server accepts the client's
+ * first offered key_share and never sends a HelloRetryRequest. Must be set
+ * before the handshake starts.
+ */
+R_API RTLSError r_tls_server_set_key_share_group (RTLSServer * server,
+    RTLSSupportedGroup group);
+/**
  * @brief Configure the application protocols the server supports for ALPN
  * (RFC 7301), in descending order of preference.
  *
