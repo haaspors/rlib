@@ -113,9 +113,9 @@ r_thread_init (void)
    * pthread name query only applies off Windows -- mingw ships winpthreads, so
    * gate on the OS, not just HAVE_PTHREAD_GETNAME_NP. */
 #if !defined (R_OS_WIN32) && defined (HAVE_PTHREAD_GETNAME_NP)
-  static const int maxname = 24;
-  rchar name[maxname + 1];
-  if (pthread_getname_np (thread->thread, name, maxname) == 0 && name[0] != 0) {
+  #define MAX_GETNAME_NP 24
+  rchar name[MAX_GETNAME_NP + 1];
+  if (pthread_getname_np (thread->thread, name, MAX_GETNAME_NP) == 0 && name[0] != 0) {
     thread->name = r_strdup (name);
   } else
 #endif
