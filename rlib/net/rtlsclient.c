@@ -77,6 +77,9 @@ struct RTLSClient {
 
   RTLSVersion version;
   RTLSVersion recordver;
+  RTLSVersion min_version;      /* lowest TLS version the client will offer / accept */
+  RTLSVersion max_version;      /* highest offered; == version at start, then negotiated */
+  rboolean version_range_set;   /* an explicit range was configured before start */
   RTLSCompressionMethod comp;
   const RTLSCipherSuiteInfo * csinfo;
   rboolean support_ext_master_secret;
@@ -297,6 +300,8 @@ r_tls_client_new (const RTLSCallbacks * cb, rpointer userdata, RDestroyNotify no
     r_queue_init (&ret->qsend);
     ret->decrypt = r_tls_client_null_decrypt;
     ret->encrypt = r_tls_client_null_encrypt;
+    ret->min_version = R_TLS_VERSION_TLS_1_2;
+    ret->max_version = R_TLS_VERSION_TLS_1_3;
   }
 
   return ret;
@@ -344,6 +349,23 @@ r_tls_client_set_server_name (RTLSClient * client, const rchar * host)
   r_free (client->server_name);
   client->server_name = (host != NULL) ? r_strdup (host) : NULL;
 
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_client_set_version_range (RTLSClient * client,
+    RTLSVersion min, RTLSVersion max)
+{
+  if (R_UNLIKELY (client == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (client->state != R_TLS_CLIENT_INITIAL)) return R_TLS_ERROR_WRONG_STATE;
+  /* Only the TLS 1.2..1.3 window is configurable; DTLS is fixed at 1.2. */
+  if (R_UNLIKELY (min < R_TLS_VERSION_TLS_1_2 || max > R_TLS_VERSION_TLS_1_3 ||
+        min > max))
+    return R_TLS_ERROR_VERSION;
+
+  client->min_version = min;
+  client->max_version = max;
+  client->version_range_set = TRUE;
   return R_TLS_ERROR_OK;
 }
 
@@ -605,15 +627,20 @@ r_tls_client_write_hs_ext_signature_algorithms13 (ruint8 * ptr)
   return 12;
 }
 
-/* ClientHello supported_versions offering only TLS 1.3. */
+/* ClientHello supported_versions offering TLS 1.3 first, then 1.2 when it is
+ * within the configured range, so a 1.3-capable server picks 1.3 while a
+ * 1.2-only server can still match the hybrid offer. */
 static ruint16
-r_tls_client_write_hs_ext_supported_versions13 (ruint8 * ptr)
+r_tls_client_write_hs_ext_supported_versions13 (ruint8 * ptr, rboolean include_tls12)
 {
+  ruint8 n = include_tls12 ? 2 : 1;
   r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_SUPPORTED_VERSIONS);
-  r_store_be16 (&ptr[2], sizeof (ruint8) + sizeof (ruint16));
-  ptr[4] = sizeof (ruint16);                          /* ProtocolVersion list length */
+  r_store_be16 (&ptr[2], sizeof (ruint8) + n * sizeof (ruint16));
+  ptr[4] = n * sizeof (ruint16);                      /* ProtocolVersion list length */
   r_store_be16 (&ptr[5], (ruint16)R_TLS_VERSION_TLS_1_3);
-  return 7;
+  if (include_tls12)
+    r_store_be16 (&ptr[7], (ruint16)R_TLS_VERSION_TLS_1_2);
+  return 5 + n * sizeof (ruint16);
 }
 
 /* ClientHello key_share with a single KeyShareEntry for the offered group. */
@@ -808,6 +835,18 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
       cs[1] = R_TLS_CS_AES_256_GCM_SHA384;
       ncs = 2;
     }
+    /* When 1.2 is within range, also offer the 1.2 suites so a server may
+     * negotiate 1.2 from this same ClientHello (RFC 8446 hybrid); a 1.3 server
+     * ignores them. */
+    if (client->min_version <= R_TLS_VERSION_TLS_1_2) {
+      rsize n12 = R_N_ELEMENTS (cs) - ncs;
+      if (client->cb.preferred_cipher_suites == NULL ||
+          !client->cb.preferred_cipher_suites (client->userdata,
+            R_TLS_VERSION_TLS_1_2, cs + ncs, &n12))
+        r_tls_client_default_cipher_suites (client->userdata,
+            R_TLS_VERSION_TLS_1_2, cs + ncs, &n12);
+      ncs += n12;
+    }
     /* On a retry the group + ephemeral were re-selected for the
      * HelloRetryRequest's group; keep them. */
     if (!retry) {
@@ -852,9 +891,20 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
 
     extsize = 0;
     if (client->version == R_TLS_VERSION_TLS_1_3) {
+      rboolean include12 = client->min_version <= R_TLS_VERSION_TLS_1_2;
+      /* When 1.2 is within range, the 1.2-compatible extensions go first so the
+       * same ClientHello completes a 1.2 handshake if the server negotiates it
+       * (the 1.3 signature_algorithms is a superset, so it serves both). */
+      if (include12) {
+        extsize += r_tls_client_write_hs_ext_renegotiation (ptr + 2 + extsize);
+        extsize += r_tls_client_write_hs_ext_extended_ms (ptr + 2 + extsize);
+        extsize += r_tls_client_write_hs_ext_encrypt_then_mac (ptr + 2 + extsize);
+      }
       extsize += r_tls_client_write_hs_ext_supported_groups (ptr + 2 + extsize);
+      if (include12)
+        extsize += r_tls_client_write_hs_ext_ec_point_formats (ptr + 2 + extsize);
       extsize += r_tls_client_write_hs_ext_signature_algorithms13 (ptr + 2 + extsize);
-      extsize += r_tls_client_write_hs_ext_supported_versions13 (ptr + 2 + extsize);
+      extsize += r_tls_client_write_hs_ext_supported_versions13 (ptr + 2 + extsize, include12);
       extsize += r_tls_client_write_hs_ext_key_share13 (client, ptr + 2 + extsize);
       if (retry && client->cookielen > 0)
         extsize += r_tls_client_write_hs_ext_cookie (client, ptr + 2 + extsize);
@@ -966,8 +1016,20 @@ r_tls_client_start (RTLSClient * client, REvLoop * loop, RPrng * prng,
   if (prng != NULL) r_prng_ref (prng);
   client->loop = r_ev_loop_ref (loop);
   client->prng = prng;
-  client->version = version;
   client->comp = R_TLS_COMPRESSION_NULL;
+
+  /* Resolve the offered version range. DTLS is fixed at 1.2. For TLS the range
+   * is the one configured with r_tls_client_set_version_range, or [1.2, version]
+   * by default so start(1.3) offers both versions and start(1.2) offers 1.2. */
+  if (r_tls_version_is_dtls (version)) {
+    client->min_version = client->max_version = version;
+  } else if (!client->version_range_set) {
+    client->min_version = R_TLS_VERSION_TLS_1_2;
+    client->max_version = version;
+  }
+  /* version carries the highest offered version now and the negotiated one once
+   * the ServerHello lands (a 1.2 fallback pins it down). */
+  client->version = client->max_version;
 
   /* The PRF and transcript hash depend on the suite the server selects, which
    * is not known until its ServerHello. The ClientHello is buffered and the
@@ -1561,6 +1623,20 @@ r_tls_client_nego_server_hello (RTLSClient * client, const RTLSParser * parser)
      * in the random is a forced downgrade and must abort (RFC 8446 4.1.3). */
     if (r_tls13_random_is_downgrade (hello.random))
       return R_TLS_ERROR_ILLEGAL_PARAMETER;
+    /* No sentinel: the server negotiated a lower version. Accept it only if it
+     * is within our offered range (a hybrid ClientHello also offers 1.2), then
+     * fall back to a full 1.2 handshake -- pin the negotiated version (it frames
+     * records and the RSA premaster) and drop the 1.3 key_share ephemeral so the
+     * 1.2 ECDHE exchange keys itself from the server-selected curve. A 1.3-only
+     * client leaves version unchanged and the check below rejects the mismatch. */
+    if (hello.version == R_TLS_VERSION_TLS_1_2 &&
+        client->min_version <= R_TLS_VERSION_TLS_1_2) {
+      client->version = R_TLS_VERSION_TLS_1_2;
+      if (client->ecdhe_key != NULL) {
+        r_crypto_key_unref (client->ecdhe_key);
+        client->ecdhe_key = NULL;
+      }
+    }
   }
 
   if (hello.version != client->version)
