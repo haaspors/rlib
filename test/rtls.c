@@ -370,7 +370,7 @@ RTEST (rtls, write_parse_new_session_ticket13_roundtrip, RTEST_FAST)
   ruint8 rec[128];
   rsize hssize = 0, bodylen = 0;
   RTLSParser parser = R_TLS_PARSER_INIT;
-  ruint32 lifetime = 0, age_add = 0;
+  ruint32 lifetime = 0, age_add = 0, max_early = 0xffff;
   const ruint8 * np = NULL, * tp = NULL;
   ruint8 nlen = 0;
   ruint16 tlen = 0;
@@ -379,7 +379,7 @@ RTEST (rtls, write_parse_new_session_ticket13_roundtrip, RTEST_FAST)
         &hssize, R_TLS_VERSION_TLS_1_3, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, 0));
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_hs_new_session_ticket13 (
         rec + hssize, sizeof (rec) - hssize, &bodylen, 30, 0xfad6aac5,
-        nonce, sizeof (nonce), ticket, sizeof (ticket)));
+        nonce, sizeof (nonce), ticket, sizeof (ticket), 0));
   /* lifetime(4) + age_add(4) + nonce{1+2} + ticket{2+7} + ext<2>. */
   r_assert_cmpuint (bodylen, ==, 4 + 4 + (1 + 2) + (2 + sizeof (ticket)) + 2);
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
@@ -388,18 +388,37 @@ RTEST (rtls, write_parse_new_session_ticket13_roundtrip, RTEST_FAST)
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
       r_tls_parser_init (&parser, rec, hssize + bodylen));
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_parse_new_session_ticket13 (
-        &parser, &lifetime, &age_add, &np, &nlen, &tp, &tlen));
+        &parser, &lifetime, &age_add, &np, &nlen, &tp, &tlen, &max_early));
   r_assert_cmpuint (lifetime, ==, 30);
   r_assert_cmphex (age_add, ==, 0xfad6aac5);
   r_assert_cmpuint (nlen, ==, sizeof (nonce));
   r_assert_cmpmem (np, ==, nonce, sizeof (nonce));
   r_assert_cmpuint (tlen, ==, sizeof (ticket));
   r_assert_cmpmem (tp, ==, ticket, sizeof (ticket));
+  r_assert_cmpuint (max_early, ==, 0);   /* no early_data extension */
+  r_tls_parser_clear (&parser);
+
+  /* With max_early_data set the ticket carries an early_data extension whose
+   * max_early_data_size the parser surfaces. */
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_hs_new_session_ticket13 (
+        rec + hssize, sizeof (rec) - hssize, &bodylen, 30, 0xfad6aac5,
+        nonce, sizeof (nonce), ticket, sizeof (ticket), 0x4000));
+  /* ext<2> now holds one early_data extension: 2(type) + 2(len) + 4(size). */
+  r_assert_cmpuint (bodylen, ==, 4 + 4 + (1 + 2) + (2 + sizeof (ticket)) + 2 + 8);
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_update_handshake_len (rec, sizeof (rec), (ruint16) bodylen));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_init (&parser, rec, hssize + bodylen));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_parse_new_session_ticket13 (
+        &parser, NULL, NULL, NULL, NULL, &tp, &tlen, &max_early));
+  r_assert_cmpuint (tlen, ==, sizeof (ticket));
+  r_assert_cmpmem (tp, ==, ticket, sizeof (ticket));
+  r_assert_cmphex (max_early, ==, 0x4000);
   r_tls_parser_clear (&parser);
 
   /* A zero-length ticket is rejected (ticket<1..2^16-1>). */
   r_assert_cmpint (R_TLS_ERROR_INVAL, ==, r_tls_write_hs_new_session_ticket13 (
-        rec, sizeof (rec), &bodylen, 30, 0, NULL, 0, ticket, 0));
+        rec, sizeof (rec), &bodylen, 30, 0, NULL, 0, ticket, 0, 0));
 }
 RTEST_END;
 
