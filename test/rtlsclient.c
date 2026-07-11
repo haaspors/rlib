@@ -1231,6 +1231,41 @@ RTEST_F (rtlsclient, tls_downgrade_protection, RTEST_FAST)
 }
 RTEST_END;
 
+/* A server that requires 1.3 rejects a 1.2-only client with a fatal
+ * protocol_version alert. */
+RTEST_F (rtlsclient, tls_server_requires_tls13, RTEST_FAST)
+{
+  RBuffer * ch, * alert;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSAlertLevel alevel;
+  RTLSAlertType atype;
+
+  r_assert_cmpint (r_tls_server_set_version_range (fixture->server,
+        R_TLS_VERSION_TLS_1_3, R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpptr ((ch = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_tls_server_incoming_data (fixture->server, ch);
+  r_buffer_unref (ch);
+
+  r_assert (fixture->srv_error);
+  r_assert (!fixture->srv_hs_done);
+
+  r_assert_cmpptr ((alert = r_queue_pop (&fixture->srv_out)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, alert), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_PROTOCOL_VERSION);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (alert);
+}
+RTEST_END;
+
 /* Mutual TLS: the server requires a client certificate, the client presents
  * one, and the handshake completes with each side holding the other's leaf. */
 static void

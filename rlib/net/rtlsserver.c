@@ -81,6 +81,8 @@ struct RTLSServer {
 
   RTLSVersion version;
   RTLSVersion recordver;        /* version of the last record seen, for pre-nego alerts */
+  RTLSVersion min_version;      /* lowest TLS version the server will negotiate */
+  RTLSVersion max_version;      /* highest; < 1.3 means the server is not 1.3-capable */
   RTLSCompressionMethod comp;
   const RTLSCipherSuiteInfo * csinfo;
   rboolean support_renego;
@@ -278,6 +280,8 @@ r_tls_server_new (const RTLSCallbacks * cb, rpointer userdata, RDestroyNotify no
     r_queue_init (&ret->qsend);
     ret->decrypt = r_tls_server_null_decrypt;
     ret->encrypt = r_tls_server_null_encrypt;
+    ret->min_version = R_TLS_VERSION_TLS_1_2;
+    ret->max_version = R_TLS_VERSION_TLS_1_3;
   }
 
   return ret;
@@ -311,6 +315,23 @@ r_tls_server_set_cert (RTLSServer * server,
   server->cert = r_crypto_cert_ref (cert);
   server->privkey = r_crypto_key_ref (privkey);
 
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_server_set_version_range (RTLSServer * server,
+    RTLSVersion min, RTLSVersion max)
+{
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  /* The range gates version negotiation in the ServerHello; fix it first. */
+  if (R_UNLIKELY (server->state > R_TLS_SERVER_HELLO)) return R_TLS_ERROR_WRONG_STATE;
+  /* Only the TLS 1.2..1.3 window is configurable; DTLS is fixed at 1.2. */
+  if (R_UNLIKELY (min < R_TLS_VERSION_TLS_1_2 || max > R_TLS_VERSION_TLS_1_3 ||
+        min > max))
+    return R_TLS_ERROR_VERSION;
+
+  server->min_version = min;
+  server->max_version = max;
   return R_TLS_ERROR_OK;
 }
 
@@ -783,10 +804,12 @@ r_tls_server_write_hello (RTLSServer * server)
 
     if (!server->servrandompinned) {
       r_tls_generate_hello_random (server->servrandom, server->prng);
-      /* This path only writes a <= 1.2 ServerHello; the server is otherwise
-       * 1.3-capable, so stamp the downgrade sentinel (RFC 8446 4.1.3). DTLS is
+      /* This path only writes a <= 1.2 ServerHello. Stamp the downgrade
+       * sentinel (RFC 8446 4.1.3) only when the server is actually 1.3-capable;
+       * a range-capped 1.2 server is a genuine 1.2 peer and must not. DTLS is
        * excluded -- the stack has no DTLS 1.3 to be downgraded from. */
-      if (!r_tls_version_is_dtls (server->version))
+      if (!r_tls_version_is_dtls (server->version) &&
+          server->max_version >= R_TLS_VERSION_TLS_1_3)
         r_tls13_downgrade_random (server->servrandom, server->version);
       server->servrandompinned = TRUE;
     }
@@ -2385,7 +2408,8 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   /* Detect a TLS 1.3 offer (supported_versions) before resolving SNI, so the
    * server_name callback sees the version that will actually be negotiated. The
    * full 1.3 negotiation runs after SNI (it needs the selected certificate). */
-  if (!r_tls_version_is_dtls (server->version)) {
+  if (!r_tls_version_is_dtls (server->version) &&
+      server->max_version >= R_TLS_VERSION_TLS_1_3) {
     RTLSHelloExt sv = R_TLS_HELLO_EXT_INIT;
     if (r_tls_server_find_ext (server, R_TLS_EXT_TYPE_SUPPORTED_VERSIONS, &sv) &&
         r_tls_hello_ext_supported_versions_contains (&sv, R_TLS_VERSION_TLS_1_3))
@@ -2406,12 +2430,20 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
   }
 
   /* A ClientHello selecting TLS 1.3 (supported_versions) takes the 1.3 path;
-   * NOT_NEEDED means it did not, so fall through to the <=1.2 negotiation. */
-  if (!r_tls_version_is_dtls (server->version)) {
+   * NOT_NEEDED means it did not, so fall through to the <=1.2 negotiation. The
+   * range cap suppresses 1.3 entirely, making the server a genuine 1.2 peer. */
+  if (!r_tls_version_is_dtls (server->version) &&
+      server->max_version >= R_TLS_VERSION_TLS_1_3) {
     RTLSError r13 = r_tls_server_nego_hello13 (server);
     if (r13 != R_TLS_ERROR_NOT_NEEDED)
       return r13;
   }
+
+  /* Falling through here means <=1.2 was negotiated; reject it if a higher
+   * minimum was required. */
+  if (!r_tls_version_is_dtls (server->version) &&
+      server->version < server->min_version)
+    return R_TLS_ERROR_VERSION;
 
   if (R_UNLIKELY (server->hello.cslen == 0 || (server->hello.cslen & 1)))
     return R_TLS_ERROR_CORRUPT_RECORD;
