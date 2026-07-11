@@ -1329,6 +1329,53 @@ r_tls_parser_parse_new_session_ticket (const RTLSParser * parser,
 }
 
 RTLSError
+r_tls_parser_parse_new_session_ticket13 (const RTLSParser * parser,
+    ruint32 * lifetime, ruint32 * age_add,
+    const ruint8 ** nonce, ruint8 * noncelen,
+    const ruint8 ** ticket, ruint16 * ticketsize)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end;
+  ruint8 nlen;
+  ruint16 tlen, extlen;
+  RTLSError ret;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  /* ticket_lifetime, ticket_age_add, then ticket_nonce<0..255>. */
+  if (R_UNLIKELY (ptr + 2 * sizeof (ruint32) + 1 > end))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  if (lifetime != NULL) *lifetime = r_load_be32 (ptr);
+  if (age_add != NULL)  *age_add = r_load_be32 (ptr + sizeof (ruint32));
+  ptr += 2 * sizeof (ruint32);
+  nlen = *ptr++;
+  if (R_UNLIKELY (ptr + nlen + sizeof (ruint16) > end))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  if (nonce != NULL)    *nonce = nlen != 0 ? ptr : NULL;
+  if (noncelen != NULL) *noncelen = nlen;
+  ptr += nlen;
+
+  /* ticket<1..2^16-1>. */
+  tlen = r_load_be16 (ptr);
+  ptr += sizeof (ruint16);
+  if (R_UNLIKELY (tlen == 0 || ptr + tlen + sizeof (ruint16) > end))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  if (ticket != NULL)     *ticket = ptr;
+  if (ticketsize != NULL) *ticketsize = tlen;
+  ptr += tlen;
+
+  /* Trailing Extension list must fit; its contents are not returned. */
+  extlen = r_load_be16 (ptr);
+  if (R_UNLIKELY (ptr + sizeof (ruint16) + extlen > end))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_parser_parse_certificate_verify (const RTLSParser * parser,
     RTLSSignatureScheme * sigscheme, const ruint8 ** sig, ruint16 * sigsize)
 {
@@ -1680,6 +1727,81 @@ r_tls_hello_ext_key_share_server (const RTLSHelloExt * ext, RTLSKeyShareEntry * 
   return r_tls_key_share_entry_read (ext->data, ext->data + ext->len, entry);
 }
 
+static RTLSError
+r_tls_psk_identity_read (const ruint8 * p, const ruint8 * end,
+    RTLSPskIdentity * ident)
+{
+  ruint16 idlen;
+
+  /* PskIdentity: opaque identity<1..2^16-1>, uint32 obfuscated_ticket_age. */
+  if (R_UNLIKELY (p + sizeof (ruint16) > end)) return R_TLS_ERROR_EOB;
+  idlen = r_load_be16 (p);
+  if (R_UNLIKELY (p + sizeof (ruint16) + idlen + sizeof (ruint32) > end))
+    return R_TLS_ERROR_EOB;
+
+  ident->start = p;
+  ident->len = idlen;
+  ident->identity = p + sizeof (ruint16);
+  ident->age = r_load_be32 (p + sizeof (ruint16) + idlen);
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_hello_ext_psk_identity_first (const RTLSHelloExt * ext, RTLSPskIdentity * ident)
+{
+  const ruint8 * end;
+
+  if (R_UNLIKELY (ext == NULL || ident == NULL)) return R_TLS_ERROR_INVAL;
+  /* OfferedPsks: uint16 identities_len, then PskIdentity*. Bound the walk by
+   * the identities list, not the whole extension (the binders follow). */
+  if (R_UNLIKELY (ext->len < sizeof (ruint16))) return R_TLS_ERROR_EOB;
+  end = ext->data + sizeof (ruint16) + r_load_be16 (ext->data);
+  if (R_UNLIKELY (end > ext->data + ext->len)) return R_TLS_ERROR_EOB;
+  return r_tls_psk_identity_read (ext->data + sizeof (ruint16), end, ident);
+}
+
+RTLSError
+r_tls_hello_ext_psk_identity_next (const RTLSHelloExt * ext, RTLSPskIdentity * ident)
+{
+  const ruint8 * end;
+
+  if (R_UNLIKELY (ext == NULL || ident == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (ident->start == NULL || ident->identity == NULL))
+    return r_tls_hello_ext_psk_identity_first (ext, ident);
+  end = ext->data + sizeof (ruint16) + r_load_be16 (ext->data);
+  return r_tls_psk_identity_read (
+      ident->identity + ident->len + sizeof (ruint32), end, ident);
+}
+
+RTLSError
+r_tls_hello_ext_psk_binder (const RTLSHelloExt * ext, ruint n,
+    const ruint8 ** binder, ruint8 * binderlen)
+{
+  const ruint8 * p, * end;
+  ruint i;
+
+  if (R_UNLIKELY (ext == NULL || binder == NULL || binderlen == NULL))
+    return R_TLS_ERROR_INVAL;
+  if ((p = r_tls_hello_ext_psk_binders_start (ext)) == NULL)
+    return R_TLS_ERROR_EOB;
+  /* binders<33..2^16-1>: uint16 list length, then PskBinderEntry<32..255>. */
+  end = p + sizeof (ruint16) + r_load_be16 (p);
+  if (R_UNLIKELY (end > ext->data + ext->len)) return R_TLS_ERROR_EOB;
+  p += sizeof (ruint16);
+  for (i = 0; ; i++) {
+    ruint8 l;
+    if (R_UNLIKELY (p + 1 > end)) return R_TLS_ERROR_EOB;
+    l = *p;
+    if (R_UNLIKELY (p + 1 + l > end)) return R_TLS_ERROR_EOB;
+    if (i == n) {
+      *binder = p + 1;
+      *binderlen = l;
+      return R_TLS_ERROR_OK;
+    }
+    p += 1 + l;
+  }
+}
+
 RCryptoCert *
 r_tls_certificate_get_cert (const RTLSCertificate * cert)
 {
@@ -1917,6 +2039,33 @@ r_tls_write_hs_new_session_ticket (rpointer data, rsize size, rsize * out,
 
   if (out != NULL)
     *out = sizeof (ruint32) + sizeof (ruint16) + tsize;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_write_hs_new_session_ticket13 (rpointer data, rsize size, rsize * out,
+    ruint32 lifetime, ruint32 age_add, const ruint8 * nonce, ruint8 noncelen,
+    const ruint8 * ticket, ruint16 tsize)
+{
+  ruint8 * p = data;
+  rsize need = 2 * sizeof (ruint32) + 1 + (rsize)noncelen +
+      sizeof (ruint16) + (rsize)tsize + sizeof (ruint16);
+
+  if (R_UNLIKELY (data == NULL || ticket == NULL || tsize == 0))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  r_store_be32 (p, lifetime);       p += sizeof (ruint32);
+  r_store_be32 (p, age_add);        p += sizeof (ruint32);
+  *p++ = noncelen;
+  if (noncelen > 0) { r_memcpy (p, nonce, noncelen); p += noncelen; }
+  r_store_be16 (p, tsize);          p += sizeof (ruint16);
+  r_memcpy (p, ticket, tsize);      p += tsize;
+  r_store_be16 (p, 0);              p += sizeof (ruint16);  /* no extensions */
+
+  if (out != NULL)
+    *out = RPOINTER_TO_SIZE (p) - RPOINTER_TO_SIZE (data);
 
   return R_TLS_ERROR_OK;
 }

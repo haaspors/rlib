@@ -361,6 +361,103 @@ RTEST (rtls, write_parse_certificate13_roundtrip, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, write_parse_new_session_ticket13_roundtrip, RTEST_FAST)
+{
+  /* Build a TLS 1.3 NewSessionTicket around a stand-in ticket and read the
+   * lifetime, age_add, nonce and ticket back with the 1.3 parser. */
+  static const ruint8 nonce[] = { 0x00, 0x00 };
+  static const ruint8 ticket[] = { 0x2c, 0x03, 0x5d, 0x82, 0x93, 0x59, 0xee };
+  ruint8 rec[128];
+  rsize hssize = 0, bodylen = 0;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  ruint32 lifetime = 0, age_add = 0;
+  const ruint8 * np = NULL, * tp = NULL;
+  ruint8 nlen = 0;
+  ruint16 tlen = 0;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_handshake (rec, sizeof (rec),
+        &hssize, R_TLS_VERSION_TLS_1_3, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET, 0));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_hs_new_session_ticket13 (
+        rec + hssize, sizeof (rec) - hssize, &bodylen, 30, 0xfad6aac5,
+        nonce, sizeof (nonce), ticket, sizeof (ticket)));
+  /* lifetime(4) + age_add(4) + nonce{1+2} + ticket{2+7} + ext<2>. */
+  r_assert_cmpuint (bodylen, ==, 4 + 4 + (1 + 2) + (2 + sizeof (ticket)) + 2);
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_update_handshake_len (rec, sizeof (rec), (ruint16) bodylen));
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_init (&parser, rec, hssize + bodylen));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_parser_parse_new_session_ticket13 (
+        &parser, &lifetime, &age_add, &np, &nlen, &tp, &tlen));
+  r_assert_cmpuint (lifetime, ==, 30);
+  r_assert_cmphex (age_add, ==, 0xfad6aac5);
+  r_assert_cmpuint (nlen, ==, sizeof (nonce));
+  r_assert_cmpmem (np, ==, nonce, sizeof (nonce));
+  r_assert_cmpuint (tlen, ==, sizeof (ticket));
+  r_assert_cmpmem (tp, ==, ticket, sizeof (ticket));
+  r_tls_parser_clear (&parser);
+
+  /* A zero-length ticket is rejected (ticket<1..2^16-1>). */
+  r_assert_cmpint (R_TLS_ERROR_INVAL, ==, r_tls_write_hs_new_session_ticket13 (
+        rec, sizeof (rec), &bodylen, 30, 0, NULL, 0, ticket, 0));
+}
+RTEST_END;
+
+RTEST (rtls, parse_pre_shared_key_extension, RTEST_FAST)
+{
+  /* An OfferedPsks body: one identity (a 4-byte ticket + obfuscated age) and
+   * its 32-byte binder, plus a psk_key_exchange_modes body. Exercise the parse
+   * accessors against a hand-built extension. */
+  static const ruint8 psk[] = {
+    0x00, 0x0a,                             /* identities_length = 10 */
+    0x00, 0x04, 0xde, 0xad, 0xbe, 0xef,     /* identity<4> */
+    0x01, 0x02, 0x03, 0x04,                 /* obfuscated_ticket_age */
+    0x00, 0x21, 0x20,                       /* binders_length=33, entry len=32 */
+    0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7,
+    0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf,
+    0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7,
+    0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf };
+  static const ruint8 modes[] = { 0x02, 0x00, 0x01 };  /* psk_ke, psk_dhe_ke */
+  RTLSHelloExt ext = R_TLS_HELLO_EXT_INIT;
+  RTLSPskIdentity ident = R_TLS_PSK_IDENTITY_INIT;
+  const ruint8 * binder = NULL;
+  ruint8 binderlen = 0;
+
+  ext.type = R_TLS_EXT_TYPE_PRE_SHARED_KEY;
+  ext.data = psk;
+  ext.len = sizeof (psk);
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_hello_ext_psk_identity_first (&ext, &ident));
+  r_assert_cmpuint (ident.len, ==, 4);
+  r_assert_cmpmem (ident.identity, ==, "\xde\xad\xbe\xef", 4);
+  r_assert_cmphex (ident.age, ==, 0x01020304);
+  /* Only one identity. */
+  r_assert_cmpint (R_TLS_ERROR_EOB, ==,
+      r_tls_hello_ext_psk_identity_next (&ext, &ident));
+
+  /* The binder transcript truncates at the binders-list length field. */
+  r_assert_cmpptr (r_tls_hello_ext_psk_binders_start (&ext), ==, psk + 12);
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_hello_ext_psk_binder (&ext, 0, &binder, &binderlen));
+  r_assert_cmpuint (binderlen, ==, 32);
+  r_assert_cmpmem (binder, ==, psk + 15, 32);
+  /* No second binder. */
+  r_assert_cmpint (R_TLS_ERROR_EOB, ==,
+      r_tls_hello_ext_psk_binder (&ext, 1, &binder, &binderlen));
+
+  ext.type = R_TLS_EXT_TYPE_PSK_KEY_EXCHANGE_MODES;
+  ext.data = modes;
+  ext.len = sizeof (modes);
+  r_assert (r_tls_hello_ext_psk_ke_modes_contains (&ext,
+        R_TLS_PSK_KE_MODE_PSK_DHE_KE));
+  r_assert (r_tls_hello_ext_psk_ke_modes_contains (&ext,
+        R_TLS_PSK_KE_MODE_PSK_KE));
+  r_assert (!r_tls_hello_ext_psk_ke_modes_contains (&ext, 0x02));
+}
+RTEST_END;
+
 RTEST (rtls, parse_dtls_certificate_request, RTEST_FAST)
 {
   static const ruint8 pkt_dtls_certificate_request[] = {
