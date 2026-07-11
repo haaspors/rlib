@@ -244,6 +244,18 @@ r_tls13_binder_key (const RTLS13Schedule * sched, ruint8 * out)
 }
 
 rboolean
+r_tls13_schedule_early (RTLS13Schedule * sched, const ruint8 * transcript_hash)
+{
+  if (R_UNLIKELY (sched == NULL || transcript_hash == NULL))
+    return FALSE;
+
+  /* client_early_traffic_secret = Derive-Secret(Early, "c e traffic",
+   *   Transcript-Hash(ClientHello)). */
+  return r_tls13_derive_secret (sched->hash, sched->early,
+      R_STR_WITH_SIZE_ARGS ("c e traffic"), transcript_hash, sched->cet);
+}
+
+rboolean
 r_tls13_schedule_handshake (RTLS13Schedule * sched, const ruint8 * ecdhe,
     rsize ecdhelen, const ruint8 * transcript_hash)
 {

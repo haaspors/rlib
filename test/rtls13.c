@@ -253,6 +253,41 @@ RTEST (rtls13, key_schedule_resumption_rfc8448, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rtls13, key_schedule_early_rfc8448, R_TEST_TYPE_FAST)
+{
+  /* The 0-RTT values of RFC 8448 section 4: the client_early_traffic_secret is
+   * Derive-Secret(Early, "c e traffic", Transcript-Hash(ClientHello)), where
+   * the Early Secret comes from the section 3 ticket PSK and the transcript
+   * hash covers the resumed ClientHello (binders included). */
+  static const ruint8 psk[32] = {
+    0x4e, 0xcd, 0x0e, 0xb6, 0xec, 0x3b, 0x4d, 0x87, 0xf5, 0xd6, 0x02, 0x8f,
+    0x92, 0x2c, 0xa4, 0xc5, 0x85, 0x1a, 0x27, 0x7f, 0xd4, 0x13, 0x11, 0xc9,
+    0xe6, 0x2d, 0x2c, 0x94, 0x92, 0xe1, 0xc4, 0xf3 };
+  static const ruint8 th_ch[32] = {    /* Transcript-Hash(ClientHello) */
+    0x08, 0xad, 0x0f, 0xa0, 0x5d, 0x7c, 0x72, 0x33, 0xb1, 0x77, 0x5b, 0xa2,
+    0xff, 0x9f, 0x4c, 0x5b, 0x8b, 0x59, 0x27, 0x6b, 0x7f, 0x22, 0x7f, 0x13,
+    0xa9, 0x76, 0x24, 0x5f, 0x5d, 0x96, 0x09, 0x13 };
+  RTLS13Schedule sched;
+
+  /* Early Secret = HKDF-Extract(0, PSK). */
+  r_assert (r_tls13_schedule_init_psk (&sched, R_MSG_DIGEST_TYPE_SHA256,
+        psk, sizeof (psk)));
+  r_assert_cmpmem (sched.early, ==,
+      "\x9b\x21\x88\xe9\xb2\xfc\x6d\x64\xd7\x1d\xc3\x29\x90\x0e\x20\xbb"
+      "\x41\x91\x50\x00\xf6\x78\xaa\x83\x9c\xbb\x79\x7c\xb7\xd8\x33\x2c", 32);
+
+  /* client_early_traffic_secret = Derive-Secret(Early, "c e traffic", th). */
+  r_assert (r_tls13_schedule_early (&sched, th_ch));
+  r_assert_cmpmem (sched.cet, ==,
+      "\x3f\xbb\xe6\xa6\x0d\xeb\x66\xc3\x0a\x32\x79\x5a\xba\x0e\xff\x7e"
+      "\xaa\x10\x10\x55\x86\xe7\xbe\x5c\x09\x67\x8d\x63\xb6\xca\xab\x62", 32);
+
+  /* Argument checks. */
+  r_assert (!r_tls13_schedule_early (NULL, th_ch));
+  r_assert (!r_tls13_schedule_early (&sched, NULL));
+}
+RTEST_END;
+
 RTEST (rtls13, cert_verify_tbs, R_TEST_TYPE_FAST)
 {
   ruint8 th[32], out[R_TLS13_CERT_VERIFY_TBS_MAX];
