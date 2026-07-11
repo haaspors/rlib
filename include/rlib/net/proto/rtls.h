@@ -228,6 +228,12 @@ typedef enum {
   R_TLS_EXT_TYPE_RENEGOTIATION_INFO                     = 0xff01, /* [RFC5746] */
 } RTLSExtensionType;
 
+/** @brief PSK key-exchange mode for the psk_key_exchange_modes extension (RFC 8446 4.2.9). */
+typedef enum {
+  R_TLS_PSK_KE_MODE_PSK_KE                              = 0x00, /* PSK-only key establishment */
+  R_TLS_PSK_KE_MODE_PSK_DHE_KE                          = 0x01, /* PSK with (EC)DHE */
+} RTLSPskKeyExchangeMode;
+
 /** @brief Named group / elliptic curve for key exchange (IANA TLS Supported Groups). */
 /* http://www.iana.org/assignments/tls-parameters/#tls-parameters-8 */
 typedef enum {
@@ -433,6 +439,16 @@ typedef struct {
 /** @brief Static initialiser for an empty @ref RTLSKeyShareEntry. */
 #define R_TLS_KEY_SHARE_ENTRY_INIT          { NULL, 0, 0, NULL }
 
+/** @brief One PskIdentity from a ClientHello pre_shared_key extension (RFC 8446). */
+typedef struct {
+  const ruint8 *  start;   /**< @brief First octet of the entry (its identity-length field). */
+  const ruint8 *  identity;/**< @brief Pointer to the identity (ticket) octets. */
+  ruint16         len;     /**< @brief Identity length in bytes. */
+  ruint32         age;     /**< @brief obfuscated_ticket_age. */
+} RTLSPskIdentity;
+/** @brief Static initialiser for an empty @ref RTLSPskIdentity. */
+#define R_TLS_PSK_IDENTITY_INIT             { NULL, NULL, 0, 0 }
+
 /** @brief One certificate entry from a Certificate handshake message. */
 typedef struct {
   const ruint8 * start;    /**< @brief First octet of the entry (its length field). */
@@ -556,6 +572,26 @@ R_API RTLSError r_tls_parser_parse_certificate_request (const RTLSParser * parse
  */
 R_API RTLSError r_tls_parser_parse_new_session_ticket (const RTLSParser * parser,
     ruint32 * lifetime, const ruint8 ** ticket, ruint16 * ticketsize);
+/**
+ * @brief Parse the current record as a TLS 1.3 NewSessionTicket (RFC 8446 4.6.1).
+ *
+ * The 1.3 message adds @c ticket_age_add, a @c ticket_nonce and a trailing
+ * @c Extension list around the ticket, so it differs from the 1.2 layout parsed
+ * by @ref r_tls_parser_parse_new_session_ticket. Out pointers point into the
+ * record buffer. The trailing extensions are validated for length but not
+ * returned.
+ * @param parser Parser positioned on the message.
+ * @param lifetime Out: ticket_lifetime in seconds (may be @c NULL).
+ * @param age_add Out: ticket_age_add (may be @c NULL).
+ * @param nonce Out: pointer to the ticket_nonce bytes (may be @c NULL).
+ * @param noncelen Out: ticket_nonce length (may be @c NULL).
+ * @param ticket Out: pointer to the ticket bytes (may be @c NULL).
+ * @param ticketsize Out: ticket length in bytes (may be @c NULL).
+ */
+R_API RTLSError r_tls_parser_parse_new_session_ticket13 (const RTLSParser * parser,
+    ruint32 * lifetime, ruint32 * age_add,
+    const ruint8 ** nonce, ruint8 * noncelen,
+    const ruint8 ** ticket, ruint16 * ticketsize);
 /**
  * @brief Parse the current record as a CertificateVerify.
  * @param parser Parser positioned on the message.
@@ -799,6 +835,76 @@ static inline const ruint8 * r_tls_hello_ext_cookie (const RTLSHelloExt * ext, r
 }
 /** @} */
 
+/** @name pre_shared_key / psk_key_exchange_modes accessors (RFC 8446)
+ *  @{ */
+/**
+ * @brief Whether a psk_key_exchange_modes extension @p ext offers @p mode.
+ *
+ * The extension data is @c PskKeyExchangeMode ke_modes<1..255>: a uint8 length
+ * then the mode octets, clamped to @p ext's declared length (RFC 8446 4.2.9).
+ * @param ext  The psk_key_exchange_modes extension.
+ * @param mode The mode to look for (e.g. @ref R_TLS_PSK_KE_MODE_PSK_DHE_KE).
+ * @return @c TRUE if @p mode is listed.
+ */
+static inline rboolean r_tls_hello_ext_psk_ke_modes_contains (const RTLSHelloExt * ext,
+    ruint8 mode)
+{
+  ruint8 n, i;
+  if (ext->len < 1) return FALSE;
+  n = MIN (ext->data[0], (ruint8) (ext->len - 1));
+  for (i = 0; i < n; i++)
+    if (ext->data[1 + i] == mode) return TRUE;
+  return FALSE;
+}
+
+/**
+ * @brief Read the first PskIdentity of a ClientHello pre_shared_key @p ext.
+ *
+ * Walks the @c PskIdentity list (a uint16 length prefix then
+ * @c {opaque identity<1..2^16-1>; uint32 obfuscated_ticket_age} records)
+ * strictly within @p ext's declared length; @p ident points into the buffer.
+ * @return @c R_TLS_ERROR_OK, @c R_TLS_ERROR_EOB once exhausted or truncated, or
+ *  @c R_TLS_ERROR_INVAL on a @c NULL argument.
+ */
+R_API RTLSError r_tls_hello_ext_psk_identity_first (const RTLSHelloExt * ext,
+    RTLSPskIdentity * ident);
+/** @brief Advance @p ident to the next PskIdentity; restarts from the first when
+ * @p ident is empty. @see r_tls_hello_ext_psk_identity_first */
+R_API RTLSError r_tls_hello_ext_psk_identity_next (const RTLSHelloExt * ext,
+    RTLSPskIdentity * ident);
+/**
+ * @brief Read the @p n-th PskBinderEntry of a ClientHello pre_shared_key @p ext.
+ *
+ * The binders list follows the identities list; entry @p n must exist for the
+ * offer to be well-formed (one binder per identity, in order).
+ * @param ext     The pre_shared_key extension.
+ * @param n       Zero-based binder index.
+ * @param binder  Out: pointer to the binder octets.
+ * @param binderlen Out: binder length in bytes.
+ * @return @c R_TLS_ERROR_OK, or @c R_TLS_ERROR_EOB if absent / truncated.
+ */
+R_API RTLSError r_tls_hello_ext_psk_binder (const RTLSHelloExt * ext, ruint n,
+    const ruint8 ** binder, ruint8 * binderlen);
+/**
+ * @brief The truncation point for the pre_shared_key binder transcript.
+ *
+ * The binders are computed over the ClientHello up to and including the
+ * identities, i.e. ending just before the binders-list length field. This
+ * returns a pointer to that field, so the caller hashes from the handshake
+ * message start up to (but not including) it (RFC 8446 4.2.11.2).
+ * @param ext The pre_shared_key extension.
+ * @return Pointer to the binders-list length field, or @c NULL if malformed.
+ */
+static inline const ruint8 * r_tls_hello_ext_psk_binders_start (const RTLSHelloExt * ext)
+{
+  ruint16 idlen;
+  if (ext->len < sizeof (ruint16)) return NULL;
+  idlen = r_load_be16 (ext->data);
+  if ((rsize) sizeof (ruint16) + idlen + sizeof (ruint16) > ext->len) return NULL;
+  return ext->data + sizeof (ruint16) + idlen;
+}
+/** @} */
+
 
 /** @brief Decode the certificate entry @p cert into an @c RCryptoCert (caller owns the result). */
 R_API RCryptoCert * r_tls_certificate_get_cert (const RTLSCertificate * cert);
@@ -964,6 +1070,25 @@ R_API RTLSError r_tls_write_hs_new_session_ticket (rpointer buf, rsize size, rsi
     ruint32 lifetime, const ruint8 * ticket, ruint16 tsize);
 /** @brief DTLS alias for @ref r_tls_write_hs_new_session_ticket. */
 #define r_dtls_write_hs_new_session_ticket r_tls_write_hs_new_session_ticket
+/**
+ * @brief Write a TLS 1.3 NewSessionTicket handshake-message body (RFC 8446 4.6.1).
+ *
+ * Emits @c ticket_lifetime, @c ticket_age_add, the @c ticket_nonce, the
+ * @c ticket, and an empty @c Extension list. The caller frames the handshake
+ * header and protects the record.
+ * @param buf Destination buffer.
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written.
+ * @param lifetime ticket_lifetime hint in seconds.
+ * @param age_add ticket_age_add (random per ticket).
+ * @param nonce ticket_nonce bytes; may be @c NULL when @p noncelen is 0.
+ * @param noncelen ticket_nonce length, at most 255.
+ * @param ticket Ticket bytes.
+ * @param tsize Ticket length in bytes (1..65535).
+ */
+R_API RTLSError r_tls_write_hs_new_session_ticket13 (rpointer buf, rsize size, rsize * out,
+    ruint32 lifetime, ruint32 age_add, const ruint8 * nonce, ruint8 noncelen,
+    const ruint8 * ticket, ruint16 tsize);
 
 /**
  * @brief Write a CertificateRequest handshake-message body into @p buf.
