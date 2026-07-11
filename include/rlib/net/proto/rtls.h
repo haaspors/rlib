@@ -578,8 +578,8 @@ R_API RTLSError r_tls_parser_parse_new_session_ticket (const RTLSParser * parser
  * The 1.3 message adds @c ticket_age_add, a @c ticket_nonce and a trailing
  * @c Extension list around the ticket, so it differs from the 1.2 layout parsed
  * by @ref r_tls_parser_parse_new_session_ticket. Out pointers point into the
- * record buffer. The trailing extensions are validated for length but not
- * returned.
+ * record buffer. The trailing extensions are validated for length; only the
+ * @c early_data @c max_early_data_size is surfaced (@p max_early_data).
  * @param parser Parser positioned on the message.
  * @param lifetime Out: ticket_lifetime in seconds (may be @c NULL).
  * @param age_add Out: ticket_age_add (may be @c NULL).
@@ -587,11 +587,13 @@ R_API RTLSError r_tls_parser_parse_new_session_ticket (const RTLSParser * parser
  * @param noncelen Out: ticket_nonce length (may be @c NULL).
  * @param ticket Out: pointer to the ticket bytes (may be @c NULL).
  * @param ticketsize Out: ticket length in bytes (may be @c NULL).
+ * @param max_early_data Out: the @c early_data extension's @c max_early_data_size,
+ *  or 0 if the ticket carries no @c early_data extension (may be @c NULL).
  */
 R_API RTLSError r_tls_parser_parse_new_session_ticket13 (const RTLSParser * parser,
     ruint32 * lifetime, ruint32 * age_add,
     const ruint8 ** nonce, ruint8 * noncelen,
-    const ruint8 ** ticket, ruint16 * ticketsize);
+    const ruint8 ** ticket, ruint16 * ticketsize, ruint32 * max_early_data);
 /**
  * @brief Parse the current record as a CertificateVerify.
  * @param parser Parser positioned on the message.
@@ -1074,8 +1076,9 @@ R_API RTLSError r_tls_write_hs_new_session_ticket (rpointer buf, rsize size, rsi
  * @brief Write a TLS 1.3 NewSessionTicket handshake-message body (RFC 8446 4.6.1).
  *
  * Emits @c ticket_lifetime, @c ticket_age_add, the @c ticket_nonce, the
- * @c ticket, and an empty @c Extension list. The caller frames the handshake
- * header and protects the record.
+ * @c ticket, and an @c Extension list carrying an @c early_data extension
+ * (@c max_early_data_size) when @p max_early_data is non-zero, else empty. The
+ * caller frames the handshake header and protects the record.
  * @param buf Destination buffer.
  * @param size Capacity of @p buf in bytes.
  * @param out Out: bytes written.
@@ -1085,10 +1088,26 @@ R_API RTLSError r_tls_write_hs_new_session_ticket (rpointer buf, rsize size, rsi
  * @param noncelen ticket_nonce length, at most 255.
  * @param ticket Ticket bytes.
  * @param tsize Ticket length in bytes (1..65535).
+ * @param max_early_data The 0-RTT @c max_early_data_size to advertise, or 0 to
+ *  omit the @c early_data extension (no 0-RTT with this ticket).
  */
 R_API RTLSError r_tls_write_hs_new_session_ticket13 (rpointer buf, rsize size, rsize * out,
     ruint32 lifetime, ruint32 age_add, const ruint8 * nonce, ruint8 noncelen,
-    const ruint8 * ticket, ruint16 tsize);
+    const ruint8 * ticket, ruint16 tsize, ruint32 max_early_data);
+
+/**
+ * @brief Write an EndOfEarlyData handshake-message body (RFC 8446, 4.5).
+ *
+ * The message has an empty body; this writes nothing and reports a zero length.
+ * The caller frames the handshake header and protects the record (under the
+ * client early-traffic key). Provided for symmetry so callers need not special-
+ * case the empty body.
+ * @param buf Destination buffer (unused; may be @c NULL).
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written (always 0).
+ */
+R_API RTLSError r_tls_write_hs_end_of_early_data (rpointer buf, rsize size,
+    rsize * out);
 
 /**
  * @brief Write a CertificateRequest handshake-message body into @p buf.

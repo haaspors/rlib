@@ -1332,13 +1332,15 @@ RTLSError
 r_tls_parser_parse_new_session_ticket13 (const RTLSParser * parser,
     ruint32 * lifetime, ruint32 * age_add,
     const ruint8 ** nonce, ruint8 * noncelen,
-    const ruint8 ** ticket, ruint16 * ticketsize)
+    const ruint8 ** ticket, ruint16 * ticketsize, ruint32 * max_early_data)
 {
   RTLSHandshakeType type;
   const ruint8 * ptr, * end;
   ruint8 nlen;
   ruint16 tlen, extlen;
   RTLSError ret;
+
+  if (max_early_data != NULL) *max_early_data = 0;
 
   ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
   if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
@@ -1367,10 +1369,25 @@ r_tls_parser_parse_new_session_ticket13 (const RTLSParser * parser,
   if (ticketsize != NULL) *ticketsize = tlen;
   ptr += tlen;
 
-  /* Trailing Extension list must fit; its contents are not returned. */
+  /* Trailing Extension list must fit; surface only early_data's size. */
   extlen = r_load_be16 (ptr);
-  if (R_UNLIKELY (ptr + sizeof (ruint16) + extlen > end))
+  ptr += sizeof (ruint16);
+  if (R_UNLIKELY (ptr + extlen > end))
     return R_TLS_ERROR_CORRUPT_RECORD;
+  end = ptr + extlen;
+  while (ptr + 2 * sizeof (ruint16) <= end) {
+    ruint16 etype = r_load_be16 (ptr);
+    ruint16 elen = r_load_be16 (ptr + sizeof (ruint16));
+    ptr += 2 * sizeof (ruint16);
+    if (R_UNLIKELY (ptr + elen > end))
+      return R_TLS_ERROR_CORRUPT_RECORD;
+    if (etype == R_TLS_EXT_TYPE_EARLY_DATA) {
+      if (R_UNLIKELY (elen != sizeof (ruint32)))
+        return R_TLS_ERROR_CORRUPT_RECORD;
+      if (max_early_data != NULL) *max_early_data = r_load_be32 (ptr);
+    }
+    ptr += elen;
+  }
 
   return R_TLS_ERROR_OK;
 }
@@ -2046,11 +2063,13 @@ r_tls_write_hs_new_session_ticket (rpointer data, rsize size, rsize * out,
 RTLSError
 r_tls_write_hs_new_session_ticket13 (rpointer data, rsize size, rsize * out,
     ruint32 lifetime, ruint32 age_add, const ruint8 * nonce, ruint8 noncelen,
-    const ruint8 * ticket, ruint16 tsize)
+    const ruint8 * ticket, ruint16 tsize, ruint32 max_early_data)
 {
   ruint8 * p = data;
+  /* An early_data extension is 2 (type) + 2 (len) + 4 (max_early_data_size). */
+  rsize extslen = (max_early_data != 0) ? 2 * sizeof (ruint16) + sizeof (ruint32) : 0;
   rsize need = 2 * sizeof (ruint32) + 1 + (rsize)noncelen +
-      sizeof (ruint16) + (rsize)tsize + sizeof (ruint16);
+      sizeof (ruint16) + (rsize)tsize + sizeof (ruint16) + extslen;
 
   if (R_UNLIKELY (data == NULL || ticket == NULL || tsize == 0))
     return R_TLS_ERROR_INVAL;
@@ -2062,11 +2081,25 @@ r_tls_write_hs_new_session_ticket13 (rpointer data, rsize size, rsize * out,
   if (noncelen > 0) { r_memcpy (p, nonce, noncelen); p += noncelen; }
   r_store_be16 (p, tsize);          p += sizeof (ruint16);
   r_memcpy (p, ticket, tsize);      p += tsize;
-  r_store_be16 (p, 0);              p += sizeof (ruint16);  /* no extensions */
+  r_store_be16 (p, (ruint16)extslen); p += sizeof (ruint16);
+  if (extslen > 0) {
+    r_store_be16 (p, (ruint16)R_TLS_EXT_TYPE_EARLY_DATA); p += sizeof (ruint16);
+    r_store_be16 (p, (ruint16)sizeof (ruint32));          p += sizeof (ruint16);
+    r_store_be32 (p, max_early_data);                     p += sizeof (ruint32);
+  }
 
   if (out != NULL)
     *out = RPOINTER_TO_SIZE (p) - RPOINTER_TO_SIZE (data);
 
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_write_hs_end_of_early_data (rpointer data, rsize size, rsize * out)
+{
+  (void) data; (void) size;
+  if (out != NULL)
+    *out = 0;
   return R_TLS_ERROR_OK;
 }
 

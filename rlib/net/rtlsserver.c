@@ -2238,7 +2238,7 @@ r_tls_server_write_new_session_ticket13 (RTLSServer * server)
 
   if ((ret = r_tls_write_hs_new_session_ticket13 (body, sizeof (body), &bodylen,
           R_TLS_SESSION_TICKET_LIFETIME, age_add, nonce, sizeof (nonce),
-          server->ticket, server->ticketsize)) != R_TLS_ERROR_OK)
+          server->ticket, server->ticketsize, 0)) != R_TLS_ERROR_OK)
     return ret;
 
   msg[0] = (ruint8) R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET;

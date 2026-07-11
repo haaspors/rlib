@@ -2275,7 +2275,7 @@ r_tls_client_store_ticket13 (RTLSClient * client, const RTLSParser * parser)
   RTLSClientSession * s;
 
   if (r_tls_parser_parse_new_session_ticket13 (parser, &lifetime, &age_add,
-        &nonce, &noncelen, &ticket, &ticketsize) != R_TLS_ERROR_OK)
+        &nonce, &noncelen, &ticket, &ticketsize, NULL) != R_TLS_ERROR_OK)
     return;
   if ((s = r_mem_new0 (RTLSClientSession)) == NULL)
     return;
