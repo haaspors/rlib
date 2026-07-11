@@ -189,6 +189,7 @@ typedef struct {
   ruint8 shs[R_TLS13_SECRET_MAX];        /**< @brief server_handshake_traffic_secret. */
   ruint8 cap[R_TLS13_SECRET_MAX];        /**< @brief client_application_traffic_secret_0. */
   ruint8 sap[R_TLS13_SECRET_MAX];        /**< @brief server_application_traffic_secret_0. */
+  ruint8 res_master[R_TLS13_SECRET_MAX]; /**< @brief resumption_master_secret. */
 } RTLS13Schedule;
 
 /**
@@ -201,6 +202,40 @@ typedef struct {
  * @return @c TRUE on success; @c FALSE on an unsupported hash.
  */
 R_API rboolean r_tls13_schedule_init (RTLS13Schedule * sched, RMsgDigestType hash);
+
+/**
+ * @brief Initialise the key schedule with a resumption PSK.
+ *
+ * The Early Secret becomes @c HKDF-Extract(0, PSK) instead of the PSK-less
+ * @c HKDF-Extract(0, 0^HashLen); the caller drives the rest of the schedule
+ * (@ref r_tls13_schedule_handshake, @ref r_tls13_schedule_master) exactly as in
+ * the full handshake. The @p psk is the ticket-derived secret from
+ * @ref r_tls13_resumption_psk and its length is the suite's @c HashLen.
+ *
+ * @param sched  Schedule to initialise.
+ * @param hash   Cipher-suite hash (SHA-256 / SHA-384).
+ * @param psk    The pre-shared key; @c HashLen bytes.
+ * @param psklen Length of @p psk.
+ * @return @c TRUE on success; @c FALSE on an unsupported hash or @c NULL @p psk.
+ */
+R_API rboolean r_tls13_schedule_init_psk (RTLS13Schedule * sched,
+    RMsgDigestType hash, const ruint8 * psk, rsize psklen);
+
+/**
+ * @brief Derive the resumption binder key (RFC 8446, section 7.1).
+ *
+ * @c binder_key = Derive-Secret(Early, "res binder", ""). The caller expands it
+ * into a Finished key with @ref r_tls13_finished_key and computes the
+ * @c pre_shared_key binder over the partial ClientHello transcript with
+ * @ref r_tls13_verify_data, the same construction as a Finished message.
+ *
+ * @param sched Schedule whose Early Secret was set from the PSK
+ *              (@ref r_tls13_schedule_init_psk, or @ref r_tls13_schedule_init
+ *              for the PSK-less binder in an external-PSK offer).
+ * @param out   Destination for the @c HashLen-byte binder key.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_tls13_binder_key (const RTLS13Schedule * sched, ruint8 * out);
 
 /**
  * @brief Derive the Handshake Secret and the handshake-traffic secrets.
@@ -231,6 +266,43 @@ R_API rboolean r_tls13_schedule_handshake (RTLS13Schedule * sched,
  */
 R_API rboolean r_tls13_schedule_master (RTLS13Schedule * sched,
     const ruint8 * transcript_hash);
+
+/**
+ * @brief Derive the resumption master secret (RFC 8446, section 7.1).
+ *
+ * @c resumption_master_secret = Derive-Secret(Master, "res master",
+ * Transcript-Hash(ClientHello..client Finished)); stored in @c sched->res_master
+ * for @ref r_tls13_resumption_psk to expand into per-ticket PSKs. Bound to the
+ * transcript through the client Finished, so it is derived once the handshake
+ * has completed (unlike the application secrets, bound through the server
+ * Finished).
+ *
+ * @param sched           Schedule, already @ref r_tls13_schedule_master.
+ * @param transcript_hash @c Transcript-Hash(ClientHello..client Finished); @c HashLen bytes.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_tls13_schedule_resumption (RTLS13Schedule * sched,
+    const ruint8 * transcript_hash);
+
+/**
+ * @brief Expand a per-ticket resumption PSK (RFC 8446, section 4.6.1).
+ *
+ * @c PSK = HKDF-Expand-Label(resumption_master_secret, "resumption",
+ * ticket_nonce, HashLen): the pre-shared key a NewSessionTicket represents,
+ * bound to that ticket's @p nonce so distinct tickets from one connection yield
+ * distinct PSKs.
+ *
+ * @param hash       Cipher-suite hash.
+ * @param res_master The resumption master secret (@ref RTLS13Schedule.res_master);
+ *                   @c HashLen bytes.
+ * @param nonce      The ticket_nonce; may be @c NULL when @p noncelen is 0.
+ * @param noncelen   Length of @p nonce, at most 255.
+ * @param out        Destination for the @c HashLen-byte PSK.
+ * @return @c TRUE on success; @c FALSE on invalid arguments.
+ */
+R_API rboolean r_tls13_resumption_psk (RMsgDigestType hash,
+    const ruint8 * res_master, const ruint8 * nonce, rsize noncelen,
+    ruint8 * out);
 
 /**
  * @brief Derive the @c "key" / @c "iv" traffic keys from a traffic secret.
