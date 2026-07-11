@@ -1557,6 +1557,10 @@ r_tls_client_nego_server_hello (RTLSClient * client, const RTLSParser * parser)
     RTLSError r13 = r_tls_client_nego_server_hello13 (client, &hello);
     if (r13 != R_TLS_ERROR_NOT_NEEDED)
       return r13;
+    /* Offered 1.3 but the server selected a lower version: a downgrade sentinel
+     * in the random is a forced downgrade and must abort (RFC 8446 4.1.3). */
+    if (r_tls13_random_is_downgrade (hello.random))
+      return R_TLS_ERROR_ILLEGAL_PARAMETER;
   }
 
   if (hello.version != client->version)
@@ -2155,6 +2159,9 @@ r_tls_client_state_server_hello (RTLSClient * client, const RTLSParser * parser)
       break;
     case R_TLS_ERROR_VERSION:
       r_tls_client_send_alert (client, R_TLS_ALERT_TYPE_PROTOCOL_VERSION);
+      break;
+    case R_TLS_ERROR_ILLEGAL_PARAMETER:
+      r_tls_client_send_alert (client, R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER);
       break;
     case R_TLS_ERROR_HANDSHAKE_FAILURE:
       r_tls_client_send_alert (client, R_TLS_ALERT_TYPE_HANDSHAKE_FAILURE);
