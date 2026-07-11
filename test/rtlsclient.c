@@ -1171,6 +1171,66 @@ RTEST_F (rtlsclient, tls_verify_cert_reject, RTEST_FAST)
 }
 RTEST_END;
 
+/* RFC 8446 4.1.3 downgrade protection: a 1.3-capable server that settles on
+ * TLS 1.2 stamps the downgrade sentinel into its ServerHello.random, and a
+ * client that offered 1.3 but is answered with that ServerHello aborts with a
+ * fatal illegal_parameter alert rather than completing the downgrade. */
+RTEST_F (rtlsclient, tls_downgrade_protection, RTEST_FAST)
+{
+  RBuffer * ch, * sh, * alert;
+  RTLSClient * victim;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RTLSAlertLevel alevel;
+  RTLSAlertType atype;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  /* Drive the 1.2 ClientHello into the server so it emits its flight. */
+  r_assert_cmpptr ((ch = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_tls_server_incoming_data (fixture->server, ch);
+  r_buffer_unref (ch);
+
+  /* The first server record is the ServerHello; its random carries the
+   * "DOWNGRD\x01" sentinel because the 1.3-capable server settled on 1.2. */
+  r_assert_cmpptr ((sh = r_queue_pop (&fixture->srv_out)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, sh), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  r_assert (r_tls13_random_is_downgrade (hello.random));
+  r_assert_cmpmem (hello.random + R_TLS_HELLO_RANDOM_BYTES - 8, ==,
+      "\x44\x4f\x57\x4e\x47\x52\x44\x01", 8);
+  r_tls_parser_clear (&parser);
+
+  /* A fresh client that offered 1.3 detects the downgrade in that ServerHello
+   * and aborts instead of accepting 1.2. */
+  r_assert_cmpptr ((victim = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_start (victim, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);   /* drop victim's ClientHello */
+  fixture->cli_error = fixture->cli_hs_done = FALSE;
+
+  r_tls_client_incoming_data (victim, sh);
+  r_assert (fixture->cli_error);
+  r_assert (!fixture->cli_hs_done);
+
+  /* It signalled the peer with a fatal illegal_parameter alert. */
+  r_assert_cmpptr ((alert = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, alert), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (alert);
+
+  r_tls_client_unref (victim);
+  r_buffer_unref (sh);
+}
+RTEST_END;
+
 /* Mutual TLS: the server requires a client certificate, the client presents
  * one, and the handshake completes with each side holding the other's leaf. */
 static void

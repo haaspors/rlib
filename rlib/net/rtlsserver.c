@@ -783,6 +783,11 @@ r_tls_server_write_hello (RTLSServer * server)
 
     if (!server->servrandompinned) {
       r_tls_generate_hello_random (server->servrandom, server->prng);
+      /* This path only writes a <= 1.2 ServerHello; the server is otherwise
+       * 1.3-capable, so stamp the downgrade sentinel (RFC 8446 4.1.3). DTLS is
+       * excluded -- the stack has no DTLS 1.3 to be downgraded from. */
+      if (!r_tls_version_is_dtls (server->version))
+        r_tls13_downgrade_random (server->servrandom, server->version);
       server->servrandompinned = TRUE;
     }
 
@@ -3106,6 +3111,11 @@ r_tls_server_try_resume (RTLSServer * server)
   r_prng_fill (server->prng, server->session_id, server->session_id_len);
   if (!server->servrandompinned) {
     r_tls_generate_hello_random (server->servrandom, server->prng);
+    /* Resuming a <= 1.2 session still warrants the downgrade sentinel when the
+     * server is 1.3-capable (RFC 8446 4.1.3), matching r_tls_server_write_hello. */
+    if (!r_tls_version_is_dtls (server->version) &&
+        server->max_version >= R_TLS_VERSION_TLS_1_3)
+      r_tls13_downgrade_random (server->servrandom, server->version);
     server->servrandompinned = TRUE;
   }
 
