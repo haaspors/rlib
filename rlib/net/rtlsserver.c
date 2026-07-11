@@ -142,6 +142,12 @@ struct RTLSServer {
   ruint8 psk13[R_TLS13_SECRET_MAX];     /* ticket-derived PSK for the schedule */
   rsize psk13_len;
   ruint32 nst13_count;                  /* NewSessionTicket nonce counter */
+  ruint32 max_early_data13;             /* configured 0-RTT max_early_data_size; 0 disables */
+  rboolean early13_accepted;            /* 0-RTT accepted this handshake */
+  rboolean early13_draining;            /* reading early data under the early key, awaiting EndOfEarlyData */
+  rboolean early13_skip;                /* early data offered but rejected: discard the client's 0-RTT records */
+  rsize early13_skipped;                /* bytes of rejected early data discarded so far */
+  rsize early13_received;               /* bytes of accepted early data delivered so far */
 
   RBuffer * inbuf;
   RQueue qsend;
@@ -355,6 +361,22 @@ r_tls_server_set_session_ticket_keys (RTLSServer * server,
   server->ticket_keys = r_tls_session_ticket_keys_ref (keys);
 
   return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_server_set_max_early_data_size (RTLSServer * server, ruint32 size)
+{
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (server->state > R_TLS_SERVER_HELLO)) return R_TLS_ERROR_WRONG_STATE;
+
+  server->max_early_data13 = size;
+  return R_TLS_ERROR_OK;
+}
+
+rboolean
+r_tls_server_get_early_data_accepted (const RTLSServer * server)
+{
+  return server != NULL && server->early13_accepted;
 }
 
 RTLSError
@@ -1493,6 +1515,10 @@ r_tls_server_read_key_share (const RTLSServer * server,
 #define R_TLS_TICKET13_STATE_MAX      (1 + 2 + 8 + 1 + \
     R_TLS_TICKET13_NONCE_SIZE + R_TLS13_SECRET_MAX)
 
+/* Cap on rejected 0-RTT ciphertext discarded before we stop trial-decrypting
+ * and fail the record (bounds a peer that streams undecryptable data). */
+#define R_TLS13_EARLY_DATA_SKIP_MAX   16384
+
 /* Seal the resumption state (res_master + @nonce, keyed to the negotiated
  * suite) into an opaque ticket under the shared key store. */
 static RTLSError
@@ -1626,6 +1652,16 @@ r_tls_server_try_resume13 (RTLSServer * server)
 
   server->resumed13 = TRUE;
   server->selected_identity13 = 0;
+
+  /* 0-RTT is accepted only for the first identity (this cut offers one), only
+   * when configured (max_early_data13), and only when the ClientHello carries
+   * the early_data extension. */
+  {
+    RTLSHelloExt ed = R_TLS_HELLO_EXT_INIT;
+    if (server->max_early_data13 > 0 &&
+        r_tls_server_find_ext (server, R_TLS_EXT_TYPE_EARLY_DATA, &ed))
+      server->early13_accepted = TRUE;
+  }
   return R_TLS_ERROR_OK;
 
 decline:
@@ -1739,6 +1775,16 @@ r_tls_server_nego_hello13 (RTLSServer * server)
     RTLSError rr = r_tls_server_try_resume13 (server);
     if (rr != R_TLS_ERROR_OK && rr != R_TLS_ERROR_NOT_NEEDED)
       return rr;
+  }
+
+  /* A client that offered early_data we did not accept has already put its
+   * 0-RTT records on the wire; they must be discarded rather than fed to the
+   * handshake-key AEAD (RFC 8446 4.2.10). */
+  {
+    RTLSHelloExt ed = R_TLS_HELLO_EXT_INIT;
+    if (!server->early13_accepted &&
+        r_tls_server_find_ext (server, R_TLS_EXT_TYPE_EARLY_DATA, &ed))
+      server->early13_skip = TRUE;
   }
 
   server->comp = R_TLS_COMPRESSION_NULL;
@@ -2076,6 +2122,21 @@ r_tls_server_write_flight13 (RTLSServer * server)
   RMemMapInfo certinfo = R_MEM_MAP_INFO_INIT;
   RTLSError ret;
 
+  /* 0. Accepted 0-RTT: the client early-traffic secret is bound to the
+   * ClientHello alone, so derive it and install the early read key now, before
+   * the ServerHello is folded. The client's 0-RTT records then decrypt under it
+   * until the EndOfEarlyData switches the read key to the handshake secret. */
+  if (server->early13_accepted) {
+    if (!r_msg_digest_get_data (server->hshash, th, hlen, NULL))
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    if (!r_tls13_schedule_init_psk (&server->sched13, server->cs13_hash,
+            server->psk13, server->psk13_len) ||
+        !r_tls13_schedule_early (&server->sched13, th) ||
+        !r_tls_server_install_keys13 (server, &server->rk_read, server->sched13.cet))
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    server->early13_draining = TRUE;
+  }
+
   /* 1. ServerHello (plaintext); generate the server ephemeral first. */
   if ((server->ecdhe_key = r_tls_ecdhe_keygen (server->ecdhe_curve, server->prng)) == NULL)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
@@ -2100,15 +2161,29 @@ r_tls_server_write_flight13 (RTLSServer * server)
   }
   r_memclear_secure (ecdhe, sizeof (ecdhe));
 
-  /* 3. Install handshake-traffic keys (server writes shs, reads chs). */
-  if (!r_tls_server_install_keys13 (server, &server->rk_write, server->sched13.shs) ||
+  /* 3. Install handshake-traffic keys (server writes shs, reads chs). While
+   * draining 0-RTT the read key stays the early-traffic key -- it switches to
+   * chs only once the EndOfEarlyData arrives. */
+  if (!r_tls_server_install_keys13 (server, &server->rk_write, server->sched13.shs))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if (!server->early13_draining &&
       !r_tls_server_install_keys13 (server, &server->rk_read, server->sched13.chs))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
-  /* 4. EncryptedExtensions (empty in this cut). */
-  if ((ret = r_tls_write_hs_encrypted_extensions (body, sizeof (body),
-          &bodylen, NULL, 0)) != R_TLS_ERROR_OK)
-    return ret;
+  /* 4. EncryptedExtensions: signal early-data acceptance back to the client
+   * (empty extension), otherwise an empty list. */
+  {
+    ruint8 ee[4];
+    ruint16 eelen = 0;
+    if (server->early13_accepted) {
+      r_store_be16 (ee, (ruint16)R_TLS_EXT_TYPE_EARLY_DATA);
+      r_store_be16 (ee + 2, 0);
+      eelen = sizeof (ee);
+    }
+    if ((ret = r_tls_write_hs_encrypted_extensions (body, sizeof (body),
+            &bodylen, eelen ? ee : NULL, eelen)) != R_TLS_ERROR_OK)
+      return ret;
+  }
   if ((ret = r_tls_server_send_hs13 (server,
           R_TLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS, body, bodylen)) != R_TLS_ERROR_OK)
     return ret;
@@ -2238,7 +2313,8 @@ r_tls_server_write_new_session_ticket13 (RTLSServer * server)
 
   if ((ret = r_tls_write_hs_new_session_ticket13 (body, sizeof (body), &bodylen,
           R_TLS_SESSION_TICKET_LIFETIME, age_add, nonce, sizeof (nonce),
-          server->ticket, server->ticketsize, 0)) != R_TLS_ERROR_OK)
+          server->ticket, server->ticketsize,
+          server->max_early_data13)) != R_TLS_ERROR_OK)
     return ret;
 
   msg[0] = (ruint8) R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET;
@@ -3290,6 +3366,46 @@ r_tls_server_state_finished (RTLSServer * server, const RTLSParser * parser)
   RTLSError err;
 
   if (server->tls13) {
+    /* While draining accepted 0-RTT (before the EndOfEarlyData), the client's
+     * records arrive under the early-traffic key: application_data is delivered
+     * as early data, and EndOfEarlyData ends the flow and switches the read key
+     * to the client handshake-traffic secret for the client Finished. */
+    if (server->early13_draining) {
+      if (parser->content == R_TLS_CONTENT_TYPE_APPLICATION_DATA) {
+        RBuffer * buf;
+        /* Reject a client that streams more 0-RTT than the max_early_data_size
+         * we advertised in the ticket (RFC 8446 4.2.10). */
+        if ((server->early13_received += parser->fragment.size) >
+            server->max_early_data13) {
+          r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+          return R_TLS_ERROR_WRONG_TYPE;
+        }
+        buf = r_buffer_view (parser->buf, parser->offset, parser->fragment.size);
+        if (buf != NULL) {
+          server->cb.appdata (server->userdata, buf, server);
+          r_buffer_unref (buf);
+        }
+        return R_TLS_ERROR_OK;
+      }
+      if (parser->content == R_TLS_CONTENT_TYPE_HANDSHAKE) {
+        RTLSHandshakeType type;
+        if ((err = r_tls_parser_parse_handshake_peek_type (parser, &type)) != R_TLS_ERROR_OK ||
+            type != R_TLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA) {
+          r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+          return R_TLS_ERROR_WRONG_TYPE;
+        }
+        r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
+        server->early13_draining = FALSE;
+        if (!r_tls_server_install_keys13 (server, &server->rk_read, server->sched13.chs)) {
+          r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
+          return R_TLS_ERROR_HANDSHAKE_FAILURE;
+        }
+        return R_TLS_ERROR_OK;
+      }
+      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+      return R_TLS_ERROR_WRONG_TYPE;
+    }
+
     if ((err = r_tls_server_finished13 (server, parser)) == R_TLS_ERROR_OK)
       err = r_tls_server_change_state (server, R_TLS_SERVER_APPDATA);
     if (err == R_TLS_ERROR_OK) {
@@ -3437,11 +3553,29 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
         if ((err = r_tls_parser_unprotect13 (&parser, server->rk_read.cipher,
                 server->rk_read.iv, server->rk_read.ivlen,
                 server->rk_read.seq)) != R_TLS_ERROR_OK) {
+          /* Rejected 0-RTT: the client's early-data records fail under the
+           * handshake key. Discard them (no alert) up to a bound, until the
+           * client Finished decrypts (RFC 8446 4.2.10). */
+          if (server->early13_skip &&
+              (server->early13_skipped += parser.fragment.size) <=
+                  R_TLS13_EARLY_DATA_SKIP_MAX)
+            continue;
           R_LOG_WARNING ("1.3 record unprotect returned: %d", err);
           r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
           continue;
         }
+        server->early13_skip = FALSE;   /* a record decrypted: early data is over */
         server->rk_read.seq++;
+      } else if (server->early13_skip &&
+          parser.content == R_TLS_CONTENT_TYPE_APPLICATION_DATA) {
+        /* Rejected 0-RTT with no read key yet installed (e.g. after a
+         * HelloRetryRequest): the early-data records are undecryptable, so
+         * discard them up to the same bound. */
+        if ((server->early13_skipped += parser.fragment.size) <=
+                R_TLS13_EARLY_DATA_SKIP_MAX)
+          continue;
+        r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
+        continue;
       }
     } else {
       /* TLS carries no explicit record sequence number; feed the running read

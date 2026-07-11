@@ -211,6 +211,34 @@ R_API const rchar * r_tls_server_get_server_name (const RTLSServer * server);
 R_API RTLSError r_tls_server_set_session_ticket_keys (RTLSServer * server,
     RTLSSessionTicketKeys * keys);
 /**
+ * @brief Enable TLS 1.3 0-RTT early data, accepting up to @p size bytes.
+ *
+ * Opt in to 0-RTT (RFC 8446 2.3): the NewSessionTicket then advertises an
+ * @c early_data extension with @p size as @c max_early_data_size, and a later
+ * resumption that offers @c early_data is accepted -- the server decrypts the
+ * client's 0-RTT records under the client early-traffic key and delivers them
+ * through the @c appdata callback before the handshake completes. Requires a
+ * session-ticket key store (@ref r_tls_server_set_session_ticket_keys); with
+ * @p size 0 (the default) the server neither advertises nor accepts early data.
+ *
+ * @warning 0-RTT data carries no forward secrecy and, because the tickets are
+ * stateless, this implementation provides no replay protection beyond the
+ * ticket lifetime: an on-path attacker may replay the early-data records and the
+ * server will accept them again. Enable this only when the 0-RTT-triggered
+ * application actions are idempotent (RFC 8446 8, appendix E.5). The 1-RTT data
+ * that follows the handshake is unaffected.
+ */
+R_API RTLSError r_tls_server_set_max_early_data_size (RTLSServer * server,
+    ruint32 size);
+/**
+ * @brief Whether the current handshake accepted TLS 1.3 0-RTT early data.
+ *
+ * @c TRUE once a resumption offered early data and the server accepted it (see
+ * @ref r_tls_server_set_max_early_data_size); the early-data bytes are delivered
+ * via the @c appdata callback during the handshake.
+ */
+R_API rboolean r_tls_server_get_early_data_accepted (const RTLSServer * server);
+/**
  * @brief Require a specific (EC)DHE group of TLS 1.3 clients (RFC 8446).
  *
  * When set, a TLS 1.3 ClientHello that does not carry a @c key_share for
