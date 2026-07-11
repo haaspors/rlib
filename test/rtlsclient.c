@@ -913,6 +913,68 @@ RTEST_F (rtlsclient, tls13_early_data_rejected, RTEST_FAST)
 }
 RTEST_END;
 
+/* The resuming server accepts 0-RTT but has a smaller max_early_data_size than
+ * the ticket originally advertised; a client payload that overshoots that limit
+ * is rejected on the server rather than delivered (RFC 8446 4.2.10). */
+RTEST_F (rtlsclient, tls13_early_data_exceeds_max, RTEST_FAST)
+{
+  static const ruint8 early[] = { 'T', 'O', 'O', 'M', 'U', 'C', 'H', '!' };
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RBuffer * app;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First handshake advertises a generous limit, so the ticket permits enough
+   * early data for the payload below. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 0x4000),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* The resuming server now enforces a limit of 4 bytes, below the 8-byte
+   * payload the client offers as 0-RTT. */
+  r_tls_client_unref (fixture->client);
+  r_tls_server_unref (fixture->server);
+  fixture->server = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 4),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)early, sizeof (early), sizeof (early), 0, NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_early_data (fixture->client, app), ==, R_TLS_ERROR_OK);
+  r_buffer_unref (app);
+
+  fixture->cli_hs_done = fixture->srv_hs_done = FALSE;
+  fixture->cli_error = fixture->srv_error = FALSE;
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  /* The server aborted the handshake on the over-long early data; the oversized
+   * record was never delivered to the application. */
+  r_assert (fixture->srv_error);
+  r_assert (!fixture->srv_hs_done);
+  r_assert_cmpuint (r_queue_size (&fixture->srv_app), ==, 0);
+
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+}
+RTEST_END;
+
 /* In 1.3, alerts after the handshake are AEAD-protected (RFC 8446 5): the
  * server's close_notify goes out as an application_data record, the client
  * decrypts it, reports the orderly close and auto-responds with its own

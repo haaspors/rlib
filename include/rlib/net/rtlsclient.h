@@ -131,6 +131,34 @@ R_API RTLSError r_tls_client_set_session (RTLSClient * client,
  */
 R_API RTLSClientSession * r_tls_client_get_session (const RTLSClient * client);
 /**
+ * @brief Queue @p buffer as TLS 1.3 0-RTT early data for the next handshake.
+ *
+ * When the offered @ref RTLSClient session (@ref r_tls_client_set_session)
+ * permits early data, the client sends @p buffer encrypted under the client
+ * early-traffic key immediately after the ClientHello, before the handshake
+ * completes (RFC 8446 2.3). If the server accepts, the peer receives it through
+ * its @c appdata callback during the handshake; if the server rejects 0-RTT (or
+ * the session does not permit it, or @p buffer exceeds the ticket's
+ * @c max_early_data_size), the client transparently resends @p buffer as
+ * ordinary application data once the handshake completes, so the payload is
+ * delivered either way. Must be called before @ref r_tls_client_start; the
+ * client takes a reference on @p buffer. Pass @c NULL to clear.
+ *
+ * @warning 0-RTT data is not forward secret and may be replayed; only use it for
+ * idempotent requests (see @ref r_tls_server_set_max_early_data_size).
+ */
+R_API RTLSError r_tls_client_set_early_data (RTLSClient * client,
+    RBuffer * buffer);
+/**
+ * @brief Whether the server accepted the 0-RTT early data offered this handshake.
+ *
+ * @c TRUE once the server has echoed the @c early_data extension, i.e. the data
+ * set with @ref r_tls_client_set_early_data was delivered as 0-RTT. When @c FALSE
+ * after the handshake the data was (or will be) resent as ordinary application
+ * data. Meaningful once the handshake has progressed past EncryptedExtensions.
+ */
+R_API rboolean r_tls_client_get_early_data_accepted (const RTLSClient * client);
+/**
  * @brief Start the session on @p loop, drawing randomness from @p prng, and
  * emit the ClientHello offering @p version (@c R_TLS_VERSION_TLS_1_2 or
  * @c R_TLS_VERSION_DTLS_1_2).
