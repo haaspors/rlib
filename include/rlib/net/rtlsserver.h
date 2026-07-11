@@ -172,6 +172,21 @@ typedef enum {
 R_API RTLSError r_tls_server_set_cert (RTLSServer * server,
     RCryptoCert * cert, RCryptoKey * privkey);
 /**
+ * @brief Constrain the TLS versions the server will negotiate.
+ *
+ * Both bounds lie in the configurable window @c R_TLS_VERSION_TLS_1_2 ..
+ * @c R_TLS_VERSION_TLS_1_3 (the default range); @p min must not exceed @p max.
+ * A ClientHello that can only reach below @p min is rejected with a
+ * @c protocol_version alert. Capping @p max at @c R_TLS_VERSION_TLS_1_2 makes
+ * the server a genuine 1.2-only peer: it ignores a client's 1.3 offer and,
+ * being no longer 1.3-capable, does not stamp the RFC 8446 4.1.3 downgrade
+ * sentinel, so a 1.3-capable client falls back to 1.2 without treating it as an
+ * attack. Must be set before the handshake starts; DTLS is fixed at 1.2 and
+ * unaffected.
+ */
+R_API RTLSError r_tls_server_set_version_range (RTLSServer * server,
+    RTLSVersion min, RTLSVersion max);
+/**
  * @brief Set the client-certificate (mutual-TLS) policy; defaults to
  * @ref R_TLS_CLIENT_CERT_MODE_NONE. Must be set before the handshake starts.
  */
