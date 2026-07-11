@@ -1231,6 +1231,73 @@ RTEST_F (rtlsclient, tls_downgrade_protection, RTEST_FAST)
 }
 RTEST_END;
 
+/* The client offers both 1.3 and 1.2 in one ClientHello. Against the default
+ * (1.3-capable) server it negotiates 1.3. */
+RTEST_F (rtlsclient, tls_hybrid_negotiates_tls13, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, R_TLS_VERSION_TLS_1_3);
+  r_assert_cmpuint (r_tls_server_get_version (fixture->server), ==, R_TLS_VERSION_TLS_1_3);
+}
+RTEST_END;
+
+/* Same hybrid client, but the server is capped at 1.2 -- a genuine 1.2 peer
+ * that neither speaks 1.3 nor stamps the downgrade sentinel. The client falls
+ * back to a full 1.2 handshake (no false downgrade abort) and data flows. */
+RTEST_F (rtlsclient, tls_hybrid_falls_back_to_tls12, RTEST_FAST)
+{
+  static const ruint8 c2s[] = { 'f', 'a', 'l', 'l', 'b', 'a', 'c', 'k' };
+  static const ruint8 s2c[] = { 'o', 'k', ' ', '1', '.', '2' };
+  RBuffer * app;
+
+  r_assert_cmpint (r_tls_server_set_version_range (fixture->server,
+        R_TLS_VERSION_TLS_1_2, R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, R_TLS_VERSION_TLS_1_2);
+  r_assert_cmpuint (r_tls_server_get_version (fixture->server), ==, R_TLS_VERSION_TLS_1_2);
+  r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), !=, NULL);
+  /* 1.2 with the default ECDHE-first preference: forward secrecy preserved. */
+  r_assert_cmpptr (r_tls_client_get_cipher_suite (fixture->client), !=, NULL);
+  r_assert_cmpint (r_tls_client_get_cipher_suite (fixture->client)->key_exchange,
+      ==, R_KEY_EXCHANGE_ECDHE_RSA);
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+}
+RTEST_END;
+
 /* A server that requires 1.3 rejects a 1.2-only client with a fatal
  * protocol_version alert. */
 RTEST_F (rtlsclient, tls_server_requires_tls13, RTEST_FAST)
@@ -1263,6 +1330,78 @@ RTEST_F (rtlsclient, tls_server_requires_tls13, RTEST_FAST)
   r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_PROTOCOL_VERSION);
   r_tls_parser_clear (&parser);
   r_buffer_unref (alert);
+}
+RTEST_END;
+
+/* r_tls_client_set_version_range accepts the 1.2..1.3 window and rejects
+ * inverted, out-of-window and DTLS bounds. */
+RTEST_F (rtlsclient, tls_client_version_range_validation, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_client_set_version_range (fixture->client,
+        R_TLS_VERSION_TLS_1_2, R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_set_version_range (fixture->client,
+        R_TLS_VERSION_TLS_1_3, R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_set_version_range (fixture->client,
+        R_TLS_VERSION_TLS_1_3, R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_VERSION);
+  r_assert_cmpint (r_tls_client_set_version_range (fixture->client,
+        R_TLS_VERSION_TLS_1_0, R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_VERSION);
+  r_assert_cmpint (r_tls_client_set_version_range (fixture->client,
+        R_TLS_VERSION_DTLS_1_2, R_TLS_VERSION_DTLS_1_2), ==, R_TLS_ERROR_VERSION);
+}
+RTEST_END;
+
+/* A client pinned to 1.3 (no fallback) rejects a 1.2 ServerHello as out of its
+ * offered range, aborting with protocol_version rather than downgrading. A
+ * pinned client offers no 1.2 suites, so a genuine 1.2 server could not answer
+ * it at all; the rejection guards the case where a server (or an attacker)
+ * replies 1.2 regardless. The 1.2 ServerHello is sourced from the capped server
+ * answering a hybrid client. */
+RTEST_F (rtlsclient, tls_client_requires_tls13, RTEST_FAST)
+{
+  RBuffer * ch, * sh, * alert;
+  RTLSClient * victim;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSAlertLevel alevel;
+  RTLSAlertType atype;
+
+  r_assert_cmpint (r_tls_server_set_version_range (fixture->server,
+        R_TLS_VERSION_TLS_1_2, R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  /* A hybrid client so the capped server produces a real (sentinel-free) 1.2
+   * ServerHello. */
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((ch = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_tls_server_incoming_data (fixture->server, ch);
+  r_buffer_unref (ch);
+  r_assert_cmpptr ((sh = r_queue_pop (&fixture->srv_out)), !=, NULL);
+
+  /* Pinned-1.3 client fed that 1.2 ServerHello aborts. */
+  r_assert_cmpptr ((victim = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_version_range (victim,
+        R_TLS_VERSION_TLS_1_3, R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (victim, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);   /* drop victim's ClientHello */
+  fixture->cli_error = fixture->cli_hs_done = FALSE;
+
+  r_tls_client_incoming_data (victim, sh);
+  r_assert (fixture->cli_error);
+  r_assert (!fixture->cli_hs_done);
+
+  r_assert_cmpptr ((alert = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, alert), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_PROTOCOL_VERSION);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (alert);
+
+  r_tls_client_unref (victim);
+  r_buffer_unref (sh);
 }
 RTEST_END;
 

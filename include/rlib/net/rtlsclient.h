@@ -106,6 +106,22 @@ R_API RTLSError r_tls_client_set_cert (RTLSClient * client,
  */
 R_API RTLSError r_tls_client_set_server_name (RTLSClient * client,
     const rchar * host);
+/**
+ * @brief Constrain the TLS versions the client offers.
+ *
+ * Both bounds lie in the window @c R_TLS_VERSION_TLS_1_2 ..
+ * @c R_TLS_VERSION_TLS_1_3; @p min must not exceed @p max. The ClientHello
+ * offers every version in the range (a @c [1.2, 1.3] range sends a hybrid
+ * ClientHello that a server may answer with either), and a ServerHello outside
+ * the range is refused. Without this call the range defaults to @c [1.2, @p
+ * version] from @ref r_tls_client_start, so starting at 1.3 offers both 1.3 and
+ * 1.2 (the common modern default) and starting at 1.2 offers 1.2 only; setting
+ * @c [1.3, 1.3] pins the client to 1.3 with no downgrade. When set, the version
+ * passed to @ref r_tls_client_start only selects TLS versus DTLS. Must be called
+ * before @ref r_tls_client_start; DTLS is fixed at 1.2 and unaffected.
+ */
+R_API RTLSError r_tls_client_set_version_range (RTLSClient * client,
+    RTLSVersion min, RTLSVersion max);
 /** @brief Override the client-random (testing / determinism). */
 R_API RTLSError r_tls_client_set_random (RTLSClient * client,
     const ruint8 clirandom[R_TLS_HELLO_RANDOM_BYTES]);
