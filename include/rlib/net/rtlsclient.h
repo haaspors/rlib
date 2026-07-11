@@ -65,6 +65,20 @@ R_BEGIN_DECLS
 /** @brief Opaque, refcounted TLS / DTLS client session. */
 typedef struct RTLSClient RTLSClient;
 
+/**
+ * @brief Opaque, refcounted TLS 1.3 resumption session (RFC 8446).
+ *
+ * Carries a NewSessionTicket the server issued and the pre-shared key derived
+ * from it, so a later @ref RTLSClient can resume without a full handshake.
+ * Obtain one with @ref r_tls_client_get_session after a 1.3 handshake, and
+ * feed it to a new client with @ref r_tls_client_set_session before starting.
+ */
+typedef struct RTLSClientSession RTLSClientSession;
+/** @brief Take a reference on a resumption session (alias for @ref r_ref_ref). */
+#define r_tls_client_session_ref    r_ref_ref
+/** @brief Drop a reference; scrubs the PSK at zero (alias for @ref r_ref_unref). */
+#define r_tls_client_session_unref  r_ref_unref
+
 /** @brief Create a TLS client with the given callbacks and user context. */
 R_API RTLSClient * r_tls_client_new (const RTLSCallbacks * cb,
     rpointer userdata, RDestroyNotify notify) R_ATTR_MALLOC;
@@ -95,6 +109,27 @@ R_API RTLSError r_tls_client_set_server_name (RTLSClient * client,
 /** @brief Override the client-random (testing / determinism). */
 R_API RTLSError r_tls_client_set_random (RTLSClient * client,
     const ruint8 clirandom[R_TLS_HELLO_RANDOM_BYTES]);
+/**
+ * @brief Offer @p session for TLS 1.3 resumption in the next handshake.
+ *
+ * The ClientHello will carry the session's ticket in a @c pre_shared_key
+ * extension (with @c psk_dhe_ke); if the server accepts, the handshake is
+ * abbreviated and no server certificate is exchanged. Must be called before
+ * @ref r_tls_client_start and only applies when starting with
+ * @c R_TLS_VERSION_TLS_1_3. The client takes its own reference; pass @c NULL to
+ * clear. A server that declines simply runs a full handshake.
+ */
+R_API RTLSError r_tls_client_set_session (RTLSClient * client,
+    RTLSClientSession * session);
+/**
+ * @brief The resumption session from the server's NewSessionTicket, or @c NULL.
+ *
+ * Available once a 1.3 handshake has completed and the server has issued a
+ * ticket. The caller owns the returned reference (release with
+ * @ref r_tls_client_session_unref) and may feed it to a future client via
+ * @ref r_tls_client_set_session.
+ */
+R_API RTLSClientSession * r_tls_client_get_session (const RTLSClient * client);
 /**
  * @brief Start the session on @p loop, drawing randomness from @p prng, and
  * emit the ClientHello offering @p version (@c R_TLS_VERSION_TLS_1_2 or

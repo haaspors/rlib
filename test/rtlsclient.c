@@ -219,26 +219,27 @@ r_tlsclient_test_sni (rpointer ctx, const rchar * name, rpointer session)
   return R_TLS_ERROR_OK;
 }
 
+static const RTLSCallbacks srvcbs = {
+  r_tlsclient_test_prefer_ecdhe,
+  r_tlsclient_test_srv_hs_done,
+  r_tlsclient_test_srv_out,
+  r_tlsclient_test_srv_app,
+  r_tlsclient_test_srv_error,
+  NULL,
+  r_tlsclient_test_srv_closed,
+};
+static const RTLSCallbacks clicbs = {
+  r_tlsclient_test_prefer_ecdhe,
+  r_tlsclient_test_cli_hs_done,
+  r_tlsclient_test_cli_out,
+  r_tlsclient_test_cli_app,
+  r_tlsclient_test_cli_error,
+  r_tlsclient_test_verify_cert,
+  r_tlsclient_test_cli_closed,
+};
+
 RTEST_FIXTURE_SETUP (rtlsclient)
 {
-  static RTLSCallbacks srvcbs = {
-    r_tlsclient_test_prefer_ecdhe,
-    r_tlsclient_test_srv_hs_done,
-    r_tlsclient_test_srv_out,
-    r_tlsclient_test_srv_app,
-    r_tlsclient_test_srv_error,
-    NULL,
-    r_tlsclient_test_srv_closed,
-  };
-  static RTLSCallbacks clicbs = {
-    r_tlsclient_test_prefer_ecdhe,
-    r_tlsclient_test_cli_hs_done,
-    r_tlsclient_test_cli_out,
-    r_tlsclient_test_cli_app,
-    r_tlsclient_test_cli_error,
-    r_tlsclient_test_verify_cert,
-    r_tlsclient_test_cli_closed,
-  };
   RCryptoCert * cert;
   RCryptoKey * pk;
 
@@ -560,6 +561,355 @@ RTEST_F (rtlsclient, tls13_loopback_hrr, RTEST_FAST)
   r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
         R_TLS_SUPPORTED_GROUP_SECP256R1), ==, R_TLS_ERROR_OK);
   r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+/* Build a fresh server pre-loaded with the test cert and @keys (shared so a
+ * later connection can open a ticket the first sealed). */
+static RTLSServer *
+r_test_tls13_new_server (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture,
+    RTLSSessionTicketKeys * keys)
+{
+  RTLSServer * s = r_tls_server_new (&srvcbs, fixture, NULL);
+  RCryptoCert * cert = r_pem_parse_cert_from_data (testcertpem, -1);
+  RCryptoKey * pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0);
+  r_assert_cmpint (r_tls_server_set_cert (s, cert, pk), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (s, keys), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  return s;
+}
+
+/* Full 1.3 handshake yields a NewSessionTicket; a second connection resumes
+ * from it with an abbreviated handshake (no certificate exchanged) that still
+ * carries application data both ways. The two servers share a ticket-key store,
+ * as separate server instances would in production. */
+RTEST_F (rtlsclient, tls13_resumption, RTEST_FAST)
+{
+  static const ruint8 c2s[] = { 'r', 'e', 's', 'u', 'm', 'e' };
+  static const ruint8 s2c[] = { 'o', 'k' };
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RBuffer * app;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First (full) handshake. The server issues a NewSessionTicket. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+  r_assert_cmpuint (fixture->verify_calls, ==, 1);   /* full handshake verified a cert */
+
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* Fresh endpoints (sharing the key store) for the resumed handshake. */
+  r_tls_client_unref (fixture->client);
+  r_tls_server_unref (fixture->server);
+  fixture->server = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+
+  fixture->cli_hs_done = fixture->srv_hs_done = FALSE;
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+  r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, R_TLS_VERSION_TLS_1_3);
+  /* Resumption authenticates via the PSK: no Certificate, so verify_cert was
+   * not called again and no peer certificate was received. */
+  r_assert_cmpuint (fixture->verify_calls, ==, 1);
+  r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), ==, NULL);
+
+  /* The resumed session carries application data both ways. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+}
+RTEST_END;
+
+/* A resumption ClientHello whose pre_shared_key binder does not match the one
+ * the server recomputes over the ticket PSK is rejected: the server opens the
+ * ticket, fails the binder check and aborts with a fatal decrypt_error alert
+ * instead of completing the abbreviated handshake. */
+RTEST_F (rtlsclient, tls13_resumption_bad_binder, RTEST_FAST)
+{
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RTLSAlertLevel alevel;
+  RTLSAlertType atype;
+  RBuffer * ch, * alert;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First (full) handshake to obtain a ticket. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* Fresh endpoints sharing the key store; the ticket opens but we corrupt the
+   * binder on the wire. */
+  r_tls_client_unref (fixture->client);
+  r_tls_server_unref (fixture->server);
+  fixture->server = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+  fixture->cli_hs_done = fixture->srv_hs_done = FALSE;
+  fixture->cli_error = fixture->srv_error = FALSE;
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+
+  /* The ClientHello ends with the binder (pre_shared_key is last); flipping its
+   * final byte leaves the transcript the server hashes intact but breaks the
+   * binder value. */
+  r_assert_cmpptr ((ch = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_assert (r_buffer_map (ch, &info, R_MEM_MAP_WRITE));
+  info.data[info.size - 1] ^= 0xff;
+  r_assert (r_buffer_unmap (ch, &info));
+
+  r_tls_server_incoming_data (fixture->server, ch);
+  r_buffer_unref (ch);
+
+  r_assert (fixture->srv_error);
+  r_assert (!fixture->srv_hs_done);
+
+  r_assert_cmpptr ((alert = r_queue_pop (&fixture->srv_out)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, alert), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_DECRYPT_ERROR);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (alert);
+
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+}
+RTEST_END;
+
+/* A ticket the resuming server cannot open (its key store never sealed it) is
+ * silently declined: the pre_shared_key offer is ignored and the handshake
+ * falls back to a full one, verifying the certificate again. */
+RTEST_F (rtlsclient, tls13_resumption_ticket_declined, RTEST_FAST)
+{
+  RTLSSessionTicketKeys * keys, * otherkeys;
+  RTLSClientSession * session;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First (full) handshake seals a ticket under @keys. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpuint (fixture->verify_calls, ==, 1);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* The resuming server holds an unrelated key store, so the ticket will not
+   * open. */
+  r_assert_cmpptr ((otherkeys = r_tls_session_ticket_keys_new ()), !=, NULL);
+  r_tls_client_unref (fixture->client);
+  r_tls_server_unref (fixture->server);
+  fixture->server = r_test_tls13_new_server (fixture, otherkeys);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+  fixture->cli_hs_done = fixture->srv_hs_done = FALSE;
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  /* Full handshake ran instead: no error, a certificate was verified again and
+   * a peer certificate is present. */
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+  r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, R_TLS_VERSION_TLS_1_3);
+  r_assert_cmpuint (fixture->verify_calls, ==, 2);
+  r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), !=, NULL);
+
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+  r_tls_session_ticket_keys_unref (otherkeys);
+}
+RTEST_END;
+
+/* A first handshake against an early-data-enabled server yields a ticket that
+ * permits 0-RTT; the resumed connection sends early data after the ClientHello,
+ * the server accepts it (echoes early_data) and delivers it via appdata before
+ * the handshake completes. */
+RTEST_F (rtlsclient, tls13_early_data_accepted, RTEST_FAST)
+{
+  static const ruint8 early[] = { 'G', 'E', 'T', ' ', '/' };
+  static const ruint8 s2c[] = { 'o', 'k' };
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RBuffer * app;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First handshake: the server offers 0-RTT, so its ticket advertises it. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 0x4000),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* Fresh endpoints (sharing the key store); the client offers 0-RTT data. */
+  r_tls_client_unref (fixture->client);
+  r_tls_server_unref (fixture->server);
+  fixture->server = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 0x4000),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)early, sizeof (early), sizeof (early), 0, NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_early_data (fixture->client, app), ==, R_TLS_ERROR_OK);
+  r_buffer_unref (app);
+
+  fixture->cli_hs_done = fixture->srv_hs_done = FALSE;
+  fixture->verify_calls = 0;
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+  /* Both endpoints agree 0-RTT was accepted; the certificate was not re-sent. */
+  r_assert (r_tls_client_get_early_data_accepted (fixture->client));
+  r_assert (r_tls_server_get_early_data_accepted (fixture->server));
+  r_assert_cmpuint (fixture->verify_calls, ==, 0);
+  r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), ==, NULL);
+  /* The early data reached the server as application data during the handshake. */
+  r_test_tls_assert_appdata (&fixture->srv_app, early, sizeof (early));
+
+  /* 1-RTT data still flows afterwards. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+}
+RTEST_END;
+
+/* When the resuming server declines 0-RTT (early data disabled), the client's
+ * early-data records are discarded and the payload is transparently resent as
+ * ordinary application data once the handshake completes. */
+RTEST_F (rtlsclient, tls13_early_data_rejected, RTEST_FAST)
+{
+  static const ruint8 early[] = { 'P', 'I', 'N', 'G' };
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RBuffer * app;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First handshake against an early-data-enabled server: the ticket permits
+   * 0-RTT, so the client will actually put early data on the wire. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 0x4000),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* The resuming server does NOT enable 0-RTT, so it declines the offer. */
+  r_tls_client_unref (fixture->client);
+  r_tls_server_unref (fixture->server);
+  fixture->server = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)early, sizeof (early), sizeof (early), 0, NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_early_data (fixture->client, app), ==, R_TLS_ERROR_OK);
+  r_buffer_unref (app);
+
+  fixture->cli_hs_done = fixture->srv_hs_done = FALSE;
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+  /* Neither side saw 0-RTT accepted, yet the payload was delivered once, resent
+   * as 1-RTT application data. */
+  r_assert (!r_tls_client_get_early_data_accepted (fixture->client));
+  r_assert (!r_tls_server_get_early_data_accepted (fixture->server));
+  r_test_tls_assert_appdata (&fixture->srv_app, early, sizeof (early));
+
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
 }
 RTEST_END;
 

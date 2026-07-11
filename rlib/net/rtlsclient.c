@@ -120,10 +120,50 @@ struct RTLSClient {
   rboolean hrr_just_sent;              /* the retry ClientHello was just sent */
   ruint8 cookie[256];                   /* cookie echoed in the retry ClientHello */
   ruint16 cookielen;
+  RTLSClientSession * resume;           /* session to offer for resumption, or NULL */
+  RTLSClientSession * new_session;      /* session from a received NewSessionTicket */
+  rboolean resumed13;                   /* server accepted our pre_shared_key */
 
   RBuffer * inbuf;
   RQueue qsend;
 };
+
+/* A stored TLS 1.3 resumption session: the server's ticket, the PSK derived
+ * from it, and the parameters needed to offer it again (RFC 8446 4.6.1). */
+struct RTLSClientSession {
+  RRef ref;
+  ruint8 * ticket;              /* opaque NewSessionTicket identity */
+  rsize ticketlen;
+  ruint8 psk[R_TLS13_SECRET_MAX];
+  rsize psklen;
+  RTLSCipherSuite suite;
+  RMsgDigestType hash;
+  ruint32 age_add;
+  RClockTime obtained;          /* when the ticket arrived, for obfuscated age */
+};
+
+static void
+r_tls_client_session_free (RTLSClientSession * s)
+{
+  r_free (s->ticket);
+  r_memclear_secure (s->psk, sizeof (s->psk));
+  r_free (s);
+}
+
+/* Wall-clock 'now' for ticket age bookkeeping; a synthetic loop clock drives it
+ * deterministically in tests (mirrors r_tls_server_now). */
+static RClockTime
+r_tls_client_now (const RTLSClient * client)
+{
+  RClock * clock;
+
+  if (client->loop != NULL &&
+      (clock = r_ev_loop_get_clock (client->loop)) != NULL &&
+      r_clock_is_synthetic (clock))
+    return r_clock_get_time (clock);
+
+  return r_time_get_ts_wallclock ();
+}
 
 R_LOG_CATEGORY_DEFINE_STATIC (tlsclicat, "tlsclient", "RLib TLS Client",
     R_CLR_FG_WHITE | R_CLR_BG_BLUE | R_CLR_FMT_BOLD);
@@ -171,6 +211,10 @@ r_tls_client_free (RTLSClient * client)
   r_free (client->server.fixediv);
   r_msg_digest_free (client->hshash);
   r_free (client->clienthello);
+  if (client->resume != NULL)
+    r_tls_client_session_unref (client->resume);
+  if (client->new_session != NULL)
+    r_tls_client_session_unref (client->new_session);
 
   if (client->inbuf != NULL)
     r_buffer_unref (client->inbuf);
@@ -178,6 +222,26 @@ r_tls_client_free (RTLSClient * client)
   r_memclear_secure (client->mastersecret, sizeof (client->mastersecret));
   r_memclear_secure (&client->sched13, sizeof (client->sched13));
   r_free (client);
+}
+
+RTLSError
+r_tls_client_set_session (RTLSClient * client, RTLSClientSession * session)
+{
+  if (R_UNLIKELY (client == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (client->loop != NULL)) return R_TLS_ERROR_WRONG_STATE;
+
+  if (client->resume != NULL)
+    r_tls_client_session_unref (client->resume);
+  client->resume = (session != NULL) ? r_tls_client_session_ref (session) : NULL;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSClientSession *
+r_tls_client_get_session (const RTLSClient * client)
+{
+  if (R_UNLIKELY (client == NULL) || client->new_session == NULL)
+    return NULL;
+  return r_tls_client_session_ref (client->new_session);
 }
 
 static RTLSError
@@ -555,6 +619,80 @@ r_tls_client_write_hs_ext_cookie (RTLSClient * client, ruint8 * ptr)
   return (ruint16) (6 + client->cookielen);
 }
 
+/* psk_key_exchange_modes offering psk_dhe_ke (RFC 8446 4.2.9). */
+static ruint16
+r_tls_client_write_hs_ext_psk_key_exchange_modes (ruint8 * ptr)
+{
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_PSK_KEY_EXCHANGE_MODES);
+  r_store_be16 (&ptr[2], 2);
+  ptr[4] = 1;                                     /* ke_modes<1..255> length */
+  ptr[5] = (ruint8) R_TLS_PSK_KE_MODE_PSK_DHE_KE;
+  return 6;
+}
+
+/* pre_shared_key offer with a single identity and a zeroed binder placeholder
+ * (RFC 8446 4.2.11). Returns bytes written and, via @binder_off, the offset of
+ * the binder value within @ptr so the caller can patch it after computing it
+ * over the truncated ClientHello. */
+static ruint16
+r_tls_client_write_hs_ext_pre_shared_key (RTLSClient * client, ruint8 * ptr,
+    ruint8 binderlen, rsize * binder_off)
+{
+  RTLSClientSession * s = client->resume;
+  ruint16 idlen = (ruint16) s->ticketlen;
+  ruint16 idslen = (ruint16) (sizeof (ruint16) + idlen + sizeof (ruint32));
+  ruint16 bslen = (ruint16) (1 + binderlen);
+  ruint32 age;
+  rsize n = 0;
+
+  /* obfuscated_ticket_age = elapsed_ms + ticket_age_add (RFC 8446 4.2.11.1). */
+  age = (ruint32) ((r_tls_client_now (client) - s->obtained) / R_MSECOND) + s->age_add;
+
+  r_store_be16 (&ptr[n], (ruint16)R_TLS_EXT_TYPE_PRE_SHARED_KEY); n += 2;
+  r_store_be16 (&ptr[n], (ruint16) (sizeof (ruint16) + idslen +
+        sizeof (ruint16) + bslen)); n += 2;
+  r_store_be16 (&ptr[n], idslen); n += 2;         /* identities<7..> length */
+  r_store_be16 (&ptr[n], idlen); n += 2;
+  r_memcpy (&ptr[n], s->ticket, idlen); n += idlen;
+  r_store_be32 (&ptr[n], age); n += 4;
+  r_store_be16 (&ptr[n], bslen); n += 2;          /* binders<33..> length */
+  ptr[n++] = binderlen;
+  *binder_off = n;
+  r_memset (&ptr[n], 0, binderlen); n += binderlen;
+  return (ruint16) n;
+}
+
+/* Compute the pre_shared_key binder over the truncated ClientHello
+ * [@chstart, @binders) with the resumption PSK's binder key (RFC 8446
+ * 4.2.11.2). Assumes an empty prior transcript (the non-retry offer). */
+static rboolean
+r_tls_client_psk_binder (RTLSClient * client, const ruint8 * chstart,
+    const ruint8 * binders, ruint8 * out)
+{
+  RTLSClientSession * s = client->resume;
+  RTLS13Schedule sched;
+  ruint8 bhash[R_TLS13_SECRET_MAX], bk[R_TLS13_SECRET_MAX], finkey[R_TLS13_SECRET_MAX];
+  rsize hlen = r_msg_digest_type_size (s->hash);
+  RMsgDigest * md;
+  rboolean ok;
+
+  if ((md = r_msg_digest_new (s->hash)) == NULL)
+    return FALSE;
+  ok = r_msg_digest_update (md, chstart,
+          RPOINTER_TO_SIZE (binders) - RPOINTER_TO_SIZE (chstart)) &&
+       r_msg_digest_get_data (md, bhash, hlen, NULL);
+  r_msg_digest_free (md);
+  if (!ok)
+    return FALSE;
+
+  ok = r_tls13_schedule_init_psk (&sched, s->hash, s->psk, s->psklen) &&
+       r_tls13_binder_key (&sched, bk) &&
+       r_tls13_finished_key (s->hash, bk, finkey) &&
+       r_tls13_verify_data (s->hash, finkey, bhash, out);
+  r_memclear_secure (&sched, sizeof (sched));
+  return ok;
+}
+
 static RTLSError
 r_tls_client_send_hello (RTLSClient * client, rboolean retry)
 {
@@ -616,10 +754,10 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
     return R_TLS_ERROR_OOM;
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
-    ruint8 * ptr;
+    ruint8 * ptr, * psk_binder_ptr = NULL;
     rsize hssize, size = 0;
     ruint16 extsize;
-    ruint8 hdrsize;
+    ruint8 hdrsize, psk_binderlen = 0;
 
     if (dtls) {
       ret = r_dtls_write_handshake (info.data, info.size, &hssize,
@@ -648,6 +786,18 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
         extsize += r_tls_client_write_hs_ext_cookie (client, ptr + 2 + extsize);
       if (client->server_name != NULL)
         extsize += r_tls_client_write_hs_ext_server_name (ptr + 2 + extsize, client->server_name);
+      /* Advertise (EC)DHE resumption support so the server issues tickets. */
+      extsize += r_tls_client_write_hs_ext_psk_key_exchange_modes (ptr + 2 + extsize);
+      /* pre_shared_key MUST be the last extension. Offered only on the initial
+       * ClientHello (the binder transcript assumes an empty prior transcript). */
+      if (client->resume != NULL && !retry) {
+        ruint8 * pskptr = ptr + 2 + extsize;
+        rsize boff;
+        psk_binderlen = (ruint8) r_msg_digest_type_size (client->resume->hash);
+        extsize += r_tls_client_write_hs_ext_pre_shared_key (client, pskptr,
+            psk_binderlen, &boff);
+        psk_binder_ptr = pskptr + boff;
+      }
     } else {
       extsize += r_tls_client_write_hs_ext_renegotiation (ptr + 2 + extsize);
       extsize += r_tls_client_write_hs_ext_extended_ms (ptr + 2 + extsize);
@@ -670,6 +820,18 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
             (ruint16)(size - hssize), 0, (ruint32)(size - hssize));
       else
         ret = r_tls_update_handshake_len (info.data, info.size, (ruint16)(size - hssize));
+
+      /* Now that the header length covers the full ClientHello, compute the
+       * binder over the message truncated before the binders list and patch it
+       * in, so the folded transcript carries the real binder. */
+      if (ret == R_TLS_ERROR_OK && psk_binder_ptr != NULL) {
+        ruint8 binder[R_TLS13_SECRET_MAX];
+        if (!r_tls_client_psk_binder (client, info.data + hdrsize,
+              psk_binder_ptr - 3, binder))
+          ret = R_TLS_ERROR_HANDSHAKE_FAILURE;
+        else
+          r_memcpy (psk_binder_ptr, binder, psk_binderlen);
+      }
 
       if (ret == R_TLS_ERROR_OK) {
         if (retry) {
@@ -822,8 +984,9 @@ static RTLSError
 r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hello)
 {
   RTLSHelloExt ext, sv = R_TLS_HELLO_EXT_INIT, ks = R_TLS_HELLO_EXT_INIT;
+  RTLSHelloExt psk = R_TLS_HELLO_EXT_INIT;
   RTLSKeyShareEntry entry = R_TLS_KEY_SHARE_ENTRY_INIT;
-  rboolean have_sv = FALSE, have_ks = FALSE;
+  rboolean have_sv = FALSE, have_ks = FALSE, have_psk = FALSE;
   RTLSCipherSuite cs;
   REcurveID curve;
   RTLSError r;
@@ -832,10 +995,19 @@ r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hell
       r = r_tls_hello_msg_extension_next (hello, &ext)) {
     if (ext.type == R_TLS_EXT_TYPE_SUPPORTED_VERSIONS) { sv = ext; have_sv = TRUE; }
     else if (ext.type == R_TLS_EXT_TYPE_KEY_SHARE) { ks = ext; have_ks = TRUE; }
+    else if (ext.type == R_TLS_EXT_TYPE_PRE_SHARED_KEY) { psk = ext; have_psk = TRUE; }
   }
   if (!have_sv ||
       r_tls_hello_ext_selected_version (&sv) != R_TLS_VERSION_TLS_1_3)
     return R_TLS_ERROR_NOT_NEEDED;
+
+  /* The server accepts resumption by echoing pre_shared_key with the identity
+   * it selected; it must be one we offered (we offer a single identity, 0). */
+  if (have_psk && client->resume != NULL) {
+    if (psk.len != sizeof (ruint16) || r_load_be16 (psk.data) != 0)
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    client->resumed13 = TRUE;
+  }
 
   /* Committed to 1.3. */
   if (hello->cslen != sizeof (ruint16))
@@ -901,7 +1073,12 @@ r_tls_client_setup_keys13 (RTLSClient * client)
   if (!r_tls_ecdhe_compute (client->ecdhe_key, client->ecdhe_server_pub,
         ecdhe, sizeof (ecdhe), &ecdhelen))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (!r_tls13_schedule_init (&client->sched13, client->cs13_hash) ||
+  /* On an accepted resumption the Early Secret comes from the ticket PSK
+   * (psk_dhe_ke); otherwise it is the PSK-less zero value. */
+  if (!(client->resumed13 ?
+          r_tls13_schedule_init_psk (&client->sched13, client->cs13_hash,
+              client->resume->psk, client->resume->psklen) :
+          r_tls13_schedule_init (&client->sched13, client->cs13_hash)) ||
       !r_tls13_schedule_handshake (&client->sched13, ecdhe, ecdhelen, th)) {
     r_memclear_secure (ecdhe, sizeof (ecdhe));
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
@@ -1072,7 +1249,9 @@ r_tls_client_flight13 (RTLSClient * client, const RTLSParser * parser)
       if (type != R_TLS_HANDSHAKE_TYPE_ENCRYPTED_EXTENSIONS)
         return R_TLS_ERROR_WRONG_TYPE;
       r_msg_digest_update (client->hshash, parser->fragment.data, parser->fragment.size);
-      client->flight13_step = 1;
+      /* A resumed handshake authenticates via the PSK, so no Certificate /
+       * CertificateVerify follow: jump straight to the server Finished. */
+      client->flight13_step = client->resumed13 ? 3 : 1;
       return R_TLS_ERROR_OK;
 
     case 1: {
@@ -1161,6 +1340,12 @@ r_tls_client_flight13 (RTLSClient * client, const RTLSParser * parser)
       if ((err = r_tls_client_send_hs13 (client,
               R_TLS_HANDSHAKE_TYPE_FINISHED, body, bodylen)) != R_TLS_ERROR_OK)
         return err;
+
+      /* Derive the resumption master secret over the transcript through the
+       * client Finished (send_hs13 just folded it), for tickets received later. */
+      if (!r_msg_digest_get_data (client->hshash, th, hlen, NULL) ||
+          !r_tls13_schedule_resumption (&client->sched13, th))
+        return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
       /* Switch to application keys: client writes cap, reads sap. */
       if (!r_tls_client_install_keys13 (client, &client->rk_write, client->sched13.cap) ||
@@ -2076,6 +2261,48 @@ r_tls_client_state_finished (RTLSClient * client, const RTLSParser * parser)
   return err;
 }
 
+/* Store a post-handshake NewSessionTicket (RFC 8446 4.6.1) as a resumption
+ * session: keep the ticket and derive its PSK from our resumption master
+ * secret and the ticket nonce. A malformed ticket or allocation failure is
+ * ignored (resumption is best-effort). */
+static void
+r_tls_client_store_ticket13 (RTLSClient * client, const RTLSParser * parser)
+{
+  ruint32 lifetime, age_add;
+  const ruint8 * nonce, * ticket;
+  ruint8 noncelen;
+  ruint16 ticketsize;
+  RTLSClientSession * s;
+
+  if (r_tls_parser_parse_new_session_ticket13 (parser, &lifetime, &age_add,
+        &nonce, &noncelen, &ticket, &ticketsize) != R_TLS_ERROR_OK)
+    return;
+  if ((s = r_mem_new0 (RTLSClientSession)) == NULL)
+    return;
+  if ((s->ticket = r_memdup (ticket, ticketsize)) == NULL) {
+    r_free (s);
+    return;
+  }
+  s->ticketlen = ticketsize;
+  s->suite = client->cs13_suite;
+  s->hash = client->cs13_hash;
+  s->age_add = age_add;
+  s->obtained = r_tls_client_now (client);
+  if (!r_tls13_resumption_psk (client->cs13_hash, client->sched13.res_master,
+        nonce, noncelen, s->psk)) {
+    r_memclear_secure (s->psk, sizeof (s->psk));
+    r_free (s->ticket);
+    r_free (s);
+    return;
+  }
+  s->psklen = r_msg_digest_type_size (client->cs13_hash);
+  r_ref_init (s, r_tls_client_session_free);
+
+  if (client->new_session != NULL)
+    r_tls_client_session_unref (client->new_session);
+  client->new_session = s;
+}
+
 static RTLSError
 r_tls_client_state_appdata (RTLSClient * client, const RTLSParser * parser)
 {
@@ -2086,6 +2313,14 @@ r_tls_client_state_appdata (RTLSClient * client, const RTLSParser * parser)
       client->cb.appdata (client->userdata, buf, client);
       r_buffer_unref (buf);
     }
+  } else if (parser->content == R_TLS_CONTENT_TYPE_HANDSHAKE) {
+    /* Post-handshake messages (1.3): store a NewSessionTicket for resumption,
+     * ignore the rest (e.g. KeyUpdate is out of scope). */
+    RTLSHandshakeType type;
+    if (client->tls13 &&
+        r_tls_parser_parse_handshake_peek_type (parser, &type) == R_TLS_ERROR_OK &&
+        type == R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET)
+      r_tls_client_store_ticket13 (client, parser);
   } else {
     R_LOG_WARNING ("Received non-app-data record");
   }
