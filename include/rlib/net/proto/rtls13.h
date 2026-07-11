@@ -190,6 +190,7 @@ typedef struct {
   ruint8 cap[R_TLS13_SECRET_MAX];        /**< @brief client_application_traffic_secret_0. */
   ruint8 sap[R_TLS13_SECRET_MAX];        /**< @brief server_application_traffic_secret_0. */
   ruint8 res_master[R_TLS13_SECRET_MAX]; /**< @brief resumption_master_secret. */
+  ruint8 cet[R_TLS13_SECRET_MAX];        /**< @brief client_early_traffic_secret. */
 } RTLS13Schedule;
 
 /**
@@ -236,6 +237,24 @@ R_API rboolean r_tls13_schedule_init_psk (RTLS13Schedule * sched,
  * @return @c TRUE on success.
  */
 R_API rboolean r_tls13_binder_key (const RTLS13Schedule * sched, ruint8 * out);
+
+/**
+ * @brief Derive the client early-traffic secret for 0-RTT (RFC 8446, 7.1).
+ *
+ * @c client_early_traffic_secret = Derive-Secret(Early, "c e traffic",
+ * Transcript-Hash(ClientHello)); stored in @c sched->cet. It protects the 0-RTT
+ * data the client sends immediately after a resumption ClientHello (and the
+ * @c EndOfEarlyData that closes the early-data flow), so it is bound to the
+ * ClientHello alone -- before the ServerHello, unlike the handshake secrets.
+ * The Early Secret must have been set from the ticket PSK
+ * (@ref r_tls13_schedule_init_psk).
+ *
+ * @param sched           Schedule whose Early Secret was set from the PSK.
+ * @param transcript_hash @c Transcript-Hash(ClientHello); @c HashLen bytes.
+ * @return @c TRUE on success; @c FALSE on invalid arguments.
+ */
+R_API rboolean r_tls13_schedule_early (RTLS13Schedule * sched,
+    const ruint8 * transcript_hash);
 
 /**
  * @brief Derive the Handshake Secret and the handshake-traffic secrets.
