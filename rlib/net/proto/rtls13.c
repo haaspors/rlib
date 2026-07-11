@@ -213,6 +213,37 @@ r_tls13_schedule_init (RTLS13Schedule * sched, RMsgDigestType hash)
 }
 
 rboolean
+r_tls13_schedule_init_psk (RTLS13Schedule * sched, RMsgDigestType hash,
+    const ruint8 * psk, rsize psklen)
+{
+  rsize hlen = r_msg_digest_type_size (hash);
+
+  if (R_UNLIKELY (sched == NULL || psk == NULL || psklen == 0 ||
+        hlen == 0 || hlen > R_TLS13_SECRET_MAX))
+    return FALSE;
+
+  sched->hash = hash;
+  sched->hlen = hlen;
+
+  /* Early Secret = HKDF-Extract(0, PSK). */
+  return r_hkdf_extract (hash, NULL, 0, psk, psklen, sched->early);
+}
+
+rboolean
+r_tls13_binder_key (const RTLS13Schedule * sched, ruint8 * out)
+{
+  ruint8 emptyhash[R_TLS13_SECRET_MAX];
+
+  if (R_UNLIKELY (sched == NULL || out == NULL))
+    return FALSE;
+
+  /* binder_key = Derive-Secret(Early, "res binder", ""). */
+  return r_tls13_empty_transcript (sched->hash, emptyhash, sched->hlen) &&
+      r_tls13_derive_secret (sched->hash, sched->early,
+          R_STR_WITH_SIZE_ARGS ("res binder"), emptyhash, out);
+}
+
+rboolean
 r_tls13_schedule_handshake (RTLS13Schedule * sched, const ruint8 * ecdhe,
     rsize ecdhelen, const ruint8 * transcript_hash)
 {
@@ -263,6 +294,34 @@ r_tls13_schedule_master (RTLS13Schedule * sched, const ruint8 * transcript_hash)
             R_STR_WITH_SIZE_ARGS ("c ap traffic"), transcript_hash, sched->cap) &&
          r_tls13_derive_secret (sched->hash, sched->master,
             R_STR_WITH_SIZE_ARGS ("s ap traffic"), transcript_hash, sched->sap);
+}
+
+rboolean
+r_tls13_schedule_resumption (RTLS13Schedule * sched,
+    const ruint8 * transcript_hash)
+{
+  if (R_UNLIKELY (sched == NULL || transcript_hash == NULL))
+    return FALSE;
+
+  /* resumption_master_secret = Derive-Secret(Master, "res master",
+   *   Transcript-Hash(ClientHello..client Finished)). */
+  return r_tls13_derive_secret (sched->hash, sched->master,
+      R_STR_WITH_SIZE_ARGS ("res master"), transcript_hash, sched->res_master);
+}
+
+rboolean
+r_tls13_resumption_psk (RMsgDigestType hash, const ruint8 * res_master,
+    const ruint8 * nonce, rsize noncelen, ruint8 * out)
+{
+  rsize hlen = r_msg_digest_type_size (hash);
+
+  if (R_UNLIKELY (res_master == NULL || out == NULL || hlen == 0))
+    return FALSE;
+
+  /* PSK = HKDF-Expand-Label(resumption_master_secret, "resumption",
+   *   ticket_nonce, HashLen). */
+  return r_tls13_expand_label (hash, res_master,
+      R_STR_WITH_SIZE_ARGS ("resumption"), nonce, noncelen, out, hlen);
 }
 
 rboolean

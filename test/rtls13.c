@@ -179,6 +179,80 @@ RTEST (rtls13, key_schedule_rfc8448, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rtls13, key_schedule_resumption_rfc8448, R_TEST_TYPE_FAST)
+{
+  /* The resumption values of RFC 8448: the "res master" secret derived at the
+   * end of the section 3 handshake, the per-ticket PSK it expands into, and the
+   * section 4 resumed ClientHello's early secret, binder key and PSK binder
+   * (the binder uses the Finished construction over a truncated-ClientHello
+   * transcript). */
+  static const ruint8 master[32] = {   /* section 3 Master Secret */
+    0x18, 0xdf, 0x06, 0x84, 0x3d, 0x13, 0xa0, 0x8b, 0xf2, 0xa4, 0x49, 0x84,
+    0x4c, 0x5f, 0x8a, 0x47, 0x80, 0x01, 0xbc, 0x4d, 0x4c, 0x62, 0x79, 0x84,
+    0xd5, 0xa4, 0x1d, 0xa8, 0xd0, 0x40, 0x29, 0x19 };
+  static const ruint8 th_cf[32] = {    /* Transcript-Hash(CH..client Finished) */
+    0x20, 0x91, 0x45, 0xa9, 0x6e, 0xe8, 0xe2, 0xa1, 0x22, 0xff, 0x81, 0x00,
+    0x47, 0xcc, 0x95, 0x26, 0x84, 0x65, 0x8d, 0x60, 0x49, 0xe8, 0x64, 0x29,
+    0x42, 0x6d, 0xb8, 0x7c, 0x54, 0xad, 0x14, 0x3d };
+  static const ruint8 nonce[2] = { 0x00, 0x00 };
+  static const ruint8 binder_hash[32] = { /* Transcript-Hash(truncated CH) */
+    0x63, 0x22, 0x4b, 0x2e, 0x45, 0x73, 0xf2, 0xd3, 0x45, 0x4c, 0xa8, 0x4b,
+    0x9d, 0x00, 0x9a, 0x04, 0xf6, 0xbe, 0x9e, 0x05, 0x71, 0x1a, 0x83, 0x96,
+    0x47, 0x3a, 0xef, 0xa0, 0x1e, 0x92, 0x4a, 0x14 };
+  RTLS13Schedule sched;
+  ruint8 psk[32], binder_key[32], finkey[32], binder[32];
+
+  /* resumption_master_secret = Derive-Secret(Master, "res master", th). */
+  r_memset (&sched, 0, sizeof (sched));
+  sched.hash = R_MSG_DIGEST_TYPE_SHA256;
+  sched.hlen = 32;
+  r_memcpy (sched.master, master, sizeof (master));
+  r_assert (r_tls13_schedule_resumption (&sched, th_cf));
+  r_assert_cmpmem (sched.res_master, ==,
+      "\x7d\xf2\x35\xf2\x03\x1d\x2a\x05\x12\x87\xd0\x2b\x02\x41\xb0\xbf"
+      "\xda\xf8\x6c\xc8\x56\x23\x1f\x2d\x5a\xba\x46\xc4\x34\xec\x19\x6c", 32);
+
+  /* PSK = HKDF-Expand-Label(res_master, "resumption", ticket_nonce, 32). */
+  r_assert (r_tls13_resumption_psk (R_MSG_DIGEST_TYPE_SHA256, sched.res_master,
+        nonce, sizeof (nonce), psk));
+  r_assert_cmpmem (psk, ==,
+      "\x4e\xcd\x0e\xb6\xec\x3b\x4d\x87\xf5\xd6\x02\x8f\x92\x2c\xa4\xc5"
+      "\x85\x1a\x27\x7f\xd4\x13\x11\xc9\xe6\x2d\x2c\x94\x92\xe1\xc4\xf3", 32);
+
+  /* Early Secret = HKDF-Extract(0, PSK). */
+  r_assert (r_tls13_schedule_init_psk (&sched, R_MSG_DIGEST_TYPE_SHA256,
+        psk, sizeof (psk)));
+  r_assert_cmpmem (sched.early, ==,
+      "\x9b\x21\x88\xe9\xb2\xfc\x6d\x64\xd7\x1d\xc3\x29\x90\x0e\x20\xbb"
+      "\x41\x91\x50\x00\xf6\x78\xaa\x83\x9c\xbb\x79\x7c\xb7\xd8\x33\x2c", 32);
+
+  /* binder_key = Derive-Secret(Early, "res binder", ""). */
+  r_assert (r_tls13_binder_key (&sched, binder_key));
+  r_assert_cmpmem (binder_key, ==,
+      "\x69\xfe\x13\x1a\x3b\xba\xd5\xd6\x3c\x64\xee\xbc\xc3\x0e\x39\x5b"
+      "\x9d\x81\x07\x72\x6a\x13\xd0\x74\xe3\x89\xdb\xc8\xa4\xe4\x72\x56", 32);
+
+  /* The binder is a Finished over the truncated-ClientHello transcript. */
+  r_assert (r_tls13_finished_key (R_MSG_DIGEST_TYPE_SHA256, binder_key, finkey));
+  r_assert_cmpmem (finkey, ==,
+      "\x55\x88\x67\x3e\x72\xcb\x59\xc8\x7d\x22\x0c\xaf\xfe\x94\xf2\xde"
+      "\xa9\xa3\xb1\x60\x9f\x7d\x50\xe9\x0a\x48\x22\x7d\xb9\xed\x7e\xaa", 32);
+  r_assert (r_tls13_verify_data (R_MSG_DIGEST_TYPE_SHA256, finkey, binder_hash,
+        binder));
+  r_assert_cmpmem (binder, ==,
+      "\x3a\xdd\x4f\xb2\xd8\xfd\xf8\x22\xa0\xca\x3c\xf7\x67\x8e\xf5\xe8"
+      "\x8d\xae\x99\x01\x41\xc5\x92\x4d\x57\xbb\x6f\xa3\x1b\x9e\x5f\x9d", 32);
+
+  /* Argument checks. */
+  r_assert (!r_tls13_schedule_resumption (NULL, th_cf));
+  r_assert (!r_tls13_schedule_resumption (&sched, NULL));
+  r_assert (!r_tls13_resumption_psk (R_MSG_DIGEST_TYPE_SHA256, NULL,
+        nonce, sizeof (nonce), psk));
+  r_assert (!r_tls13_schedule_init_psk (&sched, R_MSG_DIGEST_TYPE_SHA256, NULL, 0));
+  r_assert (!r_tls13_binder_key (NULL, binder_key));
+}
+RTEST_END;
+
 RTEST (rtls13, cert_verify_tbs, R_TEST_TYPE_FAST)
 {
   ruint8 th[32], out[R_TLS13_CERT_VERIFY_TBS_MAX];
