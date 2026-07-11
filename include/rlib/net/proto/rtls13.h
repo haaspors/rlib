@@ -407,6 +407,36 @@ R_API void r_tls13_hello_retry_random (ruint8 * out);
 R_API rboolean r_tls13_random_is_hrr (const ruint8 * random);
 
 /**
+ * @brief Stamp the downgrade-protection sentinel into a ServerHello @p random
+ * (RFC 8446, section 4.1.3).
+ *
+ * A server that supports TLS 1.3 but settles on a lower version overwrites the
+ * last eight bytes of its ServerHello.random with a fixed sentinel so that a
+ * 1.3-capable client can detect a forced downgrade: @c "DOWNGRD\x01"
+ * (@c 44 4F 57 4E 47 52 44 01) when negotiating TLS 1.2, or @c "DOWNGRD\x00"
+ * when negotiating TLS 1.1 or below. For any other @p negotiated version
+ * (including 1.3 itself) @p random is left unchanged.
+ *
+ * @param random     ServerHello random to stamp; @ref R_TLS_HELLO_RANDOM_BYTES
+ *                   bytes. The leading bytes are preserved.
+ * @param negotiated The version the server selected.
+ */
+R_API void r_tls13_downgrade_random (ruint8 * random, RTLSVersion negotiated);
+
+/**
+ * @brief Whether a ServerHello @p random carries a downgrade sentinel.
+ *
+ * A 1.3-capable client that offered TLS 1.3 but was answered with a lower
+ * version checks the ServerHello.random with this; a @c TRUE result is a
+ * detected downgrade and the client must abort with @c illegal_parameter
+ * (RFC 8446, section 4.1.3).
+ *
+ * @param random A ServerHello random field; @ref R_TLS_HELLO_RANDOM_BYTES bytes.
+ * @return @c TRUE if the last eight bytes equal either downgrade sentinel.
+ */
+R_API rboolean r_tls13_random_is_downgrade (const ruint8 * random);
+
+/**
  * @brief Build the synthetic @c message_hash handshake message (RFC 8446, 4.4.1).
  *
  * When a HelloRetryRequest is used the transcript replaces the first

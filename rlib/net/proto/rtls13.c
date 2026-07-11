@@ -444,6 +444,38 @@ r_tls13_random_is_hrr (const ruint8 * random)
       r_memcmp (random, r_tls13_hrr_random, sizeof (r_tls13_hrr_random)) == 0;
 }
 
+/* RFC 8446 4.1.3 downgrade-protection sentinels, stamped into the last 8 bytes
+ * of ServerHello.random by a 1.3-capable server that negotiates a lower
+ * version: "DOWNGRD\x01" for TLS 1.2, "DOWNGRD\x00" for TLS 1.1 or below. */
+static const ruint8 r_tls13_downgrade_tls12[8] = {
+  0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x01
+};
+static const ruint8 r_tls13_downgrade_tls11[8] = {
+  0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x00
+};
+
+void
+r_tls13_downgrade_random (ruint8 * random, RTLSVersion negotiated)
+{
+  if (R_UNLIKELY (random == NULL))
+    return;
+  if (negotiated == R_TLS_VERSION_TLS_1_2)
+    r_memcpy (random + R_TLS_HELLO_RANDOM_BYTES - 8, r_tls13_downgrade_tls12, 8);
+  else if (negotiated >= R_TLS_VERSION_TLS_1_0 && negotiated < R_TLS_VERSION_TLS_1_2)
+    r_memcpy (random + R_TLS_HELLO_RANDOM_BYTES - 8, r_tls13_downgrade_tls11, 8);
+}
+
+rboolean
+r_tls13_random_is_downgrade (const ruint8 * random)
+{
+  if (R_UNLIKELY (random == NULL))
+    return FALSE;
+  return r_memcmp (random + R_TLS_HELLO_RANDOM_BYTES - 8,
+          r_tls13_downgrade_tls12, 8) == 0 ||
+      r_memcmp (random + R_TLS_HELLO_RANDOM_BYTES - 8,
+          r_tls13_downgrade_tls11, 8) == 0;
+}
+
 rboolean
 r_tls13_message_hash (RMsgDigestType hash, const ruint8 * msg, rsize msglen,
     ruint8 * out, rsize outsize, rsize * outlen)

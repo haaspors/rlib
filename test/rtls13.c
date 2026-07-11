@@ -334,6 +334,40 @@ RTEST (rtls13, hello_retry_random, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rtls13, downgrade_random, R_TEST_TYPE_FAST)
+{
+  ruint8 r[32];
+  rsize i;
+
+  for (i = 0; i < sizeof (r); i++)
+    r[i] = (ruint8) i;
+
+  /* TLS 1.2: "DOWNGRD\x01" in the last 8 bytes, leading bytes preserved. */
+  r_tls13_downgrade_random (r, R_TLS_VERSION_TLS_1_2);
+  r_assert_cmpmem (r + 24, ==, "\x44\x4f\x57\x4e\x47\x52\x44\x01", 8);
+  for (i = 0; i < 24; i++)
+    r_assert_cmpuint (r[i], ==, (ruint8) i);
+  r_assert (r_tls13_random_is_downgrade (r));
+
+  /* TLS 1.1 and below: "DOWNGRD\x00". */
+  r_tls13_downgrade_random (r, R_TLS_VERSION_TLS_1_1);
+  r_assert_cmpmem (r + 24, ==, "\x44\x4f\x57\x4e\x47\x52\x44\x00", 8);
+  r_assert (r_tls13_random_is_downgrade (r));
+  r_tls13_downgrade_random (r, R_TLS_VERSION_TLS_1_0);
+  r_assert_cmpmem (r + 24, ==, "\x44\x4f\x57\x4e\x47\x52\x44\x00", 8);
+
+  /* 1.3 (and unknown) leave the random untouched. */
+  for (i = 0; i < sizeof (r); i++)
+    r[i] = (ruint8) i;
+  r_tls13_downgrade_random (r, R_TLS_VERSION_TLS_1_3);
+  for (i = 0; i < sizeof (r); i++)
+    r_assert_cmpuint (r[i], ==, (ruint8) i);
+  r_assert (!r_tls13_random_is_downgrade (r));
+  r_assert (!r_tls13_random_is_downgrade (NULL));
+  r_tls13_downgrade_random (NULL, R_TLS_VERSION_TLS_1_2);
+}
+RTEST_END;
+
 RTEST (rtls13, message_hash, R_TEST_TYPE_FAST)
 {
   static const ruint8 ch1[] = { 0x01, 0x00, 0x00, 0x04, 0xde, 0xad, 0xbe, 0xef };
