@@ -1540,7 +1540,7 @@ r_tls_client_flight13 (RTLSClient * client, const RTLSParser * parser)
           !r_tls13_finished_key (client->cs13_hash, client->sched13.shs, finkey) ||
           !r_tls13_verify_data (client->cs13_hash, finkey, th, expect))
         return R_TLS_ERROR_HANDSHAKE_FAILURE;
-      if (vdsize != hlen || r_memcmp (vd, expect, hlen) != 0)
+      if (vdsize != hlen || r_memcmp_ct (vd, expect, hlen) != 0)
         return R_TLS_ERROR_HS_VERIFICATION_FAILED;
 
       /* Fold the server Finished, then derive the application secrets over
@@ -2128,7 +2128,7 @@ r_tls_client_parse_finished (RTLSClient * client, const RTLSParser * parser)
             client->mastersecret, sizeof (client->mastersecret),
             R_STR_WITH_SIZE_ARGS ("server finished"),
             hash, hashsize, NULL)) == R_TLS_ERROR_OK) {
-        if (r_memcmp (verify_calc, verify_data, size) != 0) {
+        if (r_memcmp_ct (verify_calc, verify_data, size) != 0) {
           R_LOG_WARNING ("Server Finished NOT verified");
           ret = R_TLS_ERROR_HS_VERIFICATION_FAILED;
         }
