@@ -835,6 +835,38 @@ RTEST (rcryptocert, self_signed_ed25519, RTEST_FAST)
 }
 RTEST_END;
 
+/* A self-signed Ed448 certificate (RFC 8410): the subjectPublicKeyInfo and
+ * the signatureAlgorithm are both ed448. PureEdDSA signs the TBSCertificate
+ * directly, so verify_signature checks the raw content rather than a pre-hash. */
+RTEST (rcryptocert, self_signed_ed448, RTEST_FAST)
+{
+  static const rchar pem[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBdjCB96ADAgECAgEBMAUGAytlcTAVMRMwEQYDVQQDDApybGliLWVkNDQ4MB4X\n"
+    "DTI2MDcyNzIyMzgzNVoXDTQ4MDYyMTIyMzgzNVowFTETMBEGA1UEAwwKcmxpYi1l\n"
+    "ZDQ0ODBDMAUGAytlcQM6ALsYJKLhoYrpXLc0/NT4FTHn3ufPTYqN9cNqHoO4G+/n\n"
+    "byz7tDfnc0wUY60oV9W+ld4IuPiDnFh+gKNTMFEwHQYDVR0OBBYEFI+7lKgPHo4r\n"
+    "16us3Oy20G7dAsKAMB8GA1UdIwQYMBaAFI+7lKgPHo4r16us3Oy20G7dAsKAMA8G\n"
+    "A1UdEwEB/wQFMAMBAf8wBQYDK2VxA3MAw/4wBzJpHCJX9A9gGQTJ3kWNtR5q35Nu\n"
+    "wC4AAgcxa3P1YVGA7WNyH4HMJkIeCXeQj2/1P9938r4AzHws10Sew1lxXLfnq+/t\n"
+    "0zq0Q0xz1qzYfW0Ct/03IBoCDoHfhDx1qMdSEL4q3lRlGnE+kCFlLQ8A\n"
+    "-----END CERTIFICATE-----\n";
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (pem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_crypto_cert_get_public_key (cert)), !=, NULL);
+  r_assert_cmpint (r_crypto_key_get_algo (pk), ==, R_CRYPTO_ALGO_ED448);
+  r_crypto_key_unref (pk);
+
+  r_assert (r_crypto_x509_cert_is_self_issued (cert));
+  r_assert (r_crypto_x509_cert_is_self_signed (cert));
+  r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_OK);
+
+  r_crypto_cert_unref (cert);
+}
+RTEST_END;
+
 /* r_crypto_x509_cert_verify_host: RFC 6125 SAN matching (DNS + IP, wildcard),
  * exercised directly on the certificate. */
 RTEST (rcryptocert, x509_verify_host_dns, RTEST_FAST)

@@ -697,10 +697,11 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
     /* signatureAlgorithm */
     if (r_asn1_bin_decoder_into (dec, &tlv) != R_ASN1_DECODER_OK)
       goto beach;
-    /* PureEdDSA (Ed25519) signs the TBSCertificate directly; there is no
-     * digest OID and no pre-hash, so keep a copy of the raw TBS for
+    /* PureEdDSA (Ed25519 / Ed448) signs the TBSCertificate directly; there is
+     * no digest OID and no pre-hash, so keep a copy of the raw TBS for
      * verification instead of the signhash the hashed schemes precompute. */
-    is_eddsa = r_asn1_oid_bin_equals (tlv.value, tlv.len, R_RFC8410_OID_ED25519);
+    is_eddsa = r_asn1_oid_bin_equals (tlv.value, tlv.len, R_RFC8410_OID_ED25519) ||
+        r_asn1_oid_bin_equals (tlv.value, tlv.len, R_RFC8410_OID_ED448);
     if (r_asn1_bin_tlv_parse_oid_to_msg_digest_type (&tlv, &cert->cert.signalgo) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_out (dec, &tlv) != R_ASN1_DECODER_OK) {
       goto beach;
