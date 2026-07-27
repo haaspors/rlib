@@ -76,6 +76,32 @@ RTEST (rtruststore, trust_three_level, RTEST_FAST)
 }
 RTEST_END;
 
+/* A full Ed448 chain: leaf <- intermediate (in chain) <- root (anchor). Both
+ * hops are PureEdDSA signatures, so completing the chain exercises Ed448
+ * certificate-signature verification across issuers, not just self-signed. */
+RTEST (rtruststore, trust_three_level_ed448, RTEST_FAST)
+{
+  RTrustStore * store = r_test_store_with (rtest_ed448_root_pem);
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW,
+        R_X509_EXT_KEY_USAGE_SERVER_AUTH, rtest_ed448_leaf_pem,
+        rtest_ed448_inter_pem, NULL),
+      ==, R_TRUST_OK);
+  r_trust_store_unref (store);
+}
+RTEST_END;
+
+/* The same Ed448 leaf does not chain to the wrong (RSA root) anchor. */
+RTEST (rtruststore, untrusted_wrong_anchor_ed448, RTEST_FAST)
+{
+  RTrustStore * store = r_test_store_with (rtest_root_pem);
+  r_assert_cmpint (r_test_verify (store, RTEST_NOW,
+        R_X509_EXT_KEY_USAGE_SERVER_AUTH, rtest_ed448_leaf_pem,
+        rtest_ed448_inter_pem, NULL),
+      ==, R_TRUST_UNTRUSTED);
+  r_trust_store_unref (store);
+}
+RTEST_END;
+
 RTEST (rtruststore, trust_anchor_is_intermediate, RTEST_FAST)
 {
   RTrustStore * store = r_test_store_with (rtest_inter_pem);
