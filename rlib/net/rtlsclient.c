@@ -110,6 +110,9 @@ struct RTLSClient {
   const rchar * alpn_selected; /* negotiated protocol, points into alpn_protocols */
   rsize alpn_selected_len;
 
+  ruint16 record_size_limit;      /* our advertised record_size_limit (RFC 8449), 0 = off */
+  ruint16 peer_record_size_limit; /* server's echoed limit, caps our send; 0 = none */
+
   rboolean ecdhe;                  /* an ECDHE suite was negotiated */
   REcurveID ecdhe_curve;           /* the server-selected named group */
   RCryptoKey * ecdhe_key;          /* client ephemeral ECDH private key */
@@ -421,6 +424,18 @@ r_tls_client_set_version_range (RTLSClient * client,
   client->min_version = min;
   client->max_version = max;
   client->version_range_set = TRUE;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_client_set_record_size_limit (RTLSClient * client, ruint16 limit)
+{
+  if (R_UNLIKELY (client == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (client->state != R_TLS_CLIENT_INITIAL)) return R_TLS_ERROR_WRONG_STATE;
+  if (R_UNLIKELY (limit != 0 && (limit < 64 || limit > R_TLS_MAX_PLAINTEXT)))
+    return R_TLS_ERROR_INVAL;
+
+  client->record_size_limit = limit;
   return R_TLS_ERROR_OK;
 }
 
@@ -838,6 +853,17 @@ r_tls_client_write_hs_ext_early_data (ruint8 * ptr)
   return 4;
 }
 
+/* record_size_limit: the max plaintext (incl. content-type byte) we will
+ * receive (RFC 8449). */
+static ruint16
+r_tls_client_write_hs_ext_record_size_limit (ruint8 * ptr, ruint16 limit)
+{
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_RECORD_SIZE_LIMIT);
+  r_store_be16 (&ptr[2], sizeof (ruint16));
+  r_store_be16 (&ptr[4], limit);
+  return 6;
+}
+
 /* Whether an EncryptedExtensions handshake message (a full message: 4-byte
  * header then a uint16-prefixed extension list) carries an early_data
  * extension, i.e. the server accepted 0-RTT. */
@@ -892,6 +918,41 @@ r_tls_client_ee_apply_alpn (RTLSClient * client, const ruint8 * msg, rsize msgle
       return;
     if (etype == R_TLS_EXT_TYPE_APPLICATION_LAYER_PROTOCOL_NEGOTIATION) {
       r_tls_client_alpn_apply_selection (client, p, elen);
+      return;
+    }
+    p += elen;
+  }
+}
+
+/* Walk an EncryptedExtensions message for the server's record_size_limit and,
+ * when present and valid, record it as the cap on our outgoing plaintext
+ * (RFC 8449). */
+static void
+r_tls_client_ee_apply_record_size_limit (RTLSClient * client,
+    const ruint8 * msg, rsize msglen)
+{
+  const ruint8 * p, * end;
+  ruint16 extslen;
+
+  if (msglen < R_TLS_HS_HDR_SIZE + sizeof (ruint16))
+    return;
+  p = msg + R_TLS_HS_HDR_SIZE;
+  extslen = r_load_be16 (p);
+  p += sizeof (ruint16);
+  end = p + extslen;
+  if (RPOINTER_TO_SIZE (end) > RPOINTER_TO_SIZE (msg + msglen))
+    return;
+  while (p + 2 * sizeof (ruint16) <= end) {
+    ruint16 etype = r_load_be16 (p);
+    ruint16 elen = r_load_be16 (p + sizeof (ruint16));
+    p += 2 * sizeof (ruint16);
+    if (p + elen > end)
+      return;
+    if (etype == R_TLS_EXT_TYPE_RECORD_SIZE_LIMIT && elen == sizeof (ruint16)) {
+      ruint16 limit = r_load_be16 (p);
+      if (limit >= 64)
+        client->peer_record_size_limit =
+            limit > R_TLS_MAX_PLAINTEXT ? R_TLS_MAX_PLAINTEXT : limit;
       return;
     }
     p += elen;
@@ -1085,6 +1146,9 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
         extsize += r_tls_client_write_hs_ext_server_name (ptr + 2 + extsize, client->server_name);
       if (client->alpn_count > 0)
         extsize += r_tls_client_write_hs_ext_alpn (client, ptr + 2 + extsize);
+      if (client->record_size_limit != 0)
+        extsize += r_tls_client_write_hs_ext_record_size_limit (
+            ptr + 2 + extsize, client->record_size_limit);
       /* Advertise (EC)DHE resumption support so the server issues tickets. */
       extsize += r_tls_client_write_hs_ext_psk_key_exchange_modes (ptr + 2 + extsize);
       /* early_data (0-RTT) sits before pre_shared_key, which stays last. */
@@ -1236,9 +1300,9 @@ r_tls_client_install_keys13 (RTLSClient * client, RTLS13RecordKeys * rk,
 }
 
 /* AEAD-protect @plain[@plainlen] (real content type @ct) under the current
- * write key and queue the application_data record. */
+ * write key and queue one application_data record. */
 static RTLSError
-r_tls_client_protect_record13 (RTLSClient * client, RTLSContentType ct,
+r_tls_client_protect_record13_one (RTLSClient * client, RTLSContentType ct,
     const ruint8 * plain, rsize plainlen)
 {
   RBuffer * rec;
@@ -1276,6 +1340,35 @@ r_tls_client_protect_record13 (RTLSClient * client, RTLSContentType ct,
   if (rec != NULL)
     r_buffer_unref (rec);
   return ret;
+}
+
+/* Protect @plain[@plainlen], fragmenting into records whose inner plaintext --
+ * content-type byte included -- honours a negotiated record_size_limit
+ * (RFC 8449); with none negotiated a single record up to 2^14 is emitted. The
+ * cap is applied only to post-handshake traffic: the handshake flight is exempt,
+ * since a message split across records is not reassembled by the simple
+ * one-message-per-record handshake reader. */
+static RTLSError
+r_tls_client_protect_record13 (RTLSClient * client, RTLSContentType ct,
+    const ruint8 * plain, rsize plainlen)
+{
+  rsize max = (client->peer_record_size_limit != 0 &&
+      client->state == R_TLS_CLIENT_APPDATA) ?
+      (rsize) client->peer_record_size_limit - 1 : R_TLS_MAX_PLAINTEXT;
+  rsize off = 0;
+
+  do {
+    rsize chunk = plainlen - off;
+    RTLSError ret;
+    if (chunk > max)
+      chunk = max;
+    if ((ret = r_tls_client_protect_record13_one (client, ct,
+            plain + off, chunk)) != R_TLS_ERROR_OK)
+      return ret;
+    off += chunk;
+  } while (off < plainlen);
+
+  return R_TLS_ERROR_OK;
 }
 
 /* Derive the client early-traffic secret (bound to the just-built ClientHello)
@@ -1679,6 +1772,9 @@ r_tls_client_flight13 (RTLSClient * client, const RTLSParser * parser)
         }
       }
       r_tls_client_ee_apply_alpn (client, parser->fragment.data, parser->fragment.size);
+      if (client->record_size_limit != 0)
+        r_tls_client_ee_apply_record_size_limit (client,
+            parser->fragment.data, parser->fragment.size);
       /* A resumed handshake authenticates via the PSK, so no Certificate /
        * CertificateVerify follow: jump straight to the server Finished. */
       client->flight13_step = client->resumed13 ? 3 : 1;
@@ -2935,6 +3031,18 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
     }
 
     client->server.seqno++;
+
+    /* Honour a negotiated record_size_limit (RFC 8449): a post-handshake record
+     * whose plaintext -- content-type byte included -- exceeds the limit we
+     * advertised is a fatal record_overflow. The handshake flight is exempt (see
+     * r_tls_client_protect_record13). */
+    if (client->tls13 && client->state == R_TLS_CLIENT_APPDATA &&
+        client->record_size_limit != 0 && client->peer_record_size_limit != 0 &&
+        parser.fragment.size + 1 > (rsize) client->record_size_limit) {
+      r_tls_client_send_alert (client, R_TLS_ALERT_TYPE_RECORD_OVERFLOW);
+      err = R_TLS_ERROR_RECORD_OVERFLOW;
+      break;
+    }
 
     if (parser.content == R_TLS_CONTENT_TYPE_ALERT) {
       RTLSAlertLevel alevel;

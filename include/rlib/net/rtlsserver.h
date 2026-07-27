@@ -280,6 +280,25 @@ R_API RTLSError r_tls_server_set_key_share_group (RTLSServer * server,
  */
 R_API RTLSError r_tls_server_set_alpn_protocols (RTLSServer * server,
     const rchar * const * protocols, rsize count);
+/**
+ * @brief Advertise a TLS 1.3 @c record_size_limit (RFC 8449).
+ *
+ * @p limit is the largest protected-record plaintext -- counting the inner
+ * content-type byte -- the server is willing to @e receive, in the range
+ * 64 .. @ref R_TLS_MAX_PLAINTEXT (16384); an inbound record whose plaintext
+ * exceeds it aborts the session with a @c record_overflow alert. The value is
+ * offered in the server's EncryptedExtensions only when the client also offered
+ * the extension, and independently constrains what the peer sends this way.
+ * A peer's advertised limit is likewise honoured, capping the plaintext of each
+ * record the server emits. With @p limit 0 (the default) the server neither
+ * advertises the extension nor enforces an inbound cap. The cap governs
+ * post-handshake traffic (application data and post-handshake messages); the
+ * handshake flight itself is exempt. Applies to TLS 1.3 only; must be set before
+ * the handshake starts. Returns @c R_TLS_ERROR_INVAL for a non-zero @p limit
+ * below 64 or above @ref R_TLS_MAX_PLAINTEXT.
+ */
+R_API RTLSError r_tls_server_set_record_size_limit (RTLSServer * server,
+    ruint16 limit);
 /** @brief Override the server-random (testing / determinism). */
 R_API RTLSError r_tls_server_set_random (RTLSServer * server,
     const ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES]);

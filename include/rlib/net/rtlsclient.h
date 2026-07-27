@@ -122,6 +122,23 @@ R_API RTLSError r_tls_client_set_server_name (RTLSClient * client,
 R_API RTLSError r_tls_client_set_alpn_protocols (RTLSClient * client,
     const rchar * const * protocols, rsize count);
 /**
+ * @brief Advertise a TLS 1.3 @c record_size_limit (RFC 8449).
+ *
+ * @p limit is the largest protected-record plaintext -- counting the inner
+ * content-type byte -- the client is willing to @e receive, in the range
+ * 64 .. @ref R_TLS_MAX_PLAINTEXT (16384); an inbound record whose plaintext
+ * exceeds it aborts the session with a @c record_overflow alert. The value is
+ * offered in the ClientHello, and the server's echoed limit is honoured,
+ * capping the plaintext of each record the client emits. With @p limit 0 (the
+ * default) the client neither offers the extension nor enforces an inbound cap.
+ * The cap governs post-handshake traffic (application data and post-handshake
+ * messages); the handshake flight itself is exempt. Applies to TLS 1.3 only;
+ * must be called before @ref r_tls_client_start. Returns @c R_TLS_ERROR_INVAL
+ * for a non-zero @p limit below 64 or above @ref R_TLS_MAX_PLAINTEXT.
+ */
+R_API RTLSError r_tls_client_set_record_size_limit (RTLSClient * client,
+    ruint16 limit);
+/**
  * @brief Constrain the TLS versions the client offers.
  *
  * Both bounds lie in the window @c R_TLS_VERSION_TLS_1_2 ..
