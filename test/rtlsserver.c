@@ -2521,6 +2521,62 @@ RTEST_F (rtlsserver, tls_session_resume, RTEST_FAST)
 }
 RTEST_END;
 
+/* A 1.3-capable server resuming a <= 1.2 session via ticket still stamps the
+ * RFC 8446 4.1.3 downgrade sentinel into the ServerHello.random, so a
+ * 1.3-capable client can detect a forced downgrade even on the abbreviated
+ * path. A NewSessionTicket -- not a Certificate -- follows the ServerHello,
+ * confirming the sentinel was written on the resumption path. */
+RTEST_F (rtlsserver, tls_session_resume_downgrade_sentinel, RTEST_FAST)
+{
+  RTLSServer * srv2;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RBuffer * buf;
+  RTLSHandshakeType hs;
+  ruint32 l;
+  ruint16 msgseq;
+  ruint8 ms[48], crand[R_TLS_HELLO_RANDOM_BYTES], * ticket = NULL, ch[512];
+  rsize ticketlen = 0, chlen;
+
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server,
+        fixture->ticket_keys), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_client_issue (fixture->server, fixture->prng, &fixture->qout,
+      ms, &ticket, &ticketlen);
+  r_assert_cmpuint (ticketlen, >, 0);
+
+  r_queue_clear (&fixture->qout, r_buffer_unref);
+  r_assert_cmpptr ((srv2 = r_test_tls_server_new_cfg (fixture)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (srv2, fixture->ticket_keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srv2, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_client_hello (fixture->prng, ch, sizeof (ch),
+      R_TLS_CS_RSA_WITH_AES_128_CBC_SHA, ticket, ticketlen, crand);
+  r_test_tls_server_feed (srv2, ch, chlen);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (r_tls_server_get_version (srv2), ==, R_TLS_VERSION_TLS_1_2);
+  r_assert (r_tls13_random_is_downgrade (hello.random));
+
+  r_assert_cmpint (r_tls_parser_init_next (&parser, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_parse_handshake_full (&parser, &hs, &l, &msgseq,
+        NULL, NULL), ==, R_TLS_ERROR_OK);
+  r_assert_cmphex (hs, ==, R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET);
+
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+  r_free (ticket);
+  r_tls_server_unref (srv2);
+}
+RTEST_END;
+
 /* A ticket still opens after the key store rotates, as long as its sealing key
  * is still in the retained current+recent set (#348). */
 RTEST_F (rtlsserver, tls_session_resume_after_rotation, RTEST_FAST)

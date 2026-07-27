@@ -84,6 +84,7 @@ RTEST_FIXTURE_STRUCT (rtlsclient)
 
   rboolean srv_hs_done, cli_hs_done;
   rboolean srv_error, cli_error;
+  RTLSAlertType srv_alert, cli_alert;   /* alert each side raised at its error */
   rboolean srv_closed, cli_closed;
   ruint verify_calls;
   rboolean verify_result;
@@ -135,16 +136,18 @@ static void
 r_tlsclient_test_srv_error (rpointer ctx, RTLSAlertType alert, rpointer session)
 {
   RTEST_FIXTURE_STRUCT (rtlsclient) * fixture = ctx;
-  (void) alert; (void) session;
+  (void) session;
   fixture->srv_error = TRUE;
+  fixture->srv_alert = alert;
 }
 
 static void
 r_tlsclient_test_cli_error (rpointer ctx, RTLSAlertType alert, rpointer session)
 {
   RTEST_FIXTURE_STRUCT (rtlsclient) * fixture = ctx;
-  (void) alert; (void) session;
+  (void) session;
   fixture->cli_error = TRUE;
+  fixture->cli_alert = alert;
 }
 
 static void
@@ -249,6 +252,7 @@ RTEST_FIXTURE_SETUP (rtlsclient)
 
   fixture->srv_hs_done = fixture->cli_hs_done = FALSE;
   fixture->srv_error = fixture->cli_error = FALSE;
+  fixture->srv_alert = fixture->cli_alert = R_TLS_ALERT_TYPE_CLOSE_NOTIFY;
   fixture->srv_closed = fixture->cli_closed = FALSE;
   fixture->verify_calls = 0;
   fixture->verify_result = TRUE;
@@ -561,6 +565,195 @@ RTEST_F (rtlsclient, tls13_loopback_hrr, RTEST_FAST)
   r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
         R_TLS_SUPPORTED_GROUP_SECP256R1), ==, R_TLS_ERROR_OK);
   r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+/* Drive CH1 -> HelloRetryRequest with a server that requires secp256r1 while
+ * the client first offers x25519. Returns the (still-owned) HRR record and
+ * leaves the client having consumed nothing yet. */
+static RBuffer *
+r_test_tls13_hrr_drive (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
+{
+  RBuffer * ch1, * hrr;
+
+  r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
+        R_TLS_SUPPORTED_GROUP_SECP256R1), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpptr ((ch1 = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_tls_server_incoming_data (fixture->server, ch1);
+  r_buffer_unref (ch1);
+  r_assert_cmpptr ((hrr = r_queue_pop (&fixture->srv_out)), !=, NULL);
+  return hrr;
+}
+
+/* A second HelloRetryRequest is illegal (RFC 8446 4.1.4): once the client has
+ * answered one HRR, replaying it aborts with unexpected_message. */
+RTEST_F (rtlsclient, tls13_hrr_second_rejected, RTEST_FAST)
+{
+  RBuffer * hrr = r_test_tls13_hrr_drive (fixture);
+
+  /* First HRR: the client retries (CH2), no error. */
+  r_tls_client_incoming_data (fixture->client, hrr);
+  r_assert (!fixture->cli_error);
+
+  /* Replaying the HRR is a second one -- reject it. */
+  r_tls_client_incoming_data (fixture->client, hrr);
+  r_buffer_unref (hrr);
+
+  r_assert (fixture->cli_error);
+  r_assert_cmpuint (fixture->cli_alert, ==, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+  r_assert (!fixture->cli_hs_done);
+}
+RTEST_END;
+
+/* After a HelloRetryRequest the ServerHello must keep the suite the HRR
+ * committed to; a changed suite is illegal_parameter (RFC 8446 4.1.4). */
+RTEST_F (rtlsclient, tls13_hrr_serverhello_suite_mismatch, RTEST_FAST)
+{
+  RBuffer * hrr = r_test_tls13_hrr_drive (fixture);
+  RBuffer * ch2, * sh;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rsize csoff;
+  ruint16 cur;
+
+  r_tls_client_incoming_data (fixture->client, hrr);
+  r_buffer_unref (hrr);
+
+  /* CH2 -> server sends its second flight; the ServerHello is the first record. */
+  r_assert_cmpptr ((ch2 = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_tls_server_incoming_data (fixture->server, ch2);
+  r_buffer_unref (ch2);
+  r_assert_cmpptr ((sh = r_queue_pop (&fixture->srv_out)), !=, NULL);
+
+  /* Rewrite the ServerHello cipher_suite to a different (valid) 1.3 suite. The
+   * field sits after record hdr(5) + hs hdr(4) + version(2) + random(32) +
+   * legacy_session_id (1-byte length + echo). */
+  r_assert (r_buffer_map (sh, &info, R_MEM_MAP_WRITE));
+  r_assert_cmpuint (info.data[0], ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpuint (info.data[5], ==, R_TLS_HANDSHAKE_TYPE_SERVER_HELLO);
+  csoff = 44 + info.data[43];
+  cur = r_load_be16 (info.data + csoff);
+  r_store_be16 (info.data + csoff, cur == R_TLS_CS_AES_128_GCM_SHA256 ?
+      (ruint16) R_TLS_CS_AES_256_GCM_SHA384 : (ruint16) R_TLS_CS_AES_128_GCM_SHA256);
+  r_assert (r_buffer_unmap (sh, &info));
+
+  r_tls_client_incoming_data (fixture->client, sh);
+  r_buffer_unref (sh);
+
+  r_assert (fixture->cli_error);
+  r_assert_cmpuint (fixture->cli_alert, ==, R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER);
+  r_assert (!fixture->cli_hs_done);
+}
+RTEST_END;
+
+/* The retry ClientHello must echo the HelloRetryRequest cookie verbatim; a
+ * corrupted echo is rejected by the server with illegal_parameter. */
+RTEST_F (rtlsclient, tls13_hrr_cookie_mismatch, RTEST_FAST)
+{
+  RBuffer * hrr = r_test_tls13_hrr_drive (fixture);
+  RBuffer * ch2;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RTLSHelloExt ext;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  const ruint8 * cookie = NULL;
+  ruint16 cookielen = 0;
+  ruint8 ckcopy[64];
+  rsize i, off = 0;
+  rboolean found = FALSE;
+  RTLSError e;
+
+  /* Read the cookie the HRR carries. */
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, hrr), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  for (e = r_tls_hello_msg_extension_first (&hello, &ext); e == R_TLS_ERROR_OK;
+      e = r_tls_hello_msg_extension_next (&hello, &ext)) {
+    if (ext.type == R_TLS_EXT_TYPE_COOKIE) {
+      cookie = r_tls_hello_ext_cookie (&ext, &cookielen);
+      r_assert_cmpuint (cookielen, >, 0);
+      r_assert_cmpuint (cookielen, <=, sizeof (ckcopy));
+      r_memcpy (ckcopy, cookie, cookielen);
+      found = TRUE;
+    }
+  }
+  r_assert (found);
+  r_tls_parser_clear (&parser);
+
+  /* Client retries (CH2), echoing the cookie. */
+  r_tls_client_incoming_data (fixture->client, hrr);
+  r_buffer_unref (hrr);
+  r_assert_cmpptr ((ch2 = r_queue_pop (&fixture->cli_out)), !=, NULL);
+
+  /* Locate the echoed cookie in CH2 and flip one of its bytes. */
+  r_assert (r_buffer_map (ch2, &info, R_MEM_MAP_WRITE));
+  found = FALSE;
+  for (i = 0; i + cookielen <= info.size; i++) {
+    if (r_memcmp (info.data + i, ckcopy, cookielen) == 0) { off = i; found = TRUE; break; }
+  }
+  r_assert (found);
+  info.data[off] ^= 0xff;
+  r_assert (r_buffer_unmap (ch2, &info));
+
+  r_tls_server_incoming_data (fixture->server, ch2);
+  r_buffer_unref (ch2);
+
+  r_assert (fixture->srv_error);
+  r_assert_cmpuint (fixture->srv_alert, ==, R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER);
+  r_assert (!fixture->srv_hs_done);
+}
+RTEST_END;
+
+/* The retry ClientHello must carry a key_share for the group the
+ * HelloRetryRequest asked for; a retry that still omits it (here its share is
+ * repointed to another group) leaves the server with no usable share and it
+ * aborts with handshake_failure rather than issuing a second HRR. */
+RTEST_F (rtlsclient, tls13_hrr_retry_missing_share, RTEST_FAST)
+{
+  RBuffer * hrr = r_test_tls13_hrr_drive (fixture);
+  RBuffer * ch2;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg hello;
+  RTLSHelloExt ext;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rsize ksoff = 0;
+  rboolean found = FALSE;
+  RTLSError e;
+
+  r_tls_client_incoming_data (fixture->client, hrr);
+  r_buffer_unref (hrr);
+  r_assert_cmpptr ((ch2 = r_queue_pop (&fixture->cli_out)), !=, NULL);
+
+  /* Find the first KeyShareEntry's group id -- ext.data opens with the
+   * client_shares vector length(2), then group(2) -- and repoint it. */
+  r_assert (r_buffer_map (ch2, &info, R_MEM_MAP_READ));
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, ch2), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &hello), ==, R_TLS_ERROR_OK);
+  for (e = r_tls_hello_msg_extension_first (&hello, &ext); e == R_TLS_ERROR_OK;
+      e = r_tls_hello_msg_extension_next (&hello, &ext)) {
+    if (ext.type == R_TLS_EXT_TYPE_KEY_SHARE) {
+      ksoff = (rsize) (ext.data - info.data) + 2;
+      found = TRUE;
+    }
+  }
+  r_tls_parser_clear (&parser);
+  r_assert (found);
+  r_assert (r_buffer_unmap (ch2, &info));
+
+  r_assert (r_buffer_map (ch2, &info, R_MEM_MAP_WRITE));
+  r_assert_cmpuint (r_load_be16 (info.data + ksoff), ==, R_TLS_SUPPORTED_GROUP_SECP256R1);
+  r_store_be16 (info.data + ksoff, (ruint16) R_TLS_SUPPORTED_GROUP_X25519);
+  r_assert (r_buffer_unmap (ch2, &info));
+
+  r_tls_server_incoming_data (fixture->server, ch2);
+  r_buffer_unref (ch2);
+
+  r_assert (fixture->srv_error);
+  r_assert_cmpuint (fixture->srv_alert, ==, R_TLS_ALERT_TYPE_HANDSHAKE_FAILURE);
+  r_assert (!fixture->srv_hs_done);
 }
 RTEST_END;
 
