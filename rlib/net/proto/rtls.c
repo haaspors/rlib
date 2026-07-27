@@ -61,6 +61,10 @@ r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme, RMsgDigestType * md)
     case R_TLS_SIGN_SCHEME_RSA_PSS_SHA512:
       *md = R_MSG_DIGEST_TYPE_SHA512;
       return TRUE;
+    case R_TLS_SIGN_SCHEME_ED25519:
+      /* PureEdDSA signs the content directly (RFC 8446 4.2.3); no pre-hash. */
+      *md = R_MSG_DIGEST_TYPE_NONE;
+      return TRUE;
     default:
       return FALSE;
   }
@@ -69,15 +73,19 @@ r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme, RMsgDigestType * md)
 RTLSSignatureScheme
 r_tls_sign_scheme_for_key (const RCryptoKey * key)
 {
-  if (r_crypto_key_get_algo (key) == R_CRYPTO_ALGO_ECDSA) {
-    /* The ECDSA schemes bind the curve to a digest (RFC 8446 4.2.3). */
-    switch (r_ecc_key_get_curve (key)) {
-      case R_ECURVE_ID_SECP384R1: return R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384;
-      case R_ECURVE_ID_SECP521R1: return R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512;
-      default:                    return R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256;
-    }
+  switch (r_crypto_key_get_algo (key)) {
+    case R_CRYPTO_ALGO_ECDSA:
+      /* The ECDSA schemes bind the curve to a digest (RFC 8446 4.2.3). */
+      switch (r_ecc_key_get_curve (key)) {
+        case R_ECURVE_ID_SECP384R1: return R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384;
+        case R_ECURVE_ID_SECP521R1: return R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512;
+        default:                    return R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256;
+      }
+    case R_CRYPTO_ALGO_ED25519:
+      return R_TLS_SIGN_SCHEME_ED25519;
+    default:
+      return R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256;
   }
-  return R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256;
 }
 
 rboolean

@@ -1770,9 +1770,10 @@ r_tls_server_nego_hello13 (RTLSServer * server)
   }
 
   /* CertificateVerify scheme follows the certificate key: ECDSA binds the curve
-   * to its digest (secp256r1/384r1/521r1), RSA uses rsa_pss_rsae_sha256. */
+   * to its digest (secp256r1/384r1/521r1), ed25519 is PureEdDSA, RSA uses
+   * rsa_pss_rsae_sha256. */
   certalgo = r_crypto_key_get_algo (server->privkey);
-  if (certalgo == R_CRYPTO_ALGO_ECDSA)
+  if (certalgo == R_CRYPTO_ALGO_ECDSA || certalgo == R_CRYPTO_ALGO_ED25519)
     server->cv_scheme = r_tls_sign_scheme_for_key (server->privkey);
   else if (certalgo == R_CRYPTO_ALGO_RSA)
     server->cv_scheme = R_TLS_SIGN_SCHEME_RSA_PSS_SHA256;
@@ -2142,6 +2143,15 @@ r_tls_server_sign_certificate_verify13 (RTLSServer * server,
    * ecdsa_secp384r1_sha384), independent of the cipher-suite hash. */
   if (!r_tls_sign_scheme_to_md (server->cv_scheme, &mdtype))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  if (mdtype == R_MSG_DIGEST_TYPE_NONE) {
+    /* PureEdDSA signs the content directly, without a pre-hash. */
+    if (r_crypto_key_sign (server->privkey, server->prng, mdtype,
+          tbs, tbslen, sig, siglen) != R_CRYPTO_OK)
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+    return R_TLS_ERROR_OK;
+  }
+
   if ((md = r_msg_digest_new (mdtype)) == NULL)
     return R_TLS_ERROR_OOM;
   dlen = r_msg_digest_size (md);

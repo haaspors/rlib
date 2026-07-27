@@ -127,6 +127,25 @@ static const rchar testpkpem_ecdsa521[] =
   "Og==\n"
   "-----END PRIVATE KEY-----\n";
 
+/* Self-signed Ed25519 certificate + matching PKCS#8 key (CN=rlib-ed25519), for
+ * the 1.3 CertificateVerify ed25519 scheme. Same generation constraints as
+ * testcertpem_ecdsa (small serial, pre-2050). */
+static const rchar testcertpem_ed25519[] =
+  "-----BEGIN CERTIFICATE-----\n"
+  "MIIBLzCB4qADAgECAgEBMAUGAytlcDAXMRUwEwYDVQQDDAxybGliLWVkMjU1MTkw\n"
+  "HhcNMjYwNzI3MjIwNzU4WhcNNDgwNjIxMjIwNzU4WjAXMRUwEwYDVQQDDAxybGli\n"
+  "LWVkMjU1MTkwKjAFBgMrZXADIQCraKuX/GZ695ZdM5IWppcYyHKCHa0bsPum1mxl\n"
+  "7Su9C6NTMFEwHQYDVR0OBBYEFEejUEmkmH4KhOFQbwqykULLE34rMB8GA1UdIwQY\n"
+  "MBaAFEejUEmkmH4KhOFQbwqykULLE34rMA8GA1UdEwEB/wQFMAMBAf8wBQYDK2Vw\n"
+  "A0EA+pW3yQXXbirkFdrSS/h4ks261980uyvLB38wOrxsg8y9C2EljrtAcTWOLFQH\n"
+  "2Fvt0wDLNP+pQlXYPoqsZL3vDw==\n"
+  "-----END CERTIFICATE-----\n";
+
+static const rchar testpkpem_ed25519[] =
+  "-----BEGIN PRIVATE KEY-----\n"
+  "MC4CAQAwBQYDK2VwBCIEIJKdC2hLiSupxcBfuOHOJo21Xs4uo1DHngILAzCzFb3D\n"
+  "-----END PRIVATE KEY-----\n";
+
 RTEST_FIXTURE_STRUCT (rtlsclient)
 {
   RTLSServer * server;
@@ -625,6 +644,24 @@ RTEST_F (rtlsclient, tls13_loopback_ecdsa_secp521r1, RTEST_FAST)
 
   r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ecdsa521, -1)), !=, NULL);
   r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ecdsa521, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+/* Ed25519 server certificate: the 1.3 CertificateVerify uses the ed25519 scheme,
+ * so the server signs and the client verifies over the content directly (no
+ * pre-hash). The handshake completing exercises the PureEdDSA sign/verify path. */
+RTEST_F (rtlsclient, tls13_loopback_ed25519, RTEST_FAST)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ed25519, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ed25519, -1, NULL, 0)), !=, NULL);
   r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
   r_crypto_key_unref (pk);
   r_crypto_cert_unref (cert);
