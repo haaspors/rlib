@@ -1770,10 +1770,11 @@ r_tls_server_nego_hello13 (RTLSServer * server)
   }
 
   /* CertificateVerify scheme follows the certificate key: ECDSA binds the curve
-   * to its digest (secp256r1/384r1/521r1), ed25519 is PureEdDSA, RSA uses
-   * rsa_pss_rsae_sha256. */
+   * to its digest (secp256r1/384r1/521r1), ed25519 / ed448 are PureEdDSA, RSA
+   * uses rsa_pss_rsae_sha256. */
   certalgo = r_crypto_key_get_algo (server->privkey);
-  if (certalgo == R_CRYPTO_ALGO_ECDSA || certalgo == R_CRYPTO_ALGO_ED25519)
+  if (certalgo == R_CRYPTO_ALGO_ECDSA || certalgo == R_CRYPTO_ALGO_ED25519 ||
+      certalgo == R_CRYPTO_ALGO_ED448)
     server->cv_scheme = r_tls_sign_scheme_for_key (server->privkey);
   else if (certalgo == R_CRYPTO_ALGO_RSA)
     server->cv_scheme = R_TLS_SIGN_SCHEME_RSA_PSS_SHA256;

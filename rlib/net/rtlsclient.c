@@ -740,7 +740,7 @@ r_tls_client_default_cipher_suites (rpointer ctx, RTLSVersion ver,
 }
 
 /* signature_algorithms for 1.3: offer the ECDSA (secp256r1/384r1/521r1),
- * ed25519 and RSA-PSS (SHA-256/384/512) schemes valid for a 1.3
+ * ed25519 / ed448 and RSA-PSS (SHA-256/384/512) schemes valid for a 1.3
  * CertificateVerify, plus rsa_pkcs1_sha256 for certificate signatures. */
 static ruint16
 r_tls_client_write_hs_ext_signature_algorithms13 (ruint8 * ptr)
@@ -750,6 +750,7 @@ r_tls_client_write_hs_ext_signature_algorithms13 (ruint8 * ptr)
     R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384,
     R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512,
     R_TLS_SIGN_SCHEME_ED25519,
+    R_TLS_SIGN_SCHEME_ED448,
     R_TLS_SIGN_SCHEME_RSA_PSS_SHA256,
     R_TLS_SIGN_SCHEME_RSA_PSS_SHA384,
     R_TLS_SIGN_SCHEME_RSA_PSS_SHA512,
@@ -1583,13 +1584,14 @@ r_tls_client_verify_certificate_verify13 (RTLSClient * client,
   RTLSError err;
 
   /* The schemes valid for a 1.3 CertificateVerify that we can verify: ECDSA
-   * (secp256r1/384r1/521r1), RSA-PSS (SHA-256/384/512) and ed25519. PKCS#1
-   * v1.5 is forbidden in 1.3; other schemes are rejected. */
+   * (secp256r1/384r1/521r1), RSA-PSS (SHA-256/384/512) and ed25519 / ed448.
+   * PKCS#1 v1.5 is forbidden in 1.3; other schemes are rejected. */
   switch (scheme) {
     case R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256:
     case R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384:
     case R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512:
     case R_TLS_SIGN_SCHEME_ED25519:
+    case R_TLS_SIGN_SCHEME_ED448:
       pss = FALSE;
       break;
     case R_TLS_SIGN_SCHEME_RSA_PSS_SHA256:
