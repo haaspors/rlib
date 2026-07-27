@@ -71,6 +71,7 @@ R_BEGIN_DECLS
 #define R_DTLS_RECORD_HDR_SIZE            (R_TLS_RECORD_HDR_SIZE + R_TLS_RECORD_EXTRA_DTLS_SIZE) /**< @brief DTLS record header size in bytes. */
 #define R_DTLS_HS_HDR_SIZE                (R_TLS_HS_HDR_SIZE + R_TLS_HS_EXTRA_DTLS_SIZE) /**< @brief DTLS handshake header size in bytes. */
 #define R_TLS_SESSION_TICKET_LIFETIME     7200 /**< @brief Default session-ticket lifetime hint, in seconds. */
+#define R_TLS_MAX_PLAINTEXT               16384 /**< @brief Maximum protected-record plaintext (2^14), the default record_size_limit (RFC 8449). */
 /** @} */
 
 /** @brief TLS / DTLS protocol version (the 16-bit version field; DTLS uses 0xfe**). */
@@ -220,6 +221,7 @@ typedef enum {
   R_TLS_EXT_TYPE_EXTENDED_MASTER_SECRET                 = 0x0017, /* [RFC7627] */
   R_TLS_EXT_TYPE_TOKEN_BINDING                          = 0x0018, /* (TEMPORARY - registered 2016-02-04, expires 2017-02-04) [draft-ietf-tokbind-negotiation] */
   R_TLS_EXT_TYPE_CACHED_INFO                            = 0x0019, /* [RFC7924] */
+  R_TLS_EXT_TYPE_RECORD_SIZE_LIMIT                      = 0x001c, /* [RFC8449] */
   R_TLS_EXT_TYPE_SESSION_TICKET                         = 0x0023, /* [RFC4507] */
   R_TLS_EXT_TYPE_PRE_SHARED_KEY                         = 0x0029, /* [RFC8446] */
   R_TLS_EXT_TYPE_EARLY_DATA                             = 0x002a, /* [RFC8446] */

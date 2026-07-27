@@ -925,6 +925,149 @@ HEAVY_RTEST_F (rtlsclient, tls13_loopback_group_ffdhe8192, RTEST_SLOW)
 }
 RTEST_END;
 
+/* Drain @from, asserting every record's ciphertext fits a @limit-byte plaintext
+ * cap (RFC 8449: header + inner plaintext<=limit + AEAD tag), feed each into the
+ * server (@to_server) or client, and return the record count. */
+static ruint
+r_test_tls_relay_capped (RQueue * from, ruint16 limit,
+    rboolean to_server, RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
+{
+  RBuffer * rec;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint n = 0;
+
+  while ((rec = r_queue_pop (from)) != NULL) {
+    r_assert (r_buffer_map (rec, &info, R_MEM_MAP_READ));
+    r_assert_cmpuint (info.size, <=,
+        R_TLS_RECORD_HDR_SIZE + (rsize) limit + R_TLS13_AEAD_TAG_SIZE);
+    r_buffer_unmap (rec, &info);
+    if (to_server)
+      r_tls_server_incoming_data (fixture->server, rec);
+    else
+      r_tls_client_incoming_data (fixture->client, rec);
+    r_buffer_unref (rec);
+    n++;
+  }
+  return n;
+}
+
+/* record_size_limit (RFC 8449): both endpoints advertise a small receive limit;
+ * the handshake completes and each direction honours the peer's cap, fragmenting
+ * larger application data into multiple records that reassemble to the original.
+ * The client sends toward @srv_limit (the server's advertised value), the server
+ * toward @cli_limit. */
+static void
+r_test_tls13_record_size_limit (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture,
+    ruint16 cli_limit, ruint16 srv_limit)
+{
+  ruint8 payload[1000];
+  RBuffer * app;
+  rsize i;
+
+  for (i = 0; i < sizeof (payload); i++)
+    payload[i] = (ruint8) (i & 0xff);
+
+  r_assert_cmpint (r_tls_client_set_record_size_limit (fixture->client, cli_limit),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_record_size_limit (fixture->server, srv_limit),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  /* Client -> server: the client caps each record at the server's limit. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          payload, sizeof (payload), sizeof (payload), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_assert_cmpuint (r_test_tls_relay_capped (&fixture->cli_out, srv_limit, TRUE, fixture),
+      >, 1);
+  r_test_tls_assert_appdata (&fixture->srv_app, payload, sizeof (payload));
+
+  /* Server -> client: symmetrically capped at the client's limit. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          payload, sizeof (payload), sizeof (payload), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_assert_cmpuint (r_test_tls_relay_capped (&fixture->srv_out, cli_limit, FALSE, fixture),
+      >, 1);
+  r_test_tls_assert_appdata (&fixture->cli_app, payload, sizeof (payload));
+
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+}
+
+RTEST_F (rtlsclient, tls13_record_size_limit, RTEST_FAST)
+{
+  r_test_tls13_record_size_limit (fixture, 64, 100);
+}
+RTEST_END;
+
+/* An incoming record whose plaintext exceeds the limit we advertised is a fatal
+ * record_overflow (RFC 8449). Post-handshake application_data is AEAD-protected
+ * and would fail decryption before the size guard, so a plaintext handshake-type
+ * record -- which skips decryption -- exercises the guard directly. */
+RTEST_F (rtlsclient, tls13_record_size_limit_incoming_overflow, RTEST_FAST)
+{
+  ruint8 big[R_TLS_RECORD_HDR_SIZE + 200];
+  RBuffer * rec;
+
+  r_assert_cmpint (r_tls_client_set_record_size_limit (fixture->client, 64),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_record_size_limit (fixture->server, 64),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (!fixture->cli_error);
+
+  r_memclear (big, sizeof (big));
+  big[0] = R_TLS_CONTENT_TYPE_HANDSHAKE;
+  r_store_be16 (&big[1], R_TLS_VERSION_TLS_1_2);
+  r_store_be16 (&big[3], 200);                /* fragment length 200 > 64 */
+  r_assert_cmpptr ((rec = r_buffer_new_wrapped (R_MEM_FLAG_NONE, big,
+          sizeof (big), sizeof (big), 0, NULL, NULL)), !=, NULL);
+  r_tls_client_incoming_data (fixture->client, rec);
+  r_buffer_unref (rec);
+
+  r_assert (fixture->cli_error);
+  r_assert_cmpuint (fixture->cli_alert, ==, R_TLS_ALERT_TYPE_RECORD_OVERFLOW);
+}
+RTEST_END;
+
+/* The limit must lie in 64 .. 2^14; 0 disables the extension. */
+RTEST_F (rtlsclient, tls13_record_size_limit_invalid, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_client_set_record_size_limit (fixture->client, 63),
+      ==, R_TLS_ERROR_INVAL);
+  r_assert_cmpint (r_tls_client_set_record_size_limit (fixture->client,
+        R_TLS_MAX_PLAINTEXT + 1), ==, R_TLS_ERROR_INVAL);
+  r_assert_cmpint (r_tls_client_set_record_size_limit (fixture->client, 0),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_set_record_size_limit (fixture->client, 64),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_set_record_size_limit (fixture->client,
+        R_TLS_MAX_PLAINTEXT), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_set_record_size_limit (fixture->server, 63),
+      ==, R_TLS_ERROR_INVAL);
+  r_assert_cmpint (r_tls_server_set_record_size_limit (fixture->server,
+        R_TLS_MAX_PLAINTEXT + 1), ==, R_TLS_ERROR_INVAL);
+  r_assert_cmpint (r_tls_server_set_record_size_limit (fixture->server, 64),
+      ==, R_TLS_ERROR_OK);
+}
+RTEST_END;
+
 /* Drive CH1 -> HelloRetryRequest with a server that requires secp256r1 while
  * the client first offers x25519. Returns the (still-owned) HRR record and
  * leaves the client having consumed nothing yet. */
