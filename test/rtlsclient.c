@@ -557,6 +557,70 @@ RTEST_F (rtlsclient, tls13_loopback_aes256, RTEST_FAST)
 }
 RTEST_END;
 
+/* TLS 1.3 post-handshake KeyUpdate (RFC 8446 4.6.3). After the handshake each
+ * endpoint rekeys its sending direction; the peer must track the rotation for
+ * records to keep decrypting. A key_update requesting a peer update makes the
+ * peer answer with its own KeyUpdate, rotating both directions. An app-data
+ * round trip after each rotation proves the keys stayed in sync. */
+RTEST_F (rtlsclient, tls13_key_update, RTEST_FAST)
+{
+  static const ruint8 a[] = { 'a', 'f', 't', 'e', 'r', '1' };
+  static const ruint8 b[] = { 'a', 'f', 't', 'e', 'r', '2' };
+  RBuffer * app;
+
+  /* KeyUpdate is refused before the session is established. */
+  r_assert (!r_tls_client_key_update (fixture->client, FALSE));
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+
+  /* Client rekeys its sending direction; the peer need not respond. */
+  r_assert (r_tls_client_key_update (fixture->client, FALSE));
+  r_test_tls_loopback_pump (fixture);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  /* client -> server still decrypts under the client's new send key. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)a, sizeof (a), sizeof (a), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, a, sizeof (a));
+
+  /* Server rekeys and asks the client to rekey too: the client's auto-response
+   * KeyUpdate rotates the remaining direction, so both are now fresh. */
+  r_assert (r_tls_server_key_update (fixture->server, TRUE));
+  r_test_tls_loopback_pump (fixture);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  /* server -> client under the server's new send key. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)b, sizeof (b), sizeof (b), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, b, sizeof (b));
+
+  /* client -> server under the client's twice-rotated send key. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)a, sizeof (a), sizeof (a), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, a, sizeof (a));
+
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+}
+RTEST_END;
+
 /* The server requires secp256r1 but the client offers an x25519 key_share, so
  * the server answers with a HelloRetryRequest and the client retries with a
  * secp256r1 share. The handshake can only complete if the retry worked. */

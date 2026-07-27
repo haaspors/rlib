@@ -340,6 +340,24 @@ R_API rboolean r_tls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
     const RCryptoCipherInfo * info, RTLS13RecordKeys * out);
 
 /**
+ * @brief Advance an application-traffic secret one generation (RFC 8446, 7.2).
+ *
+ * @c application_traffic_secret_N+1 =
+ * @c HKDF-Expand-Label(application_traffic_secret_N, "traffic upd", "",
+ * Hash.length): the rekeying a @c KeyUpdate performs. Re-derive the record keys
+ * from @p out with @ref r_tls13_traffic_keys. @p out may alias @p secret for an
+ * in-place advance.
+ *
+ * @param hash   Cipher-suite hash.
+ * @param secret The current application-traffic secret; @c HashLen bytes.
+ * @param out    Destination for the next-generation secret; @c HashLen bytes.
+ * @return @c TRUE on success; @c FALSE on invalid arguments or a derivation
+ *  failure.
+ */
+R_API rboolean r_tls13_traffic_update (RMsgDigestType hash,
+    const ruint8 * secret, ruint8 * out);
+
+/**
  * @brief Derive a Finished key from a handshake-traffic secret.
  *
  * @c finished_key = HKDF-Expand-Label(secret, "finished", "", HashLen).
