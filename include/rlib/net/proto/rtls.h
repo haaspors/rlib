@@ -371,6 +371,7 @@ typedef enum {
   R_TLS_ERROR_RECORD_OVERFLOW                           = -0x11, /**< Record fragment length exceeds the limit. */
   R_TLS_ERROR_ILLEGAL_PARAMETER                         = -0x12, /**< Field value well-formed but out of range. */
   R_TLS_ERROR_NO_APPLICATION_PROTOCOL                   = -0x13, /**< No ALPN protocol in common with the peer. */
+  R_TLS_ERROR_INAPPROPRIATE_FALLBACK                    = -0x14, /**< Client signalled a fallback below the highest common version (RFC 7507). */
 } RTLSError;
 
 /** @brief TLS record compression method (only @c NULL is supported / non-deprecated). */
