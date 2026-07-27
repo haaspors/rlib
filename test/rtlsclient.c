@@ -1186,6 +1186,116 @@ RTEST_F (rtlsclient, tls13_ocsp_set_validation, RTEST_FAST)
 }
 RTEST_END;
 
+/* signed_certificate_timestamp (RFC 6962): the client offers the extension and
+ * the server carries the SignedCertificateTimestampList verbatim in the leaf
+ * CertificateEntry; the client retrieves the identical bytes. */
+RTEST_F (rtlsclient, tls13_sct, RTEST_FAST)
+{
+  static const ruint8 scts[] = {
+    0x00, 0x12, 0x00, 0x10, 0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03, 0x04,
+    0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c };
+  const ruint8 * got;
+  rsize gotlen = 0;
+
+  r_assert_cmpint (r_tls_client_request_sct (fixture->client, TRUE),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_sct_list (fixture->server, scts, sizeof (scts)),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+
+  got = r_tls_client_get_sct_list (fixture->client, &gotlen);
+  r_assert_cmpptr (got, !=, NULL);
+  r_assert_cmpuint (gotlen, ==, sizeof (scts));
+  r_assert_cmpmem (got, ==, scts, sizeof (scts));
+}
+RTEST_END;
+
+/* OCSP staple and SCTs ride the same leaf CertificateEntry: both are delivered
+ * when both are requested and configured. */
+RTEST_F (rtlsclient, tls13_ocsp_and_sct, RTEST_FAST)
+{
+  static const ruint8 ocsp[] = { 0x30, 0x05, 0x0a, 0x01, 0x00, 0x02, 0x00 };
+  static const ruint8 scts[] = { 0x00, 0x06, 0x00, 0x04, 0xaa, 0xbb, 0xcc, 0xdd };
+  const ruint8 * got;
+  rsize gotlen = 0;
+
+  r_assert_cmpint (r_tls_client_request_ocsp (fixture->client, TRUE),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_request_sct (fixture->client, TRUE),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_ocsp_response (fixture->server, ocsp, sizeof (ocsp)),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_sct_list (fixture->server, scts, sizeof (scts)),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (!fixture->cli_error);
+
+  got = r_tls_client_get_ocsp_response (fixture->client, &gotlen);
+  r_assert_cmpptr (got, !=, NULL);
+  r_assert_cmpuint (gotlen, ==, sizeof (ocsp));
+  r_assert_cmpmem (got, ==, ocsp, sizeof (ocsp));
+
+  got = r_tls_client_get_sct_list (fixture->client, &gotlen);
+  r_assert_cmpptr (got, !=, NULL);
+  r_assert_cmpuint (gotlen, ==, sizeof (scts));
+  r_assert_cmpmem (got, ==, scts, sizeof (scts));
+}
+RTEST_END;
+
+/* No SCTs are delivered when the client did not ask, even with some configured. */
+RTEST_F (rtlsclient, tls13_sct_not_delivered, RTEST_FAST)
+{
+  static const ruint8 scts[] = { 0x00, 0x06, 0x00, 0x04, 0xaa, 0xbb, 0xcc, 0xdd };
+  const ruint8 * got;
+  rsize gotlen = 1;
+
+  r_assert_cmpint (r_tls_server_set_sct_list (fixture->server, scts, sizeof (scts)),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (!fixture->cli_error);
+
+  got = r_tls_client_get_sct_list (fixture->client, &gotlen);
+  r_assert_cmpptr (got, ==, NULL);
+  r_assert_cmpuint (gotlen, ==, 0);
+}
+RTEST_END;
+
+/* set_sct_list validates its arguments. */
+RTEST_F (rtlsclient, tls13_sct_set_validation, RTEST_FAST)
+{
+  static const ruint8 scts[] = { 0x00, 0x06, 0x00, 0x04, 0xaa, 0xbb, 0xcc, 0xdd };
+
+  r_assert_cmpint (r_tls_server_set_sct_list (fixture->server, scts, 0),
+      ==, R_TLS_ERROR_INVAL);
+  r_assert_cmpint (r_tls_server_set_sct_list (fixture->server, NULL, 5),
+      ==, R_TLS_ERROR_INVAL);
+  r_assert_cmpint (r_tls_server_set_sct_list (fixture->server, scts, sizeof (scts)),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_sct_list (fixture->server, NULL, 0),
+      ==, R_TLS_ERROR_OK);
+}
+RTEST_END;
+
 /* Drive CH1 -> HelloRetryRequest with a server that requires secp256r1 while
  * the client first offers x25519. Returns the (still-owned) HRR record and
  * leaves the client having consumed nothing yet. */

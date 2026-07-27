@@ -104,6 +104,9 @@ struct RTLSServer {
   ruint8 * ocsp_response;               /* DER OCSPResponse to staple (RFC 6066), owned; NULL = none */
   rsize ocsp_len;
   rboolean status_request_offered;      /* client sent status_request in its ClientHello */
+  ruint8 * sct_list;                    /* SignedCertificateTimestampList (RFC 6962), owned; NULL = none */
+  rsize sct_len;
+  rboolean sct_offered;                 /* client sent signed_certificate_timestamp */
   ruint8 * ticket;
   ruint16 ticketsize;
   RTLSSessionTicketKeys * ticket_keys;  /* shared STEK store; NULL disables tickets */
@@ -243,6 +246,7 @@ r_tls_server_free (RTLSServer * server)
 
   r_free (server->ticket);
   r_free (server->ocsp_response);
+  r_free (server->sct_list);
   if (server->ticket_keys != NULL)
     r_tls_session_ticket_keys_unref (server->ticket_keys);
   r_queue_clear (&server->qsend, r_buffer_unref);
@@ -492,6 +496,27 @@ r_tls_server_set_ocsp_response (RTLSServer * server, const ruint8 * der, rsize l
   r_free (server->ocsp_response);
   server->ocsp_response = copy;
   server->ocsp_len = len;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_server_set_sct_list (RTLSServer * server, const ruint8 * der, rsize len)
+{
+  ruint8 * copy = NULL;
+
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (server->state > R_TLS_SERVER_HELLO)) return R_TLS_ERROR_WRONG_STATE;
+  if (R_UNLIKELY ((der == NULL) != (len == 0))) return R_TLS_ERROR_INVAL;
+  /* The SCT entry (type + len + list) rides the leaf's 16-bit CertificateEntry
+   * extensions list: 4 + len must fit a uint16. */
+  if (R_UNLIKELY (len > 0xffffu - 4)) return R_TLS_ERROR_INVAL;
+
+  if (len > 0 && (copy = r_memdup (der, len)) == NULL)
+    return R_TLS_ERROR_OOM;
+
+  r_free (server->sct_list);
+  server->sct_list = copy;
+  server->sct_len = len;
   return R_TLS_ERROR_OK;
 }
 
@@ -1916,6 +1941,14 @@ r_tls_server_nego_hello13 (RTLSServer * server)
         r_tls_server_find_ext (server, R_TLS_EXT_TYPE_STATUS_REQUEST, &sr);
   }
 
+  /* signed_certificate_timestamp (RFC 6962): note the SCT request so the leaf
+   * CertificateEntry can carry the SignedCertificateTimestampList. */
+  {
+    RTLSHelloExt sct = R_TLS_HELLO_EXT_INIT;
+    server->sct_offered =
+        r_tls_server_find_ext (server, R_TLS_EXT_TYPE_SIGNED_CERTIFICATE_TIMESTAMP, &sct);
+  }
+
   server->comp = R_TLS_COMPRESSION_NULL;
   server->version = R_TLS_VERSION_TLS_1_3;
   server->tls13 = TRUE;
@@ -2277,20 +2310,25 @@ r_tls_server_sign_certificate_verify13 (RTLSServer * server,
 }
 
 /* Build the leaf CertificateEntry Extension list (RFC 8446 4.4.2.1): an OCSP
- * staple (status_request, RFC 6066) when the client asked and one is configured.
- * Returns a newly allocated blob (caller frees) and its length via @out, or
- * @c NULL / 0 for an empty list. */
+ * staple (status_request, RFC 6066) and/or Signed Certificate Timestamps
+ * (signed_certificate_timestamp, RFC 6962), each included when the client asked
+ * and one is configured. Returns a newly allocated blob (caller frees) and its
+ * length via @out, or @c NULL / 0 for an empty list. */
 static ruint8 *
 r_tls_server_build_leaf_cert_exts (RTLSServer * server, ruint16 * out)
 {
   rboolean staple = server->status_request_offered && server->ocsp_response != NULL;
+  rboolean sct = server->sct_offered && server->sct_list != NULL;
   ruint8 * exts, * p;
   rsize need = 0;
 
   *out = 0;
   if (staple)
     need += 2 + 2 + 1 + 3 + server->ocsp_len;   /* status_request entry */
-  if (need == 0)
+  if (sct)
+    need += 2 + 2 + server->sct_len;            /* signed_certificate_timestamp entry */
+  /* The whole list rides a 16-bit CertificateEntry extensions length. */
+  if (need == 0 || need > 0xffff)
     return NULL;
   if ((exts = r_malloc (need)) == NULL)
     return NULL;
@@ -2306,6 +2344,12 @@ r_tls_server_build_leaf_cert_exts (RTLSServer * server, ruint16 * out)
     *p++ = (ruint8)((server->ocsp_len >>  8) & 0xff);
     *p++ = (ruint8)((server->ocsp_len      ) & 0xff);
     r_memcpy (p, server->ocsp_response, server->ocsp_len); p += server->ocsp_len;
+  }
+  if (sct) {
+    /* extension_data is the SignedCertificateTimestampList, carried verbatim. */
+    r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_SIGNED_CERTIFICATE_TIMESTAMP); p += 2;
+    r_store_be16 (p, (ruint16) server->sct_len); p += 2;
+    r_memcpy (p, server->sct_list, server->sct_len); p += server->sct_len;
   }
 
   *out = (ruint16) need;

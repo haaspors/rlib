@@ -312,6 +312,19 @@ R_API RTLSError r_tls_server_set_record_size_limit (RTLSServer * server,
  */
 R_API RTLSError r_tls_server_set_ocsp_response (RTLSServer * server,
     const ruint8 * der, rsize len);
+/**
+ * @brief Attach Signed Certificate Timestamps to the certificate (RFC 6962).
+ *
+ * When a TLS 1.3 client offers the @c signed_certificate_timestamp extension,
+ * the server carries @p der -- a serialized @c SignedCertificateTimestampList,
+ * @p len bytes, copied -- verbatim in the leaf @c CertificateEntry extensions,
+ * evidencing certificate-transparency log inclusion. With none configured (the
+ * default), or when the client did not ask, no SCTs are sent. Must be set before
+ * the handshake starts; pass @c NULL / @p len 0 to clear. Applies to TLS 1.3
+ * only.
+ */
+R_API RTLSError r_tls_server_set_sct_list (RTLSServer * server,
+    const ruint8 * der, rsize len);
 /** @brief Override the server-random (testing / determinism). */
 R_API RTLSError r_tls_server_set_random (RTLSServer * server,
     const ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES]);
