@@ -343,6 +343,13 @@ R_API rboolean r_asn1_oid_has_dot_prefix (const ruint32 * oid, rsize oidlen,
 #define R_ECDSA_OID_SHA384                      R_X9_62_OID_SIG"\x03\x03"
 #define R_ECDSA_OID_SHA512                      R_X9_62_OID_SIG"\x03\x04"
 
+/* RFC 8410 Edwards-curve algorithm identifiers (1.3.101.{110..113}). */
+#define R_RFC8410_OID                           R_ASN1_OID_ISO_ID_ORG"\x65"
+#define R_RFC8410_OID_X25519                    R_RFC8410_OID"\x6e"
+#define R_RFC8410_OID_X448                      R_RFC8410_OID"\x6f"
+#define R_RFC8410_OID_ED25519                   R_RFC8410_OID"\x70"
+#define R_RFC8410_OID_ED448                     R_RFC8410_OID"\x71"
+
 /** @} */
 
 R_END_DECLS

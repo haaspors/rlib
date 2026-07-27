@@ -23,6 +23,7 @@
 #include <rlib/crypto/rdsa.h>
 #include <rlib/crypto/recc.h>
 #include <rlib/crypto/recurve.h>
+#include <rlib/crypto/red25519.h>
 #include <rlib/crypto/rrsa.h>
 
 #include <rlib/format/roid.h>
@@ -361,6 +362,14 @@ r_crypto_key_from_asn1_public_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
         } else {
           r_asn1_bin_decoder_out (dec, tlv);
         }
+      } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RFC8410_OID_ED25519)) {
+        /* RFC 8410: the AlgorithmIdentifier has no parameters, so the
+         * subjectPublicKey BIT STRING is the OID's next sibling -- one octet
+         * of unused-bits padding then the 32-byte public key. */
+        r_asn1_bin_decoder_out (dec, tlv);
+        if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_BIT_STRING) &&
+            tlv->len == R_ED25519_PUB_KEY_SIZE + 1 && tlv->value[0] == 0)
+          ret = r_ed25519_pub_key_new (tlv->value + 1, tlv->len - 1);
       } else {
         r_asn1_bin_decoder_out (dec, tlv);
       }
@@ -450,6 +459,16 @@ r_crypto_key_from_asn1_private_key (RAsn1BinDecoder * dec, RAsn1BinTLV * tlv)
             ret = r_ecc_priv_key_new_from_asn1 (dec, tlv, curve, is_ecdh);
             r_asn1_bin_decoder_out (dec, tlv);
           }
+        }
+      } else if (r_asn1_oid_bin_equals (tlv->value, tlv->len, R_RFC8410_OID_ED25519)) {
+        /* RFC 8410 / RFC 5958: the privateKey OCTET STRING wraps a nested
+         * OCTET STRING holding the 32-byte seed. */
+        if (r_asn1_bin_decoder_out (dec, tlv) == R_ASN1_DECODER_OK &&
+            r_asn1_bin_decoder_into (dec, tlv) == R_ASN1_DECODER_OK) {
+          if (R_ASN1_BIN_TLV_ID_IS_TAG (tlv, R_ASN1_ID_OCTET_STRING) &&
+              tlv->len == R_ED25519_SEED_SIZE)
+            ret = r_ed25519_priv_key_new (tlv->value, tlv->len);
+          r_asn1_bin_decoder_out (dec, tlv);
         }
       }
     }

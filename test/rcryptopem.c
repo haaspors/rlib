@@ -1043,6 +1043,75 @@ RTEST (rcryptopem, ec_p256_pkcs8_private_key, RTEST_FAST)
 }
 RTEST_END;
 
+static const rchar pem_ed25519_pkcs8[] =
+  "-----BEGIN PRIVATE KEY-----\n"
+  "MC4CAQAwBQYDK2VwBCIEIHt7K2fM0GArAkMamRMg/Y18t/UCIUwZJdaW4QqWSIOY\n"
+  "-----END PRIVATE KEY-----\n";
+static const rchar pem_ed25519_spki[] =
+  "-----BEGIN PUBLIC KEY-----\n"
+  "MCowBQYDK2VwAyEAgjHFjqoJ7PWTP+zwNxlCxaphvg9bJy232B2czSre8tY=\n"
+  "-----END PUBLIC KEY-----\n";
+static const ruint8 ed25519_pub[] = {
+  0x82, 0x31, 0xc5, 0x8e, 0xaa, 0x09, 0xec, 0xf5, 0x93, 0x3f, 0xec, 0xf0,
+  0x37, 0x19, 0x42, 0xc5, 0xaa, 0x61, 0xbe, 0x0f, 0x5b, 0x27, 0x2d, 0xb7,
+  0xd8, 0x1d, 0x9c, 0xcd, 0x2a, 0xde, 0xf2, 0xd6
+};
+
+RTEST (rcryptopem, ed25519_pkcs8_private_key, RTEST_FAST)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  const ruint8 * pub = NULL;
+  rsize pubsize = 0;
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_ed25519_pkcs8, sizeof (pem_ed25519_pkcs8))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_crypto_key_get_type (key), ==, R_CRYPTO_PRIVATE_KEY);
+  r_assert_cmpint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_ED25519);
+
+  /* The seed derives the public key -- check it matches the known pair. */
+  r_assert (r_ed25519_key_get_pub (key, &pub, &pubsize));
+  r_assert_cmpuint (pubsize, ==, sizeof (ed25519_pub));
+  r_assert_cmpmem (pub, ==, ed25519_pub, pubsize);
+
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rcryptopem, ed25519_spki_public_key, RTEST_FAST)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  const ruint8 * pub = NULL;
+  rsize pubsize = 0;
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_ed25519_spki, sizeof (pem_ed25519_spki))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_crypto_key_get_type (key), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_ED25519);
+
+  r_assert (r_ed25519_key_get_pub (key, &pub, &pubsize));
+  r_assert_cmpuint (pubsize, ==, sizeof (ed25519_pub));
+  r_assert_cmpmem (pub, ==, ed25519_pub, pubsize);
+
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+}
+RTEST_END;
+
 /* Round-trip the given key through r_pem_write_private_key_dup +
  * r_pem_parser_new, returning the decoded key. Caller owns it. */
 static RCryptoKey *
