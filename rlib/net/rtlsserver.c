@@ -1675,7 +1675,7 @@ r_tls_server_try_resume13 (RTLSServer * server)
   if (r_tls_hello_ext_psk_binder (&psk, 0, &binder, &binderlen) != R_TLS_ERROR_OK ||
       !r_tls_server_psk_binder (server, &psk, server->hello.random - 6, expect))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (binderlen != hlen || r_memcmp (binder, expect, hlen) != 0)
+  if (binderlen != hlen || r_memcmp_ct (binder, expect, hlen) != 0)
     return R_TLS_ERROR_HS_VERIFICATION_FAILED;
 
   server->resumed13 = TRUE;
@@ -2298,7 +2298,7 @@ r_tls_server_finished13 (RTLSServer * server, const RTLSParser * parser)
       !r_tls13_finished_key (server->cs13_hash, server->sched13.chs, finkey) ||
       !r_tls13_verify_data (server->cs13_hash, finkey, th, expect))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (vdsize != hlen || r_memcmp (vd, expect, hlen) != 0)
+  if (vdsize != hlen || r_memcmp_ct (vd, expect, hlen) != 0)
     return R_TLS_ERROR_HS_VERIFICATION_FAILED;
 
   /* Switch to application-traffic keys (server writes sap, reads cap). */
@@ -2903,7 +2903,7 @@ r_tls_server_parse_finished (RTLSServer * server, const RTLSParser * parser)
             server->mastersecret, sizeof (server->mastersecret),
             R_STR_WITH_SIZE_ARGS ("client finished"),
             hash, hashsize, NULL)) == R_TLS_ERROR_OK) {
-        if (r_memcmp (verify_calc, verify_data, size) != 0) {
+        if (r_memcmp_ct (verify_calc, verify_data, size) != 0) {
           R_LOG_WARNING ("Handshake NOT verified");
           R_LOG_MEM_DUMP (R_LOG_LEVEL_DEBUG, verify_data, size);
           R_LOG_DEBUG ("expected:");
