@@ -2568,6 +2568,61 @@ r_tls_client_store_ticket13 (RTLSClient * client, const RTLSParser * parser)
   client->new_session = s;
 }
 
+/* Send a post-handshake KeyUpdate (RFC 8446 4.6.3) and rotate our sending key.
+ * Unlike handshake-phase messages it is framed but not folded into the
+ * transcript. It goes out under the current write key; every record after it
+ * uses the advanced key, so the rotation follows the queued record. */
+static RTLSError
+r_tls_client_send_key_update13 (RTLSClient * client, rboolean request_peer_update)
+{
+  ruint8 msg[R_TLS_HS_HDR_SIZE + 1];
+  RTLSError ret;
+
+  msg[0] = (ruint8) R_TLS_HANDSHAKE_TYPE_KEY_UPDATE;
+  msg[1] = 0x00;
+  msg[2] = 0x00;
+  msg[3] = 0x01;
+  msg[4] = (ruint8) (request_peer_update ? R_TLS_KEY_UPDATE_REQUESTED
+                                         : R_TLS_KEY_UPDATE_NOT_REQUESTED);
+
+  if ((ret = r_tls_client_protect_record13 (client, R_TLS_CONTENT_TYPE_HANDSHAKE,
+          msg, sizeof (msg))) != R_TLS_ERROR_OK)
+    return ret;
+
+  if (!r_tls13_traffic_update (client->cs13_hash, client->sched13.cap,
+          client->sched13.cap) ||
+      !r_tls_client_install_keys13 (client, &client->rk_write, client->sched13.cap))
+    return R_TLS_ERROR_ENCRYPTION_FAILED;
+  return R_TLS_ERROR_OK;
+}
+
+/* Handle a peer KeyUpdate (RFC 8446 4.6.3): advance our receiving key to the
+ * peer's next generation and, when asked, answer with our own KeyUpdate --
+ * never itself update_requested, so the exchange cannot loop. The queued reply
+ * is flushed by the incoming_data send_out once dispatch returns. */
+static RTLSError
+r_tls_client_recv_key_update13 (RTLSClient * client, const RTLSParser * parser)
+{
+  ruint8 request;
+
+  if (r_tls_parser_parse_key_update (parser, &request) != R_TLS_ERROR_OK ||
+      request > R_TLS_KEY_UPDATE_REQUESTED) {
+    r_tls_client_send_alert (client, R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER);
+    return R_TLS_ERROR_ILLEGAL_PARAMETER;
+  }
+
+  if (!r_tls13_traffic_update (client->cs13_hash, client->sched13.sap,
+          client->sched13.sap) ||
+      !r_tls_client_install_keys13 (client, &client->rk_read, client->sched13.sap)) {
+    r_tls_client_send_alert (client, R_TLS_ALERT_TYPE_INTERNAL_ERROR);
+    return R_TLS_ERROR_ENCRYPTION_FAILED;
+  }
+
+  if (request == R_TLS_KEY_UPDATE_REQUESTED)
+    return r_tls_client_send_key_update13 (client, FALSE);
+  return R_TLS_ERROR_OK;
+}
+
 static RTLSError
 r_tls_client_state_appdata (RTLSClient * client, const RTLSParser * parser)
 {
@@ -2580,12 +2635,15 @@ r_tls_client_state_appdata (RTLSClient * client, const RTLSParser * parser)
     }
   } else if (parser->content == R_TLS_CONTENT_TYPE_HANDSHAKE) {
     /* Post-handshake messages (1.3): store a NewSessionTicket for resumption,
-     * ignore the rest (e.g. KeyUpdate is out of scope). */
+     * rekey on a KeyUpdate, ignore the rest. */
     RTLSHandshakeType type;
     if (client->tls13 &&
-        r_tls_parser_parse_handshake_peek_type (parser, &type) == R_TLS_ERROR_OK &&
-        type == R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET)
-      r_tls_client_store_ticket13 (client, parser);
+        r_tls_parser_parse_handshake_peek_type (parser, &type) == R_TLS_ERROR_OK) {
+      if (type == R_TLS_HANDSHAKE_TYPE_NEW_SESSION_TICKET)
+        r_tls_client_store_ticket13 (client, parser);
+      else if (type == R_TLS_HANDSHAKE_TYPE_KEY_UPDATE)
+        return r_tls_client_recv_key_update13 (client, parser);
+    }
   } else {
     R_LOG_WARNING ("Received non-app-data record");
   }
@@ -2758,6 +2816,22 @@ r_tls_client_send_appdata (RTLSClient * client, RBuffer * buffer)
   }
 
   if (ret != R_TLS_ERROR_OK)
+    return FALSE;
+
+  r_tls_client_send_out (client);
+  return TRUE;
+}
+
+rboolean
+r_tls_client_key_update (RTLSClient * client, rboolean request_peer_update)
+{
+  if (R_UNLIKELY (client == NULL)) return FALSE;
+  /* KeyUpdate is a TLS 1.3 post-handshake message; the record keys must be
+   * installed, i.e. the session established. */
+  if (R_UNLIKELY (!client->tls13 || client->state != R_TLS_CLIENT_APPDATA))
+    return FALSE;
+
+  if (r_tls_client_send_key_update13 (client, request_peer_update) != R_TLS_ERROR_OK)
     return FALSE;
 
   r_tls_client_send_out (client);

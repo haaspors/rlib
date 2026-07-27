@@ -1393,6 +1393,29 @@ r_tls_parser_parse_new_session_ticket13 (const RTLSParser * parser,
 }
 
 RTLSError
+r_tls_parser_parse_key_update (const RTLSParser * parser,
+    ruint8 * request_update)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end;
+  RTLSError ret;
+
+  if (R_UNLIKELY (parser == NULL || request_update == NULL))
+    return R_TLS_ERROR_INVAL;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_KEY_UPDATE))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  /* KeyUpdate body is a single request_update byte. */
+  if (R_UNLIKELY (end - ptr != 1))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  *request_update = *ptr;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_parser_parse_certificate_verify (const RTLSParser * parser,
     RTLSSignatureScheme * sigscheme, const ruint8 ** sig, ruint16 * sigsize)
 {

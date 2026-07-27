@@ -187,6 +187,22 @@ R_API rboolean r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer
 /** @brief Encrypt and send application data through the session. */
 R_API rboolean r_tls_client_send_appdata (RTLSClient * client, RBuffer * buffer);
 /**
+ * @brief Rekey an established TLS 1.3 session (RFC 8446, section 4.6.3).
+ *
+ * Sends a post-handshake @c KeyUpdate and advances our sending key to its next
+ * generation. When @p request_peer_update is @c TRUE the peer must reply with
+ * its own @c KeyUpdate, advancing our receiving key too; the reply is processed
+ * on the next @ref r_tls_client_incoming_data.
+ *
+ * @param client              An established TLS 1.3 client.
+ * @param request_peer_update Ask the peer to rekey its sending direction.
+ * @return @c TRUE if the @c KeyUpdate was emitted; @c FALSE if the session is
+ *  not an established TLS 1.3 session (@c <=1.2 or not yet in its
+ *  application-data state) or the record could not be produced.
+ */
+R_API rboolean r_tls_client_key_update (RTLSClient * client,
+    rboolean request_peer_update);
+/**
  * @brief Cleanly close an established session.
  *
  * Emits a warning @c close_notify alert to the peer and moves the session to

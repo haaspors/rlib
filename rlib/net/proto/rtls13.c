@@ -368,6 +368,27 @@ r_tls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
 }
 
 rboolean
+r_tls13_traffic_update (RMsgDigestType hash, const ruint8 * secret, ruint8 * out)
+{
+  ruint8 next[R_TLS13_SECRET_MAX];
+  rsize hlen = r_msg_digest_type_size (hash);
+
+  if (R_UNLIKELY (secret == NULL || out == NULL ||
+        hlen == 0 || hlen > R_TLS13_SECRET_MAX))
+    return FALSE;
+
+  /* application_traffic_secret_N+1 = HKDF-Expand-Label(
+   *   application_traffic_secret_N, "traffic upd", "", Hash.length). A temporary
+   * keeps this correct when @out aliases @secret for an in-place advance. */
+  if (!r_tls13_expand_label (hash, secret, R_STR_WITH_SIZE_ARGS ("traffic upd"),
+        NULL, 0, next, hlen))
+    return FALSE;
+  r_memcpy (out, next, hlen);
+  r_memclear (next, sizeof (next));
+  return TRUE;
+}
+
+rboolean
 r_tls13_finished_key (RMsgDigestType hash, const ruint8 * secret, ruint8 * out)
 {
   rsize hlen = r_msg_digest_type_size (hash);

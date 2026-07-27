@@ -184,6 +184,12 @@ typedef enum {
   R_TLS_HANDSHAKE_TYPE_MESSAGE_HASH                     = 0xfe, /* [RFC8446] */
 } RTLSHandshakeType;
 
+/** @brief KeyUpdate @c request_update value (RFC 8446, section 4.6.3). */
+typedef enum {
+  R_TLS_KEY_UPDATE_NOT_REQUESTED                        = 0x00, /**< The peer need not update its keys. */
+  R_TLS_KEY_UPDATE_REQUESTED                            = 0x01, /**< The peer must respond with its own KeyUpdate. */
+} RTLSKeyUpdateRequest;
+
 /** @brief TLS extension type (IANA TLS ExtensionType). */
 /* http://www.iana.org/assignments/tls-extensiontype-values/ */
 typedef enum {
@@ -595,6 +601,17 @@ R_API RTLSError r_tls_parser_parse_new_session_ticket13 (const RTLSParser * pars
     ruint32 * lifetime, ruint32 * age_add,
     const ruint8 ** nonce, ruint8 * noncelen,
     const ruint8 ** ticket, ruint16 * ticketsize, ruint32 * max_early_data);
+/**
+ * @brief Parse the current record as a KeyUpdate (RFC 8446, section 4.6.3).
+ * @param parser Parser positioned on the post-handshake message.
+ * @param request_update Out: the raw @c request_update byte; the caller treats
+ *  a value above @ref R_TLS_KEY_UPDATE_REQUESTED as an @c illegal_parameter.
+ * @return @c R_TLS_ERROR_OK; @c R_TLS_ERROR_WRONG_TYPE if the message is not a
+ *  KeyUpdate; @c R_TLS_ERROR_CORRUPT_RECORD if the body is not one byte;
+ *  @c R_TLS_ERROR_INVAL on a @c NULL argument.
+ */
+R_API RTLSError r_tls_parser_parse_key_update (const RTLSParser * parser,
+    ruint8 * request_update);
 /**
  * @brief Parse the current record as a CertificateVerify.
  * @param parser Parser positioned on the message.
