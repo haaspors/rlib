@@ -25,6 +25,7 @@
 #include <rlib/net/proto/rtls.h>
 #include <rlib/net/proto/rtls12.h>
 #include <rlib/crypto/recurve.h>
+#include <rlib/crypto/rdh.h>
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rmsgdigest.h>
 #include <rlib/rrand.h>
@@ -120,6 +121,41 @@ R_API_HIDDEN RCryptoKey * r_tls_ecdhe_point_read (REcurveID curve,
  * pre-master secret is this raw, fixed-width coordinate. FALSE on failure or a
  * rejected (e.g. all-zero) secret. */
 R_API_HIDDEN rboolean r_tls_ecdhe_compute (const RCryptoKey * priv,
+    const RCryptoKey * peer, ruint8 * out, rsize cap, rsize * len);
+
+/* TLS 1.3 key_share generalised over EC and finite-field (ffdhe) groups. The
+ * ffdhe values dwarf the EC ones -- the ffdhe8192 public value / shared secret
+ * are both 1024 bytes -- so key_share buffers on the 1.3 path use these. */
+#define R_TLS_KE_VALUE_MAX    1024
+#define R_TLS_KE_SECRET_MAX   1024
+
+/* Map a TLS supported_group to an RFC 7919 FFDHE named group; FALSE if @group
+ * is not one of the ffdhe* groups. */
+R_API_HIDDEN rboolean r_tls_group_to_dh (RTLSSupportedGroup group,
+    RDhNamedGroup * dh);
+
+/* TRUE if @group is a key-exchange group we support (an EC curve via
+ * r_tls_ecdhe_group_to_curve, or an ffdhe finite-field group). */
+R_API_HIDDEN rboolean r_tls_ke_group_supported (RTLSSupportedGroup group);
+
+/* Generate an ephemeral key-exchange private key for @group (EC or FFDHE).
+ * NULL on an unsupported group or failure. */
+R_API_HIDDEN RCryptoKey * r_tls_ke_keygen (RTLSSupportedGroup group, RPrng * prng);
+
+/* Serialize @key's public value into @out (capacity @cap) as @group's TLS
+ * KeyShareEntry.key_exchange, writing the length (up to R_TLS_KE_VALUE_MAX) to
+ * @len. FALSE on a bad key / small buffer. */
+R_API_HIDDEN rboolean r_tls_ke_pub_write (const RCryptoKey * key,
+    RTLSSupportedGroup group, ruint8 * out, rsize cap, rsize * len);
+
+/* Parse a peer's key_share value (@data/@len) for @group into a public key.
+ * NULL on a malformed value. */
+R_API_HIDDEN RCryptoKey * r_tls_ke_pub_read (RTLSSupportedGroup group,
+    const ruint8 * data, rsize len);
+
+/* Compute the key-exchange shared secret between @priv and @peer into @out
+ * (capacity @cap), writing its length to @len. Dispatches on the key type. */
+R_API_HIDDEN rboolean r_tls_ke_compute (const RCryptoKey * priv,
     const RCryptoKey * peer, ruint8 * out, rsize cap, rsize * len);
 
 R_END_DECLS
