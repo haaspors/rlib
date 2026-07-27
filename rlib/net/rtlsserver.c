@@ -1513,11 +1513,10 @@ r_tls_server_client_offers_group (const RTLSServer * server,
   return FALSE;
 }
 
-/* Read the client's key_share for @group (on @curve) into a public key, or NULL
- * when the client offered no share for that group. */
+/* Read the client's key_share for @group into a public key, or NULL when the
+ * client offered no share for that group. */
 static RCryptoKey *
-r_tls_server_read_key_share (const RTLSServer * server,
-    RTLSSupportedGroup group, REcurveID curve)
+r_tls_server_read_key_share (const RTLSServer * server, RTLSSupportedGroup group)
 {
   RTLSHelloExt ks = R_TLS_HELLO_EXT_INIT;
   RTLSKeyShareEntry entry = R_TLS_KEY_SHARE_ENTRY_INIT;
@@ -1528,7 +1527,7 @@ r_tls_server_read_key_share (const RTLSServer * server,
   for (r = r_tls_hello_ext_key_share_first (&ks, &entry); r == R_TLS_ERROR_OK;
       r = r_tls_hello_ext_key_share_next (&ks, &entry)) {
     if (entry.group == group)
-      return r_tls_ecdhe_point_read (curve, entry.key, entry.len);
+      return r_tls_ke_pub_read (group, entry.key, entry.len);
   }
   return NULL;
 }
@@ -1708,7 +1707,6 @@ r_tls_server_nego_hello13 (RTLSServer * server)
   RTLSCipherSuite cs13 = R_TLS_CS_NONE;
   RCryptoAlgorithm certalgo;
   RTLSError r;
-  REcurveID curve;
   ruint16 i, ncs;
 
   if (!r_tls_server_find_ext (server, R_TLS_EXT_TYPE_SUPPORTED_VERSIONS, &sv) ||
@@ -1745,11 +1743,12 @@ r_tls_server_nego_hello13 (RTLSServer * server)
    * without a share. With no preference, pick the first offered share on a
    * curve we support. */
   if (server->ks_pref_group != 0) {
-    if (!r_tls_ecdhe_group_to_curve (server->ks_pref_group, &curve))
+    if (!r_tls_ke_group_supported (server->ks_pref_group))
       return R_TLS_ERROR_HANDSHAKE_FAILURE;
     server->ks_group = server->ks_pref_group;
-    server->ecdhe_curve = curve;
-    server->ks_peer_pub = r_tls_server_read_key_share (server, server->ks_group, curve);
+    if (!r_tls_ecdhe_group_to_curve (server->ks_group, &server->ecdhe_curve))
+      server->ecdhe_curve = R_ECURVE_ID_NONE;   /* ffdhe: no curve */
+    server->ks_peer_pub = r_tls_server_read_key_share (server, server->ks_group);
     if (server->ks_peer_pub == NULL &&
         !r_tls_server_client_offers_group (server, server->ks_group))
       return R_TLS_ERROR_HANDSHAKE_FAILURE;   /* client cannot do the group */
@@ -1758,10 +1757,11 @@ r_tls_server_nego_hello13 (RTLSServer * server)
       return R_TLS_ERROR_HANDSHAKE_FAILURE;
     for (r = r_tls_hello_ext_key_share_first (&ks, &entry); r == R_TLS_ERROR_OK;
         r = r_tls_hello_ext_key_share_next (&ks, &entry)) {
-      if (r_tls_ecdhe_group_to_curve (entry.group, &curve)) {
+      if (r_tls_ke_group_supported (entry.group)) {
         server->ks_group = entry.group;
-        server->ecdhe_curve = curve;
-        server->ks_peer_pub = r_tls_ecdhe_point_read (curve, entry.key, entry.len);
+        if (!r_tls_ecdhe_group_to_curve (entry.group, &server->ecdhe_curve))
+          server->ecdhe_curve = R_ECURVE_ID_NONE;   /* ffdhe: no curve */
+        server->ks_peer_pub = r_tls_ke_pub_read (entry.group, entry.key, entry.len);
         break;
       }
     }
@@ -1854,20 +1854,22 @@ r_tls_server_write_ext13_supported_versions (ruint8 * p)
   return 6;
 }
 
-/* ServerHello key_share: the single server KeyShareEntry. */
+/* ServerHello key_share: the single server KeyShareEntry (an EC point or, for
+ * an ffdhe group, the DH public value). */
 static ruint16
 r_tls_server_write_ext13_key_share (RTLSServer * server, ruint8 * p)
 {
-  ruint8 point[256], plen = 0;
+  ruint8 value[R_TLS_KE_VALUE_MAX];
+  rsize plen = 0;
 
-  if (!r_tls_ecdhe_point_write (server->ecdhe_key, server->ecdhe_curve,
-        point, sizeof (point), &plen))
+  if (!r_tls_ke_pub_write (server->ecdhe_key, server->ks_group,
+        value, sizeof (value), &plen))
     return 0;
   r_store_be16 (p, R_TLS_EXT_TYPE_KEY_SHARE);
   r_store_be16 (p + 2, (ruint16) (2 * sizeof (ruint16) + plen));
   r_store_be16 (p + 4, (ruint16) server->ks_group);
-  r_store_be16 (p + 6, plen);
-  r_memcpy (p + 8, point, plen);
+  r_store_be16 (p + 6, (ruint16) plen);
+  r_memcpy (p + 8, value, plen);
   return (ruint16) (8 + plen);
 }
 
@@ -1963,7 +1965,6 @@ static RTLSError
 r_tls_server_nego_hello13_retry (RTLSServer * server)
 {
   RTLSHelloExt ck = R_TLS_HELLO_EXT_INIT;
-  REcurveID curve;
 
   if (server->cookielen > 0) {
     const ruint8 * cookie;
@@ -1976,9 +1977,7 @@ r_tls_server_nego_hello13_retry (RTLSServer * server)
       return R_TLS_ERROR_ILLEGAL_PARAMETER;
   }
 
-  if (!r_tls_ecdhe_group_to_curve (server->ks_group, &curve))
-    return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  server->ks_peer_pub = r_tls_server_read_key_share (server, server->ks_group, curve);
+  server->ks_peer_pub = r_tls_server_read_key_share (server, server->ks_group);
   if (server->ks_peer_pub == NULL)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;   /* still no usable share: no second HRR */
 
@@ -2167,7 +2166,7 @@ r_tls_server_sign_certificate_verify13 (RTLSServer * server,
 static RTLSError
 r_tls_server_write_flight13 (RTLSServer * server)
 {
-  ruint8 ecdhe[R_TLS_ECDHE_SECRET_MAX], th[R_TLS13_SECRET_MAX];
+  ruint8 ecdhe[R_TLS_KE_SECRET_MAX], th[R_TLS13_SECRET_MAX];
   ruint8 sig[512], finkey[R_TLS13_SECRET_MAX], vd[R_TLS13_SECRET_MAX];
   ruint8 body[4096];
   rsize ecdhelen = 0, siglen = sizeof (sig), bodylen = 0;
@@ -2192,7 +2191,7 @@ r_tls_server_write_flight13 (RTLSServer * server)
   }
 
   /* 1. ServerHello (plaintext); generate the server ephemeral first. */
-  if ((server->ecdhe_key = r_tls_ecdhe_keygen (server->ecdhe_curve, server->prng)) == NULL)
+  if ((server->ecdhe_key = r_tls_ke_keygen (server->ks_group, server->prng)) == NULL)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   if ((ret = r_tls_server_write_hello13 (server)) != R_TLS_ERROR_OK)
     return ret;
@@ -2200,7 +2199,7 @@ r_tls_server_write_flight13 (RTLSServer * server)
   /* 2. Handshake secrets, bound to Transcript-Hash(ClientHello..ServerHello). */
   if (!r_msg_digest_get_data (server->hshash, th, hlen, NULL))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (!r_tls_ecdhe_compute (server->ecdhe_key, server->ks_peer_pub,
+  if (!r_tls_ke_compute (server->ecdhe_key, server->ks_peer_pub,
         ecdhe, sizeof (ecdhe), &ecdhelen))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   /* Resumption is psk_dhe_ke: the Early Secret comes from the ticket PSK

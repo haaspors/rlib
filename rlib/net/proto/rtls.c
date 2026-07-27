@@ -26,6 +26,8 @@
 #include <rlib/crypto/rx509.h>
 #include <rlib/crypto/recc.h>
 #include <rlib/crypto/rxdh.h>
+#include <rlib/crypto/rdh.h>
+#include <rlib/data/rmpint.h>
 
 static inline ruint32
 _r_parse_u24 (const ruint8 * ptr)
@@ -159,6 +161,127 @@ r_tls_ecdhe_compute (const RCryptoKey * priv, const RCryptoKey * peer,
   if (res != R_CRYPTO_OK) return FALSE;
   *len = sz;
   return TRUE;
+}
+
+rboolean
+r_tls_group_to_dh (RTLSSupportedGroup group, RDhNamedGroup * dh)
+{
+  switch (group) {
+    case R_TLS_SUPPORTED_GROUP_FFDHE2048: *dh = R_DH_GROUP_FFDHE_2048; return TRUE;
+    case R_TLS_SUPPORTED_GROUP_FFDHE3072: *dh = R_DH_GROUP_FFDHE_3072; return TRUE;
+    case R_TLS_SUPPORTED_GROUP_FFDHE4096: *dh = R_DH_GROUP_FFDHE_4096; return TRUE;
+    case R_TLS_SUPPORTED_GROUP_FFDHE6144: *dh = R_DH_GROUP_FFDHE_6144; return TRUE;
+    case R_TLS_SUPPORTED_GROUP_FFDHE8192: *dh = R_DH_GROUP_FFDHE_8192; return TRUE;
+    default: return FALSE;
+  }
+}
+
+/* Serialize a FFDHE public value as the KeyShareEntry.key_exchange: the DH
+ * public value Y, big-endian, left-zero-padded to the size of p (RFC 8446
+ * 4.2.8.1). */
+static rboolean
+r_tls_dh_value_write (const RCryptoKey * key, ruint8 * out, rsize cap, rsize * len)
+{
+  rmpint p, y;
+  rsize plen;
+  rboolean ok = FALSE;
+
+  r_mpint_init (&p);
+  r_mpint_init (&y);
+  if (r_dh_pub_key_get_p (key, &p) && r_dh_pub_key_get_y (key, &y)) {
+    plen = r_mpint_bytes_used (&p);
+    if (plen <= cap && r_mpint_to_binary_with_size (&y, out, plen)) {
+      *len = plen;
+      ok = TRUE;
+    }
+  }
+  r_mpint_clear (&p);
+  r_mpint_clear (&y);
+  return ok;
+}
+
+/* Parse a peer FFDHE key_share value into a public key on @dh's (p, g). The
+ * range check on Y (small-subgroup defence) happens later in r_dh_compute_shared. */
+static RCryptoKey *
+r_tls_dh_value_read (RDhNamedGroup dh, const ruint8 * data, rsize len)
+{
+  rmpint p, g, y;
+  RCryptoKey * key = NULL;
+
+  r_mpint_init (&p);
+  r_mpint_init (&g);
+  r_mpint_init_binary (&y, data, len);
+  if (r_dh_named_group_get_params (dh, &p, &g))
+    key = r_dh_pub_key_new (&p, &g, &y);
+  r_mpint_clear (&p);
+  r_mpint_clear (&g);
+  r_mpint_clear (&y);
+  return key;
+}
+
+rboolean
+r_tls_ke_group_supported (RTLSSupportedGroup group)
+{
+  REcurveID curve;
+  RDhNamedGroup dh;
+  return r_tls_ecdhe_group_to_curve (group, &curve) ||
+      r_tls_group_to_dh (group, &dh);
+}
+
+RCryptoKey *
+r_tls_ke_keygen (RTLSSupportedGroup group, RPrng * prng)
+{
+  REcurveID curve;
+  RDhNamedGroup dh;
+  if (r_tls_group_to_dh (group, &dh))
+    return r_dh_priv_key_new_gen_named (dh, prng);
+  if (r_tls_ecdhe_group_to_curve (group, &curve))
+    return r_tls_ecdhe_keygen (curve, prng);
+  return NULL;
+}
+
+rboolean
+r_tls_ke_pub_write (const RCryptoKey * key, RTLSSupportedGroup group,
+    ruint8 * out, rsize cap, rsize * len)
+{
+  REcurveID curve;
+  RDhNamedGroup dh;
+  if (r_tls_group_to_dh (group, &dh))
+    return r_tls_dh_value_write (key, out, cap, len);
+  if (r_tls_ecdhe_group_to_curve (group, &curve)) {
+    ruint8 l8 = 0;
+    if (!r_tls_ecdhe_point_write (key, curve, out, cap, &l8))
+      return FALSE;
+    *len = l8;
+    return TRUE;
+  }
+  return FALSE;
+}
+
+RCryptoKey *
+r_tls_ke_pub_read (RTLSSupportedGroup group, const ruint8 * data, rsize len)
+{
+  REcurveID curve;
+  RDhNamedGroup dh;
+  if (r_tls_group_to_dh (group, &dh))
+    return r_tls_dh_value_read (dh, data, len);
+  if (r_tls_ecdhe_group_to_curve (group, &curve))
+    return r_tls_ecdhe_point_read (curve, data, len);
+  return NULL;
+}
+
+rboolean
+r_tls_ke_compute (const RCryptoKey * priv, const RCryptoKey * peer,
+    ruint8 * out, rsize cap, rsize * len)
+{
+  if (r_crypto_key_get_algo (priv) == R_CRYPTO_ALGO_DH) {
+    rsize sz = cap;
+    if (r_dh_compute_shared (priv, peer, out, &sz) != R_CRYPTO_OK)
+      return FALSE;
+    *len = sz;
+    return TRUE;
+  }
+  return r_tls_ecdhe_compute (priv, peer, out, cap, len);
 }
 
 void

@@ -828,6 +828,27 @@ RTEST_F (rtlsclient, tls13_loopback_group_x448, RTEST_FAST)
 }
 RTEST_END;
 
+/* Finite-field (ffdhe, RFC 7919) key exchange: pinning the server to an ffdhe
+ * group forces a HelloRetryRequest and the client retries with an ffdhe
+ * key_share. The handshake completing exercises the DH keygen / public-value
+ * encoding / shared secret. ffdhe8192 (the 1024-byte value / secret) is in the
+ * heavy tier because its modular exponentiations are expensive. */
+RTEST_F (rtlsclient, tls13_loopback_group_ffdhe2048, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
+        R_TLS_SUPPORTED_GROUP_FFDHE2048), ==, R_TLS_ERROR_OK);
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+HEAVY_RTEST_F (rtlsclient, tls13_loopback_group_ffdhe8192, RTEST_SLOW)
+{
+  r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
+        R_TLS_SUPPORTED_GROUP_FFDHE8192), ==, R_TLS_ERROR_OK);
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
 /* Drive CH1 -> HelloRetryRequest with a server that requires secp256r1 while
  * the client first offers x25519. Returns the (still-owned) HRR record and
  * leaves the client having consumed nothing yet. */

@@ -602,6 +602,11 @@ r_tls_client_write_hs_ext_supported_groups (ruint8 * ptr)
     R_TLS_SUPPORTED_GROUP_SECP256R1, R_TLS_SUPPORTED_GROUP_X25519,
     R_TLS_SUPPORTED_GROUP_SECP384R1, R_TLS_SUPPORTED_GROUP_SECP521R1,
     R_TLS_SUPPORTED_GROUP_X448,
+    /* The finite-field groups rank below the EC groups (a 1.3-only preference:
+     * only a peer selecting ffdhe drives the finite-field key_share path). */
+    R_TLS_SUPPORTED_GROUP_FFDHE2048, R_TLS_SUPPORTED_GROUP_FFDHE3072,
+    R_TLS_SUPPORTED_GROUP_FFDHE4096, R_TLS_SUPPORTED_GROUP_FFDHE6144,
+    R_TLS_SUPPORTED_GROUP_FFDHE8192,
   };
   ruint16 listlen = (ruint16) (R_N_ELEMENTS (groups) * sizeof (ruint16));
   rsize i;
@@ -776,23 +781,26 @@ r_tls_client_write_hs_ext_supported_versions13 (ruint8 * ptr, rboolean include_t
   return 5 + n * sizeof (ruint16);
 }
 
-/* ClientHello key_share with a single KeyShareEntry for the offered group. */
+/* ClientHello key_share with a single KeyShareEntry for the offered group.
+ * The value is an EC point or, for an ffdhe group, the (larger) DH public
+ * value. */
 static ruint16
 r_tls_client_write_hs_ext_key_share13 (RTLSClient * client, ruint8 * ptr)
 {
-  ruint8 point[256], plen = 0;
+  ruint8 value[R_TLS_KE_VALUE_MAX];
+  rsize plen = 0;
   ruint16 entrylen;
 
-  if (!r_tls_ecdhe_point_write (client->ecdhe_key, client->ecdhe_curve,
-        point, sizeof (point), &plen))
+  if (!r_tls_ke_pub_write (client->ecdhe_key, client->ks_group,
+        value, sizeof (value), &plen))
     return 0;
   entrylen = (ruint16) (2 * sizeof (ruint16) + plen);     /* group + klen + key */
   r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_KEY_SHARE);
   r_store_be16 (&ptr[2], (ruint16) (sizeof (ruint16) + entrylen));
   r_store_be16 (&ptr[4], entrylen);                       /* client_shares length */
   r_store_be16 (&ptr[6], (ruint16)client->ks_group);
-  r_store_be16 (&ptr[8], plen);
-  r_memcpy (&ptr[10], point, plen);
+  r_store_be16 (&ptr[8], (ruint16) plen);
+  r_memcpy (&ptr[10], value, plen);
   return (ruint16) (10 + plen);
 }
 
@@ -1356,7 +1364,6 @@ r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hell
   RTLSKeyShareEntry entry = R_TLS_KEY_SHARE_ENTRY_INIT;
   rboolean have_sv = FALSE, have_ks = FALSE, have_psk = FALSE;
   RTLSCipherSuite cs;
-  REcurveID curve;
   RTLSError r;
 
   for (r = r_tls_hello_msg_extension_first (hello, &ext); r == R_TLS_ERROR_OK;
@@ -1399,11 +1406,10 @@ r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hell
   /* The server key_share must be on the group we offered. */
   if (!have_ks || r_tls_hello_ext_key_share_server (&ks, &entry) != R_TLS_ERROR_OK)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (!r_tls_ecdhe_group_to_curve (entry.group, &curve) ||
-      curve != client->ecdhe_curve)
+  if (entry.group != client->ks_group)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   if ((client->ecdhe_server_pub =
-          r_tls_ecdhe_point_read (curve, entry.key, entry.len)) == NULL)
+          r_tls_ke_pub_read (entry.group, entry.key, entry.len)) == NULL)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
   r_memcpy (client->servrandom, hello->random, R_TLS_HELLO_RANDOM_BYTES);
@@ -1433,12 +1439,12 @@ r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hell
 static RTLSError
 r_tls_client_setup_keys13 (RTLSClient * client)
 {
-  ruint8 ecdhe[R_TLS_ECDHE_SECRET_MAX], th[R_TLS13_SECRET_MAX];
+  ruint8 ecdhe[R_TLS_KE_SECRET_MAX], th[R_TLS13_SECRET_MAX];
   rsize ecdhelen = 0, hlen = r_msg_digest_type_size (client->cs13_hash);
 
   if (!r_msg_digest_get_data (client->hshash, th, hlen, NULL))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (!r_tls_ecdhe_compute (client->ecdhe_key, client->ecdhe_server_pub,
+  if (!r_tls_ke_compute (client->ecdhe_key, client->ecdhe_server_pub,
         ecdhe, sizeof (ecdhe), &ecdhelen))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   /* On an accepted resumption the Early Secret comes from the ticket PSK
@@ -1477,7 +1483,6 @@ r_tls_client_handle_hrr (RTLSClient * client, const RTLSHelloMsg * hello,
   rboolean have_sv = FALSE, have_ks = FALSE, have_ck = FALSE;
   RTLSSupportedGroup selected;
   RTLSCipherSuite cs;
-  REcurveID curve;
   ruint8 mh[4 + R_TLS13_SECRET_MAX];
   rsize mhlen = 0;
   RTLSError r;
@@ -1500,7 +1505,7 @@ r_tls_client_handle_hrr (RTLSClient * client, const RTLSHelloMsg * hello,
   /* The selected group must be one we support and must differ from the one we
    * already sent a share for (otherwise the server should not have retried). */
   selected = r_tls_hello_ext_key_share_group (&ks);
-  if (!r_tls_ecdhe_group_to_curve (selected, &curve) || selected == client->ks_group)
+  if (!r_tls_ke_group_supported (selected) || selected == client->ks_group)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
   /* Cipher suite from the HelloRetryRequest. */
@@ -1525,14 +1530,15 @@ r_tls_client_handle_hrr (RTLSClient * client, const RTLSHelloMsg * hello,
     client->cookielen = clen;
   }
 
-  /* Regenerate the (EC)DHE share for the selected group. */
+  /* Regenerate the (EC)DHE / ffdhe share for the selected group. */
   client->ks_group = selected;
-  client->ecdhe_curve = curve;
+  if (!r_tls_ecdhe_group_to_curve (selected, &client->ecdhe_curve))
+    client->ecdhe_curve = R_ECURVE_ID_NONE;   /* ffdhe: no curve */
   if (client->ecdhe_key != NULL) {
     r_crypto_key_unref (client->ecdhe_key);
     client->ecdhe_key = NULL;
   }
-  if ((client->ecdhe_key = r_tls_ecdhe_keygen (curve, client->prng)) == NULL)
+  if ((client->ecdhe_key = r_tls_ke_keygen (selected, client->prng)) == NULL)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
   /* Transcript rewrite (RFC 8446 4.4.1): the first ClientHello is replaced by
