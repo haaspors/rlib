@@ -1769,10 +1769,11 @@ r_tls_server_nego_hello13 (RTLSServer * server)
       return R_TLS_ERROR_HANDSHAKE_FAILURE;
   }
 
-  /* CertificateVerify scheme follows the certificate key (both hash SHA-256). */
+  /* CertificateVerify scheme follows the certificate key: ECDSA binds the curve
+   * to its digest (secp256r1/384r1/521r1), RSA uses rsa_pss_rsae_sha256. */
   certalgo = r_crypto_key_get_algo (server->privkey);
   if (certalgo == R_CRYPTO_ALGO_ECDSA)
-    server->cv_scheme = R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256;
+    server->cv_scheme = r_tls_sign_scheme_for_key (server->privkey);
   else if (certalgo == R_CRYPTO_ALGO_RSA)
     server->cv_scheme = R_TLS_SIGN_SCHEME_RSA_PSS_SHA256;
   else
@@ -2129,17 +2130,20 @@ static RTLSError
 r_tls_server_sign_certificate_verify13 (RTLSServer * server,
     const ruint8 * th, rsize hlen, ruint8 * sig, rsize * siglen)
 {
-  ruint8 tbs[R_TLS13_CERT_VERIFY_TBS_MAX], digest[R_TLS13_SECRET_MAX];
+  ruint8 tbs[R_TLS13_CERT_VERIFY_TBS_MAX], digest[64];  /* up to SHA-512 */
   rsize tbslen = 0, dlen;
+  RMsgDigestType mdtype;
   RMsgDigest * md;
   rboolean ok;
 
   if (!r_tls13_cert_verify_tbs (TRUE, th, hlen, tbs, sizeof (tbs), &tbslen))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
-  /* Both ecdsa_secp256r1_sha256 and rsa_pss_rsae_sha256 hash with SHA-256,
-   * independent of the cipher-suite hash. */
-  if ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_SHA256)) == NULL)
+  /* The digest is the negotiated scheme's (e.g. SHA-384 for
+   * ecdsa_secp384r1_sha384), independent of the cipher-suite hash. */
+  if (!r_tls_sign_scheme_to_md (server->cv_scheme, &mdtype))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if ((md = r_msg_digest_new (mdtype)) == NULL)
     return R_TLS_ERROR_OOM;
   dlen = r_msg_digest_size (md);
   ok = r_msg_digest_update (md, tbs, tbslen) &&
@@ -2150,7 +2154,7 @@ r_tls_server_sign_certificate_verify13 (RTLSServer * server,
 
   if (server->cv_scheme == R_TLS_SIGN_SCHEME_RSA_PSS_SHA256)
     r_rsa_priv_key_set_padding (server->privkey, R_RSA_PADDING_PKCS1_V21);
-  if (r_crypto_key_sign (server->privkey, server->prng, R_MSG_DIGEST_TYPE_SHA256,
+  if (r_crypto_key_sign (server->privkey, server->prng, mdtype,
         digest, dlen, sig, siglen) != R_CRYPTO_OK)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 

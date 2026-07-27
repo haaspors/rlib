@@ -734,19 +734,30 @@ r_tls_client_default_cipher_suites (rpointer ctx, RTLSVersion ver,
   return TRUE;
 }
 
-/* signature_algorithms for 1.3: offer ecdsa_secp256r1_sha256 and
- * rsa_pss_rsae_sha256 (the schemes valid for a 1.3 CertificateVerify), plus
+/* signature_algorithms for 1.3: offer the ECDSA (secp256r1/384r1/521r1) and
+ * RSA-PSS (SHA-256/384/512) schemes valid for a 1.3 CertificateVerify, plus
  * rsa_pkcs1_sha256 for certificate signatures. */
 static ruint16
 r_tls_client_write_hs_ext_signature_algorithms13 (ruint8 * ptr)
 {
+  static const RTLSSignatureScheme schemes[] = {
+    R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256,
+    R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384,
+    R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512,
+    R_TLS_SIGN_SCHEME_RSA_PSS_SHA256,
+    R_TLS_SIGN_SCHEME_RSA_PSS_SHA384,
+    R_TLS_SIGN_SCHEME_RSA_PSS_SHA512,
+    R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256,
+  };
+  ruint16 listlen = (ruint16) (R_N_ELEMENTS (schemes) * sizeof (ruint16));
+  rsize i;
+
   r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_SIGNATURE_ALGORITHMS);
-  r_store_be16 (&ptr[2], 2 + 3 * sizeof (ruint16));
-  r_store_be16 (&ptr[4], 3 * sizeof (ruint16));
-  r_store_be16 (&ptr[6], (ruint16)R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256);
-  r_store_be16 (&ptr[8], (ruint16)R_TLS_SIGN_SCHEME_RSA_PSS_SHA256);
-  r_store_be16 (&ptr[10], (ruint16)R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256);
-  return 12;
+  r_store_be16 (&ptr[2], (ruint16)(sizeof (ruint16) + listlen));
+  r_store_be16 (&ptr[4], listlen);
+  for (i = 0; i < R_N_ELEMENTS (schemes); i++)
+    r_store_be16 (&ptr[6 + i * sizeof (ruint16)], (ruint16) schemes[i]);
+  return (ruint16) (6 + listlen);
 }
 
 /* ClientHello supported_versions offering TLS 1.3 first, then 1.2 when it is
@@ -1555,15 +1566,33 @@ static RTLSError
 r_tls_client_verify_certificate_verify13 (RTLSClient * client,
     RTLSSignatureScheme scheme, const ruint8 * sig, ruint16 sigsize)
 {
-  ruint8 th[R_TLS13_SECRET_MAX], tbs[R_TLS13_CERT_VERIFY_TBS_MAX], digest[R_TLS13_SECRET_MAX];
+  ruint8 th[R_TLS13_SECRET_MAX], tbs[R_TLS13_CERT_VERIFY_TBS_MAX], digest[64];  /* up to SHA-512 */
   rsize hlen = r_msg_digest_type_size (client->cs13_hash), tbslen = 0, dlen;
+  RMsgDigestType mdtype;
   RMsgDigest * md;
   RCryptoKey * pub;
+  rboolean pss;
   rboolean ok;
   RTLSError err;
 
-  if (scheme != R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256 &&
-      scheme != R_TLS_SIGN_SCHEME_RSA_PSS_SHA256)
+  /* The schemes valid for a 1.3 CertificateVerify that we can verify: ECDSA
+   * (secp256r1/384r1/521r1) and RSA-PSS (SHA-256/384/512). PKCS#1 v1.5 is
+   * forbidden in 1.3; other schemes are rejected. */
+  switch (scheme) {
+    case R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256:
+    case R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384:
+    case R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512:
+      pss = FALSE;
+      break;
+    case R_TLS_SIGN_SCHEME_RSA_PSS_SHA256:
+    case R_TLS_SIGN_SCHEME_RSA_PSS_SHA384:
+    case R_TLS_SIGN_SCHEME_RSA_PSS_SHA512:
+      pss = TRUE;
+      break;
+    default:
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  }
+  if (!r_tls_sign_scheme_to_md (scheme, &mdtype))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
   /* The signature covers the content over Transcript-Hash(..Certificate). */
@@ -1571,7 +1600,7 @@ r_tls_client_verify_certificate_verify13 (RTLSClient * client,
       !r_tls13_cert_verify_tbs (TRUE, th, hlen, tbs, sizeof (tbs), &tbslen))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
-  if ((md = r_msg_digest_new (R_MSG_DIGEST_TYPE_SHA256)) == NULL)
+  if ((md = r_msg_digest_new (mdtype)) == NULL)
     return R_TLS_ERROR_OOM;
   dlen = r_msg_digest_size (md);
   ok = r_msg_digest_update (md, tbs, tbslen) &&
@@ -1582,9 +1611,9 @@ r_tls_client_verify_certificate_verify13 (RTLSClient * client,
 
   if ((pub = r_crypto_cert_get_public_key (client->peer_cert)) == NULL)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (scheme == R_TLS_SIGN_SCHEME_RSA_PSS_SHA256)
+  if (pss)
     r_rsa_pub_key_set_padding (pub, R_RSA_PADDING_PKCS1_V21);
-  err = (r_crypto_key_verify (pub, R_MSG_DIGEST_TYPE_SHA256, digest, dlen,
+  err = (r_crypto_key_verify (pub, mdtype, digest, dlen,
             sig, sigsize) == R_CRYPTO_OK) ?
       R_TLS_ERROR_OK : R_TLS_ERROR_HS_VERIFICATION_FAILED;
   r_crypto_key_unref (pub);
