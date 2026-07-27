@@ -1068,6 +1068,124 @@ RTEST_F (rtlsclient, tls13_record_size_limit_invalid, RTEST_FAST)
 }
 RTEST_END;
 
+/* OCSP stapling (status_request, RFC 6066 / RFC 8446 4.4.2.1): the client offers
+ * status_request and the server, with a response configured, staples it in the
+ * leaf CertificateEntry; the client retrieves the identical bytes. @staplelen
+ * spans small and multi-KB responses (the latter outgrows the certificate scratch
+ * buffer, exercising the heap-built Certificate message). */
+static void
+r_test_tls13_ocsp_staple (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture, rsize staplelen)
+{
+  ruint8 * staple;
+  const ruint8 * got;
+  rsize gotlen = 0, i;
+
+  r_assert_cmpptr ((staple = r_malloc (staplelen)), !=, NULL);
+  for (i = 0; i < staplelen; i++)
+    staple[i] = (ruint8) ((i * 7 + 3) & 0xff);
+
+  r_assert_cmpint (r_tls_client_request_ocsp (fixture->client, TRUE),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_ocsp_response (fixture->server, staple, staplelen),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  got = r_tls_client_get_ocsp_response (fixture->client, &gotlen);
+  r_assert_cmpptr (got, !=, NULL);
+  r_assert_cmpuint (gotlen, ==, staplelen);
+  r_assert_cmpmem (got, ==, staple, staplelen);
+
+  r_free (staple);
+}
+
+RTEST_F (rtlsclient, tls13_ocsp_staple, RTEST_FAST)
+{
+  r_test_tls13_ocsp_staple (fixture, 128);
+}
+RTEST_END;
+
+/* A multi-KB staple forces the Certificate message past the stack scratch buffer. */
+RTEST_F (rtlsclient, tls13_ocsp_staple_large, RTEST_FAST)
+{
+  r_test_tls13_ocsp_staple (fixture, 6000);
+}
+RTEST_END;
+
+/* No staple is delivered when the client did not ask, even if the server has one
+ * configured; and none when the client asks but the server has none. Either way
+ * the handshake completes. */
+RTEST_F (rtlsclient, tls13_ocsp_not_delivered, RTEST_FAST)
+{
+  static const ruint8 staple[] = { 0x30, 0x03, 0x0a, 0x01, 0x00 };
+  const ruint8 * got;
+  rsize gotlen = 1;
+
+  /* Server has a response, but the client never offers status_request. */
+  r_assert_cmpint (r_tls_server_set_ocsp_response (fixture->server, staple,
+        sizeof (staple)), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (!fixture->cli_error);
+
+  got = r_tls_client_get_ocsp_response (fixture->client, &gotlen);
+  r_assert_cmpptr (got, ==, NULL);
+  r_assert_cmpuint (gotlen, ==, 0);
+}
+RTEST_END;
+
+/* status_request offered, but the server stapled nothing: no OCSP delivered. */
+RTEST_F (rtlsclient, tls13_ocsp_requested_server_none, RTEST_FAST)
+{
+  const ruint8 * got;
+  rsize gotlen = 1;
+
+  r_assert_cmpint (r_tls_client_request_ocsp (fixture->client, TRUE),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (!fixture->cli_error);
+
+  got = r_tls_client_get_ocsp_response (fixture->client, &gotlen);
+  r_assert_cmpptr (got, ==, NULL);
+  r_assert_cmpuint (gotlen, ==, 0);
+}
+RTEST_END;
+
+/* set_ocsp_response validates its arguments. */
+RTEST_F (rtlsclient, tls13_ocsp_set_validation, RTEST_FAST)
+{
+  static const ruint8 der[] = { 0x30, 0x03, 0x0a, 0x01, 0x00 };
+
+  r_assert_cmpint (r_tls_server_set_ocsp_response (fixture->server, der, 0),
+      ==, R_TLS_ERROR_INVAL);          /* non-NULL der, zero len */
+  r_assert_cmpint (r_tls_server_set_ocsp_response (fixture->server, NULL, 5),
+      ==, R_TLS_ERROR_INVAL);          /* NULL der, non-zero len */
+  r_assert_cmpint (r_tls_server_set_ocsp_response (fixture->server, der, sizeof (der)),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_ocsp_response (fixture->server, NULL, 0),
+      ==, R_TLS_ERROR_OK);             /* clear */
+}
+RTEST_END;
+
 /* Drive CH1 -> HelloRetryRequest with a server that requires secp256r1 while
  * the client first offers x25519. Returns the (still-owned) HRR record and
  * leaves the client having consumed nothing yet. */

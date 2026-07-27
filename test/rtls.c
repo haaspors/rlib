@@ -339,7 +339,7 @@ RTEST (rtls, write_parse_certificate13_roundtrip, RTEST_FAST)
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_handshake (rec, sizeof (rec),
         &hssize, R_TLS_VERSION_TLS_1_3, R_TLS_HANDSHAKE_TYPE_CERTIFICATE, 0));
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_hs_certificate13 (
-        rec + hssize, sizeof (rec) - hssize, &bodylen, der, sizeof (der)));
+        rec + hssize, sizeof (rec) - hssize, &bodylen, der, sizeof (der), NULL, 0));
   /* context(1) + list<3> + entry{ cert<3> + der + ext<2> }. */
   r_assert_cmpuint (bodylen, ==, 1 + 3 + (3 + sizeof (der) + 2));
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
@@ -353,6 +353,7 @@ RTEST (rtls, write_parse_certificate13_roundtrip, RTEST_FAST)
       r_tls_parser_parse_certificate13_first (&parser, &tlscert));
   r_assert_cmpuint (tlscert.len, ==, sizeof (der));
   r_assert_cmpmem (tlscert.cert, ==, der, sizeof (der));
+  r_assert_cmpuint (tlscert.extlen, ==, 0);
   /* Only one entry: the next walk reports end-of-buffer. */
   r_assert_cmpint (R_TLS_ERROR_EOB, ==,
       r_tls_parser_parse_certificate13_next (&parser, &tlscert));

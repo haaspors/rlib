@@ -139,6 +139,27 @@ R_API RTLSError r_tls_client_set_alpn_protocols (RTLSClient * client,
 R_API RTLSError r_tls_client_set_record_size_limit (RTLSClient * client,
     ruint16 limit);
 /**
+ * @brief Offer the @c status_request extension to request a stapled OCSP
+ * response (RFC 6066 / RFC 8446 4.4.2.1).
+ *
+ * With @p request @c TRUE the ClientHello asks the server to staple an OCSP
+ * response for its certificate; if the server does, it is available after the
+ * handshake via @ref r_tls_client_get_ocsp_response. The staple is delivered
+ * as-is -- the library does not validate it. Off by default; must be called
+ * before @ref r_tls_client_start. Applies to TLS 1.3 only.
+ */
+R_API RTLSError r_tls_client_request_ocsp (RTLSClient * client, rboolean request);
+/**
+ * @brief The OCSP response the server stapled to its certificate, or @c NULL.
+ *
+ * Valid once the handshake has completed when @ref r_tls_client_request_ocsp was
+ * set and the server stapled one (RFC 6066). The bytes are the DER
+ * @c OCSPResponse, borrowed (owned by the session); @p len, when non-@c NULL,
+ * receives the length. The library does not validate the response.
+ */
+R_API const ruint8 * r_tls_client_get_ocsp_response (const RTLSClient * client,
+    rsize * len);
+/**
  * @brief Constrain the TLS versions the client offers.
  *
  * Both bounds lie in the window @c R_TLS_VERSION_TLS_1_2 ..

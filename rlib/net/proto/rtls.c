@@ -1391,6 +1391,13 @@ r_tls_certificate13_walk (const RTLSParser * parser, RTLSCertificate * cert,
         RPOINTER_TO_SIZE (end)))
     return R_TLS_ERROR_CORRUPT_RECORD;
 
+  /* The entry's Extension list follows the certificate (RFC 8446 4.4.2). */
+  cert->extlen = r_load_be16 (cert->cert + cert->len);
+  cert->ext = cert->cert + cert->len + sizeof (ruint16);
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (cert->ext + cert->extlen) >
+        RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
   return R_TLS_ERROR_OK;
 }
 
@@ -2383,11 +2390,12 @@ r_tls_write_hs_encrypted_extensions (rpointer data, rsize size, rsize * out,
 
 RTLSError
 r_tls_write_hs_certificate13 (rpointer data, rsize size, rsize * out,
-    const ruint8 * der, rsize dersize)
+    const ruint8 * der, rsize dersize, const ruint8 * leafexts, ruint16 leafextslen)
 {
   ruint8 * p = data;
+  rsize extslen = (leafexts != NULL) ? leafextslen : 0;
   /* One CertificateEntry = cert_data<3> | cert | extensions<2>. */
-  rsize entrylen = (der != NULL && dersize > 0) ? (3 + dersize + 2) : 0;
+  rsize entrylen = (der != NULL && dersize > 0) ? (3 + dersize + 2 + extslen) : 0;
   rsize need = 1 + 3 + entrylen;   /* context<1>=0 | certificate_list<3> | entries */
 
   if (R_UNLIKELY (data == NULL)) return R_TLS_ERROR_INVAL;
@@ -2404,7 +2412,10 @@ r_tls_write_hs_certificate13 (rpointer data, rsize size, rsize * out,
     *p++ = (ruint8)((dersize >>  8) & 0xff);
     *p++ = (ruint8)((dersize      ) & 0xff);
     r_memcpy (p, der, dersize); p += dersize;
-    r_store_be16 (p, 0);   /* extensions<0..2^16-1>: empty */
+    r_store_be16 (p, (ruint16) extslen); p += sizeof (ruint16);   /* extensions<0..2^16-1> */
+    if (extslen > 0) {
+      r_memcpy (p, leafexts, extslen); p += extslen;
+    }
   }
 
   if (out != NULL)
