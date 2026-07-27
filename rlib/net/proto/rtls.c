@@ -62,6 +62,7 @@ r_tls_sign_scheme_to_md (RTLSSignatureScheme scheme, RMsgDigestType * md)
       *md = R_MSG_DIGEST_TYPE_SHA512;
       return TRUE;
     case R_TLS_SIGN_SCHEME_ED25519:
+    case R_TLS_SIGN_SCHEME_ED448:
       /* PureEdDSA signs the content directly (RFC 8446 4.2.3); no pre-hash. */
       *md = R_MSG_DIGEST_TYPE_NONE;
       return TRUE;
@@ -83,6 +84,8 @@ r_tls_sign_scheme_for_key (const RCryptoKey * key)
       }
     case R_CRYPTO_ALGO_ED25519:
       return R_TLS_SIGN_SCHEME_ED25519;
+    case R_CRYPTO_ALGO_ED448:
+      return R_TLS_SIGN_SCHEME_ED448;
     default:
       return R_TLS_SIGN_SCHEME_RSA_PKCS1_SHA256;
   }

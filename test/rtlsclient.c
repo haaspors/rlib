@@ -146,6 +146,27 @@ static const rchar testpkpem_ed25519[] =
   "MC4CAQAwBQYDK2VwBCIEIJKdC2hLiSupxcBfuOHOJo21Xs4uo1DHngILAzCzFb3D\n"
   "-----END PRIVATE KEY-----\n";
 
+/* Self-signed Ed448 certificate + matching PKCS#8 key (CN=rlib-ed448), for the
+ * 1.3 CertificateVerify ed448 scheme. Same generation constraints as
+ * testcertpem_ecdsa (small serial, pre-2050). */
+static const rchar testcertpem_ed448[] =
+  "-----BEGIN CERTIFICATE-----\n"
+  "MIIBdjCB96ADAgECAgEBMAUGAytlcTAVMRMwEQYDVQQDDApybGliLWVkNDQ4MB4X\n"
+  "DTI2MDcyNzIyMzgzNVoXDTQ4MDYyMTIyMzgzNVowFTETMBEGA1UEAwwKcmxpYi1l\n"
+  "ZDQ0ODBDMAUGAytlcQM6ALsYJKLhoYrpXLc0/NT4FTHn3ufPTYqN9cNqHoO4G+/n\n"
+  "byz7tDfnc0wUY60oV9W+ld4IuPiDnFh+gKNTMFEwHQYDVR0OBBYEFI+7lKgPHo4r\n"
+  "16us3Oy20G7dAsKAMB8GA1UdIwQYMBaAFI+7lKgPHo4r16us3Oy20G7dAsKAMA8G\n"
+  "A1UdEwEB/wQFMAMBAf8wBQYDK2VxA3MAw/4wBzJpHCJX9A9gGQTJ3kWNtR5q35Nu\n"
+  "wC4AAgcxa3P1YVGA7WNyH4HMJkIeCXeQj2/1P9938r4AzHws10Sew1lxXLfnq+/t\n"
+  "0zq0Q0xz1qzYfW0Ct/03IBoCDoHfhDx1qMdSEL4q3lRlGnE+kCFlLQ8A\n"
+  "-----END CERTIFICATE-----\n";
+
+static const rchar testpkpem_ed448[] =
+  "-----BEGIN PRIVATE KEY-----\n"
+  "MEcCAQAwBQYDK2VxBDsEORtAq9iHLGotJ4Nctu8X08dMYN9OVyGG7L7/uhFDrJ7q\n"
+  "dLpCuWG+OY9CEHXZFz+l0DOgJkvQiK+drg==\n"
+  "-----END PRIVATE KEY-----\n";
+
 RTEST_FIXTURE_STRUCT (rtlsclient)
 {
   RTLSServer * server;
@@ -662,6 +683,24 @@ RTEST_F (rtlsclient, tls13_loopback_ed25519, RTEST_FAST)
 
   r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ed25519, -1)), !=, NULL);
   r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ed25519, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+/* Ed448 server certificate: the 1.3 CertificateVerify uses the ed448 scheme,
+ * so the server signs and the client verifies over the content directly (no
+ * pre-hash). The handshake completing exercises the PureEdDSA sign/verify path. */
+RTEST_F (rtlsclient, tls13_loopback_ed448, RTEST_FAST)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ed448, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ed448, -1, NULL, 0)), !=, NULL);
   r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
   r_crypto_key_unref (pk);
   r_crypto_cert_unref (cert);
