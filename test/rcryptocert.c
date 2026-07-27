@@ -804,6 +804,37 @@ RTEST (rcryptocert, large_serial_number, RTEST_FAST)
 }
 RTEST_END;
 
+/* A self-signed Ed25519 certificate (RFC 8410): the subjectPublicKeyInfo and
+ * the signatureAlgorithm are both ed25519. PureEdDSA signs the TBSCertificate
+ * directly, so verify_signature checks the raw content rather than a pre-hash. */
+RTEST (rcryptocert, self_signed_ed25519, RTEST_FAST)
+{
+  static const rchar pem[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBLzCB4qADAgECAgEBMAUGAytlcDAXMRUwEwYDVQQDDAxybGliLWVkMjU1MTkw\n"
+    "HhcNMjYwNzI3MjIwNzU4WhcNNDgwNjIxMjIwNzU4WjAXMRUwEwYDVQQDDAxybGli\n"
+    "LWVkMjU1MTkwKjAFBgMrZXADIQCraKuX/GZ695ZdM5IWppcYyHKCHa0bsPum1mxl\n"
+    "7Su9C6NTMFEwHQYDVR0OBBYEFEejUEmkmH4KhOFQbwqykULLE34rMB8GA1UdIwQY\n"
+    "MBaAFEejUEmkmH4KhOFQbwqykULLE34rMA8GA1UdEwEB/wQFMAMBAf8wBQYDK2Vw\n"
+    "A0EA+pW3yQXXbirkFdrSS/h4ks261980uyvLB38wOrxsg8y9C2EljrtAcTWOLFQH\n"
+    "2Fvt0wDLNP+pQlXYPoqsZL3vDw==\n"
+    "-----END CERTIFICATE-----\n";
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (pem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_crypto_cert_get_public_key (cert)), !=, NULL);
+  r_assert_cmpint (r_crypto_key_get_algo (pk), ==, R_CRYPTO_ALGO_ED25519);
+  r_crypto_key_unref (pk);
+
+  r_assert (r_crypto_x509_cert_is_self_issued (cert));
+  r_assert (r_crypto_x509_cert_is_self_signed (cert));
+  r_assert_cmpuint (r_crypto_x509_cert_verify_signature (cert, cert), ==, R_CRYPTO_OK);
+
+  r_crypto_cert_unref (cert);
+}
+RTEST_END;
+
 /* r_crypto_x509_cert_verify_host: RFC 6125 SAN matching (DNS + IP, wildcard),
  * exercised directly on the certificate. */
 RTEST (rcryptocert, x509_verify_host_dns, RTEST_FAST)

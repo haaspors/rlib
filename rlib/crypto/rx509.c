@@ -617,6 +617,7 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
     const ruint8 * tbs = tlv.start;
     rsize tbssize = RPOINTER_TO_SIZE (tlv.value - tlv.start) + tlv.len;
     RMsgDigest * md;
+    rboolean is_eddsa;
 
     /* TBSCertificate */
     if (r_asn1_bin_decoder_into (dec, &tlv) == R_ASN1_DECODER_OK) {
@@ -694,13 +695,23 @@ r_crypto_x509_cert_init (RCryptoX509Cert * cert, RAsn1BinDecoder * dec)
     } else goto beach;
 
     /* signatureAlgorithm */
-    if (r_asn1_bin_decoder_into (dec, &tlv) != R_ASN1_DECODER_OK ||
-        r_asn1_bin_tlv_parse_oid_to_msg_digest_type (&tlv, &cert->cert.signalgo) != R_ASN1_DECODER_OK ||
+    if (r_asn1_bin_decoder_into (dec, &tlv) != R_ASN1_DECODER_OK)
+      goto beach;
+    /* PureEdDSA (Ed25519) signs the TBSCertificate directly; there is no
+     * digest OID and no pre-hash, so keep a copy of the raw TBS for
+     * verification instead of the signhash the hashed schemes precompute. */
+    is_eddsa = r_asn1_oid_bin_equals (tlv.value, tlv.len, R_RFC8410_OID_ED25519);
+    if (r_asn1_bin_tlv_parse_oid_to_msg_digest_type (&tlv, &cert->cert.signalgo) != R_ASN1_DECODER_OK ||
         r_asn1_bin_decoder_out (dec, &tlv) != R_ASN1_DECODER_OK) {
       goto beach;
     }
 
-    if ((md = r_msg_digest_new (cert->cert.signalgo)) != NULL) {
+    if (is_eddsa) {
+      cert->cert.signalgo = R_MSG_DIGEST_TYPE_NONE;
+      if ((cert->cert.tbs = r_memdup (tbs, tbssize)) == NULL)
+        goto beach;
+      cert->cert.tbssize = tbssize;
+    } else if ((md = r_msg_digest_new (cert->cert.signalgo)) != NULL) {
       if (!r_msg_digest_update (md, tbs, tbssize) ||
           !r_msg_digest_get_data (md, cert->cert.signhash, sizeof (cert->cert.signhash), NULL)) {
         r_msg_digest_free (md);
@@ -1804,6 +1815,14 @@ RCryptoResult
 r_crypto_x509_cert_verify_signature (const RCryptoCert * cert, const RCryptoCert * parent)
 {
   if (R_UNLIKELY (parent->pk == NULL)) return R_CRYPTO_NOT_AVAILABLE;
+
+  /* PureEdDSA verifies over the raw TBSCertificate (kept at parse time),
+   * not a pre-hash; signalgo is NONE for it. */
+  if (cert->signalgo == R_MSG_DIGEST_TYPE_NONE) {
+    if (R_UNLIKELY (cert->tbs == NULL)) return R_CRYPTO_NOT_AVAILABLE;
+    return r_crypto_key_verify (parent->pk, R_MSG_DIGEST_TYPE_NONE,
+        cert->tbs, cert->tbssize, cert->sign, cert->signbits / 8);
+  }
 
   return r_crypto_key_verify (parent->pk, cert->signalgo, cert->signhash,
       r_msg_digest_type_size (cert->signalgo), cert->sign, cert->signbits / 8);

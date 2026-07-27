@@ -73,6 +73,8 @@ struct RCryptoCert {
 
   RMsgDigestType signalgo;
   ruint8 signhash[64];
+  ruint8 * tbs;           /* raw TBSCertificate; kept only for PureEdDSA (no pre-hash) */
+  rsize tbssize;
   ruint8 * sign;
   rsize signbits;
 
