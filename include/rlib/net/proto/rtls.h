@@ -463,9 +463,11 @@ typedef struct {
   const ruint8 * start;    /**< @brief First octet of the entry (its length field). */
   ruint32 len;             /**< @brief Certificate length in bytes. */
   const ruint8 * cert;     /**< @brief Pointer to the DER-encoded certificate. */
+  const ruint8 * ext;      /**< @brief TLS 1.3 per-entry Extension list, or @c NULL (1.2). */
+  ruint16 extlen;          /**< @brief Length of @c ext in bytes. */
 } RTLSCertificate;
 /** @brief Static initialiser for an empty @ref RTLSCertificate. */
-#define R_TLS_CERTIFICATE_INIT              { NULL, 0, NULL }
+#define R_TLS_CERTIFICATE_INIT              { NULL, 0, NULL, NULL, 0 }
 
 /** @brief Parsed CertificateRequest message, pointing into the record buffer. */
 typedef struct {
@@ -1191,18 +1193,20 @@ R_API RTLSError r_tls_write_hs_encrypted_extensions (rpointer buf, rsize size,
  * @brief Write a TLS 1.3 Certificate handshake-message body (RFC 8446, 4.4.2).
  *
  * Emits an empty @c certificate_request_context and a @c certificate_list of a
- * single end-entity @p der entry with an empty @c Extension list (or an empty
- * list when @p der is @c NULL). Distinct from the 1.2
- * @ref r_tls_write_hs_certificate, which has neither the context nor per-entry
- * extensions.
+ * single end-entity @p der entry, carrying @p leafexts as the entry's
+ * @c Extension list (an empty list when @p leafexts is @c NULL, or when @p der
+ * is @c NULL). Distinct from the 1.2 @ref r_tls_write_hs_certificate, which has
+ * neither the context nor per-entry extensions.
  * @param buf Destination buffer.
  * @param size Capacity of @p buf in bytes.
  * @param out Out: bytes written.
  * @param der DER-encoded certificate, or @c NULL for an empty Certificate.
  * @param dersize Length of @p der in bytes.
+ * @param leafexts Serialized Extension list for the leaf entry, or @c NULL.
+ * @param leafextslen Length of @p leafexts in bytes.
  */
 R_API RTLSError r_tls_write_hs_certificate13 (rpointer buf, rsize size, rsize * out,
-    const ruint8 * der, rsize dersize);
+    const ruint8 * der, rsize dersize, const ruint8 * leafexts, ruint16 leafextslen);
 
 /**
  * @brief Write a Finished handshake-message body (RFC 8446, 4.4.4).

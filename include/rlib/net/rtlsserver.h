@@ -299,6 +299,19 @@ R_API RTLSError r_tls_server_set_alpn_protocols (RTLSServer * server,
  */
 R_API RTLSError r_tls_server_set_record_size_limit (RTLSServer * server,
     ruint16 limit);
+/**
+ * @brief Staple a DER-encoded OCSP response to the certificate (RFC 6066 /
+ * RFC 8446 4.4.2.1).
+ *
+ * When a TLS 1.3 client offers the @c status_request extension, the server
+ * carries @p der (a complete @c OCSPResponse, @p len bytes, copied) as a
+ * @c CertificateStatus in the leaf @c CertificateEntry extensions, saving the
+ * client a separate OCSP round-trip. With none configured (the default), or when
+ * the client did not ask, no status is stapled. Must be set before the handshake
+ * starts; pass @c NULL / @p len 0 to clear. Applies to TLS 1.3 only.
+ */
+R_API RTLSError r_tls_server_set_ocsp_response (RTLSServer * server,
+    const ruint8 * der, rsize len);
 /** @brief Override the server-random (testing / determinism). */
 R_API RTLSError r_tls_server_set_random (RTLSServer * server,
     const ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES]);

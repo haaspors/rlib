@@ -101,6 +101,9 @@ struct RTLSServer {
   ruint8 max_fragment;                  /* negotiated max_fragment_length (RFC 6066): 0 none, else 1..4 */
   ruint16 record_size_limit;            /* our advertised record_size_limit (RFC 8449), 0 = off */
   ruint16 peer_record_size_limit;       /* client's offered limit, caps our send; 0 = none */
+  ruint8 * ocsp_response;               /* DER OCSPResponse to staple (RFC 6066), owned; NULL = none */
+  rsize ocsp_len;
+  rboolean status_request_offered;      /* client sent status_request in its ClientHello */
   ruint8 * ticket;
   ruint16 ticketsize;
   RTLSSessionTicketKeys * ticket_keys;  /* shared STEK store; NULL disables tickets */
@@ -239,6 +242,7 @@ r_tls_server_free (RTLSServer * server)
   r_msg_digest_free (server->hshash);
 
   r_free (server->ticket);
+  r_free (server->ocsp_response);
   if (server->ticket_keys != NULL)
     r_tls_session_ticket_keys_unref (server->ticket_keys);
   r_queue_clear (&server->qsend, r_buffer_unref);
@@ -467,6 +471,27 @@ r_tls_server_set_record_size_limit (RTLSServer * server, ruint16 limit)
     return R_TLS_ERROR_INVAL;
 
   server->record_size_limit = limit;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_server_set_ocsp_response (RTLSServer * server, const ruint8 * der, rsize len)
+{
+  ruint8 * copy = NULL;
+
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (server->state > R_TLS_SERVER_HELLO)) return R_TLS_ERROR_WRONG_STATE;
+  if (R_UNLIKELY ((der == NULL) != (len == 0))) return R_TLS_ERROR_INVAL;
+  /* The status_request entry (type + len + CertificateStatus) rides the leaf's
+   * 16-bit CertificateEntry extensions list: 8 + len must fit a uint16. */
+  if (R_UNLIKELY (len > 0xffffu - 8)) return R_TLS_ERROR_INVAL;
+
+  if (len > 0 && (copy = r_memdup (der, len)) == NULL)
+    return R_TLS_ERROR_OOM;
+
+  r_free (server->ocsp_response);
+  server->ocsp_response = copy;
+  server->ocsp_len = len;
   return R_TLS_ERROR_OK;
 }
 
@@ -1883,6 +1908,14 @@ r_tls_server_nego_hello13 (RTLSServer * server)
     }
   }
 
+  /* status_request (RFC 6066): note the OCSP-staple request so the leaf
+   * CertificateEntry can carry a CertificateStatus (RFC 8446 4.4.2.1). */
+  {
+    RTLSHelloExt sr = R_TLS_HELLO_EXT_INIT;
+    server->status_request_offered =
+        r_tls_server_find_ext (server, R_TLS_EXT_TYPE_STATUS_REQUEST, &sr);
+  }
+
   server->comp = R_TLS_COMPRESSION_NULL;
   server->version = R_TLS_VERSION_TLS_1_3;
   server->tls13 = TRUE;
@@ -2243,6 +2276,42 @@ r_tls_server_sign_certificate_verify13 (RTLSServer * server,
   return R_TLS_ERROR_OK;
 }
 
+/* Build the leaf CertificateEntry Extension list (RFC 8446 4.4.2.1): an OCSP
+ * staple (status_request, RFC 6066) when the client asked and one is configured.
+ * Returns a newly allocated blob (caller frees) and its length via @out, or
+ * @c NULL / 0 for an empty list. */
+static ruint8 *
+r_tls_server_build_leaf_cert_exts (RTLSServer * server, ruint16 * out)
+{
+  rboolean staple = server->status_request_offered && server->ocsp_response != NULL;
+  ruint8 * exts, * p;
+  rsize need = 0;
+
+  *out = 0;
+  if (staple)
+    need += 2 + 2 + 1 + 3 + server->ocsp_len;   /* status_request entry */
+  if (need == 0)
+    return NULL;
+  if ((exts = r_malloc (need)) == NULL)
+    return NULL;
+
+  p = exts;
+  if (staple) {
+    /* status_request = CertificateStatus{ status_type=ocsp(1); OCSPResponse }. */
+    rsize dlen = 1 + 3 + server->ocsp_len;
+    r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_STATUS_REQUEST); p += 2;
+    r_store_be16 (p, (ruint16) dlen); p += 2;
+    *p++ = 1;                                   /* status_type = ocsp */
+    *p++ = (ruint8)((server->ocsp_len >> 16) & 0xff);
+    *p++ = (ruint8)((server->ocsp_len >>  8) & 0xff);
+    *p++ = (ruint8)((server->ocsp_len      ) & 0xff);
+    r_memcpy (p, server->ocsp_response, server->ocsp_len); p += server->ocsp_len;
+  }
+
+  *out = (ruint16) need;
+  return exts;
+}
+
 /* Send the encrypted server flight (EncryptedExtensions, Certificate,
  * CertificateVerify, Finished) and derive the application secrets. The
  * ServerHello goes out in the clear first. */
@@ -2330,21 +2399,36 @@ r_tls_server_write_flight13 (RTLSServer * server)
   /* 5. + 6. Certificate and CertificateVerify: authenticated by the PSK on a
    * resumed handshake, so both are skipped (RFC 8446 2.2). */
   if (!server->resumed13) {
-    /* Certificate (single leaf). */
+    /* Certificate (single leaf), possibly carrying a stapled OCSP response in
+     * the leaf entry's extensions. The message can outgrow the stack scratch
+     * buffer, so build it on the heap sized to the certificate plus staple. */
+    ruint8 * leafexts, * certbody;
+    ruint16 leafextslen;
+    rsize certbodylen = 0;
+
     if ((certbuf = r_crypto_cert_get_data_buffer (server->cert)) == NULL)
       return R_TLS_ERROR_NO_CERTIFICATE;
     if (!r_buffer_map (certbuf, &certinfo, R_MEM_MAP_READ)) {
       r_buffer_unref (certbuf);
       return R_TLS_ERROR_OOM;
     }
-    ret = r_tls_write_hs_certificate13 (body, sizeof (body), &bodylen,
-        certinfo.data, certinfo.size);
+    leafexts = r_tls_server_build_leaf_cert_exts (server, &leafextslen);
+    /* context<1> | certificate_list<3> | cert_data<3> | cert | extensions<2>. */
+    if ((certbody = r_malloc (1 + 3 + 3 + certinfo.size + 2 + leafextslen)) == NULL) {
+      ret = R_TLS_ERROR_OOM;
+    } else {
+      ret = r_tls_write_hs_certificate13 (certbody,
+          1 + 3 + 3 + certinfo.size + 2 + leafextslen, &certbodylen,
+          certinfo.data, certinfo.size, leafexts, leafextslen);
+    }
     r_buffer_unmap (certbuf, &certinfo);
     r_buffer_unref (certbuf);
+    r_free (leafexts);
+    if (ret == R_TLS_ERROR_OK)
+      ret = r_tls_server_send_hs13 (server,
+          R_TLS_HANDSHAKE_TYPE_CERTIFICATE, certbody, certbodylen);
+    r_free (certbody);
     if (ret != R_TLS_ERROR_OK)
-      return ret;
-    if ((ret = r_tls_server_send_hs13 (server,
-            R_TLS_HANDSHAKE_TYPE_CERTIFICATE, body, bodylen)) != R_TLS_ERROR_OK)
       return ret;
 
     /* CertificateVerify over Transcript-Hash(ClientHello..Certificate). */
