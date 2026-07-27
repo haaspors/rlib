@@ -105,6 +105,11 @@ struct RTLSClient {
 
   rchar * server_name;         /* SNI host to offer in the ClientHello, or NULL */
 
+  rchar ** alpn_protocols;     /* ALPN protocols to offer (owned), or NULL */
+  rsize alpn_count;
+  const rchar * alpn_selected; /* negotiated protocol, points into alpn_protocols */
+  rsize alpn_selected_len;
+
   rboolean ecdhe;                  /* an ECDHE suite was negotiated */
   REcurveID ecdhe_curve;           /* the server-selected named group */
   RCryptoKey * ecdhe_key;          /* client ephemeral ECDH private key */
@@ -198,6 +203,12 @@ r_tls_client_free (RTLSClient * client)
   if (client->privkey != NULL)
     r_crypto_key_unref (client->privkey);
   r_free (client->server_name);
+  if (client->alpn_protocols != NULL) {
+    rsize i;
+    for (i = 0; i < client->alpn_count; i++)
+      r_free (client->alpn_protocols[i]);
+    r_free (client->alpn_protocols);
+  }
   if (client->ecdhe_key != NULL)
     r_crypto_key_unref (client->ecdhe_key);
   if (client->ecdhe_server_pub != NULL)
@@ -348,6 +359,50 @@ r_tls_client_set_server_name (RTLSClient * client, const rchar * host)
 
   r_free (client->server_name);
   client->server_name = (host != NULL) ? r_strdup (host) : NULL;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_client_set_alpn_protocols (RTLSClient * client,
+    const rchar * const * protocols, rsize count)
+{
+  rchar ** copy;
+  rsize i;
+
+  if (R_UNLIKELY (client == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (client->state != R_TLS_CLIENT_INITIAL)) return R_TLS_ERROR_WRONG_STATE;
+  if (R_UNLIKELY (protocols == NULL && count > 0)) return R_TLS_ERROR_INVAL;
+  /* ALPN protocol names are opaque<1..255> (RFC 7301). */
+  for (i = 0; i < count; i++) {
+    rsize len = (protocols[i] != NULL) ? r_strlen (protocols[i]) : 0;
+    if (len == 0 || len > 255)
+      return R_TLS_ERROR_INVAL;
+  }
+
+  /* Replace any previously configured list. */
+  if (client->alpn_protocols != NULL) {
+    for (i = 0; i < client->alpn_count; i++)
+      r_free (client->alpn_protocols[i]);
+    r_free (client->alpn_protocols);
+    client->alpn_protocols = NULL;
+    client->alpn_count = 0;
+  }
+  if (count == 0)
+    return R_TLS_ERROR_OK;
+
+  if ((copy = r_mem_new_n (rchar *, count)) == NULL)
+    return R_TLS_ERROR_OOM;
+  for (i = 0; i < count; i++) {
+    if ((copy[i] = r_strdup (protocols[i])) == NULL) {
+      while (i > 0)
+        r_free (copy[--i]);
+      r_free (copy);
+      return R_TLS_ERROR_OOM;
+    }
+  }
+  client->alpn_protocols = copy;
+  client->alpn_count = count;
 
   return R_TLS_ERROR_OK;
 }
@@ -587,6 +642,65 @@ r_tls_client_write_hs_ext_server_name (ruint8 * ptr, const rchar * name)
   return (ruint16)(9 + namelen);
 }
 
+/* application_layer_protocol_negotiation (ALPN, RFC 7301): a ProtocolNameList
+ * of the offered protocols. Offered only when configured via
+ * r_tls_client_set_alpn_protocols. */
+static ruint16
+r_tls_client_write_hs_ext_alpn (const RTLSClient * client, ruint8 * ptr)
+{
+  ruint16 listlen = 0;
+  rsize off, i;
+
+  /* ProtocolNameList: { uint8 name_len, name }* */
+  for (i = 0; i < client->alpn_count; i++)
+    listlen += (ruint16) (1 + r_strlen (client->alpn_protocols[i]));
+
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_APPLICATION_LAYER_PROTOCOL_NEGOTIATION);
+  r_store_be16 (&ptr[2], (ruint16)(sizeof (ruint16) + listlen)); /* extension_data length */
+  r_store_be16 (&ptr[4], listlen);                              /* ProtocolNameList length */
+  off = 6;
+  for (i = 0; i < client->alpn_count; i++) {
+    ruint8 nlen = (ruint8) r_strlen (client->alpn_protocols[i]);
+    ptr[off++] = nlen;
+    r_memcpy (&ptr[off], client->alpn_protocols[i], nlen);
+    off += nlen;
+  }
+  return (ruint16) off;
+}
+
+/* Match the server's ALPN response (a ProtocolNameList carrying the single
+ * selected protocol) against our offered list, recording the selection. The
+ * pointer is kept inside our owned list so the getter stays valid; a protocol
+ * we did not offer is ignored (leaving no selection). */
+static void
+r_tls_client_alpn_apply_selection (RTLSClient * client,
+    const ruint8 * data, ruint16 len)
+{
+  const ruint8 * name;
+  ruint16 listlen;
+  ruint8 nlen;
+  rsize i;
+
+  if (len < sizeof (ruint16) + 1)
+    return;
+  listlen = r_load_be16 (data);
+  if (listlen < 1 || (rsize) listlen + sizeof (ruint16) > len)
+    return;
+  nlen = data[sizeof (ruint16)];
+  name = data + sizeof (ruint16) + 1;
+  if (nlen == 0 || (rsize) nlen + 1 > listlen)
+    return;
+
+  for (i = 0; i < client->alpn_count; i++) {
+    if (r_strlen (client->alpn_protocols[i]) == nlen &&
+        r_memcmp (client->alpn_protocols[i], name, nlen) == 0) {
+      client->alpn_selected = client->alpn_protocols[i];
+      client->alpn_selected_len = nlen;
+      return;
+    }
+  }
+}
+
 static ruint16
 r_tls_client_write_hs_ext_use_srtp (ruint8 * ptr)
 {
@@ -723,6 +837,36 @@ r_tls_client_ee_has_early_data (const ruint8 * msg, rsize msglen)
     p += elen;
   }
   return FALSE;
+}
+
+/* Walk an EncryptedExtensions message for the server's ALPN selection and, when
+ * present, apply it against our offered list. */
+static void
+r_tls_client_ee_apply_alpn (RTLSClient * client, const ruint8 * msg, rsize msglen)
+{
+  const ruint8 * p, * end;
+  ruint16 extslen;
+
+  if (client->alpn_count == 0 || msglen < R_TLS_HS_HDR_SIZE + sizeof (ruint16))
+    return;
+  p = msg + R_TLS_HS_HDR_SIZE;
+  extslen = r_load_be16 (p);
+  p += sizeof (ruint16);
+  end = p + extslen;
+  if (RPOINTER_TO_SIZE (end) > RPOINTER_TO_SIZE (msg + msglen))
+    return;
+  while (p + 2 * sizeof (ruint16) <= end) {
+    ruint16 etype = r_load_be16 (p);
+    ruint16 elen = r_load_be16 (p + sizeof (ruint16));
+    p += 2 * sizeof (ruint16);
+    if (p + elen > end)
+      return;
+    if (etype == R_TLS_EXT_TYPE_APPLICATION_LAYER_PROTOCOL_NEGOTIATION) {
+      r_tls_client_alpn_apply_selection (client, p, elen);
+      return;
+    }
+    p += elen;
+  }
 }
 
 /* pre_shared_key offer with a single identity and a zeroed binder placeholder
@@ -910,6 +1054,8 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
         extsize += r_tls_client_write_hs_ext_cookie (client, ptr + 2 + extsize);
       if (client->server_name != NULL)
         extsize += r_tls_client_write_hs_ext_server_name (ptr + 2 + extsize, client->server_name);
+      if (client->alpn_count > 0)
+        extsize += r_tls_client_write_hs_ext_alpn (client, ptr + 2 + extsize);
       /* Advertise (EC)DHE resumption support so the server issues tickets. */
       extsize += r_tls_client_write_hs_ext_psk_key_exchange_modes (ptr + 2 + extsize);
       /* early_data (0-RTT) sits before pre_shared_key, which stays last. */
@@ -934,6 +1080,8 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
       extsize += r_tls_client_write_hs_ext_signature_algorithms (ptr + 2 + extsize);
       if (client->server_name != NULL)
         extsize += r_tls_client_write_hs_ext_server_name (ptr + 2 + extsize, client->server_name);
+      if (client->alpn_count > 0)
+        extsize += r_tls_client_write_hs_ext_alpn (client, ptr + 2 + extsize);
       if (dtls)
         extsize += r_tls_client_write_hs_ext_use_srtp (ptr + 2 + extsize);
     }
@@ -1469,6 +1617,7 @@ r_tls_client_flight13 (RTLSClient * client, const RTLSParser * parser)
             return R_TLS_ERROR_HANDSHAKE_FAILURE;
         }
       }
+      r_tls_client_ee_apply_alpn (client, parser->fragment.data, parser->fragment.size);
       /* A resumed handshake authenticates via the PSK, so no Certificate /
        * CertificateVerify follow: jump straight to the server Finished. */
       client->flight13_step = client->resumed13 ? 3 : 1;
@@ -1681,6 +1830,9 @@ r_tls_client_nego_server_hello (RTLSClient * client, const RTLSParser * parser)
       case R_TLS_EXT_TYPE_USE_SRTP:
         if (r_tls_hello_ext_use_srtp_profile_count (&ext) > 0)
           client->dtls_srtp_profile = r_tls_hello_ext_use_srtp_profile (&ext, 0);
+        break;
+      case R_TLS_EXT_TYPE_APPLICATION_LAYER_PROTOCOL_NEGOTIATION:
+        r_tls_client_alpn_apply_selection (client, ext.data, ext.len);
         break;
       default:
         break;
@@ -2900,4 +3052,12 @@ RSRTPCipherSuite
 r_tls_client_get_dtls_srtp_profile (const RTLSClient * client)
 {
   return client->dtls_srtp_profile;
+}
+
+const rchar *
+r_tls_client_get_alpn_selected (const RTLSClient * client, rsize * len)
+{
+  if (len != NULL)
+    *len = (client != NULL) ? client->alpn_selected_len : 0;
+  return (client != NULL) ? client->alpn_selected : NULL;
 }

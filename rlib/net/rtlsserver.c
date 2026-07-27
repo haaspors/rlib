@@ -1815,6 +1815,28 @@ r_tls_server_nego_hello13 (RTLSServer * server)
       server->early13_skip = TRUE;
   }
 
+  /* ALPN: pick the first configured protocol the client also offered (server
+   * preference), echoed later in EncryptedExtensions. The <=1.2 negotiation
+   * runs the same selection in nego_hello, but the 1.3 cut returns before it.
+   * An offer with no overlap aborts the handshake (RFC 7301 3.2). */
+  {
+    RTLSHelloExt a = R_TLS_HELLO_EXT_INIT;
+    if (r_tls_server_find_ext (server,
+          R_TLS_EXT_TYPE_APPLICATION_LAYER_PROTOCOL_NEGOTIATION, &a)) {
+      rsize k;
+      for (k = 0; k < server->alpn_count && server->alpn_selected == NULL; k++) {
+        rsize plen = r_strlen (server->alpn_protocols[k]);
+        if (r_tls_hello_ext_alpn_contains (&a,
+              (const ruint8 *) server->alpn_protocols[k], (ruint8) plen)) {
+          server->alpn_selected = server->alpn_protocols[k];
+          server->alpn_selected_len = plen;
+        }
+      }
+      if (server->alpn_count > 0 && server->alpn_selected == NULL)
+        return R_TLS_ERROR_NO_APPLICATION_PROTOCOL;
+    }
+  }
+
   server->comp = R_TLS_COMPRESSION_NULL;
   server->version = R_TLS_VERSION_TLS_1_3;
   server->tls13 = TRUE;
@@ -2198,16 +2220,18 @@ r_tls_server_write_flight13 (RTLSServer * server)
       !r_tls_server_install_keys13 (server, &server->rk_read, server->sched13.chs))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
-  /* 4. EncryptedExtensions: signal early-data acceptance back to the client
-   * (empty extension), otherwise an empty list. */
+  /* 4. EncryptedExtensions: echo the server's decisions -- early-data
+   * acceptance (empty extension) and the negotiated ALPN protocol -- otherwise
+   * an empty list. */
   {
-    ruint8 ee[4];
+    ruint8 ee[4 + 7 + 255];   /* early_data(4) + ALPN(7 + name<=255>) */
     ruint16 eelen = 0;
     if (server->early13_accepted) {
       r_store_be16 (ee, (ruint16)R_TLS_EXT_TYPE_EARLY_DATA);
       r_store_be16 (ee + 2, 0);
-      eelen = sizeof (ee);
+      eelen = 4;
     }
+    eelen += r_tls_server_write_hs_ext_alpn (server, ee + eelen);
     if ((ret = r_tls_write_hs_encrypted_extensions (body, sizeof (body),
             &bodylen, eelen ? ee : NULL, eelen)) != R_TLS_ERROR_OK)
       return ret;
