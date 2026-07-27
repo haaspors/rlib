@@ -107,6 +107,21 @@ R_API RTLSError r_tls_client_set_cert (RTLSClient * client,
 R_API RTLSError r_tls_client_set_server_name (RTLSClient * client,
     const rchar * host);
 /**
+ * @brief Configure the application protocols the client offers for ALPN
+ * (RFC 7301), in descending order of preference.
+ *
+ * Each @p protocols entry is a NUL-terminated protocol name (e.g. @c "h2",
+ * @c "http/1.1"); names are copied and offered in a ClientHello @c ALPN
+ * extension. The server's selection is then available via
+ * @ref r_tls_client_get_alpn_selected. With no protocols configured (the
+ * default) the client does not offer ALPN. Must be called before
+ * @ref r_tls_client_start. Returns @c R_TLS_ERROR_INVAL if any name is empty or
+ * longer than 255 bytes. Call with @p count 0 to clear a previously configured
+ * list.
+ */
+R_API RTLSError r_tls_client_set_alpn_protocols (RTLSClient * client,
+    const rchar * const * protocols, rsize count);
+/**
  * @brief Constrain the TLS versions the client offers.
  *
  * Both bounds lie in the window @c R_TLS_VERSION_TLS_1_2 ..
@@ -226,6 +241,14 @@ R_API const RTLSCipherSuiteInfo * r_tls_client_get_cipher_suite (const RTLSClien
 R_API RCryptoCert * r_tls_client_get_peer_cert (const RTLSClient * client);
 /** @brief Negotiated DTLS-SRTP protection profile (for @ref r_srtp). */
 R_API RSRTPCipherSuite r_tls_client_get_dtls_srtp_profile (const RTLSClient * client);
+/**
+ * @brief Negotiated ALPN protocol, or @c NULL if none was negotiated.
+ *
+ * Returns the protocol the server selected from the offered list
+ * (NUL-terminated); @p len, when non-@c NULL, receives its length. See
+ * @ref r_tls_client_set_alpn_protocols.
+ */
+R_API const rchar * r_tls_client_get_alpn_selected (const RTLSClient * client, rsize * len);
 
 R_END_DECLS
 

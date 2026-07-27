@@ -621,6 +621,89 @@ RTEST_F (rtlsclient, tls13_key_update, RTEST_FAST)
 }
 RTEST_END;
 
+/* ALPN (RFC 7301): the client offers a protocol list, the server selects by its
+ * own preference from the overlap, and both endpoints report the same choice.
+ * Parameterised by @version to cover the 1.2 ServerHello and the 1.3
+ * EncryptedExtensions carrier. */
+static void
+r_test_tls_alpn_negotiated (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture,
+    RTLSVersion version)
+{
+  static const rchar * srv[] = { "h2", "http/1.1" };
+  static const rchar * cli[] = { "http/1.1", "h2" };
+  const rchar * sel;
+  rsize sellen = 0;
+
+  r_assert_cmpint (r_tls_server_set_alpn_protocols (fixture->server,
+        srv, R_N_ELEMENTS (srv)), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_set_alpn_protocols (fixture->client,
+        cli, R_N_ELEMENTS (cli)), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        version), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  /* Server preference wins: "h2" is the server's first choice and the client
+   * offers it too, so both sides agree on "h2". */
+  sel = r_tls_client_get_alpn_selected (fixture->client, &sellen);
+  r_assert_cmpptr (sel, !=, NULL);
+  r_assert_cmpuint (sellen, ==, 2);
+  r_assert_cmpint (r_memcmp (sel, "h2", 2), ==, 0);
+
+  sel = r_tls_server_get_alpn_selected (fixture->server, &sellen);
+  r_assert_cmpptr (sel, !=, NULL);
+  r_assert_cmpuint (sellen, ==, 2);
+  r_assert_cmpint (r_memcmp (sel, "h2", 2), ==, 0);
+}
+
+RTEST_F (rtlsclient, tls_alpn, RTEST_FAST)
+{
+  r_test_tls_alpn_negotiated (fixture, R_TLS_VERSION_TLS_1_2);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls13_alpn, RTEST_FAST)
+{
+  r_test_tls_alpn_negotiated (fixture, R_TLS_VERSION_TLS_1_3);
+}
+RTEST_END;
+
+/* The client offers ALPN but the server has none configured: no protocol is
+ * negotiated and the handshake still completes. Input validation of the
+ * protocol list is exercised alongside. */
+RTEST_F (rtlsclient, tls13_alpn_server_unconfigured, RTEST_FAST)
+{
+  static const rchar * cli[] = { "h2" };
+  static const rchar * bad[] = { "" };
+  rsize sellen = 1;
+
+  r_assert_cmpint (r_tls_client_set_alpn_protocols (fixture->client, bad, 1),
+      ==, R_TLS_ERROR_INVAL);
+  r_assert_cmpint (r_tls_client_set_alpn_protocols (fixture->client,
+        cli, R_N_ELEMENTS (cli)), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert_cmpptr (r_tls_client_get_alpn_selected (fixture->client, &sellen), ==, NULL);
+  r_assert_cmpuint (sellen, ==, 0);
+}
+RTEST_END;
+
 /* The server requires secp256r1 but the client offers an x25519 key_share, so
  * the server answers with a HelloRetryRequest and the client retries with a
  * secp256r1 share. The handshake can only complete if the retry worked. */
