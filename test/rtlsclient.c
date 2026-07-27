@@ -77,6 +77,56 @@ static const rchar testpkpem_ecdsa[] =
   "Np4My2vJp9DCvlHhpADjI99HT50XfWNpou8qVaNctGgG/xyWBf6us+KY\n"
   "-----END PRIVATE KEY-----\n";
 
+/* Self-signed P-384 / P-521 ECDSA test certificates + PKCS#8 keys, for the 1.3
+ * CertificateVerify schemes ecdsa_secp384r1_sha384 / ecdsa_secp521r1_sha512.
+ * Same generation constraints as testcertpem_ecdsa (small serial, pre-2050). */
+static const rchar testcertpem_ecdsa384[] =
+  "-----BEGIN CERTIFICATE-----\n"
+  "MIIBrzCCATWgAwIBAgIBATAKBggqhkjOPQQDAjAYMRYwFAYDVQQDDA1ybGliLWVj\n"
+  "ZHNhMzg0MB4XDTI2MDcyNzIwNDgyMVoXDTQ4MDYyMTIwNDgyMVowGDEWMBQGA1UE\n"
+  "AwwNcmxpYi1lY2RzYTM4NDB2MBAGByqGSM49AgEGBSuBBAAiA2IABHfcO62ibiQU\n"
+  "glYrb6sPqvtMNBx9hQ8PaSN0tjtDT6j06PCMz723JL6M/fqXtFFfEp7fsc9l/qWt\n"
+  "ebpFUXmSGfae7V9gUcYUn0ymDmCMbhJtbhz04Yq1Yu94g4B1dYMaZaNTMFEwHQYD\n"
+  "VR0OBBYEFAXcoxN3AXnLfJVUpwLdMJkCvPfkMB8GA1UdIwQYMBaAFAXcoxN3AXnL\n"
+  "fJVUpwLdMJkCvPfkMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDaAAwZQIw\n"
+  "el4HTsofk/B7Cp/FJWXqivsbMBj7LFB3/Kom3vjmZ6OJll+utXhd7lElP4mhSq3e\n"
+  "AjEAxUsip5CG6drgL5x89Q9XcZz5hEg1UG9OZ0TnxvyKy2IqujOKcYu0KpqafmyD\n"
+  "fidy\n"
+  "-----END CERTIFICATE-----\n";
+
+static const rchar testpkpem_ecdsa384[] =
+  "-----BEGIN PRIVATE KEY-----\n"
+  "MIG2AgEAMBAGByqGSM49AgEGBSuBBAAiBIGeMIGbAgEBBDDCbWZwdlCAU6sPeKSD\n"
+  "BRf4heZXVNP6ly9a2A/wlmO6RErkq//ezyhEV3PgqJwAUtqhZANiAAR33Dutom4k\n"
+  "FIJWK2+rD6r7TDQcfYUPD2kjdLY7Q0+o9OjwjM+9tyS+jP36l7RRXxKe37HPZf6l\n"
+  "rXm6RVF5khn2nu1fYFHGFJ9Mpg5gjG4SbW4c9OGKtWLveIOAdXWDGmU=\n"
+  "-----END PRIVATE KEY-----\n";
+
+static const rchar testcertpem_ecdsa521[] =
+  "-----BEGIN CERTIFICATE-----\n"
+  "MIIB+TCCAVugAwIBAgIBATAKBggqhkjOPQQDAjAYMRYwFAYDVQQDDA1ybGliLWVj\n"
+  "ZHNhNTIxMB4XDTI2MDcyNzIwNDgyMVoXDTQ4MDYyMTIwNDgyMVowGDEWMBQGA1UE\n"
+  "AwwNcmxpYi1lY2RzYTUyMTCBmzAQBgcqhkjOPQIBBgUrgQQAIwOBhgAEAXM0f8y9\n"
+  "YmTfGEsdGKWUljQ/BpOmgPsHtgrlPrsL5CmpL6JsEMZL1Td7g5tlwKfLh8bB3r8V\n"
+  "oS2Z7Rmbt1JFhsOCAIa5xsoVl42QpunyaIYMFi4TSara6eoZDJXQXV0Q2q9mY/Qk\n"
+  "erTFmxh4V8vRl2+BFnNDAQ15LglOnRFvVKNnfuY6o1MwUTAdBgNVHQ4EFgQUjgHe\n"
+  "cUiLJUWqs95CAU2QI7hnECswHwYDVR0jBBgwFoAUjgHecUiLJUWqs95CAU2QI7hn\n"
+  "ECswDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgOBiwAwgYcCQgHGr2XEchte\n"
+  "EwLZC2sD13k14Q59MbySYcBefHSm+Yw1VgM3eEgKyYP6ncLqJepTxhKiVCxTjNRS\n"
+  "1Pa08NMrrl1+jAJBJ/KZxMUz/jGseAq+OSN6cF6irVc5y/yQi06ZAviKikaqRcyx\n"
+  "s5z6FC1GXtKu3yjbdOk8pMJ/3XMmvIKC6iG54TI=\n"
+  "-----END CERTIFICATE-----\n";
+
+static const rchar testpkpem_ecdsa521[] =
+  "-----BEGIN PRIVATE KEY-----\n"
+  "MIHuAgEAMBAGByqGSM49AgEGBSuBBAAjBIHWMIHTAgEBBEIAgpoilaQNti83T+zw\n"
+  "0wJL9Y3m0WLkPAmG7bb3cFi26R1Q+XLIF2t/GKwirvWSAD+v7D5OzTMxKF434kLB\n"
+  "xpV5HSuhgYkDgYYABAFzNH/MvWJk3xhLHRillJY0PwaTpoD7B7YK5T67C+QpqS+i\n"
+  "bBDGS9U3e4ObZcCny4fGwd6/FaEtme0Zm7dSRYbDggCGucbKFZeNkKbp8miGDBYu\n"
+  "E0mq2unqGQyV0F1dENqvZmP0JHq0xZsYeFfL0ZdvgRZzQwENeS4JTp0Rb1SjZ37m\n"
+  "Og==\n"
+  "-----END PRIVATE KEY-----\n";
+
 RTEST_FIXTURE_STRUCT (rtlsclient)
 {
   RTLSServer * server;
@@ -541,6 +591,40 @@ RTEST_F (rtlsclient, tls13_loopback_ecdsa, RTEST_FAST)
 
   r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ecdsa, -1)), !=, NULL);
   r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ecdsa, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+/* P-384 / P-521 ECDSA server certificates: the 1.3 CertificateVerify uses
+ * ecdsa_secp384r1_sha384 / ecdsa_secp521r1_sha512, so the server signs and the
+ * client verifies with SHA-384 / SHA-512 -- the handshake completing exercises
+ * the curve-matched scheme selection and digest on both sides. */
+RTEST_F (rtlsclient, tls13_loopback_ecdsa_secp384r1, RTEST_FAST)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ecdsa384, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ecdsa384, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls13_loopback_ecdsa_secp521r1, RTEST_FAST)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ecdsa521, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ecdsa521, -1, NULL, 0)), !=, NULL);
   r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
   r_crypto_key_unref (pk);
   r_crypto_cert_unref (cert);
