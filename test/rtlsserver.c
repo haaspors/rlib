@@ -1144,6 +1144,99 @@ RTEST_F (rtlsserver, dtls_renegotiation_info_scsv, RTEST_FAST)
 }
 RTEST_END;
 
+/* A TLS 1.2 ClientHello (RSA-AES128-CBC-SHA, null compression, empty
+ * renegotiation_info) that additionally lists TLS_FALLBACK_SCSV, marking the
+ * offer as a deliberate downgrade (RFC 7507). */
+static rsize
+r_test_tls_build_client_hello_fallback (RPrng * prng, ruint8 * ch, rsize chcap)
+{
+  ruint8 body[256];
+  ruint8 * p = body;
+  ruint8 * extlenp;
+  rsize bodylen, hssz;
+
+  *p++ = 0x03; *p++ = 0x03;                  /* client_version TLS 1.2 */
+  r_prng_fill (prng, p, R_TLS_HELLO_RANDOM_BYTES); p += R_TLS_HELLO_RANDOM_BYTES;
+  *p++ = 0;                                  /* session id length */
+  r_store_be16 (p, 4); p += 2;               /* cipher-suites length (2 entries) */
+  r_store_be16 (p, (ruint16) R_TLS_CS_RSA_WITH_AES_128_CBC_SHA); p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_CS_FALLBACK_SCSV); p += 2;
+  *p++ = 1; *p++ = 0;                        /* compression: null */
+  extlenp = p; p += 2;
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_RENEGOTIATION_INFO); p += 2;
+  r_store_be16 (p, 1); p += 2; *p++ = 0;
+  r_store_be16 (extlenp, (ruint16) (p - (extlenp + 2)));
+  bodylen = (rsize) (p - body);
+
+  r_assert_cmpint (r_tls_write_handshake (ch, chcap, &hssz, R_TLS_VERSION_TLS_1_2,
+        R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO, (ruint16) bodylen), ==, R_TLS_ERROR_OK);
+  r_memcpy (ch + hssz, body, bodylen);
+  return hssz + bodylen;
+}
+
+/* RFC 7507: a ClientHello that lists TLS_FALLBACK_SCSV while offering only
+ * TLS 1.2 to a server that also speaks 1.3 has been downgraded below the
+ * highest common version; the server aborts with a fatal inappropriate_fallback
+ * alert. */
+RTEST_F (rtlsserver, tls_fallback_scsv_rejected, RTEST_FAST)
+{
+  ruint8 ch[256];
+  rsize chlen;
+  RBuffer * buf;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSAlertLevel alevel;
+  RTLSAlertType atype;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_client_hello_fallback (fixture->prng, ch, sizeof (ch));
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert (fixture->got_error);
+  r_assert_cmpuint (fixture->last_alert, ==, R_TLS_ALERT_TYPE_INAPPROPRIATE_FALLBACK);
+  r_assert (!fixture->hs_done);
+
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_ALERT);
+  r_assert_cmpint (r_tls_parser_parse_alert (&parser, &alevel, &atype), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (alevel, ==, R_TLS_ALERT_LEVEL_FATAL);
+  r_assert_cmpuint (atype, ==, R_TLS_ALERT_TYPE_INAPPROPRIATE_FALLBACK);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+/* When the server's own maximum is TLS 1.2 the fallback SCSV is not a downgrade
+ * signal -- the client offered the server's best version -- so the handshake
+ * proceeds to a ServerHello rather than aborting (RFC 7507). */
+RTEST_F (rtlsserver, tls_fallback_scsv_at_max_version_ok, RTEST_FAST)
+{
+  ruint8 ch[256];
+  rsize chlen;
+  RBuffer * buf;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSHelloMsg msg;
+
+  r_assert_cmpint (r_tls_server_set_version_range (fixture->server,
+        R_TLS_VERSION_TLS_1_2, R_TLS_VERSION_TLS_1_2), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+
+  chlen = r_test_tls_build_client_hello_fallback (fixture->prng, ch, sizeof (ch));
+  r_test_tls_server_feed (fixture->server, ch, chlen);
+
+  r_assert (!fixture->got_error);
+  r_assert_cmpptr ((buf = r_test_tls_server_queue_agg (&fixture->qout)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, buf), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmpint (r_tls_parser_parse_hello (&parser, &msg), ==, R_TLS_ERROR_OK);
+  r_tls_parser_clear (&parser);
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 /* A ClientHello whose trailing extension declares a body that isn't present
  * must be parsed without reading past the extensions block: the extension
  * iterator stops at the truncated entry and the handshake proceeds from the

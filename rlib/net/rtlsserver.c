@@ -2445,6 +2445,15 @@ r_tls_server_nego_hello (RTLSServer * server, RTLSVersion verlo, RTLSVersion ver
       server->version < server->min_version)
     return R_TLS_ERROR_VERSION;
 
+  /* RFC 7507: TLS_FALLBACK_SCSV marks a ClientHello as a deliberate downgrade
+   * of the client's own retry. Having landed below the highest version we
+   * support, that fallback was forced by a meddler -- refuse it. Pairs with the
+   * RFC 8446 4.1.3 ServerHello.random sentinel, which guards the reverse path. */
+  if (!r_tls_version_is_dtls (server->version) &&
+      server->version < server->max_version &&
+      r_tls_hello_msg_has_cipher_suite (&server->hello, R_TLS_CS_FALLBACK_SCSV))
+    return R_TLS_ERROR_INAPPROPRIATE_FALLBACK;
+
   if (R_UNLIKELY (server->hello.cslen == 0 || (server->hello.cslen & 1)))
     return R_TLS_ERROR_CORRUPT_RECORD;
   count = server->hello.cslen / sizeof (ruint16);
@@ -3016,6 +3025,8 @@ r_tls_server_alert_for_error (RTLSError err)
       return R_TLS_ALERT_TYPE_ILLEGAL_PARAMETER;
     case R_TLS_ERROR_NO_APPLICATION_PROTOCOL: /* no ALPN protocol in common */
       return R_TLS_ALERT_TYPE_NO_APPLICATION_PROTOCOL;
+    case R_TLS_ERROR_INAPPROPRIATE_FALLBACK:  /* RFC 7507 fallback SCSV */
+      return R_TLS_ALERT_TYPE_INAPPROPRIATE_FALLBACK;
     case R_TLS_ERROR_HS_VERIFICATION_FAILED:  /* could not verify Finished */
       return R_TLS_ALERT_TYPE_DECRYPT_ERROR;
     case R_TLS_ERROR_VERSION:
