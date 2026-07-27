@@ -160,6 +160,28 @@ R_API RTLSError r_tls_client_request_ocsp (RTLSClient * client, rboolean request
 R_API const ruint8 * r_tls_client_get_ocsp_response (const RTLSClient * client,
     rsize * len);
 /**
+ * @brief Offer the @c signed_certificate_timestamp extension to request SCTs
+ * (RFC 6962).
+ *
+ * With @p request @c TRUE the ClientHello asks the server for Signed Certificate
+ * Timestamps evidencing certificate-transparency log inclusion; if the server
+ * carries them, the serialized @c SignedCertificateTimestampList is available
+ * after the handshake via @ref r_tls_client_get_sct_list. The list is delivered
+ * as-is -- the library does not validate it. Off by default; must be called
+ * before @ref r_tls_client_start. Applies to TLS 1.3 only.
+ */
+R_API RTLSError r_tls_client_request_sct (RTLSClient * client, rboolean request);
+/**
+ * @brief The Signed Certificate Timestamps the server sent, or @c NULL.
+ *
+ * Valid once the handshake has completed when @ref r_tls_client_request_sct was
+ * set and the server carried them (RFC 6962). The bytes are the serialized
+ * @c SignedCertificateTimestampList, borrowed (owned by the session); @p len,
+ * when non-@c NULL, receives the length. The library does not validate them.
+ */
+R_API const ruint8 * r_tls_client_get_sct_list (const RTLSClient * client,
+    rsize * len);
+/**
  * @brief Constrain the TLS versions the client offers.
  *
  * Both bounds lie in the window @c R_TLS_VERSION_TLS_1_2 ..

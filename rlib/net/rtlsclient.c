@@ -117,6 +117,10 @@ struct RTLSClient {
   ruint8 * ocsp_response;         /* stapled OCSPResponse the server sent (owned), or NULL */
   rsize ocsp_len;
 
+  rboolean request_sct;           /* offer signed_certificate_timestamp (RFC 6962) */
+  ruint8 * sct_list;              /* SignedCertificateTimestampList the server sent (owned), or NULL */
+  rsize sct_len;
+
   rboolean ecdhe;                  /* an ECDHE suite was negotiated */
   REcurveID ecdhe_curve;           /* the server-selected named group */
   RCryptoKey * ecdhe_key;          /* client ephemeral ECDH private key */
@@ -211,6 +215,7 @@ r_tls_client_free (RTLSClient * client)
     r_crypto_key_unref (client->privkey);
   r_free (client->server_name);
   r_free (client->ocsp_response);
+  r_free (client->sct_list);
   if (client->alpn_protocols != NULL) {
     rsize i;
     for (i = 0; i < client->alpn_count; i++)
@@ -464,6 +469,28 @@ r_tls_client_get_ocsp_response (const RTLSClient * client, rsize * len)
   if (len != NULL)
     *len = client->ocsp_len;
   return client->ocsp_response;
+}
+
+RTLSError
+r_tls_client_request_sct (RTLSClient * client, rboolean request)
+{
+  if (R_UNLIKELY (client == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (client->state != R_TLS_CLIENT_INITIAL)) return R_TLS_ERROR_WRONG_STATE;
+
+  client->request_sct = request;
+  return R_TLS_ERROR_OK;
+}
+
+const ruint8 *
+r_tls_client_get_sct_list (const RTLSClient * client, rsize * len)
+{
+  if (R_UNLIKELY (client == NULL)) {
+    if (len != NULL) *len = 0;
+    return NULL;
+  }
+  if (len != NULL)
+    *len = client->sct_len;
+  return client->sct_list;
 }
 
 RTLSError
@@ -904,6 +931,16 @@ r_tls_client_write_hs_ext_status_request (ruint8 * ptr)
   return 9;
 }
 
+/* signed_certificate_timestamp: request SCTs (RFC 6962). Empty in a
+ * ClientHello. */
+static ruint16
+r_tls_client_write_hs_ext_sct (ruint8 * ptr)
+{
+  r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_SIGNED_CERTIFICATE_TIMESTAMP);
+  r_store_be16 (&ptr[2], 0);
+  return 4;
+}
+
 /* Whether an EncryptedExtensions handshake message (a full message: 4-byte
  * header then a uint16-prefixed extension list) carries an early_data
  * extension, i.e. the server accepted 0-RTT. */
@@ -999,11 +1036,13 @@ r_tls_client_ee_apply_record_size_limit (RTLSClient * client,
   }
 }
 
-/* Extract a stapled OCSP response from a leaf CertificateEntry Extension list
- * (status_request, RFC 8446 4.4.2.1): CertificateStatus{ status_type=ocsp(1);
- * OCSPResponse<1..2^24-1> }. Stores a copy on the client. */
+/* Extract the per-entry extensions carried in a leaf CertificateEntry
+ * (RFC 8446 4.4.2.1): a stapled OCSP response (status_request,
+ * CertificateStatus{ status_type=ocsp(1); OCSPResponse }) and/or Signed
+ * Certificate Timestamps (signed_certificate_timestamp, RFC 6962). Stores copies
+ * of the ones the client asked for. */
 static void
-r_tls_client_apply_cert_status (RTLSClient * client,
+r_tls_client_apply_cert_exts (RTLSClient * client,
     const ruint8 * ext, ruint16 extlen)
 {
   const ruint8 * p = ext, * end = ext + extlen;
@@ -1014,14 +1053,19 @@ r_tls_client_apply_cert_status (RTLSClient * client,
     p += 4;
     if (p + elen > end)
       return;
-    if (etype == R_TLS_EXT_TYPE_STATUS_REQUEST && elen >= 4 && p[0] == 1 /* ocsp */) {
+    if (client->request_ocsp && etype == R_TLS_EXT_TYPE_STATUS_REQUEST &&
+        elen >= 4 && p[0] == 1 /* ocsp */) {
       rsize rlen = ((rsize) p[1] << 16) | ((rsize) p[2] << 8) | p[3];
       if (4 + rlen <= (rsize) elen && rlen > 0) {
         r_free (client->ocsp_response);
         client->ocsp_response = r_memdup (p + 4, rlen);
         client->ocsp_len = (client->ocsp_response != NULL) ? rlen : 0;
       }
-      return;
+    } else if (client->request_sct &&
+        etype == R_TLS_EXT_TYPE_SIGNED_CERTIFICATE_TIMESTAMP && elen > 0) {
+      r_free (client->sct_list);
+      client->sct_list = r_memdup (p, elen);
+      client->sct_len = (client->sct_list != NULL) ? elen : 0;
     }
     p += elen;
   }
@@ -1219,6 +1263,8 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
             ptr + 2 + extsize, client->record_size_limit);
       if (client->request_ocsp)
         extsize += r_tls_client_write_hs_ext_status_request (ptr + 2 + extsize);
+      if (client->request_sct)
+        extsize += r_tls_client_write_hs_ext_sct (ptr + 2 + extsize);
       /* Advertise (EC)DHE resumption support so the server issues tickets. */
       extsize += r_tls_client_write_hs_ext_psk_key_exchange_modes (ptr + 2 + extsize);
       /* early_data (0-RTT) sits before pre_shared_key, which stays last. */
@@ -1876,8 +1922,9 @@ r_tls_client_flight13 (RTLSClient * client, const RTLSParser * parser)
         err = R_TLS_ERROR_CORRUPT_CERTIFICATE;
       else {
         client->peer_cert = r_crypto_cert_ref (chain[0]);
-        if (client->request_ocsp && leafext != NULL && leafextlen > 0)
-          r_tls_client_apply_cert_status (client, leafext, leafextlen);
+        if ((client->request_ocsp || client->request_sct) &&
+            leafext != NULL && leafextlen > 0)
+          r_tls_client_apply_cert_exts (client, leafext, leafextlen);
         err = R_TLS_ERROR_OK;
       }
       for (i = 0; i < n; i++)
