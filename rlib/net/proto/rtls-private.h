@@ -80,8 +80,16 @@ R_API_HIDDEN rboolean r_tls_prf_and_hash_for (RMsgDigestType hash,
  * is Montgomery (raw little-endian u-coordinate, the rxdh primitives). These
  * helpers hide that split so both endpoints share one code path. */
 
+/* Largest (EC)DHE shared secret and uncompressed ECPoint across the supported
+ * groups: P-521 has 66-byte coordinates, so a 66-byte shared secret and a
+ * 133-byte uncompressed point (0x04 || X || Y). Buffers on the key-exchange
+ * paths are sized to these so any supported group fits (RFC 8446 7.4.2 / SEC 1). */
+#define R_TLS_ECDHE_SECRET_MAX    66
+#define R_TLS_ECDHE_POINT_MAX     133
+
 /* Map a TLS supported_group to an REcurveID we can do ECDHE on, gating to the
- * curves this cut supports (secp256r1, x25519). Returns FALSE otherwise. */
+ * curves this cut supports (secp256r1, secp384r1, secp521r1, x25519, x448).
+ * Returns FALSE otherwise. */
 R_API_HIDDEN rboolean r_tls_ecdhe_group_to_curve (RTLSSupportedGroup group,
     REcurveID * curve);
 

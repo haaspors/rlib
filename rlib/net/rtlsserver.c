@@ -994,7 +994,7 @@ r_tls_server_write_key_exchange (RTLSServer * server)
   RBuffer * buf;
   RTLSError ret;
   RMemMapInfo info;
-  ruint8 point[65];                     /* SEC 1 uncompressed P-256; x25519 is 32 */
+  ruint8 point[R_TLS_ECDHE_POINT_MAX];  /* SEC 1 uncompressed, up to P-521 */
   ruint8 tbs[2 * R_TLS_HELLO_RANDOM_BYTES + 4 + sizeof (point)];
   ruint8 hash[64];
   ruint8 sig[512];
@@ -2163,7 +2163,7 @@ r_tls_server_sign_certificate_verify13 (RTLSServer * server,
 static RTLSError
 r_tls_server_write_flight13 (RTLSServer * server)
 {
-  ruint8 ecdhe[64], th[R_TLS13_SECRET_MAX];
+  ruint8 ecdhe[R_TLS_ECDHE_SECRET_MAX], th[R_TLS13_SECRET_MAX];
   ruint8 sig[512], finkey[R_TLS13_SECRET_MAX], vd[R_TLS13_SECRET_MAX];
   ruint8 body[4096];
   rsize ecdhelen = 0, siglen = sizeof (sig), bodylen = 0;
@@ -2758,7 +2758,7 @@ r_tls_server_parse_certificate_verify (RTLSServer * server, const RTLSParser * p
 
 static RTLSError
 r_tls_server_parse_client_key_exchange (RTLSServer * server,
-    const RTLSParser * parser, ruint8 pms[48], rsize * pmslen)
+    const RTLSParser * parser, ruint8 pms[R_TLS_ECDHE_SECRET_MAX], rsize * pmslen)
 {
   const ruint8 * encpms;
   rsize size;
@@ -2779,7 +2779,7 @@ r_tls_server_parse_client_key_exchange (RTLSServer * server,
      * zero secrets; the shared secret is the variable-length premaster. */
     if ((peer = r_tls_ecdhe_point_read (server->ecdhe_curve, point, pointlen)) == NULL)
       return R_TLS_ERROR_HANDSHAKE_FAILURE;
-    ok = r_tls_ecdhe_compute (server->ecdhe_key, peer, pms, 48, pmslen);
+    ok = r_tls_ecdhe_compute (server->ecdhe_key, peer, pms, R_TLS_ECDHE_SECRET_MAX, pmslen);
     r_crypto_key_unref (peer);
     return ok ? R_TLS_ERROR_OK : R_TLS_ERROR_HANDSHAKE_FAILURE;
   }
@@ -3355,7 +3355,7 @@ static RTLSError
 r_tls_server_state_key_exchange (RTLSServer * server, const RTLSParser * parser)
 {
   RTLSError err;
-  ruint8 pms[48];
+  ruint8 pms[R_TLS_ECDHE_SECRET_MAX];
   rsize pmslen = sizeof (pms);
 
   if ((err = r_tls_server_parse_client_key_exchange (server, parser, pms, &pmslen)) == R_TLS_ERROR_OK)
