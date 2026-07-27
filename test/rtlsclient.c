@@ -715,6 +715,35 @@ RTEST_F (rtlsclient, tls13_loopback_hrr, RTEST_FAST)
 }
 RTEST_END;
 
+/* The client offers a key_share for x25519 but lists the other supported groups
+ * too; pinning the server to each in turn forces a HelloRetryRequest and drives
+ * the client's retry with that group's key_share. The handshake completing
+ * exercises keygen / point / ECDH shared-secret for the group end to end -- the
+ * secp521r1 case in particular covers the 66-byte secret / 133-byte point. */
+RTEST_F (rtlsclient, tls13_loopback_group_secp384r1, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
+        R_TLS_SUPPORTED_GROUP_SECP384R1), ==, R_TLS_ERROR_OK);
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls13_loopback_group_secp521r1, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
+        R_TLS_SUPPORTED_GROUP_SECP521R1), ==, R_TLS_ERROR_OK);
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, tls13_loopback_group_x448, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
+        R_TLS_SUPPORTED_GROUP_X448), ==, R_TLS_ERROR_OK);
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
 /* Drive CH1 -> HelloRetryRequest with a server that requires secp256r1 while
  * the client first offers x25519. Returns the (still-owned) HRR record and
  * leaves the client having consumed nothing yet. */

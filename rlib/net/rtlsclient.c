@@ -598,12 +598,20 @@ r_tls_client_write_hs_ext_encrypt_then_mac (ruint8 * ptr)
 static ruint16
 r_tls_client_write_hs_ext_supported_groups (ruint8 * ptr)
 {
+  static const RTLSSupportedGroup groups[] = {
+    R_TLS_SUPPORTED_GROUP_SECP256R1, R_TLS_SUPPORTED_GROUP_X25519,
+    R_TLS_SUPPORTED_GROUP_SECP384R1, R_TLS_SUPPORTED_GROUP_SECP521R1,
+    R_TLS_SUPPORTED_GROUP_X448,
+  };
+  ruint16 listlen = (ruint16) (R_N_ELEMENTS (groups) * sizeof (ruint16));
+  rsize i;
+
   r_store_be16 (&ptr[0], (ruint16)R_TLS_EXT_TYPE_SUPPORTED_GROUPS);
-  r_store_be16 (&ptr[2], 2 + 2 * sizeof (ruint16));   /* list length + 2 groups */
-  r_store_be16 (&ptr[4], 2 * sizeof (ruint16));       /* named-group list length */
-  r_store_be16 (&ptr[6], (ruint16)R_TLS_SUPPORTED_GROUP_SECP256R1);
-  r_store_be16 (&ptr[8], (ruint16)R_TLS_SUPPORTED_GROUP_X25519);
-  return 10;
+  r_store_be16 (&ptr[2], (ruint16)(sizeof (ruint16) + listlen));  /* list length + groups */
+  r_store_be16 (&ptr[4], listlen);                                /* named-group list length */
+  for (i = 0; i < R_N_ELEMENTS (groups); i++)
+    r_store_be16 (&ptr[6 + i * sizeof (ruint16)], (ruint16) groups[i]);
+  return (ruint16) (6 + listlen);
 }
 
 static ruint16
@@ -1414,7 +1422,7 @@ r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hell
 static RTLSError
 r_tls_client_setup_keys13 (RTLSClient * client)
 {
-  ruint8 ecdhe[64], th[R_TLS13_SECRET_MAX];
+  ruint8 ecdhe[R_TLS_ECDHE_SECRET_MAX], th[R_TLS13_SECRET_MAX];
   rsize ecdhelen = 0, hlen = r_msg_digest_type_size (client->cs13_hash);
 
   if (!r_msg_digest_get_data (client->hshash, th, hlen, NULL))
@@ -2046,12 +2054,13 @@ r_tls_client_send_certificate_verify (RTLSClient * client)
 /* ECDHE ClientKeyExchange: send our ephemeral public point and compute the
  * premaster from the ECDH shared secret. */
 static RTLSError
-r_tls_client_send_key_exchange_ecdhe (RTLSClient * client, ruint8 pms[48], rsize * pmslen)
+r_tls_client_send_key_exchange_ecdhe (RTLSClient * client,
+    ruint8 pms[R_TLS_ECDHE_SECRET_MAX], rsize * pmslen)
 {
   RBuffer * buf;
   RTLSError ret;
   RMemMapInfo info;
-  ruint8 point[65];
+  ruint8 point[R_TLS_ECDHE_POINT_MAX];
   ruint8 pointlen;
 
   if (client->ecdhe_key == NULL || client->ecdhe_server_pub == NULL)
@@ -2059,7 +2068,8 @@ r_tls_client_send_key_exchange_ecdhe (RTLSClient * client, ruint8 pms[48], rsize
   if (!r_tls_ecdhe_point_write (client->ecdhe_key, client->ecdhe_curve,
         point, sizeof (point), &pointlen))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (!r_tls_ecdhe_compute (client->ecdhe_key, client->ecdhe_server_pub, pms, 48, pmslen))
+  if (!r_tls_ecdhe_compute (client->ecdhe_key, client->ecdhe_server_pub,
+        pms, R_TLS_ECDHE_SECRET_MAX, pmslen))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
   if ((buf = r_tls_client_alloc_buffer (client)) == NULL)
@@ -2103,7 +2113,8 @@ r_tls_client_send_key_exchange_ecdhe (RTLSClient * client, ruint8 pms[48], rsize
 }
 
 static RTLSError
-r_tls_client_send_key_exchange (RTLSClient * client, ruint8 pms[48], rsize * pmslen)
+r_tls_client_send_key_exchange (RTLSClient * client,
+    ruint8 pms[R_TLS_ECDHE_SECRET_MAX], rsize * pmslen)
 {
   RBuffer * buf;
   RTLSError ret;
@@ -2299,7 +2310,7 @@ static RTLSError
 r_tls_client_send_flight (RTLSClient * client)
 {
   RTLSError ret = R_TLS_ERROR_OK;
-  ruint8 pms[48];
+  ruint8 pms[R_TLS_ECDHE_SECRET_MAX];
   rsize pmslen = sizeof (pms);
 
   /* mTLS: a Certificate (the configured one, or empty) precedes the

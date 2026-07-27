@@ -66,7 +66,10 @@ r_tls_ecdhe_group_to_curve (RTLSSupportedGroup group, REcurveID * curve)
 {
   switch (group) {
     case R_TLS_SUPPORTED_GROUP_SECP256R1: *curve = R_ECURVE_ID_SECP256R1; return TRUE;
+    case R_TLS_SUPPORTED_GROUP_SECP384R1: *curve = R_ECURVE_ID_SECP384R1; return TRUE;
+    case R_TLS_SUPPORTED_GROUP_SECP521R1: *curve = R_ECURVE_ID_SECP521R1; return TRUE;
     case R_TLS_SUPPORTED_GROUP_X25519:    *curve = R_ECURVE_ID_X25519;    return TRUE;
+    case R_TLS_SUPPORTED_GROUP_X448:      *curve = R_ECURVE_ID_X448;      return TRUE;
     default: return FALSE;
   }
 }
