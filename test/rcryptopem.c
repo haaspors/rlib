@@ -1112,6 +1112,79 @@ RTEST (rcryptopem, ed25519_spki_public_key, RTEST_FAST)
 }
 RTEST_END;
 
+static const rchar pem_ed448_pkcs8[] =
+  "-----BEGIN PRIVATE KEY-----\n"
+  "MEcCAQAwBQYDK2VxBDsEORtAq9iHLGotJ4Nctu8X08dMYN9OVyGG7L7/uhFDrJ7q\n"
+  "dLpCuWG+OY9CEHXZFz+l0DOgJkvQiK+drg==\n"
+  "-----END PRIVATE KEY-----\n";
+static const rchar pem_ed448_spki[] =
+  "-----BEGIN PUBLIC KEY-----\n"
+  "MEMwBQYDK2VxAzoAuxgkouGhiulctzT81PgVMefe589Nio31w2oeg7gb7+dvLPu0\n"
+  "N+dzTBRjrShX1b6V3gi4+IOcWH6A\n"
+  "-----END PUBLIC KEY-----\n";
+static const ruint8 ed448_pub[] = {
+  0xbb, 0x18, 0x24, 0xa2, 0xe1, 0xa1, 0x8a, 0xe9, 0x5c, 0xb7, 0x34, 0xfc,
+  0xd4, 0xf8, 0x15, 0x31, 0xe7, 0xde, 0xe7, 0xcf, 0x4d, 0x8a, 0x8d, 0xf5,
+  0xc3, 0x6a, 0x1e, 0x83, 0xb8, 0x1b, 0xef, 0xe7, 0x6f, 0x2c, 0xfb, 0xb4,
+  0x37, 0xe7, 0x73, 0x4c, 0x14, 0x63, 0xad, 0x28, 0x57, 0xd5, 0xbe, 0x95,
+  0xde, 0x08, 0xb8, 0xf8, 0x83, 0x9c, 0x58, 0x7e, 0x80
+};
+
+RTEST (rcryptopem, ed448_pkcs8_private_key, RTEST_FAST)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  const ruint8 * pub = NULL;
+  rsize pubsize = 0;
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_ed448_pkcs8, sizeof (pem_ed448_pkcs8))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_crypto_key_get_type (key), ==, R_CRYPTO_PRIVATE_KEY);
+  r_assert_cmpint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_ED448);
+
+  /* The seed derives the public key -- check it matches the known pair. */
+  r_assert (r_ed448_key_get_pub (key, &pub, &pubsize));
+  r_assert_cmpuint (pubsize, ==, sizeof (ed448_pub));
+  r_assert_cmpmem (pub, ==, ed448_pub, pubsize);
+
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+}
+RTEST_END;
+
+RTEST (rcryptopem, ed448_spki_public_key, RTEST_FAST)
+{
+  RPemParser * parser;
+  RPemBlock * block;
+  RCryptoKey * key;
+  const ruint8 * pub = NULL;
+  rsize pubsize = 0;
+
+  r_assert_cmpptr (
+      (parser = r_pem_parser_new (pem_ed448_spki, sizeof (pem_ed448_spki))),
+      !=, NULL);
+  r_assert_cmpptr ((block = r_pem_parser_next_block (parser)), !=, NULL);
+
+  r_assert_cmpptr ((key = r_pem_block_get_key (block, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_crypto_key_get_type (key), ==, R_CRYPTO_PUBLIC_KEY);
+  r_assert_cmpint (r_crypto_key_get_algo (key), ==, R_CRYPTO_ALGO_ED448);
+
+  r_assert (r_ed448_key_get_pub (key, &pub, &pubsize));
+  r_assert_cmpuint (pubsize, ==, sizeof (ed448_pub));
+  r_assert_cmpmem (pub, ==, ed448_pub, pubsize);
+
+  r_crypto_key_unref (key);
+  r_pem_block_unref (block);
+  r_pem_parser_unref (parser);
+}
+RTEST_END;
+
 /* Round-trip the given key through r_pem_write_private_key_dup +
  * r_pem_parser_new, returning the decoded key. Caller owns it. */
 static RCryptoKey *
