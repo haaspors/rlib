@@ -5,7 +5,8 @@
  * validity window (independent of the build host's clock). Leaves carry SAN
  * DNS:localhost + IP:127.0.0.1 and extendedKeyUsage serverAuth unless their name
  * says otherwise; leaf_clientauth is the client (CN=rlib Test Client, clientAuth).
- * Regenerate via test/gen-rtlstestcerts.sh.
+ * A parallel Ed448 root/intermediate/leaf chain exercises PureEdDSA chain
+ * verification. Regenerate via test/gen-rtlstestcerts.sh.
  */
 #ifndef __R_TEST_TLS_TEST_CERTS_H__
 #define __R_TEST_TLS_TEST_CERTS_H__
@@ -369,6 +370,52 @@ static const rchar rtest_leaf_clientauth_key_pem[] =
   "y31Xo4pN9Mnw13sxxcQ4BlZsFyxkrynL/u4SE1zf/eKoDjettm/T6qctLLeDp2bW\r\n"
   "w1DB9mABK7t9AtCvgLtbNjM=\r\n"
   "-----END PRIVATE KEY-----\r\n"
+;
+
+static const rchar rtest_ed448_root_pem[] =
+  "-----BEGIN CERTIFICATE-----\r\n"
+  "MIIBuTCCATmgAwIBAgIURJdDX2UoF5MbgomZfOeREg0ZTl4wBQYDK2VxMCIxIDAe\r\n"
+  "BgNVBAMMF3JsaWIgVGVzdCBFZDQ0OCBSb290IENBMCAXDTE1MDEwMTAwMDAwMFoY\r\n"
+  "DzIxMjUwMTAxMDAwMDAwWjAiMSAwHgYDVQQDDBdybGliIFRlc3QgRWQ0NDggUm9v\r\n"
+  "dCBDQTBDMAUGAytlcQM6AFOLEGeqwiVsOv3S6FgiqfPHL6SaqWCLQUz5/J0SQ5da\r\n"
+  "hhgLYFqV2pSC+AXeyl7Ipeih+BYH06ysAKNmMGQwHQYDVR0OBBYEFNmXKlZOCGWs\r\n"
+  "sm+tuxSebXjPk+d1MB8GA1UdIwQYMBaAFNmXKlZOCGWssm+tuxSebXjPk+d1MBIG\r\n"
+  "A1UdEwEB/wQIMAYBAf8CAQEwDgYDVR0PAQH/BAQDAgEGMAUGAytlcQNzANSxbwqe\r\n"
+  "hcUvFLCOW0iR59rXB5x9/AJYw4dL6eFx0NomeItCXAye6KsEOb41P42av3OdNnDe\r\n"
+  "4Q7cgEoCQ3LSbKQpzqRQkpRFFVZZPT2PxQd4DcVM0vS1CE9p3VnMEllye/bOXbXd\r\n"
+  "hSBUxMXXYv164e82AA==\r\n"
+  "-----END CERTIFICATE-----\r\n"
+;
+
+static const rchar rtest_ed448_inter_pem[] =
+  "-----BEGIN CERTIFICATE-----\r\n"
+  "MIIBwTCCAUGgAwIBAgIUGuvbiFIeioaiDLpchvcxYMC8XlUwBQYDK2VxMCIxIDAe\r\n"
+  "BgNVBAMMF3JsaWIgVGVzdCBFZDQ0OCBSb290IENBMCAXDTE1MDEwMTAwMDAwMFoY\r\n"
+  "DzIxMjUwMTAxMDAwMDAwWjAqMSgwJgYDVQQDDB9ybGliIFRlc3QgRWQ0NDggSW50\r\n"
+  "ZXJtZWRpYXRlIENBMEMwBQYDK2VxAzoA4ajQYESZ7RPA+esQiViGKzsScRyyWkb8\r\n"
+  "X4NDNSsESlyJfXUarQXKU5CcgJvcqN/QK1J7nBpX/FqAo2YwZDASBgNVHRMBAf8E\r\n"
+  "CDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBBjAdBgNVHQ4EFgQUP1knkBwfWlCcoJSp\r\n"
+  "d/cZBpjHncgwHwYDVR0jBBgwFoAU2ZcqVk4IZayyb627FJ5teM+T53UwBQYDK2Vx\r\n"
+  "A3MAzdRZsEpREg6wFchsHO0YVpYdS/B22zSnjNqXnKiaIkrkKbtWuSnnREV+IBN7\r\n"
+  "GqRnQmblpHwitCMAIBlDR4jx+zvDR9g/SEloVcfR7pXVefnvVR3je8yZhRCvz0DL\r\n"
+  "mqiGh0W05/Qt+QbQFwJNtjmyKzAA\r\n"
+  "-----END CERTIFICATE-----\r\n"
+;
+
+static const rchar rtest_ed448_leaf_pem[] =
+  "-----BEGIN CERTIFICATE-----\r\n"
+  "MIIB4DCCAWCgAwIBAgIUWOCMOfk+0aesoNo9kdSRJb/nl0kwBQYDK2VxMCoxKDAm\r\n"
+  "BgNVBAMMH3JsaWIgVGVzdCBFZDQ0OCBJbnRlcm1lZGlhdGUgQ0EwIBcNMTUwMTAx\r\n"
+  "MDAwMDAwWhgPMjEyNTAxMDEwMDAwMDBaMBQxEjAQBgNVBAMMCWxvY2FsaG9zdDBD\r\n"
+  "MAUGAytlcQM6ADaLHUXVBD2Q0GVn+AJsXWMmsp8bin3mpZFnW0lT03eDspg1cBIp\r\n"
+  "aKudAihIXZwMTvDKZGr0QICOgKOBkjCBjzAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB\r\n"
+  "/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAaBgNVHREEEzARgglsb2NhbGhv\r\n"
+  "c3SHBH8AAAEwHQYDVR0OBBYEFDuOwXkcARkQN+Y+75VgM0J93nY0MB8GA1UdIwQY\r\n"
+  "MBaAFD9ZJ5AcH1pQnKCUqXf3GQaYx53IMAUGAytlcQNzAHwwdAscwR9EboRBr43v\r\n"
+  "pBZzepP3Z0cZGIJPh3QEufMYtO2XwBHmYsZq15q2R58deqhOibzsZu90AI5y5QYt\r\n"
+  "Ef0ahwpt1Ui6AxzyA6qK2NFK3Rs/pKY3j1R1T9EhiQKa9gQ/FB3HtkQ5mCVrDZoD\r\n"
+  "UrUIAA==\r\n"
+  "-----END CERTIFICATE-----\r\n"
 ;
 
 #endif /* __R_TEST_TLS_TEST_CERTS_H__ */

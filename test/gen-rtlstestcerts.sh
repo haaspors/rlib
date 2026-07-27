@@ -69,6 +69,32 @@ issue leaf_sub      subinter      "basicConstraints=critical,CA:FALSE
 extendedKeyUsage=serverAuth
 subjectAltName=DNS:localhost,IP:127.0.0.1"                               "localhost"
 
+# A parallel Ed448 chain (root/intermediate/leaf), for PureEdDSA chain
+# verification. issue_ed448 mirrors issue but with an Ed448 key and no external
+# digest (EdDSA signs the content directly).
+issue_ed448 () {
+  openssl genpkey -algorithm ed448 -out "$1.key" 2>/dev/null
+  openssl req -new -key "$1.key" -out "$1.csr" -subj "/CN=$4" 2>/dev/null
+  printf '%s\n' "$3" > "$1.ext"
+  openssl x509 -req -in "$1.csr" -CA "$2.crt" -CAkey "$2.key" -CAcreateserial \
+    -out "$1.crt" -not_before "$NOT_BEFORE" -not_after "$NOT_AFTER" \
+    -extfile "$1.ext" 2>/dev/null
+}
+
+openssl genpkey -algorithm ed448 -out ed448_root.key 2>/dev/null
+openssl req -new -x509 -key ed448_root.key -out ed448_root.crt \
+  -not_before "$NOT_BEFORE" -not_after "$NOT_AFTER" \
+  -subj "/CN=rlib Test Ed448 Root CA" \
+  -addext "basicConstraints=critical,CA:TRUE,pathlen:1" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" 2>/dev/null
+
+issue_ed448 ed448_inter ed448_root "basicConstraints=critical,CA:TRUE,pathlen:0
+keyUsage=critical,keyCertSign,cRLSign"                                   "rlib Test Ed448 Intermediate CA"
+issue_ed448 ed448_leaf  ed448_inter "basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:localhost,IP:127.0.0.1"                               "localhost"
+
 emit () {  # emit <c-name> <pem-file>
   printf 'static const rchar %s[] =\n' "$1"
   while IFS= read -r line; do printf '  "%s\\r\\n"\n' "$line"; done < "$2"
@@ -84,7 +110,8 @@ emit () {  # emit <c-name> <pem-file>
  * validity window (independent of the build host's clock). Leaves carry SAN
  * DNS:localhost + IP:127.0.0.1 and extendedKeyUsage serverAuth unless their name
  * says otherwise; leaf_clientauth is the client (CN=rlib Test Client, clientAuth).
- * Regenerate via test/gen-rtlstestcerts.sh.
+ * A parallel Ed448 root/intermediate/leaf chain exercises PureEdDSA chain
+ * verification. Regenerate via test/gen-rtlstestcerts.sh.
  */
 #ifndef __R_TEST_TLS_TEST_CERTS_H__
 #define __R_TEST_TLS_TEST_CERTS_H__
@@ -105,6 +132,9 @@ HDR
   emit rtest_leaf_wild_pem     leaf_wild.crt
   emit rtest_leaf_clientauth_pem     leaf_clientauth.crt
   emit rtest_leaf_clientauth_key_pem leaf_clientauth.key
+  emit rtest_ed448_root_pem          ed448_root.crt
+  emit rtest_ed448_inter_pem         ed448_inter.crt
+  emit rtest_ed448_leaf_pem          ed448_leaf.crt
   echo "#endif /* __R_TEST_TLS_TEST_CERTS_H__ */"
 } > "$OUT"
 
