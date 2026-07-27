@@ -739,9 +739,9 @@ r_tls_client_default_cipher_suites (rpointer ctx, RTLSVersion ver,
   return TRUE;
 }
 
-/* signature_algorithms for 1.3: offer the ECDSA (secp256r1/384r1/521r1) and
- * RSA-PSS (SHA-256/384/512) schemes valid for a 1.3 CertificateVerify, plus
- * rsa_pkcs1_sha256 for certificate signatures. */
+/* signature_algorithms for 1.3: offer the ECDSA (secp256r1/384r1/521r1),
+ * ed25519 and RSA-PSS (SHA-256/384/512) schemes valid for a 1.3
+ * CertificateVerify, plus rsa_pkcs1_sha256 for certificate signatures. */
 static ruint16
 r_tls_client_write_hs_ext_signature_algorithms13 (ruint8 * ptr)
 {
@@ -749,6 +749,7 @@ r_tls_client_write_hs_ext_signature_algorithms13 (ruint8 * ptr)
     R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256,
     R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384,
     R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512,
+    R_TLS_SIGN_SCHEME_ED25519,
     R_TLS_SIGN_SCHEME_RSA_PSS_SHA256,
     R_TLS_SIGN_SCHEME_RSA_PSS_SHA384,
     R_TLS_SIGN_SCHEME_RSA_PSS_SHA512,
@@ -1582,12 +1583,13 @@ r_tls_client_verify_certificate_verify13 (RTLSClient * client,
   RTLSError err;
 
   /* The schemes valid for a 1.3 CertificateVerify that we can verify: ECDSA
-   * (secp256r1/384r1/521r1) and RSA-PSS (SHA-256/384/512). PKCS#1 v1.5 is
-   * forbidden in 1.3; other schemes are rejected. */
+   * (secp256r1/384r1/521r1), RSA-PSS (SHA-256/384/512) and ed25519. PKCS#1
+   * v1.5 is forbidden in 1.3; other schemes are rejected. */
   switch (scheme) {
     case R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256:
     case R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384:
     case R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512:
+    case R_TLS_SIGN_SCHEME_ED25519:
       pss = FALSE;
       break;
     case R_TLS_SIGN_SCHEME_RSA_PSS_SHA256:
@@ -1606,17 +1608,31 @@ r_tls_client_verify_certificate_verify13 (RTLSClient * client,
       !r_tls13_cert_verify_tbs (TRUE, th, hlen, tbs, sizeof (tbs), &tbslen))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
-  if ((md = r_msg_digest_new (mdtype)) == NULL)
+  if ((pub = r_crypto_cert_get_public_key (client->peer_cert)) == NULL)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  if (mdtype == R_MSG_DIGEST_TYPE_NONE) {
+    /* PureEdDSA verifies over the content directly, without a pre-hash. */
+    err = (r_crypto_key_verify (pub, mdtype, tbs, tbslen,
+              sig, sigsize) == R_CRYPTO_OK) ?
+        R_TLS_ERROR_OK : R_TLS_ERROR_HS_VERIFICATION_FAILED;
+    r_crypto_key_unref (pub);
+    return err;
+  }
+
+  if ((md = r_msg_digest_new (mdtype)) == NULL) {
+    r_crypto_key_unref (pub);
     return R_TLS_ERROR_OOM;
+  }
   dlen = r_msg_digest_size (md);
   ok = r_msg_digest_update (md, tbs, tbslen) &&
        r_msg_digest_get_data (md, digest, dlen, NULL);
   r_msg_digest_free (md);
-  if (!ok)
+  if (!ok) {
+    r_crypto_key_unref (pub);
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  }
 
-  if ((pub = r_crypto_cert_get_public_key (client->peer_cert)) == NULL)
-    return R_TLS_ERROR_HANDSHAKE_FAILURE;
   if (pss)
     r_rsa_pub_key_set_padding (pub, R_RSA_PADDING_PKCS1_V21);
   err = (r_crypto_key_verify (pub, mdtype, digest, dlen,
