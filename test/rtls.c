@@ -339,7 +339,7 @@ RTEST (rtls, write_parse_certificate13_roundtrip, RTEST_FAST)
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_handshake (rec, sizeof (rec),
         &hssize, R_TLS_VERSION_TLS_1_3, R_TLS_HANDSHAKE_TYPE_CERTIFICATE, 0));
   r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_hs_certificate13 (
-        rec + hssize, sizeof (rec) - hssize, &bodylen, der, sizeof (der), NULL, 0));
+        rec + hssize, sizeof (rec) - hssize, &bodylen, NULL, 0, der, sizeof (der), NULL, 0));
   /* context(1) + list<3> + entry{ cert<3> + der + ext<2> }. */
   r_assert_cmpuint (bodylen, ==, 1 + 3 + (3 + sizeof (der) + 2));
   r_assert_cmpint (R_TLS_ERROR_OK, ==,
@@ -357,6 +357,77 @@ RTEST (rtls, write_parse_certificate13_roundtrip, RTEST_FAST)
   /* Only one entry: the next walk reports end-of-buffer. */
   r_assert_cmpint (R_TLS_ERROR_EOB, ==,
       r_tls_parser_parse_certificate13_next (&parser, &tlscert));
+
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
+RTEST (rtls, write_parse_certificate_request13_roundtrip, RTEST_FAST)
+{
+  /* Build a TLS 1.3 CertificateRequest with a non-empty context and a
+   * signature_algorithms list, then read the context and schemes back. */
+  static const ruint8 ctx[] = { 0xa1, 0xb2, 0xc3, 0xd4 };
+  static const RTLSSignatureScheme schemes[] = {
+    R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256, R_TLS_SIGN_SCHEME_RSA_PSS_SHA256 };
+  ruint8 rec[64];
+  rsize hssize = 0, bodylen = 0;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSCertReq13 req = { 0, NULL, 0, NULL };
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_handshake (rec, sizeof (rec),
+        &hssize, R_TLS_VERSION_TLS_1_3, R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST, 0));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_hs_certificate_request13 (
+        rec + hssize, sizeof (rec) - hssize, &bodylen, ctx, sizeof (ctx),
+        schemes, R_N_ELEMENTS (schemes)));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_update_handshake_len (rec, sizeof (rec), (ruint16) bodylen));
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_init (&parser, rec, hssize + bodylen));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_parse_certificate_request13 (&parser, &req));
+  r_assert_cmpuint (req.contextlen, ==, sizeof (ctx));
+  r_assert_cmpmem (req.context, ==, ctx, sizeof (ctx));
+  r_assert_cmpuint (req.signschemecount, ==, R_N_ELEMENTS (schemes));
+  r_assert_cmpuint (r_tls_cert_req13_sign_scheme (&req, 0), ==, schemes[0]);
+  r_assert_cmpuint (r_tls_cert_req13_sign_scheme (&req, 1), ==, schemes[1]);
+
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
+RTEST (rtls, write_parse_certificate13_context_roundtrip, RTEST_FAST)
+{
+  /* A post-handshake Certificate echoes a non-empty context; the context reader
+   * returns it and the entry walker still finds the leaf past it. */
+  static const ruint8 ctx[] = { 0x11, 0x22, 0x33 };
+  static const ruint8 der[] = { 0x30, 0x82, 0x01, 0x0a, 0xde, 0xad, 0xbe, 0xef };
+  ruint8 rec[64];
+  rsize hssize = 0, bodylen = 0;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSCertificate tlscert = R_TLS_CERTIFICATE_INIT;
+  const ruint8 * rctx = NULL;
+  ruint8 rctxlen = 0;
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_handshake (rec, sizeof (rec),
+        &hssize, R_TLS_VERSION_TLS_1_3, R_TLS_HANDSHAKE_TYPE_CERTIFICATE, 0));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==, r_tls_write_hs_certificate13 (
+        rec + hssize, sizeof (rec) - hssize, &bodylen, ctx, sizeof (ctx),
+        der, sizeof (der), NULL, 0));
+  r_assert_cmpuint (bodylen, ==, 1 + sizeof (ctx) + 3 + (3 + sizeof (der) + 2));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_update_handshake_len (rec, sizeof (rec), (ruint16) bodylen));
+
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_init (&parser, rec, hssize + bodylen));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_parse_certificate13_context (&parser, &rctx, &rctxlen));
+  r_assert_cmpuint (rctxlen, ==, sizeof (ctx));
+  r_assert_cmpmem (rctx, ==, ctx, sizeof (ctx));
+  r_assert_cmpint (R_TLS_ERROR_OK, ==,
+      r_tls_parser_parse_certificate13_first (&parser, &tlscert));
+  r_assert_cmpuint (tlscert.len, ==, sizeof (der));
+  r_assert_cmpmem (tlscert.cert, ==, der, sizeof (der));
 
   r_tls_parser_clear (&parser);
 }

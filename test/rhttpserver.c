@@ -346,7 +346,7 @@ r_test_tls_client_appdata (rpointer data, RBuffer * buf, rpointer session)
 
 static const RTLSCallbacks g_test_tls_client_cbs = {
   NULL, r_test_tls_client_hs_done, r_test_tls_client_out,
-  r_test_tls_client_appdata, NULL, NULL, NULL,
+  r_test_tls_client_appdata, NULL, NULL, NULL, NULL,
 };
 
 static void

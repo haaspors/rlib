@@ -159,6 +159,13 @@ struct RTLSServer {
   rsize early13_skipped;                /* bytes of rejected early data discarded so far */
   rsize early13_received;               /* bytes of accepted early data delivered so far */
 
+  /* Post-handshake client authentication (RFC 8446 4.6.2, TLS 1.3). */
+  rboolean peer_post_handshake_auth;    /* client offered post_handshake_auth */
+  rboolean ph_auth_pending;             /* a CertificateRequest is outstanding */
+  ruint8 ph_step;                       /* 0 Certificate, 1 CertificateVerify, 2 Finished */
+  ruint8 ph_ctx[32];                    /* certificate_request_context we sent */
+  ruint8 ph_ctxlen;
+
   RBuffer * inbuf;
   RQueue qsend;
 };
@@ -1949,6 +1956,14 @@ r_tls_server_nego_hello13 (RTLSServer * server)
         r_tls_server_find_ext (server, R_TLS_EXT_TYPE_SIGNED_CERTIFICATE_TIMESTAMP, &sct);
   }
 
+  /* post_handshake_auth (RFC 8446 4.6.2): note the client's willingness so
+   * r_tls_server_request_post_handshake_auth may later prompt for a cert. */
+  {
+    RTLSHelloExt pha = R_TLS_HELLO_EXT_INIT;
+    server->peer_post_handshake_auth =
+        r_tls_server_find_ext (server, R_TLS_EXT_TYPE_POST_HANDSHAKE_AUTH, &pha);
+  }
+
   server->comp = R_TLS_COMPRESSION_NULL;
   server->version = R_TLS_VERSION_TLS_1_3;
   server->tls13 = TRUE;
@@ -2463,7 +2478,7 @@ r_tls_server_write_flight13 (RTLSServer * server)
     } else {
       ret = r_tls_write_hs_certificate13 (certbody,
           1 + 3 + 3 + certinfo.size + 2 + leafextslen, &certbodylen,
-          certinfo.data, certinfo.size, leafexts, leafextslen);
+          NULL, 0, certinfo.data, certinfo.size, leafexts, leafextslen);
     }
     r_buffer_unmap (certbuf, &certinfo);
     r_buffer_unref (certbuf);
@@ -3701,8 +3716,13 @@ r_tls_server_state_finished (RTLSServer * server, const RTLSParser * parser)
     if ((err = r_tls_server_finished13 (server, parser)) == R_TLS_ERROR_OK)
       err = r_tls_server_change_state (server, R_TLS_SERVER_APPDATA);
     if (err == R_TLS_ERROR_OK) {
-      r_msg_digest_free (server->hshash);
-      server->hshash = NULL;
+      /* Keep the transcript alive when the client offered post_handshake_auth: a
+       * later CertificateRequest and the client's answer extend it (RFC 8446
+       * 4.6.2). Otherwise release it now that the handshake is done. */
+      if (!server->peer_post_handshake_auth) {
+        r_msg_digest_free (server->hshash);
+        server->hshash = NULL;
+      }
       /* Offer a resumption ticket now that the handshake (and the resumption
        * master secret) is complete. A failure here does not fail the session. */
       r_tls_server_write_new_session_ticket13 (server);
@@ -3804,6 +3824,271 @@ r_tls_server_recv_key_update13 (RTLSServer * server, const RTLSParser * parser)
   return R_TLS_ERROR_OK;
 }
 
+/* Send a post-handshake CertificateRequest (RFC 8446 4.6.2) carrying a fresh,
+ * non-empty certificate_request_context that binds the client's answering
+ * flight to this request. Framed, folded into the transcript kept alive since
+ * the handshake, and protected under the current application key. */
+static RTLSError
+r_tls_server_send_certificate_request13 (RTLSServer * server)
+{
+  static const RTLSSignatureScheme schemes[] = {
+    R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256,
+    R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384,
+    R_TLS_SIGN_SCHEME_ED25519,
+    R_TLS_SIGN_SCHEME_ED448,
+    R_TLS_SIGN_SCHEME_RSA_PSS_SHA256,
+  };
+  ruint8 msg[R_TLS_HS_HDR_SIZE + 1 + sizeof (server->ph_ctx) + 64];
+  rsize bodylen = 0;
+  RTLSError ret;
+
+  server->ph_ctxlen = (ruint8) sizeof (server->ph_ctx);
+  if (!r_prng_fill (server->prng, server->ph_ctx, server->ph_ctxlen))
+    return R_TLS_ERROR_ENCRYPTION_FAILED;
+
+  if ((ret = r_tls_write_hs_certificate_request13 (msg + R_TLS_HS_HDR_SIZE,
+          sizeof (msg) - R_TLS_HS_HDR_SIZE, &bodylen, server->ph_ctx, server->ph_ctxlen,
+          schemes, R_N_ELEMENTS (schemes))) != R_TLS_ERROR_OK)
+    return ret;
+
+  msg[0] = (ruint8) R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST;
+  _r_write_u24 (msg + 1, (ruint32) bodylen);
+
+  r_msg_digest_update (server->hshash, msg, R_TLS_HS_HDR_SIZE + bodylen);
+  return r_tls_server_protect_record13 (server, R_TLS_CONTENT_TYPE_HANDSHAKE,
+      msg, R_TLS_HS_HDR_SIZE + bodylen);
+}
+
+RTLSError
+r_tls_server_request_post_handshake_auth (RTLSServer * server)
+{
+  RTLSError ret;
+
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (!server->tls13 || server->state != R_TLS_SERVER_APPDATA ||
+        !server->peer_post_handshake_auth || server->ph_auth_pending ||
+        server->hshash == NULL))
+    return R_TLS_ERROR_WRONG_STATE;
+
+  if ((ret = r_tls_server_send_certificate_request13 (server)) != R_TLS_ERROR_OK)
+    return ret;
+
+  /* Await the client's Certificate / CertificateVerify / Finished flight; a
+   * stale leaf from a prior authentication is dropped so get_peer_cert reflects
+   * only the outcome of this exchange. */
+  server->ph_auth_pending = TRUE;
+  server->ph_step = 0;
+  server->client_cert_received = FALSE;
+  if (server->peer_cert != NULL) {
+    r_crypto_cert_unref (server->peer_cert);
+    server->peer_cert = NULL;
+  }
+  if (server->peer_pubkey != NULL) {
+    r_crypto_key_unref (server->peer_pubkey);
+    server->peer_pubkey = NULL;
+  }
+
+  r_tls_server_send_out (server);
+  return R_TLS_ERROR_OK;
+}
+
+/* Parse the client's post-handshake Certificate (RFC 8446 4.4.2 / 4.6.2): the
+ * echoed context must match our request, then the leaf is trust-checked via the
+ * verify_cert callback and kept for the CertificateVerify. */
+static RTLSError
+r_tls_server_parse_client_certificate13 (RTLSServer * server, const RTLSParser * parser)
+{
+  RCryptoCert * chain[16];
+  RTLSCertificate tlscert = R_TLS_CERTIFICATE_INIT;
+  const ruint8 * ctx = NULL;
+  ruint8 ctxlen = 0;
+  ruint n = 0, i;
+  RTLSError err = R_TLS_ERROR_OK;
+
+  if (r_tls_parser_parse_certificate13_context (parser, &ctx, &ctxlen) != R_TLS_ERROR_OK ||
+      ctxlen != server->ph_ctxlen || r_memcmp (ctx, server->ph_ctx, ctxlen) != 0)
+    return R_TLS_ERROR_ILLEGAL_PARAMETER;
+
+  if (r_tls_parser_parse_certificate13_first (parser, &tlscert) == R_TLS_ERROR_OK) {
+    do {
+      if ((chain[n] = r_tls_certificate_get_cert (&tlscert)) != NULL)
+        n++;
+    } while (n < R_N_ELEMENTS (chain) &&
+        r_tls_parser_parse_certificate13_next (parser, &tlscert) == R_TLS_ERROR_OK);
+  }
+
+  if (n == 0) {
+    if (server->client_cert_mode == R_TLS_CLIENT_CERT_MODE_REQUIRE)
+      return R_TLS_ERROR_NO_CERTIFICATE;
+    server->client_cert_received = FALSE;
+    return R_TLS_ERROR_OK;
+  }
+
+  if (server->cb.verify_cert != NULL &&
+      !server->cb.verify_cert (server->userdata, chain, n)) {
+    err = R_TLS_ERROR_CORRUPT_CERTIFICATE;
+  } else if ((server->peer_pubkey = r_crypto_cert_get_public_key (chain[0])) == NULL) {
+    err = R_TLS_ERROR_CORRUPT_CERTIFICATE;
+  } else {
+    server->peer_cert = r_crypto_cert_ref (chain[0]);
+    server->client_cert_received = TRUE;
+  }
+
+  for (i = 0; i < n; i++)
+    r_crypto_cert_unref (chain[i]);
+
+  return err;
+}
+
+/* Verify the client's post-handshake CertificateVerify: its signature covers the
+ * content over Transcript-Hash(..Certificate) with the client context string.
+ * PKCS#1 v1.5 is forbidden in 1.3; other schemes are rejected. */
+static RTLSError
+r_tls_server_verify_certificate_verify13 (RTLSServer * server, const RTLSParser * parser)
+{
+  RTLSSignatureScheme scheme;
+  const ruint8 * sig;
+  ruint16 sigsize;
+  ruint8 th[R_TLS13_SECRET_MAX], tbs[R_TLS13_CERT_VERIFY_TBS_MAX], digest[64];
+  rsize hlen = r_msg_digest_type_size (server->cs13_hash), tbslen = 0, dlen;
+  RMsgDigestType mdtype;
+  RMsgDigest * md;
+  rboolean pss, ok;
+  RTLSError err;
+
+  if (R_UNLIKELY (server->peer_pubkey == NULL))
+    return R_TLS_ERROR_WRONG_STATE;
+  if ((err = r_tls_parser_parse_certificate_verify (parser, &scheme, &sig, &sigsize))
+        != R_TLS_ERROR_OK)
+    return err;
+
+  switch (scheme) {
+    case R_TLS_SIGN_SCHEME_ECDSA_SECP256R1_SHA256:
+    case R_TLS_SIGN_SCHEME_ECDSA_SECP384R1_SHA384:
+    case R_TLS_SIGN_SCHEME_ECDSA_SECP521R1_SHA512:
+    case R_TLS_SIGN_SCHEME_ED25519:
+    case R_TLS_SIGN_SCHEME_ED448:
+      pss = FALSE;
+      break;
+    case R_TLS_SIGN_SCHEME_RSA_PSS_SHA256:
+    case R_TLS_SIGN_SCHEME_RSA_PSS_SHA384:
+    case R_TLS_SIGN_SCHEME_RSA_PSS_SHA512:
+      pss = TRUE;
+      break;
+    default:
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  }
+  if (!r_tls_sign_scheme_to_md (scheme, &mdtype))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  if (!r_msg_digest_get_data (server->hshash, th, hlen, NULL) ||
+      !r_tls13_cert_verify_tbs (FALSE, th, hlen, tbs, sizeof (tbs), &tbslen))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  if (mdtype == R_MSG_DIGEST_TYPE_NONE)
+    return (r_crypto_key_verify (server->peer_pubkey, mdtype, tbs, tbslen,
+              sig, sigsize) == R_CRYPTO_OK) ?
+        R_TLS_ERROR_OK : R_TLS_ERROR_HS_VERIFICATION_FAILED;
+
+  if ((md = r_msg_digest_new (mdtype)) == NULL)
+    return R_TLS_ERROR_OOM;
+  dlen = r_msg_digest_size (md);
+  ok = r_msg_digest_update (md, tbs, tbslen) &&
+       r_msg_digest_get_data (md, digest, dlen, NULL);
+  r_msg_digest_free (md);
+  if (!ok)
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  if (pss)
+    r_rsa_pub_key_set_padding (server->peer_pubkey, R_RSA_PADDING_PKCS1_V21);
+  return (r_crypto_key_verify (server->peer_pubkey, mdtype, digest, dlen,
+            sig, sigsize) == R_CRYPTO_OK) ?
+      R_TLS_ERROR_OK : R_TLS_ERROR_HS_VERIFICATION_FAILED;
+}
+
+/* Verify the client's post-handshake Finished: verify_data keyed from the client
+ * application-traffic secret over Transcript-Hash(..CertificateVerify). */
+static RTLSError
+r_tls_server_ph_finished13 (RTLSServer * server, const RTLSParser * parser)
+{
+  const ruint8 * vd;
+  rsize vdsize;
+  ruint8 th[R_TLS13_SECRET_MAX], finkey[R_TLS13_SECRET_MAX], expect[R_TLS13_SECRET_MAX];
+  rsize hlen = r_msg_digest_type_size (server->cs13_hash);
+  RTLSError err;
+
+  if ((err = r_tls_parser_parse_finished (parser, &vd, &vdsize)) != R_TLS_ERROR_OK)
+    return err;
+  if (!r_msg_digest_get_data (server->hshash, th, hlen, NULL) ||
+      !r_tls13_finished_key (server->cs13_hash, server->sched13.cap, finkey) ||
+      !r_tls13_verify_data (server->cs13_hash, finkey, th, expect))
+    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  if (vdsize != hlen || r_memcmp_ct (vd, expect, hlen) != 0)
+    return R_TLS_ERROR_HS_VERIFICATION_FAILED;
+  return R_TLS_ERROR_OK;
+}
+
+/* Drive the client's post-handshake authentication flight (RFC 8446 4.6.2):
+ * Certificate, an optional CertificateVerify, then Finished. Each message is
+ * folded into the transcript; a failure alerts and ends the exchange. */
+static RTLSError
+r_tls_server_recv_post_handshake_auth13 (RTLSServer * server,
+    const RTLSParser * parser, RTLSHandshakeType hstype)
+{
+  RTLSError err;
+
+  switch (server->ph_step) {
+    case 0:
+      if (hstype != R_TLS_HANDSHAKE_TYPE_CERTIFICATE) { err = R_TLS_ERROR_WRONG_TYPE; break; }
+      err = r_tls_server_parse_client_certificate13 (server, parser);
+      if (err == R_TLS_ERROR_OK) {
+        r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
+        /* An empty Certificate (no leaf) carries no CertificateVerify. */
+        server->ph_step = server->client_cert_received ? 1 : 2;
+      }
+      break;
+    case 1:
+      if (hstype != R_TLS_HANDSHAKE_TYPE_CERTIFICATE_VERIFY) { err = R_TLS_ERROR_WRONG_TYPE; break; }
+      err = r_tls_server_verify_certificate_verify13 (server, parser);
+      if (err == R_TLS_ERROR_OK) {
+        r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
+        server->ph_step = 2;
+      }
+      break;
+    default:
+      if (hstype != R_TLS_HANDSHAKE_TYPE_FINISHED) { err = R_TLS_ERROR_WRONG_TYPE; break; }
+      if ((err = r_tls_server_ph_finished13 (server, parser)) == R_TLS_ERROR_OK) {
+        r_msg_digest_update (server->hshash, parser->fragment.data, parser->fragment.size);
+        /* Clean completion: report whether a certificate was authenticated (an
+         * empty answer under REQUEST authenticates no one). Verification and
+         * policy failures instead abort below via the error path. */
+        server->ph_auth_pending = FALSE;
+        if (server->cb.post_handshake_auth != NULL)
+          server->cb.post_handshake_auth (server->userdata,
+              server->client_cert_received, server);
+      }
+      break;
+  }
+
+  if (err != R_TLS_ERROR_OK) {
+    server->ph_auth_pending = FALSE;
+    /* Drop any leaf accepted before the proof-of-possession failed, so a failed
+     * exchange never leaves an unverified certificate visible via
+     * r_tls_server_get_peer_cert. */
+    server->client_cert_received = FALSE;
+    if (server->peer_cert != NULL) {
+      r_crypto_cert_unref (server->peer_cert);
+      server->peer_cert = NULL;
+    }
+    if (server->peer_pubkey != NULL) {
+      r_crypto_key_unref (server->peer_pubkey);
+      server->peer_pubkey = NULL;
+    }
+    r_tls_server_send_alert (server, r_tls_server_alert_for_error (err));
+  }
+  return err;
+}
+
 static RTLSError
 r_tls_server_state_appdata (RTLSServer * server, const RTLSParser * parser)
 {
@@ -3823,6 +4108,8 @@ r_tls_server_state_appdata (RTLSServer * server, const RTLSParser * parser)
       R_LOG_WARNING ("Received non-app-data record");
     else if (server->tls13 && hstype == R_TLS_HANDSHAKE_TYPE_KEY_UPDATE)
       return r_tls_server_recv_key_update13 (server, parser);
+    else if (server->tls13 && server->ph_auth_pending)
+      return r_tls_server_recv_post_handshake_auth13 (server, parser, hstype);
     else if (hstype == R_TLS_HANDSHAKE_TYPE_CLIENT_HELLO)
       /* A post-handshake ClientHello is a renegotiation attempt. We do not
        * renegotiate; decline with a warning and keep the session running

@@ -419,6 +419,7 @@ static const RTLSCallbacks g__r_http_client_tls_callbacks = {
   r_http_client_tls_error,               /* error */
   r_http_client_tls_verify,              /* verify_cert */
   r_http_client_tls_closed,              /* closed */
+  NULL,                                  /* post_handshake_auth */
 };
 
 static RHttpClientConn *

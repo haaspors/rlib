@@ -1418,6 +1418,30 @@ r_tls_parser_parse_certificate13_next (const RTLSParser * parser,
 }
 
 RTLSError
+r_tls_parser_parse_certificate13_context (const RTLSParser * parser,
+    const ruint8 ** ctx, ruint8 * ctxlen)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end;
+  RTLSError ret;
+
+  if (R_UNLIKELY (ctx == NULL || ctxlen == NULL)) return R_TLS_ERROR_INVAL;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_CERTIFICATE))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint8)) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  *ctxlen = *ptr++;
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + *ctxlen) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  *ctx = *ctxlen > 0 ? ptr : NULL;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_parser_parse_certificate_request (const RTLSParser * parser,
     RTLSCertReq * req)
 {
@@ -1455,6 +1479,59 @@ r_tls_parser_parse_certificate_request (const RTLSParser * parser,
     return R_TLS_ERROR_CORRUPT_RECORD;
   else
     return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_parser_parse_certificate_request13 (const RTLSParser * parser,
+    RTLSCertReq13 * req)
+{
+  RTLSHandshakeType type;
+  const ruint8 * ptr, * end, * ext, * extend;
+  ruint16 extslen;
+  RTLSError ret;
+
+  if (R_UNLIKELY (req == NULL)) return R_TLS_ERROR_INVAL;
+
+  ret = r_tls_parser_parse_handshake_internal (parser, &type, &ptr, &end);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK)) return ret;
+  if (R_UNLIKELY (type != R_TLS_HANDSHAKE_TYPE_CERTIFICATE_REQUEST))
+    return R_TLS_ERROR_WRONG_TYPE;
+
+  /* certificate_request_context<0..2^8-1> */
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint8)) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  req->contextlen = *ptr++;
+  req->context = ptr;
+  ptr += req->contextlen;
+
+  /* extensions<2..2^16-1> */
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + sizeof (ruint16)) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  extslen = r_load_be16 (ptr); ptr += sizeof (ruint16);
+  if (R_UNLIKELY (RPOINTER_TO_SIZE (ptr + extslen) > RPOINTER_TO_SIZE (end)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  /* Walk the extensions for signature_algorithms (mandatory, RFC 8446 4.3.2). */
+  req->signschemecount = 0;
+  req->signscheme = NULL;
+  for (ext = ptr, extend = ptr + extslen;
+      RPOINTER_TO_SIZE (ext + 2 * sizeof (ruint16)) <= RPOINTER_TO_SIZE (extend); ) {
+    ruint16 etype = r_load_be16 (ext); ext += sizeof (ruint16);
+    ruint16 elen = r_load_be16 (ext); ext += sizeof (ruint16);
+    if (R_UNLIKELY (RPOINTER_TO_SIZE (ext + elen) > RPOINTER_TO_SIZE (extend)))
+      return R_TLS_ERROR_CORRUPT_RECORD;
+    if (etype == R_TLS_EXT_TYPE_SIGNATURE_ALGORITHMS &&
+        elen >= sizeof (ruint16)) {
+      ruint16 listlen = r_load_be16 (ext);
+      if (R_UNLIKELY ((rsize) listlen + sizeof (ruint16) > elen))
+        return R_TLS_ERROR_CORRUPT_RECORD;
+      req->signschemecount = listlen / sizeof (ruint16);
+      req->signscheme = ext + sizeof (ruint16);
+    }
+    ext += elen;
+  }
+
+  return R_TLS_ERROR_OK;
 }
 
 RTLSError
@@ -2320,6 +2397,42 @@ r_tls_write_hs_certificate_request (rpointer data, rsize size, rsize * out,
 }
 
 RTLSError
+r_tls_write_hs_certificate_request13 (rpointer data, rsize size, rsize * out,
+    const ruint8 * ctx, ruint8 ctxlen,
+    const RTLSSignatureScheme * signschemes, ruint16 nsignschemes)
+{
+  ruint8 * p = data;
+  /* signature_algorithms extension: type<2> | ext_len<2> | list_len<2> | schemes. */
+  rsize schemebytes = (rsize)nsignschemes * sizeof (ruint16);
+  rsize sigext = sizeof (ruint16) + sizeof (ruint16) + sizeof (ruint16) + schemebytes;
+  rsize need = sizeof (ruint8) + (rsize)ctxlen + sizeof (ruint16) + sigext;
+  ruint16 i;
+
+  if (R_UNLIKELY (data == NULL || (ctxlen > 0 && ctx == NULL) ||
+        (nsignschemes > 0 && signschemes == NULL)))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  /* certificate_request_context<0..2^8-1> */
+  *p++ = ctxlen;
+  if (ctxlen > 0) { r_memcpy (p, ctx, ctxlen); p += ctxlen; }
+
+  /* extensions<2..2^16-1>: a lone signature_algorithms (mandatory, RFC 8446 4.3.2). */
+  r_store_be16 (p, (ruint16) sigext); p += sizeof (ruint16);
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_SIGNATURE_ALGORITHMS); p += sizeof (ruint16);
+  r_store_be16 (p, (ruint16) (sizeof (ruint16) + schemebytes)); p += sizeof (ruint16);
+  r_store_be16 (p, (ruint16) schemebytes); p += sizeof (ruint16);
+  for (i = 0; i < nsignschemes; i++) {
+    r_store_be16 (p, (ruint16) signschemes[i]); p += sizeof (ruint16);
+  }
+
+  if (out != NULL)
+    *out = need;
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_write_hs_certificate_verify (rpointer data, rsize size, rsize * out,
     RTLSSignatureScheme sigscheme, const ruint8 * sig, ruint16 sigsize)
 {
@@ -2390,18 +2503,22 @@ r_tls_write_hs_encrypted_extensions (rpointer data, rsize size, rsize * out,
 
 RTLSError
 r_tls_write_hs_certificate13 (rpointer data, rsize size, rsize * out,
+    const ruint8 * ctx, ruint8 ctxlen,
     const ruint8 * der, rsize dersize, const ruint8 * leafexts, ruint16 leafextslen)
 {
   ruint8 * p = data;
   rsize extslen = (leafexts != NULL) ? leafextslen : 0;
   /* One CertificateEntry = cert_data<3> | cert | extensions<2>. */
   rsize entrylen = (der != NULL && dersize > 0) ? (3 + dersize + 2 + extslen) : 0;
-  rsize need = 1 + 3 + entrylen;   /* context<1>=0 | certificate_list<3> | entries */
+  rsize need = 1 + (rsize)ctxlen + 3 + entrylen;   /* context<1> | certificate_list<3> | entries */
 
-  if (R_UNLIKELY (data == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (data == NULL || (ctxlen > 0 && ctx == NULL))) return R_TLS_ERROR_INVAL;
   if (R_UNLIKELY (size < need)) return R_TLS_ERROR_BUF_TOO_SMALL;
 
-  *p++ = 0x00;   /* certificate_request_context<0..2^8-1>: empty */
+  /* certificate_request_context<0..2^8-1>: empty in the handshake, echoed from
+   * the CertificateRequest for post-handshake authentication (RFC 8446 4.6.2). */
+  *p++ = ctxlen;
+  if (ctxlen > 0) { r_memcpy (p, ctx, ctxlen); p += ctxlen; }
 
   /* certificate_list<0..2^24-1> */
   *p++ = (ruint8)((entrylen >> 16) & 0xff);

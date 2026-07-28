@@ -150,6 +150,7 @@ RTEST_FIXTURE_SETUP (rtlsserver)
     r_tlsserver_test_error,
     r_tlsserver_test_verify_cert,
     r_tlsserver_test_closed,
+    NULL,
   };
   RCryptoCert * cert;
   RCryptoKey * pk;
@@ -2193,7 +2194,7 @@ r_test_tls_server_new_cfg (rpointer ctx)
 {
   static const RTLSCallbacks cbs = {
     NULL, r_tlsserver_test_hs_done, r_tlsserver_test_buffer_out,
-    r_tlsserver_test_buffer_appdata, r_tlsserver_test_error, NULL, NULL,
+    r_tlsserver_test_buffer_appdata, r_tlsserver_test_error, NULL, NULL, NULL,
   };
   RTLSServer * srv;
   RCryptoCert * cert;
