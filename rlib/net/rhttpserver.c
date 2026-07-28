@@ -788,6 +788,7 @@ static const RTLSCallbacks g__r_http_tls_callbacks = {
   r_http_client_ctx_tls_error,       /* error */
   r_http_client_ctx_tls_verify_peer, /* verify_cert (mutual TLS) */
   r_http_client_ctx_tls_closed,      /* closed */
+  NULL,                              /* post_handshake_auth */
 };
 
 static void

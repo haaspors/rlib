@@ -176,6 +176,8 @@ RTEST_FIXTURE_STRUCT (rtlsclient)
   rboolean srv_error, cli_error;
   RTLSAlertType srv_alert, cli_alert;   /* alert each side raised at its error */
   rboolean srv_closed, cli_closed;
+  rboolean srv_ph_auth_called;          /* server post_handshake_auth cb fired */
+  rboolean srv_ph_auth_ok;              /* its result flag */
   ruint verify_calls;
   rboolean verify_result;
   RTLSCipherSuite force_suite;   /* pin both endpoints to one suite; NONE = defaults */
@@ -312,6 +314,15 @@ r_tlsclient_test_sni (rpointer ctx, const rchar * name, rpointer session)
   return R_TLS_ERROR_OK;
 }
 
+static void
+r_tlsclient_test_srv_ph_auth (rpointer ctx, rboolean ok, rpointer session)
+{
+  RTEST_FIXTURE_STRUCT (rtlsclient) * fixture = ctx;
+  (void) session;
+  fixture->srv_ph_auth_called = TRUE;
+  fixture->srv_ph_auth_ok = ok;
+}
+
 static const RTLSCallbacks srvcbs = {
   r_tlsclient_test_prefer_ecdhe,
   r_tlsclient_test_srv_hs_done,
@@ -320,6 +331,7 @@ static const RTLSCallbacks srvcbs = {
   r_tlsclient_test_srv_error,
   NULL,
   r_tlsclient_test_srv_closed,
+  r_tlsclient_test_srv_ph_auth,
 };
 static const RTLSCallbacks clicbs = {
   r_tlsclient_test_prefer_ecdhe,
@@ -329,6 +341,7 @@ static const RTLSCallbacks clicbs = {
   r_tlsclient_test_cli_error,
   r_tlsclient_test_verify_cert,
   r_tlsclient_test_cli_closed,
+  NULL,
 };
 
 RTEST_FIXTURE_SETUP (rtlsclient)
@@ -344,6 +357,7 @@ RTEST_FIXTURE_SETUP (rtlsclient)
   fixture->srv_error = fixture->cli_error = FALSE;
   fixture->srv_alert = fixture->cli_alert = R_TLS_ALERT_TYPE_CLOSE_NOTIFY;
   fixture->srv_closed = fixture->cli_closed = FALSE;
+  fixture->srv_ph_auth_called = fixture->srv_ph_auth_ok = FALSE;
   fixture->verify_calls = 0;
   fixture->verify_result = TRUE;
   fixture->force_suite = R_TLS_CS_NONE;
@@ -2876,5 +2890,141 @@ RTEST_F (rtlsclient, tls_ecdsa_mutual, RTEST_FAST)
   r_assert (!fixture->srv_error);
   r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), !=, NULL);
   r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), !=, NULL);
+}
+RTEST_END;
+
+/* Post-handshake client authentication (RFC 8446 4.6.2): run a TLS 1.3 handshake
+ * in which the client offered post_handshake_auth, confirm no client cert was
+ * requested during it, then have the server request one and drive the client's
+ * answering Certificate / CertificateVerify / Finished flight. */
+static void
+r_test_tls13_post_handshake_auth (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture,
+    RTLSClientCertMode mode)
+{
+  r_assert_cmpint (r_tls_client_set_post_handshake_auth (fixture->client, TRUE),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server, mode),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), ==, NULL);
+
+  r_assert_cmpint (r_tls_server_request_post_handshake_auth (fixture->server),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+}
+
+/* RSA client certificate: the server requests it after the handshake and the
+ * flight verifies, exposing the leaf and reporting success. */
+RTEST_F (rtlsclient, tls13_post_handshake_auth, RTEST_FAST)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_cert (fixture->client, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_test_tls13_post_handshake_auth (fixture, R_TLS_CLIENT_CERT_MODE_REQUIRE);
+
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert (fixture->srv_ph_auth_called);
+  r_assert (fixture->srv_ph_auth_ok);
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), !=, NULL);
+}
+RTEST_END;
+
+/* ECDSA client certificate: exercises the ECDSA CertificateVerify sign (client)
+ * and verify (server) on the post-handshake path. */
+RTEST_F (rtlsclient, tls13_post_handshake_auth_ecdsa, RTEST_FAST)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_test_tls_use_ecdsa_server_cert (fixture);
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ecdsa, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ecdsa, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_cert (fixture->client, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_test_tls13_post_handshake_auth (fixture, R_TLS_CLIENT_CERT_MODE_REQUIRE);
+
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert (fixture->srv_ph_auth_called);
+  r_assert (fixture->srv_ph_auth_ok);
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), !=, NULL);
+}
+RTEST_END;
+
+/* Client offered post_handshake_auth but holds no certificate: under REQUEST it
+ * answers with an empty Certificate, so the flight completes but authenticates
+ * no one -- the result is reported as failure and no peer cert is exposed. */
+RTEST_F (rtlsclient, tls13_post_handshake_auth_no_cert, RTEST_FAST)
+{
+  r_test_tls13_post_handshake_auth (fixture, R_TLS_CLIENT_CERT_MODE_REQUEST);
+
+  r_assert (!fixture->srv_error);
+  r_assert (fixture->srv_ph_auth_called);
+  r_assert (!fixture->srv_ph_auth_ok);
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), ==, NULL);
+}
+RTEST_END;
+
+/* Client offered post_handshake_auth but holds no certificate, and the server
+ * requires one: the empty answer aborts the session with a fatal alert and the
+ * completion callback does not fire. */
+RTEST_F (rtlsclient, tls13_post_handshake_auth_require_no_cert, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_client_set_post_handshake_auth (fixture->client, TRUE),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_client_cert_mode (fixture->server,
+        R_TLS_CLIENT_CERT_MODE_REQUIRE), ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->srv_hs_done);
+
+  r_assert_cmpint (r_tls_server_request_post_handshake_auth (fixture->server),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->srv_error);
+  r_assert (!fixture->srv_ph_auth_called);
+  r_assert_cmpptr (r_tls_server_get_peer_cert (fixture->server), ==, NULL);
+}
+RTEST_END;
+
+/* The client never offered post_handshake_auth: the server cannot request a
+ * post-handshake certificate and the trigger is rejected. */
+RTEST_F (rtlsclient, tls13_post_handshake_auth_not_offered, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->srv_hs_done);
+
+  r_assert_cmpint (r_tls_server_request_post_handshake_auth (fixture->server),
+      ==, R_TLS_ERROR_WRONG_STATE);
+  r_assert (!fixture->srv_ph_auth_called);
 }
 RTEST_END;

@@ -98,6 +98,18 @@ R_API RTLSClient * r_tls_client_new (const RTLSCallbacks * cb,
 R_API RTLSError r_tls_client_set_cert (RTLSClient * client,
     RCryptoCert * cert, RCryptoKey * privkey);
 /**
+ * @brief Offer post-handshake client authentication (RFC 8446, 4.6.2; TLS 1.3).
+ *
+ * When @p enable is @c TRUE the client advertises the @c post_handshake_auth
+ * extension in its ClientHello, permitting the server to send a
+ * @c CertificateRequest after the handshake. The client answers with the
+ * certificate configured via @ref r_tls_client_set_cert (or an empty
+ * Certificate when none is set). Off by default; must be set before
+ * @ref r_tls_client_start and has no effect on TLS 1.2 / DTLS.
+ */
+R_API RTLSError r_tls_client_set_post_handshake_auth (RTLSClient * client,
+    rboolean enable);
+/**
  * @brief Offer @p host in the ClientHello @c server_name (SNI) extension.
  *
  * Lets the server select a certificate (and policy) for the requested name --

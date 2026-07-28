@@ -134,6 +134,21 @@ typedef void (*RTLSClosedCb) (rpointer ctx, rpointer session);
  */
 typedef RTLSError (*RTLSServerNameCb) (rpointer ctx, const rchar * name, rpointer session);
 
+/**
+ * @brief Callback fired when a post-handshake client authentication exchange
+ * completes (server only; RFC 8446, 4.6.2).
+ *
+ * Invoked once a @ref r_tls_server_request_post_handshake_auth flight completes
+ * cleanly: @p ok is @c TRUE when the client authenticated with a verified
+ * certificate (the leaf is then available via @ref r_tls_server_get_peer_cert)
+ * and @c FALSE when it declined with an empty certificate (permitted only under
+ * @ref R_TLS_CLIENT_CERT_MODE_REQUEST). A malformed or unverifiable flight, or
+ * an empty certificate under @ref R_TLS_CLIENT_CERT_MODE_REQUIRE, aborts the
+ * session with a fatal alert (@ref RTLSErrorCb) instead of firing this callback.
+ * May be @c NULL. @p session is the @ref RTLSServer.
+ */
+typedef void (*RTLSPostHandshakeAuthCb) (rpointer ctx, rboolean ok, rpointer session);
+
 /** @brief Callback bundle wiring a session to its transport and policy. */
 typedef struct {
   RTLSPreferredCipherSuitesCb   preferred_cipher_suites; /**< Choose cipher suites; may be @c NULL for defaults. */
@@ -143,6 +158,7 @@ typedef struct {
   RTLSErrorCb                   error;                   /**< Fired on a fatal alert; may be @c NULL. */
   RTLSCertVerifyCb              verify_cert;             /**< Verify the peer certificate chain; may be @c NULL. */
   RTLSClosedCb                  closed;                  /**< Fired on a peer close_notify; may be @c NULL. */
+  RTLSPostHandshakeAuthCb       post_handshake_auth;     /**< Post-handshake auth result (server); may be @c NULL. */
 } RTLSCallbacks;
 
 /** @brief Create a TLS server with the given callbacks and user context. */
@@ -202,6 +218,20 @@ R_API RTLSError r_tls_server_set_client_cert_mode (RTLSServer * server,
  */
 R_API RTLSError r_tls_server_set_server_name_cb (RTLSServer * server,
     RTLSServerNameCb cb);
+/**
+ * @brief Request post-handshake client authentication (RFC 8446, 4.6.2).
+ *
+ * Sends a @c CertificateRequest after the handshake, prompting the client to
+ * present a certificate flight; the result is delivered to the
+ * @ref RTLSPostHandshakeAuthCb and the verified leaf via
+ * @ref r_tls_server_get_peer_cert. Requires a completed TLS 1.3 handshake in
+ * which the client offered the @c post_handshake_auth extension (see
+ * @ref r_tls_client_set_post_handshake_auth) and no prior request still
+ * outstanding; returns @ref R_TLS_ERROR_WRONG_STATE otherwise. Trust and the
+ * empty-certificate policy follow @ref r_tls_server_set_client_cert_mode as in
+ * the handshake.
+ */
+R_API RTLSError r_tls_server_request_post_handshake_auth (RTLSServer * server);
 /**
  * @brief The peer (client) leaf certificate presented during a mutual-TLS
  * handshake, or @c NULL if none was presented. The reference is borrowed

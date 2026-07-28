@@ -479,6 +479,16 @@ typedef struct {
   const ruint8 * ca;          /**< @brief Distinguished names of accepted CAs. */
 } RTLSCertReq;
 
+/** @brief Parsed TLS 1.3 CertificateRequest (RFC 8446, 4.3.2), pointing into
+ * the record buffer. The context is echoed by the responding Certificate and,
+ * for post-handshake authentication, ties the flight to the request. */
+typedef struct {
+  ruint8 contextlen;          /**< @brief Length of @c context in bytes. */
+  const ruint8 * context;     /**< @brief certificate_request_context to echo. */
+  ruint16 signschemecount;    /**< @brief Number of accepted signature schemes. */
+  const ruint8 * signscheme;  /**< @brief Accepted signature schemes (@ref RTLSSignatureScheme). */
+} RTLSCertReq13;
+
 /** @brief Peek the protocol version of the record in @p buf without full parsing; @c R_TLS_VERSION_UNKNOWN if not a record. */
 R_API RTLSVersion r_tls_parse_data_shallow (rconstpointer buf, rsize size);
 
@@ -572,8 +582,27 @@ R_API RTLSError r_tls_parser_parse_certificate13_first (const RTLSParser * parse
  * current entry's extensions. @see r_tls_parser_parse_certificate13_first */
 R_API RTLSError r_tls_parser_parse_certificate13_next (const RTLSParser * parser,
     RTLSCertificate * cert);
+/**
+ * @brief Read the @c certificate_request_context of a TLS 1.3 Certificate.
+ *
+ * The context is empty in the handshake and non-empty for a post-handshake
+ * authentication answer, where it echoes the CertificateRequest (RFC 8446
+ * 4.6.2). @p ctx points into the record buffer (@c NULL when empty).
+ */
+R_API RTLSError r_tls_parser_parse_certificate13_context (const RTLSParser * parser,
+    const ruint8 ** ctx, ruint8 * ctxlen);
 /** @brief Parse the current record as a CertificateRequest into @p req. */
 R_API RTLSError r_tls_parser_parse_certificate_request (const RTLSParser * parser, RTLSCertReq * req);
+/**
+ * @brief Parse the current record as a TLS 1.3 CertificateRequest into @p req.
+ *
+ * The 1.3 message (RFC 8446, 4.3.2) replaces the 1.2 certificate-type and CA
+ * fields with a @c certificate_request_context and an extension list, so the
+ * 1.2 @ref r_tls_parser_parse_certificate_request would misparse it. Exposes the
+ * context to echo and the accepted signature schemes; @p req points into the
+ * record buffer.
+ */
+R_API RTLSError r_tls_parser_parse_certificate_request13 (const RTLSParser * parser, RTLSCertReq13 * req);
 /**
  * @brief Parse the current record as a NewSessionTicket.
  * @param parser Parser positioned on the message.
@@ -941,6 +970,9 @@ static inline RTLSClientCertificateType r_tls_cert_req_cert_type (const RTLSCert
 /** @brief Return the @p n th accepted signature scheme in @p req. */
 static inline RTLSSignatureScheme r_tls_cert_req_sign_scheme (const RTLSCertReq * req, int n)
 { return (RTLSSignatureScheme) r_load_be16 (req->signscheme + n * sizeof (ruint16)); }
+/** @brief Return the @p n th accepted signature scheme in a TLS 1.3 @p req. */
+static inline RTLSSignatureScheme r_tls_cert_req13_sign_scheme (const RTLSCertReq13 * req, int n)
+{ return (RTLSSignatureScheme) r_load_be16 (req->signscheme + n * sizeof (ruint16)); }
 /** @} */
 
 
@@ -1151,6 +1183,24 @@ R_API RTLSError r_tls_write_hs_certificate_request (rpointer buf, rsize size, rs
 #define r_dtls_write_hs_certificate_request r_tls_write_hs_certificate_request
 
 /**
+ * @brief Write a TLS 1.3 CertificateRequest body (RFC 8446, 4.3.2) into @p buf.
+ *
+ * Emits @p ctx as the @c certificate_request_context (non-empty for
+ * post-handshake authentication) followed by an extension list holding the
+ * mandatory @c signature_algorithms with @p signschemes.
+ * @param buf Destination buffer.
+ * @param size Capacity of @p buf in bytes.
+ * @param out Out: bytes written.
+ * @param ctx certificate_request_context bytes, or @c NULL when @p ctxlen is 0.
+ * @param ctxlen Length of @p ctx in bytes.
+ * @param signschemes Accepted signature schemes (@ref RTLSSignatureScheme).
+ * @param nsignschemes Number of signature schemes.
+ */
+R_API RTLSError r_tls_write_hs_certificate_request13 (rpointer buf, rsize size, rsize * out,
+    const ruint8 * ctx, ruint8 ctxlen,
+    const RTLSSignatureScheme * signschemes, ruint16 nsignschemes);
+
+/**
  * @brief Write a CertificateVerify handshake-message body into @p buf.
  * @param buf Destination buffer.
  * @param size Capacity of @p buf in bytes.
@@ -1192,20 +1242,24 @@ R_API RTLSError r_tls_write_hs_encrypted_extensions (rpointer buf, rsize size,
 /**
  * @brief Write a TLS 1.3 Certificate handshake-message body (RFC 8446, 4.4.2).
  *
- * Emits an empty @c certificate_request_context and a @c certificate_list of a
- * single end-entity @p der entry, carrying @p leafexts as the entry's
- * @c Extension list (an empty list when @p leafexts is @c NULL, or when @p der
- * is @c NULL). Distinct from the 1.2 @ref r_tls_write_hs_certificate, which has
- * neither the context nor per-entry extensions.
+ * Emits @p ctx as the @c certificate_request_context (empty in the handshake,
+ * echoed from the CertificateRequest for post-handshake authentication) and a
+ * @c certificate_list of a single end-entity @p der entry, carrying @p leafexts
+ * as the entry's @c Extension list (an empty list when @p leafexts is @c NULL,
+ * or when @p der is @c NULL). Distinct from the 1.2 @ref r_tls_write_hs_certificate,
+ * which has neither the context nor per-entry extensions.
  * @param buf Destination buffer.
  * @param size Capacity of @p buf in bytes.
  * @param out Out: bytes written.
+ * @param ctx certificate_request_context bytes, or @c NULL when @p ctxlen is 0.
+ * @param ctxlen Length of @p ctx in bytes.
  * @param der DER-encoded certificate, or @c NULL for an empty Certificate.
  * @param dersize Length of @p der in bytes.
  * @param leafexts Serialized Extension list for the leaf entry, or @c NULL.
  * @param leafextslen Length of @p leafexts in bytes.
  */
 R_API RTLSError r_tls_write_hs_certificate13 (rpointer buf, rsize size, rsize * out,
+    const ruint8 * ctx, ruint8 ctxlen,
     const ruint8 * der, rsize dersize, const ruint8 * leafexts, ruint16 leafextslen);
 
 /**
