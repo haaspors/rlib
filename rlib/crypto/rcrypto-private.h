@@ -119,6 +119,9 @@ R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ccm;
 R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_192_ccm;
 R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_256_ccm;
 
+R_API_HIDDEN RCryptoCipher * r_cipher_chacha20_poly1305_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key);
+R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_chacha20_poly1305;
+
 R_END_DECLS
 
 #endif /* __R_CRYPTO_PRIVATE_H__ */

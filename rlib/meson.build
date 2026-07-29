@@ -55,6 +55,7 @@ rlib_sources = [
   'charset/runicode-props.c',
   'crypto/raes.c',
   'crypto/rchacha20.c',
+  'crypto/rchacha20poly1305.c',
   'crypto/rcert.c',
   'crypto/rcipher.c',
   'crypto/rdh.c',

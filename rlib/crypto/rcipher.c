@@ -58,6 +58,7 @@ const RCryptoCipherInfo * g__r_crypto_ciphers[] = {
   &g__r_crypto_cipher_aes_128_ccm,
   &g__r_crypto_cipher_aes_192_ccm,
   &g__r_crypto_cipher_aes_256_ccm,
+  &g__r_crypto_cipher_chacha20_poly1305,
 };
 
 const RCryptoCipherInfo *
@@ -116,6 +117,8 @@ r_crypto_cipher_new (const RCryptoCipherInfo * info, const ruint8 * key)
       return r_crypto_cipher_null_new ();
     case R_CRYPTO_CIPHER_ALGO_AES:
       return r_cipher_aes_new_with_info (info, key);
+    case R_CRYPTO_CIPHER_ALGO_CHACHA20:
+      return r_cipher_chacha20_poly1305_new_with_info (info, key);
     default:
       break;
   }
@@ -128,7 +131,8 @@ r_crypto_cipher_is_aead (const RCryptoCipher * cipher)
 {
   if (R_UNLIKELY (cipher == NULL)) return FALSE;
   return cipher->info->mode == R_CRYPTO_CIPHER_MODE_GCM ||
-         cipher->info->mode == R_CRYPTO_CIPHER_MODE_CCM;
+         cipher->info->mode == R_CRYPTO_CIPHER_MODE_CCM ||
+         cipher->info->mode == R_CRYPTO_CIPHER_MODE_POLY1305;
 }
 
 RCryptoCipherResult
