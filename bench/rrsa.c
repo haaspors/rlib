@@ -185,35 +185,35 @@ run_rsa_verify_bench (ruint bits, ruint iters)
   r_free (sig);
 }
 
-RTEST_BENCH (rrsa, decrypt_2048, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rrsa, decrypt_2048, RTEST_SLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_rsa_decrypt_bench (2048, RSA_BENCH_ITERS_2048);
 }
 RTEST_END;
 
-RTEST_BENCH (rrsa, decrypt_3072, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rrsa, decrypt_3072, RTEST_SLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_rsa_decrypt_bench (3072, RSA_BENCH_ITERS_3072);
 }
 RTEST_END;
 
-RTEST_BENCH (rrsa, decrypt_4096, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rrsa, decrypt_4096, RTEST_SLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_rsa_decrypt_bench (4096, RSA_BENCH_ITERS_4096);
 }
 RTEST_END;
 
-RTEST_BENCH (rrsa, sign_2048, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rrsa, sign_2048, RTEST_SLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_rsa_sign_bench (2048, RSA_BENCH_ITERS_2048);
 }
 RTEST_END;
 
-RTEST_BENCH (rrsa, verify_2048, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rrsa, verify_2048, RTEST_SLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_rsa_verify_bench (2048, RSA_BENCH_ITERS_VERIFY);

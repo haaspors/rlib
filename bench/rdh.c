@@ -70,7 +70,7 @@ run_dh_bench (RDhNamedGroup group, const rchar * group_name)
   r_prng_unref (prng);
 }
 
-RTEST_BENCH (rdh, compute_shared_modp_2048, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rdh, compute_shared_modp_2048, RTEST_SLOW)
 {
   /* MODP-2048 (RFC 3526 group 14) - the workhorse for IKE / SSH /
    * legacy TLS. Exercises the windowed-CT expmod the RSA private
@@ -80,7 +80,7 @@ RTEST_BENCH (rdh, compute_shared_modp_2048, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (rdh, compute_shared_ffdhe_2048, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rdh, compute_shared_ffdhe_2048, RTEST_SLOW)
 {
   /* FFDHE-2048 (RFC 7919) - the TLS-targeted analogue of MODP-2048.
    * Same expmod engine, different group parameters - the perf

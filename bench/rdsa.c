@@ -15,7 +15,7 @@ print_dsa_result (const rchar * op, ruint iters, RClockTime elapsed)
   r_free (label);
 }
 
-RTEST_BENCH (rdsa, sign_2048_256, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rdsa, sign_2048_256, RTEST_SLOW)
 {
   /* DSA-2048/256 signing loop. Exercises r_dsa_sign end-to-end -
    * extra-random-bits nonce sampling, the CT k*G expmod and the
@@ -60,7 +60,7 @@ RTEST_BENCH (rdsa, sign_2048_256, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (rdsa, verify_2048_256, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rdsa, verify_2048_256, RTEST_SLOW)
 {
   /* DSA-2048/256 verify loop. Sign once outside the timed region
    * to produce a valid signature, then verify it in a loop. Verify
