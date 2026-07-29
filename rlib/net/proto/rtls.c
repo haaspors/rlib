@@ -27,6 +27,7 @@
 #include <rlib/crypto/recc.h>
 #include <rlib/crypto/rxdh.h>
 #include <rlib/crypto/rdh.h>
+#include <rlib/crypto/rchacha20poly1305.h>
 #include <rlib/data/rmpint.h>
 
 static inline ruint32
@@ -647,6 +648,73 @@ r_tls_parser_decrypt_aead (RTLSParser * parser, const RCryptoCipher * cipher,
   return R_TLS_ERROR_OK;
 }
 
+/* RFC 7905 AEAD decrypt (ChaCha20-Poly1305 in TLS 1.2 / DTLS 1.2): unlike
+ * the GCM framing there is no explicit per-record nonce on the wire - the
+ * fragment is ciphertext || tag(16) and the 12-byte nonce is the fixed
+ * write-IV XOR the record sequence number, exactly as TLS 1.3 builds it.
+ * The seq_num sits in the first 8 bytes of the additional_data, so it
+ * doubles as the value XORed into the IV, keeping the two consistent for
+ * both TLS (64-bit seqno) and DTLS (epoch||seqno). */
+static RTLSError
+r_tls_parser_decrypt_aead_7905 (RTLSParser * parser, const RCryptoCipher * cipher,
+    const ruint8 * fixediv)
+{
+  RBuffer * buf, * replace;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rsize tagsize = R_CHACHA20POLY1305_TAG_SIZE;
+  rsize ivsize = cipher->info->ivsize;   /* 12 */
+  rsize ctlen, i;
+  ruint8 nonce[R_TLS_AEAD_NONCE_SIZE_MAX];
+  ruint8 aad[R_TLS_AEAD_AAD_SIZE];
+  const ruint8 * ct, * tag;
+  RCryptoCipherResult res;
+
+  if (R_UNLIKELY (fixediv == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (ivsize != R_TLS_AEAD_NONCE_SIZE_MAX))
+    return R_TLS_ERROR_INVAL;
+  if (parser->fragment.size < tagsize)
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  ctlen = parser->fragment.size - tagsize;
+  ct = parser->fragment.data;
+  tag = ct + ctlen;
+
+  r_tls_mac_seed (parser, aad, ctlen);
+  r_memcpy (nonce, fixediv, ivsize);
+  for (i = 0; i < sizeof (ruint64); i++)
+    nonce[ivsize - sizeof (ruint64) + i] ^= aad[i];
+
+  if ((buf = r_buffer_new_alloc (NULL, ctlen, NULL)) == NULL)
+    return R_TLS_ERROR_OOM;
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_OOM;
+  }
+
+  res = r_crypto_cipher_decrypt_aead (cipher, info.data, ctlen, ct,
+      aad, sizeof (aad), nonce, ivsize, (ruint8 *) tag, tagsize);
+  r_buffer_unmap (buf, &info);
+  if (res != R_CRYPTO_CIPHER_OK) {
+    r_buffer_unref (buf);
+    return (res == R_CRYPTO_CIPHER_AUTH_FAILED) ?
+        R_TLS_ERROR_INVALID_MAC : R_TLS_ERROR_CORRUPT_RECORD;
+  }
+
+  replace = r_buffer_replace_byte_range (parser->buf,
+      parser->offset, parser->fragment.size, buf);
+  r_buffer_unref (buf);
+  r_buffer_unmap (parser->buf, &parser->fragment);
+  r_buffer_unref (parser->buf);
+  parser->buf = replace;
+  parser->recsize = parser->offset + ctlen;
+
+  if (!r_buffer_map_byte_range (parser->buf, parser->offset, (rssize)ctlen,
+        &parser->fragment, R_MEM_MAP_READ))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  return R_TLS_ERROR_OK;
+}
+
 RTLSError
 r_tls_parser_unprotect13 (RTLSParser * parser, const RCryptoCipher * cipher,
     const ruint8 * iv, rsize ivlen, ruint64 seq)
@@ -715,6 +783,9 @@ r_tls_parser_decrypt (RTLSParser * parser,
 
   if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_GCM)
     return r_tls_parser_decrypt_aead (parser, cipher, salt);
+
+  if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_POLY1305)
+    return r_tls_parser_decrypt_aead_7905 (parser, cipher, salt);
 
   if (etm && mac != NULL && cipher->info->mode == R_CRYPTO_CIPHER_MODE_CBC)
     return r_tls_parser_decrypt_etm (parser, cipher, mac);
@@ -1092,6 +1163,60 @@ _r_tls_encrypt_buffer_aead (const ruint8 * buf, rsize bufsize, rsize hdrsize,
   return ret;
 }
 
+/* RFC 7905 AEAD record builder (ChaCha20-Poly1305): emit record hdr ||
+ * ciphertext || tag(16) with no explicit nonce on the wire; the 12-byte
+ * nonce is the fixed @salt(12) XOR the 8-byte @nonce_explicit sequence
+ * (seq_num for TLS, epoch||seqno for DTLS). @aad is the shared 13-byte seed. */
+static RBuffer *
+_r_tls_encrypt_buffer_aead_7905 (const ruint8 * buf, rsize bufsize, rsize hdrsize,
+    const RCryptoCipher * cipher, const ruint8 * salt,
+    const ruint8 * nonce_explicit, const ruint8 * aad)
+{
+  RBuffer * ret = NULL;
+  rsize fraglen = bufsize - hdrsize;
+  rsize tagsize = R_CHACHA20POLY1305_TAG_SIZE;
+  rsize ivsize = cipher->info->ivsize;   /* 12 */
+  rsize reclen = fraglen + tagsize;
+
+  if (R_UNLIKELY (ivsize != R_TLS_AEAD_NONCE_SIZE_MAX))
+    return NULL;
+
+  if ((ret = r_buffer_new_alloc (NULL, hdrsize + reclen, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+    RCryptoCipherResult res;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      ruint8 nonce[R_TLS_AEAD_NONCE_SIZE_MAX];
+      ruint8 * p = info.data;
+      rsize i;
+
+      /* record hdr with the AEAD record length */
+      r_memcpy (p, buf, hdrsize - 2);
+      p += hdrsize - 2;
+      *p++ = (reclen >> 8) & 0xff;
+      *p++ = (reclen     ) & 0xff;
+
+      r_memcpy (nonce, salt, ivsize);
+      for (i = 0; i < sizeof (ruint64); i++)
+        nonce[ivsize - sizeof (ruint64) + i] ^= nonce_explicit[i];
+
+      res = r_crypto_cipher_encrypt_aead (cipher, p, fraglen, buf + hdrsize,
+          aad, R_TLS_AEAD_AAD_SIZE, nonce, ivsize, p + fraglen, tagsize);
+
+      r_buffer_unmap (ret, &info);
+    } else {
+      res = R_CRYPTO_CIPHER_INVAL;
+    }
+
+    if (res != R_CRYPTO_CIPHER_OK) {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
 /* Build the 13-byte AEAD additional_data: seq_num(8) || type(1) || version(2)
  * || plainlen(2). @seqnum is the 8-byte big-endian sequence (TLS) or
  * epoch||seqno (DTLS); @rec points at the record header (type, version). */
@@ -1123,8 +1248,12 @@ r_tls_encrypt_buffer_aead (RBuffer * buf, ruint64 seqno,
     r_memcpy (nonce_explicit, &seqbe, sizeof (ruint64));
     r_tls_aead_aad (aad, nonce_explicit, info.data,
         info.size - R_TLS_RECORD_HDR_SIZE);
-    ret = _r_tls_encrypt_buffer_aead (info.data, info.size, R_TLS_RECORD_HDR_SIZE,
-        cipher, salt, nonce_explicit, aad);
+    if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_POLY1305)
+      ret = _r_tls_encrypt_buffer_aead_7905 (info.data, info.size, R_TLS_RECORD_HDR_SIZE,
+          cipher, salt, nonce_explicit, aad);
+    else
+      ret = _r_tls_encrypt_buffer_aead (info.data, info.size, R_TLS_RECORD_HDR_SIZE,
+          cipher, salt, nonce_explicit, aad);
     r_buffer_unmap (buf, &info);
   } else {
     ret = NULL;
@@ -1149,8 +1278,12 @@ r_dtls_encrypt_buffer_aead (RBuffer * buf, const RCryptoCipher * cipher,
      * (info.data + 3). */
     r_tls_aead_aad (aad, info.data + 3, info.data,
         info.size - R_DTLS_RECORD_HDR_SIZE);
-    ret = _r_tls_encrypt_buffer_aead (info.data, info.size, R_DTLS_RECORD_HDR_SIZE,
-        cipher, salt, info.data + 3, aad);
+    if (cipher->info->mode == R_CRYPTO_CIPHER_MODE_POLY1305)
+      ret = _r_tls_encrypt_buffer_aead_7905 (info.data, info.size, R_DTLS_RECORD_HDR_SIZE,
+          cipher, salt, info.data + 3, aad);
+    else
+      ret = _r_tls_encrypt_buffer_aead (info.data, info.size, R_DTLS_RECORD_HDR_SIZE,
+          cipher, salt, info.data + 3, aad);
     r_buffer_unmap (buf, &info);
   } else {
     ret = NULL;

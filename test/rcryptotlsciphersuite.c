@@ -36,10 +36,14 @@ RTEST (rtlsciphersuite, is_supported, RTEST_FAST)
 
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_NULL_WITH_NULL_NULL));
 
-  /* TLS 1.3 AES-GCM suites; ChaCha20-Poly1305 (0x1303) is not yet implemented. */
+  /* TLS 1.3 AEAD suites. */
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_AES_128_GCM_SHA256));
   r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_AES_256_GCM_SHA384));
-  r_assert (!r_tls_cipher_suite_is_supported (R_TLS_CS_CHACHA20_POLY1305_SHA256));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_CHACHA20_POLY1305_SHA256));
+
+  /* ChaCha20-Poly1305 (RFC 7905). */
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256));
+  r_assert (r_tls_cipher_suite_is_supported (R_TLS_CS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256));
 }
 RTEST_END;
 
@@ -113,8 +117,19 @@ RTEST (rtlsciphersuite, get_info, RTEST_FAST)
   r_assert_cmpint (info->cipher->keybits, ==, 256);
   r_assert_cmpint (info->prf, ==, R_MSG_DIGEST_TYPE_SHA384);
 
-  /* ChaCha20-Poly1305 has a code point but no implementation yet. */
-  r_assert_cmpptr (r_tls_cipher_suite_get_info (R_TLS_CS_CHACHA20_POLY1305_SHA256), ==, NULL);
+  /* ChaCha20-Poly1305 (RFC 8439/7905): AEAD, 256-bit key, 12-byte nonce. */
+  r_assert_cmpptr ((info = r_tls_cipher_suite_get_info (R_TLS_CS_CHACHA20_POLY1305_SHA256)), !=, NULL);
+  r_assert_cmpint (info->cipher->type, ==, R_CRYPTO_CIPHER_ALGO_CHACHA20);
+  r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_POLY1305);
+  r_assert_cmpuint (info->cipher->keybits, ==, 256);
+  r_assert_cmpuint (info->cipher->ivsize, ==, 12);
+  r_assert_cmpint (info->mac, ==, R_MSG_DIGEST_TYPE_NONE);
+  r_assert_cmpint (info->prf, ==, R_MSG_DIGEST_TYPE_SHA256);
+
+  r_assert_cmpptr ((info = r_tls_cipher_suite_get_info (R_TLS_CS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256)), !=, NULL);
+  r_assert_cmpint (info->key_exchange, ==, R_KEY_EXCHANGE_ECDHE_RSA);
+  r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_POLY1305);
+  r_assert_cmpint (info->prf, ==, R_MSG_DIGEST_TYPE_SHA256);
 }
 RTEST_END;
 
@@ -153,10 +168,8 @@ RTEST (rtlsciphersuite, filter, RTEST_FAST)
     R_TLS_CS_RSA_WITH_3DES_EDE_CBC_SHA,
   };
   /* None of these are both supported by us and present in @incoming: the
-   * ChaCha20 suite is unsupported; the CBC-SHA256 / NULL suites are supported
-   * but Chrome did not offer them. */
+   * CBC-SHA256 / NULL suites are supported but Chrome did not offer them. */
   const RTLSCipherSuite nonsuites[] = {
-    R_TLS_CS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, /* Not supported */
     R_TLS_CS_RSA_WITH_AES_128_CBC_SHA256,
     R_TLS_CS_RSA_WITH_NULL_MD5,
     R_TLS_CS_NULL_WITH_NULL_NULL,

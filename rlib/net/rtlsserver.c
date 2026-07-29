@@ -137,7 +137,7 @@ struct RTLSServer {
   RTLS13Schedule sched13;               /* 1-RTT key schedule */
   RTLS13RecordKeys rk_write, rk_read;   /* installed 1.3 record keys */
   const RCryptoCipherInfo * cs13_cipher;/* AEAD for the 1.3 suite */
-  RTLSCipherSuite cs13_suite;           /* 0x1301 / 0x1302 */
+  RTLSCipherSuite cs13_suite;           /* 0x1301 / 0x1302 / 0x1303 */
   RMsgDigestType cs13_hash;             /* SHA-256 / SHA-384 */
   RTLSSupportedGroup ks_group;          /* selected key_share group */
   RTLSSupportedGroup ks_pref_group;     /* group to require via HRR, or 0 */
@@ -567,7 +567,7 @@ r_tls_server_cipher_encrypt (RTLSServer * server, RBuffer * buf)
   RBuffer * ret;
 
   R_LOG_TRACE ("Encrypting buffer %p", buf);
-  if (server->server.cipher->info->mode == R_CRYPTO_CIPHER_MODE_GCM) {
+  if (r_crypto_cipher_is_aead (server->server.cipher)) {
     if (r_tls_version_is_dtls (server->version))
       ret = r_dtls_encrypt_buffer_aead (buf, server->server.cipher, server->server.fixediv);
     else
@@ -1808,7 +1808,7 @@ r_tls_server_nego_hello13 (RTLSServer * server)
   for (i = 0; i < ncs; i++) {
     RTLSCipherSuite c =
         (RTLSCipherSuite) r_load_be16 (server->hello.cs + i * sizeof (ruint16));
-    if (c == R_TLS_CS_AES_128_GCM_SHA256 || c == R_TLS_CS_AES_256_GCM_SHA384) {
+    if (r_tls13_cipher_suite_is_supported (c)) {
       cs13 = c;
       break;
     }
@@ -3125,8 +3125,8 @@ r_tls_server_expand_master_secret (RTLSServer * server)
         ret = R_TLS_ERROR_OOM;
     }
 
-    /* IV — for AEAD this is the 4-byte fixed salt (ivsize-8); CBC keeps ivsize
-     * (the explicit IV is per-record). */
+    /* IV — for GCM this is the 4-byte fixed salt (ivsize-8); ChaCha20-Poly1305
+     * (RFC 7905) and CBC keep the full ivsize (CBC's explicit IV is per-record). */
     if (ret == R_TLS_ERROR_OK) {
       const RCryptoCipherInfo * ci = server->csinfo->cipher;
       size = (ci->mode == R_CRYPTO_CIPHER_MODE_GCM) ?

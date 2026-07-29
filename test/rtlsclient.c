@@ -602,10 +602,15 @@ r_test_tls13_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
   r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, R_TLS_VERSION_TLS_1_3);
   /* The negotiated 1.3 suite is reported (it has a cipher-suite table entry). */
   r_assert_cmpptr (r_tls_client_get_cipher_suite (fixture->client), !=, NULL);
-  r_assert (r_tls_client_get_cipher_suite (fixture->client)->suite ==
-        R_TLS_CS_AES_128_GCM_SHA256 ||
-      r_tls_client_get_cipher_suite (fixture->client)->suite ==
-        R_TLS_CS_AES_256_GCM_SHA384);
+  if (fixture->force_suite != R_TLS_CS_NONE) {
+    r_assert_cmpint (r_tls_client_get_cipher_suite (fixture->client)->suite,
+        ==, fixture->force_suite);
+  } else {
+    r_assert (r_tls_client_get_cipher_suite (fixture->client)->suite ==
+          R_TLS_CS_AES_128_GCM_SHA256 ||
+        r_tls_client_get_cipher_suite (fixture->client)->suite ==
+          R_TLS_CS_AES_256_GCM_SHA384);
+  }
 
   /* Application data, client -> server. */
   r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
@@ -727,6 +732,15 @@ RTEST_END;
 RTEST_F (rtlsclient, tls13_loopback_aes256, RTEST_FAST)
 {
   fixture->force_suite = R_TLS_CS_AES_256_GCM_SHA384;
+  r_test_tls13_loopback (fixture);
+}
+RTEST_END;
+
+/* Force TLS_CHACHA20_POLY1305_SHA256 (0x1303): the ChaCha20-Poly1305 AEAD
+ * drives the 1.3 record layer end to end. */
+RTEST_F (rtlsclient, tls13_loopback_chacha20, RTEST_FAST)
+{
+  fixture->force_suite = R_TLS_CS_CHACHA20_POLY1305_SHA256;
   r_test_tls13_loopback (fixture);
 }
 RTEST_END;
@@ -2661,6 +2675,68 @@ RTEST_F (rtlsclient, dtls_gcm_rsa_aes256_sha384, RTEST_FAST)
 {
   r_test_tls_gcm_loopback (fixture, R_TLS_VERSION_DTLS_1_2,
       R_TLS_CS_RSA_WITH_AES_256_GCM_SHA384);
+}
+RTEST_END;
+
+/* ChaCha20-Poly1305 (RFC 7905) end to end for one version: handshake completes
+ * on the forced suite and app data round-trips through the AEAD record path,
+ * which for RFC 7905 uses the TLS 1.3-style nonce (no explicit per-record
+ * nonce) rather than the GCM salt||nonce framing. */
+static void
+r_test_tls_chacha20_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture,
+    RTLSVersion version)
+{
+  static const ruint8 c2s[] = { 'c', 'c', '2', '0', '-', 'p', 'i', 'n', 'g' };
+  static const ruint8 s2c[] = { 'c', 'c', '2', '0', '-', 'p', 'o', 'n', 'g' };
+  const RTLSCipherSuiteInfo * info;
+  RBuffer * app;
+
+  fixture->force_suite = R_TLS_CS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng, version),
+      ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  r_assert_cmpptr ((info = r_tls_client_get_cipher_suite (fixture->client)), !=, NULL);
+  r_assert_cmpint (info->suite, ==, R_TLS_CS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256);
+  r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_POLY1305);
+  r_assert_cmpptr ((info = r_tls_server_get_cipher_suite (fixture->server)), !=, NULL);
+  r_assert_cmpint (info->suite, ==, R_TLS_CS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256);
+  r_assert_cmpint (info->cipher->mode, ==, R_CRYPTO_CIPHER_MODE_POLY1305);
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer)s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+}
+
+/* The issue's headline: ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca8). */
+RTEST_F (rtlsclient, tls_chacha20_ecdhe_rsa, RTEST_FAST)
+{
+  r_test_tls_chacha20_loopback (fixture, R_TLS_VERSION_TLS_1_2);
+}
+RTEST_END;
+
+RTEST_F (rtlsclient, dtls_chacha20_ecdhe_rsa, RTEST_FAST)
+{
+  r_test_tls_chacha20_loopback (fixture, R_TLS_VERSION_DTLS_1_2);
 }
 RTEST_END;
 

@@ -973,6 +973,77 @@ RTEST (rtls, pkt_dtls_finished_encrypted, RTEST_FAST)
 }
 RTEST_END;
 
+/* RFC 7905 TLS 1.2 record round-trip: encrypt a plaintext record with the
+ * ChaCha20-Poly1305 AEAD (no explicit nonce, 12-byte fixed IV XOR seq) and
+ * recover it through the parser decrypt path. A tampered ciphertext byte
+ * must fail authentication. */
+RTEST (rtls, tls12_chacha20_poly1305_record_roundtrip, RTEST_FAST)
+{
+  static const ruint8 key[R_CHACHA20POLY1305_KEY_SIZE] = {
+    0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+    0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f
+  };
+  static const ruint8 fixediv[R_CHACHA20POLY1305_NONCE_SIZE] = {
+    0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47
+  };
+  static const ruint8 appdata[] = {
+    'h', 'e', 'l', 'l', 'o', ' ', 'c', 'h', 'a', 'c', 'h', 'a'
+  };
+  RCryptoCipher * enc, * dec;
+  RBuffer * plainbuf, * record;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  ruint8 * p;
+
+  r_assert_cmpptr ((enc = r_cipher_chacha20_poly1305_new (key)), !=, NULL);
+
+  /* Build a plaintext record: hdr(type, version, length) || fragment. */
+  r_assert_cmpptr ((plainbuf = r_buffer_new_alloc (NULL,
+          R_TLS_RECORD_HDR_SIZE + sizeof (appdata), NULL)), !=, NULL);
+  r_assert (r_buffer_map (plainbuf, &info, R_MEM_MAP_WRITE));
+  p = info.data;
+  p[0] = R_TLS_CONTENT_TYPE_APPLICATION_DATA;
+  p[1] = (R_TLS_VERSION_TLS_1_2 >> 8) & 0xff;
+  p[2] = (R_TLS_VERSION_TLS_1_2     ) & 0xff;
+  p[3] = (sizeof (appdata) >> 8) & 0xff;
+  p[4] = (sizeof (appdata)     ) & 0xff;
+  r_memcpy (p + R_TLS_RECORD_HDR_SIZE, appdata, sizeof (appdata));
+  r_buffer_unmap (plainbuf, &info);
+
+  r_assert_cmpptr ((record = r_tls_encrypt_buffer_aead (plainbuf, 0, enc, fixediv)),
+      !=, NULL);
+  r_buffer_unref (plainbuf);
+
+  /* The record is hdr || ciphertext || tag with no explicit nonce. */
+  r_assert (r_buffer_map (record, &info, R_MEM_MAP_READ));
+  r_assert_cmpuint (info.size, ==,
+      R_TLS_RECORD_HDR_SIZE + sizeof (appdata) + R_CHACHA20POLY1305_TAG_SIZE);
+  r_buffer_unmap (record, &info);
+
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, record), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.content, ==, R_TLS_CONTENT_TYPE_APPLICATION_DATA);
+  r_assert_cmpptr ((dec = r_cipher_chacha20_poly1305_new (key)), !=, NULL);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, dec, NULL, FALSE, fixediv),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (parser.fragment.size, ==, sizeof (appdata));
+  r_assert_cmpint (r_memcmp (parser.fragment.data, appdata, sizeof (appdata)), ==, 0);
+  r_tls_parser_clear (&parser);
+
+  /* Flip a ciphertext byte: authentication must fail. */
+  r_assert (r_buffer_map (record, &info, R_MEM_MAP_RW));
+  info.data[R_TLS_RECORD_HDR_SIZE] ^= 0x01;
+  r_buffer_unmap (record, &info);
+  r_assert_cmpint (r_tls_parser_init_buffer (&parser, record), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_parser_decrypt (&parser, dec, NULL, FALSE, fixediv),
+      ==, R_TLS_ERROR_INVALID_MAC);
+  r_tls_parser_clear (&parser);
+
+  r_crypto_cipher_unref (enc);
+  r_crypto_cipher_unref (dec);
+  r_buffer_unref (record);
+}
+RTEST_END;
+
 /* PRF test vectors taken from IETF mailing list,
  * email from Joseph Birr-Pixton <jbp at ncipher.com> */
 RTEST (rtls, prf_sha224, RTEST_FAST)

@@ -531,7 +531,7 @@ r_tls_client_cipher_encrypt (RTLSClient * client, RBuffer * buf)
 {
   RBuffer * ret;
 
-  if (client->client.cipher->info->mode == R_CRYPTO_CIPHER_MODE_GCM) {
+  if (r_crypto_cipher_is_aead (client->client.cipher)) {
     if (r_tls_version_is_dtls (client->version))
       ret = r_dtls_encrypt_buffer_aead (buf, client->client.cipher, client->client.fixediv);
     else
@@ -1192,15 +1192,15 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
     if (client->cb.preferred_cipher_suites != NULL &&
         client->cb.preferred_cipher_suites (client->userdata, client->version, want, &nwant)) {
       for (i = 0; i < nwant && ncs < R_N_ELEMENTS (cs); i++) {
-        if (want[i] == R_TLS_CS_AES_128_GCM_SHA256 ||
-            want[i] == R_TLS_CS_AES_256_GCM_SHA384)
+        if (r_tls13_cipher_suite_is_supported (want[i]))
           cs[ncs++] = want[i];
       }
     }
     if (ncs == 0) {
       cs[0] = R_TLS_CS_AES_128_GCM_SHA256;
       cs[1] = R_TLS_CS_AES_256_GCM_SHA384;
-      ncs = 2;
+      cs[2] = R_TLS_CS_CHACHA20_POLY1305_SHA256;
+      ncs = 3;
     }
     /* When 1.2 is within range, also offer the 1.2 suites so a server may
      * negotiate 1.2 from this same ClientHello (RFC 8446 hybrid); a 1.3 server
@@ -1631,7 +1631,7 @@ r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hell
    * accessors report it, and take the cipher and hash from it. */
   if ((client->csinfo = r_tls_cipher_suite_get_info (cs)) == NULL ||
       client->csinfo->cipher == NULL ||
-      (cs != R_TLS_CS_AES_128_GCM_SHA256 && cs != R_TLS_CS_AES_256_GCM_SHA384))
+      !r_tls13_cipher_suite_is_supported (cs))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   client->cs13_suite = cs;
   client->cs13_cipher = client->csinfo->cipher;
@@ -1748,7 +1748,7 @@ r_tls_client_handle_hrr (RTLSClient * client, const RTLSHelloMsg * hello,
   cs = (RTLSCipherSuite) r_load_be16 (hello->cs);
   if ((client->csinfo = r_tls_cipher_suite_get_info (cs)) == NULL ||
       client->csinfo->cipher == NULL ||
-      (cs != R_TLS_CS_AES_128_GCM_SHA256 && cs != R_TLS_CS_AES_256_GCM_SHA384))
+      !r_tls13_cipher_suite_is_supported (cs))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   client->cs13_suite = cs;
   client->cs13_cipher = client->csinfo->cipher;
@@ -2210,7 +2210,8 @@ r_tls_client_expand_master_secret (RTLSClient * client)
       if (client->client.cipher == NULL || client->server.cipher == NULL)
         ret = R_TLS_ERROR_OOM;
     }
-    /* IV — AEAD takes the 4-byte fixed salt (ivsize-8); CBC keeps ivsize. */
+    /* IV — GCM takes the 4-byte fixed salt (ivsize-8); ChaCha20-Poly1305
+     * (RFC 7905) and CBC keep the full ivsize. */
     if (ret == R_TLS_ERROR_OK) {
       const RCryptoCipherInfo * ci = client->csinfo->cipher;
       size = (ci->mode == R_CRYPTO_CIPHER_MODE_GCM) ?
