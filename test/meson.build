@@ -70,6 +70,7 @@ rlibtest_sources = [
   'rmsgdigest.c',
   'rpe.c',
   'rpoll.c',
+  'rpoly1305.c',
   'rprng-kiss.c',
   'rprng-mt.c',
   'rproc.c',

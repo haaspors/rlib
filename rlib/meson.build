@@ -69,6 +69,7 @@ rlib_sources = [
   'crypto/rkdf.c',
   'crypto/rkey.c',
   'crypto/rpem.c',
+  'crypto/rpoly1305.c',
   'crypto/rrsa.c',
   'crypto/rxdh.c',
   'crypto/rsrtpciphersuite.c',
