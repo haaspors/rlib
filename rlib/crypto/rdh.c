@@ -303,6 +303,7 @@ r_dh_priv_key_gen (const rmpint * p, const rmpint * g, ruint ebits, RPrng * prng
 
     for (;;) {
       if (!r_prng_fill (prng, xbuf, pbytes)) {
+        r_memclear_secure (xbuf, pbytes);
         r_dh_priv_key_free (ret);
         ret = NULL;
         r_mpint_clear (&p_2);
@@ -323,6 +324,7 @@ r_dh_priv_key_gen (const rmpint * p, const rmpint * g, ruint ebits, RPrng * prng
     xbuf = r_alloca (pbytes);
 
     if (!r_prng_fill (prng, xbuf, pbytes)) {
+      r_memclear_secure (xbuf, pbytes);
       r_dh_priv_key_free (ret);
       ret = NULL;
       r_mpint_clear (&p_2);
@@ -334,6 +336,10 @@ r_dh_priv_key_gen (const rmpint * p, const rmpint * g, ruint ebits, RPrng * prng
       xbuf[0] |= 0x80u;
     r_mpint_set_binary (&ret->x, xbuf, pbytes);
   }
+
+  /* xbuf held the raw private exponent; scrub it off the stack now that
+   * it lives (secure-cleared) in ret->x. */
+  r_memclear_secure (xbuf, pbytes);
 
   if (!r_mpint_expmod (&ret->pub.y, &ret->pub.g, &ret->x, &ret->pub.p)) {
     r_dh_priv_key_free (ret);
