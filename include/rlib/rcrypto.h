@@ -112,6 +112,7 @@
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rmsgdigest.h>
 #include <rlib/crypto/rpem.h>
+#include <rlib/crypto/rpoly1305.h>
 #include <rlib/crypto/rrsa.h>
 #include <rlib/crypto/rxdh.h>
 #include <rlib/crypto/rsrtpciphersuite.h>

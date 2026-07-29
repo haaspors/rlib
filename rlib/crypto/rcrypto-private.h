@@ -84,6 +84,23 @@ struct RCryptoCert {
 R_API_HIDDEN void r_crypto_key_destroy (RCryptoKey * key);
 R_API_HIDDEN void r_crypto_cert_destroy (RCryptoCert * cert);
 
+/* Poly1305 incremental state (RFC 8439 §2.5), radix-2^26 accumulator.
+ * The one-shot r_poly1305_mac is public; these hidden entry points let
+ * the ChaCha20-Poly1305 AEAD feed the padded AAD / ciphertext / length
+ * blocks without staging them in one contiguous buffer. */
+typedef struct {
+  ruint32 r[5];
+  ruint32 h[5];
+  ruint32 pad[4];
+  rsize leftover;
+  ruint8 buffer[16];
+  ruint8 final;
+} RPoly1305Ctx;
+
+R_API_HIDDEN void r_poly1305_init (RPoly1305Ctx * ctx, const ruint8 key[32]);
+R_API_HIDDEN void r_poly1305_update (RPoly1305Ctx * ctx, const ruint8 * m, rsize bytes);
+R_API_HIDDEN void r_poly1305_finish (RPoly1305Ctx * ctx, ruint8 mac[16]);
+
 R_API_HIDDEN RCryptoCipher * r_cipher_aes_new_with_info (const RCryptoCipherInfo * info, const ruint8 * key);
 R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_null_cipher;
 R_API_HIDDEN extern const RCryptoCipherInfo g__r_crypto_cipher_aes_128_ecb;
