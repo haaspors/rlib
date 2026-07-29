@@ -15,6 +15,7 @@ rlibtest_sources = [
   'rcbqueue.c',
   'rcbrlist.c',
   'rchacha20.c',
+  'rchacha20poly1305.c',
   'rclock.c',
   'rcpufeatures.c',
   'rcrc.c',

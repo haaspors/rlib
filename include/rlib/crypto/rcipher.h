@@ -72,6 +72,7 @@ typedef enum {
   R_CRYPTO_CIPHER_ALGO_DES,         /**< Single DES. */
   R_CRYPTO_CIPHER_ALGO_3DES,        /**< Triple DES. */
   R_CRYPTO_CIPHER_ALGO_CAMELLIA,    /**< Camellia. */
+  R_CRYPTO_CIPHER_ALGO_CHACHA20,    /**< ChaCha20 stream cipher (RFC 8439). */
 } RCryptoCipherAlgorithm;
 
 /**
@@ -89,6 +90,7 @@ typedef enum {
   R_CRYPTO_CIPHER_MODE_CTR,         /**< Counter mode. */
   R_CRYPTO_CIPHER_MODE_GCM,         /**< Galois / Counter Mode (AEAD; future). */
   R_CRYPTO_CIPHER_MODE_CCM,         /**< Counter with CBC-MAC (AEAD; future). */
+  R_CRYPTO_CIPHER_MODE_POLY1305,    /**< ChaCha20-Poly1305 AEAD (RFC 8439). */
   R_CRYPTO_CIPHER_MODE_STREAM,      /**< Generic stream cipher (no block boundary). */
 } RCryptoCipherMode;
 

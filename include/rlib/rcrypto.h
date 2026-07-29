@@ -97,6 +97,7 @@
 
 #include <rlib/crypto/raes.h>
 #include <rlib/crypto/rchacha20.h>
+#include <rlib/crypto/rchacha20poly1305.h>
 #include <rlib/crypto/rcert.h>
 #include <rlib/crypto/rcipher.h>
 #include <rlib/crypto/rdh.h>
