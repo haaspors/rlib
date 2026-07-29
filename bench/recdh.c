@@ -74,7 +74,7 @@ run_ecdh_bench (REcurveID curve_id, const rchar * curve_name)
   r_prng_unref (prng);
 }
 
-RTEST_BENCH (recdh, compute_shared_secp256r1, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (recdh, compute_shared_secp256r1, RTEST_FASTSLOW)
 {
   /* ECDH on secp256r1 - the most-used curve in the wild. Exercises
    * the CT scalar-mul ladder (r_ecurve_point_scalar_mul) end-to-end
@@ -84,7 +84,7 @@ RTEST_BENCH (recdh, compute_shared_secp256r1, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (recdh, compute_shared_secp384r1, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (recdh, compute_shared_secp384r1, RTEST_FASTSLOW)
 {
   /* ECDH on secp384r1. Same path as secp256r1, wider digit count -
    * gives a feel for how the CT scalar-mul scales with curve width

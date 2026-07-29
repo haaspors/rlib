@@ -56,7 +56,7 @@ run_hmac_bench (RMsgDigestType type, const rchar * label)
   r_hmac_free (hmac);
 }
 
-RTEST_BENCH (rhmac, sha256, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rhmac, sha256, RTEST_FAST)
 {
   /* HMAC-SHA256 bulk throughput. Thin wrapper over two SHA-256
    * passes (inner over @c K^ipad ++ msg, outer over @c K^opad ++
@@ -69,7 +69,7 @@ RTEST_BENCH (rhmac, sha256, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (rhmac, sha1, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rhmac, sha1, RTEST_FAST)
 {
   /* HMAC-SHA1 bulk throughput. Legacy MAC kept for compat with the
    * protocols that still need it (TLS-PRF, S3 signature v2,

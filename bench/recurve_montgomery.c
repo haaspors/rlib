@@ -45,7 +45,7 @@ run_montgomery_ladder_bench (REcurveID curve_id, const rchar * curve_name,
   r_prng_unref (prng);
 }
 
-RTEST_BENCH (recurve_montgomery, ladder_x25519, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (recurve_montgomery, ladder_x25519, RTEST_FASTSLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_montgomery_ladder_bench (R_ECURVE_ID_X25519, "Curve25519",
@@ -53,7 +53,7 @@ RTEST_BENCH (recurve_montgomery, ladder_x25519, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (recurve_montgomery, ladder_x448, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (recurve_montgomery, ladder_x448, RTEST_FASTSLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_montgomery_ladder_bench (R_ECURVE_ID_X448, "Curve448",

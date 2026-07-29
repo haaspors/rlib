@@ -41,7 +41,7 @@ run_crc_bench (RCrcUpdateFn fn, const rchar * label)
   r_free (input);
 }
 
-RTEST_BENCH (rcrc, crc32, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rcrc, crc32, RTEST_FAST)
 {
   /* IEEE 802.3 / zlib / PNG CRC32 (reflected, polynomial
    * 0x04C11DB7). Table-driven implementation; the throughput
@@ -52,7 +52,7 @@ RTEST_BENCH (rcrc, crc32, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (rcrc, crc32c, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rcrc, crc32c, RTEST_FAST)
 {
   /* Castagnoli CRC32 (reflected, polynomial 0x1EDC6F41). Used by
    * SCTP, iSCSI, Btrfs, etc. Same table-driven implementation as
@@ -66,7 +66,7 @@ RTEST_BENCH (rcrc, crc32c, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (rcrc, crc32bzip2, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rcrc, crc32bzip2, RTEST_FAST)
 {
   /* CRC32 bzip2 - same polynomial as IEEE CRC32 but non-reflected.
    * Used by the bzip2 compressor. Same table-driven cost shape

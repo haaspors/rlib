@@ -76,14 +76,14 @@ run_ed448_verify_bench (ruint iters)
   r_crypto_key_unref (pub);
 }
 
-RTEST_BENCH (red448, sign, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (red448, sign, RTEST_FASTSLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_ed448_sign_bench (ED448_BENCH_ITERS_SIGN);
 }
 RTEST_END;
 
-RTEST_BENCH (red448, verify, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (red448, verify, RTEST_FASTSLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_ed448_verify_bench (ED448_BENCH_ITERS_VERIFY);

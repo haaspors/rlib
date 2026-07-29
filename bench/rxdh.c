@@ -56,14 +56,14 @@ run_xdh_bench (REcurveID curve_id, const rchar * curve_name, ruint iters)
   r_prng_unref (prng);
 }
 
-RTEST_BENCH (rxdh, compute_shared_x25519, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rxdh, compute_shared_x25519, RTEST_FASTSLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_xdh_bench (R_ECURVE_ID_X25519, "X25519", XDH_BENCH_ITERS_25519);
 }
 RTEST_END;
 
-RTEST_BENCH (rxdh, compute_shared_x448, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rxdh, compute_shared_x448, RTEST_FASTSLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_xdh_bench (R_ECURVE_ID_X448, "X448", XDH_BENCH_ITERS_448);

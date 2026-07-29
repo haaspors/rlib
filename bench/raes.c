@@ -70,7 +70,7 @@ static const ruint8 aes_bench_key[32] = {
   0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
 };
 
-RTEST_BENCH (raes, cbc_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, cbc_128_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -80,7 +80,7 @@ RTEST_BENCH (raes, cbc_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, cbc_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, cbc_256_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -90,7 +90,7 @@ RTEST_BENCH (raes, cbc_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, ctr_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, ctr_128_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -100,7 +100,7 @@ RTEST_BENCH (raes, ctr_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, ctr_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, ctr_256_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -110,7 +110,7 @@ RTEST_BENCH (raes, ctr_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, ecb_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, ecb_128_encrypt, RTEST_FAST)
 {
   /* ECB - block-by-block AES with no chaining. Same per-block
    * cost as CBC's inner round, no IV mixing. The CBC/CTR-vs-ECB
@@ -123,7 +123,7 @@ RTEST_BENCH (raes, ecb_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, ecb_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, ecb_256_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -133,7 +133,7 @@ RTEST_BENCH (raes, ecb_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, cfb_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, cfb_128_encrypt, RTEST_FAST)
 {
   /* CFB - feedback stream variant; each ciphertext block feeds
    * into the next plaintext encrypt. Same engine as CBC, mostly
@@ -146,7 +146,7 @@ RTEST_BENCH (raes, cfb_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, cfb_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, cfb_256_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -156,7 +156,7 @@ RTEST_BENCH (raes, cfb_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, ofb_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, ofb_128_encrypt, RTEST_FAST)
 {
   /* OFB - output feedback stream variant; the keystream is
    * derived by repeatedly re-encrypting the IV (independent of
@@ -170,7 +170,7 @@ RTEST_BENCH (raes, ofb_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, ofb_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, ofb_256_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -226,7 +226,7 @@ run_aes_aead_bench (RCryptoCipher * cipher, const rchar * label,
   r_free (output);
 }
 
-RTEST_BENCH (raes, gcm_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, gcm_128_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -236,7 +236,7 @@ RTEST_BENCH (raes, gcm_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, gcm_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, gcm_256_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -246,7 +246,7 @@ RTEST_BENCH (raes, gcm_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, ccm_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, ccm_128_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
@@ -256,7 +256,7 @@ RTEST_BENCH (raes, ccm_128_encrypt, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (raes, ccm_256_encrypt, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (raes, ccm_256_encrypt, RTEST_FAST)
 {
   RCryptoCipher * c;
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);

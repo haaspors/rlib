@@ -49,7 +49,7 @@ run_digest_bench (RMsgDigestType type, const rchar * label)
   r_msg_digest_free (md);
 }
 
-RTEST_BENCH (rmsgdigest, sha256, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rmsgdigest, sha256, RTEST_FAST)
 {
   /* SHA-256 bulk throughput. 32-bit-word compression function;
    * the workhorse digest for nearly every protocol in rlib (TLS,
@@ -60,7 +60,7 @@ RTEST_BENCH (rmsgdigest, sha256, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (rmsgdigest, sha512, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rmsgdigest, sha512, RTEST_FAST)
 {
   /* SHA-512 bulk throughput. 64-bit-word compression function;
    * faster than SHA-256 on 64-bit hosts despite the larger digest
@@ -80,28 +80,28 @@ RTEST_END;
  * siblings - the benches are here mostly so regressions on the
  * legacy primitives don't go unnoticed. */
 
-RTEST_BENCH (rmsgdigest, md5, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rmsgdigest, md5, RTEST_FAST)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_digest_bench (R_MSG_DIGEST_TYPE_MD5, "MD5");
 }
 RTEST_END;
 
-RTEST_BENCH (rmsgdigest, sha1, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rmsgdigest, sha1, RTEST_FAST)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_digest_bench (R_MSG_DIGEST_TYPE_SHA1, "SHA-1");
 }
 RTEST_END;
 
-RTEST_BENCH (rmsgdigest, sha224, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rmsgdigest, sha224, RTEST_FAST)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_digest_bench (R_MSG_DIGEST_TYPE_SHA224, "SHA-224");
 }
 RTEST_END;
 
-RTEST_BENCH (rmsgdigest, sha384, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rmsgdigest, sha384, RTEST_FAST)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_digest_bench (R_MSG_DIGEST_TYPE_SHA384, "SHA-384");
@@ -148,7 +148,7 @@ run_shake256_bench (void)
   r_free (input);
 }
 
-RTEST_BENCH (rmsgdigest, shake256, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (rmsgdigest, shake256, RTEST_FAST)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_shake256_bench ();

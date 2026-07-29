@@ -76,7 +76,7 @@ fail_after_priv:
   return ok;
 }
 
-RTEST_BENCH (recdsa, sign_secp256r1, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (recdsa, sign_secp256r1, RTEST_FASTSLOW)
 {
   /* ECDSA sign on secp256r1. Exercises r_ecdsa_sign end-to-end -
    * nonce sampling, CT k*G via r_ecurve_point_scalar_mul, the
@@ -117,7 +117,7 @@ RTEST_BENCH (recdsa, sign_secp256r1, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
-RTEST_BENCH (recdsa, verify_secp256r1, RTEST_FAST | RTEST_SYSTEM)
+RTEST_BENCH (recdsa, verify_secp256r1, RTEST_FASTSLOW)
 {
   /* ECDSA verify on secp256r1. Verify is variable-time on the
    * public signature; runs through two scalar-muls (u1*G and u2*Q)

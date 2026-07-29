@@ -42,7 +42,7 @@ run_edwards_scalar_mul_bench (REcurveID curve_id, const rchar * curve_name,
 }
 
 RTEST_BENCH (recurve_edwards, scalar_mul_edwards25519,
-    RTEST_FAST | RTEST_SYSTEM)
+    RTEST_FASTSLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_edwards_scalar_mul_bench (R_ECURVE_ID_X25519, "edwards25519", 255,
@@ -51,7 +51,7 @@ RTEST_BENCH (recurve_edwards, scalar_mul_edwards25519,
 RTEST_END;
 
 RTEST_BENCH (recurve_edwards, scalar_mul_edwards448,
-    RTEST_FAST | RTEST_SYSTEM)
+    RTEST_FASTSLOW)
 {
   r_print ("%"R_TIME_FORMAT" --- %s ---\n", R_TIME_ARGS (0), R_STRFUNC);
   run_edwards_scalar_mul_bench (R_ECURVE_ID_X448, "edwards448", 448,
