@@ -151,8 +151,18 @@ R_API RCryptoKey * r_dh_priv_key_new_gen (const rmpint * p, const rmpint * g,
 /**
  * @brief Generate a fresh DH keypair in a standard named group.
  *
- * Convenience wrapper that loads @c (p, g) for @p group from the
- * RFC tables before calling @ref r_dh_priv_key_new_gen.
+ * Loads @c (p, g) for @p group from the RFC tables and generates the
+ * keypair. Unlike @ref r_dh_priv_key_new_gen, which samples a
+ * full-width @c x, this uses a short private exponent of @c 2*strength
+ * bits (the group's estimated security strength per RFC 7919 App. A):
+ * the named groups are safe primes, so the best attack on @c g^x with
+ * @c x from an N-bit range is Pollard's kangaroo at ~2^(N/2) work, and
+ * the shorter exponent proportionally reduces the modexp cost.
+ *
+ * @param group  A named MODP / FFDHE group.
+ * @param prng   Randomness source for sampling @c x; must be
+ *               cryptographically secure — use @ref r_prng_new_crypto,
+ *               not @ref r_prng_new_kiss / @ref r_prng_new_mt.
  */
 R_API RCryptoKey * r_dh_priv_key_new_gen_named (RDhNamedGroup group,
     RPrng * prng) R_ATTR_MALLOC;
