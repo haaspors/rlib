@@ -30,19 +30,23 @@ typedef struct {
   const ruint8 * p;
   rsize p_len;
   ruint8 g;
+  /* Estimated security strength in bits (RFC 7919 App. A / NIST SP
+   * 800-57), used as a conservative lower bound to size the short
+   * private exponent (2*strength) in r_dh_priv_key_gen. */
+  ruint16 strength;
 } RDhGroupParams;
 
 static const RDhGroupParams g__dh_groups[R_DH_GROUP_COUNT] = {
-  { rfc3526_group14_p, sizeof (rfc3526_group14_p), 2 },
-  { rfc3526_group15_p, sizeof (rfc3526_group15_p), 2 },
-  { rfc3526_group16_p, sizeof (rfc3526_group16_p), 2 },
-  { rfc3526_group17_p, sizeof (rfc3526_group17_p), 2 },
-  { rfc3526_group18_p, sizeof (rfc3526_group18_p), 2 },
-  { rfc7919_ffdhe2048_p, sizeof (rfc7919_ffdhe2048_p), 2 },
-  { rfc7919_ffdhe3072_p, sizeof (rfc7919_ffdhe3072_p), 2 },
-  { rfc7919_ffdhe4096_p, sizeof (rfc7919_ffdhe4096_p), 2 },
-  { rfc7919_ffdhe6144_p, sizeof (rfc7919_ffdhe6144_p), 2 },
-  { rfc7919_ffdhe8192_p, sizeof (rfc7919_ffdhe8192_p), 2 },
+  { rfc3526_group14_p, sizeof (rfc3526_group14_p), 2, 112 },
+  { rfc3526_group15_p, sizeof (rfc3526_group15_p), 2, 125 },
+  { rfc3526_group16_p, sizeof (rfc3526_group16_p), 2, 150 },
+  { rfc3526_group17_p, sizeof (rfc3526_group17_p), 2, 175 },
+  { rfc3526_group18_p, sizeof (rfc3526_group18_p), 2, 192 },
+  { rfc7919_ffdhe2048_p, sizeof (rfc7919_ffdhe2048_p), 2, 103 },
+  { rfc7919_ffdhe3072_p, sizeof (rfc7919_ffdhe3072_p), 2, 125 },
+  { rfc7919_ffdhe4096_p, sizeof (rfc7919_ffdhe4096_p), 2, 150 },
+  { rfc7919_ffdhe6144_p, sizeof (rfc7919_ffdhe6144_p), 2, 175 },
+  { rfc7919_ffdhe8192_p, sizeof (rfc7919_ffdhe8192_p), 2, 192 },
 };
 
 typedef struct {
@@ -253,8 +257,13 @@ r_dh_priv_key_new_binary (rconstpointer p, rsize psize,
   return (RCryptoKey *)ret;
 }
 
-RCryptoKey *
-r_dh_priv_key_new_gen (const rmpint * p, const rmpint * g, RPrng * prng)
+/* Generate a DH private key on group (p, g). @ebits caps the private
+ * exponent's bit length; 0 (or a value >= the modulus width) means a
+ * full-width exponent, the conservative default for arbitrary,
+ * possibly non-safe-prime groups. A short exponent is only requested
+ * for the named safe-prime groups (see r_dh_priv_key_new_gen_named). */
+static RCryptoKey *
+r_dh_priv_key_gen (const rmpint * p, const rmpint * g, ruint ebits, RPrng * prng)
 {
   RDhPrivKey * ret;
   rmpint p_2;
@@ -285,22 +294,45 @@ r_dh_priv_key_new_gen (const rmpint * p, const rmpint * g, RPrng * prng)
   r_mpint_init (&p_2);
   r_mpint_sub_i32 (&p_2, p, 2);
 
-  /* Draw x as a positive integer of the same byte length as p, then keep
-   * resampling until 2 <= x <= p-2. With a fully-random sample on a real
-   * group this loop converges immediately. */
-  pbytes = (r_mpint_bits_used (p) + 7) / 8;
-  xbuf = r_alloca (pbytes);
+  if (ebits == 0 || ebits >= r_mpint_bits_used (p)) {
+    /* Full-width: draw x of the same byte length as p, then keep
+     * resampling until 2 <= x <= p-2. With a fully-random sample on a
+     * real group this loop converges immediately. */
+    pbytes = (r_mpint_bits_used (p) + 7) / 8;
+    xbuf = r_alloca (pbytes);
 
-  for (;;) {
+    for (;;) {
+      if (!r_prng_fill (prng, xbuf, pbytes)) {
+        r_dh_priv_key_free (ret);
+        ret = NULL;
+        r_mpint_clear (&p_2);
+        goto out;
+      }
+      r_mpint_set_binary (&ret->x, xbuf, pbytes);
+      if (r_mpint_cmp_i32 (&ret->x, 2) >= 0 && r_mpint_cmp (&ret->x, &p_2) <= 0)
+        break;
+    }
+  } else {
+    /* Short exponent: draw exactly @ebits random bits with the top bit
+     * forced set, so the exponent length - and hence the ~2^(ebits/2)
+     * kangaroo cost that bounds its security - is guaranteed. The result
+     * satisfies 2 <= x < 2^ebits < p-2 by construction, so no resampling
+     * is needed. */
+    ruint topbits = ebits & 7u;
+    pbytes = (ebits + 7) / 8;
+    xbuf = r_alloca (pbytes);
+
     if (!r_prng_fill (prng, xbuf, pbytes)) {
       r_dh_priv_key_free (ret);
       ret = NULL;
       r_mpint_clear (&p_2);
       goto out;
     }
+    if (topbits != 0)
+      xbuf[0] = (ruint8)((xbuf[0] & ((1u << topbits) - 1u)) | (1u << (topbits - 1u)));
+    else
+      xbuf[0] |= 0x80u;
     r_mpint_set_binary (&ret->x, xbuf, pbytes);
-    if (r_mpint_cmp_i32 (&ret->x, 2) >= 0 && r_mpint_cmp (&ret->x, &p_2) <= 0)
-      break;
   }
 
   if (!r_mpint_expmod (&ret->pub.y, &ret->pub.g, &ret->x, &ret->pub.p)) {
@@ -316,6 +348,12 @@ out:
   r_prng_unref (prng);
 
   return (RCryptoKey *)ret;
+}
+
+RCryptoKey *
+r_dh_priv_key_new_gen (const rmpint * p, const rmpint * g, RPrng * prng)
+{
+  return r_dh_priv_key_gen (p, g, 0, prng);
 }
 
 rboolean
@@ -483,7 +521,13 @@ r_dh_priv_key_new_gen_named (RDhNamedGroup group, RPrng * prng)
 
   if (!r_dh_named_group_get_params (group, &p, &g))
     return NULL;
-  ret = r_dh_priv_key_new_gen (&p, &g, prng);
+  /* The named groups are RFC 3526 / RFC 7919 safe primes, so a short
+   * private exponent is sound: the best attack on g^x with x from an
+   * N-bit range is Pollard's kangaroo at ~2^(N/2) work. Sizing the
+   * exponent at 2*strength keeps it from being the weak link while
+   * shrinking the modexp ladder (one iteration per exponent bit)
+   * roughly log2(p)/(2*strength)-fold. */
+  ret = r_dh_priv_key_gen (&p, &g, 2u * g__dh_groups[group].strength, prng);
   r_mpint_clear (&p);
   r_mpint_clear (&g);
   return ret;
