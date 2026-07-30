@@ -147,6 +147,8 @@ struct RTLSClient {
 
   /* DTLS 1.3 flight retransmission (RFC 9147 5.8) + ACKs (7). */
   RDtls13Rtx rtx;                       /* flight retransmission state */
+  RDtls13RecordNumber rx_acks[R_DTLS13_ACK_MAX]; /* received handshake records to ACK */
+  ruint rx_nacks;
 
   RTLS13Schedule sched13;               /* 1-RTT key schedule */
   RTLS13RecordKeys rk_write, rk_read;   /* installed 1.3 record keys */
@@ -642,8 +644,10 @@ r_tls_client_rtx_fire (rpointer data, REvLoop * loop)
     r_tls_client_change_state (client, R_TLS_CLIENT_ERROR);
     return;
   }
-  for (i = 0; i < n; i++)                    /* the out callback takes its own ref */
-    client->cb.out (client->userdata, r_ptr_array_get (&client->rtx.flight, i), client);
+  for (i = 0; i < n; i++) {                  /* the out callback takes its own ref */
+    RDtls13FlightRec * fr = r_ptr_array_get (&client->rtx.flight, i);
+    client->cb.out (client->userdata, fr->rec, client);
+  }
   r_dtls13_rtx_reschedule (&client->rtx, loop, r_tls_client_rtx_fire, client);
 }
 
@@ -653,7 +657,6 @@ r_tls_client_send_out (RTLSClient * client)
   RBuffer * buf;
 
   while ((buf = r_queue_pop (&client->qsend)) != NULL) {
-    r_dtls13_rtx_capture (&client->rtx, buf);
     client->cb.out (client->userdata, buf, client);
     r_buffer_unref (buf);
   }
@@ -1466,8 +1469,12 @@ r_tls_client_send_hello (RTLSClient * client, rboolean retry)
     r_buffer_unmap (buf, &info);
     r_buffer_set_size (buf, size);
 
-    if (ret == R_TLS_ERROR_OK)
+    if (ret == R_TLS_ERROR_OK) {
+      /* Capture the (plaintext, epoch-0) ClientHello for retransmission. */
+      r_dtls13_rtx_capture (&client->rtx, buf, client->client.epoch,
+          client->client.seqno);
       ret = r_tls_client_send_record (client, buf);
+    }
     /* 0-RTT data follows the ClientHello, encrypted under the early key. */
     if (ret == R_TLS_ERROR_OK && client->early13_sent)
       ret = r_tls_client_send_early_data13 (client);
@@ -1590,6 +1597,11 @@ r_tls_client_protect_record13_one (RTLSClient * client, RTLSContentType ct,
     if (ok) {
       r_buffer_set_size (rec, reclen);
       if (r_queue_push (&client->qsend, rec) != NULL) {
+        /* Capture handshake records (not ACKs) for retransmission, tagged with
+         * the record number they were protected under. */
+        if (client->dtls13 && ct == R_TLS_CONTENT_TYPE_HANDSHAKE)
+          r_dtls13_rtx_capture (&client->rtx, rec, client->rk_write.epoch,
+              client->rk_write.seq);
         client->rk_write.seq++;
         rec = NULL;
         ret = R_TLS_ERROR_OK;
@@ -3506,6 +3518,22 @@ r_tls_client_state_appdata (RTLSClient * client, const RTLSParser * parser)
   return R_TLS_ERROR_OK;
 }
 
+/* ACK the received handshake records so the peer stops retransmitting a flight
+ * we send no response to (RFC 9147 7); sent protected under the current key. */
+static void
+r_tls_client_send_ack13 (RTLSClient * client)
+{
+  ruint8 body[sizeof (ruint16) + R_DTLS13_ACK_MAX * 16];
+  rsize bodylen = 0;
+
+  if (client->rx_nacks == 0)
+    return;
+  if (r_dtls13_write_ack (body, sizeof (body), &bodylen, client->rx_acks,
+          client->rx_nacks) == R_TLS_ERROR_OK)
+    r_tls_client_protect_record13 (client, R_TLS_CONTENT_TYPE_ACK, body, bodylen);
+  client->rx_nacks = 0;
+}
+
 /* Route a DTLS 1.3 handshake record. Plaintext Hello records (before read keys)
  * go straight to the state machine; the encrypted flight is reassembled -- its
  * fragmented / reordered messages buffered and delivered in message_seq order. */
@@ -3516,6 +3544,7 @@ r_tls_client_dtls13_handshake (RTLSClient * client, RTLSParser * parser,
   RTLSHandshakeType type;
   ruint32 len = 0, foff = 0, flen = 0;
   ruint16 mseq = 0;
+  rboolean progressed = FALSE;
   RTLSError err;
 
   if ((err = r_tls_parser_parse_handshake_full (parser, &type, &len, &mseq,
@@ -3536,6 +3565,12 @@ r_tls_client_dtls13_handshake (RTLSClient * client, RTLSParser * parser,
 
   if (parser->fragment.size < (rsize) R_DTLS_HS_HDR_SIZE + flen)
     return R_TLS_ERROR_CORRUPT_RECORD;
+  /* Remember the record number for the ACK we may send once processing settles. */
+  if (client->rx_nacks < R_DTLS13_ACK_MAX) {
+    client->rx_acks[client->rx_nacks].epoch = client->rk_read.epoch;
+    client->rx_acks[client->rx_nacks].seq = parser->seqno;
+    client->rx_nacks++;
+  }
   if (client->reasm13 == NULL) {
     if ((client->reasm13 = r_dtls13_reassembler_new ()) == NULL)
       return R_TLS_ERROR_OOM;
@@ -3554,6 +3589,7 @@ r_tls_client_dtls13_handshake (RTLSClient * client, RTLSParser * parser,
       break;
     /* Progress: a new message was reassembled, so our flight was received. */
     r_dtls13_rtx_cancel (&client->rtx, client->loop);
+    progressed = TRUE;
     if ((err = r_dtls_parser_init_handshake13 (&hp, rmsg, rlen)) != R_TLS_ERROR_OK)
       return err;
     do {
@@ -3563,6 +3599,19 @@ r_tls_client_dtls13_handshake (RTLSClient * client, RTLSParser * parser,
     if (err < R_TLS_ERROR_OK)
       return err;
   }
+
+  /* A response flight acknowledges the received records implicitly. Otherwise we
+   * ACK only when the record could not be processed in order -- a gap in the
+   * flight (this record advanced nothing) or a post-handshake message -- so the
+   * peer retransmits just the missing pieces (RFC 9147 7.1) rather than being
+   * prompted after every in-order record. The ACK needs a write key, so it is
+   * held until one is installed (the pre-key ClientHello / HRR exchange is
+   * covered by the peer's own retransmit timer). */
+  if (r_queue_size (&client->qsend) > 0)
+    client->rx_nacks = 0;
+  else if (client->rx_nacks > 0 && client->rk_write.cipher != NULL &&
+      (!progressed || client->state == R_TLS_CLIENT_APPDATA))
+    r_tls_client_send_ack13 (client);
   return R_TLS_ERROR_OK;
 }
 
@@ -3703,11 +3752,17 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
       continue;
     }
 
-    /* A DTLS 1.3 ACK acknowledges our flight: stop retransmitting (RFC 9147 7). */
+    /* A DTLS 1.3 ACK acknowledges individual records of our flight: drop the
+     * acknowledged ones and stop retransmitting once the flight is empty
+     * (RFC 9147 7.1). Records left unacknowledged are retransmitted by the
+     * still-armed timer. */
     if (client->version == R_TLS_VERSION_DTLS_1_3 &&
         parser.content == R_TLS_CONTENT_TYPE_ACK) {
-      r_dtls13_rtx_cancel (&client->rtx, client->loop);
-      client->rtx.capturing = FALSE;
+      if (r_dtls13_rtx_ack (&client->rtx, parser.fragment.data,
+              parser.fragment.size) == 0) {
+        r_dtls13_rtx_cancel (&client->rtx, client->loop);
+        client->rtx.capturing = FALSE;
+      }
       continue;
     }
 

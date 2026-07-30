@@ -2181,8 +2181,12 @@ r_tls_server_write_hrr (RTLSServer * server)
     r_buffer_unmap (buf, &info);
     r_buffer_set_size (buf, size);
 
-    if (ret == R_TLS_ERROR_OK)
+    if (ret == R_TLS_ERROR_OK) {
+      /* Capture the (plaintext, epoch-0) HelloRetryRequest for retransmission. */
+      r_dtls13_rtx_capture (&server->rtx, buf, server->server.epoch,
+          server->server.seqno);
       ret = r_tls_server_send_record (server, buf);
+    }
   } else {
     ret = R_TLS_ERROR_OOM;
   }
@@ -2284,8 +2288,12 @@ r_tls_server_write_hello13 (RTLSServer * server)
     r_buffer_unmap (buf, &info);
     r_buffer_set_size (buf, size);
 
-    if (ret == R_TLS_ERROR_OK)
+    if (ret == R_TLS_ERROR_OK) {
+      /* Capture the (plaintext, epoch-0) ServerHello for retransmission. */
+      r_dtls13_rtx_capture (&server->rtx, buf, server->server.epoch,
+          server->server.seqno);
       ret = r_tls_server_send_record (server, buf);
+    }
   } else {
     ret = R_TLS_ERROR_OOM;
   }
@@ -2338,6 +2346,11 @@ r_tls_server_protect_record13_one (RTLSServer * server, RTLSContentType ct,
     if (ok) {
       r_buffer_set_size (rec, reclen);
       if (r_queue_push (&server->qsend, rec) != NULL) {
+        /* Capture handshake records (not ACKs) for retransmission, tagged with
+         * the record number they were protected under. */
+        if (server->dtls13 && ct == R_TLS_CONTENT_TYPE_HANDSHAKE)
+          r_dtls13_rtx_capture (&server->rtx, rec, server->rk_write.epoch,
+              server->rk_write.seq);
         server->rk_write.seq++;
         rec = NULL;   /* queue owns it now */
         ret = R_TLS_ERROR_OK;
@@ -4363,8 +4376,10 @@ r_tls_server_rtx_fire (rpointer data, REvLoop * loop)
     r_tls_server_change_state (server, R_TLS_SERVER_ERROR);
     return;
   }
-  for (i = 0; i < n; i++)                    /* the out callback takes its own ref */
-    server->cb.out (server->userdata, r_ptr_array_get (&server->rtx.flight, i), server);
+  for (i = 0; i < n; i++) {                  /* the out callback takes its own ref */
+    RDtls13FlightRec * fr = r_ptr_array_get (&server->rtx.flight, i);
+    server->cb.out (server->userdata, fr->rec, server);
+  }
   r_dtls13_rtx_reschedule (&server->rtx, loop, r_tls_server_rtx_fire, server);
 }
 
@@ -4374,7 +4389,6 @@ r_tls_server_send_out (RTLSServer * server)
   RBuffer * buf;
 
   while ((buf = r_queue_pop (&server->qsend)) != NULL) {
-    r_dtls13_rtx_capture (&server->rtx, buf);
     server->cb.out (server->userdata, buf, server);
     r_buffer_unref (buf);
   }
@@ -4642,6 +4656,20 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
         R_LOG_WARNING ("Received Alert, unable to parse! %d", err);
 
         r_tls_server_change_state (server, R_TLS_SERVER_ERROR);
+      }
+      continue;
+    }
+
+    /* A DTLS 1.3 ACK acknowledges individual records of our flight: drop the
+     * acknowledged ones and stop retransmitting once the flight is empty
+     * (RFC 9147 7.1). Records left unacknowledged are retransmitted by the
+     * still-armed timer. */
+    if (server->version == R_TLS_VERSION_DTLS_1_3 &&
+        parser.content == R_TLS_CONTENT_TYPE_ACK) {
+      if (r_dtls13_rtx_ack (&server->rtx, parser.fragment.data,
+              parser.fragment.size) == 0) {
+        r_dtls13_rtx_cancel (&server->rtx, server->loop);
+        server->rtx.capturing = FALSE;
       }
       continue;
     }

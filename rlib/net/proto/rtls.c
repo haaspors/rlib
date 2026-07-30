@@ -1089,11 +1089,58 @@ r_dtls13_rtx_clear (RDtls13Rtx * rtx, REvLoop * loop)
   r_ptr_array_clear (&rtx->flight);
 }
 
-void
-r_dtls13_rtx_capture (RDtls13Rtx * rtx, RBuffer * rec)
+static void
+r_dtls13_flight_rec_free (rpointer p)
 {
-  if (rtx->capturing)
-    r_ptr_array_add (&rtx->flight, r_buffer_ref (rec), r_buffer_unref);
+  RDtls13FlightRec * fr = p;
+  r_buffer_unref (fr->rec);
+  r_free (fr);
+}
+
+void
+r_dtls13_rtx_capture (RDtls13Rtx * rtx, RBuffer * rec, ruint64 epoch, ruint64 seq)
+{
+  RDtls13FlightRec * fr;
+
+  if (!rtx->capturing || (fr = r_mem_new (RDtls13FlightRec)) == NULL)
+    return;
+  fr->rec = r_buffer_ref (rec);
+  fr->num.epoch = epoch;
+  fr->num.seq = seq;
+  r_ptr_array_add (&rtx->flight, fr, r_dtls13_flight_rec_free);
+}
+
+rsize
+r_dtls13_rtx_ack (RDtls13Rtx * rtx, const ruint8 * ack, rsize acklen)
+{
+  ruint16 bodylen;
+  rsize nnums, i;
+
+  if (acklen < sizeof (ruint16))
+    return r_ptr_array_size (&rtx->flight);
+  bodylen = r_load_be16 (ack);
+  if ((bodylen % 16) != 0 || sizeof (ruint16) + bodylen > acklen)
+    return r_ptr_array_size (&rtx->flight);
+  nnums = bodylen / 16;
+
+  for (i = 0; i < r_ptr_array_size (&rtx->flight); ) {
+    RDtls13FlightRec * fr = r_ptr_array_get (&rtx->flight, i);
+    rboolean acked = FALSE;
+    rsize j;
+    for (j = 0; j < nnums; j++) {
+      const ruint8 * p = &ack[sizeof (ruint16) + j * 16];
+      if (r_load_be64 (p) == fr->num.epoch &&
+          r_load_be64 (p + sizeof (ruint64)) == fr->num.seq) {
+        acked = TRUE;
+        break;
+      }
+    }
+    if (acked)
+      r_ptr_array_remove_idx (&rtx->flight, i);   /* runs the free notify */
+    else
+      i++;
+  }
+  return r_ptr_array_size (&rtx->flight);
 }
 
 void
