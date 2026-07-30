@@ -31,6 +31,9 @@
 #include <rlib/rrand.h>
 #include <rlib/rtime.h>
 #include <rlib/rtypes.h>
+#include <rlib/rclock.h>
+#include <rlib/rbuffer.h>
+#include <rlib/ev/revloop.h>
 #include <rlib/data/rptrarray.h>
 
 R_BEGIN_DECLS
@@ -42,6 +45,32 @@ R_BEGIN_DECLS
 #define R_DTLS13_RTX_MAX          (60 * R_SECOND)   /* backoff ceiling */
 #define R_DTLS13_RTX_TRIES        8                 /* give up after this many */
 #define R_DTLS13_ACK_MAX          16                /* record numbers tracked per ACK */
+
+/* Per-endpoint retransmission state. The outstanding flight is captured as it is
+ * emitted; a timer re-sends it with exponential backoff until the peer's
+ * response (or an ACK) confirms delivery. */
+typedef struct {
+  RPtrArray flight;                       /* records of the outstanding flight (refs) */
+  RClockEntry * timer;
+  RClockTimeDiff timeout;
+  ruint tries;
+  rboolean capturing;                     /* accumulate emitted records into the flight */
+} RDtls13Rtx;
+
+R_API_HIDDEN void r_dtls13_rtx_init (RDtls13Rtx * rtx);
+/* Cancel any timer and release the flight (teardown). */
+R_API_HIDDEN void r_dtls13_rtx_clear (RDtls13Rtx * rtx, REvLoop * loop);
+/* Add @rec to the flight when capturing is enabled. */
+R_API_HIDDEN void r_dtls13_rtx_capture (RDtls13Rtx * rtx, RBuffer * rec);
+/* Arm the retransmit timer for the captured flight, if not already armed. */
+R_API_HIDDEN void r_dtls13_rtx_arm (RDtls13Rtx * rtx, REvLoop * loop,
+    REvFunc fire, rpointer ep);
+/* The peer confirmed the flight: cancel the timer, drop the flight, reset backoff. */
+R_API_HIDDEN void r_dtls13_rtx_cancel (RDtls13Rtx * rtx, REvLoop * loop);
+/* Double the backoff (capped) and re-arm; call from the endpoint's fire callback
+ * after re-emitting the flight. */
+R_API_HIDDEN void r_dtls13_rtx_reschedule (RDtls13Rtx * rtx, REvLoop * loop,
+    REvFunc fire, rpointer ep);
 
 /* --- DTLS 1.3 handshake reassembly (RFC 9147 5.5) ----------------------------
  * Buffers fragmented / out-of-order handshake messages keyed by message_seq and
@@ -85,6 +114,11 @@ R_API_HIDDEN ruint8 * r_dtls13_reassembler_next (RDtls13Reassembler * r,
  * taking ownership of @msg. r_tls_parser_clear releases it. */
 R_API_HIDDEN RTLSError r_dtls_parser_init_handshake13 (RTLSParser * parser,
     ruint8 * msg, rsize msglen);
+
+/* Write the 12-byte DTLS handshake header (type | length | message_seq |
+ * fragment_offset | fragment_length) into @p. */
+R_API_HIDDEN void r_dtls13_write_hs_hdr (ruint8 * p, ruint8 type, ruint32 len,
+    ruint16 msgseq, ruint32 foff, ruint32 flen);
 
 /* Default cipher-suite preference shared by the client and server, most
  * preferred first: AEAD (AES-GCM then ChaCha20-Poly1305) over CBC, ECDHE
