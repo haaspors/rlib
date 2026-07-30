@@ -4570,12 +4570,10 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
           r_dtls13_is_unified_hdr ((ruint8) parser.content)) {
         if ((err = r_dtls_parser_unprotect13 (&parser, &server->rk_read))
             != R_TLS_ERROR_OK) {
-          if (server->early13_skip &&
-              (server->early13_skipped += parser.fragment.size) <=
-                  R_TLS13_EARLY_DATA_SKIP_MAX)
-            continue;
-          R_LOG_WARNING ("DTLS 1.3 record unprotect returned: %d", err);
-          r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
+          /* DTLS silently discards records that fail to deprotect (RFC 9147 4.5.2);
+           * a corrupted or injected datagram must not affect the connection. */
+          R_LOG_TRACE ("DTLS 1.3 record unprotect returned: %d (dropped)", err);
+          err = R_TLS_ERROR_OK;
           continue;
         }
         /* Drop replays / too-old records once authenticated (RFC 9147 4.5.1). */
