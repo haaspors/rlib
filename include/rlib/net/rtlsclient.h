@@ -151,6 +151,21 @@ R_API RTLSError r_tls_client_set_alpn_protocols (RTLSClient * client,
 R_API RTLSError r_tls_client_set_record_size_limit (RTLSClient * client,
     ruint16 limit);
 /**
+ * @brief Offer a DTLS 1.3 Connection ID (RFC 9146).
+ *
+ * Advertises the @c connection_id extension so a DTLS 1.3 server tags the records
+ * it sends us with @p cid, letting the connection survive a local address change.
+ * A zero-length CID still opts in. Applies to DTLS 1.3 only and only takes effect
+ * if the server agrees; must be called before @ref r_tls_client_start.
+ *
+ * @param client The client.
+ * @param cid    The connection id (may be @c NULL when @p len is 0).
+ * @param len    CID length in bytes, at most @ref R_DTLS13_CID_MAX.
+ * @return @c R_TLS_ERROR_OK, @c R_TLS_ERROR_INVAL, or @c R_TLS_ERROR_WRONG_STATE.
+ */
+R_API RTLSError r_tls_client_set_connection_id (RTLSClient * client,
+    const ruint8 * cid, ruint8 len);
+/**
  * @brief Offer the @c status_request extension to request a stapled OCSP
  * response (RFC 6066 / RFC 8446 4.4.2.1).
  *

@@ -135,6 +135,17 @@ struct RTLSServer {
   /* TLS 1.3 state (separate from the <=1.2 fields above; see proto/rtls13). */
   rboolean tls13;                       /* TLS 1.3 was negotiated */
   rboolean dtls13;                      /* the negotiated 1.3 is DTLS 1.3 (RFC 9147) */
+
+  /* DTLS 1.3 connection id (RFC 9146): cid_rx is ours (advertised; the peer puts
+   * it in records to us, and we parse incoming records with its length); cid_tx
+   * is the peer's (we put it in records we send). */
+  ruint8 cid_rx[R_DTLS13_CID_MAX];
+  ruint8 cid_rxlen;
+  rboolean cid_offered;                 /* we advertise a connection_id extension */
+  ruint8 cid_tx[R_DTLS13_CID_MAX];
+  ruint8 cid_txlen;
+  rboolean cid_negotiated;              /* CIDs are in use for this connection */
+
   RTLS13Schedule sched13;               /* 1-RTT key schedule */
   RTLS13RecordKeys rk_write, rk_read;   /* installed 1.3 record keys */
   const RCryptoCipherInfo * cs13_cipher;/* AEAD for the 1.3 suite */
@@ -428,6 +439,24 @@ r_tls_server_set_key_share_group (RTLSServer * server, RTLSSupportedGroup group)
    * not carry a key_share for it the server answers with a HelloRetryRequest.
    * group 0 (the default) accepts the client's first offered key_share. */
   server->ks_pref_group = group;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_server_set_connection_id (RTLSServer * server, const ruint8 * cid, ruint8 len)
+{
+  if (R_UNLIKELY (server == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (server->state > R_TLS_SERVER_HELLO)) return R_TLS_ERROR_WRONG_STATE;
+  if (R_UNLIKELY (len > R_DTLS13_CID_MAX || (len > 0 && cid == NULL)))
+    return R_TLS_ERROR_INVAL;
+
+  /* Opt in to Connection IDs and request that a DTLS 1.3 client tag records it
+   * sends us with @cid (RFC 9146). Only then does the server echo the extension
+   * and negotiate CIDs. */
+  if (len > 0)
+    r_memcpy (server->cid_rx, cid, len);
+  server->cid_rxlen = len;
+  server->cid_offered = TRUE;
   return R_TLS_ERROR_OK;
 }
 
@@ -1971,6 +2000,23 @@ r_tls_server_nego_hello13 (RTLSServer * server)
   /* server->version is already TLS 1.3 or DTLS 1.3 from nego_hello. */
   server->dtls13 = r_tls_version_is_dtls (server->version);
   server->tls13 = TRUE;
+
+  /* Connection IDs (RFC 9146): if we opted in and the DTLS 1.3 client offered a
+   * connection_id, agree -- record the CID the client wants us to tag records
+   * with, and echo our own in the ServerHello. */
+  if (server->dtls13 && server->cid_offered) {
+    RTLSHelloExt cidext = R_TLS_HELLO_EXT_INIT;
+    if (r_tls_server_find_ext (server, R_TLS_EXT_TYPE_CONNECTION_ID, &cidext)) {
+      ruint8 clen = 0;
+      const ruint8 * c = r_tls_hello_ext_connection_id (&cidext, &clen);
+      if (clen > R_DTLS13_CID_MAX)
+        return R_TLS_ERROR_ILLEGAL_PARAMETER;
+      if (clen > 0)
+        r_memcpy (server->cid_tx, c, clen);
+      server->cid_txlen = clen;
+      server->cid_negotiated = TRUE;
+    }
+  }
   return R_TLS_ERROR_OK;
 }
 
@@ -1985,6 +2031,18 @@ r_tls_server_write_ext13_supported_versions (RTLSServer * server, ruint8 * p)
   r_store_be16 (p + 2, sizeof (ruint16));
   r_store_be16 (p + 4, server->dtls13 ? R_TLS_VERSION_DTLS_1_3 : R_TLS_VERSION_TLS_1_3);
   return 6;
+}
+
+/* ServerHello connection_id: the CID the client should tag records to us with
+ * (RFC 9146 3). */
+static ruint16
+r_tls_server_write_ext13_connection_id (RTLSServer * server, ruint8 * p)
+{
+  r_store_be16 (p, (ruint16) R_TLS_EXT_TYPE_CONNECTION_ID);
+  r_store_be16 (p + 2, (ruint16) (1 + server->cid_rxlen));
+  p[4] = server->cid_rxlen;
+  r_memcpy (p + 5, server->cid_rx, server->cid_rxlen);
+  return (ruint16) (5 + server->cid_rxlen);
 }
 
 /* ServerHello key_share: the single server KeyShareEntry (an EC point or, for
@@ -2176,6 +2234,8 @@ r_tls_server_write_hello13 (RTLSServer * server)
 
     extsize += r_tls_server_write_ext13_supported_versions (server, ptr + 2 + extsize);
     extsize += r_tls_server_write_ext13_key_share (server, ptr + 2 + extsize);
+    if (server->cid_negotiated)
+      extsize += r_tls_server_write_ext13_connection_id (server, ptr + 2 + extsize);
     if (server->resumed13)
       extsize += r_tls_server_write_ext13_pre_shared_key (server, ptr + 2 + extsize);
     r_store_be16 (ptr, extsize);
@@ -2216,7 +2276,10 @@ r_tls_server_protect_record13_one (RTLSServer * server, RTLSContentType ct,
 {
   RBuffer * rec;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
-  rsize cap = R_TLS_RECORD_HDR_SIZE + plainlen + 1 + R_TLS13_AEAD_TAG_SIZE;
+  /* Header cap covers the unified header plus an optional connection id. */
+  rsize cap = R_TLS_RECORD_HDR_SIZE +
+      (server->cid_negotiated ? server->cid_txlen : 0) +
+      plainlen + 1 + R_TLS13_AEAD_TAG_SIZE;
   rsize reclen = 0;
   rboolean ok = FALSE;
   RTLSError ret = R_TLS_ERROR_OOM;
@@ -2228,7 +2291,10 @@ r_tls_server_protect_record13_one (RTLSServer * server, RTLSContentType ct,
     if (server->dtls13) {
       /* DTLS 1.3: unified header + AEAD record + masked sequence number. */
       ok = (r_dtls_write_protected_record13 (p, info.size, &reclen,
-              &server->rk_write, ct, plain, plainlen) == R_TLS_ERROR_OK);
+              &server->rk_write,
+              server->cid_negotiated ? server->cid_tx : NULL,
+              server->cid_negotiated ? server->cid_txlen : 0,
+              ct, plain, plainlen) == R_TLS_ERROR_OK);
     } else {
       rsize enclen = 0;
       if (r_tls13_record_protect (server->rk_write.cipher,
@@ -4278,6 +4344,11 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
     if (R_UNLIKELY (!r_buffer_append_mem_from_buffer (server->inbuf, buffer)))
       return FALSE;
   }
+
+  /* Once Connection IDs are negotiated, incoming protected records carry our CID,
+   * so the parser needs its length to locate the sequence number and payload. */
+  if (server->cid_negotiated)
+    parser.cidlen = server->cid_rxlen;
 
   for (err = r_tls_parser_init_buffer (&parser, server->inbuf);
       err == R_TLS_ERROR_OK;
