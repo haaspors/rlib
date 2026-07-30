@@ -33,6 +33,49 @@
 
 R_BEGIN_DECLS
 
+/* --- DTLS 1.3 handshake reassembly (RFC 9147 5.5) ----------------------------
+ * Buffers fragmented / out-of-order handshake messages keyed by message_seq and
+ * hands them to the state machine as complete messages in message_seq order. */
+#define R_DTLS13_REASM_SLOTS      8       /* concurrent pending messages */
+#define R_DTLS13_REASM_RANGES     16      /* fragment intervals per message */
+#define R_DTLS13_MAX_HANDSHAKE    0x10000 /* cap a reassembled message (64 KiB) */
+
+typedef struct {
+  rboolean active;
+  rboolean complete;
+  ruint16 msgseq;
+  ruint8 type;
+  ruint32 len;                            /* total message body length */
+  ruint8 * msg;                           /* R_DTLS_HS_HDR_SIZE + len; header + body */
+  ruint32 nranges;                        /* covered body intervals (merged) */
+  ruint32 rstart[R_DTLS13_REASM_RANGES];
+  ruint32 rend[R_DTLS13_REASM_RANGES];
+} RDtls13ReasmSlot;
+
+typedef struct {
+  ruint16 next;                           /* next message_seq to deliver */
+  RDtls13ReasmSlot slots[R_DTLS13_REASM_SLOTS];
+} RDtls13Reassembler;
+
+R_API_HIDDEN RDtls13Reassembler * r_dtls13_reassembler_new (void);
+R_API_HIDDEN void r_dtls13_reassembler_free (RDtls13Reassembler * r);
+/* Insert one fragment of message @msgseq (total body @len) covering
+ * [@foff, @foff+@flen) of the body. Duplicates and already-delivered messages
+ * are ignored. */
+R_API_HIDDEN RTLSError r_dtls13_reassembler_push (RDtls13Reassembler * r,
+    ruint8 type, ruint16 msgseq, ruint32 len, ruint32 foff,
+    const ruint8 * frag, ruint32 flen);
+/* Pop the next in-order fully-reassembled message (a complete DTLS handshake
+ * message, header included), or NULL if it is not ready. The caller owns the
+ * returned buffer and frees it (e.g. via r_tls_parser_clear after
+ * r_dtls_parser_init_handshake13). */
+R_API_HIDDEN ruint8 * r_dtls13_reassembler_next (RDtls13Reassembler * r,
+    rsize * outlen);
+/* Set up @parser over the reassembled handshake message @msg (@msglen bytes),
+ * taking ownership of @msg. r_tls_parser_clear releases it. */
+R_API_HIDDEN RTLSError r_dtls_parser_init_handshake13 (RTLSParser * parser,
+    ruint8 * msg, rsize msglen);
+
 /* Default cipher-suite preference shared by the client and server, most
  * preferred first: AEAD (AES-GCM then ChaCha20-Poly1305) over CBC, ECDHE
  * (forward secrecy) over static RSA, ECDSA over RSA authentication within a

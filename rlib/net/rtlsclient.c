@@ -141,6 +141,10 @@ struct RTLSClient {
   ruint8 cid_txlen;
   rboolean cid_negotiated;              /* the peer agreed; CIDs are in use */
 
+  RDtls13Reassembler * reasm13;         /* incoming handshake reassembly (DTLS 1.3) */
+  ruint16 recv_hello_msgseq;            /* message_seq of the last plaintext Hello received */
+  ruint16 dtls13_hs_frag;               /* max handshake fragment body per record; 0 = whole */
+
   RTLS13Schedule sched13;               /* 1-RTT key schedule */
   RTLS13RecordKeys rk_write, rk_read;   /* installed 1.3 record keys */
   const RCryptoCipherInfo * cs13_cipher;/* AEAD for the 1.3 suite */
@@ -254,6 +258,7 @@ r_tls_client_free (RTLSClient * client)
     r_crypto_cipher_unref (client->server.cipher);
   r_free (client->server.fixediv);
   r_msg_digest_free (client->hshash);
+  r_dtls13_reassembler_free (client->reasm13);
   r_free (client->clienthello);
   if (client->resume != NULL)
     r_tls_client_session_unref (client->resume);
@@ -477,6 +482,18 @@ r_tls_client_set_connection_id (RTLSClient * client, const ruint8 * cid, ruint8 
     r_memcpy (client->cid_rx, cid, len);
   client->cid_rxlen = len;
   client->cid_offered = TRUE;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_tls_client_set_dtls_handshake_fragment (RTLSClient * client, ruint16 size)
+{
+  if (R_UNLIKELY (client == NULL)) return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (client->state != R_TLS_CLIENT_INITIAL)) return R_TLS_ERROR_WRONG_STATE;
+
+  /* Cap the body of each DTLS 1.3 handshake fragment so a large message (e.g. the
+   * Certificate) is split to fit the path MTU (RFC 9147 5.5). 0 disables. */
+  client->dtls13_hs_frag = size;
   return R_TLS_ERROR_OK;
 }
 
@@ -1663,6 +1680,7 @@ r_tls_client_send_hs13 (RTLSClient * client, RTLSHandshakeType type,
 {
   rsize hdrlen = client->dtls13 ? R_DTLS_HS_HDR_SIZE : R_TLS_HS_HDR_SIZE;
   rsize msglen = hdrlen + bodylen;
+  ruint16 mseq = client->client.msgseq;
   ruint8 * msg;
   RTLSError ret;
 
@@ -1675,7 +1693,7 @@ r_tls_client_send_hs13 (RTLSClient * client, RTLSHandshakeType type,
   if (client->dtls13) {
     /* message_seq | fragment_offset=0 | fragment_length=length (single
      * unfragmented fragment). */
-    r_store_be16 (msg + 4, client->client.msgseq);
+    r_store_be16 (msg + 4, mseq);
     msg[6] = msg[7] = msg[8] = 0;
     msg[9] = msg[1]; msg[10] = msg[2]; msg[11] = msg[3];
     client->client.msgseq++;
@@ -1683,9 +1701,37 @@ r_tls_client_send_hs13 (RTLSClient * client, RTLSHandshakeType type,
   if (bodylen > 0)
     r_memcpy (msg + hdrlen, body, bodylen);
 
+  /* Transcript folds the whole message once, regardless of fragmentation. */
   r_tls_client_hs_fold13 (client, msg, msglen);
-  ret = r_tls_client_protect_record13 (client, R_TLS_CONTENT_TYPE_HANDSHAKE,
-      msg, msglen);
+
+  if (client->dtls13 && client->dtls13_hs_frag > 0 &&
+      bodylen > client->dtls13_hs_frag) {
+    /* Split into fragments of at most dtls13_hs_frag body bytes, each a DTLS
+     * handshake fragment (same message_seq, own fragment_offset / length). */
+    rsize cap = client->dtls13_hs_frag, foff;
+    ruint8 * frag;
+
+    if ((frag = r_malloc (R_DTLS_HS_HDR_SIZE + cap)) == NULL) {
+      r_free (msg);
+      return R_TLS_ERROR_OOM;
+    }
+    ret = R_TLS_ERROR_OK;
+    for (foff = 0; foff < bodylen && ret == R_TLS_ERROR_OK; foff += cap) {
+      rsize flen = MIN (cap, bodylen - foff);
+      frag[0] = (ruint8) type;
+      frag[1] = msg[1]; frag[2] = msg[2]; frag[3] = msg[3];   /* total length */
+      r_store_be16 (frag + 4, mseq);
+      frag[6] = (ruint8) (foff >> 16); frag[7] = (ruint8) (foff >> 8); frag[8] = (ruint8) foff;
+      frag[9] = (ruint8) (flen >> 16); frag[10] = (ruint8) (flen >> 8); frag[11] = (ruint8) flen;
+      r_memcpy (frag + R_DTLS_HS_HDR_SIZE, body + foff, flen);
+      ret = r_tls_client_protect_record13 (client, R_TLS_CONTENT_TYPE_HANDSHAKE,
+          frag, R_DTLS_HS_HDR_SIZE + flen);
+    }
+    r_free (frag);
+  } else {
+    ret = r_tls_client_protect_record13 (client, R_TLS_CONTENT_TYPE_HANDSHAKE,
+        msg, msglen);
+  }
 
   r_free (msg);
   return ret;
@@ -3438,6 +3484,62 @@ r_tls_client_state_appdata (RTLSClient * client, const RTLSParser * parser)
   return R_TLS_ERROR_OK;
 }
 
+/* Route a DTLS 1.3 handshake record. Plaintext Hello records (before read keys)
+ * go straight to the state machine; the encrypted flight is reassembled -- its
+ * fragmented / reordered messages buffered and delivered in message_seq order. */
+static RTLSError
+r_tls_client_dtls13_handshake (RTLSClient * client, RTLSParser * parser,
+    const RTLSClientStateFunc * statefuncs)
+{
+  RTLSHandshakeType type;
+  ruint32 len = 0, foff = 0, flen = 0;
+  ruint16 mseq = 0;
+  RTLSError err;
+
+  if ((err = r_tls_parser_parse_handshake_full (parser, &type, &len, &mseq,
+          &foff, &flen)) != R_TLS_ERROR_OK)
+    return err;
+
+  if (client->rk_read.cipher == NULL) {
+    /* ServerHello / HelloRetryRequest: a dedicated state func handles it; note
+     * its message_seq so the reassembler starts right after the Hello. */
+    client->recv_hello_msgseq = mseq;
+    do {
+      err = statefuncs[client->state] (client, parser);
+    } while (err == R_TLS_ERROR_NOT_NEEDED);
+    return err;
+  }
+
+  if (parser->fragment.size < (rsize) R_DTLS_HS_HDR_SIZE + flen)
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  if (client->reasm13 == NULL) {
+    if ((client->reasm13 = r_dtls13_reassembler_new ()) == NULL)
+      return R_TLS_ERROR_OOM;
+    client->reasm13->next = (ruint16) (client->recv_hello_msgseq + 1);
+  }
+  if ((err = r_dtls13_reassembler_push (client->reasm13, (ruint8) type, mseq, len,
+          foff, parser->fragment.data + R_DTLS_HS_HDR_SIZE, flen)) != R_TLS_ERROR_OK)
+    return err;
+
+  for (;;) {
+    RTLSParser hp;
+    ruint8 * rmsg;
+    rsize rlen = 0;
+
+    if ((rmsg = r_dtls13_reassembler_next (client->reasm13, &rlen)) == NULL)
+      break;
+    if ((err = r_dtls_parser_init_handshake13 (&hp, rmsg, rlen)) != R_TLS_ERROR_OK)
+      return err;
+    do {
+      err = statefuncs[client->state] (client, &hp);
+    } while (err == R_TLS_ERROR_NOT_NEEDED);
+    r_tls_parser_clear (&hp);
+    if (err < R_TLS_ERROR_OK)
+      return err;
+  }
+  return R_TLS_ERROR_OK;
+}
+
 rboolean
 r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
 {
@@ -3566,9 +3668,14 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
       continue;
     }
 
-    do {
-      err = statefuncs[client->state] (client, &parser);
-    } while (err == R_TLS_ERROR_NOT_NEEDED);
+    if (client->version == R_TLS_VERSION_DTLS_1_3 &&
+        parser.content == R_TLS_CONTENT_TYPE_HANDSHAKE) {
+      err = r_tls_client_dtls13_handshake (client, &parser, statefuncs);
+    } else {
+      do {
+        err = statefuncs[client->state] (client, &parser);
+      } while (err == R_TLS_ERROR_NOT_NEEDED);
+    }
   }
 
   r_tls_parser_clear (&parser);

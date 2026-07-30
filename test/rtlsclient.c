@@ -429,6 +429,59 @@ r_test_tls_loopback_pump (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
   }
 }
 
+/* Deliver a batch of out records with the encrypted (unified-header) ones
+ * reversed, keeping the plaintext epoch-0 records (e.g. ServerHello) ahead of
+ * the flight so keys are installed before the protected records arrive. This
+ * reorders both whole messages and the fragments within them. */
+static rboolean
+r_test_deliver_reordered (RQueue * q, RTLSClient * client, RTLSServer * server)
+{
+  RBuffer * bufs[64];
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint n = 0, i;
+
+  while (n < R_N_ELEMENTS (bufs) && (bufs[n] = r_queue_pop (q)) != NULL)
+    n++;
+  if (n == 0)
+    return FALSE;
+
+  for (i = 0; i < n; i++) {          /* plaintext records first, in order */
+    rboolean unified = FALSE;
+    if (r_buffer_map (bufs[i], &info, R_MEM_MAP_READ)) {
+      unified = r_dtls13_is_unified_hdr (info.data[0]);
+      r_buffer_unmap (bufs[i], &info);
+    }
+    if (!unified) {
+      if (server != NULL) r_tls_server_incoming_data (server, bufs[i]);
+      else                r_tls_client_incoming_data (client, bufs[i]);
+      r_buffer_unref (bufs[i]);
+      bufs[i] = NULL;
+    }
+  }
+  for (i = n; i-- > 0; ) {           /* encrypted records reversed */
+    if (bufs[i] == NULL)
+      continue;
+    if (server != NULL) r_tls_server_incoming_data (server, bufs[i]);
+    else                r_tls_client_incoming_data (client, bufs[i]);
+    r_buffer_unref (bufs[i]);
+  }
+  return TRUE;
+}
+
+static void
+r_test_tls_loopback_pump_reorder (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
+{
+  ruint i;
+
+  for (i = 0; i < 64; i++) {
+    rboolean progress = FALSE;
+    progress |= r_test_deliver_reordered (&fixture->cli_out, NULL, fixture->server);
+    progress |= r_test_deliver_reordered (&fixture->srv_out, fixture->client, NULL);
+    if (!progress)
+      break;
+  }
+}
+
 static RBuffer *
 r_test_tls_queue_agg (RQueue * q)
 {
@@ -2060,6 +2113,44 @@ RTEST_F (rtlsclient, dtls13_replay_dropped, RTEST_FAST)
   r_buffer_unref (dup);
   r_assert (r_queue_is_empty (&fixture->srv_app));
   r_assert (!fixture->srv_error);
+}
+RTEST_END;
+
+/* DTLS 1.3 handshake reassembly (RFC 9147 5.5): a small fragment cap splits the
+ * flight (notably the Certificate) into multiple DTLS handshake fragments; the
+ * handshake completes only if the peer reassembles them. */
+RTEST_F (rtlsclient, dtls13_loopback_fragmented, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_client_set_dtls_handshake_fragment (fixture->client, 48),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_dtls_handshake_fragment (fixture->server, 48),
+      ==, R_TLS_ERROR_OK);
+  r_test_tls13_loopback_version (fixture, R_TLS_VERSION_DTLS_1_3);
+}
+RTEST_END;
+
+/* DTLS 1.3 reassembly with reordering: the flight is fragmented and the encrypted
+ * records are delivered in reverse, so the peer must buffer out-of-order messages
+ * and out-of-order fragments and reassemble them in message_seq order. */
+RTEST_F (rtlsclient, dtls13_reassembly_reordered, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_client_set_dtls_handshake_fragment (fixture->client, 48),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_dtls_handshake_fragment (fixture->server, 48),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+
+  r_test_tls_loopback_pump_reorder (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+  r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, R_TLS_VERSION_DTLS_1_3);
 }
 RTEST_END;
 
