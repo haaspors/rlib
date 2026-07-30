@@ -4305,6 +4305,9 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
           r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_BAD_RECORD_MAC);
           continue;
         }
+        /* Drop replays / too-old records once authenticated (RFC 9147 4.5.1). */
+        if (!r_dtls13_replay_check (&server->rk_read, parser.seqno))
+          continue;
         server->early13_skip = FALSE;
         server->rk_read.seq++;
       }

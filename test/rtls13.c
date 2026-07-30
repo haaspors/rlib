@@ -244,6 +244,33 @@ r_test_dtls13_record_roundtrip (const RCryptoCipherInfo * info)
   r_crypto_cipher_unref (rk.cipher);
 }
 
+RTEST (rtls13, dtls13_replay_window, R_TEST_TYPE_FAST)
+{
+  RTLS13RecordKeys keys = R_TLS13_RECORD_KEYS_INIT;
+
+  /* In-order sequence numbers are all accepted, each exactly once. */
+  r_assert (r_dtls13_replay_check (&keys, 0));
+  r_assert (!r_dtls13_replay_check (&keys, 0));   /* immediate replay */
+  r_assert (r_dtls13_replay_check (&keys, 1));
+  r_assert (r_dtls13_replay_check (&keys, 2));
+  r_assert (!r_dtls13_replay_check (&keys, 1));   /* replay within window */
+
+  /* Out-of-order but inside the window is accepted; a gap is fine. */
+  r_assert (r_dtls13_replay_check (&keys, 5));
+  r_assert (r_dtls13_replay_check (&keys, 3));    /* fills the gap */
+  r_assert (!r_dtls13_replay_check (&keys, 5));   /* replay */
+
+  /* A large jump advances the window; older-than-window is refused. */
+  r_assert (r_dtls13_replay_check (&keys, 200));
+  r_assert (!r_dtls13_replay_check (&keys, 200));
+  r_assert (!r_dtls13_replay_check (&keys, 200 - R_DTLS13_REPLAY_WINDOW));  /* too old */
+  r_assert (!r_dtls13_replay_check (&keys, 100));                          /* too old */
+  r_assert (r_dtls13_replay_check (&keys, 200 - R_DTLS13_REPLAY_WINDOW + 1)); /* edge, new */
+
+  r_assert (!r_dtls13_replay_check (NULL, 0));
+}
+RTEST_END;
+
 RTEST (rtls13, dtls13_record_roundtrip_aesgcm, R_TEST_TYPE_FAST)
 {
   r_test_dtls13_record_roundtrip (r_crypto_cipher_find_by_type (
