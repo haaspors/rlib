@@ -2478,6 +2478,64 @@ r_dtls13_write_unified_hdr (rpointer data, rsize size, rsize * out,
 }
 
 RTLSError
+r_dtls13_write_ack (rpointer data, rsize size, rsize * out,
+    const RDtls13RecordNumber * nums, rsize count)
+{
+  ruint8 * p = data;
+  rsize bodylen = count * 16;
+  rsize i;
+
+  if (R_UNLIKELY (data == NULL || (nums == NULL && count != 0)))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (bodylen > 0xffff))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < sizeof (ruint16) + bodylen))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  r_store_be16 (p, (ruint16) bodylen);
+  p += sizeof (ruint16);
+  for (i = 0; i < count; i++) {
+    r_store_be64 (p, nums[i].epoch); p += sizeof (ruint64);
+    r_store_be64 (p, nums[i].seq);   p += sizeof (ruint64);
+  }
+
+  if (out != NULL)
+    *out = sizeof (ruint16) + bodylen;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_dtls13_parse_ack (const ruint8 * data, rsize size,
+    RDtls13RecordNumber * nums, rsize * count)
+{
+  ruint16 bodylen;
+  rsize n, i, cap;
+
+  if (R_UNLIKELY (data == NULL || count == NULL))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < sizeof (ruint16)))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  bodylen = r_load_be16 (data);
+  if (R_UNLIKELY ((bodylen % 16) != 0 || sizeof (ruint16) + bodylen > size))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  n = bodylen / 16;
+  cap = *count;
+  *count = n;
+  if (nums == NULL)
+    return R_TLS_ERROR_OK;
+  if (R_UNLIKELY (n > cap))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  for (i = 0; i < n; i++) {
+    nums[i].epoch = r_load_be64 (&data[sizeof (ruint16) + i * 16]);
+    nums[i].seq   = r_load_be64 (&data[sizeof (ruint16) + i * 16 + sizeof (ruint64)]);
+  }
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
 r_tls_write_handshake (rpointer data, rsize size, rsize * out,
     RTLSVersion ver, RTLSHandshakeType type, ruint16 len)
 {
