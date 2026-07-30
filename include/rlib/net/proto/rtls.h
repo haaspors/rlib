@@ -1031,6 +1031,73 @@ R_API RBuffer * r_tls_encrypt_buffer_aead (RBuffer * buf, ruint64 seqno,
 R_API RBuffer * r_dtls_encrypt_buffer_aead (RBuffer * buf,
     const RCryptoCipher * cipher, const ruint8 * salt);
 
+/** @brief Fixed high bits (@c 001) of a DTLS 1.3 unified record header. */
+#define R_DTLS13_UNIFIED_FIXED_BITS      0x20
+/** @brief Largest DTLS 1.3 unified record header without a connection id, in
+ *  bytes: flags(1) + 16-bit sequence(2) + length(2). */
+#define R_DTLS13_UNIFIED_HDR_MAX         5
+/** @brief @c TRUE if record first byte @p b is a DTLS 1.3 unified header. */
+#define r_dtls13_is_unified_hdr(b)       (((b) & 0xe0) == R_DTLS13_UNIFIED_FIXED_BITS)
+
+/**
+ * @brief Parsed DTLS 1.3 unified record header (RFC 9147, section 4).
+ *
+ * The unified header prefixes every AEAD-protected DTLS 1.3 record. Its first
+ * byte carries the fixed bits @c 001 and the C (connection id), S (sequence
+ * length), L (length present), and E (low two epoch bits) flags. The
+ * @c encrypted_record begins @ref hdrlen bytes in; its sequence number is still
+ * masked (see @ref r_dtls13_sn_mask).
+ */
+typedef struct {
+  rsize hdrlen;            /**< @brief Header length; offset to encrypted_record. */
+  ruint8 epoch_bits;       /**< @brief Low two bits of the epoch (the E bits). */
+  ruint8 seqlen;           /**< @brief On-wire sequence-number length: 1 or 2. */
+  rsize seqoff;            /**< @brief Offset of the sequence-number field. */
+  ruint16 seq;             /**< @brief On-wire (masked) sequence number. */
+  rboolean has_length;     /**< @brief Whether the length field is present (L bit). */
+  rsize length;            /**< @brief encrypted_record length (rest of the datagram when @ref has_length is @c FALSE). */
+  ruint8 cidlen;           /**< @brief Connection-ID length (0 when the C bit is clear). */
+  const ruint8 * cid;      /**< @brief Connection ID, or @c NULL. */
+} RDtls13RecordHdr;
+
+/**
+ * @brief Parse a DTLS 1.3 unified record header (RFC 9147, section 4).
+ *
+ * @param data   Record bytes, starting at the unified header.
+ * @param size   Bytes available in @p data.
+ * @param cidlen Negotiated connection-ID length, or 0 if none is expected. The
+ *               unified header carries no CID length, so it must be supplied
+ *               here when the C bit is set.
+ * @param hdr    Out: the parsed header.
+ * @return @c R_TLS_ERROR_OK; @c R_TLS_ERROR_INVALID_RECORD if @p data is not a
+ *  unified header (or a CID is present with @p cidlen 0);
+ *  @c R_TLS_ERROR_BUF_TOO_SMALL if @p size is short of the header or payload.
+ */
+R_API RTLSError r_dtls13_parse_unified_hdr (const ruint8 * data, rsize size,
+    ruint8 cidlen, RDtls13RecordHdr * hdr);
+
+/**
+ * @brief Write a DTLS 1.3 unified record header (RFC 9147, section 4).
+ *
+ * Writes the header for an AEAD-protected record; the caller appends the
+ * @c encrypted_record and then masks the sequence number (@ref r_dtls13_sn_mask).
+ *
+ * @param data         Destination buffer.
+ * @param size         Capacity of @p data in bytes.
+ * @param out          Out: bytes written (may be @c NULL).
+ * @param epoch_bits   Low two bits of the epoch.
+ * @param cid          Connection ID, or @c NULL.
+ * @param cidlen       Connection-ID length; 0 for none.
+ * @param seq          Record sequence number (its low @p seqlen bytes are written).
+ * @param seqlen       On-wire sequence-number length: 1 or 2.
+ * @param write_length Emit the 16-bit length field when @c TRUE.
+ * @param length       encrypted_record length (used only when @p write_length).
+ * @return @c R_TLS_ERROR_OK, @c R_TLS_ERROR_INVAL, or @c R_TLS_ERROR_BUF_TOO_SMALL.
+ */
+R_API RTLSError r_dtls13_write_unified_hdr (rpointer data, rsize size,
+    rsize * out, ruint8 epoch_bits, const ruint8 * cid, ruint8 cidlen,
+    ruint16 seq, ruint8 seqlen, rboolean write_length, ruint16 length);
+
 /**
  * @brief Write a TLS handshake record header into @p data.
  * @param data Destination buffer.

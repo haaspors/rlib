@@ -14,6 +14,102 @@ RTEST (rtls, parse_errors, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, dtls13_unified_hdr, RTEST_FAST)
+{
+  ruint8 buf[16];
+  rsize hdrlen = 0;
+  RDtls13RecordHdr hdr;
+
+  /* Minimal header: 8-bit seq, no length, no CID, epoch 2. */
+  r_assert_cmpint (r_dtls13_write_unified_hdr (buf, sizeof (buf), &hdrlen,
+        2, NULL, 0, 0x42, 1, FALSE, 0), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (hdrlen, ==, 2);
+  r_assert_cmphex (buf[0], ==, 0x22);      /* 001 0 0 0 10 */
+  r_assert_cmphex (buf[1], ==, 0x42);
+
+  /* Full header: 16-bit seq + length, epoch 3. */
+  r_assert_cmpint (r_dtls13_write_unified_hdr (buf, sizeof (buf), &hdrlen,
+        3, NULL, 0, 0x1234, 2, TRUE, 8), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (hdrlen, ==, 5);
+  r_assert_cmphex (buf[0], ==, 0x2f);      /* 001 0 1 1 11 */
+  r_assert_cmphex (buf[1], ==, 0x12);
+  r_assert_cmphex (buf[2], ==, 0x34);
+  r_assert_cmphex (buf[3], ==, 0x00);
+  r_assert_cmphex (buf[4], ==, 0x08);
+
+  /* Parse it back (needs hdrlen + length bytes available). */
+  r_assert_cmpint (r_dtls13_parse_unified_hdr (buf, sizeof (buf), 0, &hdr),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (hdr.hdrlen, ==, 5);
+  r_assert_cmpuint (hdr.epoch_bits, ==, 3);
+  r_assert_cmpuint (hdr.seqlen, ==, 2);
+  r_assert_cmpuint (hdr.seqoff, ==, 1);
+  r_assert_cmphex (hdr.seq, ==, 0x1234);
+  r_assert (hdr.has_length);
+  r_assert_cmpuint (hdr.length, ==, 8);
+  r_assert_cmpuint (hdr.cidlen, ==, 0);
+
+  /* No-length header: length is the rest of the buffer. */
+  {
+    static const ruint8 rec[] = { 0x21, 0x05, 0, 0, 0, 0, 0, 0 };
+    r_assert_cmpint (r_dtls13_parse_unified_hdr (rec, sizeof (rec), 0, &hdr),
+        ==, R_TLS_ERROR_OK);
+    r_assert_cmpuint (hdr.hdrlen, ==, 2);
+    r_assert_cmpuint (hdr.epoch_bits, ==, 1);
+    r_assert_cmpuint (hdr.seqlen, ==, 1);
+    r_assert_cmphex (hdr.seq, ==, 0x05);
+    r_assert (!hdr.has_length);
+    r_assert_cmpuint (hdr.length, ==, sizeof (rec) - 2);
+  }
+
+  /* Errors: empty, non-unified first byte, CID present with unknown length,
+   * and a truncated length field. */
+  r_assert_cmpint (r_dtls13_parse_unified_hdr (buf, 0, 0, &hdr),
+      ==, R_TLS_ERROR_BUF_TOO_SMALL);
+  r_assert_cmpint (r_dtls13_parse_unified_hdr ((const ruint8 *) "\x16", 1, 0, &hdr),
+      ==, R_TLS_ERROR_INVALID_RECORD);
+  r_assert_cmpint (r_dtls13_parse_unified_hdr ((const ruint8 *) "\x31\x00", 2, 0, &hdr),
+      ==, R_TLS_ERROR_INVALID_RECORD);   /* C bit, cidlen 0 */
+  r_assert_cmpint (r_dtls13_parse_unified_hdr ((const ruint8 *) "\x2f\x00\x00\x00", 4, 0, &hdr),
+      ==, R_TLS_ERROR_BUF_TOO_SMALL);    /* L set, header truncated */
+
+  /* Write guards. */
+  r_assert_cmpint (r_dtls13_write_unified_hdr (NULL, sizeof (buf), &hdrlen,
+        0, NULL, 0, 0, 1, FALSE, 0), ==, R_TLS_ERROR_INVAL);
+  r_assert_cmpint (r_dtls13_write_unified_hdr (buf, sizeof (buf), &hdrlen,
+        0, NULL, 0, 0, 3, FALSE, 0), ==, R_TLS_ERROR_INVAL);   /* seqlen 3 */
+  r_assert_cmpint (r_dtls13_write_unified_hdr (buf, 1, &hdrlen,
+        0, NULL, 0, 0, 2, FALSE, 0), ==, R_TLS_ERROR_BUF_TOO_SMALL);
+}
+RTEST_END;
+
+RTEST (rtls, dtls13_parse_protected_record, RTEST_FAST)
+{
+  /* A unified-header record (epoch 2, 8-bit seq 0) with an 18-byte ciphertext:
+   * the parser surfaces the ciphertext framing without a version on the wire. */
+  ruint8 rec[2 + 18];
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  rsize i;
+
+  rec[0] = 0x22;   /* 001 0 0 0 10 : epoch 2, 8-bit seq, no length, no cid */
+  rec[1] = 0x00;
+  for (i = 0; i < 18; i++)
+    rec[2 + i] = (ruint8) (0xa0 + i);
+
+  r_assert_cmpint (r_tls_parser_init (&parser, rec, sizeof (rec)), ==, R_TLS_ERROR_OK);
+  r_assert (r_tls_parser_is_dtls (&parser));
+  r_assert_cmphex (parser.content, ==, 0x22);
+  r_assert_cmphex (parser.version, ==, R_TLS_VERSION_DTLS_1_3);
+  r_assert_cmpuint (parser.epoch, ==, 2);
+  r_assert_cmpuint (parser.seqno, ==, 0);
+  r_assert_cmpuint (parser.offset, ==, 2);
+  r_assert_cmpuint (parser.recsize, ==, sizeof (rec));
+  r_assert_cmpuint (parser.fragment.size, ==, 18);
+  r_assert_cmpmem (parser.fragment.data, ==, rec + 2, 18);
+  r_tls_parser_clear (&parser);
+}
+RTEST_END;
+
 RTEST (rtls, parse_dtls_client_hello, RTEST_FAST)
 {
   static const ruint8 pkt_dtls_client_hallo[] = {

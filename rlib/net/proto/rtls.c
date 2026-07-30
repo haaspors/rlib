@@ -377,6 +377,38 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
   if (!r_buffer_map_byte_range (buf, 0, 5, &info, R_MEM_MAP_READ))
     return R_TLS_ERROR_BUF_TOO_SMALL;
 
+  /* DTLS 1.3 AEAD-protected records use the variable-length unified header
+   * (RFC 9147 4), whose first byte has the fixed high bits 001 -- outside the
+   * 0x14..0x18 content-type range. The real content type is inside the AEAD, so
+   * expose the ciphertext framing and let the caller deprotect. A connection id,
+   * if negotiated, is applied by the deprotect path, not here. */
+  if (r_dtls13_is_unified_hdr (info.data[0])) {
+    RDtls13RecordHdr hdr;
+    RMemMapInfo full = R_MEM_MAP_INFO_INIT;
+
+    r_buffer_unmap (buf, &info);
+    if (!r_buffer_map_byte_range (buf, 0, -1, &full, R_MEM_MAP_READ))
+      return R_TLS_ERROR_BUF_TOO_SMALL;
+    ret = r_dtls13_parse_unified_hdr (full.data, full.size, 0, &hdr);
+    if (ret == R_TLS_ERROR_OK) {
+      parser->content = (RTLSContentType) full.data[0];
+      parser->version = R_TLS_VERSION_DTLS_1_3;
+      parser->epoch = hdr.epoch_bits;
+      parser->seqno = hdr.seq;
+      parser->offset = hdr.hdrlen;
+    }
+    r_buffer_unmap (buf, &full);
+    if (ret != R_TLS_ERROR_OK)
+      return ret;
+
+    if (!r_buffer_map_byte_range (buf, parser->offset, (rssize) hdr.length,
+          &parser->fragment, R_MEM_MAP_READ))
+      return R_TLS_ERROR_BUF_TOO_SMALL;
+    parser->buf = r_buffer_ref (buf);
+    parser->recsize = parser->offset + hdr.length;
+    return R_TLS_ERROR_OK;
+  }
+
   parser->content = (RTLSContentType)info.data[0];
   if (parser->content < R_TLS_CONTENT_TYPE_FIRST ||
       parser->content > R_TLS_CONTENT_TYPE_LAST) {
@@ -2218,6 +2250,100 @@ r_tls_certificate_get_cert (const RTLSCertificate * cert)
 {
   if (R_UNLIKELY (cert == NULL)) return NULL;
   return r_crypto_x509_cert_new (cert->cert, cert->len);
+}
+
+RTLSError
+r_dtls13_parse_unified_hdr (const ruint8 * data, rsize size, ruint8 cidlen,
+    RDtls13RecordHdr * hdr)
+{
+  ruint8 b0;
+  rsize off = 1;
+
+  if (R_UNLIKELY (data == NULL || hdr == NULL))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (size < 1))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  b0 = data[0];
+  if (R_UNLIKELY (!r_dtls13_is_unified_hdr (b0)))
+    return R_TLS_ERROR_INVALID_RECORD;
+
+  r_memclear (hdr, sizeof (*hdr));
+  hdr->epoch_bits = b0 & 0x03;
+
+  if ((b0 & 0x10) != 0) {                    /* C: connection id present */
+    if (R_UNLIKELY (cidlen == 0))            /* length not known out-of-band */
+      return R_TLS_ERROR_INVALID_RECORD;
+    hdr->cidlen = cidlen;
+    hdr->cid = data + off;
+    off += cidlen;
+  }
+
+  hdr->seqlen = ((b0 & 0x08) != 0) ? 2 : 1;  /* S: 16- vs 8-bit sequence */
+  hdr->seqoff = off;
+  hdr->has_length = (b0 & 0x04) != 0;        /* L: explicit length present */
+  hdr->hdrlen = off + hdr->seqlen + (hdr->has_length ? 2 : 0);
+  if (R_UNLIKELY (size < hdr->hdrlen))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  if (hdr->seqlen == 2)
+    hdr->seq = r_load_be16 (&data[off]);
+  else
+    hdr->seq = data[off];
+  off += hdr->seqlen;
+
+  if (hdr->has_length) {
+    hdr->length = r_load_be16 (&data[off]);
+    if (R_UNLIKELY (size < hdr->hdrlen + hdr->length))
+      return R_TLS_ERROR_BUF_TOO_SMALL;
+  } else {
+    hdr->length = size - hdr->hdrlen;        /* the rest of the datagram */
+  }
+
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_dtls13_write_unified_hdr (rpointer data, rsize size, rsize * out,
+    ruint8 epoch_bits, const ruint8 * cid, ruint8 cidlen,
+    ruint16 seq, ruint8 seqlen, rboolean write_length, ruint16 length)
+{
+  ruint8 * p = data;
+  rsize hdrlen;
+
+  if (R_UNLIKELY (data == NULL || (cidlen != 0 && cid == NULL)))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (seqlen != 1 && seqlen != 2))
+    return R_TLS_ERROR_INVAL;
+
+  hdrlen = 1 + cidlen + seqlen + (write_length ? 2 : 0);
+  if (R_UNLIKELY (size < hdrlen))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  *p = R_DTLS13_UNIFIED_FIXED_BITS | (epoch_bits & 0x03);
+  if (cidlen != 0)     *p |= 0x10;
+  if (seqlen == 2)     *p |= 0x08;
+  if (write_length)    *p |= 0x04;
+  p++;
+
+  if (cidlen != 0) {
+    r_memcpy (p, cid, cidlen);
+    p += cidlen;
+  }
+  if (seqlen == 2) {
+    r_store_be16 (p, seq);
+    p += 2;
+  } else {
+    *p++ = (ruint8) seq;
+  }
+  if (write_length) {
+    r_store_be16 (p, length);
+    p += 2;
+  }
+
+  if (out != NULL)
+    *out = hdrlen;
+  return R_TLS_ERROR_OK;
 }
 
 RTLSError
