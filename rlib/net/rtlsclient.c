@@ -145,6 +145,15 @@ struct RTLSClient {
   ruint16 recv_hello_msgseq;            /* message_seq of the last plaintext Hello received */
   ruint16 dtls13_hs_frag;               /* max handshake fragment body per record; 0 = whole */
 
+  /* DTLS 1.3 flight retransmission (RFC 9147 5.8) + ACKs (7). */
+  RPtrArray rtx_flight;                 /* records of the outstanding flight (refs) */
+  RClockEntry * rtx_timer;
+  RClockTimeDiff rtx_timeout;
+  ruint rtx_tries;
+  rboolean rtx_capturing;               /* accumulate emitted records into the flight */
+  RDtls13RecordNumber rx_acks[R_DTLS13_ACK_MAX]; /* received handshake records to ACK */
+  ruint rx_nacks;
+
   RTLS13Schedule sched13;               /* 1-RTT key schedule */
   RTLS13RecordKeys rk_write, rk_read;   /* installed 1.3 record keys */
   const RCryptoCipherInfo * cs13_cipher;/* AEAD for the 1.3 suite */
@@ -270,6 +279,9 @@ r_tls_client_free (RTLSClient * client)
   if (client->inbuf != NULL)
     r_buffer_unref (client->inbuf);
   r_queue_clear (&client->qsend, r_buffer_unref);
+  if (client->rtx_timer != NULL && client->loop != NULL)
+    r_ev_loop_cancel_timer (client->loop, client->rtx_timer);
+  r_ptr_array_clear (&client->rtx_flight);
   r_memclear_secure (client->mastersecret, sizeof (client->mastersecret));
   r_memclear_secure (&client->sched13, sizeof (client->sched13));
   r_free (client);
@@ -340,6 +352,8 @@ r_tls_client_new (const RTLSCallbacks * cb, rpointer userdata, RDestroyNotify no
     ret->userdata = userdata;
     ret->notify = notify;
     r_queue_init (&ret->qsend);
+    r_ptr_array_init (&ret->rtx_flight);
+    ret->rtx_timeout = R_DTLS13_RTX_INITIAL;
     ret->decrypt = r_tls_client_null_decrypt;
     ret->encrypt = r_tls_client_null_encrypt;
     ret->min_version = R_TLS_VERSION_TLS_1_2;
@@ -620,15 +634,71 @@ r_tls_client_send_record (RTLSClient * client, RBuffer * buf)
   return ret;
 }
 
+/* Re-emit the buffered flight and re-arm with doubled backoff (RFC 9147 5.8.1);
+ * give up after R_DTLS13_RTX_TRIES attempts. */
+static void
+r_tls_client_rtx_fire (rpointer data, REvLoop * loop)
+{
+  RTLSClient * client = data;
+  rsize i, n = r_ptr_array_size (&client->rtx_flight);
+
+  (void) loop;
+  client->rtx_timer = NULL;                 /* one-shot: it has fired */
+  if (n == 0)
+    return;
+  if (client->rtx_tries >= R_DTLS13_RTX_TRIES) {
+    if (client->cb.error != NULL)
+      client->cb.error (client->userdata, R_TLS_ALERT_TYPE_INTERNAL_ERROR, client);
+    r_tls_client_change_state (client, R_TLS_CLIENT_ERROR);
+    return;
+  }
+  for (i = 0; i < n; i++)                    /* the out callback takes its own ref */
+    client->cb.out (client->userdata, r_ptr_array_get (&client->rtx_flight, i), client);
+  client->rtx_timeout = MIN (client->rtx_timeout * 2, (RClockTimeDiff) R_DTLS13_RTX_MAX);
+  client->rtx_tries++;
+  r_ev_loop_add_callback_later (client->loop, &client->rtx_timer,
+      client->rtx_timeout, r_tls_client_rtx_fire, client, NULL);
+}
+
+/* Arm the retransmit timer for the captured flight, if not already armed. */
+static void
+r_tls_client_rtx_arm (RTLSClient * client)
+{
+  if (!client->rtx_capturing || client->loop == NULL || client->rtx_timer != NULL)
+    return;
+  if (r_ptr_array_size (&client->rtx_flight) == 0)
+    return;
+  r_ev_loop_add_callback_later (client->loop, &client->rtx_timer,
+      client->rtx_timeout, r_tls_client_rtx_fire, client, NULL);
+}
+
+/* The peer's flight (or an ACK) confirmed our flight arrived: stop retransmitting
+ * and reset the backoff for the next flight. */
+static void
+r_tls_client_rtx_cancel (RTLSClient * client)
+{
+  if (client->rtx_timer != NULL) {
+    r_ev_loop_cancel_timer (client->loop, client->rtx_timer);
+    client->rtx_timer = NULL;
+  }
+  r_ptr_array_clear (&client->rtx_flight);
+  client->rtx_timeout = R_DTLS13_RTX_INITIAL;
+  client->rtx_tries = 0;
+}
+
 static void
 r_tls_client_send_out (RTLSClient * client)
 {
   RBuffer * buf;
 
   while ((buf = r_queue_pop (&client->qsend)) != NULL) {
+    /* Capture the outgoing DTLS 1.3 handshake flight for retransmission. */
+    if (client->rtx_capturing)
+      r_ptr_array_add (&client->rtx_flight, r_buffer_ref (buf), r_buffer_unref);
     client->cb.out (client->userdata, buf, client);
     r_buffer_unref (buf);
   }
+  r_tls_client_rtx_arm (client);
 }
 
 static RTLSError r_tls_client_protect_record13 (RTLSClient * client,
@@ -1488,6 +1558,9 @@ r_tls_client_start (RTLSClient * client, REvLoop * loop, RPrng * prng,
    * transcript started in nego_server_hello. */
 
   r_tls_client_change_state (client, R_TLS_CLIENT_SERVER_HELLO);
+
+  /* DTLS 1.3 retransmits its handshake flights until acknowledged. */
+  client->rtx_capturing = (version == R_TLS_VERSION_DTLS_1_3);
 
   if (r_tls_client_send_hello (client, FALSE) != R_TLS_ERROR_OK)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
@@ -3507,6 +3580,8 @@ r_tls_client_dtls13_handshake (RTLSClient * client, RTLSParser * parser,
     do {
       err = statefuncs[client->state] (client, parser);
     } while (err == R_TLS_ERROR_NOT_NEEDED);
+    /* The server responded, so our previous flight was received. */
+    r_tls_client_rtx_cancel (client);
     return err;
   }
 
@@ -3528,6 +3603,8 @@ r_tls_client_dtls13_handshake (RTLSClient * client, RTLSParser * parser,
 
     if ((rmsg = r_dtls13_reassembler_next (client->reasm13, &rlen)) == NULL)
       break;
+    /* Progress: a new message was reassembled, so our flight was received. */
+    r_tls_client_rtx_cancel (client);
     if ((err = r_dtls_parser_init_handshake13 (&hp, rmsg, rlen)) != R_TLS_ERROR_OK)
       return err;
     do {
@@ -3665,6 +3742,14 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
       } else {
         r_tls_client_change_state (client, R_TLS_CLIENT_ERROR);
       }
+      continue;
+    }
+
+    /* A DTLS 1.3 ACK acknowledges our flight: stop retransmitting (RFC 9147 7). */
+    if (client->version == R_TLS_VERSION_DTLS_1_3 &&
+        parser.content == R_TLS_CONTENT_TYPE_ACK) {
+      r_tls_client_rtx_cancel (client);
+      client->rtx_capturing = FALSE;
       continue;
     }
 

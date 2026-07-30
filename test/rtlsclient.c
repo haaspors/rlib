@@ -2154,6 +2154,47 @@ RTEST_F (rtlsclient, dtls13_reassembly_reordered, RTEST_FAST)
 }
 RTEST_END;
 
+/* DTLS 1.3 flight retransmission (RFC 9147 5.8): drop the server's first flight,
+ * advance the (test) clock past the retransmit timeout and run the loop so the
+ * retransmit timers fire; the resent flight then completes the handshake. */
+RTEST_F (rtlsclient, dtls13_retransmit_lost_flight, RTEST_FAST)
+{
+  RBuffer * buf;
+  RClockTime now;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+
+  /* Deliver the ClientHello; the server emits its flight and arms a retransmit. */
+  while ((buf = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_tls_server_incoming_data (fixture->server, buf);
+    r_buffer_unref (buf);
+  }
+  r_assert (!fixture->srv_hs_done);
+  r_assert (!r_queue_is_empty (&fixture->srv_out));
+
+  /* Lose the server's flight entirely. */
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_assert (!fixture->cli_hs_done);
+
+  /* Fire the retransmit timers. */
+  now = r_clock_get_time (fixture->clock);
+  r_assert (r_test_clock_update_time (fixture->clock, now + 2 * R_SECOND));
+  r_ev_loop_run (fixture->evloop, R_EV_LOOP_RUN_NOWAIT);
+
+  /* The server retransmitted its flight; drive the rest to completion. */
+  r_assert (!r_queue_is_empty (&fixture->srv_out));
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */
