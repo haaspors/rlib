@@ -2063,6 +2063,52 @@ RTEST_F (rtlsclient, dtls13_replay_dropped, RTEST_FAST)
 }
 RTEST_END;
 
+/* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
+ * records carry the peer's CID in the unified header. Verifies the wire framing
+ * (C bit + CID bytes) and that a CID-tagged record still deprotects. */
+RTEST_F (rtlsclient, dtls13_loopback_cid, RTEST_FAST)
+{
+  static const ruint8 climsg[] = { 'c', 'i', 'd' };
+  static const ruint8 ccid[] = { 0xca, 0xfe, 0x01 };  /* the client's own CID */
+  static const ruint8 scid[] = { 0xbe, 0xef };        /* the server's own CID */
+  RBuffer * app, * rec;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  r_assert_cmpint (r_tls_client_set_connection_id (fixture->client, ccid, sizeof (ccid)),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_connection_id (fixture->server, scid, sizeof (scid)),
+      ==, R_TLS_ERROR_OK);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+  r_assert (!fixture->cli_error);
+  r_assert (!fixture->srv_error);
+
+  /* A client-sent record tags the server's CID with the C bit set. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) climsg, sizeof (climsg), sizeof (climsg), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_assert_cmpptr ((rec = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_assert (r_buffer_map (rec, &info, R_MEM_MAP_READ));
+  r_assert (r_dtls13_is_unified_hdr (info.data[0]));
+  r_assert_cmphex (info.data[0] & 0x10, ==, 0x10);        /* C bit present */
+  r_assert_cmpmem (info.data + 1, ==, scid, sizeof (scid));
+  r_buffer_unmap (rec, &info);
+
+  /* The server parses the CID-bearing record and surfaces the payload. */
+  r_tls_server_incoming_data (fixture->server, rec);
+  r_buffer_unref (rec);
+  r_test_tls_assert_appdata (&fixture->srv_app, climsg, sizeof (climsg));
+  r_assert (!fixture->srv_error);
+}
+RTEST_END;
+
 /* The client offers SNI; the server's selection callback sees the name and
  * installs a per-name certificate, which the client then receives. */
 RTEST_F (rtlsclient, sni_selects_cert, RTEST_FAST)

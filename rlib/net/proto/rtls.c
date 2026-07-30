@@ -389,7 +389,7 @@ r_tls_parser_init_buffer (RTLSParser * parser, RBuffer * buf)
     r_buffer_unmap (buf, &info);
     if (!r_buffer_map_byte_range (buf, 0, -1, &full, R_MEM_MAP_READ))
       return R_TLS_ERROR_BUF_TOO_SMALL;
-    ret = r_dtls13_parse_unified_hdr (full.data, full.size, 0, &hdr);
+    ret = r_dtls13_parse_unified_hdr (full.data, full.size, parser->cidlen, &hdr);
     if (ret == R_TLS_ERROR_OK) {
       parser->content = (RTLSContentType) full.data[0];
       parser->version = R_TLS_VERSION_DTLS_1_3;
@@ -474,9 +474,11 @@ r_tls_parser_init_next (RTLSParser * parser, RBuffer ** buf)
 {
   RBuffer * next;
   RTLSError ret;
+  ruint8 cidlen = parser->cidlen;   /* survives the clear: it is caller state */
 
   if ((next = r_tls_parser_next (parser)) != NULL) {
     r_tls_parser_clear (parser);
+    parser->cidlen = cidlen;
     ret = r_tls_parser_init_buffer (parser, next);
     if (buf != NULL)
       *buf = next;
@@ -818,12 +820,13 @@ r_dtls13_reconstruct_seq (ruint64 expected, ruint64 low, ruint8 seqlen)
 
 RTLSError
 r_dtls_write_protected_record13 (rpointer data, rsize size, rsize * out,
-    const RTLS13RecordKeys * keys, RTLSContentType type,
-    const ruint8 * content, rsize contentlen)
+    const RTLS13RecordKeys * keys, const ruint8 * cid, ruint8 cidlen,
+    RTLSContentType type, const ruint8 * content, rsize contentlen)
 {
   ruint8 * rec = data;
   ruint8 mask[R_DTLS13_SN_MAX];
-  rsize hdrlen = 0, enclen = 0, reclen = contentlen + 1 + R_TLS13_AEAD_TAG_SIZE;
+  rsize hdrlen = 0, enclen = 0, seqoff = 1 + cidlen;
+  rsize reclen = contentlen + 1 + R_TLS13_AEAD_TAG_SIZE;
   RTLSError ret;
 
   if (R_UNLIKELY (data == NULL || keys == NULL || keys->cipher == NULL ||
@@ -832,9 +835,10 @@ r_dtls_write_protected_record13 (rpointer data, rsize size, rsize * out,
 
   /* Unified header carrying the plaintext sequence number (the AEAD's AAD); a
    * 16-bit sequence and an explicit length keep records self-delimiting so a
-   * datagram may carry more than one. */
+   * datagram may carry more than one. An optional connection id (RFC 9146)
+   * precedes the sequence number. */
   ret = r_dtls13_write_unified_hdr (rec, size, &hdrlen, (ruint8) keys->epoch,
-      NULL, 0, (ruint16) keys->seq, 2, TRUE, (ruint16) reclen);
+      cid, cidlen, (ruint16) keys->seq, 2, TRUE, (ruint16) reclen);
   if (R_UNLIKELY (ret != R_TLS_ERROR_OK))
     return ret;
 
@@ -844,12 +848,12 @@ r_dtls_write_protected_record13 (rpointer data, rsize size, rsize * out,
     return R_TLS_ERROR_ENCRYPTION_FAILED;
 
   /* Mask the on-the-wire sequence number from the ciphertext (RFC 9147 4.2.3).
-   * The header's two seq octets sit right after the flags byte (no CID). */
+   * The two seq octets sit after the flags byte and the connection id. */
   if (R_UNLIKELY (!r_dtls13_sn_mask (keys->cipher->info->type, keys->sn_key,
           keys->sn_keylen, rec + hdrlen, enclen, mask, 2)))
     return R_TLS_ERROR_ENCRYPTION_FAILED;
-  rec[1] ^= mask[0];
-  rec[2] ^= mask[1];
+  rec[seqoff]     ^= mask[0];
+  rec[seqoff + 1] ^= mask[1];
 
   if (out != NULL)
     *out = hdrlen + enclen;
@@ -861,11 +865,11 @@ r_dtls_parser_unprotect13 (RTLSParser * parser, const RTLS13RecordKeys * keys)
 {
   RBuffer * buf, * replace;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
-  ruint8 aad[R_DTLS13_UNIFIED_HDR_MAX];
+  ruint8 aad[R_DTLS13_UNIFIED_HDR_MAX + R_DTLS13_CID_MAX];
   ruint8 mask[R_DTLS13_SN_MAX];
   ruint64 seq;
   ruint16 low;
-  rsize plainlen = 0, seqoff = 1, i;
+  rsize plainlen = 0, seqoff = 1 + parser->cidlen, i;
   ruint8 seqlen;
   RTLSContentType inner;
 

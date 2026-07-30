@@ -501,6 +501,8 @@ R_API rboolean r_dtls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret
  * @param size       Capacity of @p data in bytes.
  * @param out        Out: record length written (may be @c NULL).
  * @param keys       DTLS 1.3 write keys (@ref r_dtls13_traffic_keys).
+ * @param cid        Peer connection id to place in the header, or @c NULL.
+ * @param cidlen     Connection-id length; 0 for none.
  * @param type       Real content type of @p content.
  * @param content    Plaintext payload; @p contentlen bytes.
  * @param contentlen Payload length.
@@ -508,7 +510,8 @@ R_API rboolean r_dtls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret
  *  or @c R_TLS_ERROR_ENCRYPTION_FAILED.
  */
 R_API RTLSError r_dtls_write_protected_record13 (rpointer data, rsize size,
-    rsize * out, const RTLS13RecordKeys * keys, RTLSContentType type,
+    rsize * out, const RTLS13RecordKeys * keys,
+    const ruint8 * cid, ruint8 cidlen, RTLSContentType type,
     const ruint8 * content, rsize contentlen);
 
 /**

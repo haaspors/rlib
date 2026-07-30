@@ -296,6 +296,21 @@ R_API rboolean r_tls_server_get_early_data_accepted (const RTLSServer * server);
 R_API RTLSError r_tls_server_set_key_share_group (RTLSServer * server,
     RTLSSupportedGroup group);
 /**
+ * @brief Offer a DTLS 1.3 Connection ID (RFC 9146).
+ *
+ * Opts in to the @c connection_id extension: when a DTLS 1.3 client also offers
+ * one, the server negotiates CIDs and asks the client to tag the records it sends
+ * with @p cid. A zero-length CID still opts in. Applies to DTLS 1.3 only; must be
+ * called before the handshake completes.
+ *
+ * @param server The server.
+ * @param cid    The connection id (may be @c NULL when @p len is 0).
+ * @param len    CID length in bytes, at most @ref R_DTLS13_CID_MAX.
+ * @return @c R_TLS_ERROR_OK, @c R_TLS_ERROR_INVAL, or @c R_TLS_ERROR_WRONG_STATE.
+ */
+R_API RTLSError r_tls_server_set_connection_id (RTLSServer * server,
+    const ruint8 * cid, ruint8 len);
+/**
  * @brief Configure the application protocols the server supports for ALPN
  * (RFC 7301), in descending order of preference.
  *

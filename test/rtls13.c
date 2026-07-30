@@ -213,7 +213,7 @@ r_test_dtls13_record_roundtrip (const RCryptoCipherInfo * info)
   for (round = 0; round < 2; round++) {
     wk.seq = round;
     r_assert_cmpint (r_dtls_write_protected_record13 (rec, sizeof (rec), &reclen,
-          &wk, R_TLS_CONTENT_TYPE_HANDSHAKE, content, sizeof (content)),
+          &wk, NULL, 0, R_TLS_CONTENT_TYPE_HANDSHAKE, content, sizeof (content)),
         ==, R_TLS_ERROR_OK);
     r_assert (r_dtls13_is_unified_hdr (rec[0]));
     r_assert_cmphex (rec[0] & 0x03, ==, 2);          /* epoch bits */
@@ -232,7 +232,7 @@ r_test_dtls13_record_roundtrip (const RCryptoCipherInfo * info)
   /* A flipped ciphertext byte fails authentication. */
   wk.seq = 0;
   r_assert_cmpint (r_dtls_write_protected_record13 (rec, sizeof (rec), &reclen,
-        &wk, R_TLS_CONTENT_TYPE_HANDSHAKE, content, sizeof (content)),
+        &wk, NULL, 0, R_TLS_CONTENT_TYPE_HANDSHAKE, content, sizeof (content)),
       ==, R_TLS_ERROR_OK);
   rec[reclen - 1] ^= 0x01;
   r_assert_cmpint (r_tls_parser_init (&parser, rec, reclen), ==, R_TLS_ERROR_OK);

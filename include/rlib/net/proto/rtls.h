@@ -234,6 +234,7 @@ typedef enum {
   R_TLS_EXT_TYPE_POST_HANDSHAKE_AUTH                    = 0x0031, /* [RFC8446] */
   R_TLS_EXT_TYPE_SIGNATURE_ALGORITHMS_CERT              = 0x0032, /* [RFC8446] */
   R_TLS_EXT_TYPE_KEY_SHARE                              = 0x0033, /* [RFC8446] */
+  R_TLS_EXT_TYPE_CONNECTION_ID                          = 0x0036, /* [RFC9146] */
   R_TLS_EXT_TYPE_RENEGOTIATION_INFO                     = 0xff01, /* [RFC5746] */
 } RTLSExtensionType;
 
@@ -406,10 +407,11 @@ typedef struct {
   ruint16 epoch;           /**< @brief DTLS epoch (DTLS only). */
   ruint64 seqno;           /**< @brief DTLS record sequence number (DTLS only). */
   rsize offset;            /**< @brief Read offset within the buffer. */
+  ruint8 cidlen;           /**< @brief Expected connection-id length for DTLS 1.3 unified records; set by the caller before parsing. */
   RMemMapInfo fragment;    /**< @brief Mapping of the current record's payload. */
 } RTLSParser;
 /** @brief Static initialiser for an empty @ref RTLSParser. */
-#define R_TLS_PARSER_INIT           { NULL, 0, 0, 0, 0, 0, 0, R_MEM_MAP_INFO_INIT }
+#define R_TLS_PARSER_INIT           { NULL, 0, 0, 0, 0, 0, 0, 0, R_MEM_MAP_INFO_INIT }
 
 /** @brief Parsed ClientHello / ServerHello, pointing into the record buffer. */
 typedef struct {
@@ -887,6 +889,23 @@ static inline const ruint8 * r_tls_hello_ext_cookie (const RTLSHelloExt * ext, r
   *len = MIN (l, (ruint16) (ext->len - sizeof (ruint16)));
   return ext->data + sizeof (ruint16);
 }
+
+/**
+ * @brief Read the connection id from a @c connection_id extension (RFC 9146 3).
+ *
+ * The extension data is @c opaque cid<0..2^8-1>: a one-byte length then the CID
+ * bytes. An empty CID (length 0) is valid and returns @p len 0.
+ * @param ext The connection_id extension.
+ * @param len Out: connection-id length in bytes.
+ * @return Pointer to the CID bytes (or to just past the length byte when empty),
+ *  or @c NULL if malformed (with @p len 0).
+ */
+static inline const ruint8 * r_tls_hello_ext_connection_id (const RTLSHelloExt * ext, ruint8 * len)
+{
+  if (ext->len < 1 || (rsize) ext->data[0] + 1 > ext->len) { *len = 0; return NULL; }
+  *len = ext->data[0];
+  return ext->data + 1;
+}
 /** @} */
 
 /** @name pre_shared_key / psk_key_exchange_modes accessors (RFC 8446)
@@ -1032,6 +1051,8 @@ R_API RBuffer * r_tls_encrypt_buffer_aead (RBuffer * buf, ruint64 seqno,
 R_API RBuffer * r_dtls_encrypt_buffer_aead (RBuffer * buf,
     const RCryptoCipher * cipher, const ruint8 * salt);
 
+/** @brief Largest DTLS 1.3 connection id this implementation uses, in bytes. */
+#define R_DTLS13_CID_MAX                 20
 /** @brief Fixed high bits (@c 001) of a DTLS 1.3 unified record header. */
 #define R_DTLS13_UNIFIED_FIXED_BITS      0x20
 /** @brief Largest DTLS 1.3 unified record header without a connection id, in
