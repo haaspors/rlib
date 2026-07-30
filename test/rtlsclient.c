@@ -2280,6 +2280,59 @@ RTEST_F (rtlsclient, dtls13_implicit_ack_stops_retransmit, RTEST_FAST)
 }
 RTEST_END;
 
+/* RFC 9147 7.1: when a partial server flight is ACKed, the server drops the
+ * acknowledged records and retransmits only the remainder -- not the whole
+ * flight. Withhold a record from the middle of the flight so the client sees a
+ * gap and ACKs what it has; the retransmit must then be strictly smaller than
+ * the original flight. */
+RTEST_F (rtlsclient, dtls13_partial_ack_retransmits_remainder, RTEST_FAST)
+{
+  RBuffer * buf;
+  RClockTime now;
+  rsize total, drop, idx = 0, rtx_count;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+
+  /* ClientHello -> server; the server emits its flight and arms a retransmit. */
+  while ((buf = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_tls_server_incoming_data (fixture->server, buf); r_buffer_unref (buf); }
+  total = r_queue_size (&fixture->srv_out);
+  r_assert_cmpuint (total, >, 2);
+  drop = total / 2;               /* a record in the middle of the flight */
+
+  /* Deliver every record but the middle one; the records past the gap buffer,
+   * so the client cannot complete and ACKs what it received. */
+  while ((buf = r_queue_pop (&fixture->srv_out)) != NULL) {
+    if (idx++ != drop)
+      r_tls_client_incoming_data (fixture->client, buf);
+    r_buffer_unref (buf);
+  }
+  r_assert (!fixture->cli_hs_done);
+  r_assert (!r_queue_is_empty (&fixture->cli_out));
+
+  /* The client's ACK reaches the server, which drops the acknowledged records. */
+  while ((buf = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_tls_server_incoming_data (fixture->server, buf); r_buffer_unref (buf); }
+  r_assert (r_queue_is_empty (&fixture->srv_out));
+
+  /* Fire the retransmit timer: only the un-acknowledged remainder goes out. */
+  now = r_clock_get_time (fixture->clock);
+  r_assert (r_test_clock_update_time (fixture->clock, now + 2 * R_SECOND));
+  r_ev_loop_run (fixture->evloop, R_EV_LOOP_RUN_NOWAIT);
+  rtx_count = r_queue_size (&fixture->srv_out);
+  r_assert_cmpuint (rtx_count, >, 0);
+  r_assert_cmpuint (rtx_count, <, total);
+
+  /* The retransmitted remainder completes the handshake. */
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */

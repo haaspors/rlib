@@ -46,11 +46,18 @@ R_BEGIN_DECLS
 #define R_DTLS13_RTX_TRIES        8                 /* give up after this many */
 #define R_DTLS13_ACK_MAX          16                /* record numbers tracked per ACK */
 
-/* Per-endpoint retransmission state. The outstanding flight is captured as it is
- * emitted; a timer re-sends it with exponential backoff until the peer's
- * response (or an ACK) confirms delivery. */
+/* One captured flight record, tagged with its (epoch, sequence_number) so an ACK
+ * can acknowledge it individually (RFC 9147 7.1). */
 typedef struct {
-  RPtrArray flight;                       /* records of the outstanding flight (refs) */
+  RBuffer * rec;
+  RDtls13RecordNumber num;
+} RDtls13FlightRec;
+
+/* Per-endpoint retransmission state. The outstanding flight is captured, tagged
+ * with each record's number, as it is emitted; a timer re-sends the un-ACKed
+ * records with exponential backoff until the peer confirms delivery. */
+typedef struct {
+  RPtrArray flight;                       /* RDtls13FlightRec* of the outstanding flight */
   RClockEntry * timer;
   RClockTimeDiff timeout;
   ruint tries;
@@ -60,13 +67,20 @@ typedef struct {
 R_API_HIDDEN void r_dtls13_rtx_init (RDtls13Rtx * rtx);
 /* Cancel any timer and release the flight (teardown). */
 R_API_HIDDEN void r_dtls13_rtx_clear (RDtls13Rtx * rtx, REvLoop * loop);
-/* Add @rec to the flight when capturing is enabled. */
-R_API_HIDDEN void r_dtls13_rtx_capture (RDtls13Rtx * rtx, RBuffer * rec);
+/* Add @rec (record number @epoch/@seq) to the flight when capturing is enabled. */
+R_API_HIDDEN void r_dtls13_rtx_capture (RDtls13Rtx * rtx, RBuffer * rec,
+    ruint64 epoch, ruint64 seq);
 /* Arm the retransmit timer for the captured flight, if not already armed. */
 R_API_HIDDEN void r_dtls13_rtx_arm (RDtls13Rtx * rtx, REvLoop * loop,
     REvFunc fire, rpointer ep);
 /* The peer confirmed the flight: cancel the timer, drop the flight, reset backoff. */
 R_API_HIDDEN void r_dtls13_rtx_cancel (RDtls13Rtx * rtx, REvLoop * loop);
+/* Drop from the flight the records acknowledged by the ACK message body @ack
+ * (@acklen bytes: a uint16 length then 16-byte record numbers, RFC 9147 7).
+ * Scans the body directly, so it handles an ACK of any length. Returns the
+ * number of records still outstanding; when it reaches 0 the caller cancels. */
+R_API_HIDDEN rsize r_dtls13_rtx_ack (RDtls13Rtx * rtx, const ruint8 * ack,
+    rsize acklen);
 /* Double the backoff (capped) and re-arm; call from the endpoint's fire callback
  * after re-emitting the flight. */
 R_API_HIDDEN void r_dtls13_rtx_reschedule (RDtls13Rtx * rtx, REvLoop * loop,
