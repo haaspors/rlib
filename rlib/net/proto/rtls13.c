@@ -475,6 +475,20 @@ r_tls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
   return TRUE;
 }
 
+void
+r_dtls13_hs_fold (RMsgDigest * hshash, rboolean dtls, const ruint8 * msg, rsize len)
+{
+  /* DTLS 1.3 excludes the handshake header's message_seq / fragment_offset /
+   * fragment_length from the transcript (RFC 9147 5.2): only the TLS-shaped
+   * header (the first four bytes) and the body are hashed; TLS folds as-is. */
+  if (dtls && len >= R_DTLS_HS_HDR_SIZE) {
+    r_msg_digest_update (hshash, msg, R_TLS_HS_HDR_SIZE);
+    r_msg_digest_update (hshash, msg + R_DTLS_HS_HDR_SIZE, len - R_DTLS_HS_HDR_SIZE);
+  } else {
+    r_msg_digest_update (hshash, msg, len);
+  }
+}
+
 rboolean
 r_dtls13_replay_check (RTLS13RecordKeys * keys, ruint64 seq)
 {

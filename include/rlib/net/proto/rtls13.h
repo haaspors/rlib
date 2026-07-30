@@ -286,6 +286,22 @@ typedef struct {
 /** @brief Static initialiser for an empty @ref RTLS13RecordKeys. */
 #define R_TLS13_RECORD_KEYS_INIT    { NULL, { 0, }, 0, 0, 0, { 0, }, 0, 0, 0 }
 
+/**
+ * @brief Fold a handshake message into the 1.3 transcript (RFC 9147, 5.2).
+ *
+ * DTLS 1.3 excludes the DTLS handshake header's message_seq / fragment_offset /
+ * fragment_length fields from the transcript, so for DTLS only the TLS-shaped
+ * header (type + 24-bit length) and the body are hashed; for TLS the whole
+ * on-the-wire message is hashed. Used for both sent and received messages.
+ *
+ * @param hshash The running transcript digest.
+ * @param dtls   @c TRUE to strip the DTLS handshake-header fields.
+ * @param msg    The handshake message, in its on-the-wire form.
+ * @param len    Length of @p msg in bytes.
+ */
+R_API void r_dtls13_hs_fold (RMsgDigest * hshash, rboolean dtls,
+    const ruint8 * msg, rsize len);
+
 /** @brief DTLS 1.3 anti-replay sliding-window width, in records (RFC 9147 4.5.1). */
 #define R_DTLS13_REPLAY_WINDOW    64
 

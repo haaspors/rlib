@@ -1024,18 +1024,8 @@ r_dtls13_reassembler_push (RDtls13Reassembler * r, ruint8 type, ruint16 msgseq,
     s->type = type;
     s->len = len;
     s->nranges = 0;
-    /* The reassembled (complete) DTLS handshake header: type | length |
-     * message_seq | fragment_offset=0 | fragment_length=length. */
-    s->msg[0]  = type;
-    s->msg[1]  = (ruint8) (len >> 16);
-    s->msg[2]  = (ruint8) (len >> 8);
-    s->msg[3]  = (ruint8) len;
-    s->msg[4]  = (ruint8) (msgseq >> 8);
-    s->msg[5]  = (ruint8) msgseq;
-    s->msg[6]  = s->msg[7] = s->msg[8] = 0;
-    s->msg[9]  = s->msg[1];
-    s->msg[10] = s->msg[2];
-    s->msg[11] = s->msg[3];
+    /* The reassembled (complete) message: a single unfragmented DTLS header. */
+    r_dtls13_write_hs_hdr (s->msg, type, len, msgseq, 0, len);
   } else if (R_UNLIKELY (s->type != type || s->len != len)) {
     return R_TLS_ERROR_CORRUPT_RECORD;        /* inconsistent with prior fragment */
   }
@@ -1070,6 +1060,70 @@ r_dtls13_reassembler_next (RDtls13Reassembler * r, rsize * outlen)
   s->complete = FALSE;
   r->next++;
   return msg;                                 /* ownership transfers to caller */
+}
+
+void
+r_dtls13_write_hs_hdr (ruint8 * p, ruint8 type, ruint32 len, ruint16 msgseq,
+    ruint32 foff, ruint32 flen)
+{
+  p[0]  = type;
+  p[1]  = (ruint8) (len >> 16);  p[2]  = (ruint8) (len >> 8);  p[3]  = (ruint8) len;
+  r_store_be16 (p + 4, msgseq);
+  p[6]  = (ruint8) (foff >> 16); p[7]  = (ruint8) (foff >> 8); p[8]  = (ruint8) foff;
+  p[9]  = (ruint8) (flen >> 16); p[10] = (ruint8) (flen >> 8); p[11] = (ruint8) flen;
+}
+
+void
+r_dtls13_rtx_init (RDtls13Rtx * rtx)
+{
+  r_ptr_array_init (&rtx->flight);
+  rtx->timeout = R_DTLS13_RTX_INITIAL;
+}
+
+void
+r_dtls13_rtx_clear (RDtls13Rtx * rtx, REvLoop * loop)
+{
+  if (rtx->timer != NULL && loop != NULL)
+    r_ev_loop_cancel_timer (loop, rtx->timer);
+  rtx->timer = NULL;
+  r_ptr_array_clear (&rtx->flight);
+}
+
+void
+r_dtls13_rtx_capture (RDtls13Rtx * rtx, RBuffer * rec)
+{
+  if (rtx->capturing)
+    r_ptr_array_add (&rtx->flight, r_buffer_ref (rec), r_buffer_unref);
+}
+
+void
+r_dtls13_rtx_arm (RDtls13Rtx * rtx, REvLoop * loop, REvFunc fire, rpointer ep)
+{
+  if (!rtx->capturing || loop == NULL || rtx->timer != NULL)
+    return;
+  if (r_ptr_array_size (&rtx->flight) == 0)
+    return;
+  r_ev_loop_add_callback_later (loop, &rtx->timer, rtx->timeout, fire, ep, NULL);
+}
+
+void
+r_dtls13_rtx_cancel (RDtls13Rtx * rtx, REvLoop * loop)
+{
+  if (rtx->timer != NULL) {
+    r_ev_loop_cancel_timer (loop, rtx->timer);
+    rtx->timer = NULL;
+  }
+  r_ptr_array_clear (&rtx->flight);
+  rtx->timeout = R_DTLS13_RTX_INITIAL;
+  rtx->tries = 0;
+}
+
+void
+r_dtls13_rtx_reschedule (RDtls13Rtx * rtx, REvLoop * loop, REvFunc fire, rpointer ep)
+{
+  rtx->timeout = MIN (rtx->timeout * 2, (RClockTimeDiff) R_DTLS13_RTX_MAX);
+  rtx->tries++;
+  r_ev_loop_add_callback_later (loop, &rtx->timer, rtx->timeout, fire, ep, NULL);
 }
 
 RTLSError
