@@ -110,14 +110,16 @@ r_tls13_record_aad (ruint8 * aad, rsize reclen)
   aad[4] = (ruint8) reclen;
 }
 
-rboolean
-r_tls13_record_protect (const RCryptoCipher * cipher,
-    const ruint8 * iv, rsize ivlen, ruint64 seq,
-    RTLSContentType type, const ruint8 * content, rsize contentlen,
-    ruint8 * out, rsize outsize, rsize * outlen)
+/* AEAD-seal a 1.3 record: TLSInnerPlaintext (content || type) under the nonce
+ * from @iv / @seq with @aad as additional_data. Shared by the TLS and DTLS 1.3
+ * record layers, which differ only in @aad (and, for DTLS, the seq encoding). */
+static rboolean
+r_tls13_seal (const RCryptoCipher * cipher, const ruint8 * iv, rsize ivlen,
+    ruint64 seq, const ruint8 * aad, rsize aadlen, RTLSContentType type,
+    const ruint8 * content, rsize contentlen, ruint8 * out, rsize outsize,
+    rsize * outlen)
 {
   ruint8 nonce[R_TLS13_AEAD_NONCE_MAX];
-  ruint8 aad[R_TLS13_RECORD_AAD_SIZE];
   rsize innerlen = contentlen + 1;        /* content || inner content type */
   rsize reclen = innerlen + R_TLS13_AEAD_TAG_SIZE;
 
@@ -127,14 +129,13 @@ r_tls13_record_protect (const RCryptoCipher * cipher,
   if (R_UNLIKELY (!r_tls13_aead_nonce (iv, ivlen, seq, nonce)))
     return FALSE;
 
-  /* TLSInnerPlaintext: assemble in place (the AEAD may encrypt in place). */
+  /* Assemble in place (the AEAD may encrypt in place). */
   if (contentlen != 0)
     r_memmove (out, content, contentlen);
   out[contentlen] = (ruint8) type;
-  r_tls13_record_aad (aad, reclen);
 
   if (R_UNLIKELY (r_crypto_cipher_encrypt_aead (cipher, out, innerlen, out,
-          aad, sizeof (aad), nonce, ivlen,
+          aad, aadlen, nonce, ivlen,
           out + innerlen, R_TLS13_AEAD_TAG_SIZE) != R_CRYPTO_CIPHER_OK))
     return FALSE;
 
@@ -142,14 +143,15 @@ r_tls13_record_protect (const RCryptoCipher * cipher,
   return TRUE;
 }
 
-rboolean
-r_tls13_record_unprotect (const RCryptoCipher * cipher,
-    const ruint8 * iv, rsize ivlen, ruint64 seq,
-    const ruint8 * record, rsize reclen,
-    ruint8 * out, rsize outsize, rsize * outlen, RTLSContentType * type)
+/* AEAD-open a 1.3 record sealed by r_tls13_seal, recovering the plaintext and
+ * its inner content type. Shared by the TLS and DTLS 1.3 record layers. */
+static rboolean
+r_tls13_open (const RCryptoCipher * cipher, const ruint8 * iv, rsize ivlen,
+    ruint64 seq, const ruint8 * aad, rsize aadlen, const ruint8 * record,
+    rsize reclen, ruint8 * out, rsize outsize, rsize * outlen,
+    RTLSContentType * type)
 {
   ruint8 nonce[R_TLS13_AEAD_NONCE_MAX];
-  ruint8 aad[R_TLS13_RECORD_AAD_SIZE];
   ruint8 tag[R_TLS13_AEAD_TAG_SIZE];
   rsize innerlen;
   rssize i;
@@ -163,10 +165,9 @@ r_tls13_record_unprotect (const RCryptoCipher * cipher,
   if (R_UNLIKELY (!r_tls13_aead_nonce (iv, ivlen, seq, nonce)))
     return FALSE;
 
-  r_tls13_record_aad (aad, reclen);
   r_memcpy (tag, record + innerlen, R_TLS13_AEAD_TAG_SIZE);
   if (R_UNLIKELY (r_crypto_cipher_decrypt_aead (cipher, out, innerlen, record,
-          aad, sizeof (aad), nonce, ivlen,
+          aad, aadlen, nonce, ivlen,
           tag, R_TLS13_AEAD_TAG_SIZE) != R_CRYPTO_CIPHER_OK))
     return FALSE;
 
@@ -180,6 +181,58 @@ r_tls13_record_unprotect (const RCryptoCipher * cipher,
   *type = (RTLSContentType) out[i];
   *outlen = (rsize) i;
   return TRUE;
+}
+
+rboolean
+r_tls13_record_protect (const RCryptoCipher * cipher,
+    const ruint8 * iv, rsize ivlen, ruint64 seq,
+    RTLSContentType type, const ruint8 * content, rsize contentlen,
+    ruint8 * out, rsize outsize, rsize * outlen)
+{
+  ruint8 aad[R_TLS13_RECORD_AAD_SIZE];
+
+  r_tls13_record_aad (aad, contentlen + 1 + R_TLS13_AEAD_TAG_SIZE);
+  return r_tls13_seal (cipher, iv, ivlen, seq, aad, sizeof (aad),
+      type, content, contentlen, out, outsize, outlen);
+}
+
+rboolean
+r_tls13_record_unprotect (const RCryptoCipher * cipher,
+    const ruint8 * iv, rsize ivlen, ruint64 seq,
+    const ruint8 * record, rsize reclen,
+    ruint8 * out, rsize outsize, rsize * outlen, RTLSContentType * type)
+{
+  ruint8 aad[R_TLS13_RECORD_AAD_SIZE];
+
+  r_tls13_record_aad (aad, reclen);
+  return r_tls13_open (cipher, iv, ivlen, seq, aad, sizeof (aad),
+      record, reclen, out, outsize, outlen, type);
+}
+
+rboolean
+r_dtls13_record_protect (const RCryptoCipher * cipher,
+    const ruint8 * iv, rsize ivlen, ruint64 seq,
+    const ruint8 * aad, rsize aadlen,
+    RTLSContentType type, const ruint8 * content, rsize contentlen,
+    ruint8 * out, rsize outsize, rsize * outlen)
+{
+  if (R_UNLIKELY (aad == NULL || aadlen == 0))
+    return FALSE;
+  return r_tls13_seal (cipher, iv, ivlen, seq, aad, aadlen,
+      type, content, contentlen, out, outsize, outlen);
+}
+
+rboolean
+r_dtls13_record_unprotect (const RCryptoCipher * cipher,
+    const ruint8 * iv, rsize ivlen, ruint64 seq,
+    const ruint8 * aad, rsize aadlen,
+    const ruint8 * record, rsize reclen,
+    ruint8 * out, rsize outsize, rsize * outlen, RTLSContentType * type)
+{
+  if (R_UNLIKELY (aad == NULL || aadlen == 0))
+    return FALSE;
+  return r_tls13_open (cipher, iv, ivlen, seq, aad, aadlen,
+      record, reclen, out, outsize, outlen, type);
 }
 
 rboolean
@@ -419,6 +472,24 @@ r_tls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
     return FALSE;
   out->ivlen = info->ivsize;
   out->seq = 0;
+  return TRUE;
+}
+
+rboolean
+r_dtls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
+    const RCryptoCipherInfo * info, ruint16 epoch, RTLS13RecordKeys * out)
+{
+  if (!r_tls13_traffic_keys (hash, secret, info, out))
+    return FALSE;
+
+  out->epoch = epoch;
+  if (R_UNLIKELY (!r_dtls13_sn_key (hash, secret, info->keybits / 8,
+          out->sn_key))) {
+    r_crypto_cipher_unref (out->cipher);
+    out->cipher = NULL;
+    return FALSE;
+  }
+  out->sn_keylen = info->keybits / 8;
   return TRUE;
 }
 

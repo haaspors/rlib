@@ -184,6 +184,80 @@ RTEST (rtls13, dtls13_sn_mask, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+/* Full DTLS 1.3 record round-trip: write a protected record with one set of keys
+ * and deprotect it with a matching set, over @info (a SHA-256 suite). */
+static void
+r_test_dtls13_record_roundtrip (const RCryptoCipherInfo * info)
+{
+  static const ruint8 secret[32] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+    0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f };
+  static const ruint8 content[] = {  /* a mock EncryptedExtensions, with a zero tail */
+    0x08, 0x00, 0x00, 0x02, 0x00, 0x00 };
+  RTLS13RecordKeys wk = R_TLS13_RECORD_KEYS_INIT, rk = R_TLS13_RECORD_KEYS_INIT;
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  ruint8 rec[64];
+  rsize reclen = 0;
+  ruint round;
+
+  r_assert_cmpptr (info, !=, NULL);
+  /* Epoch 2 (handshake) write and read keys derived from the same secret. */
+  r_assert (r_dtls13_traffic_keys (R_MSG_DIGEST_TYPE_SHA256, secret, info, 2, &wk));
+  r_assert (r_dtls13_traffic_keys (R_MSG_DIGEST_TYPE_SHA256, secret, info, 2, &rk));
+  r_assert_cmpuint (wk.epoch, ==, 2);
+  r_assert_cmpuint (wk.sn_keylen, ==, info->keybits / 8);
+
+  /* Two records in a row exercise the sequence-number masking / reconstruction. */
+  for (round = 0; round < 2; round++) {
+    wk.seq = round;
+    r_assert_cmpint (r_dtls_write_protected_record13 (rec, sizeof (rec), &reclen,
+          &wk, R_TLS_CONTENT_TYPE_HANDSHAKE, content, sizeof (content)),
+        ==, R_TLS_ERROR_OK);
+    r_assert (r_dtls13_is_unified_hdr (rec[0]));
+    r_assert_cmphex (rec[0] & 0x03, ==, 2);          /* epoch bits */
+
+    r_assert_cmpint (r_tls_parser_init (&parser, rec, reclen), ==, R_TLS_ERROR_OK);
+    r_assert (r_tls_parser_is_dtls (&parser));
+    rk.seq = round;
+    r_assert_cmpint (r_dtls_parser_unprotect13 (&parser, &rk), ==, R_TLS_ERROR_OK);
+    r_assert_cmphex (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+    r_assert_cmpuint (parser.seqno, ==, round);
+    r_assert_cmpuint (parser.fragment.size, ==, sizeof (content));
+    r_assert_cmpmem (parser.fragment.data, ==, content, sizeof (content));
+    r_tls_parser_clear (&parser);
+  }
+
+  /* A flipped ciphertext byte fails authentication. */
+  wk.seq = 0;
+  r_assert_cmpint (r_dtls_write_protected_record13 (rec, sizeof (rec), &reclen,
+        &wk, R_TLS_CONTENT_TYPE_HANDSHAKE, content, sizeof (content)),
+      ==, R_TLS_ERROR_OK);
+  rec[reclen - 1] ^= 0x01;
+  r_assert_cmpint (r_tls_parser_init (&parser, rec, reclen), ==, R_TLS_ERROR_OK);
+  rk.seq = 0;
+  r_assert_cmpint (r_dtls_parser_unprotect13 (&parser, &rk), ==, R_TLS_ERROR_INVALID_MAC);
+  r_tls_parser_clear (&parser);
+
+  r_crypto_cipher_unref (wk.cipher);
+  r_crypto_cipher_unref (rk.cipher);
+}
+
+RTEST (rtls13, dtls13_record_roundtrip_aesgcm, R_TEST_TYPE_FAST)
+{
+  r_test_dtls13_record_roundtrip (r_crypto_cipher_find_by_type (
+        R_CRYPTO_CIPHER_ALGO_AES, R_CRYPTO_CIPHER_MODE_GCM, 128));
+}
+RTEST_END;
+
+RTEST (rtls13, dtls13_record_roundtrip_chacha20, R_TEST_TYPE_FAST)
+{
+  r_test_dtls13_record_roundtrip (r_crypto_cipher_find_by_type (
+        R_CRYPTO_CIPHER_ALGO_CHACHA20, R_CRYPTO_CIPHER_MODE_POLY1305, 256));
+}
+RTEST_END;
+
 RTEST (rtls13, key_schedule_rfc8448, R_TEST_TYPE_FAST)
 {
   /* The Simple 1-RTT Handshake of RFC 8448, section 3

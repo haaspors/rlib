@@ -194,6 +194,63 @@ R_API rboolean r_dtls13_sn_mask (RCryptoCipherAlgorithm aead,
     const ruint8 * sn_key, rsize sn_keylen,
     const ruint8 * ciphertext, rsize ctlen, ruint8 * mask, rsize masklen);
 
+/**
+ * @brief Protect a DTLS 1.3 record (RFC 9147, section 5).
+ *
+ * As @ref r_tls13_record_protect, but the @c additional_data is the caller-
+ * supplied unified record header @p aad (carrying the plaintext sequence number)
+ * rather than the fixed TLS 1.3 header, and the nonce is built from the bare
+ * record sequence number (the epoch is excluded, RFC 9147 4.2.2).
+ *
+ * @param cipher     AEAD cipher keyed with the write traffic key.
+ * @param iv         Static write-IV; @p ivlen bytes.
+ * @param ivlen      Nonce length.
+ * @param seq        Record sequence number (48-bit) used for the nonce.
+ * @param aad        The unified record header (with plaintext sequence number).
+ * @param aadlen     Length of @p aad.
+ * @param type       Real content type of @p content.
+ * @param content    Plaintext payload; @p contentlen bytes.
+ * @param contentlen Payload length.
+ * @param out        Destination for the @c encrypted_record.
+ * @param outsize    Capacity of @p out in bytes.
+ * @param outlen     Out: bytes written to @p out.
+ * @return @c TRUE on success; @c FALSE on invalid arguments, too-small @p out,
+ *  or a cipher failure.
+ */
+R_API rboolean r_dtls13_record_protect (const RCryptoCipher * cipher,
+    const ruint8 * iv, rsize ivlen, ruint64 seq,
+    const ruint8 * aad, rsize aadlen,
+    RTLSContentType type, const ruint8 * content, rsize contentlen,
+    ruint8 * out, rsize outsize, rsize * outlen);
+
+/**
+ * @brief Unprotect a DTLS 1.3 record (RFC 9147, section 5).
+ *
+ * The DTLS counterpart of @ref r_tls13_record_unprotect: @p aad is the unified
+ * record header (with the plaintext sequence number) and @p seq is the
+ * reconstructed record sequence number for the nonce.
+ *
+ * @param cipher  AEAD cipher keyed with the read traffic key.
+ * @param iv      Static read-IV; @p ivlen bytes.
+ * @param ivlen   Nonce length.
+ * @param seq     Reconstructed record sequence number (48-bit) for the nonce.
+ * @param aad     The unified record header (with plaintext sequence number).
+ * @param aadlen  Length of @p aad.
+ * @param record  The @c encrypted_record (ciphertext + tag); @p reclen bytes.
+ * @param reclen  Length of @p record.
+ * @param out     Destination for the recovered plaintext.
+ * @param outsize Capacity of @p out in bytes.
+ * @param outlen  Out: plaintext length written to @p out.
+ * @param type    Out: recovered content type.
+ * @return @c TRUE on success; @c FALSE on invalid arguments, authentication
+ *  failure, an all-zero (typeless) plaintext, or too-small @p out.
+ */
+R_API rboolean r_dtls13_record_unprotect (const RCryptoCipher * cipher,
+    const ruint8 * iv, rsize ivlen, ruint64 seq,
+    const ruint8 * aad, rsize aadlen,
+    const ruint8 * record, rsize reclen,
+    ruint8 * out, rsize outsize, rsize * outlen, RTLSContentType * type);
+
 /** @brief Largest TLS 1.3 secret / digest, in bytes (SHA-384). */
 #define R_TLS13_SECRET_MAX        48
 
@@ -209,9 +266,12 @@ typedef struct {
   ruint8 iv[R_TLS13_AEAD_NONCE_MAX];  /**< @brief Static write/read IV. */
   rsize ivlen;                        /**< @brief IV length in bytes. */
   ruint64 seq;                        /**< @brief Record counter; resets on rekey. */
+  ruint16 epoch;                      /**< @brief DTLS 1.3 epoch (unused for TLS). */
+  ruint8 sn_key[R_TLS13_AEAD_NONCE_MAX]; /**< @brief DTLS 1.3 sequence-number key. */
+  rsize sn_keylen;                    /**< @brief @ref sn_key length; 0 marks the non-DTLS path. */
 } RTLS13RecordKeys;
 /** @brief Static initialiser for an empty @ref RTLS13RecordKeys. */
-#define R_TLS13_RECORD_KEYS_INIT    { NULL, { 0, }, 0, 0 }
+#define R_TLS13_RECORD_KEYS_INIT    { NULL, { 0, }, 0, 0, 0, { 0, }, 0 }
 
 /**
  * @brief TLS 1.3 1-RTT key schedule (RFC 8446, section 7.1).
@@ -381,6 +441,63 @@ R_API rboolean r_tls13_resumption_psk (RMsgDigestType hash,
  */
 R_API rboolean r_tls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
     const RCryptoCipherInfo * info, RTLS13RecordKeys * out);
+
+/**
+ * @brief Derive DTLS 1.3 record keys, including the sequence-number key.
+ *
+ * As @ref r_tls13_traffic_keys, and additionally stamps @p out->epoch and
+ * derives @p out->sn_key (@ref r_dtls13_sn_key). A non-zero @c out->sn_keylen
+ * marks these keys as DTLS 1.3 for the record-protection paths.
+ *
+ * @param hash   Cipher-suite hash.
+ * @param secret A traffic secret (@c HashLen bytes).
+ * @param info   AEAD cipher descriptor.
+ * @param epoch  DTLS 1.3 epoch these keys protect.
+ * @param out    Receives the keyed cipher, IV, epoch and sequence-number key.
+ * @return @c TRUE on success; @c FALSE on a derivation or cipher failure.
+ */
+R_API rboolean r_dtls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
+    const RCryptoCipherInfo * info, ruint16 epoch, RTLS13RecordKeys * out);
+
+/**
+ * @brief Build a complete DTLS 1.3 protected record (RFC 9147, sections 4-5).
+ *
+ * Writes the unified header, AEAD-seals @c content||type behind it, and masks
+ * the on-the-wire sequence number -- the full send-side record layer. The
+ * sequence number and epoch come from @p keys; the caller advances
+ * @c keys->seq afterwards.
+ *
+ * @param data       Destination buffer.
+ * @param size       Capacity of @p data in bytes.
+ * @param out        Out: record length written (may be @c NULL).
+ * @param keys       DTLS 1.3 write keys (@ref r_dtls13_traffic_keys).
+ * @param type       Real content type of @p content.
+ * @param content    Plaintext payload; @p contentlen bytes.
+ * @param contentlen Payload length.
+ * @return @c R_TLS_ERROR_OK, @c R_TLS_ERROR_INVAL, @c R_TLS_ERROR_BUF_TOO_SMALL,
+ *  or @c R_TLS_ERROR_ENCRYPTION_FAILED.
+ */
+R_API RTLSError r_dtls_write_protected_record13 (rpointer data, rsize size,
+    rsize * out, const RTLS13RecordKeys * keys, RTLSContentType type,
+    const ruint8 * content, rsize contentlen);
+
+/**
+ * @brief Deprotect the DTLS 1.3 record a parser is positioned on (RFC 9147 4-5).
+ *
+ * Recovers the sequence number from the masked header, AEAD-opens the
+ * @c encrypted_record with @p keys, and re-points @p parser at the recovered
+ * plaintext with @c parser->content set to the inner content type and
+ * @c parser->seqno to the reconstructed record sequence number. The caller
+ * advances @c keys->seq afterwards.
+ *
+ * @param parser Parser positioned on a unified-header record.
+ * @param keys   DTLS 1.3 read keys (@ref r_dtls13_traffic_keys);
+ *               @c keys->seq is the next expected sequence number.
+ * @return @c R_TLS_ERROR_OK, or @c R_TLS_ERROR_INVALID_MAC on authentication
+ *  failure / a malformed plaintext.
+ */
+R_API RTLSError r_dtls_parser_unprotect13 (RTLSParser * parser,
+    const RTLS13RecordKeys * keys);
 
 /**
  * @brief Advance an application-traffic secret one generation (RFC 8446, 7.2).
