@@ -166,6 +166,20 @@ R_API RTLSError r_tls_client_set_record_size_limit (RTLSClient * client,
 R_API RTLSError r_tls_client_set_connection_id (RTLSClient * client,
     const ruint8 * cid, ruint8 len);
 /**
+ * @brief Cap the DTLS 1.3 handshake fragment size (RFC 9147 5.5).
+ *
+ * Splits handshake messages whose body exceeds @p size into DTLS fragments so a
+ * large flight (e.g. the Certificate) fits the path MTU; the peer reassembles
+ * them. @p size 0 (the default) sends each message in a single record. Applies
+ * to DTLS 1.3 only; must be called before @ref r_tls_client_start.
+ *
+ * @param client The client.
+ * @param size   Maximum handshake fragment body in bytes, or 0 to disable.
+ * @return @c R_TLS_ERROR_OK or @c R_TLS_ERROR_WRONG_STATE.
+ */
+R_API RTLSError r_tls_client_set_dtls_handshake_fragment (RTLSClient * client,
+    ruint16 size);
+/**
  * @brief Offer the @c status_request extension to request a stapled OCSP
  * response (RFC 6066 / RFC 8446 4.4.2.1).
  *

@@ -934,6 +934,164 @@ r_dtls_parser_unprotect13 (RTLSParser * parser, const RTLS13RecordKeys * keys)
   return R_TLS_ERROR_OK;
 }
 
+RDtls13Reassembler *
+r_dtls13_reassembler_new (void)
+{
+  return r_mem_new0 (RDtls13Reassembler);
+}
+
+void
+r_dtls13_reassembler_free (RDtls13Reassembler * r)
+{
+  ruint i;
+
+  if (r == NULL)
+    return;
+  for (i = 0; i < R_DTLS13_REASM_SLOTS; i++)
+    r_free (r->slots[i].msg);
+  r_free (r);
+}
+
+static RDtls13ReasmSlot *
+r_dtls13_reasm_find (RDtls13Reassembler * r, ruint16 msgseq)
+{
+  ruint i;
+
+  for (i = 0; i < R_DTLS13_REASM_SLOTS; i++)
+    if (r->slots[i].active && r->slots[i].msgseq == msgseq)
+      return &r->slots[i];
+  return NULL;
+}
+
+/* Insert [start,end) into the slot's merged, sorted-by-nothing range set,
+ * absorbing any ranges it overlaps or touches. FALSE if the set overflows. */
+static rboolean
+r_dtls13_reasm_add_range (RDtls13ReasmSlot * s, ruint32 start, ruint32 end)
+{
+  ruint i;
+
+  if (start >= end)
+    return TRUE;
+  for (i = 0; i < s->nranges; ) {
+    if (s->rend[i] < start || s->rstart[i] > end) {
+      i++;
+      continue;
+    }
+    /* Overlapping or adjacent: absorb range i and remove it. */
+    if (s->rstart[i] < start) start = s->rstart[i];
+    if (s->rend[i] > end)     end = s->rend[i];
+    s->rstart[i] = s->rstart[s->nranges - 1];
+    s->rend[i]   = s->rend[s->nranges - 1];
+    s->nranges--;
+  }
+  if (s->nranges >= R_DTLS13_REASM_RANGES)
+    return FALSE;
+  s->rstart[s->nranges] = start;
+  s->rend[s->nranges]   = end;
+  s->nranges++;
+  return TRUE;
+}
+
+RTLSError
+r_dtls13_reassembler_push (RDtls13Reassembler * r, ruint8 type, ruint16 msgseq,
+    ruint32 len, ruint32 foff, const ruint8 * frag, ruint32 flen)
+{
+  RDtls13ReasmSlot * s;
+  ruint i;
+
+  if (R_UNLIKELY (r == NULL || (frag == NULL && flen != 0)))
+    return R_TLS_ERROR_INVAL;
+  if (msgseq < r->next)                       /* already delivered / duplicate */
+    return R_TLS_ERROR_OK;
+  if (R_UNLIKELY (len > R_DTLS13_MAX_HANDSHAKE ||
+        (ruint64) foff + flen > len))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  if ((s = r_dtls13_reasm_find (r, msgseq)) == NULL) {
+    for (i = 0; i < R_DTLS13_REASM_SLOTS; i++) {
+      if (!r->slots[i].active) { s = &r->slots[i]; break; }
+    }
+    if (s == NULL)
+      return R_TLS_ERROR_QUEUE_FULL;
+    if ((s->msg = r_malloc (R_DTLS_HS_HDR_SIZE + len)) == NULL)
+      return R_TLS_ERROR_OOM;
+    s->active = TRUE;
+    s->complete = FALSE;
+    s->msgseq = msgseq;
+    s->type = type;
+    s->len = len;
+    s->nranges = 0;
+    /* The reassembled (complete) DTLS handshake header: type | length |
+     * message_seq | fragment_offset=0 | fragment_length=length. */
+    s->msg[0]  = type;
+    s->msg[1]  = (ruint8) (len >> 16);
+    s->msg[2]  = (ruint8) (len >> 8);
+    s->msg[3]  = (ruint8) len;
+    s->msg[4]  = (ruint8) (msgseq >> 8);
+    s->msg[5]  = (ruint8) msgseq;
+    s->msg[6]  = s->msg[7] = s->msg[8] = 0;
+    s->msg[9]  = s->msg[1];
+    s->msg[10] = s->msg[2];
+    s->msg[11] = s->msg[3];
+  } else if (R_UNLIKELY (s->type != type || s->len != len)) {
+    return R_TLS_ERROR_CORRUPT_RECORD;        /* inconsistent with prior fragment */
+  }
+
+  if (flen > 0)
+    r_memcpy (s->msg + R_DTLS_HS_HDR_SIZE + foff, frag, flen);
+  if (!r_dtls13_reasm_add_range (s, foff, foff + flen))
+    return R_TLS_ERROR_QUEUE_FULL;
+  if (s->nranges == 1 && s->rstart[0] == 0 && s->rend[0] == len)
+    s->complete = TRUE;
+  return R_TLS_ERROR_OK;
+}
+
+ruint8 *
+r_dtls13_reassembler_next (RDtls13Reassembler * r, rsize * outlen)
+{
+  RDtls13ReasmSlot * s;
+  ruint8 * msg;
+
+  if (R_UNLIKELY (r == NULL))
+    return NULL;
+  if ((s = r_dtls13_reasm_find (r, r->next)) == NULL || !s->complete)
+    return NULL;
+
+  msg = s->msg;
+  if (outlen != NULL)
+    *outlen = R_DTLS_HS_HDR_SIZE + s->len;
+  s->msg = NULL;
+  s->active = FALSE;
+  s->complete = FALSE;
+  r->next++;
+  return msg;                                 /* ownership transfers to caller */
+}
+
+RTLSError
+r_dtls_parser_init_handshake13 (RTLSParser * parser, ruint8 * msg, rsize msglen)
+{
+  RBuffer * buf;
+
+  if (R_UNLIKELY (parser == NULL || msg == NULL)) {
+    r_free (msg);
+    return R_TLS_ERROR_INVAL;
+  }
+  if ((buf = r_buffer_new_take (msg, msglen)) == NULL) {
+    r_free (msg);
+    return R_TLS_ERROR_OOM;
+  }
+  r_memclear (parser, sizeof (*parser));
+  parser->buf = buf;                          /* parser owns it now */
+  parser->content = R_TLS_CONTENT_TYPE_HANDSHAKE;
+  parser->version = R_TLS_VERSION_DTLS_1_3;
+  parser->offset = 0;
+  parser->recsize = msglen;
+  if (!r_buffer_map_byte_range (buf, 0, (rssize) msglen, &parser->fragment,
+        R_MEM_MAP_READ))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+  return R_TLS_ERROR_OK;
+}
+
 RTLSError
 r_tls_parser_decrypt (RTLSParser * parser,
     const RCryptoCipher * cipher, RHmac * mac, rboolean etm, const ruint8 * salt)

@@ -311,6 +311,20 @@ R_API RTLSError r_tls_server_set_key_share_group (RTLSServer * server,
 R_API RTLSError r_tls_server_set_connection_id (RTLSServer * server,
     const ruint8 * cid, ruint8 len);
 /**
+ * @brief Cap the DTLS 1.3 handshake fragment size (RFC 9147 5.5).
+ *
+ * Splits handshake messages whose body exceeds @p size into DTLS fragments so a
+ * large flight (e.g. the Certificate) fits the path MTU; the peer reassembles
+ * them. @p size 0 (the default) sends each message in a single record. Applies
+ * to DTLS 1.3 only.
+ *
+ * @param server The server.
+ * @param size   Maximum handshake fragment body in bytes, or 0 to disable.
+ * @return @c R_TLS_ERROR_OK or @c R_TLS_ERROR_WRONG_STATE.
+ */
+R_API RTLSError r_tls_server_set_dtls_handshake_fragment (RTLSServer * server,
+    ruint16 size);
+/**
  * @brief Configure the application protocols the server supports for ALPN
  * (RFC 7301), in descending order of preference.
  *
