@@ -574,12 +574,13 @@ r_test_tls_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture, RTLSVersion ve
   r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
 }
 
-/* TLS 1.3 1-RTT loopback. The 1.3 suites have no entry in the 1.2-shaped
- * cipher-suite table, so get_cipher_suite is NULL here; we assert the handshake
- * completes, the negotiated version, the peer certificate, and an
- * application-data round-trip in both directions. */
+/* 1.3 1-RTT loopback over @version (TLS 1.3 or DTLS 1.3). The 1.3 suites have no
+ * entry in the 1.2-shaped cipher-suite table, so get_cipher_suite is NULL here;
+ * we assert the handshake completes, the negotiated version, the peer
+ * certificate, and an application-data round-trip in both directions. */
 static void
-r_test_tls13_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
+r_test_tls13_loopback_version (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture,
+    RTLSVersion version)
 {
   static const ruint8 c2s[] = { 'h', 'e', 'l', 'l', 'o', ' ', '1', '.', '3' };
   static const ruint8 s2c[] = { 'h', 'i', ' ', '1', '.', '3' };
@@ -588,7 +589,7 @@ r_test_tls13_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
   r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
       ==, R_TLS_ERROR_OK);
   r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
-        R_TLS_VERSION_TLS_1_3), ==, R_TLS_ERROR_OK);
+        version), ==, R_TLS_ERROR_OK);
 
   r_test_tls_loopback_pump (fixture);
 
@@ -599,7 +600,7 @@ r_test_tls13_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
 
   r_assert_cmpuint (fixture->verify_calls, ==, 1);
   r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), !=, NULL);
-  r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, R_TLS_VERSION_TLS_1_3);
+  r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, version);
   /* The negotiated 1.3 suite is reported (it has a cipher-suite table entry). */
   r_assert_cmpptr (r_tls_client_get_cipher_suite (fixture->client), !=, NULL);
   if (fixture->force_suite != R_TLS_CS_NONE) {
@@ -627,6 +628,13 @@ r_test_tls13_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
   r_buffer_unref (app);
   r_test_tls_loopback_pump (fixture);
   r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+}
+
+/* The bulk of the suite drives TLS 1.3; the versioned core also serves DTLS. */
+static void
+r_test_tls13_loopback (RTEST_FIXTURE_STRUCT (rtlsclient) * fixture)
+{
+  r_test_tls13_loopback_version (fixture, R_TLS_VERSION_TLS_1_3);
 }
 
 RTEST_F (rtlsclient, tls_loopback, RTEST_FAST)
@@ -1966,6 +1974,41 @@ RTEST_END;
 RTEST_F (rtlsclient, dtls_loopback, RTEST_FAST)
 {
   r_test_tls_loopback (fixture, R_TLS_VERSION_DTLS_1_2);
+}
+RTEST_END;
+
+/* DTLS 1.3 (RFC 9147) 1-RTT loopback over the unified record layer: the same
+ * 1.3 handshake as TLS, reframed onto DTLS records (unified header, encrypted
+ * sequence numbers, epochs). RSA server cert -> rsa_pss_rsae_sha256. */
+RTEST_F (rtlsclient, dtls13_loopback_rsa, RTEST_FAST)
+{
+  r_test_tls13_loopback_version (fixture, R_TLS_VERSION_DTLS_1_3);
+}
+RTEST_END;
+
+/* ECDSA server certificate over DTLS 1.3: CertificateVerify uses
+ * ecdsa_secp256r1_sha256. */
+RTEST_F (rtlsclient, dtls13_loopback_ecdsa, RTEST_FAST)
+{
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (testcertpem_ecdsa, -1)), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (testpkpem_ecdsa, -1, NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_tls_server_set_cert (fixture->server, cert, pk), ==, R_TLS_ERROR_OK);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+
+  r_test_tls13_loopback_version (fixture, R_TLS_VERSION_DTLS_1_3);
+}
+RTEST_END;
+
+/* DTLS 1.3 forcing the ChaCha20-Poly1305 suite: exercises the ChaCha20 variant
+ * of the record sequence-number masking on both endpoints. */
+RTEST_F (rtlsclient, dtls13_loopback_chacha20, RTEST_FAST)
+{
+  fixture->force_suite = R_TLS_CS_CHACHA20_POLY1305_SHA256;
+  r_test_tls13_loopback_version (fixture, R_TLS_VERSION_DTLS_1_3);
 }
 RTEST_END;
 

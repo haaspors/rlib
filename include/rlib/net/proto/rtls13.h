@@ -83,6 +83,8 @@ R_API rboolean r_tls13_derive_secret (RMsgDigestType hash,
 #define R_TLS13_AEAD_TAG_SIZE     16
 /** @brief Maximum AEAD record-nonce length, in bytes. */
 #define R_TLS13_AEAD_NONCE_MAX    16
+/** @brief Maximum AEAD key length, in bytes (AES-256 / ChaCha20 = 32). */
+#define R_TLS13_AEAD_KEY_MAX      32
 
 /**
  * @brief Build the per-record AEAD nonce (RFC 8446, section 5.3).
@@ -153,6 +155,15 @@ R_API rboolean r_tls13_record_unprotect (const RCryptoCipher * cipher,
 
 /** @brief Maximum DTLS 1.3 sequence-number length on the wire, in bytes. */
 #define R_DTLS13_SN_MAX           2
+
+/** @name DTLS 1.3 epochs (RFC 9147, section 6.1)
+ *  The epoch identifies the keys a record is protected under; each maps to one
+ *  traffic secret of the 1.3 key schedule.
+ *  @{ */
+#define R_DTLS13_EPOCH_EARLY        1  /**< @brief client_early_traffic_secret (0-RTT). */
+#define R_DTLS13_EPOCH_HANDSHAKE    2  /**< @brief [sender]_handshake_traffic_secret. */
+#define R_DTLS13_EPOCH_APPLICATION  3  /**< @brief [sender]_application_traffic_secret_0. */
+/** @} */
 
 /**
  * @brief Derive the DTLS 1.3 record-number protection key (RFC 9147, 4.2.3).
@@ -267,7 +278,7 @@ typedef struct {
   rsize ivlen;                        /**< @brief IV length in bytes. */
   ruint64 seq;                        /**< @brief Record counter; resets on rekey. */
   ruint16 epoch;                      /**< @brief DTLS 1.3 epoch (unused for TLS). */
-  ruint8 sn_key[R_TLS13_AEAD_NONCE_MAX]; /**< @brief DTLS 1.3 sequence-number key. */
+  ruint8 sn_key[R_TLS13_AEAD_KEY_MAX];/**< @brief DTLS 1.3 sequence-number key (AEAD-key length). */
   rsize sn_keylen;                    /**< @brief @ref sn_key length; 0 marks the non-DTLS path. */
 } RTLS13RecordKeys;
 /** @brief Static initialiser for an empty @ref RTLS13RecordKeys. */
