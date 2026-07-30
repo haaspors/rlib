@@ -113,6 +113,7 @@ typedef enum {
   R_TLS_CONTENT_TYPE_HANDSHAKE                          = 0x16, /* [RFC5246] */
   R_TLS_CONTENT_TYPE_APPLICATION_DATA                   = 0x17, /* [RFC5246] */
   R_TLS_CONTENT_TYPE_HEARTBEAT                          = 0x18, /* [RFC6520] */
+  R_TLS_CONTENT_TYPE_ACK                                = 0x1a, /* [RFC9147] DTLS 1.3 */
 
   R_TLS_CONTENT_TYPE_FIRST                              = R_TLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC, /**< Lowest valid content type. */
   R_TLS_CONTENT_TYPE_LAST                               = R_TLS_CONTENT_TYPE_HEARTBEAT /**< Highest valid content type. */
@@ -1097,6 +1098,43 @@ R_API RTLSError r_dtls13_parse_unified_hdr (const ruint8 * data, rsize size,
 R_API RTLSError r_dtls13_write_unified_hdr (rpointer data, rsize size,
     rsize * out, ruint8 epoch_bits, const ruint8 * cid, ruint8 cidlen,
     ruint16 seq, ruint8 seqlen, rboolean write_length, ruint16 length);
+
+/** @brief A DTLS 1.3 record identity: (epoch, sequence_number) (RFC 9147 7). */
+typedef struct {
+  ruint64 epoch;              /**< @brief Epoch of the acknowledged record. */
+  ruint64 seq;                /**< @brief Sequence number of the acknowledged record. */
+} RDtls13RecordNumber;
+
+/**
+ * @brief Write a DTLS 1.3 ACK message body (RFC 9147, section 7).
+ *
+ * Emits @c RecordNumber @c record_numbers<0..2^16-1>: a 16-bit byte-count
+ * prefix followed by @p count (epoch, sequence_number) pairs, each two 64-bit
+ * big-endian values. This is the content of an @c ack (@ref
+ * R_TLS_CONTENT_TYPE_ACK) record; the caller frames and protects it.
+ *
+ * @param data  Destination buffer.
+ * @param size  Capacity of @p data in bytes.
+ * @param out   Out: bytes written (may be @c NULL).
+ * @param nums  The record numbers to acknowledge.
+ * @param count Number of entries in @p nums.
+ * @return @c R_TLS_ERROR_OK, @c R_TLS_ERROR_INVAL, or @c R_TLS_ERROR_BUF_TOO_SMALL.
+ */
+R_API RTLSError r_dtls13_write_ack (rpointer data, rsize size, rsize * out,
+    const RDtls13RecordNumber * nums, rsize count);
+
+/**
+ * @brief Parse a DTLS 1.3 ACK message body (RFC 9147, section 7).
+ *
+ * @param data  ACK body, starting at the 16-bit length prefix.
+ * @param size  Bytes available in @p data.
+ * @param nums  Out: parsed record numbers (may be @c NULL to only count).
+ * @param count In/out: capacity of @p nums on entry, entries parsed on return.
+ * @return @c R_TLS_ERROR_OK, @c R_TLS_ERROR_INVAL, @c R_TLS_ERROR_CORRUPT_RECORD
+ *  on a malformed length, or @c R_TLS_ERROR_BUF_TOO_SMALL if @p nums is too small.
+ */
+R_API RTLSError r_dtls13_parse_ack (const ruint8 * data, rsize size,
+    RDtls13RecordNumber * nums, rsize * count);
 
 /**
  * @brief Write a TLS handshake record header into @p data.

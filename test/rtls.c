@@ -148,6 +148,55 @@ RTEST (rtls, dtls12_record_demux_guard, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rtls, dtls13_ack_roundtrip, RTEST_FAST)
+{
+  static const RDtls13RecordNumber nums[] = {
+    { 2, 0 }, { 2, 1 }, { 3, 0x0102030405060708ULL }
+  };
+  ruint8 buf[2 + 3 * 16];
+  RDtls13RecordNumber out[4];
+  rsize written = 0, count;
+
+  r_assert_cmpint (r_dtls13_write_ack (buf, sizeof (buf), &written,
+        nums, R_N_ELEMENTS (nums)), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (written, ==, 2 + 3 * 16);
+  r_assert_cmphex (buf[0], ==, 0x00);
+  r_assert_cmphex (buf[1], ==, 3 * 16);        /* byte-count prefix */
+
+  /* Count-only probe. */
+  count = 0;
+  r_assert_cmpint (r_dtls13_parse_ack (buf, written, NULL, &count), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (count, ==, 3);
+
+  count = R_N_ELEMENTS (out);
+  r_assert_cmpint (r_dtls13_parse_ack (buf, written, out, &count), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (count, ==, 3);
+  r_assert_cmpuint (out[0].epoch, ==, 2);   r_assert_cmpuint (out[0].seq, ==, 0);
+  r_assert_cmpuint (out[1].epoch, ==, 2);   r_assert_cmpuint (out[1].seq, ==, 1);
+  r_assert_cmpuint (out[2].epoch, ==, 3);
+  r_assert_cmphex (out[2].seq, ==, 0x0102030405060708ULL);
+
+  /* An empty ACK is well-formed (zero record numbers). */
+  r_assert_cmpint (r_dtls13_write_ack (buf, sizeof (buf), &written, NULL, 0),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (written, ==, 2);
+  count = R_N_ELEMENTS (out);
+  r_assert_cmpint (r_dtls13_parse_ack (buf, written, out, &count), ==, R_TLS_ERROR_OK);
+  r_assert_cmpuint (count, ==, 0);
+
+  /* Guards: short buffer, too-small output, a length not a multiple of 16. */
+  r_assert_cmpint (r_dtls13_write_ack (buf, 4, &written, nums, 3), ==, R_TLS_ERROR_BUF_TOO_SMALL);
+  count = 1;
+  r_assert_cmpint (r_dtls13_parse_ack (buf, 2, out, &count), ==, R_TLS_ERROR_OK);  /* empty fits */
+  {
+    static const ruint8 bad[] = { 0x00, 0x08, 0, 0, 0, 0, 0, 0, 0, 0 };  /* len 8, not %16 */
+    count = R_N_ELEMENTS (out);
+    r_assert_cmpint (r_dtls13_parse_ack (bad, sizeof (bad), out, &count),
+        ==, R_TLS_ERROR_CORRUPT_RECORD);
+  }
+}
+RTEST_END;
+
 RTEST (rtls, parse_dtls_client_hello, RTEST_FAST)
 {
   static const ruint8 pkt_dtls_client_hallo[] = {
