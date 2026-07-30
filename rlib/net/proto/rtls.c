@@ -869,7 +869,7 @@ r_dtls_parser_unprotect13 (RTLSParser * parser, const RTLS13RecordKeys * keys)
   ruint8 mask[R_DTLS13_SN_MAX];
   ruint64 seq;
   ruint16 low;
-  rsize plainlen = 0, seqoff = 1 + parser->cidlen, i;
+  rsize plainlen = 0, seqoff, i;
   ruint8 seqlen;
   RTLSContentType inner;
 
@@ -891,7 +891,10 @@ r_dtls_parser_unprotect13 (RTLSParser * parser, const RTLS13RecordKeys * keys)
   r_memcpy (aad, info.data, parser->offset);
   r_buffer_unmap (parser->buf, &info);
 
+  /* Locate the sequence number from the record's own flags: a connection id is
+   * only present when the C bit is set. */
   seqlen = ((aad[0] & 0x08) != 0) ? 2 : 1;
+  seqoff = 1 + (((aad[0] & 0x10) != 0) ? parser->cidlen : 0);
   if (R_UNLIKELY (!r_dtls13_sn_mask (keys->cipher->info->type, keys->sn_key,
           keys->sn_keylen, parser->fragment.data, parser->fragment.size,
           mask, seqlen)))
@@ -1041,7 +1044,9 @@ r_dtls13_reassembler_push (RDtls13Reassembler * r, ruint8 type, ruint16 msgseq,
     r_memcpy (s->msg + R_DTLS_HS_HDR_SIZE + foff, frag, flen);
   if (!r_dtls13_reasm_add_range (s, foff, foff + flen))
     return R_TLS_ERROR_QUEUE_FULL;
-  if (s->nranges == 1 && s->rstart[0] == 0 && s->rend[0] == len)
+  /* An empty-body message (e.g. EndOfEarlyData) covers no bytes, so it is
+   * complete on its first fragment; otherwise a single [0,len) range means done. */
+  if (len == 0 || (s->nranges == 1 && s->rstart[0] == 0 && s->rend[0] == len))
     s->complete = TRUE;
   return R_TLS_ERROR_OK;
 }

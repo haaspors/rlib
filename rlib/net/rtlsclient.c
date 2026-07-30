@@ -151,8 +151,6 @@ struct RTLSClient {
   RClockTimeDiff rtx_timeout;
   ruint rtx_tries;
   rboolean rtx_capturing;               /* accumulate emitted records into the flight */
-  RDtls13RecordNumber rx_acks[R_DTLS13_ACK_MAX]; /* received handshake records to ACK */
-  ruint rx_nacks;
 
   RTLS13Schedule sched13;               /* 1-RTT key schedule */
   RTLS13RecordKeys rk_write, rk_read;   /* installed 1.3 record keys */
@@ -3666,13 +3664,22 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
           r_dtls13_is_unified_hdr ((ruint8) parser.content)) {
         if ((err = r_dtls_parser_unprotect13 (&parser, &client->rk_read))
             != R_TLS_ERROR_OK) {
-          R_LOG_WARNING ("DTLS 1.3 record unprotect returned: %d", err);
+          /* DTLS silently discards records that fail to deprotect (RFC 9147 4.5.2). */
+          R_LOG_TRACE ("DTLS 1.3 record unprotect returned: %d (dropped)", err);
+          err = R_TLS_ERROR_OK;
           continue;
         }
         /* Drop replays / too-old records once authenticated (RFC 9147 4.5.1). */
         if (!r_dtls13_replay_check (&client->rk_read, parser.seqno))
           continue;
         client->rk_read.seq++;
+        /* A record in the application epoch implicitly acknowledges our final
+         * flight (RFC 9147 5.8.3): stop retransmitting even without an ACK. */
+        if (client->rtx_capturing &&
+            client->rk_read.epoch >= R_DTLS13_EPOCH_APPLICATION) {
+          r_tls_client_rtx_cancel (client);
+          client->rtx_capturing = FALSE;
+        }
       }
     } else if (client->tls13) {
       /* TLS 1.3: ignore middlebox-compat ChangeCipherSpec; protected records

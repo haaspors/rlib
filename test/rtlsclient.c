@@ -2195,6 +2195,91 @@ RTEST_F (rtlsclient, dtls13_retransmit_lost_flight, RTEST_FAST)
 }
 RTEST_END;
 
+/* DTLS silently discards records that fail to deprotect (RFC 9147 4.5.2): an
+ * injected / corrupt datagram must not tear down an established session. */
+RTEST_F (rtlsclient, dtls13_corrupt_record_dropped, RTEST_FAST)
+{
+  /* A well-formed unified header (epoch 3, 16-bit seq, length) over garbage that
+   * cannot authenticate. */
+  ruint8 bogus[5 + 18];
+  static const ruint8 payload[] = { 'o', 'k' };
+  RBuffer * rec, * app;
+  rsize i;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+
+  bogus[0] = 0x2f;                       /* 001 0 1 1 11 */
+  bogus[1] = 0x00; bogus[2] = 0x00;      /* sequence */
+  bogus[3] = 0x00; bogus[4] = 18;        /* length */
+  for (i = 0; i < 18; i++)
+    bogus[5 + i] = (ruint8) (0x11 * i);
+  r_assert_cmpptr ((rec = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          bogus, sizeof (bogus), sizeof (bogus), 0, NULL, NULL)), !=, NULL);
+  r_tls_server_incoming_data (fixture->server, rec);
+  r_buffer_unref (rec);
+  r_assert (!fixture->srv_error);        /* the connection survives */
+
+  /* And normal application data still flows afterwards. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) payload, sizeof (payload), sizeof (payload), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, payload, sizeof (payload));
+  r_assert (!fixture->srv_error);
+}
+RTEST_END;
+
+/* Implicit acknowledgment (RFC 9147 5.8.3): if the server's ACK is lost, an
+ * application-epoch record still tells the client its Finished arrived, so it
+ * stops retransmitting instead of eventually failing. */
+RTEST_F (rtlsclient, dtls13_implicit_ack_stops_retransmit, RTEST_FAST)
+{
+  static const ruint8 s2c[] = { 'h', 'i' };
+  RBuffer * buf, * app;
+  RClockTime now;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+
+  /* ClientHello -> server; server flight -> client; client Finished -> server. */
+  while ((buf = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_tls_server_incoming_data (fixture->server, buf); r_buffer_unref (buf); }
+  while ((buf = r_queue_pop (&fixture->srv_out)) != NULL) {
+    r_tls_client_incoming_data (fixture->client, buf); r_buffer_unref (buf); }
+  r_assert (fixture->cli_hs_done);
+  while ((buf = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_tls_server_incoming_data (fixture->server, buf); r_buffer_unref (buf); }
+  r_assert (fixture->srv_hs_done);
+
+  /* Lose the server's ACK; only an implicit ack can now stop the client. */
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+
+  /* Server application data (next epoch) implicitly acknowledges the Finished. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  while ((buf = r_queue_pop (&fixture->srv_out)) != NULL) {
+    r_tls_client_incoming_data (fixture->client, buf); r_buffer_unref (buf); }
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+
+  /* The retransmit timer is cancelled: advancing time retransmits nothing. */
+  now = r_clock_get_time (fixture->clock);
+  r_assert (r_test_clock_update_time (fixture->clock, now + 10 * R_SECOND));
+  r_ev_loop_run (fixture->evloop, R_EV_LOOP_RUN_NOWAIT);
+  r_assert (r_queue_is_empty (&fixture->cli_out));   /* no retransmitted Finished */
+  r_assert (!fixture->cli_error);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */
