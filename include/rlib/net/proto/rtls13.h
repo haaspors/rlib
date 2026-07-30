@@ -280,9 +280,28 @@ typedef struct {
   ruint16 epoch;                      /**< @brief DTLS 1.3 epoch (unused for TLS). */
   ruint8 sn_key[R_TLS13_AEAD_KEY_MAX];/**< @brief DTLS 1.3 sequence-number key (AEAD-key length). */
   rsize sn_keylen;                    /**< @brief @ref sn_key length; 0 marks the non-DTLS path. */
+  ruint64 replay_max;                 /**< @brief Highest accepted record seq (anti-replay). */
+  ruint64 replay_bitmap;              /**< @brief Sliding-window bitmap; bit i = replay_max - i seen. */
 } RTLS13RecordKeys;
 /** @brief Static initialiser for an empty @ref RTLS13RecordKeys. */
-#define R_TLS13_RECORD_KEYS_INIT    { NULL, { 0, }, 0, 0, 0, { 0, }, 0 }
+#define R_TLS13_RECORD_KEYS_INIT    { NULL, { 0, }, 0, 0, 0, { 0, }, 0, 0, 0 }
+
+/** @brief DTLS 1.3 anti-replay sliding-window width, in records (RFC 9147 4.5.1). */
+#define R_DTLS13_REPLAY_WINDOW    64
+
+/**
+ * @brief DTLS 1.3 anti-replay check for a deprotected record (RFC 9147, 4.5.1).
+ *
+ * Tests the (reconstructed) record sequence number @p seq against the sliding
+ * window in @p keys and, when it is new, records it. Call only after the record
+ * authenticates, so a forged sequence number cannot poke a hole in the window.
+ *
+ * @param keys Read keys carrying the window (@ref replay_max / @ref replay_bitmap).
+ * @param seq  The reconstructed record sequence number.
+ * @return @c TRUE if @p seq is new (and now recorded); @c FALSE if it is a
+ *  replay or older than the window.
+ */
+R_API rboolean r_dtls13_replay_check (RTLS13RecordKeys * keys, ruint64 seq);
 
 /**
  * @brief TLS 1.3 1-RTT key schedule (RFC 8446, section 7.1).

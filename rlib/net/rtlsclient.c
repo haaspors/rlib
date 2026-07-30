@@ -3424,6 +3424,9 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
           R_LOG_WARNING ("DTLS 1.3 record unprotect returned: %d", err);
           continue;
         }
+        /* Drop replays / too-old records once authenticated (RFC 9147 4.5.1). */
+        if (!r_dtls13_replay_check (&client->rk_read, parser.seqno))
+          continue;
         client->rk_read.seq++;
       }
     } else if (client->tls13) {

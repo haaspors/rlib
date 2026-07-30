@@ -476,6 +476,31 @@ r_tls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
 }
 
 rboolean
+r_dtls13_replay_check (RTLS13RecordKeys * keys, ruint64 seq)
+{
+  if (R_UNLIKELY (keys == NULL))
+    return FALSE;
+
+  if (seq > keys->replay_max) {
+    /* Advance the window to the new high-water mark. */
+    ruint64 diff = seq - keys->replay_max;
+    keys->replay_bitmap = (diff < R_DTLS13_REPLAY_WINDOW) ?
+        (keys->replay_bitmap << diff) : 0;
+    keys->replay_bitmap |= 1;                 /* bit 0 marks replay_max itself */
+    keys->replay_max = seq;
+    return TRUE;
+  } else {
+    ruint64 diff = keys->replay_max - seq;
+    if (diff >= R_DTLS13_REPLAY_WINDOW)       /* older than the window */
+      return FALSE;
+    if ((keys->replay_bitmap & (RUINT64_CONSTANT (1) << diff)) != 0)
+      return FALSE;                           /* already seen */
+    keys->replay_bitmap |= (RUINT64_CONSTANT (1) << diff);
+    return TRUE;
+  }
+}
+
+rboolean
 r_dtls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
     const RCryptoCipherInfo * info, ruint16 epoch, RTLS13RecordKeys * out)
 {
@@ -483,6 +508,10 @@ r_dtls13_traffic_keys (RMsgDigestType hash, const ruint8 * secret,
     return FALSE;
 
   out->epoch = epoch;
+  /* Each epoch has its own record-sequence space, so the anti-replay window
+   * restarts with the keys (RFC 9147 4.5.1). */
+  out->replay_max = 0;
+  out->replay_bitmap = 0;
   if (R_UNLIKELY (!r_dtls13_sn_key (hash, secret, info->keybits / 8,
           out->sn_key))) {
     r_crypto_cipher_unref (out->cipher);

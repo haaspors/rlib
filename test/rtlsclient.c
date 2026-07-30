@@ -2025,6 +2025,44 @@ RTEST_F (rtlsclient, dtls13_loopback_hrr, RTEST_FAST)
 }
 RTEST_END;
 
+/* A replayed DTLS 1.3 record is dropped by the anti-replay window (RFC 9147
+ * 4.5.1): deliver an application-data record once, then re-deliver the identical
+ * record; the second copy authenticates but is not surfaced a second time. */
+RTEST_F (rtlsclient, dtls13_replay_dropped, RTEST_FAST)
+{
+  static const ruint8 payload[] = { 'r', 'e', 'p', 'l', 'a', 'y' };
+  RBuffer * app, * rec, * dup;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done);
+  r_assert (fixture->srv_hs_done);
+
+  /* Client sends one application-data record. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) payload, sizeof (payload), sizeof (payload), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_assert_cmpptr ((rec = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  dup = r_buffer_ref (rec);   /* keep an identical copy to replay */
+
+  /* First delivery is accepted and surfaced. */
+  r_tls_server_incoming_data (fixture->server, rec);
+  r_buffer_unref (rec);
+  r_test_tls_assert_appdata (&fixture->srv_app, payload, sizeof (payload));
+
+  /* The replay authenticates (valid record) but the window drops it: no new
+   * application data and no error. */
+  r_tls_server_incoming_data (fixture->server, dup);
+  r_buffer_unref (dup);
+  r_assert (r_queue_is_empty (&fixture->srv_app));
+  r_assert (!fixture->srv_error);
+}
+RTEST_END;
+
 /* The client offers SNI; the server's selection callback sees the name and
  * installs a per-name certificate, which the client then receives. */
 RTEST_F (rtlsclient, sni_selects_cert, RTEST_FAST)
