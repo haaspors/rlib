@@ -799,6 +799,137 @@ r_tls_parser_unprotect13 (RTLSParser * parser, const RCryptoCipher * cipher,
   return R_TLS_ERROR_OK;
 }
 
+/* Reconstruct the full 48-bit record sequence number from its low @seqlen bytes
+ * @low and the next-expected value @expected, choosing the candidate closest to
+ * @expected (RFC 9147 4.2.2). For in-order delivery this is simply @expected. */
+static ruint64
+r_dtls13_reconstruct_seq (ruint64 expected, ruint64 low, ruint8 seqlen)
+{
+  ruint64 span = (seqlen == 2) ? 0x10000 : 0x100;
+  ruint64 half = span >> 1;
+  ruint64 cand = (expected & ~(span - 1)) | (low & (span - 1));
+
+  if (cand + half < expected)
+    cand += span;
+  else if (cand >= span && cand > expected + half)
+    cand -= span;
+  return cand;
+}
+
+RTLSError
+r_dtls_write_protected_record13 (rpointer data, rsize size, rsize * out,
+    const RTLS13RecordKeys * keys, RTLSContentType type,
+    const ruint8 * content, rsize contentlen)
+{
+  ruint8 * rec = data;
+  ruint8 mask[R_DTLS13_SN_MAX];
+  rsize hdrlen = 0, enclen = 0, reclen = contentlen + 1 + R_TLS13_AEAD_TAG_SIZE;
+  RTLSError ret;
+
+  if (R_UNLIKELY (data == NULL || keys == NULL || keys->cipher == NULL ||
+        keys->sn_keylen == 0))
+    return R_TLS_ERROR_INVAL;
+
+  /* Unified header carrying the plaintext sequence number (the AEAD's AAD); a
+   * 16-bit sequence and an explicit length keep records self-delimiting so a
+   * datagram may carry more than one. */
+  ret = r_dtls13_write_unified_hdr (rec, size, &hdrlen, (ruint8) keys->epoch,
+      NULL, 0, (ruint16) keys->seq, 2, TRUE, (ruint16) reclen);
+  if (R_UNLIKELY (ret != R_TLS_ERROR_OK))
+    return ret;
+
+  if (R_UNLIKELY (!r_dtls13_record_protect (keys->cipher, keys->iv, keys->ivlen,
+          keys->seq, rec, hdrlen, type, content, contentlen,
+          rec + hdrlen, size - hdrlen, &enclen)))
+    return R_TLS_ERROR_ENCRYPTION_FAILED;
+
+  /* Mask the on-the-wire sequence number from the ciphertext (RFC 9147 4.2.3).
+   * The header's two seq octets sit right after the flags byte (no CID). */
+  if (R_UNLIKELY (!r_dtls13_sn_mask (keys->cipher->info->type, keys->sn_key,
+          keys->sn_keylen, rec + hdrlen, enclen, mask, 2)))
+    return R_TLS_ERROR_ENCRYPTION_FAILED;
+  rec[1] ^= mask[0];
+  rec[2] ^= mask[1];
+
+  if (out != NULL)
+    *out = hdrlen + enclen;
+  return R_TLS_ERROR_OK;
+}
+
+RTLSError
+r_dtls_parser_unprotect13 (RTLSParser * parser, const RTLS13RecordKeys * keys)
+{
+  RBuffer * buf, * replace;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint8 aad[R_DTLS13_UNIFIED_HDR_MAX];
+  ruint8 mask[R_DTLS13_SN_MAX];
+  ruint64 seq;
+  ruint16 low;
+  rsize plainlen = 0, seqoff = 1, i;
+  ruint8 seqlen;
+  RTLSContentType inner;
+
+  if (R_UNLIKELY (parser == NULL || keys == NULL || keys->cipher == NULL ||
+        keys->sn_keylen == 0))
+    return R_TLS_ERROR_INVAL;
+  if (R_UNLIKELY (parser->offset > sizeof (aad)))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+  /* A record past the AEAD tag is at least 17 bytes, satisfying the 16-byte
+   * ciphertext sample the sequence-number mask needs (RFC 9147 4.2.3). */
+  if (R_UNLIKELY (parser->fragment.size <= R_TLS13_AEAD_TAG_SIZE))
+    return R_TLS_ERROR_CORRUPT_RECORD;
+
+  /* Rebuild the additional_data from the record header, replacing the masked
+   * sequence number with its plaintext value. */
+  if (!r_buffer_map_byte_range (parser->buf, 0, (rssize) parser->offset,
+        &info, R_MEM_MAP_READ))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+  r_memcpy (aad, info.data, parser->offset);
+  r_buffer_unmap (parser->buf, &info);
+
+  seqlen = ((aad[0] & 0x08) != 0) ? 2 : 1;
+  if (R_UNLIKELY (!r_dtls13_sn_mask (keys->cipher->info->type, keys->sn_key,
+          keys->sn_keylen, parser->fragment.data, parser->fragment.size,
+          mask, seqlen)))
+    return R_TLS_ERROR_INVALID_MAC;
+  for (i = 0; i < seqlen; i++)
+    aad[seqoff + i] ^= mask[i];
+  low = (seqlen == 2) ? r_load_be16 (&aad[seqoff]) : aad[seqoff];
+  seq = r_dtls13_reconstruct_seq (keys->seq, low, seqlen);
+
+  if ((buf = r_buffer_new_alloc (NULL, parser->fragment.size, NULL)) == NULL)
+    return R_TLS_ERROR_OOM;
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_WRITE)) {
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_OOM;
+  }
+  if (!r_dtls13_record_unprotect (keys->cipher, keys->iv, keys->ivlen, seq,
+        aad, parser->offset, parser->fragment.data, parser->fragment.size,
+        info.data, info.size, &plainlen, &inner)) {
+    r_buffer_unmap (buf, &info);
+    r_buffer_unref (buf);
+    return R_TLS_ERROR_INVALID_MAC;
+  }
+  r_buffer_unmap (buf, &info);
+  r_buffer_set_size (buf, plainlen);
+
+  replace = r_buffer_replace_byte_range (parser->buf,
+      parser->offset, parser->fragment.size, buf);
+  r_buffer_unref (buf);
+  r_buffer_unmap (parser->buf, &parser->fragment);
+  r_buffer_unref (parser->buf);
+  parser->buf = replace;
+  parser->recsize = parser->offset + plainlen;
+  parser->content = inner;
+  parser->seqno = seq;
+
+  if (!r_buffer_map_byte_range (parser->buf, parser->offset, (rssize) plainlen,
+        &parser->fragment, R_MEM_MAP_READ))
+    return R_TLS_ERROR_BUF_TOO_SMALL;
+
+  return R_TLS_ERROR_OK;
+}
+
 RTLSError
 r_tls_parser_decrypt (RTLSParser * parser,
     const RCryptoCipher * cipher, RHmac * mac, rboolean etm, const ruint8 * salt)
