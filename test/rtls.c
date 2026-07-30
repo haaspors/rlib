@@ -110,6 +110,44 @@ RTEST (rtls, dtls13_parse_protected_record, RTEST_FAST)
 }
 RTEST_END;
 
+/* The DTLS 1.3 unified-header demux (first byte 001xxxxx) must never fire on a
+ * classic DTLS 1.2 record: those carry a real content type (0x14..0x18) and are
+ * parsed with the 13-byte DTLSPlaintext header. A guard for the DTLS 1.2 record
+ * path against the unified-header detection added for DTLS 1.3. */
+RTEST (rtls, dtls12_record_demux_guard, RTEST_FAST)
+{
+  /* A DTLS 1.2 handshake record: type 0x16, version 0xfefd, epoch 1, seqno 7. */
+  ruint8 rec[R_DTLS_RECORD_HDR_SIZE + 5];
+  RTLSParser parser = R_TLS_PARSER_INIT;
+  RTLSContentType ct;
+
+  rec[0] = R_TLS_CONTENT_TYPE_HANDSHAKE;      /* 0x16 */
+  rec[1] = 0xfe; rec[2] = 0xfd;               /* DTLS 1.2 */
+  rec[3] = 0x00; rec[4] = 0x01;               /* epoch */
+  rec[5] = 0; rec[6] = 0; rec[7] = 0; rec[8] = 0; rec[9] = 0; rec[10] = 7;  /* seqno */
+  rec[11] = 0x00; rec[12] = 0x05;             /* fragment length */
+  rec[13] = 0xaa; rec[14] = 0xbb; rec[15] = 0xcc; rec[16] = 0xdd; rec[17] = 0xee;
+
+  r_assert (!r_dtls13_is_unified_hdr (rec[0]));   /* 0x16 is not a unified header */
+  r_assert_cmpint (r_tls_parser_init (&parser, rec, sizeof (rec)), ==, R_TLS_ERROR_OK);
+  r_assert (r_tls_parser_is_dtls (&parser));
+  r_assert_cmphex (parser.content, ==, R_TLS_CONTENT_TYPE_HANDSHAKE);
+  r_assert_cmphex (parser.version, ==, R_TLS_VERSION_DTLS_1_2);
+  r_assert_cmpuint (parser.epoch, ==, 1);
+  r_assert_cmpuint (parser.seqno, ==, 7);
+  r_assert_cmpuint (parser.offset, ==, R_DTLS_RECORD_HDR_SIZE);   /* 13, not a unified header */
+  r_assert_cmpuint (parser.fragment.size, ==, 5);
+  r_tls_parser_clear (&parser);
+
+  /* The demux boundary: every real content type is classic, only 0x20..0x3f is
+   * the unified header. */
+  for (ct = R_TLS_CONTENT_TYPE_FIRST; ct <= R_TLS_CONTENT_TYPE_LAST; ct++)
+    r_assert (!r_dtls13_is_unified_hdr ((ruint8) ct));
+  r_assert (r_dtls13_is_unified_hdr (0x20));
+  r_assert (r_dtls13_is_unified_hdr (0x3f));
+}
+RTEST_END;
+
 RTEST (rtls, parse_dtls_client_hello, RTEST_FAST)
 {
   static const ruint8 pkt_dtls_client_hallo[] = {
