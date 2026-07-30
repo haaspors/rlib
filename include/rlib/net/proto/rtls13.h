@@ -151,6 +151,49 @@ R_API rboolean r_tls13_record_unprotect (const RCryptoCipher * cipher,
     const ruint8 * record, rsize reclen,
     ruint8 * out, rsize outsize, rsize * outlen, RTLSContentType * type);
 
+/** @brief Maximum DTLS 1.3 sequence-number length on the wire, in bytes. */
+#define R_DTLS13_SN_MAX           2
+
+/**
+ * @brief Derive the DTLS 1.3 record-number protection key (RFC 9147, 4.2.3).
+ *
+ * @c sn_key = HKDF-Expand-Label(secret, "sn", "", key_length): a key, the same
+ * length as the AEAD key, that masks the on-the-wire record sequence number.
+ *
+ * @param hash   Digest of the cipher suite.
+ * @param secret The traffic secret to expand; @c HashLen bytes.
+ * @param keylen Key length in bytes (the AEAD key length: 16 or 32).
+ * @param sn_key Destination for @p keylen bytes.
+ * @return @c TRUE on success; @c FALSE on invalid arguments.
+ */
+R_API rboolean r_dtls13_sn_key (RMsgDigestType hash, const ruint8 * secret,
+    rsize keylen, ruint8 * sn_key);
+
+/**
+ * @brief Compute the DTLS 1.3 sequence-number mask (RFC 9147, 4.2.3).
+ *
+ * Derives the mask that encrypts (or decrypts) the record sequence number from a
+ * ciphertext sample. For an AES AEAD the mask is @c AES-ECB(sn_key,
+ * Ciphertext[0..15]); for ChaCha20 it is the ChaCha20 block keystream with
+ * @c Ciphertext[0..3] as the (little-endian) block counter and
+ * @c Ciphertext[4..15] as the nonce. The caller XORs the @p masklen leading mask
+ * bytes onto the on-the-wire sequence-number bytes.
+ *
+ * @param aead      AEAD algorithm family: @c R_CRYPTO_CIPHER_ALGO_AES or
+ *                  @c R_CRYPTO_CIPHER_ALGO_CHACHA20.
+ * @param sn_key    The sequence-number key from @ref r_dtls13_sn_key.
+ * @param sn_keylen Key length in bytes (16 or 32 for AES; 32 for ChaCha20).
+ * @param ciphertext The record ciphertext sample; @p ctlen bytes.
+ * @param ctlen     Length of @p ciphertext; must be at least 16.
+ * @param mask      Destination for @p masklen mask bytes.
+ * @param masklen   Number of mask bytes to produce; 1..@ref R_DTLS13_SN_MAX.
+ * @return @c TRUE on success; @c FALSE on invalid arguments, a too-short
+ *  ciphertext, or a cipher failure.
+ */
+R_API rboolean r_dtls13_sn_mask (RCryptoCipherAlgorithm aead,
+    const ruint8 * sn_key, rsize sn_keylen,
+    const ruint8 * ciphertext, rsize ctlen, ruint8 * mask, rsize masklen);
+
 /** @brief Largest TLS 1.3 secret / digest, in bytes (SHA-384). */
 #define R_TLS13_SECRET_MAX        48
 
