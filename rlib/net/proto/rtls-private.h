@@ -29,9 +29,19 @@
 #include <rlib/crypto/rkey.h>
 #include <rlib/crypto/rmsgdigest.h>
 #include <rlib/rrand.h>
+#include <rlib/rtime.h>
 #include <rlib/rtypes.h>
+#include <rlib/data/rptrarray.h>
 
 R_BEGIN_DECLS
+
+/* --- DTLS 1.3 flight retransmission (RFC 9147 5.8) + ACKs (7) ----------------
+ * The handshake retransmits its last flight on a timer with exponential backoff
+ * until the peer's response (or an ACK) confirms delivery. */
+#define R_DTLS13_RTX_INITIAL      (R_SECOND)        /* initial retransmit timeout */
+#define R_DTLS13_RTX_MAX          (60 * R_SECOND)   /* backoff ceiling */
+#define R_DTLS13_RTX_TRIES        8                 /* give up after this many */
+#define R_DTLS13_ACK_MAX          16                /* record numbers tracked per ACK */
 
 /* --- DTLS 1.3 handshake reassembly (RFC 9147 5.5) ----------------------------
  * Buffers fragmented / out-of-order handshake messages keyed by message_seq and
