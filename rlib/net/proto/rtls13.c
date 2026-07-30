@@ -19,6 +19,8 @@
 #include "config.h"
 #include <rlib/net/proto/rtls13.h>
 
+#include <rlib/crypto/raes.h>
+#include <rlib/crypto/rchacha20.h>
 #include <rlib/crypto/rkdf.h>
 #include <rlib/crypto/rhmac.h>
 #include <rlib/rmem.h>
@@ -178,6 +180,59 @@ r_tls13_record_unprotect (const RCryptoCipher * cipher,
   *type = (RTLSContentType) out[i];
   *outlen = (rsize) i;
   return TRUE;
+}
+
+rboolean
+r_dtls13_sn_key (RMsgDigestType hash, const ruint8 * secret,
+    rsize keylen, ruint8 * sn_key)
+{
+  return r_tls13_expand_label (hash, secret, R_STR_WITH_SIZE_ARGS ("sn"),
+      NULL, 0, sn_key, keylen);
+}
+
+rboolean
+r_dtls13_sn_mask (RCryptoCipherAlgorithm aead, const ruint8 * sn_key,
+    rsize sn_keylen, const ruint8 * ciphertext, rsize ctlen,
+    ruint8 * mask, rsize masklen)
+{
+  if (R_UNLIKELY (sn_key == NULL || ciphertext == NULL || mask == NULL ||
+        masklen == 0 || masklen > R_DTLS13_SN_MAX || ctlen < R_AES_BLOCK_BYTES))
+    return FALSE;
+
+  switch (aead) {
+    case R_CRYPTO_CIPHER_ALGO_AES: {
+      RCryptoCipher * cipher;
+      ruint8 block[R_AES_BLOCK_BYTES];
+      rboolean ok;
+
+      if (R_UNLIKELY (sn_keylen != 16 && sn_keylen != 24 && sn_keylen != 32))
+        return FALSE;
+      if ((cipher = r_cipher_aes_new (R_CRYPTO_CIPHER_MODE_ECB,
+              (ruint) (sn_keylen * 8), sn_key)) == NULL)
+        return FALSE;
+      ok = r_cipher_aes_ecb_encrypt_block (cipher, block, ciphertext);
+      r_crypto_cipher_unref (cipher);
+      if (R_UNLIKELY (!ok))
+        return FALSE;
+      r_memcpy (mask, block, masklen);
+      r_memclear (block, sizeof (block));
+      return TRUE;
+    }
+    case R_CRYPTO_CIPHER_ALGO_CHACHA20: {
+      ruint8 ks[R_CHACHA20_BLOCK_SIZE];
+
+      /* Ciphertext[0..3] is the (little-endian) block counter and
+       * Ciphertext[4..15] the nonce (RFC 9147 4.2.3). */
+      if (R_UNLIKELY (sn_keylen != R_CHACHA20_KEY_SIZE))
+        return FALSE;
+      r_chacha20_block (ks, sn_key, r_load_le32 (ciphertext), ciphertext + 4);
+      r_memcpy (mask, ks, masklen);
+      r_memclear (ks, sizeof (ks));
+      return TRUE;
+    }
+    default:
+      return FALSE;
+  }
 }
 
 /* Transcript-Hash("") = Hash of the empty message, the context Derive-Secret

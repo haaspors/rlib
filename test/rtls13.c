@@ -121,6 +121,69 @@ RTEST (rtls13, record_protect_roundtrip, R_TEST_TYPE_FAST)
 }
 RTEST_END;
 
+RTEST (rtls13, dtls13_sn_mask, R_TEST_TYPE_FAST)
+{
+  /* AES path: FIPS-197 C.1 known-answer. AES-ECB(key, sample) starts 0x69 0xc4,
+   * so the mask leading bytes must match. */
+  static const ruint8 aeskey[16] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f };
+  static const ruint8 aessample[16] = {
+    0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+    0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
+  /* ChaCha20 path: RFC 8439 2.3.2 known-answer. The first 4 sample bytes are the
+   * little-endian block counter (= 1) and the next 12 the nonce; the keystream
+   * starts 0x10 0xf1, which also pins the counter byte order. */
+  static const ruint8 chachakey[32] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+    0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f };
+  static const ruint8 chachasample[16] = {
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09,
+    0x00, 0x00, 0x00, 0x4a, 0x00, 0x00, 0x00, 0x00 };
+  ruint8 mask[R_DTLS13_SN_MAX];
+  ruint8 sn_key[32];
+  ruint16 seq;
+
+  r_assert (r_dtls13_sn_mask (R_CRYPTO_CIPHER_ALGO_AES, aeskey, sizeof (aeskey),
+        aessample, sizeof (aessample), mask, sizeof (mask)));
+  r_assert_cmpmem (mask, ==, "\x69\xc4", 2);
+
+  r_assert (r_dtls13_sn_mask (R_CRYPTO_CIPHER_ALGO_CHACHA20,
+        chachakey, sizeof (chachakey),
+        chachasample, sizeof (chachasample), mask, sizeof (mask)));
+  r_assert_cmpmem (mask, ==, "\x10\xf1", 2);
+
+  /* The mask is its own inverse: encrypting then decrypting a 16-bit sequence
+   * number recovers it. */
+  seq = 0x1234 ^ r_load_be16 (mask);
+  r_assert_cmphex ((ruint16) (seq ^ r_load_be16 (mask)), ==, 0x1234);
+
+  /* Guards: too-short ciphertext, oversized mask, wrong key length, bad algo. */
+  r_assert (!r_dtls13_sn_mask (R_CRYPTO_CIPHER_ALGO_AES, aeskey, sizeof (aeskey),
+        aessample, 15, mask, sizeof (mask)));
+  r_assert (!r_dtls13_sn_mask (R_CRYPTO_CIPHER_ALGO_AES, aeskey, sizeof (aeskey),
+        aessample, sizeof (aessample), mask, R_DTLS13_SN_MAX + 1));
+  r_assert (!r_dtls13_sn_mask (R_CRYPTO_CIPHER_ALGO_CHACHA20,
+        chachakey, 16, chachasample, sizeof (chachasample), mask, sizeof (mask)));
+  r_assert (!r_dtls13_sn_mask (R_CRYPTO_CIPHER_ALGO_NULL, aeskey, sizeof (aeskey),
+        aessample, sizeof (aessample), mask, sizeof (mask)));
+  r_assert (!r_dtls13_sn_mask (R_CRYPTO_CIPHER_ALGO_AES, NULL, sizeof (aeskey),
+        aessample, sizeof (aessample), mask, sizeof (mask)));
+
+  /* sn_key derivation uses the "sn" label (RFC 9147 4.2.3); it matches an
+   * independent HKDF-Expand-Label and is deterministic. */
+  r_assert (r_dtls13_sn_key (R_MSG_DIGEST_TYPE_SHA256, chachakey, 16, sn_key));
+  {
+    ruint8 ref[16];
+    r_assert (r_tls13_expand_label (R_MSG_DIGEST_TYPE_SHA256, chachakey,
+          (const rchar *) "sn", 2, NULL, 0, ref, sizeof (ref)));
+    r_assert_cmpmem (sn_key, ==, ref, sizeof (ref));
+  }
+}
+RTEST_END;
+
 RTEST (rtls13, key_schedule_rfc8448, R_TEST_TYPE_FAST)
 {
   /* The Simple 1-RTT Handshake of RFC 8448, section 3
