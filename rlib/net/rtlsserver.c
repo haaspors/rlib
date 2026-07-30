@@ -3568,16 +3568,34 @@ r_tls_server_state_hello (RTLSServer * server, const RTLSParser * parser)
          * retry must echo. */
         ruint8 mh[4 + R_TLS13_SECRET_MAX];
         rsize mhlen = 0;
+        /* message_hash(CH1) is over the transcript form; DTLS 1.3 drops the DTLS
+         * handshake header fields (RFC 9147 5.2). */
+        const ruint8 * ch1 = parser->fragment.data;
+        rsize ch1len = parser->fragment.size;
+        ruint8 * stripped = NULL;
+
+        if (server->dtls13 && ch1len >= R_DTLS_HS_HDR_SIZE) {
+          ch1len = R_TLS_HS_HDR_SIZE + (parser->fragment.size - R_DTLS_HS_HDR_SIZE);
+          if ((stripped = r_malloc (ch1len)) != NULL) {
+            r_memcpy (stripped, parser->fragment.data, R_TLS_HS_HDR_SIZE);
+            r_memcpy (stripped + R_TLS_HS_HDR_SIZE,
+                (const ruint8 *) parser->fragment.data + R_DTLS_HS_HDR_SIZE,
+                parser->fragment.size - R_DTLS_HS_HDR_SIZE);
+            ch1 = stripped;
+          }
+        }
         server->cookielen = (ruint8) sizeof (server->cookie);
         if (!r_prng_fill (server->prng, server->cookie, server->cookielen) ||
-            !r_tls13_message_hash (server->cs13_hash, parser->fragment.data,
-                parser->fragment.size, mh, sizeof (mh), &mhlen)) {
+            (server->dtls13 && stripped == NULL) ||
+            !r_tls13_message_hash (server->cs13_hash, ch1, ch1len,
+                mh, sizeof (mh), &mhlen)) {
           err = R_TLS_ERROR_HANDSHAKE_FAILURE;
         } else {
           r_msg_digest_update (server->hshash, mh, mhlen);
           if ((err = r_tls_server_write_hrr (server)) == R_TLS_ERROR_OK)
             server->server.msgseq++;
         }
+        r_free (stripped);
         if (err == R_TLS_ERROR_OK)
           server->hrr_sent = TRUE;
         else

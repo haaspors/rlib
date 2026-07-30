@@ -2012,6 +2012,19 @@ RTEST_F (rtlsclient, dtls13_loopback_chacha20, RTEST_FAST)
 }
 RTEST_END;
 
+/* DTLS 1.3 HelloRetryRequest: the server requires secp256r1 but the client
+ * offers an x25519 key_share, so the server answers with an HRR (return-
+ * routability over the DTLS framing) and the client retries with a secp256r1
+ * share. Completing the handshake proves the DTLS HRR path -- transcript rewrite
+ * (message_hash), cookie echo, and the second ClientHello -- works. */
+RTEST_F (rtlsclient, dtls13_loopback_hrr, RTEST_FAST)
+{
+  r_assert_cmpint (r_tls_server_set_key_share_group (fixture->server,
+        R_TLS_SUPPORTED_GROUP_SECP256R1), ==, R_TLS_ERROR_OK);
+  r_test_tls13_loopback_version (fixture, R_TLS_VERSION_DTLS_1_3);
+}
+RTEST_END;
+
 /* The client offers SNI; the server's selection callback sees the name and
  * installs a per-name certificate, which the client then receives. */
 RTEST_F (rtlsclient, sni_selects_cert, RTEST_FAST)

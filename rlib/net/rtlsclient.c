@@ -1801,10 +1801,16 @@ r_tls_client_handle_hrr (RTLSClient * client, const RTLSHelloMsg * hello,
     else if (ext.type == R_TLS_EXT_TYPE_KEY_SHARE) { ks = ext; have_ks = TRUE; }
     else if (ext.type == R_TLS_EXT_TYPE_COOKIE) { ck = ext; have_ck = TRUE; }
   }
-  if (!have_sv || r_tls_hello_ext_selected_version (&sv) != R_TLS_VERSION_TLS_1_3)
+  if (!have_sv || r_tls_hello_ext_selected_version (&sv) !=
+        (r_tls_version_is_dtls (client->version) ? R_TLS_VERSION_DTLS_1_3
+                                                 : R_TLS_VERSION_TLS_1_3))
     return R_TLS_ERROR_VERSION;
   if (!have_ks)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
+
+  /* Mark DTLS 1.3 now: the message_hash and transcript folds below must drop the
+   * DTLS handshake header fields (RFC 9147 5.2). */
+  client->dtls13 = r_tls_version_is_dtls (client->version);
 
   /* The selected group must be one we support and must differ from the one we
    * already sent a share for (otherwise the server should not have retried). */
@@ -1851,9 +1857,30 @@ r_tls_client_handle_hrr (RTLSClient * client, const RTLSHelloMsg * hello,
     return R_TLS_ERROR_WRONG_STATE;
   if ((client->hshash = r_msg_digest_new (client->cs13_hash)) == NULL)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (!r_tls13_message_hash (client->cs13_hash, client->clienthello,
-        client->clienthellolen, mh, sizeof (mh), &mhlen))
-    return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  /* message_hash(CH1) is over the transcript form of ClientHello1; for DTLS 1.3
+   * that is the TLS-shaped message, without the DTLS handshake header fields. */
+  {
+    const ruint8 * ch1 = client->clienthello;
+    rsize ch1len = client->clienthellolen;
+    ruint8 * stripped = NULL;
+    rboolean ok;
+
+    if (client->dtls13 && ch1len >= R_DTLS_HS_HDR_SIZE) {
+      ch1len = R_TLS_HS_HDR_SIZE + (client->clienthellolen - R_DTLS_HS_HDR_SIZE);
+      if ((stripped = r_malloc (ch1len)) == NULL)
+        return R_TLS_ERROR_OOM;
+      r_memcpy (stripped, client->clienthello, R_TLS_HS_HDR_SIZE);
+      r_memcpy (stripped + R_TLS_HS_HDR_SIZE,
+          client->clienthello + R_DTLS_HS_HDR_SIZE,
+          client->clienthellolen - R_DTLS_HS_HDR_SIZE);
+      ch1 = stripped;
+    }
+    ok = r_tls13_message_hash (client->cs13_hash, ch1, ch1len,
+        mh, sizeof (mh), &mhlen);
+    r_free (stripped);
+    if (!ok)
+      return R_TLS_ERROR_HANDSHAKE_FAILURE;
+  }
   r_msg_digest_update (client->hshash, mh, mhlen);
   r_free (client->clienthello);
   client->clienthello = NULL;
