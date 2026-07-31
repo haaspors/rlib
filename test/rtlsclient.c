@@ -2428,6 +2428,52 @@ RTEST_F (rtlsclient, dtls13_key_update, RTEST_FAST)
 }
 RTEST_END;
 
+/* RFC 9147 6.1: after a KeyUpdate advances the read epoch, a record still in
+ * flight under the previous epoch must still decrypt. Withhold the client's
+ * epoch-3 record and deliver it AFTER its KeyUpdate (which moves the server to
+ * epoch 4): the server keeps the superseded read key and recovers the record. */
+RTEST_F (rtlsclient, dtls13_key_update_prev_epoch_record, RTEST_FAST)
+{
+  static const ruint8 one[] = { 'o', 'n', 'e' };
+  static const ruint8 two[] = { 't', 'w', 'o' };
+  static const ruint8 both[] = { 'o', 'n', 'e', 't', 'w', 'o' };
+  RBuffer * app, * held, * ku, * later;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+
+  /* An application record under the current epoch; hold it back. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) one, sizeof (one), sizeof (one), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_assert_cmpptr ((held = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_assert (r_queue_is_empty (&fixture->cli_out));
+
+  /* Client rekeys, then sends another record under the new epoch. */
+  r_assert (r_tls_client_key_update (fixture->client, FALSE));
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) two, sizeof (two), sizeof (two), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_assert_cmpptr ((ku = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_assert_cmpptr ((later = r_queue_pop (&fixture->cli_out)), !=, NULL);
+
+  /* KeyUpdate advances the server to epoch 4; then the withheld old-epoch record
+   * arrives, then the new-epoch record. */
+  r_tls_server_incoming_data (fixture->server, ku); r_buffer_unref (ku);
+  r_tls_server_incoming_data (fixture->server, held); r_buffer_unref (held);
+  r_tls_server_incoming_data (fixture->server, later); r_buffer_unref (later);
+
+  r_test_tls_assert_appdata (&fixture->srv_app, both, sizeof (both));
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */
