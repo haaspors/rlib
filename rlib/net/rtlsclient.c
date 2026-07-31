@@ -1234,17 +1234,10 @@ r_tls_client_psk_binder (RTLSClient * client, const ruint8 * chstart,
   RTLSClientSession * s = client->resume;
   RTLS13Schedule sched;
   ruint8 bhash[R_TLS13_SECRET_MAX], bk[R_TLS13_SECRET_MAX], finkey[R_TLS13_SECRET_MAX];
-  rsize hlen = r_msg_digest_type_size (s->hash);
-  RMsgDigest * md;
   rboolean ok;
 
-  if ((md = r_msg_digest_new (s->hash)) == NULL)
-    return FALSE;
-  ok = r_msg_digest_update (md, chstart,
-          RPOINTER_TO_SIZE (binders) - RPOINTER_TO_SIZE (chstart)) &&
-       r_msg_digest_get_data (md, bhash, hlen, NULL);
-  r_msg_digest_free (md);
-  if (!ok)
+  if (!r_dtls13_binder_hash (s->hash, r_tls_version_is_dtls (client->version),
+        chstart, binders, bhash))
     return FALSE;
 
   ok = r_tls13_schedule_init_psk (&sched, s->hash, s->psk, s->psklen) &&
