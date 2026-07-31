@@ -2381,6 +2381,53 @@ RTEST_F (rtlsclient, dtls13_next_epoch_record_buffered, RTEST_FAST)
 }
 RTEST_END;
 
+/* DTLS 1.3 post-handshake KeyUpdate (RFC 8446 4.6.3 over RFC 9147 framing). Each
+ * KeyUpdate is a handshake message that must carry the 12-byte DTLS header with a
+ * message_seq continuing past the handshake; the peer reassembles it, rotates the
+ * matching epoch, and an app-data round trip after each rotation proves the keys
+ * stayed in sync. */
+RTEST_F (rtlsclient, dtls13_key_update, RTEST_FAST)
+{
+  static const ruint8 a[] = { 'r', 'o', 't', '1' };
+  static const ruint8 b[] = { 'r', 'o', 't', '2' };
+  RBuffer * app;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+
+  /* Client rekeys its sending direction; the peer need not respond. */
+  r_assert (r_tls_client_key_update (fixture->client, FALSE));
+  r_test_tls_loopback_pump (fixture);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+
+  /* client -> server still decrypts under the client's rotated send key. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) a, sizeof (a), sizeof (a), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, a, sizeof (a));
+
+  /* Server rekeys and asks the client to rekey too, rotating both directions. */
+  r_assert (r_tls_server_key_update (fixture->server, TRUE));
+  r_test_tls_loopback_pump (fixture);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+
+  /* server -> client under the server's rotated send key. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) b, sizeof (b), sizeof (b), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, b, sizeof (b));
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */
