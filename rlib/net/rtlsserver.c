@@ -4489,8 +4489,9 @@ r_tls_server_dtls13_handshake (RTLSServer * server, RTLSParser * parser,
       return R_TLS_ERROR_OOM;
     server->reasm13->next = (ruint16) (server->recv_hello_msgseq + 1);
   }
-  if ((err = r_dtls13_reassembler_push (server->reasm13, (ruint8) type, mseq, len,
-          foff, parser->fragment.data + R_DTLS_HS_HDR_SIZE, flen)) != R_TLS_ERROR_OK)
+  if ((err = r_dtls13_reassembler_push (server->reasm13, (ruint8) type, mseq,
+          parser->epoch, len, foff, parser->fragment.data + R_DTLS_HS_HDR_SIZE,
+          flen)) != R_TLS_ERROR_OK)
     return err;
 
   for (;;) {

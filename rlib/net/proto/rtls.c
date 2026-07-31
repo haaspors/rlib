@@ -997,7 +997,7 @@ r_dtls13_reasm_add_range (RDtls13ReasmSlot * s, ruint32 start, ruint32 end)
 
 RTLSError
 r_dtls13_reassembler_push (RDtls13Reassembler * r, ruint8 type, ruint16 msgseq,
-    ruint32 len, ruint32 foff, const ruint8 * frag, ruint32 flen)
+    ruint16 epoch, ruint32 len, ruint32 foff, const ruint8 * frag, ruint32 flen)
 {
   RDtls13ReasmSlot * s;
   ruint i;
@@ -1021,11 +1021,14 @@ r_dtls13_reassembler_push (RDtls13Reassembler * r, ruint8 type, ruint16 msgseq,
     s->active = TRUE;
     s->complete = FALSE;
     s->msgseq = msgseq;
+    s->epoch = epoch;
     s->type = type;
     s->len = len;
     s->nranges = 0;
     /* The reassembled (complete) message: a single unfragmented DTLS header. */
     r_dtls13_write_hs_hdr (s->msg, type, len, msgseq, 0, len);
+  } else if (R_UNLIKELY (s->epoch != epoch)) {
+    return R_TLS_ERROR_OK;                     /* fragment from another epoch: not ours */
   } else if (R_UNLIKELY (s->type != type || s->len != len)) {
     return R_TLS_ERROR_CORRUPT_RECORD;        /* inconsistent with prior fragment */
   }

@@ -98,6 +98,7 @@ typedef struct {
   rboolean active;
   rboolean complete;
   ruint16 msgseq;
+  ruint16 epoch;                          /* low epoch bits the fragments arrived under */
   ruint8 type;
   ruint32 len;                            /* total message body length */
   ruint8 * msg;                           /* R_DTLS_HS_HDR_SIZE + len; header + body */
@@ -114,10 +115,12 @@ typedef struct {
 R_API_HIDDEN RDtls13Reassembler * r_dtls13_reassembler_new (void);
 R_API_HIDDEN void r_dtls13_reassembler_free (RDtls13Reassembler * r);
 /* Insert one fragment of message @msgseq (total body @len) covering
- * [@foff, @foff+@flen) of the body. Duplicates and already-delivered messages
- * are ignored. */
+ * [@foff, @foff+@flen) of the body, received under epoch bits @epoch. Duplicates,
+ * already-delivered messages, and fragments whose epoch disagrees with the
+ * message in progress (RFC 9147: a handshake message belongs to one epoch) are
+ * ignored. */
 R_API_HIDDEN RTLSError r_dtls13_reassembler_push (RDtls13Reassembler * r,
-    ruint8 type, ruint16 msgseq, ruint32 len, ruint32 foff,
+    ruint8 type, ruint16 msgseq, ruint16 epoch, ruint32 len, ruint32 foff,
     const ruint8 * frag, ruint32 flen);
 /* Pop the next in-order fully-reassembled message (a complete DTLS handshake
  * message, header included), or NULL if it is not ready. The caller owns the

@@ -2474,6 +2474,58 @@ RTEST_F (rtlsclient, dtls13_key_update_prev_epoch_record, RTEST_FAST)
 }
 RTEST_END;
 
+/* RFC 9147 4: several records may be coalesced into a single datagram. Our
+ * sender always writes the unified-header length (L) bit, so each record is
+ * self-delimiting; the receiver must chain through them and deprotect each. Feed
+ * two application records concatenated into one buffer and check both arrive. */
+RTEST_F (rtlsclient, dtls13_coalesced_records, RTEST_FAST)
+{
+  static const ruint8 a[] = { 'a', 'a' };
+  static const ruint8 b[] = { 'b', 'b', 'b' };
+  static const ruint8 ab[] = { 'a', 'a', 'b', 'b', 'b' };
+  RBuffer * app, * r1, * r2, * merged;
+  RMemMapInfo i1 = R_MEM_MAP_INFO_INIT, i2 = R_MEM_MAP_INFO_INIT, io = R_MEM_MAP_INFO_INIT;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+
+  /* Two client application records, each its own protected record. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) a, sizeof (a), sizeof (a), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_assert_cmpptr ((r1 = r_queue_pop (&fixture->cli_out)), !=, NULL);
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) b, sizeof (b), sizeof (b), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_assert_cmpptr ((r2 = r_queue_pop (&fixture->cli_out)), !=, NULL);
+
+  /* Concatenate them into one datagram and hand it to the server at once. */
+  r_assert (r_buffer_map (r1, &i1, R_MEM_MAP_READ));
+  r_assert (r_buffer_map (r2, &i2, R_MEM_MAP_READ));
+  r_assert_cmpptr ((merged = r_buffer_new_alloc (NULL, i1.size + i2.size, NULL)), !=, NULL);
+  r_assert (r_buffer_map (merged, &io, R_MEM_MAP_WRITE));
+  r_memcpy (io.data, i1.data, i1.size);
+  r_memcpy (io.data + i1.size, i2.data, i2.size);
+  r_buffer_unmap (merged, &io);
+  r_buffer_unmap (r1, &i1);
+  r_buffer_unmap (r2, &i2);
+  r_buffer_unref (r1);
+  r_buffer_unref (r2);
+
+  r_tls_server_incoming_data (fixture->server, merged);
+  r_buffer_unref (merged);
+
+  r_test_tls_assert_appdata (&fixture->srv_app, ab, sizeof (ab));
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */
