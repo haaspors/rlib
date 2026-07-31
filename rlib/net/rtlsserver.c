@@ -157,6 +157,7 @@ struct RTLSServer {
 
   RTLS13Schedule sched13;               /* 1-RTT key schedule */
   RTLS13RecordKeys rk_write, rk_read;   /* installed 1.3 record keys */
+  RTLS13RecordKeys rk_read_prev;        /* previous read epoch (DTLS 1.3 demux) */
   const RCryptoCipherInfo * cs13_cipher;/* AEAD for the 1.3 suite */
   RTLSCipherSuite cs13_suite;           /* 0x1301 / 0x1302 / 0x1303 */
   RMsgDigestType cs13_hash;             /* SHA-256 / SHA-384 */
@@ -254,6 +255,8 @@ r_tls_server_free (RTLSServer * server)
     r_crypto_cipher_unref (server->rk_write.cipher);
   if (server->rk_read.cipher != NULL)
     r_crypto_cipher_unref (server->rk_read.cipher);
+  if (server->rk_read_prev.cipher != NULL)
+    r_crypto_cipher_unref (server->rk_read_prev.cipher);
   if (server->alpn_protocols != NULL) {
     rsize i;
     for (i = 0; i < server->alpn_count; i++)
@@ -2476,6 +2479,14 @@ static rboolean
 r_tls_server_install_keys13 (RTLSServer * server, RTLS13RecordKeys * rk,
     const ruint8 * secret, ruint16 epoch)
 {
+  /* Retain the outgoing read key so records still in flight under the previous
+   * epoch keep decrypting after the epoch advances (RFC 9147 6.1). */
+  if (server->dtls13 && rk == &server->rk_read && rk->cipher != NULL) {
+    if (server->rk_read_prev.cipher != NULL)
+      r_crypto_cipher_unref (server->rk_read_prev.cipher);
+    server->rk_read_prev = *rk;         /* transfers the cipher reference */
+    rk->cipher = NULL;
+  }
   if (rk->cipher != NULL) {
     r_crypto_cipher_unref (rk->cipher);
     rk->cipher = NULL;
@@ -4577,16 +4588,23 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
        * plaintext DTLSPlaintext that passes through to the state handler. */
       if (server->rk_read.cipher != NULL &&
           r_dtls13_is_unified_hdr ((ruint8) parser.content)) {
-        /* A record for the epoch we are about to install can arrive before its
-         * keys exist (reordering): buffer it for replay rather than dropping it
-         * (RFC 9147 4.2.1). Records for any other epoch we cannot key. */
-        if (parser.epoch != (server->rk_read.epoch & 0x03)) {
+        /* Select the read key by the header's epoch bits: the current epoch, or
+         * the one just superseded so records still in flight under it keep
+         * decrypting after a KeyUpdate (RFC 9147 6.1). A record for the epoch we
+         * are about to install is buffered for replay (4.2.1); anything else we
+         * cannot key. */
+        RTLS13RecordKeys * rk;
+        if (parser.epoch == (server->rk_read.epoch & 0x03)) {
+          rk = &server->rk_read;
+        } else if (server->rk_read_prev.cipher != NULL &&
+            parser.epoch == (server->rk_read_prev.epoch & 0x03)) {
+          rk = &server->rk_read_prev;
+        } else {
           if (parser.epoch == ((server->rk_read.epoch + 1) & 0x03))
             r_dtls13_defer_record (&server->deferred13, &parser);
           continue;
         }
-        if ((err = r_dtls_parser_unprotect13 (&parser, &server->rk_read))
-            != R_TLS_ERROR_OK) {
+        if ((err = r_dtls_parser_unprotect13 (&parser, rk)) != R_TLS_ERROR_OK) {
           /* DTLS silently discards records that fail to deprotect (RFC 9147 4.5.2);
            * a corrupted or injected datagram must not affect the connection. */
           R_LOG_TRACE ("DTLS 1.3 record unprotect returned: %d (dropped)", err);
@@ -4594,10 +4612,11 @@ r_tls_server_incoming_data (RTLSServer * server, RBuffer * buffer)
           continue;
         }
         /* Drop replays / too-old records once authenticated (RFC 9147 4.5.1). */
-        if (!r_dtls13_replay_check (&server->rk_read, parser.seqno))
+        if (!r_dtls13_replay_check (rk, parser.seqno))
           continue;
-        server->early13_skip = FALSE;
-        server->rk_read.seq++;
+        if (rk == &server->rk_read)
+          server->early13_skip = FALSE;
+        rk->seq++;
       }
     } else if (server->tls13) {
       /* TLS 1.3: a middlebox-compat ChangeCipherSpec is ignored entirely
