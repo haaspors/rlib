@@ -3286,18 +3286,28 @@ r_tls_client_store_ticket13 (RTLSClient * client, const RTLSParser * parser)
 static RTLSError
 r_tls_client_send_key_update13 (RTLSClient * client, rboolean request_peer_update)
 {
-  ruint8 msg[R_TLS_HS_HDR_SIZE + 1];
+  ruint8 msg[R_DTLS_HS_HDR_SIZE + 1];
+  rsize hdrlen;
   RTLSError ret;
 
-  msg[0] = (ruint8) R_TLS_HANDSHAKE_TYPE_KEY_UPDATE;
-  msg[1] = 0x00;
-  msg[2] = 0x00;
-  msg[3] = 0x01;
-  msg[4] = (ruint8) (request_peer_update ? R_TLS_KEY_UPDATE_REQUESTED
-                                         : R_TLS_KEY_UPDATE_NOT_REQUESTED);
+  /* DTLS carries the 12-byte handshake header (message_seq continues past the
+   * handshake so the peer reassembles it in order); TLS uses the 4-byte one. */
+  if (client->dtls13) {
+    r_dtls13_write_hs_hdr (msg, (ruint8) R_TLS_HANDSHAKE_TYPE_KEY_UPDATE, 1,
+        client->client.msgseq++, 0, 1);
+    hdrlen = R_DTLS_HS_HDR_SIZE;
+  } else {
+    msg[0] = (ruint8) R_TLS_HANDSHAKE_TYPE_KEY_UPDATE;
+    msg[1] = 0x00;
+    msg[2] = 0x00;
+    msg[3] = 0x01;
+    hdrlen = R_TLS_HS_HDR_SIZE;
+  }
+  msg[hdrlen] = (ruint8) (request_peer_update ? R_TLS_KEY_UPDATE_REQUESTED
+                                              : R_TLS_KEY_UPDATE_NOT_REQUESTED);
 
   if ((ret = r_tls_client_protect_record13 (client, R_TLS_CONTENT_TYPE_HANDSHAKE,
-          msg, sizeof (msg))) != R_TLS_ERROR_OK)
+          msg, hdrlen + 1)) != R_TLS_ERROR_OK)
     return ret;
 
   if (!r_tls13_traffic_update (client->cs13_hash, client->sched13.cap,
