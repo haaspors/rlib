@@ -1735,21 +1735,14 @@ r_tls_server_psk_binder (RTLSServer * server, const RTLSHelloExt * psk,
 {
   RTLS13Schedule sched;
   ruint8 bhash[R_TLS13_SECRET_MAX], bk[R_TLS13_SECRET_MAX], finkey[R_TLS13_SECRET_MAX];
-  rsize hlen = r_msg_digest_type_size (server->cs13_hash);
   const ruint8 * binders = r_tls_hello_ext_psk_binders_start (psk);
-  RMsgDigest * md;
   rboolean ok;
 
   if (binders == NULL || chstart == NULL || binders < chstart)
     return FALSE;
 
-  if ((md = r_msg_digest_new (server->cs13_hash)) == NULL)
-    return FALSE;
-  ok = r_msg_digest_update (md, chstart,
-          RPOINTER_TO_SIZE (binders) - RPOINTER_TO_SIZE (chstart)) &&
-       r_msg_digest_get_data (md, bhash, hlen, NULL);
-  r_msg_digest_free (md);
-  if (!ok)
+  if (!r_dtls13_binder_hash (server->cs13_hash,
+        r_tls_version_is_dtls (server->version), chstart, binders, bhash))
     return FALSE;
 
   ok = r_tls13_schedule_init_psk (&sched, server->cs13_hash,
@@ -1816,9 +1809,13 @@ r_tls_server_try_resume13 (RTLSServer * server)
   r_memclear_secure (plain, sizeof (plain));
 
   /* The binder proves the client holds the PSK: a valid ticket with a bad
-   * binder is an attack, so fail fatally rather than falling back. */
+   * binder is an attack, so fail fatally rather than falling back. The handshake
+   * message starts one header + legacy_version (2) before the random; the header
+   * is 12 bytes for DTLS, 4 for TLS. */
   if (r_tls_hello_ext_psk_binder (&psk, 0, &binder, &binderlen) != R_TLS_ERROR_OK ||
-      !r_tls_server_psk_binder (server, &psk, server->hello.random - 6, expect))
+      !r_tls_server_psk_binder (server, &psk, server->hello.random -
+          (r_tls_version_is_dtls (server->version) ? R_DTLS_HS_HDR_SIZE + 2
+                                                    : R_TLS_HS_HDR_SIZE + 2), expect))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   if (binderlen != hlen || r_memcmp_ct (binder, expect, hlen) != 0)
     return R_TLS_ERROR_HS_VERIFICATION_FAILED;

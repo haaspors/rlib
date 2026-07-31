@@ -2526,6 +2526,73 @@ RTEST_F (rtlsclient, dtls13_coalesced_records, RTEST_FAST)
 }
 RTEST_END;
 
+/* DTLS 1.3 resumption (RFC 9147 over RFC 8446 2.2): a first handshake yields a
+ * NewSessionTicket, a second connection resumes from it. The PSK binder is
+ * computed over the DTLS transcript convention (excluding the handshake header's
+ * message_seq / fragment fields, RFC 9147 5.2), so it must verify on both ends. */
+RTEST_F (rtlsclient, dtls13_resumption, RTEST_FAST)
+{
+  static const ruint8 c2s[] = { 'r', 'e', 's', 'u', 'm', 'e' };
+  static const ruint8 s2c[] = { 'o', 'k' };
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RBuffer * app;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First (full) handshake; the server issues a NewSessionTicket. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* Fresh endpoints (sharing the key store) for the resumed handshake. */
+  r_tls_client_unref (fixture->client);
+  r_tls_server_unref (fixture->server);
+  fixture->server = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+
+  fixture->cli_hs_done = fixture->srv_hs_done = FALSE;
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+  r_assert_cmpuint (r_tls_client_get_version (fixture->client), ==, R_TLS_VERSION_DTLS_1_3);
+  r_assert_cmpptr (r_tls_client_get_peer_cert (fixture->client), ==, NULL);
+
+  /* The resumed session carries application data both ways. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
+
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */

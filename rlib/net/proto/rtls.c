@@ -1146,6 +1146,36 @@ r_dtls13_rtx_ack (RDtls13Rtx * rtx, const ruint8 * ack, rsize acklen)
   return r_ptr_array_size (&rtx->flight);
 }
 
+rboolean
+r_dtls13_binder_hash (RMsgDigestType hash, rboolean dtls,
+    const ruint8 * chstart, const ruint8 * binders, ruint8 * bhash)
+{
+  RMsgDigest * md;
+  rsize hlen = r_msg_digest_type_size (hash);
+  rboolean ok;
+
+  if (R_UNLIKELY (binders < chstart) ||
+      (dtls && RPOINTER_TO_SIZE (binders) - RPOINTER_TO_SIZE (chstart) <
+          R_DTLS_HS_HDR_SIZE))
+    return FALSE;
+  if ((md = r_msg_digest_new (hash)) == NULL)
+    return FALSE;
+  if (dtls) {
+    /* DTLS 1.3 hashes the TLS-shaped header (type + length) and the body, but
+     * not the handshake header's message_seq / fragment fields (RFC 9147 5.2). */
+    ok = r_msg_digest_update (md, chstart, R_TLS_HS_HDR_SIZE) &&
+         r_msg_digest_update (md, chstart + R_DTLS_HS_HDR_SIZE,
+             RPOINTER_TO_SIZE (binders) - RPOINTER_TO_SIZE (chstart) -
+                 R_DTLS_HS_HDR_SIZE);
+  } else {
+    ok = r_msg_digest_update (md, chstart,
+        RPOINTER_TO_SIZE (binders) - RPOINTER_TO_SIZE (chstart));
+  }
+  ok = ok && r_msg_digest_get_data (md, bhash, hlen, NULL);
+  r_msg_digest_free (md);
+  return ok;
+}
+
 ruint8
 r_dtls13_record_epoch_bits (RBuffer * rec)
 {

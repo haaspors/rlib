@@ -151,6 +151,12 @@ R_API_HIDDEN void r_dtls13_take_deferred (RQueue * deferred, ruint16 epoch,
  * a unified-header record. */
 R_API_HIDDEN ruint8 r_dtls13_record_epoch_bits (RBuffer * rec);
 
+/* Hash the truncated ClientHello [@chstart, @binders) for a PSK binder into
+ * @bhash. @chstart is the handshake-message start; for DTLS the handshake
+ * header's message_seq / fragment fields are excluded (RFC 9147 5.2). */
+R_API_HIDDEN rboolean r_dtls13_binder_hash (RMsgDigestType hash, rboolean dtls,
+    const ruint8 * chstart, const ruint8 * binders, ruint8 * bhash);
+
 /* Write the 12-byte DTLS handshake header (type | length | message_seq |
  * fragment_offset | fragment_length) into @p. */
 R_API_HIDDEN void r_dtls13_write_hs_hdr (ruint8 * p, ruint8 type, ruint32 len,
