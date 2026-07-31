@@ -1143,6 +1143,48 @@ r_dtls13_rtx_ack (RDtls13Rtx * rtx, const ruint8 * ack, rsize acklen)
   return r_ptr_array_size (&rtx->flight);
 }
 
+ruint8
+r_dtls13_record_epoch_bits (RBuffer * rec)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  ruint8 bits = 0xff;
+
+  if (r_buffer_map_byte_range (rec, 0, 1, &info, R_MEM_MAP_READ)) {
+    if (r_dtls13_is_unified_hdr (info.data[0]))
+      bits = info.data[0] & 0x03;
+    r_buffer_unmap (rec, &info);
+  }
+  return bits;
+}
+
+void
+r_dtls13_defer_record (RQueue * q, const RTLSParser * parser)
+{
+  RBuffer * rec;
+
+  if ((rec = r_buffer_view (parser->buf, 0, (rssize) parser->recsize)) == NULL)
+    return;
+  if (r_queue_size (q) >= R_DTLS13_DEFER_MAX)
+    r_buffer_unref (r_queue_pop (q));       /* drop the oldest */
+  if (r_queue_push (q, rec) == NULL)
+    r_buffer_unref (rec);
+}
+
+void
+r_dtls13_take_deferred (RQueue * deferred, ruint16 epoch, RQueue * ready)
+{
+  RBuffer * rec;
+  rsize n;
+
+  for (n = r_queue_size (deferred); n-- > 0; ) {
+    rec = r_queue_pop (deferred);
+    if (r_dtls13_record_epoch_bits (rec) == (epoch & 0x03))
+      r_queue_push (ready, rec);
+    else
+      r_queue_push (deferred, rec);         /* still a future epoch */
+  }
+}
+
 void
 r_dtls13_rtx_arm (RDtls13Rtx * rtx, REvLoop * loop, REvFunc fire, rpointer ep)
 {
