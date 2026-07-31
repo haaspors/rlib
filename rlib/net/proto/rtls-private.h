@@ -35,6 +35,7 @@
 #include <rlib/rbuffer.h>
 #include <rlib/ev/revloop.h>
 #include <rlib/data/rptrarray.h>
+#include <rlib/data/rqueue.h>
 
 R_BEGIN_DECLS
 
@@ -128,6 +129,24 @@ R_API_HIDDEN ruint8 * r_dtls13_reassembler_next (RDtls13Reassembler * r,
  * taking ownership of @msg. r_tls_parser_clear releases it. */
 R_API_HIDDEN RTLSError r_dtls_parser_init_handshake13 (RTLSParser * parser,
     ruint8 * msg, rsize msglen);
+
+/* --- DTLS 1.3 next-epoch record buffering (RFC 9147 4.2.1) -------------------
+ * A record for the epoch about to be installed can arrive before its keys are
+ * derived (reordering). Rather than drop it, buffer the raw record and replay it
+ * once the read epoch advances. Bounded so a peer cannot force unbounded growth
+ * with unauthenticated future-epoch records. */
+#define R_DTLS13_DEFER_MAX        8       /* next-epoch records buffered at once */
+/* Buffer a copy of @parser's current raw record, dropping the oldest past the
+ * cap. */
+R_API_HIDDEN void r_dtls13_defer_record (RQueue * q, const RTLSParser * parser);
+/* Move the records in @deferred whose low epoch bits match @epoch into @ready
+ * (the caller re-feeds them); records still for a future epoch stay in
+ * @deferred. */
+R_API_HIDDEN void r_dtls13_take_deferred (RQueue * deferred, ruint16 epoch,
+    RQueue * ready);
+/* Low 2 epoch bits of a buffered unified-header record, or 0xff if @rec is not
+ * a unified-header record. */
+R_API_HIDDEN ruint8 r_dtls13_record_epoch_bits (RBuffer * rec);
 
 /* Write the 12-byte DTLS handshake header (type | length | message_seq |
  * fragment_offset | fragment_length) into @p. */

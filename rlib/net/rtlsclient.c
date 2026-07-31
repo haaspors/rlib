@@ -170,6 +170,7 @@ struct RTLSClient {
 
   RBuffer * inbuf;
   RQueue qsend;
+  RQueue deferred13;                    /* DTLS 1.3 next-epoch records awaiting keys */
 };
 
 /* A stored TLS 1.3 resumption session: the server's ticket, the PSK derived
@@ -275,6 +276,7 @@ r_tls_client_free (RTLSClient * client)
   if (client->inbuf != NULL)
     r_buffer_unref (client->inbuf);
   r_queue_clear (&client->qsend, r_buffer_unref);
+  r_queue_clear (&client->deferred13, r_buffer_unref);
   r_dtls13_rtx_clear (&client->rtx, client->loop);
   r_memclear_secure (client->mastersecret, sizeof (client->mastersecret));
   r_memclear_secure (&client->sched13, sizeof (client->sched13));
@@ -346,6 +348,7 @@ r_tls_client_new (const RTLSCallbacks * cb, rpointer userdata, RDestroyNotify no
     ret->userdata = userdata;
     ret->notify = notify;
     r_queue_init (&ret->qsend);
+    r_queue_init (&ret->deferred13);
     r_dtls13_rtx_init (&ret->rtx);
     ret->decrypt = r_tls_client_null_decrypt;
     ret->encrypt = r_tls_client_null_encrypt;
@@ -3615,6 +3618,24 @@ r_tls_client_dtls13_handshake (RTLSClient * client, RTLSParser * parser,
   return R_TLS_ERROR_OK;
 }
 
+/* Replay next-epoch records that were buffered before their keys existed, now
+ * that the read epoch may have advanced (RFC 9147 4.2.1). Records still ahead of
+ * the installed epoch are left queued for a later advance. */
+static void
+r_tls_client_replay_deferred13 (RTLSClient * client)
+{
+  RQueue ready = R_QUEUE_INIT;
+  RBuffer * rec;
+
+  if (client->rk_read.cipher == NULL)
+    return;
+  r_dtls13_take_deferred (&client->deferred13, client->rk_read.epoch, &ready);
+  while ((rec = r_queue_pop (&ready)) != NULL) {
+    r_tls_client_incoming_data (client, rec);
+    r_buffer_unref (rec);
+  }
+}
+
 rboolean
 r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
 {
@@ -3662,6 +3683,14 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
        * the 001 fixed bits); deprotect them once read keys are installed. */
       if (client->rk_read.cipher != NULL &&
           r_dtls13_is_unified_hdr ((ruint8) parser.content)) {
+        /* A record for the epoch we are about to install can arrive before its
+         * keys exist (reordering): buffer it for replay rather than dropping it
+         * (RFC 9147 4.2.1). Records for any other epoch we cannot key. */
+        if (parser.epoch != (client->rk_read.epoch & 0x03)) {
+          if (parser.epoch == ((client->rk_read.epoch + 1) & 0x03))
+            r_dtls13_defer_record (&client->deferred13, &parser);
+          continue;
+        }
         if ((err = r_dtls_parser_unprotect13 (&parser, &client->rk_read))
             != R_TLS_ERROR_OK) {
           /* DTLS silently discards records that fail to deprotect (RFC 9147 4.5.2). */
@@ -3780,6 +3809,7 @@ r_tls_client_incoming_data (RTLSClient * client, RBuffer * buffer)
 
   if (err >= R_TLS_ERROR_OK) {
     r_tls_client_send_out (client);
+    r_tls_client_replay_deferred13 (client);
   } else {
     if (client->inbuf != NULL) {
       r_buffer_unref (client->inbuf);

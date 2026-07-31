@@ -2333,6 +2333,54 @@ RTEST_F (rtlsclient, dtls13_partial_ack_retransmits_remainder, RTEST_FAST)
 }
 RTEST_END;
 
+/* RFC 9147 4.2.1: a record for the next epoch can arrive before its keys are
+ * installed. Deliver the client's epoch-3 application data ahead of the epoch-2
+ * Finished that installs the server's read key: the server must buffer it and
+ * replay it once the handshake completes, not drop it. */
+RTEST_F (rtlsclient, dtls13_next_epoch_record_buffered, RTEST_FAST)
+{
+  static const ruint8 c2s[] = { 'a', 'h', 'e', 'a', 'd' };
+  RBuffer * buf, * app, * recs[8];
+  rsize n = 0, i;
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+
+  /* CH -> server; server flight -> client. The client completes and its Finished
+   * lands in cli_out, but the server has not seen it yet. */
+  while ((buf = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_tls_server_incoming_data (fixture->server, buf); r_buffer_unref (buf); }
+  while ((buf = r_queue_pop (&fixture->srv_out)) != NULL) {
+    r_tls_client_incoming_data (fixture->client, buf); r_buffer_unref (buf); }
+  r_assert (fixture->cli_hs_done);
+  r_assert (!fixture->srv_hs_done);
+
+  /* Client sends application data right behind its Finished -- a new epoch. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) c2s, sizeof (c2s), sizeof (c2s), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_client_send_appdata (fixture->client, app));
+  r_buffer_unref (app);
+
+  /* Deliver the client's output to the server in reverse, so the epoch-3
+   * application record arrives before the epoch-2 Finished. */
+  while ((buf = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_assert_cmpuint (n, <, R_N_ELEMENTS (recs));
+    recs[n++] = buf;
+  }
+  r_assert_cmpuint (n, >=, 2);
+  for (i = n; i-- > 0; ) {
+    r_tls_server_incoming_data (fixture->server, recs[i]);
+    r_buffer_unref (recs[i]);
+  }
+
+  r_assert (fixture->srv_hs_done);
+  r_test_tls_assert_appdata (&fixture->srv_app, c2s, sizeof (c2s));
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */
