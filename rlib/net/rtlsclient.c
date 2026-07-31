@@ -1066,14 +1066,14 @@ r_tls_client_write_hs_ext_post_handshake_auth (ruint8 * ptr)
  * header then a uint16-prefixed extension list) carries an early_data
  * extension, i.e. the server accepted 0-RTT. */
 static rboolean
-r_tls_client_ee_has_early_data (const ruint8 * msg, rsize msglen)
+r_tls_client_ee_has_early_data (const ruint8 * msg, rsize msglen, rsize hdrsize)
 {
   const ruint8 * p, * end;
   ruint16 extslen;
 
-  if (msglen < R_TLS_HS_HDR_SIZE + sizeof (ruint16))
+  if (msglen < hdrsize + sizeof (ruint16))
     return FALSE;
-  p = msg + R_TLS_HS_HDR_SIZE;
+  p = msg + hdrsize;
   extslen = r_load_be16 (p);
   p += sizeof (ruint16);
   end = p + extslen;
@@ -1095,14 +1095,15 @@ r_tls_client_ee_has_early_data (const ruint8 * msg, rsize msglen)
 /* Walk an EncryptedExtensions message for the server's ALPN selection and, when
  * present, apply it against our offered list. */
 static void
-r_tls_client_ee_apply_alpn (RTLSClient * client, const ruint8 * msg, rsize msglen)
+r_tls_client_ee_apply_alpn (RTLSClient * client, const ruint8 * msg,
+    rsize msglen, rsize hdrsize)
 {
   const ruint8 * p, * end;
   ruint16 extslen;
 
-  if (client->alpn_count == 0 || msglen < R_TLS_HS_HDR_SIZE + sizeof (ruint16))
+  if (client->alpn_count == 0 || msglen < hdrsize + sizeof (ruint16))
     return;
-  p = msg + R_TLS_HS_HDR_SIZE;
+  p = msg + hdrsize;
   extslen = r_load_be16 (p);
   p += sizeof (ruint16);
   end = p + extslen;
@@ -1127,14 +1128,14 @@ r_tls_client_ee_apply_alpn (RTLSClient * client, const ruint8 * msg, rsize msgle
  * (RFC 8449). */
 static void
 r_tls_client_ee_apply_record_size_limit (RTLSClient * client,
-    const ruint8 * msg, rsize msglen)
+    const ruint8 * msg, rsize msglen, rsize hdrsize)
 {
   const ruint8 * p, * end;
   ruint16 extslen;
 
-  if (msglen < R_TLS_HS_HDR_SIZE + sizeof (ruint16))
+  if (msglen < hdrsize + sizeof (ruint16))
     return;
-  p = msg + R_TLS_HS_HDR_SIZE;
+  p = msg + hdrsize;
   extslen = r_load_be16 (p);
   p += sizeof (ruint16);
   end = p + extslen;
@@ -1515,8 +1516,12 @@ r_tls_client_start (RTLSClient * client, REvLoop * loop, RPrng * prng,
     client->max_version = version;
   }
   /* version carries the highest offered version now and the negotiated one once
-   * the ServerHello lands (a 1.2 fallback pins it down). */
+   * the ServerHello lands (a 1.2 fallback pins it down). A DTLS client pins the
+   * version, so the DTLS record/framing selector is known immediately -- 0-RTT
+   * records and the resumption binder ride the first flight, before the
+   * ServerHello would otherwise set it. */
   client->version = client->max_version;
+  client->dtls13 = (client->version == R_TLS_VERSION_DTLS_1_3);
 
   /* The PRF and transcript hash depend on the suite the server selects, which
    * is not known until its ServerHello. The ClientHello is buffered and the
@@ -1672,8 +1677,11 @@ r_tls_client_setup_early_keys13 (RTLSClient * client)
     return FALSE;
   if ((md = r_msg_digest_new (s->hash)) == NULL)
     return FALSE;
-  ok = r_msg_digest_update (md, client->clienthello, client->clienthellolen) &&
-       r_msg_digest_get_data (md, th, hlen, NULL);
+  /* The early secret is bound to Transcript-Hash(ClientHello); DTLS excludes the
+   * handshake header's message_seq / fragment fields (RFC 9147 5.2), matching how
+   * the server folds it, so both derive the same early-traffic key. */
+  r_dtls13_hs_fold (md, client->dtls13, client->clienthello, client->clienthellolen);
+  ok = r_msg_digest_get_data (md, th, hlen, NULL);
   r_msg_digest_free (md);
   if (!ok)
     return FALSE;
@@ -1822,10 +1830,6 @@ r_tls_client_nego_server_hello13 (RTLSClient * client, const RTLSHelloMsg * hell
       return R_TLS_ERROR_NOT_NEEDED;
   }
 
-  /* Mark DTLS 1.3 now: the transcript folding below (the buffered ClientHello)
-   * must already drop the DTLS handshake header fields (RFC 9147 5.2). */
-  client->dtls13 = r_tls_version_is_dtls (client->version);
-
   /* The server accepts resumption by echoing pre_shared_key with the identity
    * it selected; it must be one we offered (we offer a single identity, 0). */
   if (have_psk && client->resume != NULL) {
@@ -1955,10 +1959,6 @@ r_tls_client_handle_hrr (RTLSClient * client, const RTLSHelloMsg * hello,
     return R_TLS_ERROR_VERSION;
   if (!have_ks)
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-
-  /* Mark DTLS 1.3 now: the message_hash and transcript folds below must drop the
-   * DTLS handshake header fields (RFC 9147 5.2). */
-  client->dtls13 = r_tls_version_is_dtls (client->version);
 
   /* The selected group must be one we support and must differ from the one we
    * already sent a share for (otherwise the server should not have retried). */
@@ -2145,9 +2145,13 @@ r_tls_client_flight13 (RTLSClient * client, const RTLSParser * parser)
        * the write key stays the early-traffic key until the EndOfEarlyData; on
        * rejection switch to the handshake key now and let the queued early data
        * be resent as 1-RTT once the handshake completes. */
+      {
+      /* EncryptedExtensions is a handshake message: for DTLS the extensions
+       * follow the 12-byte handshake header, for TLS the 4-byte one. */
+      rsize eehdr = client->dtls13 ? R_DTLS_HS_HDR_SIZE : R_TLS_HS_HDR_SIZE;
       if (client->early13_sent) {
         client->early13_accepted = r_tls_client_ee_has_early_data (
-            parser->fragment.data, parser->fragment.size);
+            parser->fragment.data, parser->fragment.size, eehdr);
         if (!client->early13_accepted) {
           client->early13_sent = FALSE;
           if (!r_tls_client_install_keys13 (client, &client->rk_write,
@@ -2155,10 +2159,12 @@ r_tls_client_flight13 (RTLSClient * client, const RTLSParser * parser)
             return R_TLS_ERROR_HANDSHAKE_FAILURE;
         }
       }
-      r_tls_client_ee_apply_alpn (client, parser->fragment.data, parser->fragment.size);
+      r_tls_client_ee_apply_alpn (client, parser->fragment.data,
+          parser->fragment.size, eehdr);
       if (client->record_size_limit != 0)
         r_tls_client_ee_apply_record_size_limit (client,
-            parser->fragment.data, parser->fragment.size);
+            parser->fragment.data, parser->fragment.size, eehdr);
+      }
       /* A resumed handshake authenticates via the PSK, so no Certificate /
        * CertificateVerify follow: jump straight to the server Finished. */
       client->flight13_step = client->resumed13 ? 3 : 1;
@@ -2249,18 +2255,23 @@ r_tls_client_flight13 (RTLSClient * client, const RTLSParser * parser)
           !r_tls13_schedule_master (&client->sched13, th))
         return R_TLS_ERROR_HANDSHAKE_FAILURE;
 
-      /* On accepted 0-RTT, close the early-data flow with an EndOfEarlyData
-       * (still under the early write key), fold it, then switch the write key to
-       * the client handshake-traffic secret. The client Finished then covers the
-       * transcript through EndOfEarlyData. */
+      /* On accepted 0-RTT, close the early-data flow and switch the write key to
+       * the client handshake-traffic secret. TLS 1.3 sends an EndOfEarlyData
+       * (still under the early write key) and folds it, so the client Finished
+       * covers the transcript through it; DTLS 1.3 sends no such message -- the
+       * epoch 1 -> 2 change ends early data (RFC 9147 5.6) -- so the transcript
+       * runs straight from the server Finished to the client Finished. */
       if (client->early13_accepted) {
-        if ((err = r_tls_client_send_hs13 (client,
-                R_TLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, NULL, 0)) != R_TLS_ERROR_OK)
-          return err;
         client->early13_sent = FALSE;
+        if (!client->dtls13) {
+          if ((err = r_tls_client_send_hs13 (client,
+                  R_TLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA, NULL, 0)) != R_TLS_ERROR_OK)
+            return err;
+          if (!r_msg_digest_get_data (client->hshash, th, hlen, NULL))
+            return R_TLS_ERROR_HANDSHAKE_FAILURE;
+        }
         if (!r_tls_client_install_keys13 (client, &client->rk_write, client->sched13.chs,
-              R_DTLS13_EPOCH_HANDSHAKE) ||
-            !r_msg_digest_get_data (client->hshash, th, hlen, NULL))
+              R_DTLS13_EPOCH_HANDSHAKE))
           return R_TLS_ERROR_HANDSHAKE_FAILURE;
       }
 

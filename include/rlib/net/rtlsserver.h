@@ -265,13 +265,16 @@ R_API RTLSError r_tls_server_set_session_ticket_keys (RTLSServer * server,
  * through the @c appdata callback before the handshake completes. Requires a
  * session-ticket key store (@ref r_tls_server_set_session_ticket_keys); with
  * @p size 0 (the default) the server neither advertises nor accepts early data.
+ * Applies to both TLS 1.3 and DTLS 1.3 (RFC 9147 5.6, where the epoch 1 -> 2
+ * change -- not an EndOfEarlyData -- ends the early-data flow).
  *
  * @warning 0-RTT data carries no forward secrecy and, because the tickets are
  * stateless, this implementation provides no replay protection beyond the
- * ticket lifetime: an on-path attacker may replay the early-data records and the
- * server will accept them again. Enable this only when the 0-RTT-triggered
- * application actions are idempotent (RFC 8446 8, appendix E.5). The 1-RTT data
- * that follows the handshake is unaffected.
+ * ticket lifetime: an attacker may replay the early-data records and the server
+ * will accept them again -- trivially so over DTLS, where the whole flight is a
+ * capturable datagram. Enable this only when the 0-RTT-triggered application
+ * actions are idempotent (RFC 8446 8, appendix E.5). The 1-RTT data that follows
+ * the handshake is unaffected.
  */
 R_API RTLSError r_tls_server_set_max_early_data_size (RTLSServer * server,
     ruint32 size);

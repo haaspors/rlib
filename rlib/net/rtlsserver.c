@@ -2642,13 +2642,16 @@ r_tls_server_write_flight13 (RTLSServer * server)
   }
   r_memclear_secure (ecdhe, sizeof (ecdhe));
 
-  /* 3. Install handshake-traffic keys (server writes shs, reads chs). While
-   * draining 0-RTT the read key stays the early-traffic key -- it switches to
-   * chs only once the EndOfEarlyData arrives. */
+  /* 3. Install handshake-traffic keys (server writes shs, reads chs). For TLS,
+   * while draining 0-RTT the read key stays the early-traffic key until the
+   * EndOfEarlyData. DTLS has no EndOfEarlyData: install the handshake read key
+   * now, which demotes the early key to the previous-epoch slot, so epoch-1
+   * early data and the epoch-2 client Finished both decrypt via the epoch demux
+   * (RFC 9147 5.6 / 6.1). */
   if (!r_tls_server_install_keys13 (server, &server->rk_write, server->sched13.shs,
         R_DTLS13_EPOCH_HANDSHAKE))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
-  if (!server->early13_draining &&
+  if ((!server->early13_draining || server->dtls13) &&
       !r_tls_server_install_keys13 (server, &server->rk_read, server->sched13.chs,
         R_DTLS13_EPOCH_HANDSHAKE))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
@@ -3947,7 +3950,13 @@ r_tls_server_state_finished (RTLSServer * server, const RTLSParser * parser)
         }
         return R_TLS_ERROR_OK;
       }
-      if (parser->content == R_TLS_CONTENT_TYPE_HANDSHAKE) {
+      if (server->dtls13) {
+        /* DTLS 1.3 has no EndOfEarlyData: the client's first handshake-epoch
+         * record ends early data (RFC 9147 5.6). The handshake read key was
+         * installed up front, so leave draining and handle this record (the
+         * client Finished) through the normal path below. */
+        server->early13_draining = FALSE;
+      } else if (parser->content == R_TLS_CONTENT_TYPE_HANDSHAKE) {
         RTLSHandshakeType type;
         if ((err = r_tls_parser_parse_handshake_peek_type (parser, &type)) != R_TLS_ERROR_OK ||
             type != R_TLS_HANDSHAKE_TYPE_END_OF_EARLY_DATA) {
@@ -3962,9 +3971,10 @@ r_tls_server_state_finished (RTLSServer * server, const RTLSParser * parser)
           return R_TLS_ERROR_HANDSHAKE_FAILURE;
         }
         return R_TLS_ERROR_OK;
+      } else {
+        r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
+        return R_TLS_ERROR_WRONG_TYPE;
       }
-      r_tls_server_send_alert (server, R_TLS_ALERT_TYPE_UNEXPECTED_MESSAGE);
-      return R_TLS_ERROR_WRONG_TYPE;
     }
 
     if ((err = r_tls_server_finished13 (server, parser)) == R_TLS_ERROR_OK)

@@ -2593,6 +2593,139 @@ RTEST_F (rtlsclient, dtls13_resumption, RTEST_FAST)
 }
 RTEST_END;
 
+/* DTLS 1.3 0-RTT (RFC 9147 5.6 over RFC 8446 2.3): a resumed connection sends
+ * early data (epoch 1) right behind the ClientHello, interleaved with the
+ * handshake flight (epoch 2). DTLS sends no EndOfEarlyData -- the epoch change
+ * ends early data -- and the server reads epoch-1 early data and the epoch-2
+ * Finished concurrently via the read-key demux. The server accepts the early
+ * data and delivers it before the handshake completes. */
+RTEST_F (rtlsclient, dtls13_early_data_accepted, RTEST_FAST)
+{
+  static const ruint8 early[] = { 'G', 'E', 'T', ' ', '/' };
+  static const ruint8 s2c[] = { 'o', 'k' };
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RBuffer * app;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First handshake: the server offers 0-RTT, so its ticket advertises it. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 0x4000),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* Fresh endpoints (sharing the key store); the client offers 0-RTT data. */
+  r_tls_client_unref (fixture->client);
+  r_tls_server_unref (fixture->server);
+  fixture->server = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 0x4000),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) early, sizeof (early), sizeof (early), 0, NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_early_data (fixture->client, app), ==, R_TLS_ERROR_OK);
+  r_buffer_unref (app);
+
+  fixture->cli_hs_done = fixture->srv_hs_done = FALSE;
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+  r_assert (r_tls_client_get_early_data_accepted (fixture->client));
+  r_assert (r_tls_server_get_early_data_accepted (fixture->server));
+  /* The early data reached the server as application data during the handshake. */
+  r_test_tls_assert_appdata (&fixture->srv_app, early, sizeof (early));
+
+  /* 1-RTT data still flows afterwards. */
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) s2c, sizeof (s2c), sizeof (s2c), 0, NULL, NULL)), !=, NULL);
+  r_assert (r_tls_server_send_appdata (fixture->server, app));
+  r_buffer_unref (app);
+  r_test_tls_loopback_pump (fixture);
+  r_test_tls_assert_appdata (&fixture->cli_app, s2c, sizeof (s2c));
+
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+}
+RTEST_END;
+
+/* DTLS 1.3 0-RTT declined: the resuming server does not enable early data, so it
+ * does not echo the early_data extension. The client's epoch-1 records are
+ * dropped (no early read key installed) and the payload is transparently resent
+ * as ordinary 1-RTT application data once the handshake completes. */
+RTEST_F (rtlsclient, dtls13_early_data_rejected, RTEST_FAST)
+{
+  static const ruint8 early[] = { 'P', 'I', 'N', 'G' };
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RBuffer * app;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First handshake against an early-data-enabled server: the ticket permits
+   * 0-RTT, so the client will actually put early data on the wire. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 0x4000),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* The resuming server does NOT enable 0-RTT, so it declines the offer. */
+  r_tls_client_unref (fixture->client);
+  r_tls_server_unref (fixture->server);
+  fixture->server = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) early, sizeof (early), sizeof (early), 0, NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_early_data (fixture->client, app), ==, R_TLS_ERROR_OK);
+  r_buffer_unref (app);
+
+  fixture->cli_hs_done = fixture->srv_hs_done = FALSE;
+  r_queue_clear (&fixture->srv_out, r_buffer_unref);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert (!fixture->cli_error && !fixture->srv_error);
+  /* Neither side saw 0-RTT accepted, yet the payload was delivered once, resent
+   * as 1-RTT application data. */
+  r_assert (!r_tls_client_get_early_data_accepted (fixture->client));
+  r_assert (!r_tls_server_get_early_data_accepted (fixture->server));
+  r_test_tls_assert_appdata (&fixture->srv_app, early, sizeof (early));
+
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */
