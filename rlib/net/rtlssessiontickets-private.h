@@ -24,6 +24,7 @@
 
 #include <rlib/net/rtlssessiontickets.h>
 #include <rlib/rtypes.h>
+#include <rlib/rtime.h>
 
 R_BEGIN_DECLS
 
@@ -45,6 +46,15 @@ R_API_HIDDEN rboolean r_tls_session_ticket_keys_seal (RTLSSessionTicketKeys * ke
 R_API_HIDDEN rboolean r_tls_session_ticket_keys_open (RTLSSessionTicketKeys * keys,
     const ruint8 * ticket, rsize len, ruint8 * plain_out, rsize cap,
     rsize * plainlen_out);
+
+/* 0-RTT anti-replay strike register (RFC 8446 8.1): record @id (a value unique
+ * to a ClientHello -- its PSK binder) as an accepted 0-RTT attempt valid until
+ * @expiry. Returns TRUE if @id was not already recorded (accept the early data),
+ * FALSE if it is a replay or cannot be tracked. Entries past @now are reclaimed;
+ * the register is bounded, evicting the soonest-to-expire entry when full. The
+ * store is shared across servers, so this catches cross-connection replays. */
+R_API_HIDDEN rboolean r_tls_session_ticket_keys_strike (RTLSSessionTicketKeys * keys,
+    const ruint8 * id, rsize idlen, RClockTime now, RClockTime expiry);
 
 R_END_DECLS
 
