@@ -2726,6 +2726,141 @@ RTEST_F (rtlsclient, dtls13_early_data_rejected, RTEST_FAST)
 }
 RTEST_END;
 
+/* RFC 8446 8: a replayed 0-RTT ClientHello must not be accepted twice. The
+ * strike register on the shared ticket store records the first acceptance by the
+ * ClientHello's binder, so replaying the identical flight to a second server
+ * sharing the keys is refused early data (it can still resume as 1-RTT). */
+RTEST_F (rtlsclient, dtls13_early_data_replay_rejected, RTEST_FAST)
+{
+  static const ruint8 early[] = { 'G', 'E', 'T', ' ', '/' };
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RTLSServer * srvA, * srvB;
+  RBuffer * app, * flight[8];
+  rsize n = 0, i;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  /* First handshake yields a 0-RTT-capable ticket. */
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 0x4000),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  /* A fresh resuming client that offers 0-RTT; capture the flight it emits. */
+  r_tls_client_unref (fixture->client);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) early, sizeof (early), sizeof (early), 0, NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_early_data (fixture->client, app), ==, R_TLS_ERROR_OK);
+  r_buffer_unref (app);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  while ((app = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_assert_cmpuint (n, <, R_N_ELEMENTS (flight));
+    flight[n++] = app;                          /* keep the ref for replay */
+  }
+  r_assert_cmpuint (n, >=, 2);                   /* ClientHello + early data */
+
+  /* Two servers sharing the ticket store; deliver the identical flight to each. */
+  srvA = r_test_tls13_new_server (fixture, keys);
+  srvB = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (srvA, 0x4000), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (srvB, 0x4000), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srvA, fixture->evloop, fixture->prng), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srvB, fixture->evloop, fixture->prng), ==, R_TLS_ERROR_OK);
+  for (i = 0; i < n; i++)
+    r_tls_server_incoming_data (srvA, flight[i]);
+  for (i = 0; i < n; i++)
+    r_tls_server_incoming_data (srvB, flight[i]);
+
+  /* The first acceptance is recorded; the replay is refused early data. */
+  r_assert (r_tls_server_get_early_data_accepted (srvA));
+  r_assert (!r_tls_server_get_early_data_accepted (srvB));
+
+  for (i = 0; i < n; i++)
+    r_buffer_unref (flight[i]);
+  r_tls_server_unref (srvA);
+  r_tls_server_unref (srvB);
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+}
+RTEST_END;
+
+/* RFC 8446 8.2: 0-RTT is refused when the reported ticket age is too far from
+ * the elapsed time since issue. Advancing the clock past the anti-replay window
+ * before delivering a first-seen flight makes its age look stale, so the server
+ * declines early data even though the strike register has never seen it. */
+RTEST_F (rtlsclient, dtls13_early_data_stale_age_rejected, RTEST_FAST)
+{
+  static const ruint8 early[] = { 'G', 'E', 'T', ' ', '/' };
+  RTLSSessionTicketKeys * keys;
+  RTLSClientSession * session;
+  RTLSServer * srv;
+  RBuffer * app, * flight[8];
+  RClockTime now;
+  rsize n = 0, i;
+
+  r_assert_cmpptr ((keys = r_tls_session_ticket_keys_new ()), !=, NULL);
+
+  r_assert_cmpint (r_tls_server_set_session_ticket_keys (fixture->server, keys),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (fixture->server, 0x4000),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (fixture->server, fixture->evloop, fixture->prng),
+      ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  r_test_tls_loopback_pump (fixture);
+  r_assert (fixture->cli_hs_done && fixture->srv_hs_done);
+  r_assert_cmpptr ((session = r_tls_client_get_session (fixture->client)), !=, NULL);
+
+  r_tls_client_unref (fixture->client);
+  r_assert_cmpptr ((fixture->client = r_tls_client_new (&clicbs, fixture, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_session (fixture->client, session), ==, R_TLS_ERROR_OK);
+  r_assert_cmpptr ((app = r_buffer_new_wrapped (R_MEM_FLAG_NONE,
+          (rpointer) early, sizeof (early), sizeof (early), 0, NULL, NULL)), !=, NULL);
+  r_assert_cmpint (r_tls_client_set_early_data (fixture->client, app), ==, R_TLS_ERROR_OK);
+  r_buffer_unref (app);
+  r_queue_clear (&fixture->cli_out, r_buffer_unref);
+  r_assert_cmpint (r_tls_client_start (fixture->client, fixture->evloop, fixture->prng,
+        R_TLS_VERSION_DTLS_1_3), ==, R_TLS_ERROR_OK);
+  while ((app = r_queue_pop (&fixture->cli_out)) != NULL) {
+    r_assert_cmpuint (n, <, R_N_ELEMENTS (flight));
+    flight[n++] = app;
+  }
+  r_assert_cmpuint (n, >=, 2);
+
+  /* Time passes beyond the freshness window before the flight is processed. */
+  now = r_clock_get_time (fixture->clock);
+  r_assert (r_test_clock_update_time (fixture->clock, now + 30 * R_SECOND));
+
+  srv = r_test_tls13_new_server (fixture, keys);
+  r_assert_cmpint (r_tls_server_set_max_early_data_size (srv, 0x4000), ==, R_TLS_ERROR_OK);
+  r_assert_cmpint (r_tls_server_start (srv, fixture->evloop, fixture->prng), ==, R_TLS_ERROR_OK);
+  for (i = 0; i < n; i++)
+    r_tls_server_incoming_data (srv, flight[i]);
+
+  /* The ticket still resumes, but its age is stale, so 0-RTT is declined. */
+  r_assert (!r_tls_server_get_early_data_accepted (srv));
+
+  for (i = 0; i < n; i++)
+    r_buffer_unref (flight[i]);
+  r_tls_server_unref (srv);
+  r_tls_client_session_unref (session);
+  r_tls_session_ticket_keys_unref (keys);
+}
+RTEST_END;
+
 /* DTLS 1.3 Connection ID (RFC 9146): both ends advertise a CID, so protected
  * records carry the peer's CID in the unified header. Verifies the wire framing
  * (C bit + CID bytes) and that a CID-tagged record still deprotects. */

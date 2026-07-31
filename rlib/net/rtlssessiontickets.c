@@ -34,18 +34,32 @@
  * not invalidate tickets sealed under the keys it replaces. */
 #define R_TLS_STK_KEYS_MAX        3
 
+/* Recent accepted 0-RTT ClientHellos remembered for anti-replay, and the cap on
+ * the identifier (a PSK binder, at most one hash long). */
+#define R_TLS_STK_STRIKE_MAX      256
+#define R_TLS_STK_STRIKE_ID_MAX   64
+
 typedef struct {
   ruint8 key_name[R_TLS_STK_KEY_NAME_SIZE];
   ruint8 key[R_TLS_STK_KEY_SIZE];
 } RTLSSessionTicketKey;
 
+typedef struct {
+  ruint8 id[R_TLS_STK_STRIKE_ID_MAX];
+  ruint8 idlen;                             /* 0 marks a free slot */
+  RClockTime expiry;
+} RTLSStrikeEntry;
+
 struct RTLSSessionTicketKeys {
   RRef ref;
-  /* Guards the key set: seal / open take the read lock, rotate the write lock.
-   * The store is shared across servers (and so potentially threads). */
+  /* Guards the key set (seal / open take the read lock, rotate the write lock)
+   * and the strike register (write lock). The store is shared across servers
+   * (and so potentially threads). */
   RRWMutex lock;
   rsize count;                              /* valid keys, 1..R_TLS_STK_KEYS_MAX */
   RTLSSessionTicketKey keys[R_TLS_STK_KEYS_MAX];  /* keys[0] is the active key */
+  rsize strike_count;                       /* high-water mark of used strike slots */
+  RTLSStrikeEntry strikes[R_TLS_STK_STRIKE_MAX];
 };
 
 static rboolean
@@ -205,4 +219,48 @@ r_tls_session_ticket_keys_open (RTLSSessionTicketKeys * keys,
 
   *plainlen_out = plainlen;
   return TRUE;
+}
+
+rboolean
+r_tls_session_ticket_keys_strike (RTLSSessionTicketKeys * keys,
+    const ruint8 * id, rsize idlen, RClockTime now, RClockTime expiry)
+{
+  rsize i, free_slot = R_TLS_STK_STRIKE_MAX, oldest = 0;
+  rboolean fresh = TRUE;
+
+  /* An identifier we cannot store is treated as a replay: better to refuse 0-RTT
+   * than to accept a flight we cannot remember. */
+  if (id == NULL || idlen == 0 || idlen > R_TLS_STK_STRIKE_ID_MAX)
+    return FALSE;
+
+  r_rwmutex_wrlock (&keys->lock);
+  for (i = 0; i < keys->strike_count; i++) {
+    RTLSStrikeEntry * e = &keys->strikes[i];
+    if (e->idlen == 0 || e->expiry <= now) {   /* free or expired: reclaim */
+      e->idlen = 0;
+      if (free_slot == R_TLS_STK_STRIKE_MAX)
+        free_slot = i;
+      continue;
+    }
+    if (e->idlen == idlen && r_memcmp (e->id, id, idlen) == 0) {
+      fresh = FALSE;                            /* seen within the window: replay */
+      break;
+    }
+    if (e->expiry < keys->strikes[oldest].expiry)
+      oldest = i;
+  }
+  if (fresh) {
+    RTLSStrikeEntry * e;
+    if (free_slot != R_TLS_STK_STRIKE_MAX)
+      e = &keys->strikes[free_slot];
+    else if (keys->strike_count < R_TLS_STK_STRIKE_MAX)
+      e = &keys->strikes[keys->strike_count++];
+    else
+      e = &keys->strikes[oldest];              /* full: evict soonest-to-expire */
+    r_memcpy (e->id, id, idlen);
+    e->idlen = (ruint8) idlen;
+    e->expiry = expiry;
+  }
+  r_rwmutex_wrunlock (&keys->lock);
+  return fresh;
 }

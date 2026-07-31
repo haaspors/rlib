@@ -1683,10 +1683,16 @@ r_tls_server_read_key_share (const RTLSServer * server, RTLSSupportedGroup group
  *   resumption_master_secret(HashLen)
  * The nonce and res_master together yield the PSK; issued_at bounds expiry and
  * cipher_suite fixes the hash (so HashLen). Distinct from the 1.2 layout. */
-#define R_TLS_TICKET13_STATE_VERSION  3
+#define R_TLS_TICKET13_STATE_VERSION  4
 #define R_TLS_TICKET13_NONCE_SIZE     4
-#define R_TLS_TICKET13_STATE_MAX      (1 + 2 + 8 + 1 + \
+#define R_TLS_TICKET13_STATE_MAX      (1 + 2 + 8 + 4 + 1 + \
     R_TLS_TICKET13_NONCE_SIZE + R_TLS13_SECRET_MAX)
+
+/* 0-RTT anti-replay window (RFC 8446 8.2): a resumption whose reported ticket
+ * age differs from the elapsed time since issue by more than this is refused
+ * early data, which also bounds how long the strike register must remember an
+ * accepted ClientHello. */
+#define R_TLS13_EARLY_DATA_WINDOW     (10 * R_SECOND)
 
 /* Cap on rejected 0-RTT ciphertext discarded before we stop trial-decrypting
  * and fail the record (bounds a peer that streams undecryptable data). */
@@ -1696,7 +1702,7 @@ r_tls_server_read_key_share (const RTLSServer * server, RTLSSupportedGroup group
  * suite) into an opaque ticket under the shared key store. */
 static RTLSError
 r_tls_server_create_session_ticket13 (RTLSServer * server,
-    const ruint8 * nonce, ruint8 noncelen)
+    const ruint8 * nonce, ruint8 noncelen, ruint32 age_add)
 {
   ruint8 plain[R_TLS_TICKET13_STATE_MAX];
   ruint8 * ticket;
@@ -1705,6 +1711,9 @@ r_tls_server_create_session_ticket13 (RTLSServer * server,
   plain[n++] = R_TLS_TICKET13_STATE_VERSION;
   r_store_be16 (&plain[n], (ruint16) server->cs13_suite); n += 2;
   r_store_be64 (&plain[n], (ruint64) r_tls_server_now (server)); n += 8;
+  /* The age_add lets us recover the client's real ticket age for the 0-RTT
+   * freshness check on resume (RFC 8446 8.2). */
+  r_store_be32 (&plain[n], age_add); n += 4;
   plain[n++] = noncelen;
   r_memcpy (&plain[n], nonce, noncelen); n += noncelen;
   r_memcpy (&plain[n], server->sched13.res_master, hlen); n += hlen;
@@ -1754,6 +1763,24 @@ r_tls_server_psk_binder (RTLSServer * server, const RTLSHelloExt * psk,
   return ok;
 }
 
+/* Whether a resumption's reported ticket age is fresh enough to accept 0-RTT
+ * (RFC 8446 8.2). The client sends obfuscated_ticket_age = real_age_ms + age_add
+ * (mod 2^32); recovering the real age and comparing it to the time elapsed since
+ * we issued the ticket rejects a replayed ClientHello, whose age is fixed while
+ * the elapsed time grows past the window. */
+static rboolean
+r_tls_server_early_data_fresh (ruint32 obfuscated_age, ruint32 age_add,
+    RClockTime issued, RClockTime now)
+{
+  ruint32 reported_ms = obfuscated_age - age_add;   /* mod 2^32 wraps naturally */
+  ruint64 elapsed_ms = (now - issued) / R_MSECOND;
+  ruint64 window_ms = R_TLS13_EARLY_DATA_WINDOW / R_MSECOND;
+  ruint64 diff = (elapsed_ms > reported_ms) ?
+      elapsed_ms - reported_ms : (ruint64) reported_ms - elapsed_ms;
+
+  return diff <= window_ms;
+}
+
 /* Accept a 1.3 PSK resumption offer. Requires psk_key_exchange_modes offering
  * psk_dhe_ke and a pre_shared_key whose first identity opens under our key
  * store; the ticket's suite must match and it must be unexpired, and the binder
@@ -1771,6 +1798,7 @@ r_tls_server_try_resume13 (RTLSServer * server)
   rsize plainlen, hlen = r_msg_digest_type_size (server->cs13_hash);
   RTLSCipherSuite suite;
   RClockTime issued, now;
+  ruint32 age_add;
 
   server->resumed13 = FALSE;
 
@@ -1786,15 +1814,16 @@ r_tls_server_try_resume13 (RTLSServer * server)
           ident.len, plain, sizeof (plain), &plainlen))
     return R_TLS_ERROR_NOT_NEEDED;   /* unknown / stale key: full handshake */
 
-  /* version | suite | issued_at | nonce_len | nonce | res_master(hlen). */
-  if (plainlen < 1 + 2 + 8 + 1 || plain[0] != R_TLS_TICKET13_STATE_VERSION)
+  /* version | suite | issued_at | age_add | nonce_len | nonce | res_master(hlen). */
+  if (plainlen < 1 + 2 + 8 + 4 + 1 || plain[0] != R_TLS_TICKET13_STATE_VERSION)
     goto decline;
   suite = (RTLSCipherSuite) r_load_be16 (&plain[1]);
   issued = (RClockTime) r_load_be64 (&plain[3]);
-  noncelen = plain[11];
-  if ((rsize) 12 + noncelen + hlen != plainlen || suite != server->cs13_suite)
+  age_add = r_load_be32 (&plain[11]);
+  noncelen = plain[15];
+  if ((rsize) 16 + noncelen + hlen != plainlen || suite != server->cs13_suite)
     goto decline;
-  nonce = &plain[12];
+  nonce = &plain[16];
 
   now = r_tls_server_now (server);
   if (now < issued ||
@@ -1802,7 +1831,7 @@ r_tls_server_try_resume13 (RTLSServer * server)
     goto decline;
 
   /* PSK = HKDF-Expand-Label(res_master, "resumption", nonce). */
-  if (!r_tls13_resumption_psk (server->cs13_hash, &plain[12 + noncelen],
+  if (!r_tls13_resumption_psk (server->cs13_hash, &plain[16 + noncelen],
         nonce, noncelen, server->psk13))
     goto decline;
   server->psk13_len = hlen;
@@ -1824,12 +1853,17 @@ r_tls_server_try_resume13 (RTLSServer * server)
   server->selected_identity13 = 0;
 
   /* 0-RTT is accepted only for the first identity (this cut offers one), only
-   * when configured (max_early_data13), and only when the ClientHello carries
-   * the early_data extension. */
+   * when configured (max_early_data13) and offered (early_data extension), only
+   * when the reported ticket age is fresh, and only when this exact ClientHello
+   * has not already been accepted -- the strike register on the shared ticket
+   * store rejects a replayed 0-RTT flight (RFC 8446 8). */
   {
     RTLSHelloExt ed = R_TLS_HELLO_EXT_INIT;
     if (server->max_early_data13 > 0 &&
-        r_tls_server_find_ext (server, R_TLS_EXT_TYPE_EARLY_DATA, &ed))
+        r_tls_server_find_ext (server, R_TLS_EXT_TYPE_EARLY_DATA, &ed) &&
+        r_tls_server_early_data_fresh (ident.age, age_add, issued, now) &&
+        r_tls_session_ticket_keys_strike (server->ticket_keys, binder, binderlen,
+            now, now + R_TLS13_EARLY_DATA_WINDOW))
       server->early13_accepted = TRUE;
   }
   return R_TLS_ERROR_OK;
@@ -2814,7 +2848,7 @@ r_tls_server_write_new_session_ticket13 (RTLSServer * server)
   if (!r_prng_fill (server->prng, (ruint8 *) &age_add, sizeof (age_add)))
     return R_TLS_ERROR_HANDSHAKE_FAILURE;
   if ((ret = r_tls_server_create_session_ticket13 (server,
-          nonce, sizeof (nonce))) != R_TLS_ERROR_OK)
+          nonce, sizeof (nonce), age_add)) != R_TLS_ERROR_OK)
     return ret;
 
   if ((ret = r_tls_write_hs_new_session_ticket13 (body, sizeof (body), &bodylen,
