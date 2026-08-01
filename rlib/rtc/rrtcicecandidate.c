@@ -35,6 +35,30 @@ r_rtc_ice_candidate_free (RRtcIceCandidate * candidate)
   r_free (candidate);
 }
 
+/* Pack a key/value pair into a single allocation: the RStrKV header
+ * followed by the NUL-terminated key and value bytes. */
+static RStrKV *
+r_rtc_ice_ext_new (const rchar * key, rsize ksize, const rchar * val, rsize vsize)
+{
+  rchar * alloc;
+  RStrKV * ret;
+
+  if ((alloc = r_malloc (sizeof (RStrKV) + ksize + vsize + 2)) == NULL)
+    return NULL;
+
+  ret = (RStrKV *)alloc;
+  ret->key.str = alloc + sizeof (RStrKV);
+  ret->key.size = ksize;
+  ret->val.str = ret->key.str + ksize + 1;
+  ret->val.size = vsize;
+  r_memcpy (ret->key.str, key, ksize);
+  ret->key.str[ksize] = 0;
+  r_memcpy (ret->val.str, val, vsize);
+  ret->val.str[vsize] = 0;
+
+  return ret;
+}
+
 RRtcIceCandidate *
 r_rtc_ice_candidate_new_full (const rchar * foundation, rssize fsize,
     ruint64 pri, RRtcIceComponent component,
@@ -166,21 +190,10 @@ r_rtc_ice_candidate_new_from_sdp_attrib_value (const rchar * value, rssize size)
       while (r_str_kv_parse_multiple (&kv, next, RPOINTER_TO_SIZE (end - next),
             R_STR_WITH_SIZE_ARGS (" "), R_STR_WITH_SIZE_ARGS (" "), &next) == R_STR_PARSE_OK) {
         RStrKV * extkv;
-        rchar * alloc;
 
-        if ((alloc = r_malloc (sizeof (RStrKV) + kv.key.size + kv.val.size + 2)) != NULL) {
-          extkv = (RStrKV *)alloc;
-          extkv->key.str = alloc + sizeof (RStrKV);
-          extkv->key.size = kv.key.size;
-          extkv->val.str = extkv->key.str + extkv->key.size + 1;
-          extkv->val.size = kv.val.size;
-          r_memcpy (extkv->key.str, kv.key.str, kv.key.size);
-          extkv->key.str[extkv->key.size] = 0;
-          r_memcpy (extkv->val.str, kv.val.str, kv.val.size);
-          extkv->val.str[extkv->val.size] = 0;
-
+        if ((extkv = r_rtc_ice_ext_new (kv.key.str, kv.key.size,
+                kv.val.str, kv.val.size)) != NULL)
           r_ptr_array_add (&ret->extensions, extkv, r_free);
-        }
       }
     }
 
@@ -250,7 +263,7 @@ RRtcError
 r_rtc_ice_candidate_add_ext (RRtcIceCandidate * candidate,
     const rchar * key, rssize ksize, const rchar * val, rssize vsize)
 {
-  rchar * alloc;
+  RStrKV * extkv;
 
   if (R_UNLIKELY (key == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (val == NULL)) return R_RTC_INVAL;
@@ -259,22 +272,11 @@ r_rtc_ice_candidate_add_ext (RRtcIceCandidate * candidate,
   if (R_UNLIKELY (ksize == 0)) return R_RTC_INVAL;
   if (R_UNLIKELY (vsize == 0)) return R_RTC_INVAL;
 
-  if ((alloc = r_malloc (sizeof (RStrKV) + ksize + vsize + 2)) != NULL) {
-    RStrKV * extkv = (RStrKV *)alloc;
-    extkv->key.str = alloc + sizeof (RStrKV);
-    extkv->key.size = ksize;
-    extkv->val.str = extkv->key.str + extkv->key.size + 1;
-    extkv->val.size = vsize;
-    r_memcpy (extkv->key.str, key, ksize);
-    extkv->key.str[extkv->key.size] = 0;
-    r_memcpy (extkv->val.str, val, vsize);
-    extkv->val.str[extkv->val.size] = 0;
+  if ((extkv = r_rtc_ice_ext_new (key, ksize, val, vsize)) == NULL)
+    return R_RTC_OOM;
 
-    r_ptr_array_add (&candidate->extensions, extkv, r_free);
-    return R_RTC_OK;
-  }
-
-  return R_RTC_OOM;
+  r_ptr_array_add (&candidate->extensions, extkv, r_free);
+  return R_RTC_OK;
 }
 
 
@@ -290,6 +292,24 @@ static const rchar * _r_rtc_ice_type_tbl[] = {
   "relay",
 };
 
+/* Return the unbracketed address string of @addr (SDP candidate form: a
+ * bare IPv6 literal with the port carried separately) and write the port
+ * through @port.  Returns NULL for unsupported families. */
+static rchar *
+r_rtc_ice_addr_to_str (const RSocketAddress * addr, ruint16 * port)
+{
+  switch (r_socket_address_get_family (addr)) {
+    case R_SOCKET_FAMILY_IPV4:
+      *port = r_socket_address_ipv4_get_port (addr);
+      return r_socket_address_ipv4_to_str (addr, FALSE);
+    case R_SOCKET_FAMILY_IPV6:
+      *port = r_socket_address_ipv6_get_port (addr);
+      return r_socket_address_ipv6_to_str (addr, FALSE);
+    default:
+      return NULL;
+  }
+}
+
 rchar *
 r_rtc_ice_candidate_to_string (const RRtcIceCandidate * candidate)
 {
@@ -300,18 +320,9 @@ r_rtc_ice_candidate_to_string (const RRtcIceCandidate * candidate)
 
   if (R_UNLIKELY ((str = r_string_new_sized (128)) == NULL)) return NULL;
 
-  switch (r_socket_address_get_family (candidate->addr)) {
-    case R_SOCKET_FAMILY_IPV4:
-      addr = r_socket_address_ipv4_to_str (candidate->addr, FALSE);
-      port = r_socket_address_ipv4_get_port (candidate->addr);
-      break;
-    case R_SOCKET_FAMILY_IPV6:
-      addr = r_socket_address_ipv6_to_str (candidate->addr, FALSE);
-      port = r_socket_address_ipv6_get_port (candidate->addr);
-      break;
-    default:
-      r_string_free (str);
-      return NULL;
+  if ((addr = r_rtc_ice_addr_to_str (candidate->addr, &port)) == NULL) {
+    r_string_free (str);
+    return NULL;
   }
 
   r_string_append_printf (str,
@@ -321,23 +332,10 @@ r_rtc_ice_candidate_to_string (const RRtcIceCandidate * candidate)
       addr, port, _r_rtc_ice_type_tbl[candidate->type]);
   r_free (addr);
 
-  if (candidate->raddr != NULL) {
-    switch (r_socket_address_get_family (candidate->raddr)) {
-      case R_SOCKET_FAMILY_IPV4:
-        addr = r_socket_address_ipv4_to_str (candidate->raddr, FALSE);
-        port = r_socket_address_ipv4_get_port (candidate->raddr);
-        r_string_append_printf (str, " raddr %s rport %"RUINT16_FMT, addr, port);
-        r_free (addr);
-        break;
-      case R_SOCKET_FAMILY_IPV6:
-        addr = r_socket_address_ipv6_to_str (candidate->raddr, FALSE);
-        port = r_socket_address_ipv6_get_port (candidate->raddr);
-        r_string_append_printf (str, " raddr %s rport %"RUINT16_FMT, addr, port);
-        r_free (addr);
-        break;
-      default:
-        break;
-    }
+  if (candidate->raddr != NULL &&
+      (addr = r_rtc_ice_addr_to_str (candidate->raddr, &port)) != NULL) {
+    r_string_append_printf (str, " raddr %s rport %"RUINT16_FMT, addr, port);
+    r_free (addr);
   }
 
   /* Add extensions/properties... */
