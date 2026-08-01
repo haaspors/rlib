@@ -25,6 +25,16 @@
 
 #include <rlib/net/proto/rstun.h>
 
+/* candidateSockets keeps a NULL value for candidates that are added but
+ * not yet bound, and close() resets bound sockets back to NULL -- so the
+ * value destructor has to tolerate NULL. */
+static void
+r_rtc_ice_udp_destroy (rpointer udp)
+{
+  if (udp != NULL)
+    r_ev_udp_unref (udp);
+}
+
 static void
 r_rtc_ice_transport_free (RRtcIceTransport * ice)
 {
@@ -58,7 +68,7 @@ r_rtc_ice_transport_new (
     ret->ufrag = r_strdup_size (ufrag, usize);
     ret->pwd = r_strdup_size (pwd, psize);
     ret->candidateSockets = r_hash_table_new_full (NULL, NULL,
-        r_rtc_ice_candidate_unref, r_ref_unref);
+        r_rtc_ice_candidate_unref, r_rtc_ice_udp_destroy);
     R_LOG_TRACE ("RtcIceTransport %p new %s - %s", ret, ret->ufrag, ret->pwd);
   }
 
