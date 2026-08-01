@@ -106,10 +106,17 @@ r_rtc_crypto_transport_start (RRtcCryptoTransport * crypto, REvLoop * loop)
   return ret;
 }
 
-#if 0
 RRtcError
 r_rtc_crypto_transport_close (RRtcCryptoTransport * crypto)
 {
+  if (R_UNLIKELY (crypto == NULL)) return R_RTC_INVAL;
+
+  R_LOG_TRACE ("RtcCryptoTransport %p close", crypto);
+
+  if (crypto->ice != NULL)
+    r_rtc_ice_transport_close (crypto->ice);
+  r_rtc_rtp_listener_notify_close (crypto->listener, crypto);
+
+  return R_RTC_OK;
 }
-#endif
 

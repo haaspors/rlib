@@ -53,12 +53,16 @@ static const rchar pempk[] =
 
 typedef struct {
   RRtcSession * session;
+  RRtcCryptoTransport * crypto;
   RRtcRtpReceiver * recv;
   RRtcRtpSender * send;
 
   RQueue rtp;
   RQueue rtcp;
   RQueue send_rtcp; /* RTCP delivered to our sender side */
+
+  ruint recv_closed;
+  ruint send_closed;
 } TestRtcCtx;
 
 RTEST_FIXTURE_STRUCT (rrtc)
@@ -86,6 +90,7 @@ test_rtc_recv_close (rpointer data, rpointer ctx)
   if (R_UNLIKELY ((rtc = data) == NULL)) return;
 
   r_assert_cmpptr (rtc->recv, ==, ctx);
+  rtc->recv_closed++;
 }
 
 static void
@@ -124,6 +129,7 @@ test_rtc_send_close (rpointer data, rpointer ctx)
   if (R_UNLIKELY ((rtc = data) == NULL)) return;
 
   r_assert_cmpptr (rtc->send, ==, ctx);
+  rtc->send_closed++;
 }
 
 static void
@@ -160,7 +166,7 @@ test_rtc_ctx_init (TestRtcCtx * ctx, RPrng * prng, RRtcIceTransport * ice)
   r_assert_cmpptr ((ctx->recv = r_rtc_session_create_rtp_receiver (ctx->session,
           R_STR_WITH_SIZE_ARGS ("audio"), &recv_cbs, ctx, NULL,
           crypto, crypto)), !=, NULL);
-  r_rtc_crypto_transport_unref (crypto);
+  ctx->crypto = crypto; /* keep the ref for close()-driven teardown tests */
 
   r_queue_init (&ctx->rtp);
   r_queue_init (&ctx->rtcp);
@@ -172,6 +178,7 @@ test_rtc_ctx_clear (TestRtcCtx * ctx)
 {
   r_rtc_rtp_sender_unref (ctx->send);
   r_rtc_rtp_receiver_unref (ctx->recv);
+  r_rtc_crypto_transport_unref (ctx->crypto);
   r_rtc_session_unref (ctx->session);
 
   r_queue_clear (&ctx->rtp, r_buffer_unref);
@@ -568,6 +575,35 @@ RTEST_F (rrtc, send_recv, RTEST_FAST)
   r_buffer_unref (pop);
 
   r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST_F (rrtc, crypto_transport_close, RTEST_FAST)
+{
+  /* r_rtc_crypto_transport_close closes the underlying ICE transport and
+   * notifies the RTP listener, so every started sender / receiver on that
+   * transport gets its close callback.  (The symbol was previously declared
+   * in the public header but compiled out, i.e. an undefined symbol.) */
+  RRtcRtpParameters * p;
+
+  r_assert_cmpint (r_rtc_crypto_transport_close (NULL), ==, R_RTC_INVAL);
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, p, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->alice.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
+  r_assert_cmpuint (fixture->alice.recv_closed, ==, 0);
+  r_assert_cmpuint (fixture->alice.send_closed, ==, 0);
+
+  r_assert_cmpint (r_rtc_crypto_transport_close (fixture->alice.crypto), ==, R_RTC_OK);
+
+  r_assert_cmpuint (fixture->alice.recv_closed, ==, 1);
+  r_assert_cmpuint (fixture->alice.send_closed, ==, 1);
+
+  /* bob shares no transport with alice, so its endpoints are untouched. */
+  r_assert_cmpuint (fixture->bob.recv_closed, ==, 0);
+  r_assert_cmpuint (fixture->bob.send_closed, ==, 0);
 }
 RTEST_END;
 
