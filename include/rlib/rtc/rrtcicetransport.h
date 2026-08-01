@@ -85,12 +85,57 @@ R_API RRtcError r_rtc_ice_transport_start (RRtcIceTransport * ice, REvLoop * loo
 /** @brief Close the ICE transport and release its sockets. */
 R_API RRtcError r_rtc_ice_transport_close (RRtcIceTransport * ice);
 
+/** @brief The transport's current ICE connectivity state (@ref RRtcIceState). */
+R_API RRtcIceState r_rtc_ice_transport_get_state (const RRtcIceTransport * ice);
+
+/**
+ * @brief A copy of the address a bound local host socket is listening on,
+ * or @c NULL if none is bound yet.
+ *
+ * After @ref r_rtc_ice_transport_start has bound the host candidates this
+ * returns the actual (post-bind) address — including the OS-assigned port
+ * when the candidate was added with port 0 — for the caller to signal as a
+ * remote candidate to the peer. The caller owns the returned address.
+ */
+R_API RSocketAddress * r_rtc_ice_transport_get_local_address (
+    const RRtcIceTransport * ice) R_ATTR_MALLOC;
+
+/**
+ * @brief Set the agent @p role (controlling / controlled).
+ *
+ * Determines the ICE-CONTROLLING / ICE-CONTROLLED attribute the transport
+ * puts in its connectivity checks and which side nominates the pair. Must
+ * be set before @ref r_rtc_ice_transport_start.
+ */
+R_API RRtcError r_rtc_ice_transport_set_role (RRtcIceTransport * ice,
+    RRtcIceRole role);
+
+/**
+ * @brief Set the peer's ICE credentials, @p ufrag (of @p usize bytes) and
+ * @p pwd (of @p psize bytes), taken from the remote SDP.
+ *
+ * The remote @p pwd keys the MESSAGE-INTEGRITY of the Binding requests this
+ * transport sends; both are required before connectivity checks can run.
+ */
+R_API RRtcError r_rtc_ice_transport_set_remote_credentials (RRtcIceTransport * ice,
+    const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize);
+
 /**
  * @brief Add a local host @p candidate to the transport.
  * @note Provisional — intended to be replaced by a proper ICE
  * candidate-gathering API.
  */
 R_API RRtcError r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport * ice,
+    RRtcIceCandidate * candidate);
+
+/**
+ * @brief Add a remote @p candidate learned from the peer's SDP.
+ *
+ * Each remote candidate is paired with every local socket; once the
+ * transport is started (and credentials / role are set) a STUN Binding
+ * connectivity check is issued for the new pairs.
+ */
+R_API RRtcError r_rtc_ice_transport_add_remote_candidate (RRtcIceTransport * ice,
     RRtcIceCandidate * candidate);
 
 /**
