@@ -35,6 +35,7 @@
 #include <rlib/rtc/rrtcicecandidate.h>
 
 #include <rlib/ev/revloop.h>
+#include <rlib/net/rnetif.h>
 
 /**
  * @defgroup r_rtc_icetransport WebRTC ICE transport
@@ -121,12 +122,40 @@ R_API RRtcError r_rtc_ice_transport_set_remote_credentials (RRtcIceTransport * i
     const rchar * ufrag, rssize usize, const rchar * pwd, rssize psize);
 
 /**
- * @brief Add a local host @p candidate to the transport.
- * @note Provisional — intended to be replaced by a proper ICE
- * candidate-gathering API.
+ * @brief Add a local host @p candidate to the transport explicitly.
+ *
+ * The address the transport binds and advertises is @p candidate's own
+ * address. This is the right entry point when the reachable address is
+ * already known — e.g. an SFU or other server that advertises a fixed
+ * public address rather than enumerating interfaces — and the building
+ * block @ref r_rtc_ice_transport_gather_host_candidates uses per address.
  */
 R_API RRtcError r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport * ice,
     RRtcIceCandidate * candidate);
+
+/**
+ * @brief Predicate selecting which interface addresses become host
+ * candidates in @ref r_rtc_ice_transport_gather_host_candidates.
+ *
+ * Called once per address with its owning @p iface (for the name / flags)
+ * and the specific @p addr; return @c TRUE to gather it, @c FALSE to skip.
+ * @p user is the cookie passed to the gather call.
+ */
+typedef rboolean (*RRtcIceInterfaceFilter) (const RNetInterface * iface,
+    const RSocketAddress * addr, rpointer user);
+
+/**
+ * @brief Gather host candidates by enumerating the local interfaces.
+ *
+ * Queries @ref r_net_query_interfaces and adds a host candidate for each
+ * selected address (as @ref r_rtc_ice_transport_add_local_host_candidate).
+ * With @p filter @c NULL the default policy keeps every interface that is
+ * up and non-loopback; pass a @p filter for full control (e.g. an
+ * allow-list of interfaces, or to include loopback). Servers that advertise
+ * a fixed address should skip this and add candidates explicitly instead.
+ */
+R_API RRtcError r_rtc_ice_transport_gather_host_candidates (RRtcIceTransport * ice,
+    RRtcIceInterfaceFilter filter, rpointer user);
 
 /**
  * @brief Add a remote @p candidate learned from the peer's SDP.
