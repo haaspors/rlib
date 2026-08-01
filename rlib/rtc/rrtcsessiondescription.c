@@ -736,6 +736,26 @@ r_rtc_session_description_set_originator_full (RRtcSessionDescription * sd,
   return R_RTC_OK;
 }
 
+/* Map a socket address to its SDP address type ("IP4"/"IP6") and an
+ * allocated address string.  Returns FALSE for unsupported families. */
+static rboolean
+r_rtc_sdp_addr_parts (RSocketAddress * addr,
+    const rchar ** addrtype, rchar ** addrstr)
+{
+  switch (r_socket_address_get_family (addr)) {
+    case R_SOCKET_FAMILY_IPV4:
+      *addrtype = "IP4";
+      *addrstr = r_socket_address_ipv4_to_str (addr, FALSE);
+      return TRUE;
+    case R_SOCKET_FAMILY_IPV6:
+      *addrtype = "IP6";
+      *addrstr = r_socket_address_ipv6_to_str (addr, FALSE);
+      return TRUE;
+    default:
+      return FALSE;
+  }
+}
+
 RRtcError
 r_rtc_session_description_set_originator_addr (RRtcSessionDescription * sd,
     const rchar * username, rssize usize, const rchar * sid, rssize sidsize,
@@ -746,19 +766,8 @@ r_rtc_session_description_set_originator_addr (RRtcSessionDescription * sd,
   rchar * addrstr;
 
   if (R_UNLIKELY (addr == NULL)) return R_RTC_INVAL;
-
-  switch (r_socket_address_get_family (addr)) {
-    case R_SOCKET_FAMILY_IPV4:
-      addrtype = "IP4";
-      addrstr = r_socket_address_ipv4_to_str (addr, FALSE);
-      break;
-    case R_SOCKET_FAMILY_IPV6:
-      addrtype = "IP6";
-      addrstr = r_socket_address_ipv6_to_str (addr, FALSE);
-      break;
-    default:
-      return R_RTC_INVAL;
-  }
+  if (R_UNLIKELY (!r_rtc_sdp_addr_parts (addr, &addrtype, &addrstr)))
+    return R_RTC_INVAL;
 
   ret = r_rtc_session_description_set_originator_full (sd,
       username, usize, sid, sidsize, sver, R_STR_WITH_SIZE_ARGS ("IN"),
@@ -798,19 +807,8 @@ r_rtc_session_description_set_connection_addr (RRtcSessionDescription * sd,
   rchar * addrstr;
 
   if (R_UNLIKELY (addr == NULL)) return R_RTC_INVAL;
-
-  switch (r_socket_address_get_family (addr)) {
-    case R_SOCKET_FAMILY_IPV4:
-      addrtype = "IP4";
-      addrstr = r_socket_address_ipv4_to_str (addr, FALSE);
-      break;
-    case R_SOCKET_FAMILY_IPV6:
-      addrtype = "IP6";
-      addrstr = r_socket_address_ipv6_to_str (addr, FALSE);
-      break;
-    default:
-      return R_RTC_INVAL;
-  }
+  if (R_UNLIKELY (!r_rtc_sdp_addr_parts (addr, &addrtype, &addrstr)))
+    return R_RTC_INVAL;
 
   ret = r_rtc_session_description_set_connection_full (sd,
       R_STR_WITH_SIZE_ARGS ("IN"), addrtype, -1, addrstr, -1);
