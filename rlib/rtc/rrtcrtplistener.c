@@ -20,7 +20,13 @@
 #include "rrtc-private.h"
 #include <rlib/rtc/rrtcrtplistener.h>
 
+#include <rlib/data/rhashfuncs.h>
 #include <rlib/rmem.h>
+#include <rlib/rstr.h>
+
+/* RFC 8843 signals a bundled stream's MID in an RFC 8285 header
+ * extension carrying this URI. */
+#define R_RTC_RTP_HDREXT_MID  "urn:ietf:params:rtp-hdrext:sdes:mid"
 
 static void
 r_rtc_rtp_listener_free (RRtcRtpListener * l)
@@ -45,12 +51,67 @@ r_rtc_rtp_listener_new (void)
     ret->recv = r_ptr_array_new ();
     ret->send = r_ptr_array_new ();
     ret->recv_ssrcmap = r_hash_table_new (NULL, NULL);
-    ret->recv_extmap = r_hash_table_new (NULL, NULL);
+    ret->recv_extmap = r_hash_table_new (r_str_hash, r_str_equal);
     ret->recv_ptmap = r_hash_table_new (NULL, NULL);
     ret->send_ssrcmap = r_hash_table_new (NULL, NULL);
   }
 
   return ret;
+}
+
+/* Locate the RFC 8285 header-extension element with id @id and return
+ * its value pointer / length. Handles both the one-byte (0xBEDE) and
+ * two-byte (0x100n) profiles. */
+static rboolean
+r_rtc_rtp_ext_element (const RRTPBuffer * rtp, ruint16 id,
+    const ruint8 ** out, rsize * outsize)
+{
+  ruint16 profile, size;
+  const ruint8 * data;
+  rsize p = 0;
+
+  if (id == 0 || !r_rtp_buffer_get_extension (rtp, &profile, &data, &size))
+    return FALSE;
+
+  if (profile == 0xBEDE) {
+    while (p < size) {
+      ruint8 eid = data[p] >> 4;
+      ruint8 elen = (data[p] & 0x0F) + 1;
+      p++;
+      if (eid == 0)             /* padding */
+        continue;
+      if (eid == 15)            /* reserved: stop parsing (RFC 8285 4.2) */
+        break;
+      if (p + elen > size)
+        break;
+      if (eid == id) {
+        *out = data + p;
+        *outsize = elen;
+        return TRUE;
+      }
+      p += elen;
+    }
+  } else if ((profile & 0xFFF0) == 0x1000) {
+    while (p < size) {
+      ruint8 eid = data[p++];
+      ruint8 elen;
+      if (eid == 0)             /* padding */
+        continue;
+      if (p >= size)            /* truncated: missing length octet */
+        break;
+      elen = data[p++];
+      if (p + elen > size)
+        break;
+      if (eid == id) {
+        *out = data + p;
+        *outsize = elen;
+        return TRUE;
+      }
+      p += elen;
+    }
+  }
+
+  return FALSE;
 }
 
 RRtcError
@@ -84,7 +145,28 @@ r_rtc_rtp_listener_handle_rtp (RRtcRtpListener * l,
       return R_RTC_OK;
     }
 
-    /* FIXME: recv_extmap */
+    /* Bundled streams (RFC 8843) carry their MID in an RFC 8285 header
+     * extension until their SSRC is observed. Route on the MID, then
+     * remember the SSRC so subsequent packets take the fast path above. */
+    if (l->recv_mid_ext_id != 0 && r_hash_table_size (l->recv_extmap) > 0) {
+      const ruint8 * mid;
+      rsize midsize;
+
+      if (r_rtc_rtp_ext_element (&rtp, l->recv_mid_ext_id, &mid, &midsize) &&
+          midsize < 256) {
+        rchar key[256];
+
+        r_memcpy (key, mid, midsize);
+        key[midsize] = 0;
+        if ((r = r_hash_table_lookup (l->recv_extmap, key)) != NULL) {
+          r_hash_table_insert (l->recv_ssrcmap,
+              RSIZE_TO_POINTER (r_rtp_buffer_get_ssrc (&rtp)), r);
+          r_rtp_buffer_unmap (&rtp, buf);
+          r->cbs.rtp (r->data, buf, r);
+          return R_RTC_OK;
+        }
+      }
+    }
 
     if ((r = r_hash_table_lookup (l->recv_ptmap,
             RSIZE_TO_POINTER (r_rtp_buffer_get_pt (&rtp)))) != NULL) {
@@ -230,7 +312,19 @@ r_rtc_rtp_listener_update_receiver (RRtcRtpListener * l,
     if (encp->fec.ssrc != 0)
       r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (encp->fec.ssrc), r);
   }
-  /* FIXME: update mid against mux table */
+  /* A negotiated MID header extension lets us demux this receiver's
+   * bundled stream before its SSRC is learned (see handle_rtp). The id
+   * is consistent across a BUNDLE group (RFC 8843), so the last one
+   * wins for the listener. */
+  for (i = 0, c = r_ptr_array_size (&params->extensions); i < c; i++) {
+    RRtcRtpHdrExtParameters * extp = r_ptr_array_get (&params->extensions, i);
+    if (extp->uri != NULL && r_str_equals (extp->uri, R_RTC_RTP_HDREXT_MID)) {
+      l->recv_mid_ext_id = extp->id;
+      if (r->mid != NULL)
+        r_hash_table_insert (l->recv_extmap, r->mid, r);
+    }
+  }
+
   for (i = 0, c = r_ptr_array_size (&params->codecs); i < c; i++) {
     RRtcRtpCodecParameters * codecp = r_ptr_array_get (&params->codecs, i);
     r_hash_table_insert (l->recv_ptmap, RSIZE_TO_POINTER (codecp->pt), r);

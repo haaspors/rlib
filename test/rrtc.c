@@ -510,6 +510,81 @@ RTEST_F (rrtc, receiver_stop_clears_ssrc_demux, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST_F (rrtc, listener_mid_demux_learns_ssrc, RTEST_FAST)
+{
+  /* A bundled stream announces its MID in an RFC 8285 one-byte header
+   * extension before its SSRC is known.  The listener must route the
+   * first packet on the MID, then cache the SSRC so the next packet
+   * (which may carry no extension) takes the SSRC fast path. */
+  static const ruint8 rtp_mid_audio[] = {
+    0x90, 0x00,              /* v=2 p=0 x=1 cc=0, m=0 pt=0 */
+    0x00, 0x01,              /* seq */
+    0x00, 0x00, 0x00, 0x00,  /* timestamp */
+    0xca, 0xfe, 0xba, 0xbe,  /* SSRC (not registered up front) */
+    0xbe, 0xde, 0x00, 0x02,  /* ext: profile 0xBEDE, len 2 words */
+    0x14, 'a', 'u', 'd', 'i', /* one-byte elem id=1 len=5, "audi" */
+    'o',  0x00, 0x00,        /* "o" + 2 padding to a 4-byte boundary */
+    0x00                     /* one byte payload */
+  };
+  static const ruint8 rtp_mid_video[] = {
+    0x90, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x00,
+    0x11, 0x11, 0x11, 0x11,  /* different SSRC */
+    0xbe, 0xde, 0x00, 0x02,
+    0x14, 'v', 'i', 'd', 'e',
+    'o',  0x00, 0x00,        /* MID "video" -- no receiver has this mid */
+    0x00
+  };
+  static const ruint8 rtp_no_ext[] = {
+    0x80, 0x00,              /* no extension bit */
+    0x00, 0x03,
+    0x00, 0x00, 0x00, 0x00,
+    0xca, 0xfe, 0xba, 0xbe,  /* same SSRC as the MID packet above */
+    0x00
+  };
+  RBuffer * buf;
+  RRtcRtpParameters * p;
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_hdrext_simple (p,
+        "urn:ietf:params:rtp-hdrext:sdes:mid", 1), ==, R_RTC_OK);
+  /* A codec whose PT (8) never matches the PT-0 packets below, so the
+   * empty-map broadcast fallback is off and routing must go through the
+   * MID / learned-SSRC paths. */
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (p,
+        "PCMA", R_RTP_PT_PCMA, 8000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, p, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->bob.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
+  /* First packet: routed by its MID extension. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_mid_audio, sizeof (rtp_mid_audio))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 1);
+  r_buffer_unref (buf);
+
+  /* A MID with no matching receiver is dropped, not broadcast (the fake
+   * transport discards the handler's return, so the queue size is what
+   * proves non-delivery). */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_mid_video, sizeof (rtp_mid_video))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 1);
+  r_buffer_unref (buf);
+
+  /* Second packet: no extension, but the SSRC was learned from the first. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_no_ext, sizeof (rtp_no_ext))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 2);
+  r_buffer_unref (buf);
+
+  r_assert_cmpint (r_rtc_rtp_sender_stop (fixture->alice.send), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->bob.recv), ==, R_RTC_OK);
+
+  while ((buf = r_queue_pop (&fixture->bob.rtp)) != NULL)
+    r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST_F (rrtc, sender_receives_rtcp, RTEST_FAST)
 {
   /* RTCP arriving on the listener used to dispatch only to receivers,
