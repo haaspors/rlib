@@ -106,10 +106,15 @@ R_API RSocketAddress * r_rtc_ice_transport_get_local_address (
  *
  * Determines the ICE-CONTROLLING / ICE-CONTROLLED attribute the transport
  * puts in its connectivity checks and which side nominates the pair. Must
- * be set before @ref r_rtc_ice_transport_start.
+ * be set before @ref r_rtc_ice_transport_start. The transport may switch
+ * roles during checks to resolve a role conflict (RFC 8445 7.3.1.1).
  */
 R_API RRtcError r_rtc_ice_transport_set_role (RRtcIceTransport * ice,
     RRtcIceRole role);
+
+/** @brief The transport's current ICE role (may differ from the set role
+ * after a role-conflict switch). */
+R_API RRtcIceRole r_rtc_ice_transport_get_role (const RRtcIceTransport * ice);
 
 /**
  * @brief Set the peer's ICE credentials, @p ufrag (of @p usize bytes) and

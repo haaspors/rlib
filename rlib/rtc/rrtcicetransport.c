@@ -350,6 +350,46 @@ r_rtc_ice_transport_create_stun_response_binding (RRtcIceTransport * ice,
   return ret;
 }
 
+/* Build a Binding error response carrying ERROR-CODE @code (e.g. 487 Role
+ * Conflict), keyed with our own password. */
+static RBuffer *
+r_rtc_ice_transport_create_error_response (RRtcIceTransport * ice,
+    const ruint8 transaction_id[R_STUN_TRANSACTION_ID_SIZE], ruint code)
+{
+  RBuffer * ret;
+
+  if ((ret = r_buffer_new_alloc (NULL, 128, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+      ruint8 err[4];
+      rsize size;
+
+      err[0] = 0; err[1] = 0;
+      err[2] = (ruint8) (code / 100);
+      err[3] = (ruint8) (code % 100);
+
+      r_stun_msg_begin (&ctx, info.data, info.size,
+          R_STUN_CLASS_ERROR_RESPONSE, R_STUN_METHOD_BINDING, transaction_id);
+      tlv.type = R_STUN_ATTR_TYPE_ERROR_CODE;
+      tlv.len = sizeof (err);
+      tlv.value = err;
+      r_stun_msg_add_attribute (&ctx, &tlv);
+      r_stun_msg_add_message_integrity_short_cred (&ctx, ice->pwd, r_strlen (ice->pwd));
+      size = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (ret, &info);
+      r_buffer_set_size (ret, size);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
 /* Pair priority, RFC 8445 6.1.2.3: G is the controlling agent's candidate
  * priority, D the controlled agent's. */
 static ruint64
@@ -960,6 +1000,8 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
   RRtcIceCheckPair * pair;
   RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
   rboolean use_candidate = FALSE;
+  RStunAttrType peer_role = 0;
+  ruint64 peer_tiebreaker = 0;
   RRtcIceProtocol proto = src->conn != NULL ? R_RTC_ICE_PROTO_TCP : R_RTC_ICE_PROTO_UDP;
   RBuffer * outbuf;
 
@@ -969,18 +1011,54 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
     return;
   }
 
+  if (r_stun_attr_tlv_first (msg, &tlv)) {
+    do {
+      if (tlv.type == R_STUN_ATTR_TYPE_USE_CANDIDATE) {
+        use_candidate = TRUE;
+      } else if (tlv.type == R_STUN_ATTR_TYPE_ICE_CONTROLLING ||
+          tlv.type == R_STUN_ATTR_TYPE_ICE_CONTROLLED) {
+        peer_role = tlv.type;
+        if (tlv.len == 8)
+          peer_tiebreaker = r_load_be64 (tlv.value);
+      }
+    } while (r_stun_attr_tlv_next (msg, &tlv));
+  }
+
+  /* Role conflict (RFC 8445 7.3.1.1): the peer claims the same role we
+   * hold. The higher tie-breaker keeps controlling; the loser either
+   * switches or is told to with a 487. */
+  if (ice->role == R_RTC_ICE_ROLE_CONTROLLING &&
+      peer_role == R_STUN_ATTR_TYPE_ICE_CONTROLLING) {
+    if (ice->tiebreaker >= peer_tiebreaker) {
+      if ((outbuf = r_rtc_ice_transport_create_error_response (ice,
+              r_stun_msg_transaction_id (msg), 487)) != NULL) {
+        r_rtc_ice_reply (src, outbuf);
+        r_buffer_unref (outbuf);
+      }
+      return;
+    }
+    R_LOG_INFO ("RtcIceTransport %p role conflict, switching to controlled", ice);
+    ice->role = R_RTC_ICE_ROLE_CONTROLLED;
+  } else if (ice->role == R_RTC_ICE_ROLE_CONTROLLED &&
+      peer_role == R_STUN_ATTR_TYPE_ICE_CONTROLLED) {
+    if (ice->tiebreaker >= peer_tiebreaker) {
+      R_LOG_INFO ("RtcIceTransport %p role conflict, switching to controlling", ice);
+      ice->role = R_RTC_ICE_ROLE_CONTROLLING;
+    } else {
+      if ((outbuf = r_rtc_ice_transport_create_error_response (ice,
+              r_stun_msg_transaction_id (msg), 487)) != NULL) {
+        r_rtc_ice_reply (src, outbuf);
+        r_buffer_unref (outbuf);
+      }
+      return;
+    }
+  }
+
   /* Respond, keyed with our own (local) password. */
   if ((outbuf = r_rtc_ice_transport_create_stun_response_binding (ice,
           src->addr, r_stun_msg_transaction_id (msg))) != NULL) {
     r_rtc_ice_reply (src, outbuf);
     r_buffer_unref (outbuf);
-  }
-
-  if (r_stun_attr_tlv_first (msg, &tlv)) {
-    do {
-      if (tlv.type == R_STUN_ATTR_TYPE_USE_CANDIDATE)
-        use_candidate = TRUE;
-    } while (r_stun_attr_tlv_next (msg, &tlv));
   }
 
   if (src->local == NULL)
@@ -1014,6 +1092,8 @@ r_rtc_ice_handle_binding_response (RRtcIceTransport * ice, rconstpointer msg)
   const ruint8 * tid = r_stun_msg_transaction_id (msg);
   rsize i, c;
 
+  rboolean err = r_stun_msg_is_err_resp (msg);
+
   /* A reply from a STUN server (no ICE credentials) is handled first. */
   if (r_rtc_ice_srflx_response (ice, msg))
     return;
@@ -1035,6 +1115,30 @@ r_rtc_ice_handle_binding_response (RRtcIceTransport * ice, rconstpointer msg)
       r_ev_loop_cancel_timer (ice->loop, pair->timer);
       pair->timer = NULL;
     }
+
+    /* A 487 Role Conflict: the peer kept the role we tried; switch and
+     * re-check (RFC 8445 7.2.5.1). */
+    if (err) {
+      RStunAttrTLV etlv = R_STUN_ATTR_TLV_INIT;
+      ruint code = 0;
+      if (r_stun_attr_tlv_first (msg, &etlv)) {
+        do {
+          if (etlv.type == R_STUN_ATTR_TYPE_ERROR_CODE)
+            code = r_stun_attr_tlv_parse_error_code (msg, &etlv);
+        } while (r_stun_attr_tlv_next (msg, &etlv));
+      }
+      if (code == 487) {
+        ice->role = ice->role == R_RTC_ICE_ROLE_CONTROLLING ?
+            R_RTC_ICE_ROLE_CONTROLLED : R_RTC_ICE_ROLE_CONTROLLING;
+        R_LOG_INFO ("RtcIceTransport %p got 487, switched role", ice);
+        pair->nominating = FALSE;
+        r_rtc_ice_transmit_check (ice, pair, TRUE);
+      } else {
+        pair->state = R_RTC_ICE_CHECK_FAILED;
+      }
+      return;
+    }
+
     pair->state = R_RTC_ICE_CHECK_SUCCEEDED;
     R_LOG_TRACE ("RtcIceTransport %p check succeeded", ice);
 
@@ -1065,11 +1169,10 @@ r_rtc_ice_handle_stun (RRtcIceTransport * ice, rconstpointer msg,
     R_LOG_WARNING ("RtcIceTransport %p unknown STUN method", ice);
   } else if (r_stun_msg_is_request (msg)) {
     r_rtc_ice_handle_binding_request (ice, msg, src);
-  } else if (r_stun_msg_is_success_resp (msg)) {
+  } else if (r_stun_msg_is_success_resp (msg) || r_stun_msg_is_err_resp (msg)) {
     r_rtc_ice_handle_binding_response (ice, msg);
   } else {
-    R_LOG_TRACE ("RtcIceTransport %p binding %s", ice,
-        r_stun_msg_is_err_resp (msg) ? "error" : "indication");
+    R_LOG_TRACE ("RtcIceTransport %p binding indication", ice);
   }
 }
 
@@ -1676,6 +1779,12 @@ r_rtc_ice_transport_set_role (RRtcIceTransport * ice, RRtcIceRole role)
 
   ice->role = role;
   return R_RTC_OK;
+}
+
+RRtcIceRole
+r_rtc_ice_transport_get_role (const RRtcIceTransport * ice)
+{
+  return ice->role;
 }
 
 RRtcError
