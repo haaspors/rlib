@@ -1,4 +1,6 @@
 #include <rlib/rrtc.h>
+#include <rlib/ev/revudp.h>
+#include <rlib/net/proto/rstun.h>
 
 /* Host candidate priority (RFC 8445 5.1.2.1): type pref 126, local pref
  * 65535, component 1. The exact value only affects pair ordering here. */
@@ -234,6 +236,123 @@ RTEST (rrtcicetransport, gather_host_candidates, RTEST_FAST | RTEST_SYSTEM)
   r_rtc_ice_transport_unref (b);
   r_rtc_session_unref (sa);
   r_rtc_session_unref (sb);
+  r_ev_loop_unref (loop);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
+/* A minimal STUN server: answer every Binding request with a success
+ * response whose XOR-MAPPED-ADDRESS echoes the request's source address. */
+static void
+test_stun_responder (rpointer data, RBuffer * buf, RSocketAddress * addr,
+    REvUDP * udp)
+{
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  (void) data;
+
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_READ))
+    return;
+  if (r_stun_is_valid_msg (info.data, info.size) &&
+      r_stun_msg_is_request (info.data) &&
+      r_stun_msg_method_is_binding (info.data)) {
+    RBuffer * out = r_buffer_new_alloc (NULL, 128, NULL);
+    RMemMapInfo oi = R_MEM_MAP_INFO_INIT;
+
+    if (out != NULL && r_buffer_map (out, &oi, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      rsize sz;
+
+      r_stun_msg_begin (&ctx, oi.data, oi.size, R_STUN_CLASS_SUCCESS_RESPONSE,
+          R_STUN_METHOD_BINDING, r_stun_msg_transaction_id (info.data));
+      r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS, addr);
+      sz = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (out, &oi);
+      r_buffer_set_size (out, sz);
+      r_ev_udp_send (udp, out, addr, NULL, NULL, NULL);
+    }
+    if (out != NULL)
+      r_buffer_unref (out);
+  }
+  r_buffer_unmap (buf, &info);
+}
+
+typedef struct {
+  ruint count;
+  RRtcIceCandidateType type;
+  RSocketAddress * addr;
+} TestSrflxObserver;
+
+static void
+test_srflx_on_candidate (rpointer data, RRtcIceTransport * ice,
+    RRtcIceCandidate * candidate)
+{
+  TestSrflxObserver * obs = data;
+  (void) ice;
+
+  obs->count++;
+  obs->type = r_rtc_ice_candidate_get_type (candidate);
+  obs->addr = r_rtc_ice_candidate_get_addr (candidate);
+}
+
+RTEST (rrtcicetransport, gather_srflx_candidates, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* Point srflx gathering at an in-process STUN server on loopback; the
+   * reflexive address it reports (the host socket's own loopback address,
+   * there being no NAT) is delivered as a server-reflexive candidate. */
+  RPrng * prng;
+  REvLoop * loop;
+  RRtcSession * s;
+  RRtcIceTransport * ice;
+  RRtcCryptoTransport * raw;
+  REvUDP * stun;
+  RSocketAddress * lo, * stunaddr, * hostaddr;
+  TestSrflxObserver obs = { 0, R_RTC_ICE_CANDIDATE_HOST, NULL };
+  ruint i;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+  r_assert_cmpptr ((s = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (s,
+          R_STR_WITH_SIZE_ARGS ("uf"), R_STR_WITH_SIZE_ARGS ("password01234567"))), !=, NULL);
+  r_assert_cmpptr ((raw = r_rtc_session_create_raw_transport (s, ice)), !=, NULL);
+
+  /* Bring up the fake STUN server. */
+  r_assert_cmpptr ((lo = r_socket_address_ipv4_new_from_string ("127.0.0.1", 0)), !=, NULL);
+  r_assert_cmpptr ((stun = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert (r_ev_udp_bind (stun, lo, TRUE));
+  r_assert (r_ev_udp_recv_start (stun, NULL, test_stun_responder, NULL, NULL));
+  r_assert_cmpptr ((stunaddr = r_ev_udp_get_local_address (stun)), !=, NULL);
+
+  r_rtc_ice_transport_set_on_local_candidate (ice, test_srflx_on_candidate, &obs);
+  r_assert_cmpint (r_rtc_ice_transport_gather_host_candidates (ice,
+          test_ice_only_loopback, NULL), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_start (ice, loop), ==, R_RTC_OK);
+  r_assert_cmpptr ((hostaddr = r_rtc_ice_transport_get_local_address (ice)), !=, NULL);
+
+  r_assert_cmpint (r_rtc_ice_transport_gather_srflx_candidates (ice, stunaddr), ==, R_RTC_OK);
+
+  for (i = 0; i < 200 && obs.count == 0; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  /* A single server-reflexive candidate, its address the host socket's own
+   * (loopback, no NAT in the path). */
+  r_assert_cmpuint (obs.count, ==, 1);
+  r_assert_cmpint (obs.type, ==, R_RTC_ICE_CANDIDATE_SRFLX);
+  r_assert_cmpptr (obs.addr, !=, NULL);
+  r_assert (r_socket_address_is_equal (obs.addr, hostaddr));
+
+  r_socket_address_unref (obs.addr);
+  r_socket_address_unref (hostaddr);
+  r_rtc_ice_transport_close (ice);
+  r_ev_udp_recv_stop (stun);
+  for (i = 0; i < 8; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_ev_udp_unref (stun);
+  r_socket_address_unref (lo);
+  r_rtc_crypto_transport_unref (raw);
+  r_rtc_ice_transport_unref (ice);
+  r_rtc_session_unref (s);
   r_ev_loop_unref (loop);
   r_prng_unref (prng);
 }

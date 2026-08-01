@@ -80,11 +80,36 @@ r_rtc_ice_check_pair_free (rpointer data)
   r_free (pair);
 }
 
+/* A STUN Binding request outstanding to a STUN server, discovering the
+ * server-reflexive address of its base host socket. */
+typedef struct {
+  RRtcIceTransport * ice;     /* borrowed */
+  RRtcIceCandidate * base;    /* owned: the host candidate reflected */
+  REvUDP * udp;               /* borrowed: base's socket */
+  RSocketAddress * server;    /* owned: the STUN server */
+  ruint8 tid[R_STUN_TRANSACTION_ID_SIZE];
+  ruint nsent;
+  RClockEntry * timer;
+} RRtcIceSrflxReq;
+
+static void
+r_rtc_ice_srflx_req_free (rpointer data)
+{
+  RRtcIceSrflxReq * req = data;
+
+  if (req->timer != NULL && req->ice->loop != NULL)
+    r_ev_loop_cancel_timer (req->ice->loop, req->timer);
+  r_rtc_ice_candidate_unref (req->base);
+  r_socket_address_unref (req->server);
+  r_free (req);
+}
+
 static void
 r_rtc_ice_transport_free (RRtcIceTransport * ice)
 {
-  /* Drop the checks first: cancelling their timers needs ice->loop. */
+  /* Drop the checks / srflx first: cancelling their timers needs ice->loop. */
   r_ptr_array_unref (ice->checks);
+  r_ptr_array_unref (ice->srflx);
   r_ptr_array_unref (ice->remote);
 
   if (ice->selected.local != NULL)
@@ -126,6 +151,7 @@ r_rtc_ice_transport_new (
         r_rtc_ice_candidate_unref, r_ref_unref);
     ret->remote = r_ptr_array_new ();
     ret->checks = r_ptr_array_new ();
+    ret->srflx = r_ptr_array_new ();
     R_LOG_TRACE ("RtcIceTransport %p new %s - %s", ret, ret->ufrag, ret->pwd);
   }
 
@@ -364,6 +390,129 @@ r_rtc_ice_check_timeout (rpointer data, REvLoop * loop)
   r_rtc_ice_transmit_check (pair->ice, pair, FALSE);
 }
 
+/* Server-reflexive candidate priority, RFC 8445 5.1.2.1: type preference
+ * 100, local preference 65535, component in the low octet. */
+static ruint64
+r_rtc_ice_srflx_priority (RRtcIceComponent component)
+{
+  ruint comp = component != R_RTC_ICE_COMPONENT_UNKNOWN ? component : 1;
+
+  return ((ruint64) 100 << 24) | ((ruint64) 65535 << 8) | (256 - comp);
+}
+
+/* A plain STUN Binding request (no ICE attributes) for a STUN server. */
+static RBuffer *
+r_rtc_ice_build_stun_binding (const ruint8 * tid)
+{
+  RBuffer * ret;
+
+  if ((ret = r_buffer_new_alloc (NULL, 128, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      rsize size;
+
+      r_stun_msg_begin (&ctx, info.data, info.size,
+          R_STUN_CLASS_REQUEST, R_STUN_METHOD_BINDING, tid);
+      size = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (ret, &info);
+      r_buffer_set_size (ret, size);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+static void r_rtc_ice_srflx_timeout (rpointer data, REvLoop * loop);
+
+static void
+r_rtc_ice_srflx_transmit (RRtcIceSrflxReq * req, rboolean fresh)
+{
+  RBuffer * buf;
+
+  if (fresh) {
+    r_rand_entropy_fill (req->tid, sizeof (req->tid));
+    req->nsent = 0;
+  }
+
+  if ((buf = r_rtc_ice_build_stun_binding (req->tid)) != NULL) {
+    r_ev_udp_send (req->udp, buf, req->server, NULL, NULL, NULL);
+    r_buffer_unref (buf);
+    req->nsent++;
+  }
+
+  req->timer = NULL;
+  r_ev_loop_add_callback_later (req->ice->loop, &req->timer,
+      R_RTC_ICE_CHECK_RTO, r_rtc_ice_srflx_timeout, req, NULL);
+}
+
+static void
+r_rtc_ice_srflx_timeout (rpointer data, REvLoop * loop)
+{
+  RRtcIceSrflxReq * req = data;
+  (void) loop;
+
+  req->timer = NULL;
+  if (req->nsent >= R_RTC_ICE_CHECK_MAX_SENDS) {
+    R_LOG_INFO ("RtcIceTransport %p srflx gathering timed out", req->ice);
+    r_ptr_array_remove_first_fast (req->ice->srflx, req);
+    return;
+  }
+
+  r_rtc_ice_srflx_transmit (req, FALSE);
+}
+
+/* Match a Binding response against an outstanding srflx request; on a hit,
+ * turn its XOR-MAPPED-ADDRESS into a server-reflexive candidate and hand it
+ * to the application. Returns TRUE when the response was a srflx reply. */
+static rboolean
+r_rtc_ice_srflx_response (RRtcIceTransport * ice, rconstpointer msg)
+{
+  const ruint8 * tid = r_stun_msg_transaction_id (msg);
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (ice->srflx); i < c; i++) {
+    RRtcIceSrflxReq * req = r_ptr_array_get (ice->srflx, i);
+    RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+    RSocketAddress * mapped = NULL;
+
+    if (r_memcmp_ct (req->tid, tid, R_STUN_TRANSACTION_ID_SIZE) != 0)
+      continue;
+
+    if (r_stun_attr_tlv_first (msg, &tlv)) {
+      do {
+        if (tlv.type == R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS) {
+          mapped = r_stun_attr_tlv_parse_xor_address (msg, &tlv);
+          break;
+        }
+      } while (r_stun_attr_tlv_next (msg, &tlv));
+    }
+
+    if (mapped != NULL) {
+      RRtcIceCandidate * cand = r_rtc_ice_candidate_new_full ("srflx", -1,
+          r_rtc_ice_srflx_priority (ice->component), ice->component,
+          R_RTC_ICE_PROTO_UDP, mapped, R_RTC_ICE_CANDIDATE_SRFLX);
+      r_socket_address_unref (mapped);
+      if (cand != NULL) {
+        cand->raddr = r_socket_address_ref (req->base->addr);
+        R_LOG_INFO ("RtcIceTransport %p gathered srflx candidate", ice);
+        if (ice->on_candidate != NULL)
+          ice->on_candidate (ice->on_candidate_data, ice, cand);
+        r_rtc_ice_candidate_unref (cand);
+      }
+    }
+
+    r_ptr_array_remove_first_fast (ice->srflx, req);
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
 static void
 r_rtc_ice_select_pair (RRtcIceTransport * ice, RRtcIceCheckPair * pair)
 {
@@ -474,6 +623,10 @@ r_rtc_ice_handle_binding_response (RRtcIceTransport * ice, rconstpointer msg)
 {
   const ruint8 * tid = r_stun_msg_transaction_id (msg);
   rsize i, c;
+
+  /* A reply from a STUN server (no ICE credentials) is handled first. */
+  if (r_rtc_ice_srflx_response (ice, msg))
+    return;
 
   /* The response is keyed with the peer's password (our remote pwd). */
   if (!r_rtc_ice_check_integrity (msg, ice->rpwd)) {
@@ -753,6 +906,58 @@ r_rtc_ice_transport_gather_host_candidates (RRtcIceTransport * ice,
   }
   r_ptr_array_unref (ifaces);
 
+  return R_RTC_OK;
+}
+
+RRtcError
+r_rtc_ice_transport_set_on_local_candidate (RRtcIceTransport * ice,
+    RRtcIceCandidateCb cb, rpointer data)
+{
+  if (R_UNLIKELY (ice == NULL)) return R_RTC_INVAL;
+
+  ice->on_candidate = cb;
+  ice->on_candidate_data = data;
+  return R_RTC_OK;
+}
+
+typedef struct {
+  RRtcIceTransport * ice;
+  RSocketAddress * server;
+} RRtcIceSrflxGather;
+
+static void
+r_rtc_ice_gather_srflx_cb (rpointer key, rpointer value, rpointer user)
+{
+  RRtcIceCandidate * base = key;
+  REvUDP * udp = value;
+  RRtcIceSrflxGather * ctx = user;
+  RRtcIceSrflxReq * req;
+
+  if (udp == NULL)
+    return;
+
+  req = r_mem_new0 (RRtcIceSrflxReq);
+  req->ice = ctx->ice;
+  req->base = r_rtc_ice_candidate_ref (base);
+  req->udp = udp;
+  req->server = r_socket_address_ref (ctx->server);
+  r_ptr_array_add (ctx->ice->srflx, req, r_rtc_ice_srflx_req_free);
+  r_rtc_ice_srflx_transmit (req, TRUE);
+}
+
+RRtcError
+r_rtc_ice_transport_gather_srflx_candidates (RRtcIceTransport * ice,
+    RSocketAddress * stun_server)
+{
+  RRtcIceSrflxGather ctx;
+
+  if (R_UNLIKELY (ice == NULL || stun_server == NULL)) return R_RTC_INVAL;
+  if (R_UNLIKELY (ice->send == r_rtc_ice_transport_send_fake)) return R_RTC_WRONG_STATE;
+  if (R_UNLIKELY (ice->loop == NULL)) return R_RTC_WRONG_STATE;
+
+  ctx.ice = ice;
+  ctx.server = stun_server;
+  r_hash_table_foreach (ice->candidateSockets, r_rtc_ice_gather_srflx_cb, &ctx);
   return R_RTC_OK;
 }
 

@@ -238,7 +238,11 @@ struct RRtcIceTransport {
   RHashTable * bindAddrs; /* candidate -> local bind address (NAT 1:1) */
   RPtrArray * remote;     /* remote RRtcIceCandidate * */
   RPtrArray * checks;     /* candidate-pair checks (RRtcIceCheckPair *) */
+  RPtrArray * srflx;      /* pending srflx STUN requests (RRtcIceSrflxReq *) */
   rboolean nominated;     /* a pair has been selected + ready fired */
+
+  RRtcIceCandidateCb on_candidate; /* fired for each gathered srflx candidate */
+  rpointer on_candidate_data;
   RRtcIceTransport * related; /* FIXME: Make weak? */
 };
 
