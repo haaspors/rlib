@@ -134,6 +134,19 @@ R_API RRtcError r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport *
     RRtcIceCandidate * candidate);
 
 /**
+ * @brief Add a host candidate whose advertised address differs from the
+ * socket bind address (1:1 NAT / port mapping).
+ *
+ * The transport binds @p bind_addr locally but advertises and uses
+ * @p candidate's own address — the pattern for a server behind static 1:1
+ * NAT that binds a private address yet must offer its public one.
+ * Connectivity checks from the peer arrive at @p bind_addr through the NAT
+ * and are answered from it. @p bind_addr is copied.
+ */
+R_API RRtcError r_rtc_ice_transport_add_local_host_candidate_mapped (
+    RRtcIceTransport * ice, RRtcIceCandidate * candidate, RSocketAddress * bind_addr);
+
+/**
  * @brief Predicate selecting which interface addresses become host
  * candidates in @ref r_rtc_ice_transport_gather_host_candidates.
  *
