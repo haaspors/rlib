@@ -129,9 +129,11 @@ struct RRtcRtpListener {
   RPtrArray * send;
 
   RHashTable * recv_ssrcmap;
-  RHashTable * recv_extmap;
+  RHashTable * recv_extmap;   /* MID string -> receiver (bundled demux) */
   RHashTable * recv_ptmap;
   RHashTable * send_ssrcmap;
+
+  ruint16 recv_mid_ext_id;    /* negotiated RFC 8285 id of the MID ext */
 };
 
 R_API_HIDDEN RRtcRtpListener * r_rtc_rtp_listener_new (void) R_ATTR_MALLOC;
