@@ -112,6 +112,7 @@ rlib_sources = [
   'net/rhttpclient.c',
   'net/rhttpserver.c',
   'net/rnet.c',
+  'net/rnetif.c',
   'net/rresolve.c',
   'net/rsrtp.c',
   'net/rtlsclient.c',

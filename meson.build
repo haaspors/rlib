@@ -248,6 +248,7 @@ librt = cc.find_library('rt', required : false)
 if host_machine.system() == 'windows'
   libwin = [
     cc.find_library('ws2_32'),
+    cc.find_library('iphlpapi'),
     cc.find_library('dbghelp'),
     cc.find_library('crypt32'),
   ]
@@ -287,6 +288,13 @@ check_headers = [
   'pthread.h',
   'signal.h',
   'netdb.h',
+  'ifaddrs.h',
+  'net/if.h',
+  'net/if_arp.h',
+  'net/if_dl.h',
+  'net/if_media.h',
+  'net/if_types.h',
+  'netpacket/packet.h',
   'arpa/inet.h',
   'netinet/in.h',
   'sys/types.h',

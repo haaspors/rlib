@@ -66,6 +66,7 @@ rlibtest_sources = [
   'rmem.c',
   'rmemfile.c',
   'rmodule.c',
+  'rnetif.c',
   'rmpint.c',
   'rmpint_fe.c',
   'rmsgdigest.c',

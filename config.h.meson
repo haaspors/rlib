@@ -16,6 +16,13 @@
 #mesondefine HAVE_ARPA_INET_H
 #mesondefine HAVE_NETINET_IN_H
 #mesondefine HAVE_NETDB_H
+#mesondefine HAVE_IFADDRS_H
+#mesondefine HAVE_NET_IF_H
+#mesondefine HAVE_NET_IF_ARP_H
+#mesondefine HAVE_NET_IF_DL_H
+#mesondefine HAVE_NET_IF_MEDIA_H
+#mesondefine HAVE_NET_IF_TYPES_H
+#mesondefine HAVE_NETPACKET_PACKET_H
 #mesondefine HAVE_POLL_H
 #mesondefine HAVE_SYS_TYPES_H
 #mesondefine HAVE_SYS_SOCKET_H
