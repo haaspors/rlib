@@ -95,6 +95,12 @@ R_API RRtcIceTransport * r_rtc_session_create_ice_transport (RRtcSession * s,
  * @brief Create a DTLS transport over @p ice with the given DTLS
  * @p role (see @ref RRtcCryptoRole), local certificate @p cert and
  * private key @p privkey.
+ *
+ * @p role must be a concrete side, @ref R_RTC_CRYPTO_ROLE_SERVER (passive)
+ * or @ref R_RTC_CRYPTO_ROLE_CLIENT (active); @ref R_RTC_CRYPTO_ROLE_AUTO is
+ * resolved from the SDP @c a=setup attribute during negotiation, before the
+ * transport is created. Returns @c NULL on an unresolved role or a missing
+ * @p cert / @p privkey.
  */
 R_API RRtcCryptoTransport * r_rtc_session_create_dtls_transport (RRtcSession * s,
     RRtcIceTransport * ice,
