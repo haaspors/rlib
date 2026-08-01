@@ -136,6 +136,8 @@ r_rtc_ice_candidate_new_from_sdp_attrib_value (const rchar * value, rssize size)
 
     ret = r_rtc_ice_candidate_new (res->token[0].chunk.str, res->token[0].chunk.size,
         pri, comp, proto, ip, port, type);
+    if (R_UNLIKELY (ret == NULL))
+      goto parse_error;
 
     if (res->tokens > 14) {
       const rchar * next, * end, * rnext;

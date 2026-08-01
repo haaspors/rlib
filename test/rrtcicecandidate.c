@@ -89,6 +89,35 @@ RTEST (rrtcicecandidate, new_from_sdp, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcicecandidate, new_from_sdp_malformed, RTEST_FAST)
+{
+  /* Values that match the candidate grammar shape but are otherwise
+   * invalid must return NULL, never crash.  In particular an address
+   * that fails to parse used to leave the candidate NULL while the
+   * raddr / extension parsing kept dereferencing it. */
+
+  /* Unparseable address, with trailing extension tokens (regression:
+   * dereferenced the NULL candidate while parsing "generation 0"). */
+  r_assert_cmpptr (r_rtc_ice_candidate_new_from_sdp_attrib_value (
+        R_STR_WITH_SIZE_ARGS ("foo 1 udp 100 999.999.999.999 1337 typ host generation 0")), ==, NULL);
+  /* Unparseable address, with trailing raddr / rport tokens. */
+  r_assert_cmpptr (r_rtc_ice_candidate_new_from_sdp_attrib_value (
+        R_STR_WITH_SIZE_ARGS ("foo 2 udp 100 999.999.999.999 1337 typ relay raddr 8.8.8.8 rport 5 generation 0")), ==, NULL);
+  /* Unparseable address, no trailing tokens. */
+  r_assert_cmpptr (r_rtc_ice_candidate_new_from_sdp_attrib_value (
+        R_STR_WITH_SIZE_ARGS ("foo 1 udp 100 not-an-ip 1337 typ host")), ==, NULL);
+  /* Invalid component (not 1 or 2). */
+  r_assert_cmpptr (r_rtc_ice_candidate_new_from_sdp_attrib_value (
+        R_STR_WITH_SIZE_ARGS ("foo 3 udp 100 127.0.0.1 1337 typ host")), ==, NULL);
+  /* Invalid transport protocol. */
+  r_assert_cmpptr (r_rtc_ice_candidate_new_from_sdp_attrib_value (
+        R_STR_WITH_SIZE_ARGS ("foo 1 sctp 100 127.0.0.1 1337 typ host")), ==, NULL);
+  /* Invalid candidate type. */
+  r_assert_cmpptr (r_rtc_ice_candidate_new_from_sdp_attrib_value (
+        R_STR_WITH_SIZE_ARGS ("foo 1 udp 100 127.0.0.1 1337 typ bogus")), ==, NULL);
+}
+RTEST_END;
+
 RTEST (rrtcicecandidate, add_ext, RTEST_FAST)
 {
   RRtcIceCandidate * cand;
