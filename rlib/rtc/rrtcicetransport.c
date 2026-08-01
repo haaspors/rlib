@@ -672,6 +672,60 @@ r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport * ice,
   return R_RTC_OK;
 }
 
+/* Host candidate priority, RFC 8445 5.1.2.1: type preference 126, local
+ * preference 65535, and the component in the low octet. */
+static ruint64
+r_rtc_ice_host_priority (RRtcIceComponent component)
+{
+  ruint comp = component != R_RTC_ICE_COMPONENT_UNKNOWN ? component : 1;
+
+  return ((ruint64) 126 << 24) | ((ruint64) 65535 << 8) | (256 - comp);
+}
+
+RRtcError
+r_rtc_ice_transport_gather_host_candidates (RRtcIceTransport * ice,
+    RRtcIceInterfaceFilter filter, rpointer user)
+{
+  RPtrArray * ifaces;
+  rsize i, c;
+
+  if (R_UNLIKELY (ice == NULL)) return R_RTC_INVAL;
+  if (R_UNLIKELY (ice->send == r_rtc_ice_transport_send_fake)) return R_RTC_WRONG_STATE;
+
+  ifaces = r_net_query_interfaces ();
+  for (i = 0, c = r_ptr_array_size (ifaces); i < c; i++) {
+    RNetInterface * iface = r_ptr_array_get (ifaces, i);
+    rsize j, n;
+
+    for (j = 0, n = r_ptr_array_size (iface->addrs); j < n; j++) {
+      RNetInterfaceAddr * ia = r_ptr_array_get (iface->addrs, j);
+      RRtcIceCandidate * cand;
+      rchar * foundation;
+
+      if (filter != NULL) {
+        if (!filter (iface, ia->addr, user))
+          continue;
+      } else if (!(iface->flags & R_NET_IFACE_UP) ||
+          (iface->flags & R_NET_IFACE_LOOPBACK)) {
+        continue;
+      }
+
+      foundation = r_strprintf ("%"RSIZE_FMT"-%"RSIZE_FMT, i, j);
+      cand = r_rtc_ice_candidate_new_full (foundation, -1,
+          r_rtc_ice_host_priority (ice->component), ice->component,
+          R_RTC_ICE_PROTO_UDP, ia->addr, R_RTC_ICE_CANDIDATE_HOST);
+      r_free (foundation);
+      if (cand != NULL) {
+        r_rtc_ice_transport_add_local_host_candidate (ice, cand);
+        r_rtc_ice_candidate_unref (cand);
+      }
+    }
+  }
+  r_ptr_array_unref (ifaces);
+
+  return R_RTC_OK;
+}
+
 RRtcIceState
 r_rtc_ice_transport_get_state (const RRtcIceTransport * ice)
 {
