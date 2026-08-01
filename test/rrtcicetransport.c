@@ -1,4 +1,5 @@
 #include <rlib/rrtc.h>
+#include <rlib/crypto/rmsgdigest.h>
 #include <rlib/ev/revudp.h>
 #include <rlib/net/proto/rstun.h>
 
@@ -460,3 +461,140 @@ RTEST (rrtcicetransport, connectivity_check_tcp, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 #endif /* not Windows rpoll */
+
+/* A minimal TURN server: challenge the first Allocate with 401 + REALM +
+ * NONCE, then answer the credentialed retry with a relayed address. */
+static rboolean
+test_turn_has_integrity (rconstpointer msg)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+
+  if (r_stun_attr_tlv_first (msg, &tlv)) {
+    do {
+      if (tlv.type == R_STUN_ATTR_TYPE_MESSAGE_INTEGRITY)
+        return TRUE;
+    } while (r_stun_attr_tlv_next (msg, &tlv));
+  }
+  return FALSE;
+}
+
+static void
+test_turn_responder (rpointer data, RBuffer * buf, RSocketAddress * addr, REvUDP * udp)
+{
+  RSocketAddress * relayed = data;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_READ))
+    return;
+  if (r_stun_is_valid_msg (info.data, info.size) &&
+      r_stun_msg_is_request (info.data) &&
+      r_stun_msg_method_is_allocate (info.data)) {
+    RBuffer * out = r_buffer_new_alloc (NULL, 256, NULL);
+    RMemMapInfo oi = R_MEM_MAP_INFO_INIT;
+    rboolean authed = test_turn_has_integrity (info.data);
+
+    if (out != NULL && r_buffer_map (out, &oi, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+      rsize sz;
+
+      if (authed) {
+        /* Long-term key MD5("user:rlib:pass") to sign the success. */
+        RMsgDigest * md = r_msg_digest_new_md5 ();
+        ruint8 key[16];
+        rsize klen = 0;
+
+        r_msg_digest_update (md, R_STR_WITH_SIZE_ARGS ("user:rlib:pass"));
+        r_msg_digest_get_data (md, key, sizeof (key), &klen);
+        r_msg_digest_free (md);
+
+        r_stun_msg_begin (&ctx, oi.data, oi.size, R_STUN_CLASS_SUCCESS_RESPONSE,
+            R_STUN_METHOD_ALLOCATE, r_stun_msg_transaction_id (info.data));
+        r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_RELAYED_ADDRESS, relayed);
+        r_stun_msg_add_message_integrity_short_cred (&ctx, key, sizeof (key));
+      } else {
+        ruint8 errcode[] = { 0, 0, 4, 1, 'U','n','a','u','t','h' };  /* 401 */
+        r_stun_msg_begin (&ctx, oi.data, oi.size, R_STUN_CLASS_ERROR_RESPONSE,
+            R_STUN_METHOD_ALLOCATE, r_stun_msg_transaction_id (info.data));
+        tlv.type = R_STUN_ATTR_TYPE_ERROR_CODE;
+        tlv.len = sizeof (errcode); tlv.value = errcode;
+        r_stun_msg_add_attribute (&ctx, &tlv);
+        tlv.type = R_STUN_ATTR_TYPE_REALM;
+        tlv.len = 4; tlv.value = (const ruint8 *) "rlib";
+        r_stun_msg_add_attribute (&ctx, &tlv);
+        tlv.type = R_STUN_ATTR_TYPE_NONCE;
+        tlv.len = 8; tlv.value = (const ruint8 *) "nonce123";
+        r_stun_msg_add_attribute (&ctx, &tlv);
+      }
+      sz = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (out, &oi);
+      r_buffer_set_size (out, sz);
+      r_ev_udp_send (udp, out, addr, NULL, NULL, NULL);
+    }
+    if (out != NULL)
+      r_buffer_unref (out);
+  }
+  r_buffer_unmap (buf, &info);
+}
+
+RTEST (rrtcicetransport, gather_relay_candidates, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* Point relay gathering at an in-process TURN server on loopback; after
+   * the 401 challenge and credentialed retry the allocated address is
+   * delivered as a relay candidate. */
+  RPrng * prng;
+  REvLoop * loop;
+  RRtcSession * s;
+  RRtcIceTransport * ice;
+  RRtcCryptoTransport * raw;
+  REvUDP * turn;
+  RSocketAddress * lo, * turnaddr, * relayed;
+  TestSrflxObserver obs = { 0, R_RTC_ICE_CANDIDATE_HOST, NULL };
+  ruint i;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+  r_assert_cmpptr ((s = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (s,
+          R_STR_WITH_SIZE_ARGS ("uf"), R_STR_WITH_SIZE_ARGS ("password01234567"))), !=, NULL);
+  r_assert_cmpptr ((raw = r_rtc_session_create_raw_transport (s, ice)), !=, NULL);
+
+  r_assert_cmpptr ((relayed = r_socket_address_ipv4_new_from_string ("203.0.113.1", 50000)), !=, NULL);
+  r_assert_cmpptr ((lo = r_socket_address_ipv4_new_from_string ("127.0.0.1", 0)), !=, NULL);
+  r_assert_cmpptr ((turn = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert (r_ev_udp_bind (turn, lo, TRUE));
+  r_assert (r_ev_udp_recv_start (turn, NULL, test_turn_responder, relayed, NULL));
+  r_assert_cmpptr ((turnaddr = r_ev_udp_get_local_address (turn)), !=, NULL);
+
+  r_rtc_ice_transport_set_on_local_candidate (ice, test_srflx_on_candidate, &obs);
+  r_assert_cmpint (r_rtc_ice_transport_gather_host_candidates (ice,
+          test_ice_only_loopback, NULL), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_start (ice, loop), ==, R_RTC_OK);
+
+  r_assert_cmpint (r_rtc_ice_transport_gather_relay_candidates (ice, turnaddr,
+          "user", "pass"), ==, R_RTC_OK);
+
+  for (i = 0; i < 200 && obs.count == 0; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  r_assert_cmpuint (obs.count, ==, 1);
+  r_assert_cmpint (obs.type, ==, R_RTC_ICE_CANDIDATE_RELAY);
+  r_assert_cmpptr (obs.addr, !=, NULL);
+  r_assert (r_socket_address_is_equal (obs.addr, relayed));
+
+  r_socket_address_unref (obs.addr);
+  r_rtc_ice_transport_close (ice);
+  r_ev_udp_recv_stop (turn);
+  for (i = 0; i < 8; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_ev_udp_unref (turn);
+  r_socket_address_unref (lo);
+  r_socket_address_unref (relayed);
+  r_rtc_crypto_transport_unref (raw);
+  r_rtc_ice_transport_unref (ice);
+  r_rtc_session_unref (s);
+  r_ev_loop_unref (loop);
+  r_prng_unref (prng);
+}
+RTEST_END;
