@@ -409,6 +409,20 @@ r_rtc_ice_pair_priority (RRtcIceRole role, ruint64 local, ruint64 remote)
   return (lo << 32) + (hi << 1) + (g > d ? 1 : 0);
 }
 
+/* After a role switch the G/D roles flip, so every pair's priority (and thus
+ * the check-list order) must be recomputed (RFC 8445 7.3.1.1). */
+static void
+r_rtc_ice_recompute_priorities (RRtcIceTransport * ice)
+{
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (ice->checks); i < c; i++) {
+    RRtcIceCheckPair * pair = r_ptr_array_get (ice->checks, i);
+    pair->priority = r_rtc_ice_pair_priority (ice->role,
+        pair->local->pri, pair->remote->pri);
+  }
+}
+
 typedef struct {
   rpointer sock;
   RRtcIceCandidate * local;
@@ -528,6 +542,45 @@ r_rtc_ice_build_check (RRtcIceTransport * ice, RRtcIceCheckPair * pair)
   return ret;
 }
 
+/* The highest-priority pair whose check has succeeded, or NULL. */
+static RRtcIceCheckPair *
+r_rtc_ice_best_succeeded (RRtcIceTransport * ice)
+{
+  RRtcIceCheckPair * best = NULL;
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (ice->checks); i < c; i++) {
+    RRtcIceCheckPair * pair = r_ptr_array_get (ice->checks, i);
+    if (pair->state == R_RTC_ICE_CHECK_SUCCEEDED &&
+        (best == NULL || pair->priority > best->priority))
+      best = pair;
+  }
+  return best;
+}
+
+/* Move to FAILED once nothing can still make a pair usable: no pair is
+ * waiting / in progress / succeeded, and no gathering is outstanding. */
+static void
+r_rtc_ice_maybe_failed (RRtcIceTransport * ice)
+{
+  rsize i, c;
+
+  if (ice->nominated || ice->state == R_RTC_ICE_STATE_FAILED)
+    return;
+  if (ice->ta_timer != NULL ||
+      r_ptr_array_size (ice->srflx) > 0 || r_ptr_array_size (ice->turn) > 0)
+    return;
+
+  for (i = 0, c = r_ptr_array_size (ice->checks); i < c; i++) {
+    RRtcIceCheckPair * pair = r_ptr_array_get (ice->checks, i);
+    if (pair->state != R_RTC_ICE_CHECK_FAILED)
+      return;
+  }
+
+  R_LOG_INFO ("RtcIceTransport %p all checks failed", ice);
+  ice->state = R_RTC_ICE_STATE_FAILED;
+}
+
 static void r_rtc_ice_check_timeout (rpointer data, REvLoop * loop);
 
 /* (Re)transmit the check for @pair. When @fresh a new transaction is
@@ -569,8 +622,23 @@ r_rtc_ice_check_timeout (rpointer data, REvLoop * loop)
     return;
 
   if (pair->nsent >= R_RTC_ICE_CHECK_MAX_SENDS) {
-    R_LOG_INFO ("RtcIceTransport %p check pair timed out", pair->ice);
+    RRtcIceTransport * ice = pair->ice;
+
+    R_LOG_INFO ("RtcIceTransport %p check pair timed out", ice);
     pair->state = R_RTC_ICE_CHECK_FAILED;
+
+    /* A failed nominating check must not strand a valid pair: nominate the
+     * next-best succeeded one instead of giving up (RFC 8445 8.1.1). */
+    if (pair->nominating && ice->role == R_RTC_ICE_ROLE_CONTROLLING &&
+        !ice->nominated) {
+      RRtcIceCheckPair * next = r_rtc_ice_best_succeeded (ice);
+      if (next != NULL) {
+        next->nominating = TRUE;
+        r_rtc_ice_transmit_check (ice, next, TRUE);
+        return;
+      }
+    }
+    r_rtc_ice_maybe_failed (ice);
     return;
   }
 
@@ -1059,6 +1127,7 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
   rboolean use_candidate = FALSE;
   RStunAttrType peer_role = 0;
   ruint64 peer_tiebreaker = 0;
+  ruint64 peer_priority = 0;
   RRtcIceProtocol proto = src->conn != NULL ? R_RTC_ICE_PROTO_TCP : R_RTC_ICE_PROTO_UDP;
   RBuffer * outbuf;
 
@@ -1077,6 +1146,8 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
         peer_role = tlv.type;
         if (tlv.len == 8)
           peer_tiebreaker = r_load_be64 (tlv.value);
+      } else if (tlv.type == R_STUN_ATTR_TYPE_PRIORITY && tlv.len == 4) {
+        peer_priority = r_stun_attr_tlv_parse_priority (msg, &tlv);
       }
     } while (r_stun_attr_tlv_next (msg, &tlv));
   }
@@ -1096,11 +1167,13 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
     }
     R_LOG_INFO ("RtcIceTransport %p role conflict, switching to controlled", ice);
     ice->role = R_RTC_ICE_ROLE_CONTROLLED;
+    r_rtc_ice_recompute_priorities (ice);
   } else if (ice->role == R_RTC_ICE_ROLE_CONTROLLED &&
       peer_role == R_STUN_ATTR_TYPE_ICE_CONTROLLED) {
     if (ice->tiebreaker >= peer_tiebreaker) {
       R_LOG_INFO ("RtcIceTransport %p role conflict, switching to controlling", ice);
       ice->role = R_RTC_ICE_ROLE_CONTROLLING;
+      r_rtc_ice_recompute_priorities (ice);
     } else {
       if ((outbuf = r_rtc_ice_transport_create_error_response (ice,
               r_stun_msg_transaction_id (msg), 487)) != NULL) {
@@ -1123,8 +1196,8 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
 
   /* Learn a peer-reflexive remote candidate when the source is unknown. */
   if ((pair = r_rtc_ice_find_pair (ice, src->local, src->addr)) == NULL) {
-    remote = r_rtc_ice_candidate_new_full (R_STR_WITH_SIZE_ARGS ("prflx"), 0,
-        ice->component, proto, src->addr, R_RTC_ICE_CANDIDATE_PRFLX);
+    remote = r_rtc_ice_candidate_new_full (R_STR_WITH_SIZE_ARGS ("prflx"),
+        peer_priority, ice->component, proto, src->addr, R_RTC_ICE_CANDIDATE_PRFLX);
     if (remote == NULL)
       return;
     r_ptr_array_add (ice->remote, remote, r_rtc_ice_candidate_unref);
@@ -1188,6 +1261,7 @@ r_rtc_ice_handle_binding_response (RRtcIceTransport * ice, rconstpointer msg)
         ice->role = ice->role == R_RTC_ICE_ROLE_CONTROLLING ?
             R_RTC_ICE_ROLE_CONTROLLED : R_RTC_ICE_ROLE_CONTROLLING;
         R_LOG_INFO ("RtcIceTransport %p got 487, switched role", ice);
+        r_rtc_ice_recompute_priorities (ice);
         pair->nominating = FALSE;
         r_rtc_ice_transmit_check (ice, pair, TRUE);
       } else {
@@ -1567,6 +1641,7 @@ RRtcError
 r_rtc_ice_transport_close (RRtcIceTransport * ice)
 {
   r_hash_table_foreach (ice->candidateSockets, _candidate_socket_close, ice);
+  ice->state = R_RTC_ICE_STATE_CLOSED;
 
   return R_RTC_OK;
 }
