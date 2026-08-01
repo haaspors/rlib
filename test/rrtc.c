@@ -295,6 +295,146 @@ RTEST (rrtc, create_dtls_transport_server, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtc, create_dtls_transport_client, RTEST_FAST)
+{
+  RPrng * prng;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RRtcSession * session;
+  RRtcIceTransport * ice;
+
+  RRtcCryptoTransport * crypto;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (R_STR_WITH_SIZE_ARGS (pemcert))), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (R_STR_WITH_SIZE_ARGS (pempk), NULL, 0)), !=, NULL);
+  r_assert_cmpptr ((session = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (session,
+        R_STR_WITH_SIZE_ARGS ("joe"), R_STR_WITH_SIZE_ARGS ("pwd"))), !=, NULL);
+
+  /* An unresolved role must be rejected; the concrete side is picked from
+   * the SDP a=setup attribute before the transport is created. */
+  r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_AUTO, cert, pk), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
+        ice, (RRtcCryptoRole) 0xff, cert, pk), ==, NULL);
+
+  /* Same argument validation as the server role. */
+  r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_CLIENT, NULL, pk), ==, NULL);
+  r_assert_cmpptr (r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_CLIENT, cert, NULL), ==, NULL);
+
+  r_assert_cmpptr ((crypto = r_rtc_session_create_dtls_transport (session,
+        ice, R_RTC_CRYPTO_ROLE_CLIENT, cert, pk)), !=, NULL);
+
+  r_rtc_crypto_transport_unref (crypto);
+  r_rtc_ice_transport_unref (ice);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_prng_unref (prng);
+  r_rtc_session_unref (session);
+}
+RTEST_END;
+
+typedef struct {
+  ruint ready;
+} TestDtlsPeer;
+
+static void
+test_dtls_peer_ready (rpointer data, rpointer ctx)
+{
+  TestDtlsPeer * peer = data;
+  (void) ctx;
+  peer->ready++;
+}
+
+static void
+test_dtls_peer_noop (rpointer data, rpointer ctx)
+{
+  (void) data; (void) ctx;
+}
+
+static void
+test_dtls_peer_noop_buf (rpointer data, RBuffer * buf, rpointer ctx)
+{
+  (void) data; (void) buf; (void) ctx;
+}
+
+RTEST (rrtc, dtls_client_server_handshake, RTEST_FAST)
+{
+  /* Drive a full DTLS-SRTP handshake between a server-role transport and a
+   * client-role transport over a fake ICE pair.  Both sides derive keying
+   * material and install an SRTP context, which fires the receiver ready
+   * callback -- proving the client role completes the handshake and keys. */
+  RPrng * prng;
+  REvLoop * loop;
+  RCryptoCert * cert;
+  RCryptoKey * pk;
+  RRtcIceTransport * a, * b;
+  RRtcSession * srvses, * clises;
+  RRtcCryptoTransport * srv, * cli;
+  RRtcRtpReceiver * srvrecv, * clirecv;
+  RRtcRtpParameters * p;
+  TestDtlsPeer srvpeer = { 0 }, clipeer = { 0 };
+  const RRtcRtpReceiverCallbacks srv_cbs = {
+    test_dtls_peer_ready, test_dtls_peer_noop,
+    test_dtls_peer_noop_buf, test_dtls_peer_noop_buf,
+  };
+  const RRtcRtpReceiverCallbacks cli_cbs = {
+    test_dtls_peer_ready, test_dtls_peer_noop,
+    test_dtls_peer_noop_buf, test_dtls_peer_noop_buf,
+  };
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+  r_assert_cmpptr ((cert = r_pem_parse_cert_from_data (R_STR_WITH_SIZE_ARGS (pemcert))), !=, NULL);
+  r_assert_cmpptr ((pk = r_pem_parse_key_from_data (R_STR_WITH_SIZE_ARGS (pempk), NULL, 0)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_create_fake_pair (&a, &b), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((srvses = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((clises = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((srv = r_rtc_session_create_dtls_transport (srvses, a,
+          R_RTC_CRYPTO_ROLE_SERVER, cert, pk)), !=, NULL);
+  r_assert_cmpptr ((cli = r_rtc_session_create_dtls_transport (clises, b,
+          R_RTC_CRYPTO_ROLE_CLIENT, cert, pk)), !=, NULL);
+
+  r_assert_cmpptr ((srvrecv = r_rtc_session_create_rtp_receiver (srvses,
+          R_STR_WITH_SIZE_ARGS ("audio"), &srv_cbs, &srvpeer, NULL,
+          srv, srv)), !=, NULL);
+  r_assert_cmpptr ((clirecv = r_rtc_session_create_rtp_receiver (clises,
+          R_STR_WITH_SIZE_ARGS ("audio"), &cli_cbs, &clipeer, NULL,
+          cli, cli)), !=, NULL);
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+
+  /* Start the passive (server) side first so it is ready to answer the
+   * ClientHello the active side emits on start. */
+  r_assert_cmpint (r_rtc_rtp_receiver_start (srvrecv, p, loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (clirecv, p, loop), ==, R_RTC_OK);
+
+  r_assert_cmpuint (srvpeer.ready, ==, 1);
+  r_assert_cmpuint (clipeer.ready, ==, 1);
+
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (srvrecv), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (clirecv), ==, R_RTC_OK);
+
+  r_rtc_rtp_parameters_unref (p);
+  r_rtc_rtp_receiver_unref (srvrecv);
+  r_rtc_rtp_receiver_unref (clirecv);
+  r_rtc_crypto_transport_unref (srv);
+  r_rtc_crypto_transport_unref (cli);
+  r_rtc_ice_transport_unref (a);
+  r_rtc_ice_transport_unref (b);
+  r_rtc_session_unref (srvses);
+  r_rtc_session_unref (clises);
+  r_crypto_key_unref (pk);
+  r_crypto_cert_unref (cert);
+  r_ev_loop_unref (loop);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
 RTEST (rrtc, create_rtp_sender, RTEST_FAST)
 {
   RPrng * prng;

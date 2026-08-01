@@ -30,8 +30,13 @@ r_rtc_dtls_transport_free (RRtcDtlsTransport * dtls)
 {
   r_rtc_crypto_transport_clear ((RRtcCryptoTransport *)dtls);
 
-  if (dtls->dtls.srv != NULL)
-    r_ref_unref (dtls->dtls.srv);
+  if (dtls->role == R_RTC_CRYPTO_ROLE_CLIENT) {
+    if (dtls->dtls.cli != NULL)
+      r_tls_client_unref (dtls->dtls.cli);
+  } else {
+    if (dtls->dtls.srv != NULL)
+      r_tls_server_unref (dtls->dtls.srv);
+  }
   if (dtls->srtp != NULL)
     r_srtp_ctx_unref (dtls->srtp);
 
@@ -39,6 +44,40 @@ r_rtc_dtls_transport_free (RRtcDtlsTransport * dtls)
     r_prng_unref (dtls->prng);
 
   r_free (dtls);
+}
+
+/* RFC 5764 5.2: the exported material is client-write-key ||
+ * server-write-key || client-salt || server-salt. Split it and install
+ * the half the remote peer encrypts with -- the client key for a server
+ * transport, the server key for a client transport. */
+static void
+r_rtc_dtls_install_srtp (RRtcDtlsTransport * dtls, RSRTPCipherSuite cs,
+    const RSRTPCipherSuiteInfo * csinfo, const ruint8 * material, rsize msize,
+    rboolean use_server_key)
+{
+  rsize kb = csinfo->cipher->keybits / 8;
+  rsize sb = csinfo->saltbits / 8;
+  ruint8 * clikey = r_alloca (msize / 2);
+  ruint8 * srvkey = r_alloca (msize / 2);
+  const ruint8 * ptr = material;
+  const ruint8 * key;
+  RSRTPError srtperr;
+
+  r_memcpy (clikey, ptr, kb); ptr += kb;
+  r_memcpy (srvkey, ptr, kb); ptr += kb;
+  r_memcpy (clikey + kb, ptr, sb); ptr += sb;
+  r_memcpy (srvkey + kb, ptr, sb); ptr += sb;
+
+  key = use_server_key ? srvkey : clikey;
+  if ((srtperr = r_srtp_add_crypto_context_with_filter (dtls->srtp,
+          R_SRTP_FILTER_ANY, cs, key)) == R_SRTP_ERROR_OK) {
+    R_LOG_INFO ("Added crypto context %s for DTLS-SRTP", csinfo->str);
+    R_LOG_MEM_DUMP (R_LOG_LEVEL_INFO, key, msize / 2);
+    r_rtc_rtp_listener_notify_ready (dtls->crypto.listener, (RRtcCryptoTransport *)dtls);
+  } else {
+    R_LOG_WARNING ("Couldn't add crypto context for SRTP err %d",
+        (ruint)srtperr);
+  }
 }
 
 static void
@@ -61,34 +100,42 @@ r_rtc_dtls_srv_hs_done (rpointer data, rpointer session)
   msize = 2 * ((csinfo->cipher->keybits + csinfo->saltbits) / 8);
   material = r_alloca (msize);
   if ((tlserr = r_tls_server_export_keying_material (srv, material, msize,
-      R_STR_WITH_SIZE_ARGS ("EXTRACTOR-dtls_srtp"), NULL, 0)) == R_TLS_ERROR_OK) {
-    ruint8 * clikey = r_alloca (msize / 2);
-    ruint8 * srvkey = r_alloca (msize / 2);
-    ruint8 * ptr = material;
-    RSRTPError srtperr;
-
-    r_memcpy (clikey, ptr, csinfo->cipher->keybits / 8); ptr += csinfo->cipher->keybits / 8;
-    r_memcpy (srvkey, ptr, csinfo->cipher->keybits / 8); ptr += csinfo->cipher->keybits / 8;
-    r_memcpy (clikey + csinfo->cipher->keybits / 8, ptr, csinfo->saltbits / 8); ptr += csinfo->saltbits / 8;
-    r_memcpy (srvkey + csinfo->cipher->keybits / 8, ptr, csinfo->saltbits / 8); ptr += csinfo->saltbits / 8;
-
-    if ((srtperr = r_srtp_add_crypto_context_with_filter (dtls->srtp,
-            R_SRTP_FILTER_ANY, cs, clikey)) == R_SRTP_ERROR_OK) {
-      R_LOG_INFO ("Added crypto context %s for DTLS-SRTP", csinfo->str);
-      R_LOG_MEM_DUMP (R_LOG_LEVEL_INFO, clikey, msize / 2);
-      r_rtc_rtp_listener_notify_ready (dtls->crypto.listener, (RRtcCryptoTransport *)dtls);
-    } else {
-      R_LOG_WARNING ("Couldn't add crypto context for SRTP err %d",
-          (ruint)srtperr);
-    }
-  } else {
+      R_STR_WITH_SIZE_ARGS ("EXTRACTOR-dtls_srtp"), NULL, 0)) == R_TLS_ERROR_OK)
+    r_rtc_dtls_install_srtp (dtls, cs, csinfo, material, msize, FALSE);
+  else
     R_LOG_WARNING ("Couldn't export keying material for SRTP from DTLS err %d",
         (ruint)tlserr);
+}
+
+static void
+r_rtc_dtls_cli_hs_done (rpointer data, rpointer session)
+{
+  RRtcDtlsTransport * dtls = data;
+  RTLSClient * cli = session;
+  RSRTPCipherSuite cs;
+  const RSRTPCipherSuiteInfo * csinfo;
+  ruint8 * material;
+  rsize msize;
+  RTLSError tlserr;
+
+  cs = r_tls_client_get_dtls_srtp_profile (cli);
+  if ((csinfo = r_srtp_cipher_suite_get_info (cs)) == NULL) {
+    R_LOG_WARNING ("0x%.04x DTLS-SRTP profile not supported", (ruint)cs);
+    return;
   }
+
+  msize = 2 * ((csinfo->cipher->keybits + csinfo->saltbits) / 8);
+  material = r_alloca (msize);
+  if ((tlserr = r_tls_client_export_keying_material (cli, material, msize,
+      R_STR_WITH_SIZE_ARGS ("EXTRACTOR-dtls_srtp"), NULL, 0)) == R_TLS_ERROR_OK)
+    r_rtc_dtls_install_srtp (dtls, cs, csinfo, material, msize, TRUE);
+  else
+    R_LOG_WARNING ("Couldn't export keying material for SRTP from DTLS err %d",
+        (ruint)tlserr);
 }
 
 static rboolean
-r_rtc_dtls_srv_buffer_out (rpointer data, RBuffer * buf, rpointer session)
+r_rtc_dtls_buffer_out (rpointer data, RBuffer * buf, rpointer session)
 {
   RRtcCryptoTransport * crypto = data;
   (void) session;
@@ -100,7 +147,7 @@ r_rtc_dtls_srv_buffer_out (rpointer data, RBuffer * buf, rpointer session)
 }
 
 static rboolean
-r_rtc_dtls_srv_buffer_appdata (rpointer data, RBuffer * buf, rpointer session)
+r_rtc_dtls_buffer_appdata (rpointer data, RBuffer * buf, rpointer session)
 {
   RRtcCryptoTransport * crypto = data;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
@@ -116,7 +163,7 @@ r_rtc_dtls_srv_buffer_appdata (rpointer data, RBuffer * buf, rpointer session)
 }
 
 static void
-r_rtc_dtls_transport_srv_ice_packet (rpointer data, RBuffer * buf, rpointer ctx)
+r_rtc_dtls_transport_ice_packet (rpointer data, RBuffer * buf, rpointer ctx)
 {
   RRtcDtlsTransport * dtls = data;
   RRtcIceTransport * ice = ctx;
@@ -150,8 +197,12 @@ r_rtc_dtls_transport_srv_ice_packet (rpointer data, RBuffer * buf, rpointer ctx)
     } else if (r_tls_version_is_dtls (r_tls_parse_data_shallow (info.data, info.size))) {
       R_LOG_TRACE ("RtcCryptoTransport %p DTLS packet %"RSIZE_FMT, dtls, info.size);
       r_buffer_unmap (buf, &info);
-      if (!r_tls_server_incoming_data (dtls->dtls.srv, buf)) {
-        R_LOG_WARNING ("r_tls_server_incoming_data failed!");
+      if (dtls->role == R_RTC_CRYPTO_ROLE_CLIENT) {
+        if (!r_tls_client_incoming_data (dtls->dtls.cli, buf))
+          R_LOG_WARNING ("r_tls_client_incoming_data failed!");
+      } else {
+        if (!r_tls_server_incoming_data (dtls->dtls.srv, buf))
+          R_LOG_WARNING ("r_tls_server_incoming_data failed!");
       }
     } else {
       R_LOG_WARNING ("Unknown packet received");
@@ -162,13 +213,19 @@ r_rtc_dtls_transport_srv_ice_packet (rpointer data, RBuffer * buf, rpointer ctx)
   }
 }
 static RRtcError
-r_rtc_dtls_transport_srv_start (rpointer rtc, REvLoop * loop)
+r_rtc_dtls_transport_start (rpointer rtc, REvLoop * loop)
 {
   RRtcDtlsTransport * dtls = rtc;
   RRtcError ret = R_RTC_OK;
 
-  if (dtls->dtls.srv != NULL) {
-    if (r_tls_server_start (dtls->dtls.srv, loop, dtls->prng) != R_TLS_ERROR_OK)
+  if (dtls->role == R_RTC_CRYPTO_ROLE_CLIENT) {
+    if (dtls->dtls.cli != NULL &&
+        r_tls_client_start (dtls->dtls.cli, loop, dtls->prng,
+            R_TLS_VERSION_DTLS_1_2) != R_TLS_ERROR_OK)
+      ret = R_RTC_WRONG_STATE;
+  } else {
+    if (dtls->dtls.srv != NULL &&
+        r_tls_server_start (dtls->dtls.srv, loop, dtls->prng) != R_TLS_ERROR_OK)
       ret = R_RTC_WRONG_STATE;
   }
 
@@ -212,11 +269,21 @@ r_rtc_crypto_transport_new_dtls (RRtcIceTransport * ice, RPrng * prng,
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey)
 {
   RRtcDtlsTransport * ret;
-  static RTLSCallbacks cbs = {
+  static RTLSCallbacks srv_cbs = {
     NULL,
     r_rtc_dtls_srv_hs_done,
-    r_rtc_dtls_srv_buffer_out,
-    r_rtc_dtls_srv_buffer_appdata,
+    r_rtc_dtls_buffer_out,
+    r_rtc_dtls_buffer_appdata,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+  };
+  static RTLSCallbacks cli_cbs = {
+    NULL,
+    r_rtc_dtls_cli_hs_done,
+    r_rtc_dtls_buffer_out,
+    r_rtc_dtls_buffer_appdata,
     NULL,
     NULL,
     NULL,
@@ -228,17 +295,26 @@ r_rtc_crypto_transport_new_dtls (RRtcIceTransport * ice, RPrng * prng,
   if (R_UNLIKELY (cert == NULL)) return NULL;
   if (R_UNLIKELY (privkey == NULL)) return NULL;
 
-  /* FIXME: support other roles */
-  r_assert_cmpint (role, ==, R_RTC_CRYPTO_ROLE_SERVER);
+  /* The role must already be resolved to a concrete side; AUTO is
+   * negotiated from the SDP a=setup attribute before we get here. */
+  if (R_UNLIKELY (role != R_RTC_CRYPTO_ROLE_SERVER &&
+        role != R_RTC_CRYPTO_ROLE_CLIENT))
+    return NULL;
 
   if ((ret = r_mem_new0 (RRtcDtlsTransport)) != NULL) {
     r_ref_init (ret, r_rtc_dtls_transport_free);
-    r_rtc_crypto_transport_init (ret, ice, r_rtc_dtls_transport_srv_start,
-        r_rtc_dtls_transport_srv_ice_packet, r_rtc_dtls_transport_send);
+    r_rtc_crypto_transport_init (ret, ice, r_rtc_dtls_transport_start,
+        r_rtc_dtls_transport_ice_packet, r_rtc_dtls_transport_send);
 
     ret->srtp = r_srtp_ctx_new ();
-    ret->dtls.srv = r_tls_server_new (&cbs, ret, NULL);
-    r_tls_server_set_cert (ret->dtls.srv, cert, privkey);
+    ret->role = role;
+    if (role == R_RTC_CRYPTO_ROLE_CLIENT) {
+      ret->dtls.cli = r_tls_client_new (&cli_cbs, ret, NULL);
+      r_tls_client_set_cert (ret->dtls.cli, cert, privkey);
+    } else {
+      ret->dtls.srv = r_tls_server_new (&srv_cbs, ret, NULL);
+      r_tls_server_set_cert (ret->dtls.srv, cert, privkey);
+    }
     ret->prng = r_prng_ref (prng);
   }
 

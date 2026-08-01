@@ -34,6 +34,7 @@
 
 #include <rlib/ev/revudp.h>
 #include <rlib/net/rtlsserver.h>
+#include <rlib/net/rtlsclient.h>
 #include <rlib/net/rsrtp.h>
 
 #include <rlib/data/rhashtable.h>
@@ -161,9 +162,10 @@ typedef struct  {
   RRtcCryptoTransport crypto;
 
   RSRTPCtx * srtp;
+  RRtcCryptoRole role;
   union {
     RTLSServer * srv;
-    /*RTLSClient * cli;*/
+    RTLSClient * cli;
   } dtls;
   RPrng * prng;
 } RRtcDtlsTransport;
