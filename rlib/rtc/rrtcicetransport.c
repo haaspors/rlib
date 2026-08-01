@@ -36,6 +36,10 @@
 #define R_RTC_ICE_CHECK_RTO       (500 * R_MSECOND)
 #define R_RTC_ICE_CHECK_MAX_SENDS 7
 
+/* Ta: minimum spacing between ordinary connectivity checks (RFC 8445 14.2),
+ * so a large check list is paced instead of blasted at once. */
+#define R_RTC_ICE_TA              (50 * R_MSECOND)
+
 /* A STUN message / media packet over TCP is framed with a 2-byte
  * big-endian length prefix (RFC 4571, as ICE-TCP mandates in RFC 6544). */
 #define R_RTC_ICE_TCP_FRAME_HDR   2
@@ -167,6 +171,8 @@ static void
 r_rtc_ice_transport_free (RRtcIceTransport * ice)
 {
   /* Drop the checks / srflx first: cancelling their timers needs ice->loop. */
+  if (ice->ta_timer != NULL && ice->loop != NULL)
+    r_ev_loop_cancel_timer (ice->loop, ice->ta_timer);
   r_ptr_array_unref (ice->checks);
   r_ptr_array_unref (ice->srflx);
   r_ptr_array_unref (ice->turn);
@@ -569,6 +575,57 @@ r_rtc_ice_check_timeout (rpointer data, REvLoop * loop)
   }
 
   r_rtc_ice_transmit_check (pair->ice, pair, FALSE);
+}
+
+/* The highest-priority pair still waiting for its first check, or NULL. */
+static RRtcIceCheckPair *
+r_rtc_ice_next_waiting (RRtcIceTransport * ice)
+{
+  RRtcIceCheckPair * best = NULL;
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (ice->checks); i < c; i++) {
+    RRtcIceCheckPair * pair = r_ptr_array_get (ice->checks, i);
+    if (pair->state == R_RTC_ICE_CHECK_WAITING &&
+        (best == NULL || pair->priority > best->priority))
+      best = pair;
+  }
+  return best;
+}
+
+static void r_rtc_ice_ta_tick (rpointer data, REvLoop * loop);
+
+/* Pace ordinary connectivity checks at Ta: arm the scheduler if there is a
+ * waiting pair and we can send (credentials known). */
+static void
+r_rtc_ice_schedule_checks (RRtcIceTransport * ice)
+{
+  if (ice->ta_timer != NULL || ice->nominated)
+    return;
+  if (ice->loop == NULL || ice->rpwd == NULL || ice->rufrag == NULL)
+    return;
+  if (r_rtc_ice_next_waiting (ice) == NULL)
+    return;
+
+  r_ev_loop_add_callback_later (ice->loop, &ice->ta_timer,
+      R_RTC_ICE_TA, r_rtc_ice_ta_tick, ice, NULL);
+}
+
+static void
+r_rtc_ice_ta_tick (rpointer data, REvLoop * loop)
+{
+  RRtcIceTransport * ice = data;
+  RRtcIceCheckPair * pair;
+  (void) loop;
+
+  ice->ta_timer = NULL;
+  if (ice->nominated)
+    return;
+
+  if ((pair = r_rtc_ice_next_waiting (ice)) != NULL)
+    r_rtc_ice_transmit_check (ice, pair, TRUE);
+
+  r_rtc_ice_schedule_checks (ice);   /* more waiting -> keep pacing */
 }
 
 /* Server-reflexive candidate priority, RFC 8445 5.1.2.1: type preference
@@ -1284,8 +1341,7 @@ r_rtc_ice_pair_local_with_remotes (RRtcIceTransport * ice,
       continue;
     if ((pair = r_rtc_ice_add_pair (ice, local, udp, NULL, remote)) == NULL)
       continue;
-    if (ice->loop != NULL && ice->rpwd != NULL && ice->rufrag != NULL)
-      r_rtc_ice_transmit_check (ice, pair, TRUE);
+    r_rtc_ice_schedule_checks (ice);
   }
 }
 
@@ -1398,8 +1454,8 @@ r_rtc_ice_tcp_connected (rpointer data, REvTCP * evtcp, int status)
 
   if ((pair = r_rtc_ice_find_pair (ice, conn->local, conn->remote)) == NULL)
     pair = r_rtc_ice_add_pair (ice, conn->local, NULL, conn, conn->remotecand);
-  if (pair != NULL && ice->rpwd != NULL && ice->rufrag != NULL)
-    r_rtc_ice_transmit_check (ice, pair, TRUE);
+  if (pair != NULL)
+    r_rtc_ice_schedule_checks (ice);
 }
 
 /* Dial a passive remote from an active local candidate. */
@@ -1825,8 +1881,7 @@ r_rtc_ice_pair_new_remote_cb (rpointer key, rpointer value, rpointer user)
     return;
   if ((pair = r_rtc_ice_add_pair (ctx->ice, local, udp, NULL, ctx->remote)) == NULL)
     return;
-  if (ctx->ice->loop != NULL && ctx->ice->rpwd != NULL && ctx->ice->rufrag != NULL)
-    r_rtc_ice_transmit_check (ctx->ice, pair, TRUE);
+  r_rtc_ice_schedule_checks (ctx->ice);
 }
 
 RRtcError

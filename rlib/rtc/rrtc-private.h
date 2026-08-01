@@ -242,6 +242,7 @@ struct RRtcIceTransport {
   RPtrArray * turn;       /* pending TURN Allocate requests (RRtcIceTurnReq *) */
   RPtrArray * tcpconns;   /* TCP connections (RRtcIceTcpConn *) */
   rpointer selected_conn; /* selected pair's TCP connection, or NULL */
+  RClockEntry * ta_timer; /* Ta-paced connectivity-check scheduler */
   rboolean nominated;     /* a pair has been selected + ready fired */
 
   RRtcIceCandidateCb on_candidate; /* fired for each gathered srflx candidate */
