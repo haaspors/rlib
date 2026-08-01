@@ -226,12 +226,18 @@ struct RRtcIceTransport {
 
   rchar * ufrag;
   rchar * pwd;
+  rchar * rufrag;         /* remote ICE ufrag (from the peer's SDP) */
+  rchar * rpwd;           /* remote ICE pwd, keys outbound check integrity */
+  ruint64 tiebreaker;     /* ICE-CONTROLLING / ICE-CONTROLLED tiebreaker */
 
   RRtcIceComponent component;
   RRtcIceRole role;
   RRtcIceState state;
   RRtcIceCandidatePair selected;
   RHashTable * candidateSockets;
+  RPtrArray * remote;     /* remote RRtcIceCandidate * */
+  RPtrArray * checks;     /* candidate-pair checks (RRtcIceCheckPair *) */
+  rboolean nominated;     /* a pair has been selected + ready fired */
   RRtcIceTransport * related; /* FIXME: Make weak? */
 };
 
