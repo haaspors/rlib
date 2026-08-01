@@ -972,3 +972,62 @@ RTEST (rrtcsessiondescription, new_from_sdp_to_sdp_symetric, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcsessiondescription, media_type_string, RTEST_FAST)
+{
+  /* from_string parses all four kinds (case-insensitive); to_string is
+   * intentionally partial -- only audio / video have SDP tokens, the
+   * rest map to NULL (see the header contract). */
+  r_assert_cmpint (r_rtc_media_type_from_string (R_STR_WITH_SIZE_ARGS ("audio")), ==, R_RTC_MEDIA_AUDIO);
+  r_assert_cmpint (r_rtc_media_type_from_string (R_STR_WITH_SIZE_ARGS ("video")), ==, R_RTC_MEDIA_VIDEO);
+  r_assert_cmpint (r_rtc_media_type_from_string (R_STR_WITH_SIZE_ARGS ("text")), ==, R_RTC_MEDIA_TEXT);
+  r_assert_cmpint (r_rtc_media_type_from_string (R_STR_WITH_SIZE_ARGS ("application")), ==, R_RTC_MEDIA_APPLICATION);
+  r_assert_cmpint (r_rtc_media_type_from_string (R_STR_WITH_SIZE_ARGS ("AUDIO")), ==, R_RTC_MEDIA_AUDIO);
+  r_assert_cmpint (r_rtc_media_type_from_string ("audiofoo", 5), ==, R_RTC_MEDIA_AUDIO);
+  r_assert_cmpint (r_rtc_media_type_from_string (R_STR_WITH_SIZE_ARGS ("bogus")), ==, R_RTC_MEDIA_UNKNOWN);
+  r_assert_cmpint (r_rtc_media_type_from_string ("audio", -1), ==, R_RTC_MEDIA_AUDIO);
+
+  r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_AUDIO), ==, "audio");
+  r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_VIDEO), ==, "video");
+  r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_TEXT), ==, NULL);
+  r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_APPLICATION), ==, NULL);
+  r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_UNKNOWN), ==, NULL);
+}
+RTEST_END;
+
+RTEST (rrtcsessiondescription, protocol_string, RTEST_FAST)
+{
+  RRtcProtocolFlags flags;
+
+  /* RTP profiles, plain and DTLS-wrapped, over UDP and TCP. */
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("RTP/AVP"), &flags), ==, R_RTC_PROTO_RTP);
+  r_assert_cmpuint (flags, ==, R_RTC_PROTO_FLAG_AV_PROFILE);
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("RTP/AVPF"), &flags), ==, R_RTC_PROTO_RTP);
+  r_assert_cmpuint (flags, ==, R_RTC_PROTO_FLAGS_AVPF);
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("RTP/SAVP"), &flags), ==, R_RTC_PROTO_RTP);
+  r_assert_cmpuint (flags, ==, R_RTC_PROTO_FLAGS_SAVP);
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("UDP/TLS/RTP/SAVPF"), &flags), ==, R_RTC_PROTO_RTP);
+  r_assert_cmpuint (flags, ==, R_RTC_PROTO_FLAGS_SAVPF);
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("TCP/TLS/RTP/SAVPF"), &flags), ==, R_RTC_PROTO_RTP);
+  r_assert_cmpuint (flags, ==, R_RTC_PROTO_FLAGS_SAVPF);
+
+  /* SCTP / data channel. */
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("UDP/DTLS/SCTP"), &flags), ==, R_RTC_PROTO_SCTP);
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("DTLS/SCTP"), &flags), ==, R_RTC_PROTO_SCTP);
+
+  /* Malformed / unsupported. */
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS (""), &flags), ==, R_RTC_PROTO_NONE);
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("RTP"), &flags), ==, R_RTC_PROTO_NONE);
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("RTP/XYZ"), &flags), ==, R_RTC_PROTO_NONE);
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("UDP/TLS/FOO/SAVPF"), &flags), ==, R_RTC_PROTO_NONE);
+  r_assert_cmpint (r_rtc_protocol_from_string (R_STR_WITH_SIZE_ARGS ("DTLS/RTP"), &flags), ==, R_RTC_PROTO_NONE);
+
+  /* to_string round-trips the supported profiles. */
+  r_assert_cmpstr (r_rtc_protocol_to_string (R_RTC_PROTO_RTP, R_RTC_PROTO_FLAGS_SAVPF), ==, "UDP/TLS/RTP/SAVPF");
+  r_assert_cmpstr (r_rtc_protocol_to_string (R_RTC_PROTO_RTP, R_RTC_PROTO_FLAGS_SAVP), ==, "UDP/TLS/RTP/SAVP");
+  r_assert_cmpstr (r_rtc_protocol_to_string (R_RTC_PROTO_RTP, R_RTC_PROTO_FLAGS_AVPF), ==, "RTP/AVPF");
+  r_assert_cmpstr (r_rtc_protocol_to_string (R_RTC_PROTO_RTP, R_RTC_PROTO_FLAG_AV_PROFILE), ==, "RTP/AVP");
+  r_assert_cmpstr (r_rtc_protocol_to_string (R_RTC_PROTO_SCTP, R_RTC_PROTO_FLAG_NONE), ==, "UDP/DTLS/SCTP");
+  r_assert_cmpstr (r_rtc_protocol_to_string (R_RTC_PROTO_NONE, R_RTC_PROTO_FLAG_NONE), ==, NULL);
+}
+RTEST_END;
+
