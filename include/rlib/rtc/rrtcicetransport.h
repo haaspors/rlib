@@ -198,6 +198,19 @@ R_API RRtcError r_rtc_ice_transport_gather_srflx_candidates (RRtcIceTransport * 
     RSocketAddress * stun_server);
 
 /**
+ * @brief Gather relayed candidates from the TURN server @p turn_server.
+ *
+ * Allocates a relayed transport address on @p turn_server (RFC 8656),
+ * authenticating with the long-term credential @p username / @p password;
+ * the allocated address becomes a relay candidate delivered through the
+ * callback set with @ref r_rtc_ice_transport_set_on_local_candidate.
+ * Requires the transport to be started. @p turn_server / @p username /
+ * @p password are copied.
+ */
+R_API RRtcError r_rtc_ice_transport_gather_relay_candidates (RRtcIceTransport * ice,
+    RSocketAddress * turn_server, const rchar * username, const rchar * password);
+
+/**
  * @brief Add a remote @p candidate learned from the peer's SDP.
  *
  * Each remote candidate is paired with every local socket; once the

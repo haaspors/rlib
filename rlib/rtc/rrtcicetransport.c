@@ -25,6 +25,7 @@
 #include <rlib/rrand.h>
 #include <rlib/rstr.h>
 
+#include <rlib/crypto/rmsgdigest.h>
 #include <rlib/ev/revtcp.h>
 #include <rlib/net/proto/rstun.h>
 #include <rlib/types/rendianness.h>
@@ -168,6 +169,7 @@ r_rtc_ice_transport_free (RRtcIceTransport * ice)
   /* Drop the checks / srflx first: cancelling their timers needs ice->loop. */
   r_ptr_array_unref (ice->checks);
   r_ptr_array_unref (ice->srflx);
+  r_ptr_array_unref (ice->turn);
   r_ptr_array_unref (ice->tcpconns);
   r_ptr_array_unref (ice->remote);
 
@@ -211,6 +213,7 @@ r_rtc_ice_transport_new (
     ret->remote = r_ptr_array_new ();
     ret->checks = r_ptr_array_new ();
     ret->srflx = r_ptr_array_new ();
+    ret->turn = r_ptr_array_new ();
     ret->tcpconns = r_ptr_array_new ();
     R_LOG_TRACE ("RtcIceTransport %p new %s - %s", ret, ret->ufrag, ret->pwd);
   }
@@ -651,6 +654,252 @@ r_rtc_ice_srflx_response (RRtcIceTransport * ice, rconstpointer msg)
   return FALSE;
 }
 
+/* Relay candidate priority, RFC 8445 5.1.2.1: type preference 0. */
+static ruint64
+r_rtc_ice_relay_priority (RRtcIceComponent component)
+{
+  ruint comp = component != R_RTC_ICE_COMPONENT_UNKNOWN ? component : 1;
+
+  return ((ruint64) 65535 << 8) | (256 - comp);
+}
+
+/* A TURN Allocate outstanding to a TURN server, discovering the relayed
+ * transport address for its base host socket. */
+typedef struct {
+  RRtcIceTransport * ice;
+  RRtcIceCandidate * base;
+  REvUDP * udp;
+  RSocketAddress * server;
+  rchar * username;
+  rchar * password;
+  rchar * realm;              /* learned from the 401 challenge */
+  rchar * nonce;
+  ruint8 tid[R_STUN_TRANSACTION_ID_SIZE];
+  ruint nsent;
+  rboolean authed;            /* the credentialed retry has been sent */
+  RClockEntry * timer;
+} RRtcIceTurnReq;
+
+static void
+r_rtc_ice_turn_req_free (rpointer data)
+{
+  RRtcIceTurnReq * req = data;
+
+  if (req->timer != NULL && req->ice->loop != NULL)
+    r_ev_loop_cancel_timer (req->ice->loop, req->timer);
+  r_rtc_ice_candidate_unref (req->base);
+  r_socket_address_unref (req->server);
+  r_free (req->username);
+  r_free (req->password);
+  r_free (req->realm);
+  r_free (req->nonce);
+  r_free (req);
+}
+
+/* Long-term credential key, RFC 8489 18.5.1: MD5(username ":" realm ":" pwd). */
+static rboolean
+r_rtc_ice_turn_key (const rchar * username, const rchar * realm,
+    const rchar * password, ruint8 out[16])
+{
+  RMsgDigest * md;
+  rsize outlen = 0;
+  rboolean ok = FALSE;
+
+  if ((md = r_msg_digest_new_md5 ()) != NULL) {
+    r_msg_digest_update (md, username, r_strlen (username));
+    r_msg_digest_update (md, ":", 1);
+    r_msg_digest_update (md, realm, r_strlen (realm));
+    r_msg_digest_update (md, ":", 1);
+    r_msg_digest_update (md, password, r_strlen (password));
+    ok = r_msg_digest_get_data (md, out, 16, &outlen) && outlen == 16;
+    r_msg_digest_free (md);
+  }
+  return ok;
+}
+
+static RBuffer *
+r_rtc_ice_build_allocate (RRtcIceTurnReq * req)
+{
+  RBuffer * ret;
+
+  if ((ret = r_buffer_new_alloc (NULL, 512, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+      ruint8 rt[4] = { 17, 0, 0, 0 };   /* REQUESTED-TRANSPORT: UDP (17) */
+      rsize size;
+
+      r_stun_msg_begin (&ctx, info.data, info.size,
+          R_STUN_CLASS_REQUEST, R_STUN_METHOD_ALLOCATE, req->tid);
+
+      tlv.type = R_STUN_ATTR_TYPE_REQUESTED_TRANSPORT;
+      tlv.len = sizeof (rt);
+      tlv.value = rt;
+      r_stun_msg_add_attribute (&ctx, &tlv);
+
+      if (req->authed) {
+        ruint8 key[16];
+
+        tlv.type = R_STUN_ATTR_TYPE_USERNAME;
+        tlv.len = (ruint16) r_strlen (req->username);
+        tlv.value = (const ruint8 *) req->username;
+        r_stun_msg_add_attribute (&ctx, &tlv);
+        tlv.type = R_STUN_ATTR_TYPE_REALM;
+        tlv.len = (ruint16) r_strlen (req->realm);
+        tlv.value = (const ruint8 *) req->realm;
+        r_stun_msg_add_attribute (&ctx, &tlv);
+        tlv.type = R_STUN_ATTR_TYPE_NONCE;
+        tlv.len = (ruint16) r_strlen (req->nonce);
+        tlv.value = (const ruint8 *) req->nonce;
+        r_stun_msg_add_attribute (&ctx, &tlv);
+
+        if (r_rtc_ice_turn_key (req->username, req->realm, req->password, key))
+          r_stun_msg_add_message_integrity_short_cred (&ctx, key, sizeof (key));
+      }
+
+      size = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (ret, &info);
+      r_buffer_set_size (ret, size);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+static void r_rtc_ice_turn_timeout (rpointer data, REvLoop * loop);
+
+static void
+r_rtc_ice_turn_transmit (RRtcIceTurnReq * req, rboolean fresh)
+{
+  RBuffer * buf;
+
+  if (fresh) {
+    r_rand_entropy_fill (req->tid, sizeof (req->tid));
+    req->nsent = 0;
+  }
+
+  if ((buf = r_rtc_ice_build_allocate (req)) != NULL) {
+    r_ev_udp_send (req->udp, buf, req->server, NULL, NULL, NULL);
+    r_buffer_unref (buf);
+    req->nsent++;
+  }
+
+  req->timer = NULL;
+  r_ev_loop_add_callback_later (req->ice->loop, &req->timer,
+      R_RTC_ICE_CHECK_RTO, r_rtc_ice_turn_timeout, req, NULL);
+}
+
+static void
+r_rtc_ice_turn_timeout (rpointer data, REvLoop * loop)
+{
+  RRtcIceTurnReq * req = data;
+  (void) loop;
+
+  req->timer = NULL;
+  if (req->nsent >= R_RTC_ICE_CHECK_MAX_SENDS) {
+    R_LOG_INFO ("RtcIceTransport %p TURN allocate timed out", req->ice);
+    r_ptr_array_remove_first_fast (req->ice->turn, req);
+    return;
+  }
+
+  r_rtc_ice_turn_transmit (req, FALSE);
+}
+
+/* Verify a TURN response's MESSAGE-INTEGRITY against the long-term key. */
+static rboolean
+r_rtc_ice_turn_check_integrity (rconstpointer msg, RRtcIceTurnReq * req)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  ruint8 key[16];
+
+  if (req->realm == NULL ||
+      !r_rtc_ice_turn_key (req->username, req->realm, req->password, key) ||
+      !r_stun_attr_tlv_first (msg, &tlv))
+    return FALSE;
+  do {
+    if (tlv.type == R_STUN_ATTR_TYPE_MESSAGE_INTEGRITY)
+      return r_stun_msg_check_integrity_short_cred (msg, &tlv, key, sizeof (key));
+  } while (r_stun_attr_tlv_next (msg, &tlv));
+  return FALSE;
+}
+
+/* Handle a TURN Allocate response: answer a 401 challenge with long-term
+ * credentials, or turn the (integrity-verified) XOR-RELAYED-ADDRESS into a
+ * relay candidate. */
+static void
+r_rtc_ice_turn_response (RRtcIceTransport * ice, rconstpointer msg)
+{
+  const ruint8 * tid = r_stun_msg_transaction_id (msg);
+  rboolean err = r_stun_msg_is_err_resp (msg);
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (ice->turn); i < c; i++) {
+    RRtcIceTurnReq * req = r_ptr_array_get (ice->turn, i);
+    RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+    RSocketAddress * relayed = NULL;
+    rchar * realm = NULL, * nonce = NULL;
+    ruint code = 0;
+
+    if (r_memcmp_ct (req->tid, tid, R_STUN_TRANSACTION_ID_SIZE) != 0)
+      continue;
+
+    if (r_stun_attr_tlv_first (msg, &tlv)) {
+      do {
+        switch (tlv.type) {
+          case R_STUN_ATTR_TYPE_XOR_RELAYED_ADDRESS:
+            relayed = r_stun_attr_tlv_parse_xor_address (msg, &tlv);
+            break;
+          case R_STUN_ATTR_TYPE_ERROR_CODE:
+            code = r_stun_attr_tlv_parse_error_code (msg, &tlv);
+            break;
+          case R_STUN_ATTR_TYPE_REALM:
+            realm = r_strdup_size ((const rchar *) tlv.value, tlv.len);
+            break;
+          case R_STUN_ATTR_TYPE_NONCE:
+            nonce = r_strdup_size ((const rchar *) tlv.value, tlv.len);
+            break;
+          default:
+            break;
+        }
+      } while (r_stun_attr_tlv_next (msg, &tlv));
+    }
+
+    if (err && code == 401 && !req->authed && realm != NULL && nonce != NULL) {
+      r_free (req->realm); req->realm = realm; realm = NULL;
+      r_free (req->nonce); req->nonce = nonce; nonce = NULL;
+      req->authed = TRUE;
+      r_rtc_ice_turn_transmit (req, TRUE);
+    } else if (!err && relayed != NULL &&
+        r_rtc_ice_turn_check_integrity (msg, req)) {
+      RRtcIceCandidate * cand = r_rtc_ice_candidate_new_full ("relay", -1,
+          r_rtc_ice_relay_priority (ice->component), ice->component,
+          R_RTC_ICE_PROTO_UDP, relayed, R_RTC_ICE_CANDIDATE_RELAY);
+      if (cand != NULL) {
+        cand->raddr = r_socket_address_ref (req->base->addr);
+        R_LOG_INFO ("RtcIceTransport %p gathered relay candidate", ice);
+        if (ice->on_candidate != NULL)
+          ice->on_candidate (ice->on_candidate_data, ice, cand);
+        r_rtc_ice_candidate_unref (cand);
+      }
+      r_ptr_array_remove_first_fast (ice->turn, req);
+    } else {
+      R_LOG_WARNING ("RtcIceTransport %p TURN allocate failed (code %u)", ice, code);
+      r_ptr_array_remove_first_fast (ice->turn, req);
+    }
+
+    if (relayed != NULL)
+      r_socket_address_unref (relayed);
+    r_free (realm);
+    r_free (nonce);
+    return;
+  }
+}
+
 static void
 r_rtc_ice_select_pair (RRtcIceTransport * ice, RRtcIceCheckPair * pair)
 {
@@ -809,7 +1058,10 @@ static void
 r_rtc_ice_handle_stun (RRtcIceTransport * ice, rconstpointer msg,
     const RRtcIceSrc * src)
 {
-  if (!r_stun_msg_method_is_binding (msg)) {
+  if (r_stun_msg_method_is_allocate (msg)) {
+    if (r_stun_msg_is_success_resp (msg) || r_stun_msg_is_err_resp (msg))
+      r_rtc_ice_turn_response (ice, msg);
+  } else if (!r_stun_msg_method_is_binding (msg)) {
     R_LOG_WARNING ("RtcIceTransport %p unknown STUN method", ice);
   } else if (r_stun_msg_is_request (msg)) {
     r_rtc_ice_handle_binding_request (ice, msg, src);
@@ -1329,6 +1581,54 @@ r_rtc_ice_transport_gather_srflx_candidates (RRtcIceTransport * ice,
   ctx.ice = ice;
   ctx.server = stun_server;
   r_hash_table_foreach (ice->candidateSockets, r_rtc_ice_gather_srflx_cb, &ctx);
+  return R_RTC_OK;
+}
+
+typedef struct {
+  RRtcIceTransport * ice;
+  RSocketAddress * server;
+  const rchar * username;
+  const rchar * password;
+} RRtcIceRelayGather;
+
+static void
+r_rtc_ice_gather_relay_cb (rpointer key, rpointer value, rpointer user)
+{
+  RRtcIceCandidate * base = key;
+  REvUDP * udp = value;
+  RRtcIceRelayGather * ctx = user;
+  RRtcIceTurnReq * req;
+
+  if (udp == NULL || base->proto != R_RTC_ICE_PROTO_UDP)
+    return;
+
+  req = r_mem_new0 (RRtcIceTurnReq);
+  req->ice = ctx->ice;
+  req->base = r_rtc_ice_candidate_ref (base);
+  req->udp = udp;
+  req->server = r_socket_address_ref (ctx->server);
+  req->username = r_strdup (ctx->username);
+  req->password = r_strdup (ctx->password);
+  r_ptr_array_add (ctx->ice->turn, req, r_rtc_ice_turn_req_free);
+  r_rtc_ice_turn_transmit (req, TRUE);
+}
+
+RRtcError
+r_rtc_ice_transport_gather_relay_candidates (RRtcIceTransport * ice,
+    RSocketAddress * turn_server, const rchar * username, const rchar * password)
+{
+  RRtcIceRelayGather ctx;
+
+  if (R_UNLIKELY (ice == NULL || turn_server == NULL)) return R_RTC_INVAL;
+  if (R_UNLIKELY (username == NULL || password == NULL)) return R_RTC_INVAL;
+  if (R_UNLIKELY (ice->send == r_rtc_ice_transport_send_fake)) return R_RTC_WRONG_STATE;
+  if (R_UNLIKELY (ice->loop == NULL)) return R_RTC_WRONG_STATE;
+
+  ctx.ice = ice;
+  ctx.server = turn_server;
+  ctx.username = username;
+  ctx.password = password;
+  r_hash_table_foreach (ice->candidateSockets, r_rtc_ice_gather_relay_cb, &ctx);
   return R_RTC_OK;
 }
 
