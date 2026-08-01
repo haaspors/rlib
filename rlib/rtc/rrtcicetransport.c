@@ -43,6 +43,10 @@
 /* A STUN message / media packet over TCP is framed with a 2-byte
  * big-endian length prefix (RFC 4571, as ICE-TCP mandates in RFC 6544). */
 #define R_RTC_ICE_TCP_FRAME_HDR   2
+/* Bound the passive side against accept floods and reassembly-buffer growth
+ * from an unauthenticated peer. */
+#define R_RTC_ICE_TCP_MAX_CONNS   64
+#define R_RTC_ICE_TCP_RX_MAX      (4 * (R_RTC_ICE_TCP_FRAME_HDR + 0xffff))
 
 typedef struct RRtcIceTcpConn RRtcIceTcpConn;
 
@@ -165,6 +169,34 @@ r_rtc_ice_tcp_conn_free (rpointer data)
     r_socket_address_unref (conn->remote);
   r_free (conn->rx);
   r_free (conn);
+}
+
+/* Tear down a live TCP connection, invalidating the borrowed references to
+ * it that the selected path and any check pairs hold, before freeing it.
+ * (Not used at transport teardown, where ice->checks is already gone.) */
+static void
+r_rtc_ice_drop_conn (RRtcIceTransport * ice, RRtcIceTcpConn * conn)
+{
+  rsize i, c;
+
+  if (ice->selected_conn == conn) {
+    ice->selected_conn = NULL;
+    ice->send = NULL;
+    if (ice->state == R_RTC_ICE_STATE_CONNECTED)
+      ice->state = R_RTC_ICE_STATE_DISCONNECTED;
+  }
+  for (i = 0, c = r_ptr_array_size (ice->checks); i < c; i++) {
+    RRtcIceCheckPair * pair = r_ptr_array_get (ice->checks, i);
+    if (pair->conn != conn)
+      continue;
+    if (pair->timer != NULL) {
+      r_ev_loop_cancel_timer (ice->loop, pair->timer);
+      pair->timer = NULL;
+    }
+    pair->conn = NULL;
+    pair->state = R_RTC_ICE_CHECK_FAILED;
+  }
+  r_ptr_array_remove_first_fast (ice->tcpconns, conn);
 }
 
 static void
@@ -1360,12 +1392,13 @@ static void
 r_rtc_ice_tcp_recv_cb (rpointer data, RBuffer * buf, REvTCP * evtcp)
 {
   RRtcIceTcpConn * conn = data;
+  RRtcIceTransport * ice = conn->ice;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
   rsize off;
   (void) evtcp;
 
   if (buf == NULL) {   /* peer closed: drop the connection */
-    r_ptr_array_remove_first_fast (conn->ice->tcpconns, conn);
+    r_rtc_ice_drop_conn (ice, conn);
     return;
   }
 
@@ -1373,8 +1406,18 @@ r_rtc_ice_tcp_recv_cb (rpointer data, RBuffer * buf, REvTCP * evtcp)
     return;
 
   if (conn->rxlen + info.size > conn->rxalloc) {
-    conn->rxalloc = conn->rxlen + info.size;
-    conn->rx = r_realloc (conn->rx, conn->rxalloc);
+    rsize need = conn->rxlen + info.size;
+    ruint8 * nrx;
+
+    /* Cap the accumulator and survive OOM without dereferencing NULL or
+     * leaking the old buffer (an unauthenticated peer drives this size). */
+    if (need > R_RTC_ICE_TCP_RX_MAX || (nrx = r_realloc (conn->rx, need)) == NULL) {
+      r_buffer_unmap (buf, &info);
+      r_rtc_ice_drop_conn (ice, conn);
+      return;
+    }
+    conn->rx = nrx;
+    conn->rxalloc = need;
   }
   r_memcpy (conn->rx + conn->rxlen, info.data, info.size);
   conn->rxlen += info.size;
@@ -1387,6 +1430,9 @@ r_rtc_ice_tcp_recv_cb (rpointer data, RBuffer * buf, REvTCP * evtcp)
       break;
     r_rtc_ice_tcp_dispatch (conn, conn->rx + off + R_RTC_ICE_TCP_FRAME_HDR, framelen);
     off += R_RTC_ICE_TCP_FRAME_HDR + framelen;
+    /* Dispatch reaches the app callback, which may have dropped this conn. */
+    if (r_ptr_array_find (ice->tcpconns, conn) == R_PTR_ARRAY_INVALID_IDX)
+      return;
   }
 
   /* Slide any partial frame down to the front. */
@@ -1477,8 +1523,13 @@ r_rtc_ice_tcp_on_accept (rpointer data, REvTCP * newtcp, REvTCP * listening)
   RRtcIceCandidate * local = r_rtc_ice_local_for_sock (ice, listening);
   RRtcIceTcpConn * conn;
 
-  if (local == NULL)
+  /* Refuse the accept if it is unknown or we are already at the connection
+   * cap (an unauthenticated peer must not be able to open unbounded ones). */
+  if (local == NULL ||
+      r_ptr_array_size (ice->tcpconns) >= R_RTC_ICE_TCP_MAX_CONNS) {
+    r_ev_tcp_abort (newtcp, NULL, NULL, NULL);
     return;
+  }
 
   conn = r_rtc_ice_tcp_conn_new (ice, r_ev_tcp_ref (newtcp), local, NULL,
       r_ev_tcp_get_remote_address (newtcp));
@@ -1894,12 +1945,11 @@ r_rtc_ice_transport_get_local_address (const RRtcIceTransport * ice)
   if (cand == NULL || (sock = r_hash_table_lookup (ice->candidateSockets, cand)) == NULL)
     return NULL;
 
+  /* Both accessors return a newly-owned address (getsockname); hand it
+   * straight back rather than copying and leaking the original. */
   addr = cand->proto == R_RTC_ICE_PROTO_TCP ?
       r_ev_tcp_get_local_address (sock) : r_ev_udp_get_local_address (sock);
-  if (addr == NULL)
-    return NULL;
-
-  return r_socket_address_copy (addr);
+  return addr;
 }
 
 RRtcError
