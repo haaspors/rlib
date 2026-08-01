@@ -227,6 +227,9 @@ _candidate_socket_close (rpointer key, rpointer value, rpointer user)
   RRtcIceCandidate * candidate = key;
   RRtcIceTransport * ice = user;
 
+  if (value == NULL)
+    return;
+
   if (candidate->proto == R_RTC_ICE_PROTO_UDP) {
     REvUDP * udp = value;
 
