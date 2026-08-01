@@ -235,6 +235,7 @@ struct RRtcIceTransport {
   RRtcIceState state;
   RRtcIceCandidatePair selected;
   RHashTable * candidateSockets;
+  RHashTable * bindAddrs; /* candidate -> local bind address (NAT 1:1) */
   RPtrArray * remote;     /* remote RRtcIceCandidate * */
   RPtrArray * checks;     /* candidate-pair checks (RRtcIceCheckPair *) */
   rboolean nominated;     /* a pair has been selected + ready fired */

@@ -92,6 +92,7 @@ r_rtc_ice_transport_free (RRtcIceTransport * ice)
   if (ice->selected.remote != NULL)
     r_rtc_ice_candidate_unref (ice->selected.remote);
   r_hash_table_unref (ice->candidateSockets);
+  r_hash_table_unref (ice->bindAddrs);
 
   r_free (ice->rpwd);
   r_free (ice->rufrag);
@@ -121,6 +122,8 @@ r_rtc_ice_transport_new (
     ret->tiebreaker = r_rand_entropy_u64 ();
     ret->candidateSockets = r_hash_table_new_full (NULL, NULL,
         r_rtc_ice_candidate_unref, r_rtc_ice_udp_destroy);
+    ret->bindAddrs = r_hash_table_new_full (NULL, NULL,
+        r_rtc_ice_candidate_unref, r_ref_unref);
     ret->remote = r_ptr_array_new ();
     ret->checks = r_ptr_array_new ();
     R_LOG_TRACE ("RtcIceTransport %p new %s - %s", ret, ret->ufrag, ret->pwd);
@@ -557,17 +560,24 @@ r_rtc_ice_pair_local_with_remotes (RRtcIceTransport * ice,
   }
 }
 
+/* Bind @bind_addr (the advertised @candidate address when NULL) and key
+ * the socket by @candidate, so a NAT-1:1 candidate can advertise a public
+ * address while binding a local one. */
 static RRtcError
-r_rtc_ice_transport_setup_udp (RRtcIceTransport * ice, RRtcIceCandidate * candidate)
+r_rtc_ice_transport_setup_udp (RRtcIceTransport * ice, RRtcIceCandidate * candidate,
+    RSocketAddress * bind_addr)
 {
   REvUDP * udp;
 
-  if ((udp = r_ev_udp_new (r_socket_address_get_family (candidate->addr), ice->loop)) != NULL) {
-    rchar * tmp = r_socket_address_to_str (candidate->addr);
+  if (bind_addr == NULL)
+    bind_addr = candidate->addr;
+
+  if ((udp = r_ev_udp_new (r_socket_address_get_family (bind_addr), ice->loop)) != NULL) {
+    rchar * tmp = r_socket_address_to_str (bind_addr);
     R_LOG_TRACE ("RtcIceTransport %p setup UDP: %s", ice, tmp);
     r_free (tmp);
 
-    if (r_ev_udp_bind (udp, candidate->addr, TRUE)) {
+    if (r_ev_udp_bind (udp, bind_addr, TRUE)) {
       r_ev_udp_recv_start (udp, NULL, r_rtc_ice_transport_udp_packet_cb, ice, NULL);
       r_hash_table_insert (ice->candidateSockets, r_rtc_ice_candidate_ref (candidate), udp);
       if (ice->state == R_RTC_ICE_STATE_NEW)
@@ -592,7 +602,8 @@ _candidate_socket_start (rpointer key, rpointer value, rpointer user)
 
   if (value == NULL) {
     if (candidate->proto == R_RTC_ICE_PROTO_UDP) {
-      r_rtc_ice_transport_setup_udp (ice, candidate);
+      r_rtc_ice_transport_setup_udp (ice, candidate,
+          r_hash_table_lookup (ice->bindAddrs, candidate));
     } else {
       r_assert_not_reached (); /* FIXME */
     }
@@ -652,9 +663,9 @@ r_rtc_ice_transport_send_fake (rpointer rtc, RBuffer * buf)
   return R_RTC_WRONG_STATE;
 }
 
-RRtcError
-r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport * ice,
-    RRtcIceCandidate * candidate)
+static RRtcError
+r_rtc_ice_add_host_candidate (RRtcIceTransport * ice,
+    RRtcIceCandidate * candidate, RSocketAddress * bind_addr)
 {
   if (R_UNLIKELY (ice->send == r_rtc_ice_transport_send_fake)) return R_RTC_WRONG_STATE;
   if (R_UNLIKELY (candidate == NULL)) return R_RTC_INVAL;
@@ -665,11 +676,30 @@ r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport * ice,
   if (R_UNLIKELY (r_hash_table_contains (ice->candidateSockets, candidate) == R_HASH_TABLE_OK))
     return R_RTC_ALREADY_FOUND;
 
+  if (bind_addr != NULL)
+    r_hash_table_insert (ice->bindAddrs, r_rtc_ice_candidate_ref (candidate),
+        r_socket_address_copy (bind_addr));
+
   if (ice->loop != NULL)
-    return r_rtc_ice_transport_setup_udp (ice, candidate);
+    return r_rtc_ice_transport_setup_udp (ice, candidate, bind_addr);
 
   r_hash_table_insert (ice->candidateSockets, r_rtc_ice_candidate_ref (candidate), NULL);
   return R_RTC_OK;
+}
+
+RRtcError
+r_rtc_ice_transport_add_local_host_candidate (RRtcIceTransport * ice,
+    RRtcIceCandidate * candidate)
+{
+  return r_rtc_ice_add_host_candidate (ice, candidate, NULL);
+}
+
+RRtcError
+r_rtc_ice_transport_add_local_host_candidate_mapped (RRtcIceTransport * ice,
+    RRtcIceCandidate * candidate, RSocketAddress * bind_addr)
+{
+  if (R_UNLIKELY (bind_addr == NULL)) return R_RTC_INVAL;
+  return r_rtc_ice_add_host_candidate (ice, candidate, bind_addr);
 }
 
 /* Host candidate priority, RFC 8445 5.1.2.1: type preference 126, local

@@ -101,6 +101,53 @@ RTEST (rrtcicetransport, connectivity_check, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+RTEST (rrtcicetransport, mapped_host_candidate_binds_local, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* A NAT-1:1 host candidate advertises one address but binds another:
+   * advertise a non-routable TEST-NET address (RFC 5737) yet bind
+   * loopback, and confirm the socket actually bound loopback. */
+  RPrng * prng;
+  REvLoop * loop;
+  RRtcSession * s;
+  RRtcIceTransport * ice;
+  RSocketAddress * advertised, * bind_addr, * local;
+  RRtcIceCandidate * cand;
+  rchar * str;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+  r_assert_cmpptr ((s = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (s,
+          R_STR_WITH_SIZE_ARGS ("uf"), R_STR_WITH_SIZE_ARGS ("password01234567"))), !=, NULL);
+
+  r_assert_cmpptr ((advertised = r_socket_address_ipv4_new_from_string ("192.0.2.1", 9999)), !=, NULL);
+  r_assert_cmpptr ((bind_addr = r_socket_address_ipv4_new_from_string ("127.0.0.1", 0)), !=, NULL);
+  r_assert_cmpptr ((cand = test_ice_host_candidate ("1", advertised)), !=, NULL);
+
+  r_assert_cmpint (r_rtc_ice_transport_add_local_host_candidate_mapped (ice, cand, NULL), ==, R_RTC_INVAL);
+  r_assert_cmpint (r_rtc_ice_transport_add_local_host_candidate_mapped (ice, cand, bind_addr), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_start (ice, loop), ==, R_RTC_OK);
+
+  /* The bound socket is on loopback, not the advertised 192.0.2.1. */
+  r_assert_cmpptr ((local = r_rtc_ice_transport_get_local_address (ice)), !=, NULL);
+  r_assert_cmpptr ((str = r_socket_address_ipv4_to_str (local, FALSE)), !=, NULL);
+  r_assert_cmpstr (str, ==, "127.0.0.1");
+  r_free (str);
+  r_socket_address_unref (local);
+
+  r_rtc_ice_transport_close (ice);
+  r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_rtc_ice_candidate_unref (cand);
+  r_socket_address_unref (advertised);
+  r_socket_address_unref (bind_addr);
+  r_rtc_ice_transport_unref (ice);
+  r_rtc_session_unref (s);
+  r_ev_loop_unref (loop);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
 /* Deterministic gathering for the test: keep only the IPv4 loopback
  * address so the two agents pair over 127.0.0.1 regardless of the host's
  * real interfaces. */
