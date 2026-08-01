@@ -25,6 +25,7 @@
 #include <rlib/rrand.h>
 #include <rlib/rstr.h>
 
+#include <rlib/ev/revtcp.h>
 #include <rlib/net/proto/rstun.h>
 #include <rlib/types/rendianness.h>
 
@@ -33,6 +34,12 @@
  * loss without a full timer state machine. */
 #define R_RTC_ICE_CHECK_RTO       (500 * R_MSECOND)
 #define R_RTC_ICE_CHECK_MAX_SENDS 7
+
+/* A STUN message / media packet over TCP is framed with a 2-byte
+ * big-endian length prefix (RFC 4571, as ICE-TCP mandates in RFC 6544). */
+#define R_RTC_ICE_TCP_FRAME_HDR   2
+
+typedef struct RRtcIceTcpConn RRtcIceTcpConn;
 
 typedef enum {
   R_RTC_ICE_CHECK_FROZEN = 0,
@@ -45,7 +52,8 @@ typedef enum {
 typedef struct {
   RRtcIceCandidate * local;   /* owned; keys the socket in candidateSockets */
   RRtcIceCandidate * remote;  /* owned */
-  REvUDP * udp;               /* borrowed: the local socket to check on */
+  REvUDP * udp;               /* borrowed: the local UDP socket (NULL for TCP) */
+  RRtcIceTcpConn * conn;      /* borrowed: the TCP connection (NULL for UDP) */
   ruint64 priority;           /* pair priority (RFC 8445 6.1.2.3) */
 
   RRtcIceCheckState state;
@@ -57,6 +65,37 @@ typedef struct {
   RRtcIceTransport * ice;     /* borrowed back-pointer for the timer cb */
   RClockEntry * timer;        /* retransmission timer, or NULL */
 } RRtcIceCheckPair;
+
+/* tcptype (RFC 6544): an active candidate dials out, a passive one listens. */
+typedef enum {
+  R_RTC_ICE_TCP_NONE = 0,
+  R_RTC_ICE_TCP_ACTIVE,
+  R_RTC_ICE_TCP_PASSIVE,
+} RRtcIceTcpType;
+
+/* An established (accepted or connected) ICE-TCP byte stream, carrying
+ * length-prefixed STUN / media frames to one peer. */
+struct RRtcIceTcpConn {
+  RRtcIceTransport * ice;     /* borrowed */
+  REvTCP * tcp;               /* owned */
+  RRtcIceCandidate * local;   /* owned: local TCP candidate (base) */
+  RRtcIceCandidate * remotecand; /* owned: remote candidate (active dials it); NULL passive */
+  RSocketAddress * remote;    /* owned: peer address */
+  rboolean up;                /* connected / accepted and receiving */
+
+  ruint8 * rx;                /* reassembly accumulator */
+  rsize rxlen;
+  rsize rxalloc;
+};
+
+/* Where an inbound STUN message came from, so a reply / triggered check
+ * goes back the same way (a UDP socket + peer address, or a TCP conn). */
+typedef struct {
+  REvUDP * udp;
+  RRtcIceTcpConn * conn;
+  RRtcIceCandidate * local;
+  RSocketAddress * addr;
+} RRtcIceSrc;
 
 /* candidateSockets keeps a NULL value for candidates that are added but
  * not yet bound, and close() resets bound sockets back to NULL -- so the
@@ -105,11 +144,31 @@ r_rtc_ice_srflx_req_free (rpointer data)
 }
 
 static void
+r_rtc_ice_tcp_conn_free (rpointer data)
+{
+  RRtcIceTcpConn * conn = data;
+
+  if (conn->tcp != NULL) {
+    r_ev_tcp_recv_stop (conn->tcp);
+    r_ev_tcp_abort (conn->tcp, NULL, NULL, NULL);
+    r_ev_tcp_unref (conn->tcp);
+  }
+  r_rtc_ice_candidate_unref (conn->local);
+  if (conn->remotecand != NULL)
+    r_rtc_ice_candidate_unref (conn->remotecand);
+  if (conn->remote != NULL)
+    r_socket_address_unref (conn->remote);
+  r_free (conn->rx);
+  r_free (conn);
+}
+
+static void
 r_rtc_ice_transport_free (RRtcIceTransport * ice)
 {
   /* Drop the checks / srflx first: cancelling their timers needs ice->loop. */
   r_ptr_array_unref (ice->checks);
   r_ptr_array_unref (ice->srflx);
+  r_ptr_array_unref (ice->tcpconns);
   r_ptr_array_unref (ice->remote);
 
   if (ice->selected.local != NULL)
@@ -152,10 +211,69 @@ r_rtc_ice_transport_new (
     ret->remote = r_ptr_array_new ();
     ret->checks = r_ptr_array_new ();
     ret->srflx = r_ptr_array_new ();
+    ret->tcpconns = r_ptr_array_new ();
     R_LOG_TRACE ("RtcIceTransport %p new %s - %s", ret, ret->ufrag, ret->pwd);
   }
 
   return ret;
+}
+
+/* Prefix @buf with a 2-byte big-endian length (RFC 4571 framing). */
+static RBuffer *
+r_rtc_ice_tcp_frame (RBuffer * buf)
+{
+  RBuffer * ret = NULL;
+  RMemMapInfo in = R_MEM_MAP_INFO_INIT;
+
+  if (!r_buffer_map (buf, &in, R_MEM_MAP_READ))
+    return NULL;
+
+  if (in.size <= 0xffff &&
+      (ret = r_buffer_new_alloc (NULL, in.size + R_RTC_ICE_TCP_FRAME_HDR, NULL)) != NULL) {
+    RMemMapInfo out = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &out, R_MEM_MAP_WRITE)) {
+      r_store_be16 (out.data, (ruint16) in.size);
+      r_memcpy (out.data + R_RTC_ICE_TCP_FRAME_HDR, in.data, in.size);
+      r_buffer_unmap (ret, &out);
+      r_buffer_set_size (ret, in.size + R_RTC_ICE_TCP_FRAME_HDR);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  r_buffer_unmap (buf, &in);
+  return ret;
+}
+
+static void
+r_rtc_ice_tcp_send (RRtcIceTcpConn * conn, RBuffer * buf)
+{
+  RBuffer * framed;
+
+  if (conn->tcp != NULL && (framed = r_rtc_ice_tcp_frame (buf)) != NULL) {
+    r_ev_tcp_send_and_forget (conn->tcp, framed);
+    r_buffer_unref (framed);
+  }
+}
+
+static RRtcIceTcpType
+r_rtc_ice_candidate_tcptype (RRtcIceCandidate * cand)
+{
+  rsize i, c;
+
+  for (i = 0, c = r_rtc_ice_candidate_ext_count (cand); i < c; i++) {
+    const RStrKV * kv = r_rtc_ice_candidate_get_ext (cand, i);
+    if (kv == NULL ||
+        r_str_chunk_casecmp (&kv->key, R_STR_WITH_SIZE_ARGS ("tcptype")) != 0)
+      continue;
+    if (r_str_chunk_casecmp (&kv->val, R_STR_WITH_SIZE_ARGS ("active")) == 0)
+      return R_RTC_ICE_TCP_ACTIVE;
+    if (r_str_chunk_casecmp (&kv->val, R_STR_WITH_SIZE_ARGS ("passive")) == 0)
+      return R_RTC_ICE_TCP_PASSIVE;
+  }
+  return R_RTC_ICE_TCP_NONE;
 }
 
 RRtcError
@@ -165,6 +283,12 @@ r_rtc_ice_transport_send_udp (rpointer rtc, RBuffer * buf)
   REvUDP * udp;
 
   R_LOG_TRACE ("RtcIceTransport %p: %p:%"RSIZE_FMT, ice, buf, r_buffer_get_size (buf));
+
+  /* The selected pair may be a TCP connection. */
+  if (ice->selected_conn != NULL) {
+    r_rtc_ice_tcp_send (ice->selected_conn, buf);
+    return R_RTC_OK;
+  }
 
   if ((udp = r_hash_table_lookup (ice->candidateSockets, ice->selected.local)) != NULL) {
     /* FIXME: Error checking */
@@ -182,6 +306,16 @@ r_rtc_ice_transport_send (RRtcIceTransport * ice, RBuffer * buf)
   if (R_UNLIKELY (buf == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (ice->send == NULL)) return R_RTC_WRONG_STATE;
   return ice->send (ice, buf);
+}
+
+/* Send @buf back to the peer the message came from. */
+static void
+r_rtc_ice_reply (const RRtcIceSrc * src, RBuffer * buf)
+{
+  if (src->conn != NULL)
+    r_rtc_ice_tcp_send (src->conn, buf);
+  else
+    r_ev_udp_send (src->udp, buf, src->addr, NULL, NULL, NULL);
 }
 
 static RBuffer *
@@ -227,27 +361,27 @@ r_rtc_ice_pair_priority (RRtcIceRole role, ruint64 local, ruint64 remote)
 }
 
 typedef struct {
-  REvUDP * udp;
+  rpointer sock;
   RRtcIceCandidate * local;
 } RRtcIceLocalLookup;
 
 static void
-r_rtc_ice_local_for_udp_cb (rpointer key, rpointer value, rpointer user)
+r_rtc_ice_local_for_sock_cb (rpointer key, rpointer value, rpointer user)
 {
   RRtcIceLocalLookup * lookup = user;
 
-  if (value == lookup->udp)
+  if (value == lookup->sock)
     lookup->local = key;
 }
 
 /* Reverse the candidate -> socket table to find the local candidate a
- * socket was bound for. */
+ * socket (UDP socket or TCP listener) was bound for. */
 static RRtcIceCandidate *
-r_rtc_ice_local_for_udp (RRtcIceTransport * ice, REvUDP * udp)
+r_rtc_ice_local_for_sock (RRtcIceTransport * ice, rpointer sock)
 {
-  RRtcIceLocalLookup lookup = { udp, NULL };
+  RRtcIceLocalLookup lookup = { sock, NULL };
 
-  r_hash_table_foreach (ice->candidateSockets, r_rtc_ice_local_for_udp_cb, &lookup);
+  r_hash_table_foreach (ice->candidateSockets, r_rtc_ice_local_for_sock_cb, &lookup);
   return lookup.local;
 }
 
@@ -268,7 +402,7 @@ r_rtc_ice_find_pair (RRtcIceTransport * ice, RRtcIceCandidate * local,
 
 static RRtcIceCheckPair *
 r_rtc_ice_add_pair (RRtcIceTransport * ice, RRtcIceCandidate * local,
-    REvUDP * udp, RRtcIceCandidate * remote)
+    REvUDP * udp, RRtcIceTcpConn * conn, RRtcIceCandidate * remote)
 {
   RRtcIceCheckPair * pair;
 
@@ -278,6 +412,7 @@ r_rtc_ice_add_pair (RRtcIceTransport * ice, RRtcIceCandidate * local,
   pair->local = r_rtc_ice_candidate_ref (local);
   pair->remote = r_rtc_ice_candidate_ref (remote);
   pair->udp = udp;
+  pair->conn = conn;
   pair->priority = r_rtc_ice_pair_priority (ice->role, local->pri, remote->pri);
   pair->state = R_RTC_ICE_CHECK_WAITING;
   pair->ice = ice;
@@ -360,7 +495,10 @@ r_rtc_ice_transmit_check (RRtcIceTransport * ice, RRtcIceCheckPair * pair,
   }
 
   if ((buf = r_rtc_ice_build_check (ice, pair)) != NULL) {
-    r_ev_udp_send (pair->udp, buf, pair->remote->addr, NULL, NULL, NULL);
+    if (pair->conn != NULL)
+      r_rtc_ice_tcp_send (pair->conn, buf);
+    else
+      r_ev_udp_send (pair->udp, buf, pair->remote->addr, NULL, NULL, NULL);
     r_buffer_unref (buf);
     pair->state = R_RTC_ICE_CHECK_IN_PROGRESS;
     pair->nsent++;
@@ -527,9 +665,11 @@ r_rtc_ice_select_pair (RRtcIceTransport * ice, RRtcIceCheckPair * pair)
     r_rtc_ice_candidate_unref (ice->selected.remote);
   ice->selected.local = r_rtc_ice_candidate_ref (pair->local);
   ice->selected.remote = r_rtc_ice_candidate_ref (pair->remote);
+  ice->selected_conn = pair->conn;   /* NULL for a UDP pair */
   ice->send = r_rtc_ice_transport_send_udp;
 
-  R_LOG_INFO ("RtcIceTransport %p pair nominated, connected", ice);
+  R_LOG_INFO ("RtcIceTransport %p pair nominated, connected (%s)", ice,
+      pair->conn != NULL ? "TCP" : "UDP");
   if (ice->ready != NULL)
     ice->ready (ice->data, ice);
 }
@@ -565,12 +705,13 @@ r_rtc_ice_maybe_select_controlled (RRtcIceTransport * ice, RRtcIceCheckPair * pa
 
 static void
 r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
-    RSocketAddress * addr, REvUDP * evudp)
+    const RRtcIceSrc * src)
 {
-  RRtcIceCandidate * local, * remote;
+  RRtcIceCandidate * remote;
   RRtcIceCheckPair * pair;
   RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
   rboolean use_candidate = FALSE;
+  RRtcIceProtocol proto = src->conn != NULL ? R_RTC_ICE_PROTO_TCP : R_RTC_ICE_PROTO_UDP;
   RBuffer * outbuf;
 
   /* The peer keys its requests with our local password. */
@@ -581,8 +722,8 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
 
   /* Respond, keyed with our own (local) password. */
   if ((outbuf = r_rtc_ice_transport_create_stun_response_binding (ice,
-          addr, r_stun_msg_transaction_id (msg))) != NULL) {
-    r_ev_udp_send (evudp, outbuf, addr, NULL, NULL, NULL);
+          src->addr, r_stun_msg_transaction_id (msg))) != NULL) {
+    r_rtc_ice_reply (src, outbuf);
     r_buffer_unref (outbuf);
   }
 
@@ -593,17 +734,17 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
     } while (r_stun_attr_tlv_next (msg, &tlv));
   }
 
-  if ((local = r_rtc_ice_local_for_udp (ice, evudp)) == NULL)
+  if (src->local == NULL)
     return;
 
   /* Learn a peer-reflexive remote candidate when the source is unknown. */
-  if ((pair = r_rtc_ice_find_pair (ice, local, addr)) == NULL) {
+  if ((pair = r_rtc_ice_find_pair (ice, src->local, src->addr)) == NULL) {
     remote = r_rtc_ice_candidate_new_full (R_STR_WITH_SIZE_ARGS ("prflx"), 0,
-        ice->component, R_RTC_ICE_PROTO_UDP, addr, R_RTC_ICE_CANDIDATE_PRFLX);
+        ice->component, proto, src->addr, R_RTC_ICE_CANDIDATE_PRFLX);
     if (remote == NULL)
       return;
     r_ptr_array_add (ice->remote, remote, r_rtc_ice_candidate_unref);
-    pair = r_rtc_ice_add_pair (ice, local, evudp, remote);
+    pair = r_rtc_ice_add_pair (ice, src->local, src->udp, src->conn, remote);
     if (pair == NULL)
       return;
   }
@@ -663,6 +804,23 @@ r_rtc_ice_handle_binding_response (RRtcIceTransport * ice, rconstpointer msg)
   }
 }
 
+/* Dispatch one demapped STUN message from @src. */
+static void
+r_rtc_ice_handle_stun (RRtcIceTransport * ice, rconstpointer msg,
+    const RRtcIceSrc * src)
+{
+  if (!r_stun_msg_method_is_binding (msg)) {
+    R_LOG_WARNING ("RtcIceTransport %p unknown STUN method", ice);
+  } else if (r_stun_msg_is_request (msg)) {
+    r_rtc_ice_handle_binding_request (ice, msg, src);
+  } else if (r_stun_msg_is_success_resp (msg)) {
+    r_rtc_ice_handle_binding_response (ice, msg);
+  } else {
+    R_LOG_TRACE ("RtcIceTransport %p binding %s", ice,
+        r_stun_msg_is_err_resp (msg) ? "error" : "indication");
+  }
+}
+
 static void
 r_rtc_ice_transport_udp_packet_cb (rpointer data,
     RBuffer * buf, RSocketAddress * addr, REvUDP * evudp)
@@ -674,21 +832,82 @@ r_rtc_ice_transport_udp_packet_cb (rpointer data,
 
   r_buffer_map (buf, &info, R_MEM_MAP_READ);
   if (r_stun_is_valid_msg (info.data, info.size)) {
-    if (r_stun_msg_method_is_binding (info.data)) {
-      if (r_stun_msg_is_request (info.data))
-        r_rtc_ice_handle_binding_request (ice, info.data, addr, evudp);
-      else if (r_stun_msg_is_success_resp (info.data))
-        r_rtc_ice_handle_binding_response (ice, info.data);
-      else
-        R_LOG_TRACE ("RtcIceTransport %p binding %s", ice,
-            r_stun_msg_is_err_resp (info.data) ? "error" : "indication");
-    } else {
-      R_LOG_WARNING ("RtcIceTransport %p unknown STUN method", ice);
-    }
+    RRtcIceSrc src = { evudp, NULL, r_rtc_ice_local_for_sock (ice, evudp), addr };
+    r_rtc_ice_handle_stun (ice, info.data, &src);
     r_buffer_unmap (buf, &info);
   } else {
     r_buffer_unmap (buf, &info);
     ice->packet (ice->data, buf, ice);
+  }
+}
+
+/* Feed a reassembled RFC 4571 frame from a TCP connection through the same
+ * paths as a UDP datagram. */
+static void
+r_rtc_ice_tcp_dispatch (RRtcIceTcpConn * conn, const ruint8 * data, rsize size)
+{
+  RRtcIceTransport * ice = conn->ice;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  RBuffer * buf;
+
+  /* The frame sits at an odd offset in the reassembly accumulator; copy it
+   * into an (aligned) buffer before the STUN parser reads 32-bit fields. */
+  if ((buf = r_buffer_new_dup (data, size)) == NULL)
+    return;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
+    if (r_stun_is_valid_msg (info.data, info.size)) {
+      RRtcIceSrc src = { NULL, conn, conn->local, conn->remote };
+      r_rtc_ice_handle_stun (ice, info.data, &src);
+      r_buffer_unmap (buf, &info);
+    } else {
+      r_buffer_unmap (buf, &info);
+      ice->packet (ice->data, buf, ice);
+    }
+  }
+  r_buffer_unref (buf);
+}
+
+/* Accumulate received bytes and dispatch each complete length-prefixed
+ * frame; a NULL @buf is end-of-stream. */
+static void
+r_rtc_ice_tcp_recv_cb (rpointer data, RBuffer * buf, REvTCP * evtcp)
+{
+  RRtcIceTcpConn * conn = data;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  rsize off;
+  (void) evtcp;
+
+  if (buf == NULL) {   /* peer closed: drop the connection */
+    r_ptr_array_remove_first_fast (conn->ice->tcpconns, conn);
+    return;
+  }
+
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_READ))
+    return;
+
+  if (conn->rxlen + info.size > conn->rxalloc) {
+    conn->rxalloc = conn->rxlen + info.size;
+    conn->rx = r_realloc (conn->rx, conn->rxalloc);
+  }
+  r_memcpy (conn->rx + conn->rxlen, info.data, info.size);
+  conn->rxlen += info.size;
+  r_buffer_unmap (buf, &info);
+
+  off = 0;
+  while (conn->rxlen - off >= R_RTC_ICE_TCP_FRAME_HDR) {
+    rsize framelen = r_load_be16 (conn->rx + off);
+    if (conn->rxlen - off < R_RTC_ICE_TCP_FRAME_HDR + framelen)
+      break;
+    r_rtc_ice_tcp_dispatch (conn, conn->rx + off + R_RTC_ICE_TCP_FRAME_HDR, framelen);
+    off += R_RTC_ICE_TCP_FRAME_HDR + framelen;
+  }
+
+  /* Slide any partial frame down to the front. */
+  if (off > 0) {
+    conn->rxlen -= off;
+    if (conn->rxlen > 0)
+      r_memmove (conn->rx, conn->rx + off, conn->rxlen);
   }
 }
 
@@ -704,9 +923,11 @@ r_rtc_ice_pair_local_with_remotes (RRtcIceTransport * ice,
     RRtcIceCandidate * remote = r_ptr_array_get (ice->remote, i);
     RRtcIceCheckPair * pair;
 
+    if (remote->proto != R_RTC_ICE_PROTO_UDP)
+      continue;
     if (r_rtc_ice_find_pair (ice, local, remote->addr) != NULL)
       continue;
-    if ((pair = r_rtc_ice_add_pair (ice, local, udp, remote)) == NULL)
+    if ((pair = r_rtc_ice_add_pair (ice, local, udp, NULL, remote)) == NULL)
       continue;
     if (ice->loop != NULL && ice->rpwd != NULL && ice->rufrag != NULL)
       r_rtc_ice_transmit_check (ice, pair, TRUE);
@@ -747,19 +968,157 @@ r_rtc_ice_transport_setup_udp (RRtcIceTransport * ice, RRtcIceCandidate * candid
   return R_RTC_OK;
 }
 
+/* @tcp and @remote ownership transfer to the new connection. */
+static RRtcIceTcpConn *
+r_rtc_ice_tcp_conn_new (RRtcIceTransport * ice, REvTCP * tcp,
+    RRtcIceCandidate * local, RRtcIceCandidate * remotecand, RSocketAddress * remote)
+{
+  RRtcIceTcpConn * conn = r_mem_new0 (RRtcIceTcpConn);
+
+  conn->ice = ice;
+  conn->tcp = tcp;
+  conn->local = r_rtc_ice_candidate_ref (local);
+  conn->remotecand = remotecand != NULL ? r_rtc_ice_candidate_ref (remotecand) : NULL;
+  conn->remote = remote;
+  r_ptr_array_add (ice->tcpconns, conn, r_rtc_ice_tcp_conn_free);
+  return conn;
+}
+
+/* Passive side: a peer dialed our listening socket. */
+static void
+r_rtc_ice_tcp_on_accept (rpointer data, REvTCP * newtcp, REvTCP * listening)
+{
+  RRtcIceTransport * ice = data;
+  RRtcIceCandidate * local = r_rtc_ice_local_for_sock (ice, listening);
+  RRtcIceTcpConn * conn;
+
+  if (local == NULL)
+    return;
+
+  conn = r_rtc_ice_tcp_conn_new (ice, r_ev_tcp_ref (newtcp), local, NULL,
+      r_ev_tcp_get_remote_address (newtcp));
+  conn->up = TRUE;
+  r_ev_tcp_recv_start (newtcp, NULL, r_rtc_ice_tcp_recv_cb, conn, NULL);
+  R_LOG_TRACE ("RtcIceTransport %p accepted TCP connection", ice);
+}
+
+static RRtcError
+r_rtc_ice_transport_setup_tcp_passive (RRtcIceTransport * ice,
+    RRtcIceCandidate * candidate)
+{
+  REvTCP * tcp;
+
+  if ((tcp = r_ev_tcp_new_bind (candidate->addr, ice->loop)) == NULL)
+    return R_RTC_OOM;
+
+  if (r_ev_tcp_listen (tcp, 8, r_rtc_ice_tcp_on_accept, ice, NULL) != R_SOCKET_OK) {
+    r_ev_tcp_unref (tcp);
+    return R_RTC_WRONG_STATE;
+  }
+
+  r_hash_table_insert (ice->candidateSockets, r_rtc_ice_candidate_ref (candidate), tcp);
+  if (ice->state == R_RTC_ICE_STATE_NEW)
+    ice->state = R_RTC_ICE_STATE_CHECKING;
+  return R_RTC_OK;
+}
+
+/* Active side: the TCP connection to a passive remote completed. */
+static void
+r_rtc_ice_tcp_connected (rpointer data, REvTCP * evtcp, int status)
+{
+  RRtcIceTcpConn * conn = data;
+  RRtcIceTransport * ice = conn->ice;
+  RRtcIceCheckPair * pair;
+  (void) evtcp;
+
+  if (status != 0) {
+    R_LOG_INFO ("RtcIceTransport %p TCP connect failed (%d)", ice, status);
+    r_ptr_array_remove_first_fast (ice->tcpconns, conn);
+    return;
+  }
+
+  conn->up = TRUE;
+  r_ev_tcp_recv_start (conn->tcp, NULL, r_rtc_ice_tcp_recv_cb, conn, NULL);
+  R_LOG_TRACE ("RtcIceTransport %p TCP connected", ice);
+
+  if ((pair = r_rtc_ice_find_pair (ice, conn->local, conn->remote)) == NULL)
+    pair = r_rtc_ice_add_pair (ice, conn->local, NULL, conn, conn->remotecand);
+  if (pair != NULL && ice->rpwd != NULL && ice->rufrag != NULL)
+    r_rtc_ice_transmit_check (ice, pair, TRUE);
+}
+
+/* Dial a passive remote from an active local candidate. */
+static void
+r_rtc_ice_tcp_connect (RRtcIceTransport * ice, RRtcIceCandidate * local,
+    RRtcIceCandidate * remote)
+{
+  REvTCP * tcp;
+  RRtcIceTcpConn * conn;
+  RSocketStatus st;
+
+  if ((tcp = r_ev_tcp_new (r_socket_address_get_family (remote->addr), ice->loop)) == NULL)
+    return;
+
+  conn = r_rtc_ice_tcp_conn_new (ice, tcp, local, remote,
+      r_socket_address_ref (remote->addr));
+  /* An async connect reports WOULD_BLOCK; the result arrives via the cb. */
+  st = r_ev_tcp_connect (tcp, remote->addr, r_rtc_ice_tcp_connected, conn, NULL);
+  if (st != R_SOCKET_OK && st != R_SOCKET_WOULD_BLOCK)
+    r_ptr_array_remove_first_fast (ice->tcpconns, conn);
+}
+
+static rboolean
+r_rtc_ice_tcp_conn_exists (RRtcIceTransport * ice, RRtcIceCandidate * local,
+    RSocketAddress * remote_addr)
+{
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (ice->tcpconns); i < c; i++) {
+    RRtcIceTcpConn * conn = r_ptr_array_get (ice->tcpconns, i);
+    if (conn->local == local && conn->remote != NULL &&
+        r_socket_address_is_equal (conn->remote, remote_addr))
+      return TRUE;
+  }
+  return FALSE;
+}
+
+/* An active local TCP candidate dials each passive remote TCP candidate;
+ * a passive local candidate waits to be dialed (see on_accept). */
+static void
+r_rtc_ice_tcp_start_candidate (RRtcIceTransport * ice, RRtcIceCandidate * local)
+{
+  rsize i, c;
+
+  if (r_rtc_ice_candidate_tcptype (local) != R_RTC_ICE_TCP_ACTIVE)
+    return;
+  if (ice->loop == NULL || ice->rpwd == NULL || ice->rufrag == NULL)
+    return;
+
+  for (i = 0, c = r_ptr_array_size (ice->remote); i < c; i++) {
+    RRtcIceCandidate * remote = r_ptr_array_get (ice->remote, i);
+    if (remote->proto == R_RTC_ICE_PROTO_TCP &&
+        r_rtc_ice_candidate_tcptype (remote) == R_RTC_ICE_TCP_PASSIVE &&
+        !r_rtc_ice_tcp_conn_exists (ice, local, remote->addr))
+      r_rtc_ice_tcp_connect (ice, local, remote);
+  }
+}
+
 static void
 _candidate_socket_start (rpointer key, rpointer value, rpointer user)
 {
   RRtcIceCandidate * candidate = key;
   RRtcIceTransport * ice = user;
 
-  if (value == NULL) {
-    if (candidate->proto == R_RTC_ICE_PROTO_UDP) {
-      r_rtc_ice_transport_setup_udp (ice, candidate,
-          r_hash_table_lookup (ice->bindAddrs, candidate));
+  if (candidate->proto == R_RTC_ICE_PROTO_TCP) {
+    if (r_rtc_ice_candidate_tcptype (candidate) == R_RTC_ICE_TCP_PASSIVE) {
+      if (value == NULL)
+        r_rtc_ice_transport_setup_tcp_passive (ice, candidate);
     } else {
-      r_assert_not_reached (); /* FIXME */
+      r_rtc_ice_tcp_start_candidate (ice, candidate);
     }
+  } else if (value == NULL) {
+    r_rtc_ice_transport_setup_udp (ice, candidate,
+        r_hash_table_lookup (ice->bindAddrs, candidate));
   }
 }
 
@@ -786,14 +1145,11 @@ _candidate_socket_close (rpointer key, rpointer value, rpointer user)
   if (value == NULL)
     return;
 
-  if (candidate->proto == R_RTC_ICE_PROTO_UDP) {
-    REvUDP * udp = value;
-
-    r_ev_udp_recv_stop (udp);
-    r_hash_table_insert (ice->candidateSockets, r_rtc_ice_candidate_ref (candidate), NULL);
-  } else {
-    r_assert_not_reached (); /* FIXME */
-  }
+  if (candidate->proto == R_RTC_ICE_PROTO_UDP)
+    r_ev_udp_recv_stop (value);
+  else
+    r_ev_tcp_close (value, NULL, NULL, NULL);   /* TCP listener */
+  r_hash_table_insert (ice->candidateSockets, r_rtc_ice_candidate_ref (candidate), NULL);
 }
 
 RRtcError
@@ -824,10 +1180,24 @@ r_rtc_ice_add_host_candidate (RRtcIceTransport * ice,
   if (R_UNLIKELY (candidate == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (candidate->type != R_RTC_ICE_CANDIDATE_HOST))
     return R_RTC_INVALID_TYPE;
-  if (R_UNLIKELY (candidate->proto != R_RTC_ICE_PROTO_UDP))
-    return R_RTC_INVALID_TYPE; /* FIXME: Support TCP */
+  if (R_UNLIKELY (candidate->proto != R_RTC_ICE_PROTO_UDP &&
+        candidate->proto != R_RTC_ICE_PROTO_TCP))
+    return R_RTC_INVALID_TYPE;
   if (R_UNLIKELY (r_hash_table_contains (ice->candidateSockets, candidate) == R_HASH_TABLE_OK))
     return R_RTC_ALREADY_FOUND;
+
+  if (candidate->proto == R_RTC_ICE_PROTO_TCP) {
+    /* A passive candidate listens; an active one only dials out, so it has
+     * no socket of its own until it pairs with a passive remote. */
+    if (ice->loop != NULL &&
+        r_rtc_ice_candidate_tcptype (candidate) == R_RTC_ICE_TCP_PASSIVE)
+      return r_rtc_ice_transport_setup_tcp_passive (ice, candidate);
+
+    r_hash_table_insert (ice->candidateSockets, r_rtc_ice_candidate_ref (candidate), NULL);
+    if (ice->loop != NULL)
+      r_rtc_ice_tcp_start_candidate (ice, candidate);
+    return R_RTC_OK;
+  }
 
   if (bind_addr != NULL)
     r_hash_table_insert (ice->bindAddrs, r_rtc_ice_candidate_ref (candidate),
@@ -933,7 +1303,8 @@ r_rtc_ice_gather_srflx_cb (rpointer key, rpointer value, rpointer user)
   RRtcIceSrflxGather * ctx = user;
   RRtcIceSrflxReq * req;
 
-  if (udp == NULL)
+  /* srflx over UDP only; a TCP entry's socket is a listener. */
+  if (udp == NULL || base->proto != R_RTC_ICE_PROTO_UDP)
     return;
 
   req = r_mem_new0 (RRtcIceSrflxReq);
@@ -970,23 +1341,28 @@ r_rtc_ice_transport_get_state (const RRtcIceTransport * ice)
 static void
 r_rtc_ice_first_socket_cb (rpointer key, rpointer value, rpointer user)
 {
-  REvUDP ** out = user;
-  (void) key;
+  RRtcIceCandidate ** out = user;
 
-  if (*out == NULL && value != NULL)
-    *out = value;
+  if (out[0] == NULL && value != NULL)
+    out[0] = key;
 }
 
 RSocketAddress *
 r_rtc_ice_transport_get_local_address (const RRtcIceTransport * ice)
 {
-  REvUDP * udp = NULL;
+  RRtcIceCandidate * cand = NULL;
   RSocketAddress * addr;
+  rpointer sock;
 
   if (R_UNLIKELY (ice == NULL)) return NULL;
 
-  r_hash_table_foreach (ice->candidateSockets, r_rtc_ice_first_socket_cb, &udp);
-  if (udp == NULL || (addr = r_ev_udp_get_local_address (udp)) == NULL)
+  r_hash_table_foreach (ice->candidateSockets, r_rtc_ice_first_socket_cb, &cand);
+  if (cand == NULL || (sock = r_hash_table_lookup (ice->candidateSockets, cand)) == NULL)
+    return NULL;
+
+  addr = cand->proto == R_RTC_ICE_PROTO_TCP ?
+      r_ev_tcp_get_local_address (sock) : r_ev_udp_get_local_address (sock);
+  if (addr == NULL)
     return NULL;
 
   return r_socket_address_copy (addr);
@@ -1029,11 +1405,16 @@ r_rtc_ice_pair_new_remote_cb (rpointer key, rpointer value, rpointer user)
   RRtcIcePairRemote * ctx = user;
   RRtcIceCheckPair * pair;
 
-  if (udp == NULL)
+  /* Active TCP locals dial passive remotes; handled separately. */
+  if (local->proto == R_RTC_ICE_PROTO_TCP) {
+    r_rtc_ice_tcp_start_candidate (ctx->ice, local);
+    return;
+  }
+  if (udp == NULL || ctx->remote->proto != R_RTC_ICE_PROTO_UDP)
     return;
   if (r_rtc_ice_find_pair (ctx->ice, local, ctx->remote->addr) != NULL)
     return;
-  if ((pair = r_rtc_ice_add_pair (ctx->ice, local, udp, ctx->remote)) == NULL)
+  if ((pair = r_rtc_ice_add_pair (ctx->ice, local, udp, NULL, ctx->remote)) == NULL)
     return;
   if (ctx->ice->loop != NULL && ctx->ice->rpwd != NULL && ctx->ice->rufrag != NULL)
     r_rtc_ice_transmit_check (ctx->ice, pair, TRUE);
@@ -1048,14 +1429,15 @@ r_rtc_ice_transport_add_remote_candidate (RRtcIceTransport * ice,
   if (R_UNLIKELY (ice == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (candidate == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (ice->send == r_rtc_ice_transport_send_fake)) return R_RTC_WRONG_STATE;
-  if (R_UNLIKELY (candidate->proto != R_RTC_ICE_PROTO_UDP))
-    return R_RTC_INVALID_TYPE; /* FIXME: Support TCP */
+  if (R_UNLIKELY (candidate->proto != R_RTC_ICE_PROTO_UDP &&
+        candidate->proto != R_RTC_ICE_PROTO_TCP))
+    return R_RTC_INVALID_TYPE;
 
   r_ptr_array_add (ice->remote, r_rtc_ice_candidate_ref (candidate),
       r_rtc_ice_candidate_unref);
 
-  /* Pair the new remote with every already-bound local socket and, once
-   * running with credentials, check it. */
+  /* Pair the new remote with every local candidate: UDP locals form a
+   * pair per socket; active TCP locals dial a passive TCP remote. */
   ctx.ice = ice;
   ctx.remote = candidate;
   r_hash_table_foreach (ice->candidateSockets, r_rtc_ice_pair_new_remote_cb, &ctx);
