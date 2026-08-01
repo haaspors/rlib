@@ -239,6 +239,8 @@ struct RRtcIceTransport {
   RPtrArray * remote;     /* remote RRtcIceCandidate * */
   RPtrArray * checks;     /* candidate-pair checks (RRtcIceCheckPair *) */
   RPtrArray * srflx;      /* pending srflx STUN requests (RRtcIceSrflxReq *) */
+  RPtrArray * tcpconns;   /* TCP connections (RRtcIceTcpConn *) */
+  rpointer selected_conn; /* selected pair's TCP connection, or NULL */
   rboolean nominated;     /* a pair has been selected + ready fired */
 
   RRtcIceCandidateCb on_candidate; /* fired for each gathered srflx candidate */

@@ -357,3 +357,106 @@ RTEST (rrtcicetransport, gather_srflx_candidates, RTEST_FAST | RTEST_SYSTEM)
   r_prng_unref (prng);
 }
 RTEST_END;
+
+/* The multi-round-trip framed TCP handshake needs a backend that observes
+ * loopback socket readiness promptly; the Windows WSAEventSelect readiness
+ * (rpoll) backend does not, so gate this off there as revtcp does. */
+#if !(defined (R_OS_WIN32) && defined (R_EV_USE_RPOLL))
+static RRtcIceCandidate *
+test_ice_tcp_candidate (const rchar * foundation, RSocketAddress * addr,
+    const rchar * tcptype)
+{
+  RRtcIceCandidate * c = r_rtc_ice_candidate_new_full (foundation, -1,
+      TEST_ICE_HOST_PRI, R_RTC_ICE_COMPONENT_RTP, R_RTC_ICE_PROTO_TCP, addr,
+      R_RTC_ICE_CANDIDATE_HOST);
+  if (c != NULL)
+    r_rtc_ice_candidate_add_ext (c, R_STR_WITH_SIZE_ARGS ("tcptype"),
+        tcptype, -1);
+  return c;
+}
+
+RTEST (rrtcicetransport, connectivity_check_tcp, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* An active ICE-TCP agent dials a passive one over loopback; STUN
+   * connectivity checks flow RFC 4571-framed over the connection and the
+   * controlling side nominates a pair. */
+  RPrng * prng;
+  REvLoop * loop;
+  RRtcSession * sa, * sb;
+  RRtcIceTransport * a, * b;   /* a: active/controlling, b: passive/controlled */
+  RRtcCryptoTransport * ra, * rb;
+  RSocketAddress * active_addr, * lo, * blisten;
+  RRtcIceCandidate * ca, * cb, * rem;
+  ruint i;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+  r_assert_cmpptr ((sa = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((sb = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((a = r_rtc_session_create_ice_transport (sa,
+          R_STR_WITH_SIZE_ARGS ("aufrag"), R_STR_WITH_SIZE_ARGS ("apassword01234567"))), !=, NULL);
+  r_assert_cmpptr ((b = r_rtc_session_create_ice_transport (sb,
+          R_STR_WITH_SIZE_ARGS ("bufrag"), R_STR_WITH_SIZE_ARGS ("bpassword01234567"))), !=, NULL);
+  r_assert_cmpptr ((ra = r_rtc_session_create_raw_transport (sa, a)), !=, NULL);
+  r_assert_cmpptr ((rb = r_rtc_session_create_raw_transport (sb, b)), !=, NULL);
+
+  r_assert_cmpint (r_rtc_ice_transport_set_role (a, R_RTC_ICE_ROLE_CONTROLLING), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_set_role (b, R_RTC_ICE_ROLE_CONTROLLED), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_set_remote_credentials (a,
+          R_STR_WITH_SIZE_ARGS ("bufrag"), R_STR_WITH_SIZE_ARGS ("bpassword01234567")), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_set_remote_credentials (b,
+          R_STR_WITH_SIZE_ARGS ("aufrag"), R_STR_WITH_SIZE_ARGS ("apassword01234567")), ==, R_RTC_OK);
+
+  /* b listens (passive) on an OS-assigned loopback port; a is active and
+   * has no socket of its own until it dials. */
+  r_assert_cmpptr ((lo = r_socket_address_ipv4_new_from_string ("127.0.0.1", 0)), !=, NULL);
+  r_assert_cmpptr ((active_addr = r_socket_address_ipv4_new_from_string ("127.0.0.1", 9)), !=, NULL);
+  r_assert_cmpptr ((cb = test_ice_tcp_candidate ("1", lo, "passive")), !=, NULL);
+  r_assert_cmpptr ((ca = test_ice_tcp_candidate ("1", active_addr, "active")), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_add_local_host_candidate (b, cb), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_add_local_host_candidate (a, ca), ==, R_RTC_OK);
+
+  r_assert_cmpint (r_rtc_ice_transport_start (a, loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_start (b, loop), ==, R_RTC_OK);
+
+  /* Give a the passive remote (b's real listen address) -> a dials it. */
+  r_assert_cmpptr ((blisten = r_rtc_ice_transport_get_local_address (b)), !=, NULL);
+  r_assert_cmpptr ((rem = test_ice_tcp_candidate ("1", blisten, "passive")), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_add_remote_candidate (a, rem), ==, R_RTC_OK);
+  r_rtc_ice_candidate_unref (rem);
+  /* b learns a from the incoming connection (peer-reflexive). */
+  r_assert_cmpptr ((rem = test_ice_tcp_candidate ("1", active_addr, "active")), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_add_remote_candidate (b, rem), ==, R_RTC_OK);
+  r_rtc_ice_candidate_unref (rem);
+
+  for (i = 0; i < 300; i++) {
+    if (r_rtc_ice_transport_get_state (a) == R_RTC_ICE_STATE_CONNECTED &&
+        r_rtc_ice_transport_get_state (b) == R_RTC_ICE_STATE_CONNECTED)
+      break;
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+  }
+
+  r_assert_cmpint (r_rtc_ice_transport_get_state (a), ==, R_RTC_ICE_STATE_CONNECTED);
+  r_assert_cmpint (r_rtc_ice_transport_get_state (b), ==, R_RTC_ICE_STATE_CONNECTED);
+
+  r_rtc_ice_transport_close (a);
+  r_rtc_ice_transport_close (b);
+  for (i = 0; i < 16; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_rtc_ice_candidate_unref (ca);
+  r_rtc_ice_candidate_unref (cb);
+  r_socket_address_unref (lo);
+  r_socket_address_unref (active_addr);
+  r_socket_address_unref (blisten);
+  r_rtc_crypto_transport_unref (ra);
+  r_rtc_crypto_transport_unref (rb);
+  r_rtc_ice_transport_unref (a);
+  r_rtc_ice_transport_unref (b);
+  r_rtc_session_unref (sa);
+  r_rtc_session_unref (sb);
+  r_ev_loop_unref (loop);
+  r_prng_unref (prng);
+}
+RTEST_END;
+#endif /* not Windows rpoll */
