@@ -85,6 +85,7 @@ rlibtest_sources = [
   'rrtc.c',
   'rrtcicecandidate.c',
   'rrtcrtpparameters.c',
+  'rrtcrtptransceiver.c',
   'rrtcsessiondescription.c',
   'rrtp.c',
   'rsdp.c',
