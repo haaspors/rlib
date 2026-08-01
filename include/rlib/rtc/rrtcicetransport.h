@@ -171,6 +171,33 @@ R_API RRtcError r_rtc_ice_transport_gather_host_candidates (RRtcIceTransport * i
     RRtcIceInterfaceFilter filter, rpointer user);
 
 /**
+ * @brief Callback fired when a local candidate is gathered asynchronously.
+ *
+ * Invoked for each server-reflexive candidate discovered by
+ * @ref r_rtc_ice_transport_gather_srflx_candidates once the STUN server
+ * replies; the application signals @p candidate to the peer (trickle ICE).
+ * The candidate is borrowed — ref it to keep it past the callback.
+ */
+typedef void (*RRtcIceCandidateCb) (rpointer data, RRtcIceTransport * ice,
+    RRtcIceCandidate * candidate);
+
+/** @brief Set the callback fired for asynchronously gathered local candidates. */
+R_API RRtcError r_rtc_ice_transport_set_on_local_candidate (RRtcIceTransport * ice,
+    RRtcIceCandidateCb cb, rpointer data);
+
+/**
+ * @brief Gather server-reflexive candidates via the STUN server @p stun_server.
+ *
+ * Sends a STUN Binding request from each bound host socket to @p stun_server;
+ * the reflexive (public) address it reports in the response becomes a
+ * server-reflexive candidate delivered through the callback set with
+ * @ref r_rtc_ice_transport_set_on_local_candidate. Requires the transport to
+ * be started (its host sockets bound). @p stun_server is copied.
+ */
+R_API RRtcError r_rtc_ice_transport_gather_srflx_candidates (RRtcIceTransport * ice,
+    RSocketAddress * stun_server);
+
+/**
  * @brief Add a remote @p candidate learned from the peer's SDP.
  *
  * Each remote candidate is paired with every local socket; once the
