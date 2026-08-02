@@ -21,7 +21,9 @@
 
 #include <rlib/rcrc.h>
 #include <rlib/crypto/rhmac.h>
+#include <rlib/crypto/rmsgdigest.h>
 #include <rlib/rmem.h>
+#include <rlib/rstr.h>
 
 rboolean
 r_stun_is_valid_msg (rconstpointer buf, rsize size)
@@ -183,6 +185,70 @@ r_stun_msg_end (RStunMsgCtx * ctx, rboolean fingerprint)
   ret = ctx->used_size;
   *(ruint16 *)&ctx->buf[R_STUN_MSGLEN_OFFSET] = RUINT16_TO_BE (ctx->used_size - R_STUN_HEADER_SIZE);
   r_memclear (ctx, sizeof (RStunMsgCtx));
+
+  return ret;
+}
+
+rsize
+r_stun_channel_data_encode (rpointer buf, rsize size, ruint16 channel,
+    rconstpointer data, rsize dlen)
+{
+  ruint8 * ptr = buf;
+  rsize padded = (dlen + 0x3) & ~(rsize) 0x3;
+
+  if (R_UNLIKELY (buf == NULL || dlen > 0xffff)) return 0;
+  if (R_UNLIKELY (size < R_STUN_CHANNEL_DATA_HEADER_SIZE + padded)) return 0;
+
+  *(ruint16 *) &ptr[0] = RUINT16_TO_BE (channel);
+  *(ruint16 *) &ptr[2] = RUINT16_TO_BE ((ruint16) dlen);
+  r_memcpy (&ptr[R_STUN_CHANNEL_DATA_HEADER_SIZE], data, dlen);
+  if (padded > dlen)
+    r_memset (&ptr[R_STUN_CHANNEL_DATA_HEADER_SIZE + dlen], 0, padded - dlen);
+
+  return R_STUN_CHANNEL_DATA_HEADER_SIZE + padded;
+}
+
+rboolean
+r_stun_channel_data_parse (rconstpointer buf, rsize size, ruint16 * channel,
+    rconstpointer * data, rsize * dlen)
+{
+  const ruint8 * ptr = buf;
+  ruint16 len;
+
+  if (R_UNLIKELY (!r_stun_is_channel_data (buf, size))) return FALSE;
+  len = RUINT16_FROM_BE (*(const ruint16 *) &ptr[2]);
+  if (R_UNLIKELY ((rsize) R_STUN_CHANNEL_DATA_HEADER_SIZE + len > size)) return FALSE;
+
+  if (channel != NULL)
+    *channel = RUINT16_FROM_BE (*(const ruint16 *) ptr);
+  if (data != NULL)
+    *data = &ptr[R_STUN_CHANNEL_DATA_HEADER_SIZE];
+  if (dlen != NULL)
+    *dlen = len;
+
+  return TRUE;
+}
+
+rboolean
+r_stun_turn_long_term_key (const rchar * username, const rchar * realm,
+    const rchar * password, ruint8 key[16])
+{
+  RMsgDigest * md;
+  rsize outlen = 0;
+  rboolean ret = FALSE;
+
+  if (R_UNLIKELY (username == NULL || realm == NULL || password == NULL))
+    return FALSE;
+
+  if ((md = r_msg_digest_new_md5 ()) != NULL) {
+    r_msg_digest_update (md, username, r_strlen (username));
+    r_msg_digest_update (md, ":", 1);
+    r_msg_digest_update (md, realm, r_strlen (realm));
+    r_msg_digest_update (md, ":", 1);
+    r_msg_digest_update (md, password, r_strlen (password));
+    ret = r_msg_digest_get_data (md, key, 16, &outlen) && outlen == 16;
+    r_msg_digest_free (md);
+  }
 
   return ret;
 }

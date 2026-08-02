@@ -561,3 +561,46 @@ RTEST (rstun, xor_address_ipv6_roundtrip, RTEST_FAST)
   r_socket_address_unref (addr);
 }
 RTEST_END;
+
+RTEST (rstun, channel_data_roundtrip, RTEST_FAST)
+{
+  /* Encode a ChannelData frame and parse it back: the header, padding to a
+   * 4-byte boundary, and the recovered channel / payload all match. */
+  static const ruint8 payload[5] = { 'h', 'e', 'l', 'l', 'o' };
+  ruint8 buf[64];
+  rsize framed;
+  ruint16 channel = 0;
+  rconstpointer data = NULL;
+  rsize dlen = 0;
+
+  r_memclear (buf, sizeof (buf));
+  framed = r_stun_channel_data_encode (buf, sizeof (buf), 0x4001, payload, sizeof (payload));
+  /* 4-byte header + 5 bytes payload padded up to 8. */
+  r_assert_cmpuint (framed, ==, R_STUN_CHANNEL_DATA_HEADER_SIZE + 8);
+  r_assert (r_stun_is_channel_data (buf, framed));
+
+  r_assert (r_stun_channel_data_parse (buf, framed, &channel, &data, &dlen));
+  r_assert_cmphex (channel, ==, 0x4001);
+  r_assert_cmpuint (dlen, ==, sizeof (payload));
+  r_assert_cmpmem (data, ==, payload, sizeof (payload));
+
+  /* A too-small buffer parses/encodes to failure. */
+  r_assert (!r_stun_channel_data_parse (buf, 2, NULL, NULL, NULL));
+  r_assert_cmpuint (r_stun_channel_data_encode (buf, 4, 0x4000, payload, sizeof (payload)), ==, 0);
+}
+RTEST_END;
+
+RTEST (rstun, turn_long_term_key, RTEST_FAST)
+{
+  /* The long-term credential key is MD5(username ":" realm ":" password). */
+  static const ruint8 expected[16] = {
+    0x84, 0x93, 0xfb, 0xc5, 0x3b, 0xa5, 0x82, 0xfb,
+    0x4c, 0x04, 0x4c, 0x45, 0x6b, 0xdc, 0x40, 0xeb
+  };
+  ruint8 key[16];
+
+  r_assert (r_stun_turn_long_term_key ("user", "realm", "pass", key));
+  r_assert_cmpmem (key, ==, expected, sizeof (key));
+  r_assert (!r_stun_turn_long_term_key (NULL, "realm", "pass", key));
+}
+RTEST_END;
