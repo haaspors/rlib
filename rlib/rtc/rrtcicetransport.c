@@ -348,8 +348,8 @@ r_rtc_ice_transport_send_udp (rpointer rtc, RBuffer * buf)
   }
 
   if ((udp = r_hash_table_lookup (ice->candidateSockets, ice->selected.local)) != NULL) {
-    /* FIXME: Error checking */
-    r_ev_udp_send (udp, buf, ice->selected.remote->addr, NULL, NULL, NULL);
+    if (!r_ev_udp_send (udp, buf, ice->selected.remote->addr, NULL, NULL, NULL))
+      return R_RTC_IO_ERROR;
     return R_RTC_OK;
   }
 
