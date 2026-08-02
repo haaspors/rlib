@@ -91,6 +91,18 @@ R_API RSRTPError r_srtp_add_crypto_context_for_ssrc (RSRTPCtx * ctx,
 /** @brief Install a cipher suite + key for an SSRC @p filter (e.g. @ref R_SRTP_FILTER_ANY). */
 R_API RSRTPError r_srtp_add_crypto_context_with_filter (RSRTPCtx * ctx,
     ruint32 filter, RSRTPCipherSuite cs, const ruint8 * key);
+/**
+ * @brief Install a cipher suite for an SSRC @p filter with distinct keys per
+ * direction: @p recvkey decrypts inbound packets, @p sendkey encrypts outbound.
+ *
+ * DTLS-SRTP derives a separate write key for each side (RFC 5764 4.2); a
+ * transport keys one @ref R_SRTP_FILTER_ANY context with the peer's write key
+ * for receive and its own for send. @ref r_srtp_add_crypto_context_with_filter
+ * is the single-key case where both directions share @p key.
+ */
+R_API RSRTPError r_srtp_add_crypto_context_with_filter_dual (RSRTPCtx * ctx,
+    ruint32 filter, RSRTPCipherSuite cs,
+    const ruint8 * recvkey, const ruint8 * sendkey);
 
 /** @brief Encrypt an RTP packet into a new SRTP buffer. */
 R_API RBuffer * r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * err) R_ATTR_WARN_UNUSED_RESULT;
