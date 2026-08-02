@@ -99,7 +99,7 @@ typedef enum {
 /** @brief Parse a media-kind string (e.g. @c "audio") into an @ref RRtcMediaType. */
 R_API RRtcMediaType r_rtc_media_type_from_string (const rchar * type, rssize size);
 /** @brief Return the SDP string for @p type (e.g. @c "video"), or
- *  @c NULL for any type other than audio / video. */
+ *  @c NULL for @ref R_RTC_MEDIA_UNKNOWN. */
 R_API const rchar * r_rtc_media_type_to_string (RRtcMediaType type);
 
 /** @brief Role a codec plays in a media stream. */

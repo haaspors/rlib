@@ -54,6 +54,10 @@ r_rtc_media_type_to_string (RRtcMediaType type)
       return "audio";
     case R_RTC_MEDIA_VIDEO:
       return "video";
+    case R_RTC_MEDIA_APPLICATION:
+      return "application";
+    case R_RTC_MEDIA_TEXT:
+      return "text";
     default:
       return NULL;
   }
