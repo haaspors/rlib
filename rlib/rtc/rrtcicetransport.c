@@ -49,6 +49,7 @@
 #define R_RTC_ICE_TCP_RX_MAX      (4 * (R_RTC_ICE_TCP_FRAME_HDR + 0xffff))
 
 typedef struct RRtcIceTcpConn RRtcIceTcpConn;
+typedef struct RRtcIceTurnAlloc RRtcIceTurnAlloc;
 
 typedef enum {
   R_RTC_ICE_CHECK_FROZEN = 0,
@@ -63,6 +64,7 @@ typedef struct {
   RRtcIceCandidate * remote;  /* owned */
   REvUDP * udp;               /* borrowed: the local UDP socket (NULL for TCP) */
   RRtcIceTcpConn * conn;      /* borrowed: the TCP connection (NULL for UDP) */
+  RRtcIceTurnAlloc * alloc;   /* borrowed: TURN allocation (NULL unless relay local) */
   ruint64 priority;           /* pair priority (RFC 8445 6.1.2.3) */
 
   RRtcIceCheckState state;
@@ -104,6 +106,7 @@ typedef struct {
   RRtcIceTcpConn * conn;
   RRtcIceCandidate * local;
   RSocketAddress * addr;
+  RRtcIceTurnAlloc * alloc;   /* set when the frame arrived via a TURN relay */
 } RRtcIceSrc;
 
 /* candidateSockets keeps a NULL value for candidates that are added but
@@ -208,6 +211,7 @@ r_rtc_ice_transport_free (RRtcIceTransport * ice)
   r_ptr_array_unref (ice->checks);
   r_ptr_array_unref (ice->srflx);
   r_ptr_array_unref (ice->turn);
+  r_ptr_array_unref (ice->allocs);
   r_ptr_array_unref (ice->tcpconns);
   r_ptr_array_unref (ice->remote);
 
@@ -252,6 +256,7 @@ r_rtc_ice_transport_new (
     ret->checks = r_ptr_array_new ();
     ret->srflx = r_ptr_array_new ();
     ret->turn = r_ptr_array_new ();
+    ret->allocs = r_ptr_array_new ();
     ret->tcpconns = r_ptr_array_new ();
     R_LOG_TRACE ("RtcIceTransport %p new %s - %s", ret, ret->ufrag, ret->pwd);
   }
@@ -317,6 +322,11 @@ r_rtc_ice_candidate_tcptype (RRtcIceCandidate * cand)
   return R_RTC_ICE_TCP_NONE;
 }
 
+/* Send @buf to @peer through the TURN allocation @alloc (Send indication or,
+ * once bound, ChannelData). */
+static void r_rtc_ice_relay_send (RRtcIceTurnAlloc * alloc,
+    RSocketAddress * peer, RBuffer * buf);
+
 RRtcError
 r_rtc_ice_transport_send_udp (rpointer rtc, RBuffer * buf)
 {
@@ -328,6 +338,12 @@ r_rtc_ice_transport_send_udp (rpointer rtc, RBuffer * buf)
   /* The selected pair may be a TCP connection. */
   if (ice->selected_conn != NULL) {
     r_rtc_ice_tcp_send (ice->selected_conn, buf);
+    return R_RTC_OK;
+  }
+
+  /* ...or a TURN relay allocation. */
+  if (ice->selected_alloc != NULL) {
+    r_rtc_ice_relay_send (ice->selected_alloc, ice->selected.remote->addr, buf);
     return R_RTC_OK;
   }
 
@@ -355,6 +371,8 @@ r_rtc_ice_reply (const RRtcIceSrc * src, RBuffer * buf)
 {
   if (src->conn != NULL)
     r_rtc_ice_tcp_send (src->conn, buf);
+  else if (src->alloc != NULL)
+    r_rtc_ice_relay_send (src->alloc, src->addr, buf);
   else
     r_ev_udp_send (src->udp, buf, src->addr, NULL, NULL, NULL);
 }
@@ -631,6 +649,8 @@ r_rtc_ice_transmit_check (RRtcIceTransport * ice, RRtcIceCheckPair * pair,
   if ((buf = r_rtc_ice_build_check (ice, pair)) != NULL) {
     if (pair->conn != NULL)
       r_rtc_ice_tcp_send (pair->conn, buf);
+    else if (pair->alloc != NULL)
+      r_rtc_ice_relay_send (pair->alloc, pair->remote->addr, buf);
     else
       r_ev_udp_send (pair->udp, buf, pair->remote->addr, NULL, NULL, NULL);
     r_buffer_unref (buf);
@@ -1025,6 +1045,252 @@ r_rtc_ice_turn_check_integrity (rconstpointer msg, RRtcIceTurnReq * req)
   return FALSE;
 }
 
+/* A permission installed on an allocation, authorizing traffic to and from
+ * one peer. Keyed by peer IP only -- port is not significant (RFC 8656 9). */
+typedef struct {
+  RSocketAddress * peer;      /* owned */
+  ruint8 tid[R_STUN_TRANSACTION_ID_SIZE];
+} RRtcIceTurnPerm;
+
+/* A live TURN allocation: the relayed transport address plus the permission
+ * state that lets its relay candidate carry traffic to peers. Outlives the
+ * RRtcIceTurnReq that discovered it. */
+struct RRtcIceTurnAlloc {
+  RRtcIceTransport * ice;     /* borrowed */
+  RRtcIceCandidate * base;    /* owned: the reflected host candidate */
+  REvUDP * udp;               /* borrowed: base socket, shared with the host cand */
+  RSocketAddress * server;    /* owned: the TURN server */
+  RRtcIceCandidate * cand;    /* owned: the local relay candidate */
+  rchar * username;
+  rchar * password;
+  rchar * realm;
+  rchar * nonce;
+  RPtrArray * perms;          /* installed permissions (RRtcIceTurnPerm *) */
+};
+
+static void
+r_rtc_ice_turn_perm_free (rpointer data)
+{
+  RRtcIceTurnPerm * perm = data;
+
+  r_socket_address_unref (perm->peer);
+  r_free (perm);
+}
+
+static void
+r_rtc_ice_turn_alloc_free (rpointer data)
+{
+  RRtcIceTurnAlloc * alloc = data;
+
+  r_ptr_array_unref (alloc->perms);
+  r_rtc_ice_candidate_unref (alloc->base);
+  r_rtc_ice_candidate_unref (alloc->cand);
+  r_socket_address_unref (alloc->server);
+  r_free (alloc->username);
+  r_free (alloc->password);
+  r_free (alloc->realm);
+  r_free (alloc->nonce);
+  r_free (alloc);
+}
+
+/* Compare two addresses by IP only (TURN permissions are port-independent). */
+static rboolean
+r_rtc_ice_addr_same_ip (const RSocketAddress * a, const RSocketAddress * b)
+{
+  RSocketFamily fa = r_socket_address_get_family (a);
+
+  if (fa != r_socket_address_get_family (b))
+    return FALSE;
+  if (fa == R_SOCKET_FAMILY_IPV4)
+    return r_socket_address_ipv4_get_ip (a) == r_socket_address_ipv4_get_ip (b);
+  if (fa == R_SOCKET_FAMILY_IPV6) {
+    ruint8 ba[16], bb[16];
+    return r_socket_address_ipv6_get_ip_bytes (a, ba) &&
+        r_socket_address_ipv6_get_ip_bytes (b, bb) &&
+        r_memcmp (ba, bb, sizeof (ba)) == 0;
+  }
+  return FALSE;
+}
+
+/* Wrap @payload in a TURN Send indication carrying XOR-PEER-ADDRESS @peer. */
+static RBuffer *
+r_rtc_ice_build_send_indication (RSocketAddress * peer, RBuffer * payload)
+{
+  RBuffer * ret;
+  RMemMapInfo pi = R_MEM_MAP_INFO_INIT;
+
+  if (!r_buffer_map (payload, &pi, R_MEM_MAP_READ))
+    return NULL;
+
+  if ((ret = r_buffer_new_alloc (NULL, pi.size + 128, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+      ruint8 tid[R_STUN_TRANSACTION_ID_SIZE];
+      rsize size;
+
+      r_rand_entropy_fill (tid, sizeof (tid));
+      r_stun_msg_begin (&ctx, info.data, info.size,
+          R_STUN_CLASS_INDICATION, R_STUN_METHOD_SEND, tid);
+      r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS, peer);
+      tlv.type = R_STUN_ATTR_TYPE_DATA;
+      tlv.len = (ruint16) pi.size;
+      tlv.value = pi.data;
+      r_stun_msg_add_attribute (&ctx, &tlv);
+      size = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (ret, &info);
+      r_buffer_set_size (ret, size);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  r_buffer_unmap (payload, &pi);
+  return ret;
+}
+
+/* Build a TURN CreatePermission request for @perm, keyed with the long-term
+ * credential. */
+static RBuffer *
+r_rtc_ice_build_create_permission (RRtcIceTurnAlloc * alloc, RRtcIceTurnPerm * perm)
+{
+  RBuffer * ret;
+
+  if ((ret = r_buffer_new_alloc (NULL, 256, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+      ruint8 key[16];
+      rsize size;
+
+      r_stun_msg_begin (&ctx, info.data, info.size,
+          R_STUN_CLASS_REQUEST, R_STUN_METHOD_CREATE_PERMISSION, perm->tid);
+      r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS, perm->peer);
+
+      tlv.type = R_STUN_ATTR_TYPE_USERNAME;
+      tlv.len = (ruint16) r_strlen (alloc->username);
+      tlv.value = (const ruint8 *) alloc->username;
+      r_stun_msg_add_attribute (&ctx, &tlv);
+      tlv.type = R_STUN_ATTR_TYPE_REALM;
+      tlv.len = (ruint16) r_strlen (alloc->realm);
+      tlv.value = (const ruint8 *) alloc->realm;
+      r_stun_msg_add_attribute (&ctx, &tlv);
+      tlv.type = R_STUN_ATTR_TYPE_NONCE;
+      tlv.len = (ruint16) r_strlen (alloc->nonce);
+      tlv.value = (const ruint8 *) alloc->nonce;
+      r_stun_msg_add_attribute (&ctx, &tlv);
+
+      if (r_rtc_ice_turn_key (alloc->username, alloc->realm, alloc->password, key))
+        r_stun_msg_add_message_integrity_short_cred (&ctx, key, sizeof (key));
+      size = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (ret, &info);
+      r_buffer_set_size (ret, size);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+/* Install a permission for @peer's IP if there is not one already; the
+ * request is sent without awaiting the response (a dropped first datagram is
+ * recovered by connectivity-check retransmission). */
+static void
+r_rtc_ice_turn_ensure_permission (RRtcIceTurnAlloc * alloc, RSocketAddress * peer)
+{
+  RRtcIceTurnPerm * perm;
+  RBuffer * buf;
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (alloc->perms); i < c; i++) {
+    perm = r_ptr_array_get (alloc->perms, i);
+    if (r_rtc_ice_addr_same_ip (perm->peer, peer))
+      return;
+  }
+
+  if ((perm = r_mem_new0 (RRtcIceTurnPerm)) == NULL)
+    return;
+  perm->peer = r_socket_address_ref (peer);
+  r_rand_entropy_fill (perm->tid, sizeof (perm->tid));
+  r_ptr_array_add (alloc->perms, perm, r_rtc_ice_turn_perm_free);
+
+  if ((buf = r_rtc_ice_build_create_permission (alloc, perm)) != NULL) {
+    r_ev_udp_send (alloc->udp, buf, alloc->server, NULL, NULL, NULL);
+    r_buffer_unref (buf);
+  }
+}
+
+static void
+r_rtc_ice_relay_send (RRtcIceTurnAlloc * alloc, RSocketAddress * peer, RBuffer * buf)
+{
+  RBuffer * wrapped;
+
+  r_rtc_ice_turn_ensure_permission (alloc, peer);
+  if ((wrapped = r_rtc_ice_build_send_indication (peer, buf)) != NULL) {
+    r_ev_udp_send (alloc->udp, wrapped, alloc->server, NULL, NULL, NULL);
+    r_buffer_unref (wrapped);
+  }
+}
+
+/* Spawn a persistent allocation from the Allocate transaction @req that just
+ * succeeded, adopting its credentials and relay candidate @cand. */
+static RRtcIceTurnAlloc *
+r_rtc_ice_turn_alloc_new (RRtcIceTurnReq * req, RRtcIceCandidate * cand)
+{
+  RRtcIceTurnAlloc * alloc;
+
+  if ((alloc = r_mem_new0 (RRtcIceTurnAlloc)) == NULL)
+    return NULL;
+  alloc->ice = req->ice;
+  alloc->base = r_rtc_ice_candidate_ref (req->base);
+  alloc->udp = req->udp;
+  alloc->server = r_socket_address_ref (req->server);
+  alloc->cand = r_rtc_ice_candidate_ref (cand);
+  alloc->username = r_strdup (req->username);
+  alloc->password = r_strdup (req->password);
+  alloc->realm = r_strdup (req->realm);
+  alloc->nonce = r_strdup (req->nonce);
+  alloc->perms = r_ptr_array_new ();
+  return alloc;
+}
+
+/* Pair @alloc's relay candidate with UDP remote @remote, so the relay path
+ * takes part in connectivity checks. */
+static RRtcIceCheckPair *
+r_rtc_ice_alloc_add_pair (RRtcIceTurnAlloc * alloc, RRtcIceCandidate * remote)
+{
+  RRtcIceTransport * ice = alloc->ice;
+  RRtcIceCheckPair * pair;
+
+  if (remote->proto != R_RTC_ICE_PROTO_UDP)
+    return NULL;
+  if (r_rtc_ice_find_pair (ice, alloc->cand, remote->addr) != NULL)
+    return NULL;
+  if ((pair = r_rtc_ice_add_pair (ice, alloc->cand, NULL, NULL, remote)) == NULL)
+    return NULL;
+  pair->alloc = alloc;
+  return pair;
+}
+
+static void
+r_rtc_ice_alloc_pair_with_remotes (RRtcIceTurnAlloc * alloc)
+{
+  RRtcIceTransport * ice = alloc->ice;
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (ice->remote); i < c; i++) {
+    if (r_rtc_ice_alloc_add_pair (alloc, r_ptr_array_get (ice->remote, i)) != NULL)
+      r_rtc_ice_schedule_checks (ice);
+  }
+}
+
 /* Handle a TURN Allocate response: answer a 401 challenge with long-term
  * credentials, or turn the (integrity-verified) XOR-RELAYED-ADDRESS into a
  * relay candidate. */
@@ -1077,10 +1343,15 @@ r_rtc_ice_turn_response (RRtcIceTransport * ice, rconstpointer msg)
           r_rtc_ice_relay_priority (ice->component), ice->component,
           R_RTC_ICE_PROTO_UDP, relayed, R_RTC_ICE_CANDIDATE_RELAY);
       if (cand != NULL) {
+        RRtcIceTurnAlloc * alloc = r_rtc_ice_turn_alloc_new (req, cand);
         cand->raddr = r_socket_address_ref (req->base->addr);
         R_LOG_INFO ("RtcIceTransport %p gathered relay candidate", ice);
         if (ice->on_candidate != NULL)
           ice->on_candidate (ice->on_candidate_data, ice, cand);
+        if (alloc != NULL) {
+          r_ptr_array_add (ice->allocs, alloc, r_rtc_ice_turn_alloc_free);
+          r_rtc_ice_alloc_pair_with_remotes (alloc);
+        }
         r_rtc_ice_candidate_unref (cand);
       }
       r_ptr_array_remove_first_fast (ice->turn, req);
@@ -1112,10 +1383,11 @@ r_rtc_ice_select_pair (RRtcIceTransport * ice, RRtcIceCheckPair * pair)
   ice->selected.local = r_rtc_ice_candidate_ref (pair->local);
   ice->selected.remote = r_rtc_ice_candidate_ref (pair->remote);
   ice->selected_conn = pair->conn;   /* NULL for a UDP pair */
+  ice->selected_alloc = pair->alloc; /* non-NULL for a relay pair */
   ice->send = r_rtc_ice_transport_send_udp;
 
   R_LOG_INFO ("RtcIceTransport %p pair nominated, connected (%s)", ice,
-      pair->conn != NULL ? "TCP" : "UDP");
+      pair->conn != NULL ? "TCP" : pair->alloc != NULL ? "relay" : "UDP");
   if (ice->ready != NULL)
     ice->ready (ice->data, ice);
 }
@@ -1236,6 +1508,7 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
     pair = r_rtc_ice_add_pair (ice, src->local, src->udp, src->conn, remote);
     if (pair == NULL)
       return;
+    pair->alloc = src->alloc;   /* a relay-arrived request yields a relay pair */
   }
 
   /* A request is also a triggered check: probe back if we have not yet. */
@@ -1339,18 +1612,101 @@ r_rtc_ice_handle_stun (RRtcIceTransport * ice, rconstpointer msg,
   }
 }
 
+/* The allocation whose TURN server is @addr, or NULL. Traffic from a server
+ * we hold an allocation on is the relay's control / data path, not a peer's. */
+static RRtcIceTurnAlloc *
+r_rtc_ice_alloc_for_server (RRtcIceTransport * ice, const RSocketAddress * addr)
+{
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (ice->allocs); i < c; i++) {
+    RRtcIceTurnAlloc * alloc = r_ptr_array_get (ice->allocs, i);
+    if (r_socket_address_is_equal (alloc->server, addr))
+      return alloc;
+  }
+  return NULL;
+}
+
+/* Unwrap a TURN Data indication: dispatch its DATA payload as if it had
+ * arrived directly from the XOR-PEER-ADDRESS peer over the relay. */
+static void
+r_rtc_ice_turn_data_indication (RRtcIceTransport * ice, RRtcIceTurnAlloc * alloc,
+    rconstpointer msg)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  RSocketAddress * peer = NULL;
+  const ruint8 * payload = NULL;
+  rsize plen = 0;
+
+  if (r_stun_attr_tlv_first (msg, &tlv)) {
+    do {
+      if (tlv.type == R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS)
+        peer = r_stun_attr_tlv_parse_xor_address (msg, &tlv);
+      else if (tlv.type == R_STUN_ATTR_TYPE_DATA) {
+        payload = tlv.value;
+        plen = tlv.len;
+      }
+    } while (r_stun_attr_tlv_next (msg, &tlv));
+  }
+
+  if (peer != NULL && payload != NULL) {
+    RBuffer * inner;
+
+    /* The DATA payload sits at an odd offset in the indication; copy it into
+     * an aligned buffer before the STUN parser reads 32-bit fields. */
+    if ((inner = r_buffer_new_dup (payload, plen)) != NULL) {
+      RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+      if (r_buffer_map (inner, &info, R_MEM_MAP_READ)) {
+        if (r_stun_is_valid_msg (info.data, info.size)) {
+          RRtcIceSrc src = { alloc->udp, NULL, alloc->cand, peer, alloc };
+          r_rtc_ice_handle_stun (ice, info.data, &src);
+          r_buffer_unmap (inner, &info);
+        } else {
+          r_buffer_unmap (inner, &info);
+          ice->packet (ice->data, inner, ice);
+        }
+      }
+      r_buffer_unref (inner);
+    }
+  }
+
+  if (peer != NULL)
+    r_socket_address_unref (peer);
+}
+
+/* Handle a datagram from a TURN server on the base socket: a relayed Data
+ * indication, or a response to one of our own TURN transactions. */
+static void
+r_rtc_ice_turn_handle (RRtcIceTransport * ice, RRtcIceTurnAlloc * alloc,
+    rconstpointer data, rsize size)
+{
+  if (!r_stun_is_valid_msg (data, size))
+    return;
+  if (r_stun_msg_is_indication (data) && r_stun_msg_method_is_data (data))
+    r_rtc_ice_turn_data_indication (ice, alloc, data);
+  else
+    R_LOG_TRACE ("RtcIceTransport %p TURN control response", ice);
+}
+
 static void
 r_rtc_ice_transport_udp_packet_cb (rpointer data,
     RBuffer * buf, RSocketAddress * addr, REvUDP * evudp)
 {
   RRtcIceTransport * ice = data;
+  RRtcIceTurnAlloc * alloc;
   RMemMapInfo info = R_MEM_MAP_INFO_INIT;
 
   R_LOG_TRACE ("RtcIceTransport %p packet", ice);
 
   r_buffer_map (buf, &info, R_MEM_MAP_READ);
-  if (r_stun_is_valid_msg (info.data, info.size)) {
-    RRtcIceSrc src = { evudp, NULL, r_rtc_ice_local_for_sock (ice, evudp), addr };
+  /* A datagram from a TURN server is relay traffic, not a peer's. (Before an
+   * allocation exists, the Allocate responses fall through to the STUN path.) */
+  if ((alloc = r_rtc_ice_alloc_for_server (ice, addr)) != NULL) {
+    r_rtc_ice_turn_handle (ice, alloc, info.data, info.size);
+    r_buffer_unmap (buf, &info);
+  } else if (r_stun_is_valid_msg (info.data, info.size)) {
+    RRtcIceSrc src = { evudp, NULL, r_rtc_ice_local_for_sock (ice, evudp), addr, NULL };
     r_rtc_ice_handle_stun (ice, info.data, &src);
     r_buffer_unmap (buf, &info);
   } else {
@@ -1375,7 +1731,7 @@ r_rtc_ice_tcp_dispatch (RRtcIceTcpConn * conn, const ruint8 * data, rsize size)
 
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
     if (r_stun_is_valid_msg (info.data, info.size)) {
-      RRtcIceSrc src = { NULL, conn, conn->local, conn->remote };
+      RRtcIceSrc src = { NULL, conn, conn->local, conn->remote, NULL };
       r_rtc_ice_handle_stun (ice, info.data, &src);
       r_buffer_unmap (buf, &info);
     } else {
@@ -2030,6 +2386,16 @@ r_rtc_ice_transport_add_remote_candidate (RRtcIceTransport * ice,
   ctx.ice = ice;
   ctx.remote = candidate;
   r_hash_table_foreach (ice->candidateSockets, r_rtc_ice_pair_new_remote_cb, &ctx);
+
+  /* ...and with every relay allocation's local candidate. */
+  {
+    rsize i, c;
+    for (i = 0, c = r_ptr_array_size (ice->allocs); i < c; i++) {
+      if (r_rtc_ice_alloc_add_pair (r_ptr_array_get (ice->allocs, i),
+              candidate) != NULL)
+        r_rtc_ice_schedule_checks (ice);
+    }
+  }
 
   return R_RTC_OK;
 }
