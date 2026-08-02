@@ -1966,8 +1966,11 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
     pair->alloc = src->alloc;   /* a relay-arrived request yields a relay pair */
   }
 
-  /* A request is also a triggered check: probe back if we have not yet. */
-  if (pair->state == R_RTC_ICE_CHECK_WAITING && ice->rpwd != NULL)
+  /* A request is also a triggered check (RFC 8445 7.3.1.4): (re)probe the
+   * pair unless a check is already in flight or the pair is already valid, so
+   * a frozen or previously failed pair is revived when the peer probes it. */
+  if (ice->rpwd != NULL && pair->state != R_RTC_ICE_CHECK_IN_PROGRESS &&
+      pair->state != R_RTC_ICE_CHECK_SUCCEEDED)
     r_rtc_ice_transmit_check (ice, pair, TRUE);
 
   if (use_candidate) {
