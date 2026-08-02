@@ -2454,6 +2454,10 @@ r_rtc_ice_tcp_connect (RRtcIceTransport * ice, RRtcIceCandidate * local,
   st = r_ev_tcp_connect (tcp, remote->addr, r_rtc_ice_tcp_connected, conn, NULL);
   if (st != R_SOCKET_OK && st != R_SOCKET_WOULD_BLOCK)
     r_ptr_array_remove_first_fast (ice->tcpconns, conn);
+  else if (ice->state == R_RTC_ICE_STATE_NEW)
+    /* Dialing has begun: an active-only agent must leave NEW even though no
+     * connection has completed yet. */
+    ice->state = R_RTC_ICE_STATE_CHECKING;
 }
 
 static rboolean
