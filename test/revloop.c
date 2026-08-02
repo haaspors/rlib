@@ -259,8 +259,8 @@ RTEST (revloop, callback_later_cancel, RTEST_FAST)
   r_assert_cmpuint (r_ev_loop_get_iterations (loop), ==, 1);
   r_assert_cmpuint (r_ev_loop_get_idle_count (loop), ==, 1);
 
+  /* @entry is a borrowed handle owned by the clock; cancelling frees it. */
   r_assert (r_ev_loop_cancel_timer (loop, entry));
-  r_clock_entry_unref (entry);
   r_assert_cmpuint (r_ev_loop_run (loop, R_EV_LOOP_RUN_LOOP), ==, 0);
 
   r_assert_cmpuint (size, ==, 1);

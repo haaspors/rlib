@@ -926,9 +926,12 @@ r_ev_loop_add_callback_at (REvLoop * loop, RClockEntry ** timer,
   if (R_UNLIKELY (loop == NULL)) return FALSE;
   entry = r_clock_add_timeout_callback (loop->clock,
       deadline, (RFunc)cb, data, datanotify, loop, NULL);
+  /* The clock's own list reference keeps the entry alive; @timer, when given,
+   * is a borrowed handle for cancellation that callers clear (they do not
+   * unref it), so drop the reference this returned in both cases. */
   if (timer != NULL)
     *timer = entry;
-  else if (entry != NULL)
+  if (entry != NULL)
     r_clock_entry_unref (entry);
   return entry != NULL;
 }
