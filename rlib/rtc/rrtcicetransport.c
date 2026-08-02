@@ -1848,6 +1848,8 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
   RStunAttrType peer_role = 0;
   ruint64 peer_tiebreaker = 0;
   ruint64 peer_priority = 0;
+  const rchar * uname = NULL;
+  rsize uname_len = 0;
   RRtcIceProtocol proto = src->conn != NULL ? R_RTC_ICE_PROTO_TCP : R_RTC_ICE_PROTO_UDP;
   RBuffer * outbuf;
 
@@ -1868,8 +1870,23 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
           peer_tiebreaker = r_load_be64 (tlv.value);
       } else if (tlv.type == R_STUN_ATTR_TYPE_PRIORITY && tlv.len == 4) {
         peer_priority = r_stun_attr_tlv_parse_priority (msg, &tlv);
+      } else if (tlv.type == R_STUN_ATTR_TYPE_USERNAME) {
+        uname = (const rchar *) tlv.value;
+        uname_len = tlv.len;
       }
     } while (r_stun_attr_tlv_next (msg, &tlv));
+  }
+
+  /* The peer's USERNAME is "<our-ufrag>:<their-ufrag>"; reject the check when
+   * the local fragment is not ours, rejecting stale or misrouted checks that
+   * still carry a valid integrity (RFC 8445 7.3). */
+  if (ice->ufrag != NULL) {
+    rsize uflen = r_strlen (ice->ufrag);
+    if (uname == NULL || uname_len < uflen + 1 || uname[uflen] != ':' ||
+        r_memcmp (uname, ice->ufrag, uflen) != 0) {
+      R_LOG_WARNING ("RtcIceTransport %p check request USERNAME ufrag mismatch", ice);
+      return;
+    }
   }
 
   /* Role conflict (RFC 8445 7.3.1.1): the peer claims the same role we

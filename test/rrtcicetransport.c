@@ -104,6 +104,135 @@ RTEST (rrtcicetransport, connectivity_check, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+typedef struct {
+  ruint responses;
+} TestCheckObserver;
+
+static void
+test_check_recv (rpointer data, RBuffer * buf, RSocketAddress * addr, REvUDP * udp)
+{
+  TestCheckObserver * o = data;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  (void) addr; (void) udp;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
+    if (r_stun_is_valid_msg (info.data, info.size) &&
+        r_stun_msg_method_is_binding (info.data) &&
+        r_stun_msg_is_success_resp (info.data))
+      o->responses++;
+    r_buffer_unmap (buf, &info);
+  }
+}
+
+/* Build a Binding connectivity check with USERNAME @username, keyed with
+ * short-term credential @pwd. */
+static rsize
+test_build_check (ruint8 * dst, rsize dstsize, const ruint8 * tid,
+    const rchar * username, const rchar * pwd)
+{
+  RStunMsgCtx ctx;
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  ruint8 prio[4];
+  ruint8 tb[8] = { 0, 0, 0, 0, 0, 0, 0, 1 };
+
+  r_store_be32 (prio, 0x7e0000ffu);
+  r_stun_msg_begin (&ctx, dst, dstsize, R_STUN_CLASS_REQUEST, R_STUN_METHOD_BINDING, tid);
+  tlv.type = R_STUN_ATTR_TYPE_USERNAME;
+  tlv.len = (ruint16) r_strlen (username);
+  tlv.value = (const ruint8 *) username;
+  r_stun_msg_add_attribute (&ctx, &tlv);
+  tlv.type = R_STUN_ATTR_TYPE_PRIORITY; tlv.len = 4; tlv.value = prio;
+  r_stun_msg_add_attribute (&ctx, &tlv);
+  tlv.type = R_STUN_ATTR_TYPE_ICE_CONTROLLING; tlv.len = 8; tlv.value = tb;
+  r_stun_msg_add_attribute (&ctx, &tlv);
+  r_stun_msg_add_message_integrity_short_cred (&ctx, pwd, r_strlen (pwd));
+  return r_stun_msg_end (&ctx, TRUE);
+}
+
+static void
+test_send_check (REvUDP * from, RSocketAddress * to, const rchar * username,
+    const rchar * pwd)
+{
+  RBuffer * out = r_buffer_new_alloc (NULL, 256, NULL);
+  RMemMapInfo oi = R_MEM_MAP_INFO_INIT;
+
+  if (out != NULL && r_buffer_map (out, &oi, R_MEM_MAP_WRITE)) {
+    ruint8 tid[R_STUN_TRANSACTION_ID_SIZE] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
+    rsize sz = test_build_check (oi.data, oi.size, tid, username, pwd);
+    r_buffer_unmap (out, &oi);
+    r_buffer_set_size (out, sz);
+    r_ev_udp_send (from, out, to, NULL, NULL, NULL);
+  }
+  if (out != NULL)
+    r_buffer_unref (out);
+}
+
+RTEST (rrtcicetransport, username_ufrag_rejected, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* A Binding check whose USERNAME local fragment is not our ufrag is
+   * rejected even though its MESSAGE-INTEGRITY is valid (RFC 8445 7.3): the
+   * agent does not answer it, but answers the same check with the right
+   * ufrag. */
+  RPrng * prng;
+  REvLoop * loop;
+  RRtcSession * s;
+  RRtcIceTransport * ice;
+  RRtcCryptoTransport * raw;
+  REvUDP * peer;
+  RSocketAddress * lo, * addr, * peeraddr;
+  RRtcIceCandidate * cand;
+  TestCheckObserver obs = { 0 };
+  ruint i;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+  r_assert_cmpptr ((s = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (s,
+          R_STR_WITH_SIZE_ARGS ("auf"), R_STR_WITH_SIZE_ARGS ("apassword01234567"))), !=, NULL);
+  r_assert_cmpptr ((raw = r_rtc_session_create_raw_transport (s, ice)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_set_role (ice, R_RTC_ICE_ROLE_CONTROLLED), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((lo = r_socket_address_ipv4_new_from_string ("127.0.0.1", 0)), !=, NULL);
+  r_assert_cmpptr ((cand = test_ice_host_candidate ("1", lo)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_add_local_host_candidate (ice, cand), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_start (ice, loop), ==, R_RTC_OK);
+  r_assert_cmpptr ((addr = r_rtc_ice_transport_get_local_address (ice)), !=, NULL);
+
+  r_assert_cmpptr ((peer = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert (r_ev_udp_bind (peer, lo, TRUE));
+  r_assert (r_ev_udp_recv_start (peer, NULL, test_check_recv, &obs, NULL));
+  r_assert_cmpptr ((peeraddr = r_ev_udp_get_local_address (peer)), !=, NULL);
+
+  /* Wrong local ufrag -> no answer. */
+  test_send_check (peer, addr, "wrong:puf", "apassword01234567");
+  for (i = 0; i < 40; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+  r_assert_cmpuint (obs.responses, ==, 0);
+
+  /* Correct local ufrag -> answered. */
+  test_send_check (peer, addr, "auf:puf", "apassword01234567");
+  for (i = 0; i < 40 && obs.responses == 0; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+  r_assert_cmpuint (obs.responses, ==, 1);
+
+  r_rtc_ice_transport_close (ice);
+  r_ev_udp_recv_stop (peer);
+  for (i = 0; i < 8; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_socket_address_unref (addr);
+  r_socket_address_unref (peeraddr);
+  r_socket_address_unref (lo);
+  r_ev_udp_unref (peer);
+  r_rtc_ice_candidate_unref (cand);
+  r_rtc_crypto_transport_unref (raw);
+  r_rtc_ice_transport_unref (ice);
+  r_rtc_session_unref (s);
+  r_ev_loop_unref (loop);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
 RTEST (rrtcicetransport, mapped_host_candidate_binds_local, RTEST_FAST | RTEST_SYSTEM)
 {
   /* A NAT-1:1 host candidate advertises one address but binds another:
