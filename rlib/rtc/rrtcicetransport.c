@@ -658,9 +658,16 @@ r_rtc_ice_transmit_check (RRtcIceTransport * ice, RRtcIceCheckPair * pair,
     pair->nsent++;
   }
 
-  pair->timer = NULL;
-  r_ev_loop_add_callback_later (ice->loop, &pair->timer,
-      R_RTC_ICE_CHECK_RTO, r_rtc_ice_check_timeout, pair, NULL);
+  /* Grow the retransmit interval with each attempt (RFC 8445 14.3), capped so
+   * a lost pair still fails in bounded time. */
+  {
+    ruint shift = pair->nsent > 0 ? pair->nsent - 1 : 0;
+    if (shift > 3)
+      shift = 3;
+    pair->timer = NULL;
+    r_ev_loop_add_callback_later (ice->loop, &pair->timer,
+        R_RTC_ICE_CHECK_RTO << shift, r_rtc_ice_check_timeout, pair, NULL);
+  }
 }
 
 static void
