@@ -1070,6 +1070,9 @@ struct RRtcIceTurnAlloc {
   rchar * password;
   rchar * realm;
   rchar * nonce;
+  ruint32 lifetime;           /* allocation lifetime in seconds (server-set) */
+  RClockEntry * refresh;      /* allocation / permission refresh timer */
+  rboolean released;          /* Refresh(0) sent; the base socket may be gone */
   RPtrArray * perms;          /* installed permissions (RRtcIceTurnPerm *) */
 };
 
@@ -1087,6 +1090,8 @@ r_rtc_ice_turn_alloc_free (rpointer data)
 {
   RRtcIceTurnAlloc * alloc = data;
 
+  if (alloc->refresh != NULL && alloc->ice->loop != NULL)
+    r_ev_loop_cancel_timer (alloc->ice->loop, alloc->refresh);
   r_ptr_array_unref (alloc->perms);
   r_rtc_ice_candidate_unref (alloc->base);
   r_rtc_ice_candidate_unref (alloc->cand);
@@ -1157,6 +1162,32 @@ r_rtc_ice_build_send_indication (RSocketAddress * peer, RBuffer * payload)
   return ret;
 }
 
+/* Append the long-term-credential authentication attributes (USERNAME,
+ * REALM, NONCE and the covering MESSAGE-INTEGRITY) that every authenticated
+ * TURN request carries; MESSAGE-INTEGRITY must come last. */
+static void
+r_rtc_ice_turn_add_auth (RStunMsgCtx * ctx, RRtcIceTurnAlloc * alloc)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  ruint8 key[16];
+
+  tlv.type = R_STUN_ATTR_TYPE_USERNAME;
+  tlv.len = (ruint16) r_strlen (alloc->username);
+  tlv.value = (const ruint8 *) alloc->username;
+  r_stun_msg_add_attribute (ctx, &tlv);
+  tlv.type = R_STUN_ATTR_TYPE_REALM;
+  tlv.len = (ruint16) r_strlen (alloc->realm);
+  tlv.value = (const ruint8 *) alloc->realm;
+  r_stun_msg_add_attribute (ctx, &tlv);
+  tlv.type = R_STUN_ATTR_TYPE_NONCE;
+  tlv.len = (ruint16) r_strlen (alloc->nonce);
+  tlv.value = (const ruint8 *) alloc->nonce;
+  r_stun_msg_add_attribute (ctx, &tlv);
+
+  if (r_rtc_ice_turn_key (alloc->username, alloc->realm, alloc->password, key))
+    r_stun_msg_add_message_integrity_short_cred (ctx, key, sizeof (key));
+}
+
 /* Build a TURN CreatePermission request for @perm, keyed with the long-term
  * credential. */
 static RBuffer *
@@ -1169,29 +1200,12 @@ r_rtc_ice_build_create_permission (RRtcIceTurnAlloc * alloc, RRtcIceTurnPerm * p
 
     if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
       RStunMsgCtx ctx;
-      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
-      ruint8 key[16];
       rsize size;
 
       r_stun_msg_begin (&ctx, info.data, info.size,
           R_STUN_CLASS_REQUEST, R_STUN_METHOD_CREATE_PERMISSION, perm->tid);
       r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS, perm->peer);
-
-      tlv.type = R_STUN_ATTR_TYPE_USERNAME;
-      tlv.len = (ruint16) r_strlen (alloc->username);
-      tlv.value = (const ruint8 *) alloc->username;
-      r_stun_msg_add_attribute (&ctx, &tlv);
-      tlv.type = R_STUN_ATTR_TYPE_REALM;
-      tlv.len = (ruint16) r_strlen (alloc->realm);
-      tlv.value = (const ruint8 *) alloc->realm;
-      r_stun_msg_add_attribute (&ctx, &tlv);
-      tlv.type = R_STUN_ATTR_TYPE_NONCE;
-      tlv.len = (ruint16) r_strlen (alloc->nonce);
-      tlv.value = (const ruint8 *) alloc->nonce;
-      r_stun_msg_add_attribute (&ctx, &tlv);
-
-      if (r_rtc_ice_turn_key (alloc->username, alloc->realm, alloc->password, key))
-        r_stun_msg_add_message_integrity_short_cred (&ctx, key, sizeof (key));
+      r_rtc_ice_turn_add_auth (&ctx, alloc);
       size = r_stun_msg_end (&ctx, TRUE);
       r_buffer_unmap (ret, &info);
       r_buffer_set_size (ret, size);
@@ -1202,6 +1216,56 @@ r_rtc_ice_build_create_permission (RRtcIceTurnAlloc * alloc, RRtcIceTurnPerm * p
   }
 
   return ret;
+}
+
+/* Build a TURN Refresh request setting the allocation lifetime to @lifetime
+ * seconds (0 releases the allocation). */
+static RBuffer *
+r_rtc_ice_build_refresh (RRtcIceTurnAlloc * alloc, ruint32 lifetime,
+    const ruint8 * tid)
+{
+  RBuffer * ret;
+
+  if ((ret = r_buffer_new_alloc (NULL, 256, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+      ruint8 lt[4];
+      rsize size;
+
+      r_store_be32 (lt, lifetime);
+      r_stun_msg_begin (&ctx, info.data, info.size,
+          R_STUN_CLASS_REQUEST, R_STUN_METHOD_REFRESH, tid);
+      tlv.type = R_STUN_ATTR_TYPE_LIFETIME;
+      tlv.len = sizeof (lt);
+      tlv.value = lt;
+      r_stun_msg_add_attribute (&ctx, &tlv);
+      r_rtc_ice_turn_add_auth (&ctx, alloc);
+      size = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (ret, &info);
+      r_buffer_set_size (ret, size);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+static void
+r_rtc_ice_turn_send_refresh (RRtcIceTurnAlloc * alloc, ruint32 lifetime)
+{
+  RBuffer * buf;
+  ruint8 tid[R_STUN_TRANSACTION_ID_SIZE];
+
+  r_rand_entropy_fill (tid, sizeof (tid));
+  if ((buf = r_rtc_ice_build_refresh (alloc, lifetime, tid)) != NULL) {
+    r_ev_udp_send (alloc->udp, buf, alloc->server, NULL, NULL, NULL);
+    r_buffer_unref (buf);
+  }
 }
 
 /* Install a permission for @peer's IP if there is not one already; the
@@ -1242,6 +1306,141 @@ r_rtc_ice_relay_send (RRtcIceTurnAlloc * alloc, RSocketAddress * peer, RBuffer *
     r_ev_udp_send (alloc->udp, wrapped, alloc->server, NULL, NULL, NULL);
     r_buffer_unref (wrapped);
   }
+}
+
+/* Re-send CreatePermission for every installed permission, keeping them
+ * alive (permission lifetime is 300 s, RFC 8656 9). */
+static void
+r_rtc_ice_turn_refresh_permissions (RRtcIceTurnAlloc * alloc)
+{
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (alloc->perms); i < c; i++) {
+    RRtcIceTurnPerm * perm = r_ptr_array_get (alloc->perms, i);
+    RBuffer * buf;
+
+    r_rand_entropy_fill (perm->tid, sizeof (perm->tid));
+    if ((buf = r_rtc_ice_build_create_permission (alloc, perm)) != NULL) {
+      r_ev_udp_send (alloc->udp, buf, alloc->server, NULL, NULL, NULL);
+      r_buffer_unref (buf);
+    }
+  }
+}
+
+/* Replay the CreatePermission whose in-flight transaction was @tid (after a
+ * 438 Stale Nonce), now carrying the fresh nonce. */
+static void
+r_rtc_ice_turn_replay_permission (RRtcIceTurnAlloc * alloc, const ruint8 * tid)
+{
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (alloc->perms); i < c; i++) {
+    RRtcIceTurnPerm * perm = r_ptr_array_get (alloc->perms, i);
+    RBuffer * buf;
+
+    if (r_memcmp_ct (perm->tid, tid, R_STUN_TRANSACTION_ID_SIZE) != 0)
+      continue;
+    r_rand_entropy_fill (perm->tid, sizeof (perm->tid));
+    if ((buf = r_rtc_ice_build_create_permission (alloc, perm)) != NULL) {
+      r_ev_udp_send (alloc->udp, buf, alloc->server, NULL, NULL, NULL);
+      r_buffer_unref (buf);
+    }
+    return;
+  }
+}
+
+static void r_rtc_ice_turn_refresh_timeout (rpointer data, REvLoop * loop);
+
+/* Arm the refresh timer at half the allocation lifetime, capped so the
+ * 300 s permissions are renewed on the same tick (RFC 8656 8). */
+static void
+r_rtc_ice_turn_schedule_refresh (RRtcIceTurnAlloc * alloc)
+{
+  ruint32 secs = alloc->lifetime / 2;
+
+  if (secs < 1)
+    secs = 1;
+  if (secs > 240)
+    secs = 240;
+
+  alloc->refresh = NULL;
+  r_ev_loop_add_callback_later (alloc->ice->loop, &alloc->refresh,
+      secs * R_SECOND, r_rtc_ice_turn_refresh_timeout, alloc, NULL);
+}
+
+static void
+r_rtc_ice_turn_refresh_timeout (rpointer data, REvLoop * loop)
+{
+  RRtcIceTurnAlloc * alloc = data;
+  (void) loop;
+
+  alloc->refresh = NULL;
+  r_rtc_ice_turn_send_refresh (alloc, alloc->lifetime);
+  r_rtc_ice_turn_refresh_permissions (alloc);
+  r_rtc_ice_turn_schedule_refresh (alloc);
+}
+
+/* Release the allocation server-side (Refresh with LIFETIME=0) and cancel the
+ * refresh timer; the credentials must still be intact to authenticate it.
+ * Idempotent: close may run more than once, and after the first the borrowed
+ * base socket is gone, so re-sending must be suppressed. */
+static void
+r_rtc_ice_turn_release (RRtcIceTurnAlloc * alloc)
+{
+  if (alloc->released)
+    return;
+  alloc->released = TRUE;
+
+  if (alloc->refresh != NULL && alloc->ice->loop != NULL) {
+    r_ev_loop_cancel_timer (alloc->ice->loop, alloc->refresh);
+    alloc->refresh = NULL;
+  }
+  r_rtc_ice_turn_send_refresh (alloc, 0);
+}
+
+/* Handle a Refresh / CreatePermission response: adopt a fresh nonce and
+ * replay on 438 Stale Nonce (RFC 8656 8), or track the granted lifetime. */
+static void
+r_rtc_ice_turn_control_response (RRtcIceTurnAlloc * alloc, rconstpointer msg)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  rboolean err = r_stun_msg_is_err_resp (msg);
+  ruint32 lifetime = 0;
+  ruint code = 0;
+  rchar * nonce = NULL;
+
+  if (r_stun_attr_tlv_first (msg, &tlv)) {
+    do {
+      switch (tlv.type) {
+        case R_STUN_ATTR_TYPE_LIFETIME:
+          if (tlv.len >= 4)
+            lifetime = r_load_be32 (tlv.value);
+          break;
+        case R_STUN_ATTR_TYPE_ERROR_CODE:
+          code = r_stun_attr_tlv_parse_error_code (msg, &tlv);
+          break;
+        case R_STUN_ATTR_TYPE_NONCE:
+          nonce = r_strdup_size ((const rchar *) tlv.value, tlv.len);
+          break;
+        default:
+          break;
+      }
+    } while (r_stun_attr_tlv_next (msg, &tlv));
+  }
+
+  if (err && code == 438 && nonce != NULL) {
+    r_free (alloc->nonce);
+    alloc->nonce = nonce;
+    nonce = NULL;
+    if (r_stun_msg_method_is_refresh (msg))
+      r_rtc_ice_turn_send_refresh (alloc, alloc->lifetime);
+    else if (r_stun_msg_method_is_create_permission (msg))
+      r_rtc_ice_turn_replay_permission (alloc, r_stun_msg_transaction_id (msg));
+  } else if (!err && r_stun_msg_method_is_refresh (msg) && lifetime > 0) {
+    alloc->lifetime = lifetime;
+  }
+
+  r_free (nonce);
 }
 
 /* Spawn a persistent allocation from the Allocate transaction @req that just
@@ -1311,6 +1510,7 @@ r_rtc_ice_turn_response (RRtcIceTransport * ice, rconstpointer msg)
     RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
     RSocketAddress * relayed = NULL;
     rchar * realm = NULL, * nonce = NULL;
+    ruint32 lifetime = 0;
     ruint code = 0;
 
     if (r_memcmp_ct (req->tid, tid, R_STUN_TRANSACTION_ID_SIZE) != 0)
@@ -1321,6 +1521,10 @@ r_rtc_ice_turn_response (RRtcIceTransport * ice, rconstpointer msg)
         switch (tlv.type) {
           case R_STUN_ATTR_TYPE_XOR_RELAYED_ADDRESS:
             relayed = r_stun_attr_tlv_parse_xor_address (msg, &tlv);
+            break;
+          case R_STUN_ATTR_TYPE_LIFETIME:
+            if (tlv.len >= 4)
+              lifetime = r_load_be32 (tlv.value);
             break;
           case R_STUN_ATTR_TYPE_ERROR_CODE:
             code = r_stun_attr_tlv_parse_error_code (msg, &tlv);
@@ -1354,8 +1558,10 @@ r_rtc_ice_turn_response (RRtcIceTransport * ice, rconstpointer msg)
         if (ice->on_candidate != NULL)
           ice->on_candidate (ice->on_candidate_data, ice, cand);
         if (alloc != NULL) {
+          alloc->lifetime = lifetime > 0 ? lifetime : 600;   /* RFC 8656 default */
           r_ptr_array_add (ice->allocs, alloc, r_rtc_ice_turn_alloc_free);
           r_rtc_ice_alloc_pair_with_remotes (alloc);
+          r_rtc_ice_turn_schedule_refresh (alloc);
         }
         r_rtc_ice_candidate_unref (cand);
       }
@@ -1691,7 +1897,7 @@ r_rtc_ice_turn_handle (RRtcIceTransport * ice, RRtcIceTurnAlloc * alloc,
   if (r_stun_msg_is_indication (data) && r_stun_msg_method_is_data (data))
     r_rtc_ice_turn_data_indication (ice, alloc, data);
   else
-    R_LOG_TRACE ("RtcIceTransport %p TURN control response", ice);
+    r_rtc_ice_turn_control_response (alloc, data);
 }
 
 static void
@@ -2052,6 +2258,13 @@ _candidate_socket_close (rpointer key, rpointer value, rpointer user)
 RRtcError
 r_rtc_ice_transport_close (RRtcIceTransport * ice)
 {
+  rsize i, c;
+
+  /* Release the allocations (Refresh LIFETIME=0) while their base sockets and
+   * credentials are still live, before the sockets are torn down. */
+  for (i = 0, c = r_ptr_array_size (ice->allocs); i < c; i++)
+    r_rtc_ice_turn_release (r_ptr_array_get (ice->allocs, i));
+
   r_hash_table_foreach (ice->candidateSockets, _candidate_socket_close, ice);
   ice->state = R_RTC_ICE_STATE_CLOSED;
 
