@@ -120,10 +120,6 @@ r_rtc_rtp_ext_element (const RRTPBuffer * rtp, ruint16 id,
   return FALSE;
 }
 
-/* The RID string fits an encoding's id[] field; RIDs that would overflow
- * it can't name one of our encodings, so cap the copy there. */
-#define R_RTC_RID_MAX (sizeof (((RRtcRtpEncodingParameters *)0)->id) - 1)
-
 /* Read the RID carried in header extension @extid into @rid (>= R_RTC_RID_MAX
  * + 1 bytes). Returns FALSE if absent or too long to name an encoding. */
 static rboolean

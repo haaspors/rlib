@@ -127,6 +127,9 @@ typedef struct {
   rdouble scalefr;          /**< @brief Frame-rate scale-down factor. */
 } RRtcRtpEncodingParameters;
 
+/** @brief Maximum length in bytes of an encoding RID (@ref RRtcRtpEncodingParameters.id), excluding the terminating NUL. */
+#define R_RTC_RID_MAX (sizeof (((RRtcRtpEncodingParameters *)0)->id) - 1)
+
 /** @brief Allocate and initialise an encoding descriptor for SSRC @p ssrc with payload type @p pt. */
 R_API RRtcRtpEncodingParameters * r_rtc_rtp_encoding_parameters_new (ruint32 ssrc,
     RRTPPayloadType pt) R_ATTR_MALLOC;
