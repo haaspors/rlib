@@ -1126,6 +1126,282 @@ RTEST (rrtcicetransport, turn_allocation_refresh, RTEST_FAST | RTEST_SYSTEM)
 }
 RTEST_END;
 
+typedef struct {
+  RSocketAddress * relayed;
+  ruint16 channel;            /* channel number the agent bound (0 = none) */
+  RSocketAddress * chanpeer;  /* peer bound to `channel` */
+  ruint channel_binds;        /* ChannelBind requests seen */
+  ruint channel_data_rx;      /* ChannelData frames received from the agent */
+} TestTurnChannelState;
+
+/* Build a Binding success for @req_tid (XOR-MAPPED-ADDRESS @peer) keyed with
+ * the agent's remote password, into @dst; returns its size. */
+static rsize
+test_build_binding_success (ruint8 * dst, rsize dstsize,
+    const ruint8 * req_tid, RSocketAddress * peer)
+{
+  RStunMsgCtx ctx;
+
+  r_stun_msg_begin (&ctx, dst, dstsize, R_STUN_CLASS_SUCCESS_RESPONSE,
+      R_STUN_METHOD_BINDING, req_tid);
+  r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS, peer);
+  r_stun_msg_add_message_integrity_short_cred (&ctx,
+      R_STR_WITH_SIZE_ARGS (TEST_RELAY_REMOTE_PWD));
+  return r_stun_msg_end (&ctx, TRUE);
+}
+
+static void
+test_send_channel_data (REvUDP * udp, RSocketAddress * addr, ruint16 number,
+    const ruint8 * payload, rsize plen)
+{
+  RBuffer * out = r_buffer_new_alloc (NULL, 4 + ((plen + 3) & ~(rsize) 3), NULL);
+  RMemMapInfo oi = R_MEM_MAP_INFO_INIT;
+
+  if (out != NULL && r_buffer_map (out, &oi, R_MEM_MAP_WRITE)) {
+    rsize padded = (plen + 3) & ~(rsize) 3;
+    r_store_be16 (oi.data, number);
+    r_store_be16 ((ruint8 *) oi.data + 2, (ruint16) plen);
+    r_memcpy ((ruint8 *) oi.data + 4, payload, plen);
+    if (padded > plen)
+      r_memset ((ruint8 *) oi.data + 4 + plen, 0, padded - plen);
+    r_buffer_unmap (out, &oi);
+    r_buffer_set_size (out, 4 + padded);
+    r_ev_udp_send (udp, out, addr, NULL, NULL, NULL);
+  }
+  if (out != NULL)
+    r_buffer_unref (out);
+}
+
+/* A relaying TURN server that promotes the peer to a channel: it answers
+ * ChannelBind, and once bound replies to relayed Binding checks over
+ * ChannelData, so both directions of the channel path are exercised. */
+static void
+test_turn_channel_responder (rpointer data, RBuffer * buf, RSocketAddress * addr,
+    REvUDP * udp)
+{
+  TestTurnChannelState * st = data;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+  if (!r_buffer_map (buf, &info, R_MEM_MAP_READ))
+    return;
+
+  if (r_stun_is_channel_data (info.data, info.size)) {
+    ruint16 len = r_load_be16 ((const ruint8 *) info.data + 2);
+    const ruint8 * payload = (const ruint8 *) info.data + 4;
+
+    st->channel_data_rx++;
+    if ((rsize) 4 + len <= info.size && r_stun_is_valid_msg (payload, len) &&
+        r_stun_msg_method_is_binding (payload) && r_stun_msg_is_request (payload) &&
+        st->chanpeer != NULL) {
+      ruint8 ib[256];
+      rsize isz = test_build_binding_success (ib, sizeof (ib),
+          r_stun_msg_transaction_id (payload), st->chanpeer);
+      test_send_channel_data (udp, addr, st->channel, ib, isz);
+    }
+    r_buffer_unmap (buf, &info);
+    return;
+  }
+
+  if (!r_stun_is_valid_msg (info.data, info.size) ||
+      !(r_stun_msg_is_request (info.data) || r_stun_msg_is_indication (info.data))) {
+    r_buffer_unmap (buf, &info);
+    return;
+  }
+
+  if (r_stun_msg_method_is_allocate (info.data) ||
+      r_stun_msg_method_is_create_permission (info.data) ||
+      r_stun_msg_method_is_channel_bind (info.data)) {
+    RBuffer * out = r_buffer_new_alloc (NULL, 256, NULL);
+    RMemMapInfo oi = R_MEM_MAP_INFO_INIT;
+
+    if (out != NULL && r_buffer_map (out, &oi, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+      ruint8 key[16];
+      rsize sz;
+
+      if (r_stun_msg_method_is_allocate (info.data) &&
+          !test_turn_has_integrity (info.data)) {
+        ruint8 errcode[] = { 0, 0, 4, 1, 'U','n','a','u','t','h' };  /* 401 */
+        r_stun_msg_begin (&ctx, oi.data, oi.size, R_STUN_CLASS_ERROR_RESPONSE,
+            R_STUN_METHOD_ALLOCATE, r_stun_msg_transaction_id (info.data));
+        tlv.type = R_STUN_ATTR_TYPE_ERROR_CODE; tlv.len = sizeof (errcode); tlv.value = errcode;
+        r_stun_msg_add_attribute (&ctx, &tlv);
+        tlv.type = R_STUN_ATTR_TYPE_REALM; tlv.len = 4; tlv.value = (const ruint8 *) "rlib";
+        r_stun_msg_add_attribute (&ctx, &tlv);
+        tlv.type = R_STUN_ATTR_TYPE_NONCE; tlv.len = 8; tlv.value = (const ruint8 *) "nonce123";
+        r_stun_msg_add_attribute (&ctx, &tlv);
+      } else {
+        RStunMethod method = r_stun_msg_type (info.data) & R_STUN_TYPE_METHOD_MASK;
+        test_turn_longterm_key (key);
+        r_stun_msg_begin (&ctx, oi.data, oi.size, R_STUN_CLASS_SUCCESS_RESPONSE,
+            method, r_stun_msg_transaction_id (info.data));
+        if (method == R_STUN_METHOD_ALLOCATE)
+          r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_RELAYED_ADDRESS, st->relayed);
+        if (method == R_STUN_METHOD_CHANNEL_BIND) {
+          RStunAttrTLV it = R_STUN_ATTR_TLV_INIT;
+          st->channel_binds++;
+          if (r_stun_attr_tlv_first (info.data, &it)) {
+            do {
+              if (it.type == R_STUN_ATTR_TYPE_CHANNEL_NUMBER && it.len >= 2)
+                st->channel = r_load_be16 (it.value);
+              else if (it.type == R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS) {
+                if (st->chanpeer != NULL)
+                  r_socket_address_unref (st->chanpeer);
+                st->chanpeer = r_stun_attr_tlv_parse_xor_address (info.data, &it);
+              }
+            } while (r_stun_attr_tlv_next (info.data, &it));
+          }
+        }
+        r_stun_msg_add_message_integrity_short_cred (&ctx, key, sizeof (key));
+      }
+      sz = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (out, &oi);
+      r_buffer_set_size (out, sz);
+      r_ev_udp_send (udp, out, addr, NULL, NULL, NULL);
+    }
+    if (out != NULL)
+      r_buffer_unref (out);
+  } else if (r_stun_msg_is_indication (info.data) &&
+      (r_stun_msg_type (info.data) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_SEND) {
+    RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+    RSocketAddress * peer = NULL;
+    const ruint8 * payload = NULL;
+    rsize plen = 0;
+
+    if (r_stun_attr_tlv_first (info.data, &tlv)) {
+      do {
+        if (tlv.type == R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS)
+          peer = r_stun_attr_tlv_parse_xor_address (info.data, &tlv);
+        else if (tlv.type == R_STUN_ATTR_TYPE_DATA) {
+          payload = tlv.value;
+          plen = tlv.len;
+        }
+      } while (r_stun_attr_tlv_next (info.data, &tlv));
+    }
+
+    if (peer != NULL && payload != NULL && r_stun_is_valid_msg (payload, plen) &&
+        r_stun_msg_method_is_binding (payload) && r_stun_msg_is_request (payload)) {
+      ruint8 ib[256];
+      rsize isz = test_build_binding_success (ib, sizeof (ib),
+          r_stun_msg_transaction_id (payload), peer);
+
+      /* Once the channel is bound, answer over ChannelData; otherwise wrap the
+       * success in a Data indication. */
+      if (st->channel != 0 && st->chanpeer != NULL &&
+          r_socket_address_is_equal (st->chanpeer, peer)) {
+        test_send_channel_data (udp, addr, st->channel, ib, isz);
+      } else {
+        RBuffer * out = r_buffer_new_alloc (NULL, 512, NULL);
+        RMemMapInfo oi = R_MEM_MAP_INFO_INIT;
+        if (out != NULL && r_buffer_map (out, &oi, R_MEM_MAP_WRITE)) {
+          RStunMsgCtx ctx;
+          RStunAttrTLV a = R_STUN_ATTR_TLV_INIT;
+          ruint8 tid[R_STUN_TRANSACTION_ID_SIZE] = { 0 };
+          rsize osz;
+          r_stun_msg_begin (&ctx, oi.data, oi.size, R_STUN_CLASS_INDICATION,
+              R_STUN_METHOD_DATA, tid);
+          r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS, peer);
+          a.type = R_STUN_ATTR_TYPE_DATA; a.len = (ruint16) isz; a.value = ib;
+          r_stun_msg_add_attribute (&ctx, &a);
+          osz = r_stun_msg_end (&ctx, TRUE);
+          r_buffer_unmap (out, &oi);
+          r_buffer_set_size (out, osz);
+          r_ev_udp_send (udp, out, addr, NULL, NULL, NULL);
+        }
+        if (out != NULL)
+          r_buffer_unref (out);
+      }
+    }
+    if (peer != NULL)
+      r_socket_address_unref (peer);
+  }
+
+  r_buffer_unmap (buf, &info);
+}
+
+RTEST (rrtcicetransport, turn_channel_data, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* The relay path promotes the peer to a channel: the agent sends a
+   * ChannelBind, and once bound carries checks over ChannelData. Reaching
+   * CONNECTED requires decoding an inbound ChannelData reply, and the server
+   * observing a ChannelData frame proves the outbound channel path. */
+  RPrng * prng;
+  REvLoop * loop;
+  RRtcSession * s;
+  RRtcIceTransport * ice;
+  RRtcCryptoTransport * raw;
+  REvUDP * turn;
+  RSocketAddress * lo, * turnaddr, * relayed, * peeraddr;
+  RRtcIceCandidate * peercand;
+  TestSrflxObserver obs = { 0, R_RTC_ICE_CANDIDATE_HOST, NULL };
+  TestTurnChannelState st = { NULL, 0, NULL, 0, 0 };
+  ruint i;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+  r_assert_cmpptr ((s = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((ice = r_rtc_session_create_ice_transport (s,
+          R_STR_WITH_SIZE_ARGS ("uf"), R_STR_WITH_SIZE_ARGS ("password01234567"))), !=, NULL);
+  r_assert_cmpptr ((raw = r_rtc_session_create_raw_transport (s, ice)), !=, NULL);
+
+  r_assert_cmpptr ((relayed = r_socket_address_ipv4_new_from_string ("203.0.113.1", 50000)), !=, NULL);
+  st.relayed = relayed;
+
+  r_assert_cmpptr ((lo = r_socket_address_ipv4_new_from_string ("127.0.0.1", 0)), !=, NULL);
+  r_assert_cmpptr ((turn = r_ev_udp_new (R_SOCKET_FAMILY_IPV4, loop)), !=, NULL);
+  r_assert (r_ev_udp_bind (turn, lo, TRUE));
+  r_assert (r_ev_udp_recv_start (turn, NULL, test_turn_channel_responder, &st, NULL));
+  r_assert_cmpptr ((turnaddr = r_ev_udp_get_local_address (turn)), !=, NULL);
+
+  r_rtc_ice_transport_set_on_local_candidate (ice, test_srflx_on_candidate, &obs);
+  r_assert_cmpint (r_rtc_ice_transport_gather_host_candidates (ice,
+          test_ice_only_loopback, NULL), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_set_role (ice, R_RTC_ICE_ROLE_CONTROLLING), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_set_remote_credentials (ice,
+          R_STR_WITH_SIZE_ARGS ("peer"), R_STR_WITH_SIZE_ARGS (TEST_RELAY_REMOTE_PWD)), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_start (ice, loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_gather_relay_candidates (ice, turnaddr,
+          "user", "pass"), ==, R_RTC_OK);
+
+  for (i = 0; i < 200 && obs.count == 0; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+  r_assert_cmpuint (obs.count, ==, 1);
+
+  r_assert_cmpptr ((peeraddr = r_socket_address_ipv4_new_from_string ("198.51.100.7", 3478)), !=, NULL);
+  r_assert_cmpptr ((peercand = test_ice_host_candidate ("2", peeraddr)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_add_remote_candidate (ice, peercand), ==, R_RTC_OK);
+
+  for (i = 0; i < 400 &&
+      r_rtc_ice_transport_get_state (ice) != R_RTC_ICE_STATE_CONNECTED; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  r_assert_cmpint (r_rtc_ice_transport_get_state (ice), ==, R_RTC_ICE_STATE_CONNECTED);
+  r_assert_cmpuint (st.channel_binds, >=, 1);
+  r_assert_cmpuint (st.channel_data_rx, >=, 1);
+
+  r_socket_address_unref (obs.addr);
+  r_rtc_ice_transport_close (ice);
+  r_ev_udp_recv_stop (turn);
+  for (i = 0; i < 8; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  if (st.chanpeer != NULL)
+    r_socket_address_unref (st.chanpeer);
+  r_rtc_ice_candidate_unref (peercand);
+  r_socket_address_unref (peeraddr);
+  r_ev_udp_unref (turn);
+  r_socket_address_unref (lo);
+  r_socket_address_unref (relayed);
+  r_socket_address_unref (turnaddr);
+  r_rtc_crypto_transport_unref (raw);
+  r_rtc_ice_transport_unref (ice);
+  r_rtc_session_unref (s);
+  r_ev_loop_unref (loop);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
 RTEST (rrtcicetransport, role_conflict, RTEST_FAST | RTEST_SYSTEM)
 {
   /* Both agents start controlling; the role conflict (RFC 8445 7.3.1.1)
