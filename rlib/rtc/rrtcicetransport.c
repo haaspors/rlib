@@ -828,7 +828,8 @@ r_rtc_ice_srflx_timeout (rpointer data, REvLoop * loop)
  * turn its XOR-MAPPED-ADDRESS into a server-reflexive candidate and hand it
  * to the application. Returns TRUE when the response was a srflx reply. */
 static rboolean
-r_rtc_ice_srflx_response (RRtcIceTransport * ice, rconstpointer msg)
+r_rtc_ice_srflx_response (RRtcIceTransport * ice, rconstpointer msg,
+    const RSocketAddress * from)
 {
   const ruint8 * tid = r_stun_msg_transaction_id (msg);
   rsize i, c;
@@ -840,6 +841,13 @@ r_rtc_ice_srflx_response (RRtcIceTransport * ice, rconstpointer msg)
 
     if (r_memcmp_ct (req->tid, tid, R_STUN_TRANSACTION_ID_SIZE) != 0)
       continue;
+
+    /* srflx replies carry no integrity; require the source to be the queried
+     * server so a response from an unexpected source is not accepted. */
+    if (from != NULL && !r_socket_address_is_equal (req->server, from)) {
+      R_LOG_WARNING ("RtcIceTransport %p srflx response from unexpected source", ice);
+      return TRUE;
+    }
 
     if (r_stun_attr_tlv_first (msg, &tlv)) {
       do {
@@ -1704,7 +1712,8 @@ r_rtc_ice_alloc_pair_with_remotes (RRtcIceTurnAlloc * alloc)
  * credentials, or turn the (integrity-verified) XOR-RELAYED-ADDRESS into a
  * relay candidate. */
 static void
-r_rtc_ice_turn_response (RRtcIceTransport * ice, rconstpointer msg)
+r_rtc_ice_turn_response (RRtcIceTransport * ice, rconstpointer msg,
+    const RSocketAddress * from)
 {
   const ruint8 * tid = r_stun_msg_transaction_id (msg);
   rboolean err = r_stun_msg_is_err_resp (msg);
@@ -1720,6 +1729,12 @@ r_rtc_ice_turn_response (RRtcIceTransport * ice, rconstpointer msg)
 
     if (r_memcmp_ct (req->tid, tid, R_STUN_TRANSACTION_ID_SIZE) != 0)
       continue;
+
+    /* Only accept the Allocate reply from the TURN server it was sent to. */
+    if (from != NULL && !r_socket_address_is_equal (req->server, from)) {
+      R_LOG_WARNING ("RtcIceTransport %p TURN response from unexpected source", ice);
+      return;
+    }
 
     if (r_stun_attr_tlv_first (msg, &tlv)) {
       do {
@@ -1955,7 +1970,8 @@ r_rtc_ice_handle_binding_request (RRtcIceTransport * ice, rconstpointer msg,
 }
 
 static void
-r_rtc_ice_handle_binding_response (RRtcIceTransport * ice, rconstpointer msg)
+r_rtc_ice_handle_binding_response (RRtcIceTransport * ice, rconstpointer msg,
+    const RSocketAddress * from)
 {
   const ruint8 * tid = r_stun_msg_transaction_id (msg);
   rsize i, c;
@@ -1963,7 +1979,7 @@ r_rtc_ice_handle_binding_response (RRtcIceTransport * ice, rconstpointer msg)
   rboolean err = r_stun_msg_is_err_resp (msg);
 
   /* A reply from a STUN server (no ICE credentials) is handled first. */
-  if (r_rtc_ice_srflx_response (ice, msg))
+  if (r_rtc_ice_srflx_response (ice, msg, from))
     return;
 
   /* The response is keyed with the peer's password (our remote pwd). */
@@ -2033,13 +2049,13 @@ r_rtc_ice_handle_stun (RRtcIceTransport * ice, rconstpointer msg,
 {
   if (r_stun_msg_method_is_allocate (msg)) {
     if (r_stun_msg_is_success_resp (msg) || r_stun_msg_is_err_resp (msg))
-      r_rtc_ice_turn_response (ice, msg);
+      r_rtc_ice_turn_response (ice, msg, src->addr);
   } else if (!r_stun_msg_method_is_binding (msg)) {
     R_LOG_WARNING ("RtcIceTransport %p unknown STUN method", ice);
   } else if (r_stun_msg_is_request (msg)) {
     r_rtc_ice_handle_binding_request (ice, msg, src);
   } else if (r_stun_msg_is_success_resp (msg) || r_stun_msg_is_err_resp (msg)) {
-    r_rtc_ice_handle_binding_response (ice, msg);
+    r_rtc_ice_handle_binding_response (ice, msg, src->addr);
   } else {
     R_LOG_TRACE ("RtcIceTransport %p binding indication", ice);
   }
