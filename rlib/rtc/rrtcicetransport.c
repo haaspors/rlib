@@ -1074,7 +1074,28 @@ struct RRtcIceTurnAlloc {
   RClockEntry * refresh;      /* allocation / permission refresh timer */
   rboolean released;          /* Refresh(0) sent; the base socket may be gone */
   RPtrArray * perms;          /* installed permissions (RRtcIceTurnPerm *) */
+  RPtrArray * channels;       /* bound channels (RRtcIceTurnChan *) */
+  ruint16 next_channel;       /* next channel number to assign (0x4000..0x7fff) */
 };
+
+/* A channel bound to a peer transport address (RFC 8656 12): once bound, data
+ * to/from that peer uses the 4-byte ChannelData header instead of the heavier
+ * Send / Data indications. */
+typedef struct {
+  RSocketAddress * peer;      /* owned: the bound peer (address and port) */
+  ruint16 number;             /* channel number 0x4000..0x7fff */
+  rboolean bound;             /* ChannelBind has succeeded */
+  ruint8 tid[R_STUN_TRANSACTION_ID_SIZE];
+} RRtcIceTurnChan;
+
+static void
+r_rtc_ice_turn_chan_free (rpointer data)
+{
+  RRtcIceTurnChan * chan = data;
+
+  r_socket_address_unref (chan->peer);
+  r_free (chan);
+}
 
 static void
 r_rtc_ice_turn_perm_free (rpointer data)
@@ -1093,6 +1114,7 @@ r_rtc_ice_turn_alloc_free (rpointer data)
   if (alloc->refresh != NULL && alloc->ice->loop != NULL)
     r_ev_loop_cancel_timer (alloc->ice->loop, alloc->refresh);
   r_ptr_array_unref (alloc->perms);
+  r_ptr_array_unref (alloc->channels);
   r_rtc_ice_candidate_unref (alloc->base);
   r_rtc_ice_candidate_unref (alloc->cand);
   r_socket_address_unref (alloc->server);
@@ -1296,15 +1318,191 @@ r_rtc_ice_turn_ensure_permission (RRtcIceTurnAlloc * alloc, RSocketAddress * pee
   }
 }
 
+/* Build a TURN ChannelBind request binding @chan->number to @chan->peer. */
+static RBuffer *
+r_rtc_ice_build_channel_bind (RRtcIceTurnAlloc * alloc, RRtcIceTurnChan * chan)
+{
+  RBuffer * ret;
+
+  if ((ret = r_buffer_new_alloc (NULL, 256, NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      RStunMsgCtx ctx;
+      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+      ruint8 cn[4];
+      rsize size;
+
+      r_store_be16 (cn, chan->number);
+      cn[2] = cn[3] = 0;   /* RFFU */
+      r_stun_msg_begin (&ctx, info.data, info.size,
+          R_STUN_CLASS_REQUEST, R_STUN_METHOD_CHANNEL_BIND, chan->tid);
+      tlv.type = R_STUN_ATTR_TYPE_CHANNEL_NUMBER;
+      tlv.len = sizeof (cn);
+      tlv.value = cn;
+      r_stun_msg_add_attribute (&ctx, &tlv);
+      r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS, chan->peer);
+      r_rtc_ice_turn_add_auth (&ctx, alloc);
+      size = r_stun_msg_end (&ctx, TRUE);
+      r_buffer_unmap (ret, &info);
+      r_buffer_set_size (ret, size);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+
+/* The channel bound (or being bound) to @peer's transport address, creating
+ * one and kicking off its ChannelBind if none exists yet. Channels bind a
+ * specific IP and port, so they are matched on the full address. NULL once the
+ * 0x4000..0x7fff range is exhausted. */
+static RRtcIceTurnChan *
+r_rtc_ice_turn_ensure_channel (RRtcIceTurnAlloc * alloc, RSocketAddress * peer)
+{
+  RRtcIceTurnChan * chan;
+  RBuffer * buf;
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (alloc->channels); i < c; i++) {
+    chan = r_ptr_array_get (alloc->channels, i);
+    if (r_socket_address_is_equal (chan->peer, peer))
+      return chan;
+  }
+
+  if (alloc->next_channel > R_STUN_CHANNEL_NUMBER_MAX)
+    return NULL;
+  if ((chan = r_mem_new0 (RRtcIceTurnChan)) == NULL)
+    return NULL;
+  chan->peer = r_socket_address_ref (peer);
+  chan->number = alloc->next_channel++;
+  r_rand_entropy_fill (chan->tid, sizeof (chan->tid));
+  r_ptr_array_add (alloc->channels, chan, r_rtc_ice_turn_chan_free);
+
+  if ((buf = r_rtc_ice_build_channel_bind (alloc, chan)) != NULL) {
+    r_ev_udp_send (alloc->udp, buf, alloc->server, NULL, NULL, NULL);
+    r_buffer_unref (buf);
+  }
+  return chan;
+}
+
+/* Frame @payload as a ChannelData message on channel @number: a 4-byte header
+ * (channel, length) then the data, padded to a 4-byte boundary (RFC 8656 12). */
+static RBuffer *
+r_rtc_ice_build_channel_data (ruint16 number, RBuffer * payload)
+{
+  RBuffer * ret;
+  RMemMapInfo pi = R_MEM_MAP_INFO_INIT;
+
+  if (!r_buffer_map (payload, &pi, R_MEM_MAP_READ))
+    return NULL;
+
+  if ((ret = r_buffer_new_alloc (NULL,
+          R_STUN_CHANNEL_DATA_HEADER_SIZE + ((pi.size + 3) & ~(rsize) 3), NULL)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
+      rsize padded = (pi.size + 3) & ~(rsize) 3;
+
+      r_store_be16 (info.data, number);
+      r_store_be16 ((ruint8 *) info.data + 2, (ruint16) pi.size);
+      r_memcpy ((ruint8 *) info.data + R_STUN_CHANNEL_DATA_HEADER_SIZE, pi.data, pi.size);
+      if (padded > pi.size)
+        r_memset ((ruint8 *) info.data + R_STUN_CHANNEL_DATA_HEADER_SIZE + pi.size,
+            0, padded - pi.size);
+      r_buffer_unmap (ret, &info);
+      r_buffer_set_size (ret, R_STUN_CHANNEL_DATA_HEADER_SIZE + padded);
+    } else {
+      r_buffer_unref (ret);
+      ret = NULL;
+    }
+  }
+
+  r_buffer_unmap (payload, &pi);
+  return ret;
+}
+
 static void
 r_rtc_ice_relay_send (RRtcIceTurnAlloc * alloc, RSocketAddress * peer, RBuffer * buf)
 {
+  RRtcIceTurnChan * chan = r_rtc_ice_turn_ensure_channel (alloc, peer);
   RBuffer * wrapped;
+
+  /* Once the channel is bound, use the compact ChannelData path; until then
+   * (or if channels are exhausted) bootstrap over a Send indication, which
+   * needs an explicit permission. */
+  if (chan != NULL && chan->bound) {
+    if ((wrapped = r_rtc_ice_build_channel_data (chan->number, buf)) != NULL) {
+      r_ev_udp_send (alloc->udp, wrapped, alloc->server, NULL, NULL, NULL);
+      r_buffer_unref (wrapped);
+    }
+    return;
+  }
 
   r_rtc_ice_turn_ensure_permission (alloc, peer);
   if ((wrapped = r_rtc_ice_build_send_indication (peer, buf)) != NULL) {
     r_ev_udp_send (alloc->udp, wrapped, alloc->server, NULL, NULL, NULL);
     r_buffer_unref (wrapped);
+  }
+}
+
+/* Mark the channel whose in-flight ChannelBind was @tid as bound. */
+static void
+r_rtc_ice_turn_channel_bound (RRtcIceTurnAlloc * alloc, const ruint8 * tid)
+{
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (alloc->channels); i < c; i++) {
+    RRtcIceTurnChan * chan = r_ptr_array_get (alloc->channels, i);
+    if (r_memcmp_ct (chan->tid, tid, R_STUN_TRANSACTION_ID_SIZE) == 0) {
+      chan->bound = TRUE;
+      return;
+    }
+  }
+}
+
+/* Replay the ChannelBind whose transaction was @tid (after a 438 Stale
+ * Nonce), now carrying the fresh nonce. */
+static void
+r_rtc_ice_turn_replay_channel (RRtcIceTurnAlloc * alloc, const ruint8 * tid)
+{
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (alloc->channels); i < c; i++) {
+    RRtcIceTurnChan * chan = r_ptr_array_get (alloc->channels, i);
+    RBuffer * buf;
+
+    if (r_memcmp_ct (chan->tid, tid, R_STUN_TRANSACTION_ID_SIZE) != 0)
+      continue;
+    r_rand_entropy_fill (chan->tid, sizeof (chan->tid));
+    if ((buf = r_rtc_ice_build_channel_bind (alloc, chan)) != NULL) {
+      r_ev_udp_send (alloc->udp, buf, alloc->server, NULL, NULL, NULL);
+      r_buffer_unref (buf);
+    }
+    return;
+  }
+}
+
+/* Re-send ChannelBind for every bound channel, keeping it alive (channel
+ * lifetime is 600 s, RFC 8656 12). */
+static void
+r_rtc_ice_turn_refresh_channels (RRtcIceTurnAlloc * alloc)
+{
+  rsize i, c;
+
+  for (i = 0, c = r_ptr_array_size (alloc->channels); i < c; i++) {
+    RRtcIceTurnChan * chan = r_ptr_array_get (alloc->channels, i);
+    RBuffer * buf;
+
+    if (!chan->bound)
+      continue;
+    r_rand_entropy_fill (chan->tid, sizeof (chan->tid));
+    if ((buf = r_rtc_ice_build_channel_bind (alloc, chan)) != NULL) {
+      r_ev_udp_send (alloc->udp, buf, alloc->server, NULL, NULL, NULL);
+      r_buffer_unref (buf);
+    }
   }
 }
 
@@ -1377,6 +1575,7 @@ r_rtc_ice_turn_refresh_timeout (rpointer data, REvLoop * loop)
   alloc->refresh = NULL;
   r_rtc_ice_turn_send_refresh (alloc, alloc->lifetime);
   r_rtc_ice_turn_refresh_permissions (alloc);
+  r_rtc_ice_turn_refresh_channels (alloc);
   r_rtc_ice_turn_schedule_refresh (alloc);
 }
 
@@ -1436,8 +1635,12 @@ r_rtc_ice_turn_control_response (RRtcIceTurnAlloc * alloc, rconstpointer msg)
       r_rtc_ice_turn_send_refresh (alloc, alloc->lifetime);
     else if (r_stun_msg_method_is_create_permission (msg))
       r_rtc_ice_turn_replay_permission (alloc, r_stun_msg_transaction_id (msg));
+    else if (r_stun_msg_method_is_channel_bind (msg))
+      r_rtc_ice_turn_replay_channel (alloc, r_stun_msg_transaction_id (msg));
   } else if (!err && r_stun_msg_method_is_refresh (msg) && lifetime > 0) {
     alloc->lifetime = lifetime;
+  } else if (!err && r_stun_msg_method_is_channel_bind (msg)) {
+    r_rtc_ice_turn_channel_bound (alloc, r_stun_msg_transaction_id (msg));
   }
 
   r_free (nonce);
@@ -1462,6 +1665,8 @@ r_rtc_ice_turn_alloc_new (RRtcIceTurnReq * req, RRtcIceCandidate * cand)
   alloc->realm = r_strdup (req->realm);
   alloc->nonce = r_strdup (req->nonce);
   alloc->perms = r_ptr_array_new ();
+  alloc->channels = r_ptr_array_new ();
+  alloc->next_channel = R_STUN_CHANNEL_NUMBER_MIN;
   return alloc;
 }
 
@@ -1838,6 +2043,37 @@ r_rtc_ice_alloc_for_server (RRtcIceTransport * ice, const RSocketAddress * addr)
   return NULL;
 }
 
+/* Dispatch a relayed payload (@plen bytes, apparently from @peer) as if it
+ * had arrived directly from the peer over the relay: a STUN message goes
+ * through the STUN path, anything else to the application. */
+static void
+r_rtc_ice_turn_dispatch_payload (RRtcIceTransport * ice, RRtcIceTurnAlloc * alloc,
+    RSocketAddress * peer, const ruint8 * payload, rsize plen)
+{
+  RBuffer * inner;
+
+  if (peer == NULL || payload == NULL)
+    return;
+
+  /* The payload sits at an odd offset in its frame; copy it into an aligned
+   * buffer before the STUN parser reads 32-bit fields. */
+  if ((inner = r_buffer_new_dup (payload, plen)) != NULL) {
+    RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+
+    if (r_buffer_map (inner, &info, R_MEM_MAP_READ)) {
+      if (r_stun_is_valid_msg (info.data, info.size)) {
+        RRtcIceSrc src = { alloc->udp, NULL, alloc->cand, peer, alloc };
+        r_rtc_ice_handle_stun (ice, info.data, &src);
+        r_buffer_unmap (inner, &info);
+      } else {
+        r_buffer_unmap (inner, &info);
+        ice->packet (ice->data, inner, ice);
+      }
+    }
+    r_buffer_unref (inner);
+  }
+}
+
 /* Unwrap a TURN Data indication: dispatch its DATA payload as if it had
  * arrived directly from the XOR-PEER-ADDRESS peer over the relay. */
 static void
@@ -1860,38 +2096,45 @@ r_rtc_ice_turn_data_indication (RRtcIceTransport * ice, RRtcIceTurnAlloc * alloc
     } while (r_stun_attr_tlv_next (msg, &tlv));
   }
 
-  if (peer != NULL && payload != NULL) {
-    RBuffer * inner;
-
-    /* The DATA payload sits at an odd offset in the indication; copy it into
-     * an aligned buffer before the STUN parser reads 32-bit fields. */
-    if ((inner = r_buffer_new_dup (payload, plen)) != NULL) {
-      RMemMapInfo info = R_MEM_MAP_INFO_INIT;
-
-      if (r_buffer_map (inner, &info, R_MEM_MAP_READ)) {
-        if (r_stun_is_valid_msg (info.data, info.size)) {
-          RRtcIceSrc src = { alloc->udp, NULL, alloc->cand, peer, alloc };
-          r_rtc_ice_handle_stun (ice, info.data, &src);
-          r_buffer_unmap (inner, &info);
-        } else {
-          r_buffer_unmap (inner, &info);
-          ice->packet (ice->data, inner, ice);
-        }
-      }
-      r_buffer_unref (inner);
-    }
-  }
+  r_rtc_ice_turn_dispatch_payload (ice, alloc, peer, payload, plen);
 
   if (peer != NULL)
     r_socket_address_unref (peer);
 }
 
-/* Handle a datagram from a TURN server on the base socket: a relayed Data
- * indication, or a response to one of our own TURN transactions. */
+/* Unwrap a ChannelData frame: dispatch its payload as from the peer bound to
+ * the channel number in its header. */
+static void
+r_rtc_ice_turn_channel_data (RRtcIceTransport * ice, RRtcIceTurnAlloc * alloc,
+    const ruint8 * data, rsize size)
+{
+  ruint16 number = r_load_be16 (data);
+  ruint16 len = r_load_be16 (data + 2);
+  rsize i, c;
+
+  if ((rsize) R_STUN_CHANNEL_DATA_HEADER_SIZE + len > size)
+    return;
+  for (i = 0, c = r_ptr_array_size (alloc->channels); i < c; i++) {
+    RRtcIceTurnChan * chan = r_ptr_array_get (alloc->channels, i);
+    if (chan->number == number) {
+      r_rtc_ice_turn_dispatch_payload (ice, alloc, chan->peer,
+          data + R_STUN_CHANNEL_DATA_HEADER_SIZE, len);
+      return;
+    }
+  }
+}
+
+/* Handle a datagram from a TURN server on the base socket: relayed peer data
+ * (a ChannelData frame or a Data indication), or a response to one of our own
+ * TURN transactions. */
 static void
 r_rtc_ice_turn_handle (RRtcIceTransport * ice, RRtcIceTurnAlloc * alloc,
     rconstpointer data, rsize size)
 {
+  if (r_stun_is_channel_data (data, size)) {
+    r_rtc_ice_turn_channel_data (ice, alloc, data, size);
+    return;
+  }
   if (!r_stun_is_valid_msg (data, size))
     return;
   if (r_stun_msg_is_indication (data) && r_stun_msg_method_is_data (data))
