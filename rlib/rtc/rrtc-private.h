@@ -131,10 +131,13 @@ struct RRtcRtpListener {
 
   RHashTable * recv_ssrcmap;
   RHashTable * recv_extmap;   /* MID string -> receiver (bundled demux) */
+  RHashTable * recv_ridmap;   /* RID string -> receiver (simulcast demux) */
   RHashTable * recv_ptmap;
   RHashTable * send_ssrcmap;
 
   ruint16 recv_mid_ext_id;    /* negotiated RFC 8285 id of the MID ext */
+  ruint16 recv_rid_ext_id;    /* ... of the rtp-stream-id (RID) ext */
+  ruint16 recv_rrid_ext_id;   /* ... of the repaired-rtp-stream-id ext */
 };
 
 R_API_HIDDEN RRtcRtpListener * r_rtc_rtp_listener_new (void) R_ATTR_MALLOC;

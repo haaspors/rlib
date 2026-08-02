@@ -27,12 +27,17 @@
 /* RFC 8843 signals a bundled stream's MID in an RFC 8285 header
  * extension carrying this URI. */
 #define R_RTC_RTP_HDREXT_MID  "urn:ietf:params:rtp-hdrext:sdes:mid"
+/* RFC 8852 carries a simulcast encoding's RID, and the RID its RTX stream
+ * repairs, in these RFC 8285 header extensions. */
+#define R_RTC_RTP_HDREXT_RID  "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id"
+#define R_RTC_RTP_HDREXT_RRID "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id"
 
 static void
 r_rtc_rtp_listener_free (RRtcRtpListener * l)
 {
   r_hash_table_unref (l->send_ssrcmap);
   r_hash_table_unref (l->recv_ptmap);
+  r_hash_table_unref (l->recv_ridmap);
   r_hash_table_unref (l->recv_extmap);
   r_hash_table_unref (l->recv_ssrcmap);
   r_ptr_array_unref (l->send);
@@ -52,6 +57,7 @@ r_rtc_rtp_listener_new (void)
     ret->send = r_ptr_array_new ();
     ret->recv_ssrcmap = r_hash_table_new (NULL, NULL);
     ret->recv_extmap = r_hash_table_new (r_str_hash, r_str_equal);
+    ret->recv_ridmap = r_hash_table_new (r_str_hash, r_str_equal);
     ret->recv_ptmap = r_hash_table_new (NULL, NULL);
     ret->send_ssrcmap = r_hash_table_new (NULL, NULL);
   }
@@ -114,6 +120,71 @@ r_rtc_rtp_ext_element (const RRTPBuffer * rtp, ruint16 id,
   return FALSE;
 }
 
+/* The RID string fits an encoding's id[] field; RIDs that would overflow
+ * it can't name one of our encodings, so cap the copy there. */
+#define R_RTC_RID_MAX (sizeof (((RRtcRtpEncodingParameters *)0)->id) - 1)
+
+/* Read the RID carried in header extension @extid into @rid (>= R_RTC_RID_MAX
+ * + 1 bytes). Returns FALSE if absent or too long to name an encoding. */
+static rboolean
+r_rtc_rtp_listener_read_rid (const RRTPBuffer * rtp, ruint16 extid, rchar * rid)
+{
+  const ruint8 * val;
+  rsize len;
+
+  if (extid == 0 || !r_rtc_rtp_ext_element (rtp, extid, &val, &len) ||
+      len > R_RTC_RID_MAX)
+    return FALSE;
+
+  r_memcpy (rid, val, len);
+  rid[len] = 0;
+  return TRUE;
+}
+
+/* Find receiver @r's encoding whose RID matches @rid. */
+static RRtcRtpEncodingParameters *
+r_rtc_rtp_listener_encoding_by_rid (RRtcRtpReceiver * r, const rchar * rid)
+{
+  rsize i, c;
+
+  if (r->params == NULL)
+    return NULL;
+  for (i = 0, c = r_ptr_array_size (&r->params->encodings); i < c; i++) {
+    RRtcRtpEncodingParameters * encp = r_ptr_array_get (&r->params->encodings, i);
+    if (r_str_equals (encp->id, rid))
+      return encp;
+  }
+
+  return NULL;
+}
+
+/* If the packet carries a RID (media) or repaired-RID (RTX) header extension,
+ * learn @ssrc into receiver @r's matching encoding. The RID is scoped within
+ * the already-selected receiver (RFC 8852), so simulcast layers sharing a RID
+ * string across m-lines don't collide. */
+static void
+r_rtc_rtp_listener_learn_rid_ssrc (RRtcRtpListener * l, const RRTPBuffer * rtp,
+    RRtcRtpReceiver * r, ruint32 ssrc)
+{
+  rchar rid[R_RTC_RID_MAX + 1];
+  RRtcRtpEncodingParameters * encp;
+  rboolean repaired;
+
+  if (r_rtc_rtp_listener_read_rid (rtp, l->recv_rid_ext_id, rid))
+    repaired = FALSE;
+  else if (r_rtc_rtp_listener_read_rid (rtp, l->recv_rrid_ext_id, rid))
+    repaired = TRUE;
+  else
+    return;
+
+  if ((encp = r_rtc_rtp_listener_encoding_by_rid (r, rid)) != NULL) {
+    if (repaired)
+      encp->rtx.ssrc = ssrc;
+    else
+      encp->ssrc = ssrc;
+  }
+}
+
 RRtcError
 r_rtc_rtp_listener_handle_rtp (RRtcRtpListener * l,
     RBuffer * buf, RRtcCryptoTransport * t)
@@ -126,6 +197,7 @@ r_rtc_rtp_listener_handle_rtp (RRtcRtpListener * l,
   /* FIXME: Only enable this if flag set?  */
   if (r_hash_table_size (l->recv_ssrcmap) == 0 &&
       r_hash_table_size (l->recv_extmap) == 0 &&
+      r_hash_table_size (l->recv_ridmap) == 0 &&
       r_hash_table_size (l->recv_ptmap) == 0) {
     rsize i, c;
     if ((c = r_ptr_array_size (l->recv)) > 0) {
@@ -138,16 +210,22 @@ r_rtc_rtp_listener_handle_rtp (RRtcRtpListener * l,
   }
 
   if (r_rtp_buffer_map (&rtp, buf, R_MEM_MAP_READ)) {
+    ruint32 ssrc = r_rtp_buffer_get_ssrc (&rtp);
+
     if ((r = r_hash_table_lookup (l->recv_ssrcmap,
-            RSIZE_TO_POINTER (r_rtp_buffer_get_ssrc (&rtp)))) != NULL) {
+            RSIZE_TO_POINTER (ssrc))) != NULL) {
       r_rtp_buffer_unmap (&rtp, buf);
       r->cbs.rtp (r->data, buf, r);
       return R_RTC_OK;
     }
 
-    /* Bundled streams (RFC 8843) carry their MID in an RFC 8285 header
-     * extension until their SSRC is observed. Route on the MID, then
-     * remember the SSRC so subsequent packets take the fast path above. */
+    /* Until an SSRC is observed, a packet is routed by its header
+     * extensions: MID (RFC 8843) selects the receiver, and a simulcast RID
+     * (RFC 8852) selects one of its encodings. Resolve the receiver by MID
+     * when present, else fall back to a transport-wide RID match; then learn
+     * the SSRC -- and, when a RID rides along, the per-encoding binding -- so
+     * subsequent packets take the fast path above. */
+    r = NULL;
     if (l->recv_mid_ext_id != 0 && r_hash_table_size (l->recv_extmap) > 0) {
       const ruint8 * mid;
       rsize midsize;
@@ -158,14 +236,23 @@ r_rtc_rtp_listener_handle_rtp (RRtcRtpListener * l,
 
         r_memcpy (key, mid, midsize);
         key[midsize] = 0;
-        if ((r = r_hash_table_lookup (l->recv_extmap, key)) != NULL) {
-          r_hash_table_insert (l->recv_ssrcmap,
-              RSIZE_TO_POINTER (r_rtp_buffer_get_ssrc (&rtp)), r);
-          r_rtp_buffer_unmap (&rtp, buf);
-          r->cbs.rtp (r->data, buf, r);
-          return R_RTC_OK;
-        }
+        r = r_hash_table_lookup (l->recv_extmap, key);
       }
+    }
+    if (r == NULL && (l->recv_rid_ext_id != 0 || l->recv_rrid_ext_id != 0) &&
+        r_hash_table_size (l->recv_ridmap) > 0) {
+      rchar rid[R_RTC_RID_MAX + 1];
+
+      if (r_rtc_rtp_listener_read_rid (&rtp, l->recv_rid_ext_id, rid) ||
+          r_rtc_rtp_listener_read_rid (&rtp, l->recv_rrid_ext_id, rid))
+        r = r_hash_table_lookup (l->recv_ridmap, rid);
+    }
+    if (r != NULL) {
+      r_rtc_rtp_listener_learn_rid_ssrc (l, &rtp, r, ssrc);
+      r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (ssrc), r);
+      r_rtp_buffer_unmap (&rtp, buf);
+      r->cbs.rtp (r->data, buf, r);
+      return R_RTC_OK;
     }
 
     if ((r = r_hash_table_lookup (l->recv_ptmap,
@@ -332,6 +419,7 @@ r_rtc_rtp_listener_remove_receiver (RRtcRtpListener * l, RRtcRtpReceiver * r)
    * one of those keys would dispatch to a now-stale pointer. */
   r_hash_table_remove_all_values (l->recv_ssrcmap, r);
   r_hash_table_remove_all_values (l->recv_extmap, r);
+  r_hash_table_remove_all_values (l->recv_ridmap, r);
   r_hash_table_remove_all_values (l->recv_ptmap, r);
   r_ptr_array_remove_first_fast (l->recv, r);
   return R_RTC_OK;
@@ -356,6 +444,7 @@ r_rtc_rtp_listener_update_receiver (RRtcRtpListener * l,
 
   r_hash_table_remove_all_values (l->recv_ssrcmap, r);
   r_hash_table_remove_all_values (l->recv_extmap, r);
+  r_hash_table_remove_all_values (l->recv_ridmap, r);
   r_hash_table_remove_all_values (l->recv_ptmap, r);
 
   for (i = 0, c = r_ptr_array_size (&params->encodings); i < c; i++) {
@@ -366,17 +455,29 @@ r_rtc_rtp_listener_update_receiver (RRtcRtpListener * l,
       r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (encp->rtx.ssrc), r);
     if (encp->fec.ssrc != 0)
       r_hash_table_insert (l->recv_ssrcmap, RSIZE_TO_POINTER (encp->fec.ssrc), r);
+    /* A simulcast encoding is keyed by its RID until its SSRC is learned
+     * (see handle_rtp). The id[] buffer lives in params, which the receiver
+     * holds for its lifetime, so it is a stable hash key. */
+    if (encp->id[0] != 0)
+      r_hash_table_insert (l->recv_ridmap, encp->id, r);
   }
   /* A negotiated MID header extension lets us demux this receiver's
    * bundled stream before its SSRC is learned (see handle_rtp). The id
    * is consistent across a BUNDLE group (RFC 8843), so the last one
-   * wins for the listener. */
+   * wins for the listener. The RID / repaired-RID extension ids are
+   * likewise transport-wide. */
   for (i = 0, c = r_ptr_array_size (&params->extensions); i < c; i++) {
     RRtcRtpHdrExtParameters * extp = r_ptr_array_get (&params->extensions, i);
-    if (extp->uri != NULL && r_str_equals (extp->uri, R_RTC_RTP_HDREXT_MID)) {
+    if (extp->uri == NULL)
+      continue;
+    if (r_str_equals (extp->uri, R_RTC_RTP_HDREXT_MID)) {
       l->recv_mid_ext_id = extp->id;
       if (r->mid != NULL)
         r_hash_table_insert (l->recv_extmap, r->mid, r);
+    } else if (r_str_equals (extp->uri, R_RTC_RTP_HDREXT_RID)) {
+      l->recv_rid_ext_id = extp->id;
+    } else if (r_str_equals (extp->uri, R_RTC_RTP_HDREXT_RRID)) {
+      l->recv_rrid_ext_id = extp->id;
     }
   }
 
