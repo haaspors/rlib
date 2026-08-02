@@ -183,27 +183,82 @@ r_rtc_rtp_listener_handle_rtp (RRtcRtpListener * l,
   return R_RTC_NO_HANDLER;
 }
 
+/* A report block (SR/RR) or feedback packet (RTPFB/PSFB) names the sending
+ * SSRC it concerns; resolve its owning sender and remember it so we dispatch
+ * the compound to that sender once, even when several sub-packets name it. */
+static void
+r_rtc_rtp_listener_collect_sender (RRtcRtpListener * l, ruint32 ssrc,
+    RPtrArray * targets)
+{
+  RRtcRtpSender * s;
+
+  if (ssrc == 0)
+    return;
+  if ((s = r_hash_table_lookup (l->send_ssrcmap, RSIZE_TO_POINTER (ssrc))) == NULL)
+    return;
+  if (s->cbs.rtcp == NULL)
+    return;
+  if (r_ptr_array_find (targets, s) != R_PTR_ARRAY_INVALID_IDX)
+    return;
+  r_ptr_array_add (targets, s, NULL);
+}
+
 RRtcError
 r_rtc_rtp_listener_handle_rtcp (RRtcRtpListener * l,
     RBuffer * buf, RRtcCryptoTransport * t)
 {
-  RRtcRtpReceiver * r;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
   rsize i, c;
 
   (void) t;
 
+  /* Sender reports, SDES and BYE describe the peer's streams, which any
+   * receiver may need, so those still fan out to every receiver. */
   for (i = 0, c = r_ptr_array_size (l->recv); i < c; i++) {
-    r = r_ptr_array_get (l->recv, i);
+    RRtcRtpReceiver * r = r_ptr_array_get (l->recv, i);
     r->cbs.rtcp (r->data, buf, r);
   }
 
-  /* Also fan out to senders -- receiver reports / NACK / PLI for our
-   * outbound streams ride on incoming RTCP and senders need a way to
-   * see them.  The rtcp callback is optional. */
-  for (i = 0, c = r_ptr_array_size (l->send); i < c; i++) {
-    RRtcRtpSender * s = r_ptr_array_get (l->send, i);
-    if (s->cbs.rtcp != NULL)
+  /* Feedback about our outbound streams (SR/RR report blocks, RTPFB/PSFB)
+   * targets a sending SSRC. Resolve each target via send_ssrcmap and deliver
+   * the compound only to the owning sender rather than broadcasting to all.
+   * Collect the targets first, then dispatch after unmapping so a callback is
+   * free to map the buffer itself. */
+  if (r_ptr_array_size (l->send) > 0 && r_hash_table_size (l->send_ssrcmap) > 0 &&
+      r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ)) {
+    RPtrArray * targets = r_ptr_array_new ();
+    RRTCPPacket * packet;
+
+    for (packet = r_rtcp_buffer_get_first_packet (&rtcp); packet != NULL;
+        packet = r_rtcp_buffer_get_next_packet (&rtcp, packet)) {
+      switch (r_rtcp_packet_get_type (packet)) {
+        case R_RTCP_PT_SR:
+        case R_RTCP_PT_RR: {
+          RRTCPReportBlock rb;
+          ruint8 j, n = r_rtcp_packet_get_count (packet);
+          for (j = 0; j < n; j++) {
+            if (r_rtcp_packet_sr_get_report_block (packet, j, &rb))
+              r_rtc_rtp_listener_collect_sender (l, rb.ssrc, targets);
+          }
+          break;
+        }
+        case R_RTCP_PT_RTPFB:
+        case R_RTCP_PT_PSFB:
+          r_rtc_rtp_listener_collect_sender (l,
+              r_rtcp_packet_fb_get_media_ssrc (packet), targets);
+          break;
+        default:
+          break;
+      }
+    }
+
+    r_rtcp_buffer_unmap (&rtcp, buf);
+
+    for (i = 0, c = r_ptr_array_size (targets); i < c; i++) {
+      RRtcRtpSender * s = r_ptr_array_get (targets, i);
       s->cbs.rtcp (s->data, buf, s);
+    }
+    r_ptr_array_unref (targets);
   }
 
   return R_RTC_OK;
@@ -337,13 +392,25 @@ RRtcError
 r_rtc_rtp_listener_update_sender (RRtcRtpListener * l,
     RRtcRtpSender * s, RRtcRtpParameters * params)
 {
+  rsize i, c;
+
   if (R_UNLIKELY (s == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (params == NULL)) return R_RTC_INVAL;
 
   r_hash_table_remove_all_values (l->send_ssrcmap, s);
 
-  /* TODO */
-  /*r_hash_table_insert (l->send_ssrcmap, RSIZE_TO_POINTER (0), s);*/
+  /* Map this sender's outbound SSRCs (media + RTX + FEC) so incoming RTCP
+   * feedback naming one of them routes back to it (see handle_rtcp). */
+  for (i = 0, c = r_ptr_array_size (&params->encodings); i < c; i++) {
+    RRtcRtpEncodingParameters * encp = r_ptr_array_get (&params->encodings, i);
+    if (encp->ssrc != 0)
+      r_hash_table_insert (l->send_ssrcmap, RSIZE_TO_POINTER (encp->ssrc), s);
+    if (encp->rtx.ssrc != 0)
+      r_hash_table_insert (l->send_ssrcmap, RSIZE_TO_POINTER (encp->rtx.ssrc), s);
+    if (encp->fec.ssrc != 0)
+      r_hash_table_insert (l->send_ssrcmap, RSIZE_TO_POINTER (encp->fec.ssrc), s);
+  }
+
   return R_RTC_OK;
 }
 
