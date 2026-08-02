@@ -195,14 +195,23 @@ r_srtp_stream_free (RSRTPStream * stream)
   r_free (stream);
 }
 
+/* Select the recv or send key+salt blob for @p dir (see r_srtp_crypto_ctx_new). */
+static inline const ruint8 *
+r_srtp_crypto_ctx_key (const RSRTPCryptoCtx * cctx, RSRTPDirection dir)
+{
+  rsize blob = (cctx->csinfo->cipher->keybits + cctx->csinfo->saltbits) / 8;
+  return dir == R_SRTP_DIRECTION_OUTBOUND ? cctx->key + blob : cctx->key;
+}
+
 static RSRTPStream *
-r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx)
+r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx, RSRTPDirection dir)
 {
   RSRTPStream * ret;
   RCryptoCipher * kdcipher;
+  const ruint8 * key = r_srtp_crypto_ctx_key (cctx, dir);
 
   if (R_UNLIKELY ((kdcipher = r_crypto_cipher_new (cctx->csinfo->kdprf,
-            cctx->key)) == NULL)) {
+            key)) == NULL)) {
     R_LOG_WARNING ("Unable to create key derivation PRF cipher");
     return NULL;
   }
@@ -214,6 +223,7 @@ r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx)
 
     ret->ssrc = ssrc;
     ret->cctx = cctx;
+    ret->dir = dir;
     if (R_UNLIKELY (!r_bitset_init_heap (ret->rtp.window, R_SRTP_WINDOW_SIZE) ||
           !r_bitset_init_heap (ret->rtcp.window, R_SRTP_WINDOW_SIZE))) {
       /* Without the replay window, r_srtp_stream_replay_check would later
@@ -223,13 +233,13 @@ r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx)
       ret = NULL;
     } else if (R_UNLIKELY ((res = r_srtp_state_init (&ret->rtp,
               R_SRTP_KDPRF_LABEL_RTP_ENCRYPTION, kdcipher, 0, cctx->csinfo,
-              cctx->key + keysize, saltsize)) != R_CRYPTO_CIPHER_OK)) {
+              key + keysize, saltsize)) != R_CRYPTO_CIPHER_OK)) {
       R_LOG_WARNING ("stream: 0x%.8x - RTP crypto init failed %d", ssrc, res);
       r_srtp_stream_free (ret);
       ret = NULL;
     } else if (R_UNLIKELY ((res = r_srtp_state_init (&ret->rtcp,
               R_SRTP_KDPRF_LABEL_RTCP_ENCRYPTION, kdcipher, 0, cctx->csinfo,
-              cctx->key + keysize, saltsize)) != R_CRYPTO_CIPHER_OK)) {
+              key + keysize, saltsize)) != R_CRYPTO_CIPHER_OK)) {
       R_LOG_WARNING ("stream: 0x%.8x - RTCP crypto init failed %d", ssrc, res);
       r_srtp_stream_free (ret);
       ret = NULL;
@@ -269,13 +279,33 @@ r_srtp_ctx_new (void)
   return ret;
 }
 
+/* A crypto context carries two key+salt blobs, [recv || send], so a single
+ * DTLS-SRTP filter can key both directions (RFC 5764 4.2). A single-key
+ * context duplicates the one key into both slots. */
+static RSRTPCryptoCtx *
+r_srtp_crypto_ctx_new (const RSRTPCipherSuiteInfo * info, ruint32 ssrc,
+    ruint32 filter, const ruint8 * recvkey, const ruint8 * sendkey)
+{
+  RSRTPCryptoCtx * cctx;
+  rsize blob = (info->cipher->keybits + info->saltbits) / 8;
+
+  if ((cctx = r_malloc (sizeof (RSRTPCryptoCtx) + 2 * blob)) != NULL) {
+    cctx->csinfo = info;
+    cctx->ssrc = ssrc;
+    cctx->filter = filter;
+    r_memcpy (cctx->key, recvkey, blob);
+    r_memcpy (cctx->key + blob, sendkey, blob);
+  }
+
+  return cctx;
+}
+
 RSRTPError
 r_srtp_add_crypto_context_for_ssrc (RSRTPCtx * ctx,
     ruint32 ssrc, RSRTPCipherSuite cs, const ruint8 * key)
 {
   const RSRTPCipherSuiteInfo * info;
   RSRTPCryptoCtx * cctx;
-  rsize keysize;
 
   if (R_UNLIKELY (ctx == NULL)) return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY (key == NULL)) return R_SRTP_ERROR_INVAL;
@@ -285,13 +315,7 @@ r_srtp_add_crypto_context_for_ssrc (RSRTPCtx * ctx,
           RUINT_TO_POINTER (ssrc)) == R_HASH_TABLE_OK))
     return R_SRTP_ERROR_CRYPTO_CTX_EXISTS;
 
-  keysize = (info->cipher->keybits + info->saltbits) / 8;
-  if ((cctx = r_malloc (sizeof (RSRTPCryptoCtx) + keysize)) != NULL) {
-    cctx->csinfo = info;
-    cctx->ssrc = ssrc;
-    cctx->filter = 0;
-    r_memcpy (cctx->key, key, keysize);
-
+  if ((cctx = r_srtp_crypto_ctx_new (info, ssrc, 0, key, key)) != NULL) {
     r_hash_table_insert (ctx->crypto_ssrc, RUINT_TO_POINTER (ssrc), cctx);
     R_LOG_TRACE ("ctx: %p ssrc: 0x%.8x crypto: %s", ctx, ssrc, info->str);
     return R_SRTP_ERROR_OK;
@@ -304,23 +328,24 @@ RSRTPError
 r_srtp_add_crypto_context_with_filter (RSRTPCtx * ctx,
     ruint32 filter, RSRTPCipherSuite cs, const ruint8 * key)
 {
+  return r_srtp_add_crypto_context_with_filter_dual (ctx, filter, cs, key, key);
+}
+
+RSRTPError
+r_srtp_add_crypto_context_with_filter_dual (RSRTPCtx * ctx,
+    ruint32 filter, RSRTPCipherSuite cs,
+    const ruint8 * recvkey, const ruint8 * sendkey)
+{
   const RSRTPCipherSuiteInfo * info;
   RSRTPCryptoCtx * cctx;
-  rsize keysize;
 
   if (R_UNLIKELY (ctx == NULL)) return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY (filter == 0)) return R_SRTP_ERROR_INVAL;
-  if (R_UNLIKELY (key == NULL)) return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY (recvkey == NULL || sendkey == NULL)) return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY ((info = r_srtp_cipher_suite_get_info (cs)) == NULL))
     return R_SRTP_ERROR_INVAL;
 
-  keysize = (info->cipher->keybits + info->saltbits) / 8;
-  if ((cctx = r_malloc (sizeof (RSRTPCryptoCtx) + keysize)) != NULL) {
-    cctx->csinfo = info;
-    cctx->ssrc = 0;
-    cctx->filter = filter;
-    r_memcpy (cctx->key, key, keysize);
-
+  if ((cctx = r_srtp_crypto_ctx_new (info, 0, filter, recvkey, sendkey)) != NULL) {
     ctx->crypto_filter = r_list_prepend (ctx->crypto_filter, cctx);
     R_LOG_TRACE ("ctx: %p filter: 0x%.8x crypto: %s", ctx, filter, info->str);
     return R_SRTP_ERROR_OK;
@@ -350,7 +375,7 @@ r_srtp_lookup_crypto_ctx (RSRTPCtx * ctx, ruint32 ssrc)
 }
 
 static RSRTPStream *
-r_srtp_get_stream (RSRTPCtx * ctx, ruint32 ssrc)
+r_srtp_get_stream (RSRTPCtx * ctx, ruint32 ssrc, RSRTPDirection dir)
 {
   RSRTPStream * ret;
   const RSRTPCryptoCtx * cctx;
@@ -359,7 +384,7 @@ r_srtp_get_stream (RSRTPCtx * ctx, ruint32 ssrc)
     return ret;
 
   if ((cctx = r_srtp_lookup_crypto_ctx (ctx, ssrc)) != NULL) {
-    if ((ret = r_srtp_stream_new (ssrc, cctx)) != NULL)
+    if ((ret = r_srtp_stream_new (ssrc, cctx, dir)) != NULL)
       r_hash_table_insert (ctx->streams, RUINT_TO_POINTER (ssrc), ret);
   }
 
@@ -433,7 +458,8 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
   if (r_rtp_buffer_map (&rtp, packet, R_MEM_MAP_READ)) {
     RSRTPStream * stream;
 
-    if ((stream = r_srtp_get_stream (ctx, r_rtp_buffer_get_ssrc (&rtp))) != NULL) {
+    if ((stream = r_srtp_get_stream (ctx, r_rtp_buffer_get_ssrc (&rtp),
+            R_SRTP_DIRECTION_OUTBOUND)) != NULL) {
       ruint64 idx;
 
       if (R_UNLIKELY (stream->dir != R_SRTP_DIRECTION_OUTBOUND)) {
@@ -543,7 +569,8 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
   if (r_rtp_buffer_map (&rtp, packet, R_MEM_MAP_READ)) {
     RSRTPStream * stream;
 
-    if ((stream = r_srtp_get_stream (ctx, r_rtp_buffer_get_ssrc (&rtp))) != NULL) {
+    if ((stream = r_srtp_get_stream (ctx, r_rtp_buffer_get_ssrc (&rtp),
+            R_SRTP_DIRECTION_INBOUND)) != NULL) {
       ruint64 idx;
 
       if (R_UNLIKELY (stream->dir != R_SRTP_DIRECTION_INBOUND)) {
@@ -657,7 +684,8 @@ r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
     RSRTPStream * stream;
 
     if ((rtcppacket = r_rtcp_buffer_get_first_packet (&rtcp)) != NULL &&
-        (stream = r_srtp_get_stream (ctx, r_rtcp_packet_get_ssrc (rtcppacket))) != NULL) {
+        (stream = r_srtp_get_stream (ctx, r_rtcp_packet_get_ssrc (rtcppacket),
+            R_SRTP_DIRECTION_OUTBOUND)) != NULL) {
       rsize tagsize, newsize;
       ruint32 idx;
 
@@ -771,7 +799,8 @@ r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
     RSRTPStream * stream;
 
     if ((rtcppacket = r_rtcp_buffer_get_first_packet (&rtcp)) != NULL &&
-        (stream = r_srtp_get_stream (ctx, r_rtcp_packet_get_ssrc (rtcppacket))) != NULL) {
+        (stream = r_srtp_get_stream (ctx, r_rtcp_packet_get_ssrc (rtcppacket),
+            R_SRTP_DIRECTION_INBOUND)) != NULL) {
       rsize tagsize = stream->cctx->csinfo->srtp_tagbits / 8;
       const ruint8 * authtag;
       const ruint8 * srtpidx;

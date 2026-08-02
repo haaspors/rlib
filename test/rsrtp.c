@@ -6,6 +6,10 @@ static const ruint8 masterkey[] = {
   0x3c, 0x39, 0xa8, 0x5c, 0x2d, 0xf0, 0x5e, 0x52, 0x7e, 0x79, 0x12, 0xba, 0x60, 0xc5, 0x25, 0xfe,
   0x29, 0xf7, 0x97, 0xd9, 0xda, 0xa3, 0x17, 0x60, 0xdf, 0x34, 0xb9, 0x5f, 0x87, 0xd3
 };
+static const ruint8 masterkey2[] = {
+  0x91, 0x0e, 0x4f, 0x2b, 0xc7, 0x83, 0x1a, 0x6d, 0x40, 0x22, 0xf9, 0x0c, 0x55, 0xe8, 0x37, 0xb4,
+  0x1c, 0x6a, 0x08, 0xd3, 0xe5, 0x59, 0x72, 0x84, 0xbe, 0x11, 0xa7, 0x3f, 0x02, 0x9c
+};
 static const ruint32 ssrc = 0xb476823a;
 static const rchar cname[] = "ceiNLmy6VHSE5Ja7";
 
@@ -128,6 +132,43 @@ RTEST (rsrtp, encrypt_aes_128_cm, RTEST_FAST)
 
   r_buffer_unref (buf);
   r_srtp_ctx_unref (ctx);
+}
+RTEST_END;
+
+RTEST (rsrtp, bidirectional_keys, RTEST_FAST)
+{
+  RSRTPCtx * a, * b;
+  RBuffer * buf, * enc, * dec;
+  RSRTPError err;
+
+  /* RFC 5764 4.2: send and receive use different keys. Peer A sends with
+   * masterkey and receives with masterkey2; peer B is the mirror. A must
+   * encrypt with its send key, so the ciphertext matches the masterkey
+   * vector -- not the receive key it would reuse under the bug. */
+  r_assert_cmpptr ((a = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((b = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpint (r_srtp_add_crypto_context_with_filter_dual (a, R_SRTP_FILTER_ANY,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey2, masterkey), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_crypto_context_with_filter_dual (b, R_SRTP_FILTER_ANY,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey, masterkey2), ==, R_SRTP_ERROR_OK);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtp_opus, sizeof (pkt_rtp_opus))), !=, NULL);
+
+  /* A encrypts outbound with its send key (masterkey). */
+  r_assert_cmpptr ((enc = r_srtp_encrypt_rtp (a, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_assert_cmpbufmem (enc, 0, -1, ==, pkt_srtp_aes_128_cm_opus, sizeof (pkt_srtp_aes_128_cm_opus));
+
+  /* B decrypts inbound with its receive key (also masterkey). */
+  r_assert_cmpptr ((dec = r_srtp_decrypt_rtp (b, enc, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_assert_cmpbufmem (dec, 0, -1, ==, pkt_rtp_opus, sizeof (pkt_rtp_opus));
+  r_buffer_unref (dec);
+
+  r_buffer_unref (enc);
+  r_buffer_unref (buf);
+  r_srtp_ctx_unref (a);
+  r_srtp_ctx_unref (b);
 }
 RTEST_END;
 
