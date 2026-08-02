@@ -61,6 +61,7 @@ typedef enum {
   R_RTC_DECRYPT_ERROR,      /**< SRTP / DTLS decrypt failure. */
   R_RTC_ENCRYPT_ERROR,      /**< SRTP / DTLS encrypt failure. */
   R_RTC_NO_HANDLER,         /**< No handler registered for the input. */
+  R_RTC_IO_ERROR,           /**< I/O failure (e.g. a socket send failed). */
 } RRtcError;
 
 /** @brief Media flow direction of a transceiver (bitmask of send / recv). */
