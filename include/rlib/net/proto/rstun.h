@@ -126,6 +126,8 @@ static inline ruint16 r_stun_msg_len  (rconstpointer buf) { return RUINT16_FROM_
 #define r_stun_msg_method_is_allocate(buf)((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_ALLOCATE)
 /** @brief @c TRUE if @p buf's method is Refresh. */
 #define r_stun_msg_method_is_refresh(buf) ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_REFRESH)
+/** @brief @c TRUE if @p buf's method is Send (a TURN Send indication). */
+#define r_stun_msg_method_is_send(buf)    ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_SEND)
 /** @brief @c TRUE if @p buf's method is Data (a TURN Data indication). */
 #define r_stun_msg_method_is_data(buf)    ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_DATA)
 /** @brief @c TRUE if @p buf's method is CreatePermission. */
@@ -152,6 +154,44 @@ r_stun_is_channel_data (rconstpointer buf, rsize size)
   ch = RUINT16_FROM_BE (*(const ruint16 *) buf);
   return ch >= R_STUN_CHANNEL_NUMBER_MIN && ch <= R_STUN_CHANNEL_NUMBER_MAX;
 }
+
+/**
+ * @brief Frame @p dlen bytes of @p data as a ChannelData message on @p channel.
+ *
+ * Writes the 4-byte header (channel number, unpadded length) followed by the
+ * data, padded to a 4-byte boundary (RFC 8656 12), into @p buf of @p size
+ * bytes.
+ *
+ * @return The total framed length in bytes, or @c 0 if @p buf is too small.
+ */
+R_API rsize r_stun_channel_data_encode (rpointer buf, rsize size,
+    ruint16 channel, rconstpointer data, rsize dlen);
+
+/**
+ * @brief Parse a ChannelData message, yielding its channel number and payload.
+ *
+ * On success @p channel receives the channel number and @p data / @p dlen point
+ * at the payload inside @p buf. Any of the out-parameters may be @c NULL.
+ *
+ * @return @c TRUE if @p buf (@p size bytes) is a well-formed ChannelData frame.
+ */
+R_API rboolean r_stun_channel_data_parse (rconstpointer buf, rsize size,
+    ruint16 * channel, rconstpointer * data, rsize * dlen);
+/** @} */
+
+/** @name TURN long-term credential (RFC 8489 18.5.1)
+ *  @{ */
+/**
+ * @brief Compute the TURN long-term credential key, @c MD5(username ":" realm
+ * ":" password), into @p key.
+ *
+ * The 16-byte key is the input to the MESSAGE-INTEGRITY of long-term
+ * credential requests and responses.
+ *
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_stun_turn_long_term_key (const rchar * username,
+    const rchar * realm, const rchar * password, ruint8 key[16]);
 /** @} */
 
 /** @brief STUN / TURN attribute type (RFC-registered values; @c 0x8000+ are comprehension-optional). */
