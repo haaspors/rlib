@@ -15,6 +15,7 @@ examples = [
   'rthratomic',
   'rthreadaffinity',
   'rthreadsleep',
+  'rturnserver',
 ]
 
 foreach e : examples
