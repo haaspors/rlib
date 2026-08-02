@@ -25,7 +25,6 @@
 #include <rlib/rrand.h>
 #include <rlib/rstr.h>
 
-#include <rlib/crypto/rmsgdigest.h>
 #include <rlib/ev/revtcp.h>
 #include <rlib/net/proto/rstun.h>
 #include <rlib/types/rendianness.h>
@@ -419,20 +418,11 @@ r_rtc_ice_transport_create_error_response (RRtcIceTransport * ice,
 
     if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
       RStunMsgCtx ctx;
-      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
-      ruint8 err[4];
       rsize size;
-
-      err[0] = 0; err[1] = 0;
-      err[2] = (ruint8) (code / 100);
-      err[3] = (ruint8) (code % 100);
 
       r_stun_msg_begin (&ctx, info.data, info.size,
           R_STUN_CLASS_ERROR_RESPONSE, R_STUN_METHOD_BINDING, transaction_id);
-      tlv.type = R_STUN_ATTR_TYPE_ERROR_CODE;
-      tlv.len = sizeof (err);
-      tlv.value = err;
-      r_stun_msg_add_attribute (&ctx, &tlv);
+      r_stun_msg_add_error_code (&ctx, code, NULL);
       r_stun_msg_add_message_integrity_short_cred (&ctx, ice->pwd, r_strlen (ice->pwd));
       size = r_stun_msg_end (&ctx, TRUE);
       r_buffer_unmap (ret, &info);
@@ -928,27 +918,6 @@ r_rtc_ice_turn_req_free (rpointer data)
   r_free (req);
 }
 
-/* Long-term credential key, RFC 8489 18.5.1: MD5(username ":" realm ":" pwd). */
-static rboolean
-r_rtc_ice_turn_key (const rchar * username, const rchar * realm,
-    const rchar * password, ruint8 out[16])
-{
-  RMsgDigest * md;
-  rsize outlen = 0;
-  rboolean ok = FALSE;
-
-  if ((md = r_msg_digest_new_md5 ()) != NULL) {
-    r_msg_digest_update (md, username, r_strlen (username));
-    r_msg_digest_update (md, ":", 1);
-    r_msg_digest_update (md, realm, r_strlen (realm));
-    r_msg_digest_update (md, ":", 1);
-    r_msg_digest_update (md, password, r_strlen (password));
-    ok = r_msg_digest_get_data (md, out, 16, &outlen) && outlen == 16;
-    r_msg_digest_free (md);
-  }
-  return ok;
-}
-
 static RBuffer *
 r_rtc_ice_build_allocate (RRtcIceTurnReq * req)
 {
@@ -974,20 +943,11 @@ r_rtc_ice_build_allocate (RRtcIceTurnReq * req)
       if (req->authed) {
         ruint8 key[16];
 
-        tlv.type = R_STUN_ATTR_TYPE_USERNAME;
-        tlv.len = (ruint16) r_strlen (req->username);
-        tlv.value = (const ruint8 *) req->username;
-        r_stun_msg_add_attribute (&ctx, &tlv);
-        tlv.type = R_STUN_ATTR_TYPE_REALM;
-        tlv.len = (ruint16) r_strlen (req->realm);
-        tlv.value = (const ruint8 *) req->realm;
-        r_stun_msg_add_attribute (&ctx, &tlv);
-        tlv.type = R_STUN_ATTR_TYPE_NONCE;
-        tlv.len = (ruint16) r_strlen (req->nonce);
-        tlv.value = (const ruint8 *) req->nonce;
-        r_stun_msg_add_attribute (&ctx, &tlv);
+        r_stun_msg_add_string (&ctx, R_STUN_ATTR_TYPE_USERNAME, req->username, -1);
+        r_stun_msg_add_string (&ctx, R_STUN_ATTR_TYPE_REALM, req->realm, -1);
+        r_stun_msg_add_string (&ctx, R_STUN_ATTR_TYPE_NONCE, req->nonce, -1);
 
-        if (r_rtc_ice_turn_key (req->username, req->realm, req->password, key))
+        if (r_stun_turn_long_term_key (req->username, req->realm, req->password, key))
           r_stun_msg_add_message_integrity_short_cred (&ctx, key, sizeof (key));
       }
 
@@ -1055,7 +1015,7 @@ r_rtc_ice_turn_check_integrity (rconstpointer msg, RRtcIceTurnReq * req)
   ruint8 key[16];
 
   if (req->realm == NULL ||
-      !r_rtc_ice_turn_key (req->username, req->realm, req->password, key) ||
+      !r_stun_turn_long_term_key (req->username, req->realm, req->password, key) ||
       !r_stun_attr_tlv_first (msg, &tlv))
     return FALSE;
   do {
@@ -1174,7 +1134,6 @@ r_rtc_ice_build_send_indication (RSocketAddress * peer, RBuffer * payload)
 
     if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
       RStunMsgCtx ctx;
-      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
       ruint8 tid[R_STUN_TRANSACTION_ID_SIZE];
       rsize size;
 
@@ -1182,10 +1141,7 @@ r_rtc_ice_build_send_indication (RSocketAddress * peer, RBuffer * payload)
       r_stun_msg_begin (&ctx, info.data, info.size,
           R_STUN_CLASS_INDICATION, R_STUN_METHOD_SEND, tid);
       r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS, peer);
-      tlv.type = R_STUN_ATTR_TYPE_DATA;
-      tlv.len = (ruint16) pi.size;
-      tlv.value = pi.data;
-      r_stun_msg_add_attribute (&ctx, &tlv);
+      r_stun_msg_add_data (&ctx, pi.data, pi.size);
       size = r_stun_msg_end (&ctx, TRUE);
       r_buffer_unmap (ret, &info);
       r_buffer_set_size (ret, size);
@@ -1205,23 +1161,13 @@ r_rtc_ice_build_send_indication (RSocketAddress * peer, RBuffer * payload)
 static void
 r_rtc_ice_turn_add_auth (RStunMsgCtx * ctx, RRtcIceTurnAlloc * alloc)
 {
-  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
   ruint8 key[16];
 
-  tlv.type = R_STUN_ATTR_TYPE_USERNAME;
-  tlv.len = (ruint16) r_strlen (alloc->username);
-  tlv.value = (const ruint8 *) alloc->username;
-  r_stun_msg_add_attribute (ctx, &tlv);
-  tlv.type = R_STUN_ATTR_TYPE_REALM;
-  tlv.len = (ruint16) r_strlen (alloc->realm);
-  tlv.value = (const ruint8 *) alloc->realm;
-  r_stun_msg_add_attribute (ctx, &tlv);
-  tlv.type = R_STUN_ATTR_TYPE_NONCE;
-  tlv.len = (ruint16) r_strlen (alloc->nonce);
-  tlv.value = (const ruint8 *) alloc->nonce;
-  r_stun_msg_add_attribute (ctx, &tlv);
+  r_stun_msg_add_string (ctx, R_STUN_ATTR_TYPE_USERNAME, alloc->username, -1);
+  r_stun_msg_add_string (ctx, R_STUN_ATTR_TYPE_REALM, alloc->realm, -1);
+  r_stun_msg_add_string (ctx, R_STUN_ATTR_TYPE_NONCE, alloc->nonce, -1);
 
-  if (r_rtc_ice_turn_key (alloc->username, alloc->realm, alloc->password, key))
+  if (r_stun_turn_long_term_key (alloc->username, alloc->realm, alloc->password, key))
     r_stun_msg_add_message_integrity_short_cred (ctx, key, sizeof (key));
 }
 
@@ -1268,17 +1214,11 @@ r_rtc_ice_build_refresh (RRtcIceTurnAlloc * alloc, ruint32 lifetime,
 
     if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
       RStunMsgCtx ctx;
-      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
-      ruint8 lt[4];
       rsize size;
 
-      r_store_be32 (lt, lifetime);
       r_stun_msg_begin (&ctx, info.data, info.size,
           R_STUN_CLASS_REQUEST, R_STUN_METHOD_REFRESH, tid);
-      tlv.type = R_STUN_ATTR_TYPE_LIFETIME;
-      tlv.len = sizeof (lt);
-      tlv.value = lt;
-      r_stun_msg_add_attribute (&ctx, &tlv);
+      r_stun_msg_add_lifetime (&ctx, lifetime);
       r_rtc_ice_turn_add_auth (&ctx, alloc);
       size = r_stun_msg_end (&ctx, TRUE);
       r_buffer_unmap (ret, &info);
@@ -1344,18 +1284,11 @@ r_rtc_ice_build_channel_bind (RRtcIceTurnAlloc * alloc, RRtcIceTurnChan * chan)
 
     if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
       RStunMsgCtx ctx;
-      RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
-      ruint8 cn[4];
       rsize size;
 
-      r_store_be16 (cn, chan->number);
-      cn[2] = cn[3] = 0;   /* RFFU */
       r_stun_msg_begin (&ctx, info.data, info.size,
           R_STUN_CLASS_REQUEST, R_STUN_METHOD_CHANNEL_BIND, chan->tid);
-      tlv.type = R_STUN_ATTR_TYPE_CHANNEL_NUMBER;
-      tlv.len = sizeof (cn);
-      tlv.value = cn;
-      r_stun_msg_add_attribute (&ctx, &tlv);
+      r_stun_msg_add_channel_number (&ctx, chan->number);
       r_stun_msg_add_xor_address (&ctx, R_STUN_ATTR_TYPE_XOR_PEER_ADDRESS, chan->peer);
       r_rtc_ice_turn_add_auth (&ctx, alloc);
       size = r_stun_msg_end (&ctx, TRUE);
@@ -1403,8 +1336,7 @@ r_rtc_ice_turn_ensure_channel (RRtcIceTurnAlloc * alloc, RSocketAddress * peer)
   return chan;
 }
 
-/* Frame @payload as a ChannelData message on channel @number: a 4-byte header
- * (channel, length) then the data, padded to a 4-byte boundary (RFC 8656 12). */
+/* Frame @payload as a ChannelData message on channel @number. */
 static RBuffer *
 r_rtc_ice_build_channel_data (ruint16 number, RBuffer * payload)
 {
@@ -1417,18 +1349,14 @@ r_rtc_ice_build_channel_data (ruint16 number, RBuffer * payload)
   if ((ret = r_buffer_new_alloc (NULL,
           R_STUN_CHANNEL_DATA_HEADER_SIZE + ((pi.size + 3) & ~(rsize) 3), NULL)) != NULL) {
     RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+    rsize framed = 0;
 
     if (r_buffer_map (ret, &info, R_MEM_MAP_WRITE)) {
-      rsize padded = (pi.size + 3) & ~(rsize) 3;
-
-      r_store_be16 (info.data, number);
-      r_store_be16 ((ruint8 *) info.data + 2, (ruint16) pi.size);
-      r_memcpy ((ruint8 *) info.data + R_STUN_CHANNEL_DATA_HEADER_SIZE, pi.data, pi.size);
-      if (padded > pi.size)
-        r_memset ((ruint8 *) info.data + R_STUN_CHANNEL_DATA_HEADER_SIZE + pi.size,
-            0, padded - pi.size);
+      framed = r_stun_channel_data_encode (info.data, info.size, number, pi.data, pi.size);
       r_buffer_unmap (ret, &info);
-      r_buffer_set_size (ret, R_STUN_CHANNEL_DATA_HEADER_SIZE + padded);
+    }
+    if (framed > 0) {
+      r_buffer_set_size (ret, framed);
     } else {
       r_buffer_unref (ret);
       ret = NULL;
