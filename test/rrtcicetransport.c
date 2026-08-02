@@ -589,6 +589,77 @@ RTEST (rrtcicetransport, connectivity_check_tcp, RTEST_FAST | RTEST_SYSTEM)
   r_prng_unref (prng);
 }
 RTEST_END;
+RTEST (rrtcicetransport, active_tcp_enters_checking, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* An agent whose only local candidate is active TCP has no socket until it
+   * dials. Adding a passive remote starts the dial and must move it out of
+   * NEW into CHECKING, even though no connection has completed yet. */
+  RPrng * prng;
+  REvLoop * loop;
+  RRtcSession * sa, * sb;
+  RRtcIceTransport * a, * b;
+  RRtcCryptoTransport * ra, * rb;
+  RSocketAddress * active_addr, * lo, * blisten;
+  RRtcIceCandidate * ca, * cb, * rem;
+  ruint i;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+  r_assert_cmpptr ((sa = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((sb = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((a = r_rtc_session_create_ice_transport (sa,
+          R_STR_WITH_SIZE_ARGS ("aufrag"), R_STR_WITH_SIZE_ARGS ("apassword01234567"))), !=, NULL);
+  r_assert_cmpptr ((b = r_rtc_session_create_ice_transport (sb,
+          R_STR_WITH_SIZE_ARGS ("bufrag"), R_STR_WITH_SIZE_ARGS ("bpassword01234567"))), !=, NULL);
+  r_assert_cmpptr ((ra = r_rtc_session_create_raw_transport (sa, a)), !=, NULL);
+  r_assert_cmpptr ((rb = r_rtc_session_create_raw_transport (sb, b)), !=, NULL);
+
+  r_assert_cmpint (r_rtc_ice_transport_set_role (a, R_RTC_ICE_ROLE_CONTROLLING), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_set_remote_credentials (a,
+          R_STR_WITH_SIZE_ARGS ("bufrag"), R_STR_WITH_SIZE_ARGS ("bpassword01234567")), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((lo = r_socket_address_ipv4_new_from_string ("127.0.0.1", 0)), !=, NULL);
+  r_assert_cmpptr ((active_addr = r_socket_address_ipv4_new_from_string ("127.0.0.1", 9)), !=, NULL);
+  r_assert_cmpptr ((cb = test_ice_tcp_candidate ("1", lo, "passive")), !=, NULL);
+  r_assert_cmpptr ((ca = test_ice_tcp_candidate ("1", active_addr, "active")), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_add_local_host_candidate (b, cb), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_add_local_host_candidate (a, ca), ==, R_RTC_OK);
+
+  r_assert_cmpint (r_rtc_ice_transport_start (a, loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_start (b, loop), ==, R_RTC_OK);
+
+  /* Active-only agent, no remote to dial yet: still NEW. */
+  r_assert_cmpint (r_rtc_ice_transport_get_state (a), ==, R_RTC_ICE_STATE_NEW);
+
+  /* Adding the passive remote (b's live listener) starts the dial. */
+  r_assert_cmpptr ((blisten = r_rtc_ice_transport_get_local_address (b)), !=, NULL);
+  r_assert_cmpptr ((rem = test_ice_tcp_candidate ("1", blisten, "passive")), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_add_remote_candidate (a, rem), ==, R_RTC_OK);
+  r_rtc_ice_candidate_unref (rem);
+
+  r_assert_cmpint (r_rtc_ice_transport_get_state (a), ==, R_RTC_ICE_STATE_CHECKING);
+
+  r_rtc_ice_transport_close (a);
+  r_rtc_ice_transport_close (b);
+  for (i = 0; i < 16; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_rtc_ice_candidate_unref (ca);
+  r_rtc_ice_candidate_unref (cb);
+  r_socket_address_unref (lo);
+  r_socket_address_unref (active_addr);
+  r_socket_address_unref (blisten);
+  r_rtc_crypto_transport_unref (ra);
+  r_rtc_crypto_transport_unref (rb);
+  r_rtc_ice_transport_unref (a);
+  r_rtc_ice_transport_unref (b);
+  r_rtc_session_unref (sa);
+  r_rtc_session_unref (sb);
+  r_ev_loop_unref (loop);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
 RTEST (rrtcicetransport, tcp_peer_close_disconnects, RTEST_FAST | RTEST_SYSTEM)
 {
   /* Once a TCP pair is nominated, the peer tearing the connection down must
