@@ -695,9 +695,9 @@ RTEST_END;
 
 RTEST (rrtcsessiondescription, application_mline_to_sdp, RTEST_FAST)
 {
-  /* An application (SCTP data channel) m-line must serialise its media type:
-   * to_string used to return NULL for R_RTC_MEDIA_APPLICATION, so the m-line
-   * could not round-trip through to_sdp. */
+  /* An application (SCTP data channel) m-line serialises as an SCTP-over-DTLS
+   * description (RFC 8841): the "webrtc-datachannel" format, a default
+   * a=sctp-port:5000 and, when set, a=max-message-size. */
   RRtcSessionDescription * sd;
   RRtcMediaLineInfo * mline;
   RRtcTransportInfo * trans;
@@ -722,6 +722,9 @@ RTEST (rrtcsessiondescription, application_mline_to_sdp, RTEST_FAST)
           R_RTC_DIR_NONE, R_RTC_MEDIA_APPLICATION, R_RTC_PROTO_SCTP,
           R_RTC_PROTO_FLAG_NONE)), !=, NULL);
   r_assert_cmpptr ((mline->trans = r_strdup (trans->id)), !=, NULL);
+  /* RFC 8841 defaults from _new. */
+  r_assert_cmpuint (mline->sctpport, ==, 5000);
+  r_assert_cmpuint (mline->maxmessagesize, ==, 65536);
   r_assert_cmpint (r_rtc_session_description_take_media_line (sd, mline), ==, R_RTC_OK);
 
   r_assert_cmpptr ((buf = r_rtc_session_description_to_sdp (sd, &err)), !=, NULL);
@@ -731,10 +734,48 @@ RTEST (rrtcsessiondescription, application_mline_to_sdp, RTEST_FAST)
       "o=jdoe 123456789 2 IN IP4 127.0.0.1\r\n"
       "s=-\r\n"
       "t=0 0\r\n"
-      "m=application 45342 UDP/DTLS/SCTP\r\n"
+      "m=application 45342 UDP/DTLS/SCTP webrtc-datachannel\r\n"
       "c=IN IP4 94.9.81.234\r\n"
+      "a=sctp-port:5000\r\n"
+      "a=max-message-size:65536\r\n"
       "a=inactive\r\n");
   r_buffer_unref (buf);
+
+  r_rtc_session_description_unref (sd);
+}
+RTEST_END;
+
+RTEST (rrtcsessiondescription, datachannel_sdp_parse, RTEST_FAST)
+{
+  /* Parse a data-channel description back into the media line: a non-default
+   * a=sctp-port and a=max-message-size must survive (RFC 8841). */
+  static const rchar sdp[] =
+    "v=0\r\n"
+    "o=- 123 2 IN IP4 127.0.0.1\r\n"
+    "s=-\r\n"
+    "t=0 0\r\n"
+    "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"
+    "c=IN IP4 0.0.0.0\r\n"
+    "a=mid:data\r\n"
+    "a=sctp-port:5678\r\n"
+    "a=max-message-size:262144\r\n"
+    "a=setup:actpass\r\n";
+  RRtcSessionDescription * sd;
+  RRtcMediaLineInfo * mline;
+  RBuffer * buf;
+  RRtcError err;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (sdp, sizeof (sdp) - 1)), !=, NULL);
+  r_assert_cmpptr ((sd = r_rtc_session_description_new_from_sdp (
+          R_RTC_SIGNAL_OFFER, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_RTC_OK);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((mline = r_rtc_session_description_get_media_line_by_idx (sd, 0)), !=, NULL);
+  r_assert_cmpint (mline->type, ==, R_RTC_MEDIA_APPLICATION);
+  r_assert_cmpint (mline->proto, ==, R_RTC_PROTO_SCTP);
+  r_assert_cmpuint (mline->sctpport, ==, 5678);
+  r_assert_cmpuint (mline->maxmessagesize, ==, 262144);
 
   r_rtc_session_description_unref (sd);
 }

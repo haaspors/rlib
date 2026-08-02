@@ -166,6 +166,9 @@ typedef struct {
 
   /*RDictionary * attrib;*/
   RRtcRtpParameters * params;   /**< @brief RTP parameters (@c RRtcRtpParameters). */
+
+  ruint16 sctpport;             /**< @brief SCTP port ("a=sctp-port"), for @ref R_RTC_PROTO_SCTP. */
+  ruint32 maxmessagesize;       /**< @brief Max SCTP message size ("a=max-message-size"), 0 if unset. */
 } RRtcMediaLineInfo;
 
 /**

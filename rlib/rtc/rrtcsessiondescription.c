@@ -291,6 +291,11 @@ r_rtc_media_line_info_new (const rchar * mid, rssize size, RRtcDirection dir,
     ret->endofcandidates = FALSE;
 
     ret->params = NULL;
+    /* RFC 8841: a data channel defaults to SCTP port 5000 and a maximum
+     * message size of 65536 bytes (the value assumed when a=max-message-size
+     * is absent). A max message size of 0 means "no limit". */
+    ret->sctpport = (proto == R_RTC_PROTO_SCTP) ? 5000 : 0;
+    ret->maxmessagesize = (proto == R_RTC_PROTO_SCTP) ? 65536 : 0;
   }
 
   return ret;
@@ -644,6 +649,19 @@ r_rtc_session_description_parse_sdp_mline (RRtcSessionDescription * sd,
     mline->trans = r_str_chunk_dup (&trans);
     mline->bundled = bundled;
 
+    if (mline->proto == R_RTC_PROTO_SCTP) {
+      /* RFC 8841 data-channel attributes; each keeps its default from _new
+       * (sctp-port 5000, max-message-size 65536) when absent. */
+      const RStrChunk * cur;
+      rsize idx = 0;
+
+      if ((cur = r_sdp_media_buf_attrib_find (media, "sctp-port", -1, &idx)) != NULL)
+        mline->sctpport = r_str_to_uint16_size (cur->str, cur->size, NULL, 10, NULL);
+      idx = 0;
+      if ((cur = r_sdp_media_buf_attrib_find (media, "max-message-size", -1, &idx)) != NULL)
+        mline->maxmessagesize = r_str_to_uint32_size (cur->str, cur->size, NULL, 10, NULL);
+    }
+
     for (i = 0; (cur = r_sdp_media_buf_attrib_find (media, "candidate", -1, &i)) != NULL; i++) {
       if ((cand = r_rtc_ice_candidate_new_from_sdp_attrib_value (cur->str, cur->size)) != NULL)
         r_ptr_array_add (&mline->candidates, cand, r_rtc_ice_candidate_unref);
@@ -921,7 +939,28 @@ r_rtc_session_description_mline_to_sdp_media (const RRtcSessionDescription * sd,
           mline->mid, -1);
     }
 
-    if (mline->params != NULL) {
+    if (mline->proto == R_RTC_PROTO_SCTP) {
+      /* RFC 8841: a data-channel m-line's single format is the
+       * "webrtc-datachannel" token, with the SCTP port and the maximum
+       * message size carried as media attributes. Always advertise the max
+       * message size so that "0" (no limit) round-trips rather than being
+       * mistaken for the absent-attribute default. */
+      rchar * v;
+
+      r_sdp_media_add_fmt (media, R_STR_WITH_SIZE_ARGS ("webrtc-datachannel"));
+      if ((v = r_strprintf ("%"RUINT16_FMT, mline->sctpport)) != NULL) {
+        r_sdp_media_add_attribute (media,
+            R_STR_WITH_SIZE_ARGS ("sctp-port"), v, -1);
+        r_free (v);
+      }
+      if ((v = r_strprintf ("%"RUINT32_FMT, mline->maxmessagesize)) != NULL) {
+        r_sdp_media_add_attribute (media,
+            R_STR_WITH_SIZE_ARGS ("max-message-size"), v, -1);
+        r_free (v);
+      }
+    }
+
+    if (mline->proto != R_RTC_PROTO_SCTP && mline->params != NULL) {
       rsize i, j;
 
       for (i = 0; i < r_rtc_rtp_parameters_hdrext_count (mline->params); i++) {
