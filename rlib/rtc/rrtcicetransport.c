@@ -1006,6 +1006,11 @@ r_rtc_ice_turn_transmit (RRtcIceTurnReq * req, rboolean fresh)
     req->nsent++;
   }
 
+  /* Cancel a still-armed retransmit before re-arming: the 401 -> credentialed
+   * retry re-transmits directly (not from the timeout), so the pending timer
+   * would otherwise be orphaned and fire on the freed request. */
+  if (req->timer != NULL)
+    r_ev_loop_cancel_timer (req->ice->loop, req->timer);
   req->timer = NULL;
   r_ev_loop_add_callback_later (req->ice->loop, &req->timer,
       R_RTC_ICE_CHECK_RTO, r_rtc_ice_turn_timeout, req, NULL);
