@@ -276,6 +276,19 @@ R_API rboolean r_stun_msg_add_xor_address (RStunMsgCtx * ctx,
 /** @brief Append a short-term-credential MESSAGE-INTEGRITY attribute keyed by @p key. */
 R_API rboolean r_stun_msg_add_message_integrity_short_cred (RStunMsgCtx * ctx,
     rconstpointer key, rsize keysize);
+/** @brief Append an ERROR-CODE attribute with numeric @p code and optional @p reason. */
+R_API rboolean r_stun_msg_add_error_code (RStunMsgCtx * ctx, ruint code,
+    const rchar * reason);
+/** @brief Append a LIFETIME attribute of @p seconds. */
+R_API rboolean r_stun_msg_add_lifetime (RStunMsgCtx * ctx, ruint32 seconds);
+/** @brief Append a CHANNEL-NUMBER attribute of @p channel. */
+R_API rboolean r_stun_msg_add_channel_number (RStunMsgCtx * ctx, ruint16 channel);
+/** @brief Append a DATA attribute carrying @p len bytes of @p data. */
+R_API rboolean r_stun_msg_add_data (RStunMsgCtx * ctx, rconstpointer data, rsize len);
+/** @brief Append a string-valued attribute (USERNAME / REALM / NONCE / ...).
+ *  @p len may be -1 for a NUL-terminated @p str. */
+R_API rboolean r_stun_msg_add_string (RStunMsgCtx * ctx, RStunAttrType type,
+    const rchar * str, rssize len);
 /**
  * @brief Finalise the message, patching the length field.
  * @param ctx         Builder cursor.

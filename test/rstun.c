@@ -604,3 +604,63 @@ RTEST (rstun, turn_long_term_key, RTEST_FAST)
   r_assert (!r_stun_turn_long_term_key (NULL, "realm", "pass", key));
 }
 RTEST_END;
+
+RTEST (rstun, attribute_builders, RTEST_FAST)
+{
+  /* The convenience attribute builders produce attributes that parse back to
+   * the values that were written. */
+  static const ruint8 tid[R_STUN_TRANSACTION_ID_SIZE] = {
+    0x21, 0x12, 0xa4, 0x42, 1, 2, 3, 4, 5, 6, 7, 8
+  };
+  static const ruint8 data[2] = { 'h', 'i' };
+  ruint8 buf[256];
+  RStunMsgCtx ctx;
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  rsize size;
+  rboolean seen_err = FALSE, seen_life = FALSE, seen_chan = FALSE;
+  rboolean seen_data = FALSE, seen_realm = FALSE;
+
+  r_memclear (buf, sizeof (buf));
+  r_assert (r_stun_msg_begin (&ctx, buf, sizeof (buf),
+        R_STUN_CLASS_ERROR_RESPONSE, R_STUN_METHOD_ALLOCATE, tid));
+  r_assert (r_stun_msg_add_error_code (&ctx, 401, "Unauthorized"));
+  r_assert (r_stun_msg_add_lifetime (&ctx, 600));
+  r_assert (r_stun_msg_add_channel_number (&ctx, 0x4001));
+  r_assert (r_stun_msg_add_data (&ctx, data, sizeof (data)));
+  r_assert (r_stun_msg_add_string (&ctx, R_STUN_ATTR_TYPE_REALM, "rlib", -1));
+  size = r_stun_msg_end (&ctx, FALSE);
+  r_assert (r_stun_is_valid_msg (buf, size));
+
+  r_assert (r_stun_attr_tlv_first (buf, &tlv));
+  do {
+    switch (tlv.type) {
+      case R_STUN_ATTR_TYPE_ERROR_CODE:
+        r_assert_cmpuint (r_stun_attr_tlv_parse_error_code (buf, &tlv), ==, 401);
+        seen_err = TRUE;
+        break;
+      case R_STUN_ATTR_TYPE_LIFETIME:
+        r_assert_cmpuint (r_stun_attr_tlv_parse_lifetime (buf, &tlv), ==, 600);
+        seen_life = TRUE;
+        break;
+      case R_STUN_ATTR_TYPE_CHANNEL_NUMBER:
+        r_assert_cmphex (RUINT16_FROM_BE (*(const ruint16 *) tlv.value), ==, 0x4001);
+        seen_chan = TRUE;
+        break;
+      case R_STUN_ATTR_TYPE_DATA:
+        r_assert_cmpuint (tlv.len, ==, sizeof (data));
+        r_assert_cmpmem (tlv.value, ==, data, sizeof (data));
+        seen_data = TRUE;
+        break;
+      case R_STUN_ATTR_TYPE_REALM:
+        r_assert_cmpuint (tlv.len, ==, 4);
+        r_assert_cmpmem (tlv.value, ==, "rlib", 4);
+        seen_realm = TRUE;
+        break;
+      default:
+        break;
+    }
+  } while (r_stun_attr_tlv_next (buf, &tlv));
+
+  r_assert (seen_err && seen_life && seen_chan && seen_data && seen_realm);
+}
+RTEST_END;

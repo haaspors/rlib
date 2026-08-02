@@ -167,6 +167,82 @@ r_stun_msg_add_message_integrity_short_cred (RStunMsgCtx * ctx,
   return ret;
 }
 
+rboolean
+r_stun_msg_add_error_code (RStunMsgCtx * ctx, ruint code, const rchar * reason)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  ruint8 val[4 + 128];
+  rsize rlen = reason != NULL ? r_strlen (reason) : 0;
+
+  if (rlen > sizeof (val) - 4)
+    rlen = sizeof (val) - 4;
+
+  val[0] = 0;
+  val[1] = 0;
+  val[2] = (ruint8) (code / 100);
+  val[3] = (ruint8) (code % 100);
+  if (rlen > 0)
+    r_memcpy (val + 4, reason, rlen);
+
+  tlv.type = R_STUN_ATTR_TYPE_ERROR_CODE;
+  tlv.len = (ruint16) (4 + rlen);
+  tlv.value = val;
+  return r_stun_msg_add_attribute (ctx, &tlv);
+}
+
+rboolean
+r_stun_msg_add_lifetime (RStunMsgCtx * ctx, ruint32 seconds)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  ruint8 val[4];
+
+  *(ruint32 *) val = RUINT32_TO_BE (seconds);
+  tlv.type = R_STUN_ATTR_TYPE_LIFETIME;
+  tlv.len = sizeof (val);
+  tlv.value = val;
+  return r_stun_msg_add_attribute (ctx, &tlv);
+}
+
+rboolean
+r_stun_msg_add_channel_number (RStunMsgCtx * ctx, ruint16 channel)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  ruint8 val[4];
+
+  *(ruint16 *) val = RUINT16_TO_BE (channel);
+  val[2] = val[3] = 0;   /* RFFU */
+  tlv.type = R_STUN_ATTR_TYPE_CHANNEL_NUMBER;
+  tlv.len = sizeof (val);
+  tlv.value = val;
+  return r_stun_msg_add_attribute (ctx, &tlv);
+}
+
+rboolean
+r_stun_msg_add_data (RStunMsgCtx * ctx, rconstpointer data, rsize len)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+
+  if (R_UNLIKELY (len > 0xffff)) return FALSE;
+  tlv.type = R_STUN_ATTR_TYPE_DATA;
+  tlv.len = (ruint16) len;
+  tlv.value = data;
+  return r_stun_msg_add_attribute (ctx, &tlv);
+}
+
+rboolean
+r_stun_msg_add_string (RStunMsgCtx * ctx, RStunAttrType type,
+    const rchar * str, rssize len)
+{
+  RStunAttrTLV tlv = R_STUN_ATTR_TLV_INIT;
+  rsize slen = len < 0 ? r_strlen (str) : (rsize) len;
+
+  if (R_UNLIKELY (slen > 0xffff)) return FALSE;
+  tlv.type = type;
+  tlv.len = (ruint16) slen;
+  tlv.value = (const ruint8 *) str;
+  return r_stun_msg_add_attribute (ctx, &tlv);
+}
+
 ruint16
 r_stun_msg_end (RStunMsgCtx * ctx, rboolean fingerprint)
 {
