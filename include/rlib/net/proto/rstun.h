@@ -84,7 +84,22 @@ typedef enum {
 typedef enum {
   R_STUN_METHOD_BINDING                   = 0x0001, /**< STUN Binding. */
   R_STUN_METHOD_ALLOCATE                  = 0x0003, /**< TURN Allocate. */
+  R_STUN_METHOD_REFRESH                   = 0x0004, /**< TURN Refresh. */
+  R_STUN_METHOD_SEND                      = 0x0006, /**< TURN Send indication. */
+  R_STUN_METHOD_DATA                      = 0x0007, /**< TURN Data indication. */
+  R_STUN_METHOD_CREATE_PERMISSION         = 0x0008, /**< TURN CreatePermission. */
+  R_STUN_METHOD_CHANNEL_BIND              = 0x0009, /**< TURN ChannelBind. */
 } RStunMethod;
+
+/** @name TURN ChannelData framing (RFC 8656 12)
+ *  A ChannelData message is not a STUN message: its first two bytes are the
+ *  channel number, which the reserved range below keeps disjoint from a STUN
+ *  message type (whose top two bits are always @c 0b00).
+ *  @{ */
+#define R_STUN_CHANNEL_DATA_HEADER_SIZE   4       /**< @brief 2-byte channel + 2-byte length. */
+#define R_STUN_CHANNEL_NUMBER_MIN         0x4000  /**< @brief Lowest valid channel number. */
+#define R_STUN_CHANNEL_NUMBER_MAX         0x7fff  /**< @brief Highest valid channel number. */
+/** @} */
 
 /** @name Header-field accessors
  *  Read fields straight out of a STUN message buffer.
@@ -109,6 +124,34 @@ static inline ruint16 r_stun_msg_len  (rconstpointer buf) { return RUINT16_FROM_
 #define r_stun_msg_method_is_binding(buf) ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_BINDING)
 /** @brief @c TRUE if @p buf's method is Allocate. */
 #define r_stun_msg_method_is_allocate(buf)((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_ALLOCATE)
+/** @brief @c TRUE if @p buf's method is Refresh. */
+#define r_stun_msg_method_is_refresh(buf) ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_REFRESH)
+/** @brief @c TRUE if @p buf's method is Data (a TURN Data indication). */
+#define r_stun_msg_method_is_data(buf)    ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_DATA)
+/** @brief @c TRUE if @p buf's method is CreatePermission. */
+#define r_stun_msg_method_is_create_permission(buf) \
+                                          ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_CREATE_PERMISSION)
+/** @brief @c TRUE if @p buf's method is ChannelBind. */
+#define r_stun_msg_method_is_channel_bind(buf) \
+                                          ((r_stun_msg_type (buf) & R_STUN_TYPE_METHOD_MASK) == R_STUN_METHOD_CHANNEL_BIND)
+
+/**
+ * @brief @c TRUE if @p buf (@p size bytes) is a TURN ChannelData message.
+ *
+ * ChannelData is distinguished from a STUN message on the same 5-tuple by its
+ * first two bytes: a channel number in @c 0x4000 -- @c 0x7fff, disjoint from a
+ * STUN message type (RFC 8656 12).
+ */
+static inline rboolean
+r_stun_is_channel_data (rconstpointer buf, rsize size)
+{
+  ruint16 ch;
+
+  if (size < R_STUN_CHANNEL_DATA_HEADER_SIZE)
+    return FALSE;
+  ch = RUINT16_FROM_BE (*(const ruint16 *) buf);
+  return ch >= R_STUN_CHANNEL_NUMBER_MIN && ch <= R_STUN_CHANNEL_NUMBER_MAX;
+}
 /** @} */
 
 /** @brief STUN / TURN attribute type (RFC-registered values; @c 0x8000+ are comprehension-optional). */
