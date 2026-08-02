@@ -725,6 +725,187 @@ RTEST_F (rrtc, listener_mid_demux_learns_ssrc, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST_F (rrtc, listener_rid_demux_learns_ssrc, RTEST_FAST)
+{
+  /* A simulcast encoding (RFC 8852) announces its RID in an RFC 8285 header
+   * extension, and its SSRC may be unsignalled.  The listener must route the
+   * first packet on the RID, learn the SSRC so a later extension-less packet
+   * takes the SSRC fast path, ignore a RID no encoding claims, and route an
+   * RTX stream by its repaired-RID. */
+  static const ruint8 rtp_rid_hi[] = {
+    0x90, 0x00, 0x00, 0x01,  /* v=2 x=1, m=0 pt=0, seq */
+    0x00, 0x00, 0x00, 0x00,  /* timestamp */
+    0xca, 0xfe, 0xba, 0xbe,  /* SSRC (not registered up front) */
+    0xbe, 0xde, 0x00, 0x01,  /* ext: profile 0xBEDE, 1 word */
+    0x21, 'h', 'i', 0x00,    /* one-byte elem id=2 len=2, RID "hi" + pad */
+    0x00                     /* payload */
+  };
+  static const ruint8 rtp_rid_unknown[] = {
+    0x90, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x00,
+    0x11, 0x11, 0x11, 0x11,  /* different SSRC */
+    0xbe, 0xde, 0x00, 0x01,
+    0x21, 'x', 'x', 0x00,    /* RID "xx" -- no encoding has this rid */
+    0x00
+  };
+  static const ruint8 rtp_no_ext[] = {
+    0x80, 0x00, 0x00, 0x03,  /* no extension bit */
+    0x00, 0x00, 0x00, 0x00,
+    0xca, 0xfe, 0xba, 0xbe,  /* same SSRC as the RID packet above */
+    0x00
+  };
+  static const ruint8 rtp_rrid_hi[] = {
+    0x90, 0x00, 0x00, 0x04,
+    0x00, 0x00, 0x00, 0x00,
+    0xdd, 0xdd, 0xdd, 0xdd,  /* RTX SSRC */
+    0xbe, 0xde, 0x00, 0x01,
+    0x31, 'h', 'i', 0x00,    /* elem id=3, repaired-RID "hi" */
+    0x00
+  };
+  RBuffer * buf;
+  RRtcRtpParameters * p;
+  RRtcRtpEncodingParameters * enc;
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_hdrext_simple (p,
+        "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id", 2), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_hdrext_simple (p,
+        "urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id", 3), ==, R_RTC_OK);
+  /* A codec whose PT (8) never matches the PT-0 packets, so the empty-map
+   * broadcast and the PT fallback are both off and routing must go through
+   * the RID / learned-SSRC paths. */
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (p,
+        "PCMA", R_RTP_PT_PCMA, 8000, 1), ==, R_RTC_OK);
+  /* One simulcast encoding "hi" with no signalled SSRC. */
+  r_assert_cmpint (r_rtc_rtp_parameters_add_encoding_simple (p, 0,
+        R_RTP_PT_PCMU), ==, R_RTC_OK);
+  r_assert_cmpptr ((enc = r_rtc_rtp_parameters_get_encoding (p, 0)), !=, NULL);
+  r_strcpy (enc->id, "hi");
+
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, p, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->bob.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
+  /* First packet: routed by its RID extension. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_rid_hi, sizeof (rtp_rid_hi))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 1);
+  r_buffer_unref (buf);
+
+  /* A RID no encoding claims is dropped, not broadcast. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_rid_unknown, sizeof (rtp_rid_unknown))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 1);
+  r_buffer_unref (buf);
+
+  /* Extension-less packet: SSRC was learned from the first RID packet. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_no_ext, sizeof (rtp_no_ext))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 2);
+  r_buffer_unref (buf);
+
+  /* RTX stream routed by its repaired-RID. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_rrid_hi, sizeof (rtp_rrid_hi))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 3);
+  r_buffer_unref (buf);
+
+  r_assert_cmpint (r_rtc_rtp_sender_stop (fixture->alice.send), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->bob.recv), ==, R_RTC_OK);
+
+  while ((buf = r_queue_pop (&fixture->bob.rtp)) != NULL)
+    r_buffer_unref (buf);
+}
+RTEST_END;
+
+typedef struct { RRtcRtpReceiver * recv; ruint count; } TestRidRecv;
+
+static void test_rid_ev (rpointer data, rpointer ctx) { (void) data; (void) ctx; }
+static void test_rid_rtp (rpointer data, RBuffer * buf, rpointer ctx)
+{
+  (void) buf; (void) ctx;
+  ((TestRidRecv *) data)->count++;
+}
+
+RTEST_F (rrtc, listener_rid_scoped_within_mid, RTEST_FAST)
+{
+  /* A RID is only unique within an m-line (RFC 8852): two receivers on the
+   * same transport may share a RID string, disambiguated by MID.  A bundled
+   * simulcast packet carries both -- MID must select the receiver, and the
+   * RID only the encoding within it.  With a transport-wide RID match the
+   * packet would land on whichever receiver registered the RID last. */
+  static const ruint8 rtp_mid_audio_rid_hi[] = {
+    0x90, 0x00, 0x00, 0x01,  /* v=2 x=1, m=0 pt=0, seq */
+    0x00, 0x00, 0x00, 0x00,  /* timestamp */
+    0xca, 0xfe, 0xba, 0xbe,  /* SSRC */
+    0xbe, 0xde, 0x00, 0x03,  /* ext: profile 0xBEDE, 3 words */
+    0x14, 'a', 'u', 'd', 'i', 'o',  /* elem id=1 len=5, MID "audio" */
+    0x21, 'h', 'i',          /* elem id=2 len=2, RID "hi" */
+    0x00, 0x00, 0x00,        /* padding to a 4-byte boundary */
+    0x00                     /* payload */
+  };
+  const RRtcRtpReceiverCallbacks vid_cbs = {
+    test_rid_ev, test_rid_ev, test_rid_rtp, test_rid_rtp
+  };
+  TestRidRecv vid = { NULL, 0 };
+  RBuffer * buf;
+  RRtcRtpParameters * pa, * pv;
+  RRtcRtpEncodingParameters * enc;
+
+  /* A second receiver on bob's transport, MID "video", same RID "hi". */
+  r_assert_cmpptr ((vid.recv = r_rtc_session_create_rtp_receiver (fixture->bob.session,
+          R_STR_WITH_SIZE_ARGS ("video"), &vid_cbs, &vid, NULL,
+          fixture->bob.crypto, fixture->bob.crypto)), !=, NULL);
+
+  r_assert_cmpptr ((pa = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_hdrext_simple (pa,
+        "urn:ietf:params:rtp-hdrext:sdes:mid", 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_hdrext_simple (pa,
+        "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id", 2), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (pa,
+        "PCMA", R_RTP_PT_PCMA, 8000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_encoding_simple (pa, 0, R_RTP_PT_PCMU), ==, R_RTC_OK);
+  r_assert_cmpptr ((enc = r_rtc_rtp_parameters_get_encoding (pa, 0)), !=, NULL);
+  r_strcpy (enc->id, "hi");
+
+  r_assert_cmpptr ((pv = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("video"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_hdrext_simple (pv,
+        "urn:ietf:params:rtp-hdrext:sdes:mid", 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_hdrext_simple (pv,
+        "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id", 2), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (pv,
+        "PCMA", R_RTP_PT_PCMA, 8000, 1), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_encoding_simple (pv, 0, R_RTP_PT_PCMU), ==, R_RTC_OK);
+  r_strcpy (r_rtc_rtp_parameters_get_encoding (pv, 0)->id, "hi");
+
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, pa, fixture->loop), ==, R_RTC_OK);
+  /* bob.recv started last would win a transport-wide RID map; start it
+   * first so "video" is the last RID registrant and MID must override. */
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->bob.recv, pa, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (vid.recv, pv, fixture->loop), ==, R_RTC_OK);
+
+  /* MID "audio" selects bob.recv even though "video" registered RID "hi" last. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rtp_mid_audio_rid_hi,
+          sizeof (rtp_mid_audio_rid_hi))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->alice.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->bob.rtp), ==, 1);
+  r_assert_cmpuint (vid.count, ==, 0);
+  /* The RID scoped the encoding within bob.recv, so its SSRC was learned. */
+  r_assert_cmphex (enc->ssrc, ==, 0xcafebabe);
+  r_buffer_unref (buf);
+
+  r_assert_cmpint (r_rtc_rtp_sender_stop (fixture->alice.send), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->bob.recv), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (vid.recv), ==, R_RTC_OK);
+  r_rtc_rtp_receiver_unref (vid.recv);
+  r_rtc_rtp_parameters_unref (pa);
+  r_rtc_rtp_parameters_unref (pv);
+
+  while ((buf = r_queue_pop (&fixture->bob.rtp)) != NULL)
+    r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST_F (rrtc, sender_receives_rtcp, RTEST_FAST)
 {
   /* RTCP arriving on the listener used to dispatch only to receivers,
