@@ -216,6 +216,9 @@ R_API RSdpResult r_sdp_media_add_rtp_fmt (RSdpMedia * media,
     ruint rate, ruint params);
 /** @brief Add a static RTP payload type @p pt without an "a=rtpmap" line. */
 #define r_sdp_media_add_rtp_fmt_static(m, pt) r_sdp_media_add_rtp_fmt (m, pt, NULL, 0, 0, 0)
+/** @brief Append a raw media format token @p fmt (e.g. @c "webrtc-datachannel"). */
+R_API RSdpResult r_sdp_media_add_fmt (RSdpMedia * media,
+    const rchar * fmt, rssize size);
 /** @brief Add a media-level unicast connection ("c=") for @p addr. */
 #define r_sdp_media_add_connection_unicast(media, addr)                         \
   r_sdp_media_add_connection_addr (media, addr, 0, 1)

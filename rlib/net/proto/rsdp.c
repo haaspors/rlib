@@ -937,6 +937,21 @@ r_sdp_media_add_rtp_fmt (RSdpMedia * media,
   return R_SDP_OK;
 }
 
+RSdpResult
+r_sdp_media_add_fmt (RSdpMedia * media, const rchar * fmt, rssize size)
+{
+  rchar * dup;
+
+  if (R_UNLIKELY (media == NULL)) return R_SDP_INVAL;
+  if (R_UNLIKELY (fmt == NULL)) return R_SDP_INVAL;
+
+  if (R_UNLIKELY ((dup = r_strdup_size (fmt, size)) == NULL))
+    return R_SDP_OOM;
+
+  r_ptr_array_add (media->fmt, dup, r_free);
+  return R_SDP_OK;
+}
+
 static void
 r_sdp_conn_free (rpointer data)
 {
