@@ -47,20 +47,21 @@ r_rtc_dtls_transport_free (RRtcDtlsTransport * dtls)
 }
 
 /* RFC 5764 5.2: the exported material is client-write-key ||
- * server-write-key || client-salt || server-salt. Split it and install
- * the half the remote peer encrypts with -- the client key for a server
- * transport, the server key for a client transport. */
+ * server-write-key || client-salt || server-salt. Each direction uses its
+ * own key (RFC 5764 4.2): we decrypt with the key the remote peer encrypts
+ * with and encrypt with our own. So a server keys receive from the client
+ * key and send from the server key; a client is the mirror. */
 static void
 r_rtc_dtls_install_srtp (RRtcDtlsTransport * dtls, RSRTPCipherSuite cs,
     const RSRTPCipherSuiteInfo * csinfo, const ruint8 * material, rsize msize,
-    rboolean use_server_key)
+    rboolean server_role)
 {
   rsize kb = csinfo->cipher->keybits / 8;
   rsize sb = csinfo->saltbits / 8;
   ruint8 * clikey = r_alloca (msize / 2);
   ruint8 * srvkey = r_alloca (msize / 2);
   const ruint8 * ptr = material;
-  const ruint8 * key;
+  const ruint8 * recvkey, * sendkey;
   RSRTPError srtperr;
 
   r_memcpy (clikey, ptr, kb); ptr += kb;
@@ -68,11 +69,13 @@ r_rtc_dtls_install_srtp (RRtcDtlsTransport * dtls, RSRTPCipherSuite cs,
   r_memcpy (clikey + kb, ptr, sb); ptr += sb;
   r_memcpy (srvkey + kb, ptr, sb); ptr += sb;
 
-  key = use_server_key ? srvkey : clikey;
-  if ((srtperr = r_srtp_add_crypto_context_with_filter (dtls->srtp,
-          R_SRTP_FILTER_ANY, cs, key)) == R_SRTP_ERROR_OK) {
+  recvkey = server_role ? clikey : srvkey;
+  sendkey = server_role ? srvkey : clikey;
+  if ((srtperr = r_srtp_add_crypto_context_with_filter_dual (dtls->srtp,
+          R_SRTP_FILTER_ANY, cs, recvkey, sendkey)) == R_SRTP_ERROR_OK) {
     R_LOG_INFO ("Added crypto context %s for DTLS-SRTP", csinfo->str);
-    R_LOG_MEM_DUMP (R_LOG_LEVEL_INFO, key, msize / 2);
+    R_LOG_MEM_DUMP (R_LOG_LEVEL_INFO, recvkey, msize / 2);
+    R_LOG_MEM_DUMP (R_LOG_LEVEL_INFO, sendkey, msize / 2);
     r_rtc_rtp_listener_notify_ready (dtls->crypto.listener, (RRtcCryptoTransport *)dtls);
   } else {
     R_LOG_WARNING ("Couldn't add crypto context for SRTP err %d",
@@ -101,7 +104,7 @@ r_rtc_dtls_srv_hs_done (rpointer data, rpointer session)
   material = r_alloca (msize);
   if ((tlserr = r_tls_server_export_keying_material (srv, material, msize,
       R_STR_WITH_SIZE_ARGS ("EXTRACTOR-dtls_srtp"), NULL, 0)) == R_TLS_ERROR_OK)
-    r_rtc_dtls_install_srtp (dtls, cs, csinfo, material, msize, FALSE);
+    r_rtc_dtls_install_srtp (dtls, cs, csinfo, material, msize, TRUE);
   else
     R_LOG_WARNING ("Couldn't export keying material for SRTP from DTLS err %d",
         (ruint)tlserr);
@@ -128,7 +131,7 @@ r_rtc_dtls_cli_hs_done (rpointer data, rpointer session)
   material = r_alloca (msize);
   if ((tlserr = r_tls_client_export_keying_material (cli, material, msize,
       R_STR_WITH_SIZE_ARGS ("EXTRACTOR-dtls_srtp"), NULL, 0)) == R_TLS_ERROR_OK)
-    r_rtc_dtls_install_srtp (dtls, cs, csinfo, material, msize, TRUE);
+    r_rtc_dtls_install_srtp (dtls, cs, csinfo, material, msize, FALSE);
   else
     R_LOG_WARNING ("Couldn't export keying material for SRTP from DTLS err %d",
         (ruint)tlserr);
