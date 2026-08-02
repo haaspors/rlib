@@ -693,6 +693,53 @@ RTEST (rrtcsessiondescription, simple_to_sdp, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcsessiondescription, application_mline_to_sdp, RTEST_FAST)
+{
+  /* An application (SCTP data channel) m-line must serialise its media type:
+   * to_string used to return NULL for R_RTC_MEDIA_APPLICATION, so the m-line
+   * could not round-trip through to_sdp. */
+  RRtcSessionDescription * sd;
+  RRtcMediaLineInfo * mline;
+  RRtcTransportInfo * trans;
+  RSocketAddress * addr;
+  RRtcError err;
+  RBuffer * buf;
+
+  r_assert_cmpptr ((sd = r_rtc_session_description_new (R_RTC_SIGNAL_OFFER)), !=, NULL);
+  r_assert_cmpint (r_rtc_session_description_set_originator_full (sd,
+        R_STR_WITH_SIZE_ARGS ("jdoe"), R_STR_WITH_SIZE_ARGS ("123456789"), 2,
+        R_STR_WITH_SIZE_ARGS ("IN"), R_STR_WITH_SIZE_ARGS ("IP4"),
+        R_STR_WITH_SIZE_ARGS ("127.0.0.1")), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_set_session_name (sd,
+        R_STR_WITH_SIZE_ARGS ("-")), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (94, 9, 81, 234, 45342)), !=, NULL);
+  r_assert_cmpptr ((trans = r_rtc_transport_info_new_full (R_STR_WITH_SIZE_ARGS ("data"), addr, FALSE)), !=, NULL);
+  r_socket_address_unref (addr);
+  r_assert_cmpint (r_rtc_session_description_take_transport (sd, trans), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((mline = r_rtc_media_line_info_new (NULL, 0,
+          R_RTC_DIR_NONE, R_RTC_MEDIA_APPLICATION, R_RTC_PROTO_SCTP,
+          R_RTC_PROTO_FLAG_NONE)), !=, NULL);
+  r_assert_cmpptr ((mline->trans = r_strdup (trans->id)), !=, NULL);
+  r_assert_cmpint (r_rtc_session_description_take_media_line (sd, mline), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((buf = r_rtc_session_description_to_sdp (sd, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_RTC_OK);
+  r_assert_cmpbufsstr (buf, 0, -1, ==,
+      "v=0\r\n"
+      "o=jdoe 123456789 2 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "m=application 45342 UDP/DTLS/SCTP\r\n"
+      "c=IN IP4 94.9.81.234\r\n"
+      "a=inactive\r\n");
+  r_buffer_unref (buf);
+
+  r_rtc_session_description_unref (sd);
+}
+RTEST_END;
+
 static const rchar sdp_rlib_webrtc[] =
   "v=0\r\n"
   "o=jdoe 123456789 2 IN IP4 127.0.0.1\r\n"
@@ -974,9 +1021,8 @@ RTEST_END;
 
 RTEST (rrtcsessiondescription, media_type_string, RTEST_FAST)
 {
-  /* from_string parses all four kinds (case-insensitive); to_string is
-   * intentionally partial -- only audio / video have SDP tokens, the
-   * rest map to NULL (see the header contract). */
+  /* from_string and to_string round-trip all four kinds; only UNKNOWN
+   * has no SDP token and maps to NULL. */
   r_assert_cmpint (r_rtc_media_type_from_string (R_STR_WITH_SIZE_ARGS ("audio")), ==, R_RTC_MEDIA_AUDIO);
   r_assert_cmpint (r_rtc_media_type_from_string (R_STR_WITH_SIZE_ARGS ("video")), ==, R_RTC_MEDIA_VIDEO);
   r_assert_cmpint (r_rtc_media_type_from_string (R_STR_WITH_SIZE_ARGS ("text")), ==, R_RTC_MEDIA_TEXT);
@@ -988,8 +1034,8 @@ RTEST (rrtcsessiondescription, media_type_string, RTEST_FAST)
 
   r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_AUDIO), ==, "audio");
   r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_VIDEO), ==, "video");
-  r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_TEXT), ==, NULL);
-  r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_APPLICATION), ==, NULL);
+  r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_TEXT), ==, "text");
+  r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_APPLICATION), ==, "application");
   r_assert_cmpstr (r_rtc_media_type_to_string (R_RTC_MEDIA_UNKNOWN), ==, NULL);
 }
 RTEST_END;
