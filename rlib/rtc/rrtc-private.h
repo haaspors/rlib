@@ -156,6 +156,10 @@ struct RRtcCryptoTransport {
   RRtcIceTransport * ice;
   RRtcBufferSend send;
   RRtcStart start;
+
+  RRtcBufferCb packet;          /* raw datagram delivery, or NULL for RTP demux */
+  rpointer packet_data;
+  RDestroyNotify packet_notify;
 };
 
 typedef struct  {
@@ -178,8 +182,6 @@ R_API_HIDDEN RRtcCryptoTransport * r_rtc_crypto_transport_new_raw (
 R_API_HIDDEN RRtcCryptoTransport * r_rtc_crypto_transport_new_dtls (
     RRtcIceTransport * ice, RPrng * prng,
     RRtcCryptoRole role, RCryptoCert * cert, RCryptoKey * privkey) R_ATTR_MALLOC;
-R_API_HIDDEN RRtcError r_rtc_crypto_transport_send (RRtcCryptoTransport * crypto,
-    RBuffer * buf);
 #define r_rtc_crypto_transport_add_receiver(t, r) \
   r_rtc_rtp_listener_add_receiver ((t)->listener, r)
 #define r_rtc_crypto_transport_add_sender(t, s) \

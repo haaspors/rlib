@@ -48,6 +48,13 @@ r_rtc_raw_transport_ice_packet (rpointer data, RBuffer * buf, rpointer ctx)
 
   r_assert_cmpptr (ice, ==, crypto->ice);
 
+  /* With an app packet callback the raw transport carries opaque datagrams;
+   * deliver every packet as-is instead of demuxing it as RTP/RTCP. */
+  if (crypto->packet != NULL) {
+    crypto->packet (crypto->packet_data, buf, crypto);
+    return;
+  }
+
   if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
     if (r_rtp_is_valid_hdr (info.data, info.size)) {
       r_buffer_unmap (buf, &info);
