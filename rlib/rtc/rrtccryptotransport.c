@@ -77,6 +77,9 @@ r_rtc_crypto_transport_clear (RRtcCryptoTransport * crypto)
 
   r_rtc_rtp_listener_unref (crypto->listener);
 
+  if (crypto->packet_notify != NULL)
+    crypto->packet_notify (crypto->packet_data);
+
   if (crypto->loop != NULL)
     r_ev_loop_unref (crypto->loop);
 }
@@ -87,6 +90,20 @@ r_rtc_crypto_transport_send (RRtcCryptoTransport * crypto, RBuffer * buf)
   if (R_UNLIKELY (crypto == NULL)) return R_RTC_INVAL;
   if (R_UNLIKELY (buf == NULL)) return R_RTC_INVAL;
   return crypto->send (crypto, buf);
+}
+
+RRtcError
+r_rtc_crypto_transport_set_on_packet (RRtcCryptoTransport * crypto,
+    RRtcBufferCb cb, rpointer data, RDestroyNotify notify)
+{
+  if (R_UNLIKELY (crypto == NULL)) return R_RTC_INVAL;
+
+  if (crypto->packet_notify != NULL)
+    crypto->packet_notify (crypto->packet_data);
+  crypto->packet = cb;
+  crypto->packet_data = data;
+  crypto->packet_notify = notify;
+  return R_RTC_OK;
 }
 
 RRtcError

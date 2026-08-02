@@ -72,6 +72,27 @@ R_API RRtcError r_rtc_crypto_transport_start (RRtcCryptoTransport * crypto, REvL
 /** @brief Close the crypto transport and tear down DTLS / SRTP state. */
 R_API RRtcError r_rtc_crypto_transport_close (RRtcCryptoTransport * crypto);
 
+/**
+ * @brief Send @p buf over the transport once the underlying ICE path is
+ * connected.
+ *
+ * For a raw transport (@ref r_rtc_session_create_raw_transport) @p buf is a
+ * plaintext datagram carried over ICE. Returns @c R_RTC_WRONG_STATE before a
+ * candidate pair has been selected.
+ */
+R_API RRtcError r_rtc_crypto_transport_send (RRtcCryptoTransport * crypto, RBuffer * buf);
+
+/**
+ * @brief Set the callback delivering inbound datagrams on a raw transport.
+ *
+ * When a callback is set, every packet received on a raw transport is handed
+ * to @p cb (as @c cb(@p data, buf, crypto)) rather than being demultiplexed as
+ * RTP/RTCP — the way to carry arbitrary application datagrams over ICE. @p notify
+ * frees @p data when the transport is torn down or the callback replaced.
+ */
+R_API RRtcError r_rtc_crypto_transport_set_on_packet (RRtcCryptoTransport * crypto,
+    RRtcBufferCb cb, rpointer data, RDestroyNotify notify);
+
 R_END_DECLS
 
 /** @} */

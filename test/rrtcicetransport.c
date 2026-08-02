@@ -105,6 +105,129 @@ RTEST (rrtcicetransport, connectivity_check, RTEST_FAST | RTEST_SYSTEM)
 RTEST_END;
 
 typedef struct {
+  ruint count;
+  ruint8 last[64];
+  rsize lastlen;
+} TestDatagramObs;
+
+static void
+test_datagram_recv (rpointer data, RBuffer * buf, rpointer ctx)
+{
+  TestDatagramObs * o = data;
+  RMemMapInfo info = R_MEM_MAP_INFO_INIT;
+  (void) ctx;
+
+  if (r_buffer_map (buf, &info, R_MEM_MAP_READ)) {
+    o->lastlen = MIN (info.size, sizeof (o->last));
+    r_memcpy (o->last, info.data, o->lastlen);
+    o->count++;
+    r_buffer_unmap (buf, &info);
+  }
+}
+
+RTEST (rrtcicetransport, raw_transport_datagram, RTEST_FAST | RTEST_SYSTEM)
+{
+  /* Two agents connect over loopback host candidates, then exchange an
+   * arbitrary datagram each way through the public raw-transport API. */
+  RPrng * prng;
+  REvLoop * loop;
+  RRtcSession * sa, * sb;
+  RRtcIceTransport * a, * b;
+  RRtcCryptoTransport * ra, * rb;
+  RSocketAddress * lo, * addra, * addrb;
+  RRtcIceCandidate * ca, * cb;
+  TestDatagramObs oa = { 0, { 0 }, 0 }, ob = { 0, { 0 }, 0 };
+  RBuffer * msg;
+  ruint i;
+
+  r_assert_cmpptr ((prng = r_prng_new_mt ()), !=, NULL);
+  r_assert_cmpptr ((loop = r_ev_loop_new ()), !=, NULL);
+  r_assert_cmpptr ((sa = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((sb = r_rtc_session_new (prng)), !=, NULL);
+  r_assert_cmpptr ((a = r_rtc_session_create_ice_transport (sa,
+          R_STR_WITH_SIZE_ARGS ("aufrag"), R_STR_WITH_SIZE_ARGS ("apassword01234567"))), !=, NULL);
+  r_assert_cmpptr ((b = r_rtc_session_create_ice_transport (sb,
+          R_STR_WITH_SIZE_ARGS ("bufrag"), R_STR_WITH_SIZE_ARGS ("bpassword01234567"))), !=, NULL);
+  r_assert_cmpptr ((ra = r_rtc_session_create_raw_transport (sa, a)), !=, NULL);
+  r_assert_cmpptr ((rb = r_rtc_session_create_raw_transport (sb, b)), !=, NULL);
+  r_assert_cmpint (r_rtc_crypto_transport_set_on_packet (ra, test_datagram_recv, &oa, NULL), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_crypto_transport_set_on_packet (rb, test_datagram_recv, &ob, NULL), ==, R_RTC_OK);
+
+  r_assert_cmpint (r_rtc_ice_transport_set_role (a, R_RTC_ICE_ROLE_CONTROLLING), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_set_role (b, R_RTC_ICE_ROLE_CONTROLLED), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_set_remote_credentials (a,
+          R_STR_WITH_SIZE_ARGS ("bufrag"), R_STR_WITH_SIZE_ARGS ("bpassword01234567")), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_set_remote_credentials (b,
+          R_STR_WITH_SIZE_ARGS ("aufrag"), R_STR_WITH_SIZE_ARGS ("apassword01234567")), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((lo = r_socket_address_ipv4_new_from_string ("127.0.0.1", 0)), !=, NULL);
+  r_assert_cmpptr ((ca = test_ice_host_candidate ("1", lo)), !=, NULL);
+  r_assert_cmpptr ((cb = test_ice_host_candidate ("1", lo)), !=, NULL);
+  r_socket_address_unref (lo);
+  r_assert_cmpint (r_rtc_ice_transport_add_local_host_candidate (a, ca), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_add_local_host_candidate (b, cb), ==, R_RTC_OK);
+  r_rtc_ice_candidate_unref (ca);
+  r_rtc_ice_candidate_unref (cb);
+
+  r_assert_cmpint (r_rtc_crypto_transport_start (ra, loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_crypto_transport_start (rb, loop), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((addra = r_rtc_ice_transport_get_local_address (a)), !=, NULL);
+  r_assert_cmpptr ((addrb = r_rtc_ice_transport_get_local_address (b)), !=, NULL);
+  r_assert_cmpptr ((cb = test_ice_host_candidate ("1", addrb)), !=, NULL);
+  r_assert_cmpptr ((ca = test_ice_host_candidate ("1", addra)), !=, NULL);
+  r_assert_cmpint (r_rtc_ice_transport_add_remote_candidate (a, cb), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_ice_transport_add_remote_candidate (b, ca), ==, R_RTC_OK);
+  r_rtc_ice_candidate_unref (ca);
+  r_rtc_ice_candidate_unref (cb);
+  r_socket_address_unref (addra);
+  r_socket_address_unref (addrb);
+
+  for (i = 0; i < 200; i++) {
+    if (r_rtc_ice_transport_get_state (a) == R_RTC_ICE_STATE_CONNECTED &&
+        r_rtc_ice_transport_get_state (b) == R_RTC_ICE_STATE_CONNECTED)
+      break;
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+  }
+  r_assert_cmpint (r_rtc_ice_transport_get_state (a), ==, R_RTC_ICE_STATE_CONNECTED);
+  r_assert_cmpint (r_rtc_ice_transport_get_state (b), ==, R_RTC_ICE_STATE_CONNECTED);
+
+  /* A -> B */
+  r_assert_cmpptr ((msg = r_buffer_new_dup ("ping", 4)), !=, NULL);
+  r_assert_cmpint (r_rtc_crypto_transport_send (ra, msg), ==, R_RTC_OK);
+  r_buffer_unref (msg);
+  /* B -> A */
+  r_assert_cmpptr ((msg = r_buffer_new_dup ("pong", 4)), !=, NULL);
+  r_assert_cmpint (r_rtc_crypto_transport_send (rb, msg), ==, R_RTC_OK);
+  r_buffer_unref (msg);
+
+  for (i = 0; i < 100 && (oa.count == 0 || ob.count == 0); i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_ONCE);
+
+  r_assert_cmpuint (ob.count, >=, 1);
+  r_assert_cmpuint (ob.lastlen, ==, 4);
+  r_assert_cmpmem (ob.last, ==, "ping", 4);
+  r_assert_cmpuint (oa.count, >=, 1);
+  r_assert_cmpuint (oa.lastlen, ==, 4);
+  r_assert_cmpmem (oa.last, ==, "pong", 4);
+
+  r_rtc_ice_transport_close (a);
+  r_rtc_ice_transport_close (b);
+  for (i = 0; i < 8; i++)
+    r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
+
+  r_rtc_crypto_transport_unref (ra);
+  r_rtc_crypto_transport_unref (rb);
+  r_rtc_ice_transport_unref (a);
+  r_rtc_ice_transport_unref (b);
+  r_rtc_session_unref (sa);
+  r_rtc_session_unref (sb);
+  r_ev_loop_unref (loop);
+  r_prng_unref (prng);
+}
+RTEST_END;
+
+typedef struct {
   ruint responses;
 } TestCheckObserver;
 
