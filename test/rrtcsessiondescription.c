@@ -781,6 +781,122 @@ RTEST (rrtcsessiondescription, datachannel_sdp_parse, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcsessiondescription, simulcast_mline_to_sdp, RTEST_FAST)
+{
+  /* Encodings carrying a RID serialise as a=rid restriction lines (RFC 8851)
+   * plus a single a=simulcast layer list (RFC 8853); an inactive encoding is
+   * flagged paused ("~"). */
+  RRtcSessionDescription * sd;
+  RRtcMediaLineInfo * mline;
+  RRtcTransportInfo * trans;
+  RRtcRtpEncodingParameters * enc;
+  RSocketAddress * addr;
+  RRtcError err;
+  RBuffer * buf;
+
+  r_assert_cmpptr ((sd = r_rtc_session_description_new (R_RTC_SIGNAL_OFFER)), !=, NULL);
+  r_assert_cmpint (r_rtc_session_description_set_originator_full (sd,
+        R_STR_WITH_SIZE_ARGS ("jdoe"), R_STR_WITH_SIZE_ARGS ("1"), 1,
+        R_STR_WITH_SIZE_ARGS ("IN"), R_STR_WITH_SIZE_ARGS ("IP4"),
+        R_STR_WITH_SIZE_ARGS ("127.0.0.1")), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_session_description_set_session_name (sd,
+        R_STR_WITH_SIZE_ARGS ("-")), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((addr = r_socket_address_ipv4_new_uint8 (127, 0, 0, 1, 12345)), !=, NULL);
+  r_assert_cmpptr ((trans = r_rtc_transport_info_new_full (
+          R_STR_WITH_SIZE_ARGS ("video"), addr, FALSE)), !=, NULL);
+  r_socket_address_unref (addr);
+  r_assert_cmpint (r_rtc_session_description_take_transport (sd, trans), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((mline = r_rtc_media_line_info_new (NULL, 0,
+          R_RTC_DIR_SEND_RECV, R_RTC_MEDIA_VIDEO, R_RTC_PROTO_RTP,
+          R_RTC_PROTO_FLAGS_AVPF)), !=, NULL);
+  r_assert_cmpptr ((mline->trans = r_strdup (trans->id)), !=, NULL);
+  r_assert_cmpptr ((mline->params = r_rtc_rtp_parameters_new (mline->mid, -1)), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_codec_simple (mline->params,
+        "VP8", 96, 90000, 1), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((enc = r_rtc_rtp_encoding_parameters_new (0, 96)), !=, NULL);
+  r_strcpy (enc->id, "hi");
+  enc->maxfr = 30;
+  enc->maxbr = 200000;
+  r_assert_cmpint (r_rtc_rtp_parameters_take_encoding (mline->params, enc), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((enc = r_rtc_rtp_encoding_parameters_new (0, 96)), !=, NULL);
+  r_strcpy (enc->id, "lo");
+  enc->active = FALSE;
+  r_assert_cmpint (r_rtc_rtp_parameters_take_encoding (mline->params, enc), ==, R_RTC_OK);
+
+  r_assert_cmpint (r_rtc_session_description_take_media_line (sd, mline), ==, R_RTC_OK);
+
+  r_assert_cmpptr ((buf = r_rtc_session_description_to_sdp (sd, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_RTC_OK);
+  r_assert_cmpbufsstr (buf, 0, -1, ==,
+      "v=0\r\n"
+      "o=jdoe 1 1 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "m=video 12345 RTP/AVPF 96\r\n"
+      "c=IN IP4 127.0.0.1\r\n"
+      "a=sendrecv\r\n"
+      "a=rtpmap:96 VP8/90000\r\n"
+      "a=rid:hi send pt=96;max-fps=30;max-br=200000\r\n"
+      "a=rid:lo send pt=96\r\n"
+      "a=simulcast:send hi;~lo\r\n");
+  r_buffer_unref (buf);
+
+  r_rtc_session_description_unref (sd);
+}
+RTEST_END;
+
+RTEST (rrtcsessiondescription, simulcast_sdp_parse, RTEST_FAST)
+{
+  /* a=rid lines become encodings with the RID and its restrictions (RFC 8851),
+   * and a=simulcast's "~" prefix marks the paused layer inactive (RFC 8853). */
+  static const rchar sdp[] =
+    "v=0\r\n"
+    "o=- 123 2 IN IP4 127.0.0.1\r\n"
+    "s=-\r\n"
+    "t=0 0\r\n"
+    "m=video 9 RTP/AVPF 96\r\n"
+    "c=IN IP4 0.0.0.0\r\n"
+    "a=mid:v\r\n"
+    "a=setup:actpass\r\n"
+    "a=rtpmap:96 VP8/90000\r\n"
+    "a=rid:hi send pt=96;max-fps=30;max-br=200000\r\n"
+    "a=rid:lo send pt=96\r\n"
+    "a=simulcast:send hi;~lo\r\n";
+  RRtcSessionDescription * sd;
+  RRtcMediaLineInfo * mline;
+  RRtcRtpEncodingParameters * enc;
+  RBuffer * buf;
+  RRtcError err;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (sdp, sizeof (sdp) - 1)), !=, NULL);
+  r_assert_cmpptr ((sd = r_rtc_session_description_new_from_sdp (
+          R_RTC_SIGNAL_OFFER, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_RTC_OK);
+  r_buffer_unref (buf);
+
+  r_assert_cmpptr ((mline = r_rtc_session_description_get_media_line_by_idx (sd, 0)), !=, NULL);
+  r_assert_cmpuint (r_rtc_rtp_parameters_encoding_count (mline->params), ==, 2);
+
+  r_assert_cmpptr ((enc = r_rtc_rtp_parameters_get_encoding (mline->params, 0)), !=, NULL);
+  r_assert_cmpstr (enc->id, ==, "hi");
+  r_assert_cmpuint (enc->pt, ==, 96);
+  r_assert_cmpuint (enc->maxfr, ==, 30);
+  r_assert_cmpuint (enc->maxbr, ==, 200000);
+  r_assert_cmpint (enc->active, ==, TRUE);
+
+  r_assert_cmpptr ((enc = r_rtc_rtp_parameters_get_encoding (mline->params, 1)), !=, NULL);
+  r_assert_cmpstr (enc->id, ==, "lo");
+  r_assert_cmpuint (enc->pt, ==, 96);
+  r_assert_cmpint (enc->active, ==, FALSE);
+
+  r_rtc_session_description_unref (sd);
+}
+RTEST_END;
+
 static const rchar sdp_rlib_webrtc[] =
   "v=0\r\n"
   "o=jdoe 123456789 2 IN IP4 127.0.0.1\r\n"

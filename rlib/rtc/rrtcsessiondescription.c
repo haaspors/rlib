@@ -361,6 +361,86 @@ r_rtc_session_description_new (RRtcSignalType type)
   return ret;
 }
 
+/* Apply the restrictions of an "a=rid" line (the text after "<id> <dir>",
+ * RFC 8851) onto @enc. Only restrictions with a matching encoding field are
+ * kept; "max-width"/"max-height" and unknown params are ignored. */
+static void
+r_rtc_session_description_apply_rid_restrictions (
+    RRtcRtpEncodingParameters * enc, RStrChunk * rest)
+{
+  while (rest->size > 0) {
+    RStrChunk tok = R_STR_CHUNK_INIT;
+    RStrChunk key = R_STR_CHUNK_INIT, val = R_STR_CHUNK_INIT;
+
+    r_str_chunk_split (rest, ";", &tok, NULL);
+    if (r_str_chunk_split (&tok, "=", &key, &val, NULL) < 2)
+      continue;
+
+    if (r_str_chunk_cmp (&key, R_STR_WITH_SIZE_ARGS ("pt")) == 0)
+      enc->pt = (RRTPPayloadType)r_str_to_uint8 (val.str, NULL, 10, NULL);
+    else if (r_str_chunk_cmp (&key, R_STR_WITH_SIZE_ARGS ("max-fps")) == 0)
+      enc->maxfr = r_str_to_uint (val.str, NULL, 10, NULL);
+    else if (r_str_chunk_cmp (&key, R_STR_WITH_SIZE_ARGS ("max-br")) == 0)
+      enc->maxbr = r_str_to_uint64 (val.str, NULL, 10, NULL);
+  }
+}
+
+static RRtcRtpEncodingParameters *
+r_rtc_session_description_encoding_by_rid (RRtcRtpParameters * params,
+    const RStrChunk * rid)
+{
+  rsize i;
+
+  for (i = 0; i < r_rtc_rtp_parameters_encoding_count (params); i++) {
+    RRtcRtpEncodingParameters * enc =
+        r_rtc_rtp_parameters_get_encoding (params, i);
+    if (r_str_chunk_cmp (rid, enc->id, -1) == 0)
+      return enc;
+  }
+
+  return NULL;
+}
+
+/* Walk an "a=simulcast" value (RFC 8853) and mark every layer flagged with a
+ * leading '~' (initially paused) as inactive. Streams are ';'-separated,
+ * alternatives ','-separated, and the "send"/"recv" keywords are skipped. */
+static void
+r_rtc_session_description_apply_simulcast (RRtcRtpParameters * params,
+    const RStrChunk * scval)
+{
+  RStrChunk rest = *scval;
+
+  while (rest.size > 0) {
+    RStrChunk grp = R_STR_CHUNK_INIT;
+
+    r_str_chunk_split (&rest, " ", &grp, NULL);
+    if (grp.size == 0 ||
+        r_str_chunk_cmp (&grp, R_STR_WITH_SIZE_ARGS ("send")) == 0 ||
+        r_str_chunk_cmp (&grp, R_STR_WITH_SIZE_ARGS ("recv")) == 0)
+      continue;
+
+    while (grp.size > 0) {
+      RStrChunk alts = R_STR_CHUNK_INIT;
+
+      r_str_chunk_split (&grp, ";", &alts, NULL);
+      while (alts.size > 0) {
+        RStrChunk id = R_STR_CHUNK_INIT;
+
+        r_str_chunk_split (&alts, ",", &id, NULL);
+        if (id.size > 0 && id.str[0] == '~') {
+          RRtcRtpEncodingParameters * enc;
+
+          id.str++;
+          id.size--;
+          if ((enc = r_rtc_session_description_encoding_by_rid (params,
+                  &id)) != NULL)
+            enc->active = FALSE;
+        }
+      }
+    }
+  }
+}
+
 static RRtcRtpParameters *
 r_rtc_session_description_create_sdp_rtp_params (const rchar * mid,
     RSdpMediaBuf * media, RSdpBuf * sdp)
@@ -374,6 +454,7 @@ r_rtc_session_description_create_sdp_rtp_params (const rchar * mid,
     RRtcRtcpFlags rtcpflags = R_RTC_RTCP_NONE;
     RRtcRtpCodecParameters * codec;
     RRtcRtpEncodingParameters * encoding;
+    const RStrChunk * cur;
     RStrChunk chunk;
 
     for (i = 0; i < r_sdp_media_buf_fmt_count (media); i++) {
@@ -533,6 +614,31 @@ r_rtc_session_description_create_sdp_rtp_params (const rchar * mid,
         r_rtc_rtp_parameters_take_hdrext (ret, hdrext);
       start++;
     }
+
+    /* RID / simulcast layers (RFC 8851 / RFC 8853). A simulcast offer does
+     * not signal per-layer SSRCs; each layer is named by its RID and demuxed
+     * from the rtp-stream-id header extension at runtime. Create one encoding
+     * per declared RID so the listener can bind an SSRC to it. */
+    start = 0;
+    while ((cur = r_sdp_media_buf_attrib_find (media, "rid", -1, &start)) != NULL) {
+      RStrChunk val = *cur;
+      RStrChunk id = R_STR_CHUNK_INIT, dir = R_STR_CHUNK_INIT;
+      RStrChunk rest = R_STR_CHUNK_INIT;
+
+      r_str_chunk_split (&val, " ", &id, &dir, &rest, NULL);
+      if (id.size > 0 && id.size <= R_RTC_RID_MAX &&
+          (encoding = r_rtc_rtp_encoding_parameters_new (0,
+              (RRTPPayloadType)0)) != NULL) {
+        r_memcpy (encoding->id, id.str, id.size);
+        encoding->id[id.size] = 0;
+        r_rtc_session_description_apply_rid_restrictions (encoding, &rest);
+        r_rtc_rtp_parameters_take_encoding (ret, encoding);
+      }
+      start++;
+    }
+
+    if ((cur = r_sdp_media_buf_attrib_find (media, "simulcast", -1, NULL)) != NULL)
+      r_rtc_session_description_apply_simulcast (ret, cur);
   }
 
   return ret;
@@ -1017,6 +1123,58 @@ r_rtc_session_description_mline_to_sdp_media (const RRtcSessionDescription * sd,
       if (mline->params->cname != NULL && mline->params->ssrc > 0) {
         r_sdp_media_add_ssrc_cname (media, mline->params->ssrc,
             mline->params->cname, -1);
+      }
+
+      /* RID / simulcast layers (RFC 8851 / RFC 8853): advertise each encoding
+       * that carries a RID as an "a=rid" restriction line, then list them in a
+       * single "a=simulcast" line. The RID direction follows the m-line
+       * direction. */
+      {
+        const rchar * dirstr =
+            (mline->dir == R_RTC_DIR_RECV_ONLY) ? "recv" : "send";
+        RString * sc = NULL;
+
+        for (i = 0; i < r_rtc_rtp_parameters_encoding_count (mline->params); i++) {
+          RRtcRtpEncodingParameters * enc;
+          RString * rid;
+          const rchar * sep = " ";
+          rchar * v;
+
+          enc = r_rtc_rtp_parameters_get_encoding (mline->params, i);
+          if (enc->id[0] == 0) continue;
+
+          rid = r_string_new_sized (32);
+          r_string_append_printf (rid, "%s %s", enc->id, dirstr);
+          if (enc->pt != 0) {
+            r_string_append_printf (rid, "%spt=%u", sep, (ruint)enc->pt);
+            sep = ";";
+          }
+          if (enc->maxfr != 0) {
+            r_string_append_printf (rid, "%smax-fps=%u", sep, (ruint)enc->maxfr);
+            sep = ";";
+          }
+          if (enc->maxbr != 0) {
+            r_string_append_printf (rid, "%smax-br=%"RUINT64_FMT, sep, enc->maxbr);
+            sep = ";";
+          }
+          v = r_string_free_keep (rid);
+          r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("rid"), v, -1);
+          r_free (v);
+
+          if (sc == NULL) {
+            sc = r_string_new (dirstr);
+            r_string_append_printf (sc, " %s%s", enc->active ? "" : "~", enc->id);
+          } else {
+            r_string_append_printf (sc, ";%s%s", enc->active ? "" : "~", enc->id);
+          }
+        }
+
+        if (sc != NULL) {
+          rchar * v = r_string_free_keep (sc);
+          r_sdp_media_add_attribute (media,
+              R_STR_WITH_SIZE_ARGS ("simulcast"), v, -1);
+          r_free (v);
+        }
       }
     } else {
       r_sdp_media_add_attribute (media, R_STR_WITH_SIZE_ARGS ("inactive"), NULL, 0);
