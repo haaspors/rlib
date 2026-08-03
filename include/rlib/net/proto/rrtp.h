@@ -260,6 +260,17 @@ typedef enum {
   R_RTCP_SDES_UNKNOWN  = 0xff
 } RRTCPSDESType;
 
+/** @brief RTCP Extended Report (XR) block type (RFC 3611). */
+typedef enum {
+  R_RTCP_XR_BT_LOSS_RLE   = 1,    /**< Loss RLE Report Block. */
+  R_RTCP_XR_BT_DUP_RLE    = 2,    /**< Duplicate RLE Report Block. */
+  R_RTCP_XR_BT_RCPT_TIMES = 3,    /**< Packet Receipt Times Report Block. */
+  R_RTCP_XR_BT_RRT        = 4,    /**< Receiver Reference Time Report Block. */
+  R_RTCP_XR_BT_DLRR       = 5,    /**< DLRR Report Block. */
+  R_RTCP_XR_BT_STATS      = 6,    /**< Statistics Summary Report Block. */
+  R_RTCP_XR_BT_VOIP       = 7,    /**< VoIP Metrics Report Block. */
+} RRTCPXRBlockType;
+
 /** @brief Result of parsing an RTCP packet or field. */
 typedef enum {
   R_RTCP_PARSE_ZERO = -1,         /**< Sentinel / uninitialised. */
@@ -284,6 +295,8 @@ typedef struct {
 typedef struct RRTCPPacket RRTCPPacket;
 /** @brief Opaque cursor over a single SDES chunk within an SDES packet. */
 typedef struct RRTCPSDESChunk RRTCPSDESChunk;
+/** @brief Opaque cursor over a single report block within an XR packet. */
+typedef struct RRTCPXRBlock RRTCPXRBlock;
 
 /** @brief Decoded Sender Report (SR) sender info block. */
 typedef struct {
@@ -495,6 +508,27 @@ R_API ruint32 r_rtcp_packet_fb_get_sender_ssrc (const RRTCPPacket * packet);
 R_API ruint32 r_rtcp_packet_fb_get_media_ssrc (const RRTCPPacket * packet);
 /** @brief Pointer to the Feedback Control Information; @p size receives its length. */
 R_API const ruint8 * r_rtcp_packet_fb_get_fci (const RRTCPPacket * packet, ruint16 * size);
+
+
+/* Extended Report (XR) -- RFC 3611.  The RTCP header is followed by the
+ * reporter SSRC (@ref r_rtcp_packet_get_ssrc) and a sequence of report blocks,
+ * each a 1-octet block type, a type-specific octet, a 16-bit block length and
+ * the block content. */
+/** @brief Return the first XR report block of @p packet (or @c NULL if none). */
+#define r_rtcp_packet_xr_get_first_block(packet) r_rtcp_packet_xr_get_next_block (packet, NULL)
+/** @brief Return the XR block after @p block (pass @c NULL for the first). */
+R_API RRTCPXRBlock * r_rtcp_packet_xr_get_next_block (RRTCPPacket * packet,
+    const RRTCPXRBlock * block);
+/** @brief Return the block type (@ref RRTCPXRBlockType) of an XR @p block. */
+R_API RRTCPXRBlockType r_rtcp_packet_xr_block_get_type (const RRTCPXRBlock * block);
+/** @brief Length in bytes of an XR @p block's content (excluding the 4-octet block header). */
+R_API ruint16 r_rtcp_packet_xr_block_get_length (const RRTCPXRBlock * block);
+/** @brief Number of source SSRCs an XR @p block reports on (0 for RRT and unknown types, 1 for most, N for DLRR). */
+R_API ruint r_rtcp_packet_xr_block_get_ssrc_count (const RRTCPPacket * packet,
+    const RRTCPXRBlock * block);
+/** @brief Return source SSRC @p idx that an XR @p block reports on, or 0 if out of range. */
+R_API ruint32 r_rtcp_packet_xr_block_get_ssrc (const RRTCPPacket * packet,
+    const RRTCPXRBlock * block, ruint idx);
 
 R_END_DECLS
 
