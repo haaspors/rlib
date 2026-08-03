@@ -752,6 +752,31 @@ RTEST (rsrtp, ekt_bad_args, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsrtp, ekt_mki_mutually_exclusive, RTEST_FAST)
+{
+  RSRTPCtx * a, * b;
+
+  /* EKT on a context bars adding an MKI crypto context, and vice versa: an
+   * EKT-ingested key installs an MKI-less context, so the two cannot coexist. */
+  r_assert_cmpptr ((a = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpint (r_srtp_add_ekt_key (a, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (a, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, 2, masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_INVAL);
+  r_assert_cmpint (r_srtp_add_crypto_context_with_filter_with_mki (a, R_SRTP_FILTER_ANY,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, 2, masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_INVAL);
+
+  r_assert_cmpptr ((b = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (b, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, 2, masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (b, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_INVAL);
+
+  r_srtp_ctx_unref (a);
+  r_srtp_ctx_unref (b);
+}
+RTEST_END;
+
 static void
 ekt_setup (RSRTPCtx * enc, RSRTPCtx * dec)
 {

@@ -168,6 +168,11 @@ struct RSRTPCtx {
   /* EKT (RFC 8870): NULL until the first EKTKey is configured, at which point
    * EKT framing is active for the context. */
   RSRTPEkt * ekt;
+
+  /* TRUE once an MKI crypto context is installed. EKT and MKI are mutually
+   * exclusive on one context: an EKT-ingested key installs an MKI-less context,
+   * which would then misparse an MKI trailer, so the two cannot coexist. */
+  rboolean has_mki;
 };
 
 #define R_LOG_CAT_DEFAULT &srtpcat
@@ -527,6 +532,7 @@ r_srtp_ctx_new (void)
         NULL, (RDestroyNotify) r_srtp_stream_free);
     ret->hdrext_ids = NULL;
     ret->ekt = NULL;
+    ret->has_mki = FALSE;
   }
 
   R_LOG_DEBUG ("ctx %p", ret);
@@ -688,6 +694,8 @@ r_srtp_add_crypto_context_for_ssrc_with_mki (RSRTPCtx * ctx,
     return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY (mkisize == 0 || mkisize > R_SRTP_MAX_MKI_SIZE))
     return R_SRTP_ERROR_INVAL;
+  /* EKT and MKI cannot share a context (see RSRTPCtx.has_mki). */
+  if (R_UNLIKELY (ctx->ekt != NULL)) return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY ((info = r_srtp_cipher_suite_get_info (cs)) == NULL))
     return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY (r_hash_table_contains (ctx->crypto_ssrc,
@@ -696,6 +704,7 @@ r_srtp_add_crypto_context_for_ssrc_with_mki (RSRTPCtx * ctx,
 
   if ((cctx = r_srtp_crypto_ctx_new (info, ssrc, 0, mkisize,
           recvkey, sendkey, mki)) != NULL) {
+    ctx->has_mki = TRUE;
     r_hash_table_insert (ctx->crypto_ssrc, RUINT_TO_POINTER (ssrc), cctx);
     R_LOG_TRACE ("ctx: %p ssrc: 0x%.8x crypto: %s mki: %u bytes",
         ctx, ssrc, info->str, mkisize);
@@ -719,11 +728,14 @@ r_srtp_add_crypto_context_with_filter_with_mki (RSRTPCtx * ctx,
     return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY (mkisize == 0 || mkisize > R_SRTP_MAX_MKI_SIZE))
     return R_SRTP_ERROR_INVAL;
+  /* EKT and MKI cannot share a context (see RSRTPCtx.has_mki). */
+  if (R_UNLIKELY (ctx->ekt != NULL)) return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY ((info = r_srtp_cipher_suite_get_info (cs)) == NULL))
     return R_SRTP_ERROR_INVAL;
 
   if ((cctx = r_srtp_crypto_ctx_new (info, 0, filter, mkisize,
           recvkey, sendkey, mki)) != NULL) {
+    ctx->has_mki = TRUE;
     ctx->crypto_filter = r_list_prepend (ctx->crypto_filter, cctx);
     R_LOG_TRACE ("ctx: %p filter: 0x%.8x crypto: %s mki: %u bytes",
         ctx, filter, info->str, mkisize);
@@ -803,6 +815,8 @@ r_srtp_add_ekt_key (RSRTPCtx * ctx, ruint16 spi, RSRTPEktCipher cipher,
   if (R_UNLIKELY (ctx == NULL || key == NULL)) return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY (salt == NULL && saltsize > 0)) return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY (saltsize > R_SRTP_MAX_SALT_SIZE)) return R_SRTP_ERROR_INVAL;
+  /* EKT and MKI cannot share a context (see RSRTPCtx.has_mki). */
+  if (R_UNLIKELY (ctx->has_mki)) return R_SRTP_ERROR_INVAL;
   if (R_UNLIKELY ((info = r_srtp_cipher_suite_get_info (cs)) == NULL))
     return R_SRTP_ERROR_INVAL;
   /* The transported salt must match the suite it keys, so a recovered master
