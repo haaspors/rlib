@@ -264,6 +264,41 @@ RTEST (rrtcp, map_rejects_oversized_first, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcp, add_packet_copies_verbatim, RTEST_FAST)
+{
+  /* r_rtcp_buffer_add_packet appends a byte-identical copy of a parsed packet
+   * into another compound. */
+  RBuffer * src, * dst;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT, out = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  RRTCPReportBlock rb = { 0, 0, 0, 0, 0, 0, 0 };
+
+  rb.ssrc = 0xdeadbeef;
+  r_assert_cmpptr ((src = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_rr (src, 0xb0b0b0b0, &rb, 1));
+
+  r_assert (r_rtcp_buffer_map (&rtcp, src, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpptr ((dst = r_buffer_new ()), !=, NULL);
+  r_assert (r_rtcp_buffer_add_packet (dst, pkt));
+  r_assert (r_rtcp_buffer_unmap (&rtcp, src));
+
+  r_assert_cmpuint (r_buffer_get_size (dst), ==, r_buffer_get_size (src));
+
+  r_assert (r_rtcp_buffer_map (&out, dst, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&out, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_RR);
+  r_assert_cmphex (r_rtcp_packet_rr_get_ssrc (pkt), ==, 0xb0b0b0b0);
+  r_assert_cmpuint (r_rtcp_packet_rr_get_rb_count (pkt), ==, 1);
+  r_assert (r_rtcp_packet_rr_get_report_block (pkt, 0, &rb));
+  r_assert_cmphex (rb.ssrc, ==, 0xdeadbeef);
+  r_assert (r_rtcp_buffer_unmap (&out, dst));
+
+  r_buffer_unref (src);
+  r_buffer_unref (dst);
+}
+RTEST_END;
+
 RTEST (rrtcp, xr_dlrr_wire, RTEST_FAST)
 {
   /* Extended Report (RFC 3611) with a DLRR block (two sub-blocks, so two
