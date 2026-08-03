@@ -146,7 +146,9 @@ R_API RSRTPError r_srtp_add_crypto_context_with_filter_dual (RSRTPCtx * ctx,
  * additional keys for rollover with @ref r_srtp_add_master_key and select the
  * outbound one with @ref r_srtp_set_send_master_key; this first key is the
  * initial send key. @p mkisize is fixed for the lifetime of the context and
- * must be 1..@ref R_SRTP_MAX_MKI_SIZE.
+ * must be 1..@ref R_SRTP_MAX_MKI_SIZE. MKI and EKT (@ref r_srtp_add_ekt_key)
+ * are mutually exclusive on one context; this returns @ref R_SRTP_ERROR_INVAL
+ * if EKT is already configured.
  *
  * @param ctx      The SRTP context.
  * @param ssrc     The synchronization source this context keys.
@@ -272,6 +274,11 @@ typedef enum {
  * @p cs is the SRTP cipher suite the transported keys are used with, and
  * @p salt is the master salt paired with those keys (its length must match the
  * suite's salt size); both come from signalling alongside the EKTKey.
+ *
+ * EKT and MKI (@ref r_srtp_add_crypto_context_for_ssrc_with_mki) are mutually
+ * exclusive on one context -- an EKT-ingested key installs an MKI-less crypto
+ * context -- so this returns @ref R_SRTP_ERROR_INVAL if an MKI crypto context
+ * is already installed.
  *
  * @param ctx       The SRTP context.
  * @param spi       Security Parameter Index identifying this EKTKey (0..65535).
