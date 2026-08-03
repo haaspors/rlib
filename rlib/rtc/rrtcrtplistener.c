@@ -295,6 +295,50 @@ r_rtc_rtp_listener_sender_owns (RRtcRtpListener * l, ruint32 ssrc,
       r_hash_table_lookup (l->send_ssrcmap, RSIZE_TO_POINTER (ssrc)) == s;
 }
 
+/* TRUE if @ssrc is a non-zero remote source SSRC owned by receiver @r. */
+static rboolean
+r_rtc_rtp_listener_receiver_owns (RRtcRtpListener * l, ruint32 ssrc,
+    const RRtcRtpReceiver * r)
+{
+  return ssrc != 0 &&
+      r_hash_table_lookup (l->recv_ssrcmap, RSIZE_TO_POINTER (ssrc)) == r;
+}
+
+/* Reassemble the RTCP addressed to receiver @r from the mapped compound @rtcp.
+ * A Sender Report names the remote source it describes in its sender SSRC, so
+ * it is routed to the receiver owning that source rather than broadcast; every
+ * other packet type (SDES, BYE and the reception feedback about our own
+ * outbound streams) is still copied to each receiver as before. Returns NULL
+ * if nothing targets @r. */
+static RBuffer *
+r_rtc_rtp_listener_build_receiver_rtcp (RRtcRtpListener * l, RRtcRtpReceiver * r,
+    RRTCPBuffer * rtcp)
+{
+  RBuffer * ret;
+  RRTCPPacket * packet;
+
+  if (R_UNLIKELY ((ret = r_buffer_new ()) == NULL))
+    return NULL;
+
+  for (packet = r_rtcp_buffer_get_first_packet (rtcp); packet != NULL;
+      packet = r_rtcp_buffer_get_next_packet (rtcp, packet)) {
+    if (r_rtcp_packet_get_type (packet) == R_RTCP_PT_SR) {
+      if (r_rtc_rtp_listener_receiver_owns (l,
+              r_rtcp_packet_get_ssrc (packet), r))
+        r_rtcp_buffer_add_packet (ret, packet);
+    } else {
+      r_rtcp_buffer_add_packet (ret, packet);
+    }
+  }
+
+  if (r_buffer_get_size (ret) == 0) {
+    r_buffer_unref (ret);
+    return NULL;
+  }
+
+  return ret;
+}
+
 /* Reassemble the RTCP addressed to sender @s from the mapped compound @rtcp:
  * the SR/RR reception report blocks naming one of its SSRCs (re-emitted as an
  * RR that keeps the report sender's SSRC), plus the RTPFB/PSFB and XR packets
@@ -371,83 +415,113 @@ r_rtc_rtp_listener_handle_rtcp (RRtcRtpListener * l,
 {
   RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
   rsize i, c;
+  rboolean have_recv = r_ptr_array_size (l->recv) > 0;
+  rboolean have_send = r_ptr_array_size (l->send) > 0 &&
+      r_hash_table_size (l->send_ssrcmap) > 0;
 
   (void) t;
 
-  /* Sender reports, SDES and BYE describe the peer's streams, which any
-   * receiver may need, so those still fan out to every receiver. */
-  for (i = 0, c = r_ptr_array_size (l->recv); i < c; i++) {
-    RRtcRtpReceiver * r = r_ptr_array_get (l->recv, i);
-    r->cbs.rtcp (r->data, buf, r);
-  }
+  /* Both paths need the compound mapped to route by SSRC. Map once, build a
+   * fresh per-target compound for every receiver and sender while still
+   * mapped, then unmap and dispatch: a callback is free to map the buffer it
+   * is handed. */
+  if (!(have_recv || have_send) ||
+      !r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ))
+    return R_RTC_OK;
 
-  /* Feedback about our outbound streams (SR/RR report blocks, RTPFB/PSFB, XR)
-   * targets a sending SSRC. Resolve each target via send_ssrcmap and deliver
-   * to the owning sender only its own report blocks and feedback, reassembled
-   * into a fresh compound, rather than broadcasting the shared compound and
-   * making each sender sift out its own. Collect the targets, build a buffer
-   * per target while still mapped, then dispatch after unmapping so a callback
-   * is free to map the buffer it receives. */
-  if (r_ptr_array_size (l->send) > 0 && r_hash_table_size (l->send_ssrcmap) > 0 &&
-      r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ)) {
-    RPtrArray * targets = r_ptr_array_new ();
-    RPtrArray * bufs = r_ptr_array_new ();
-    RRTCPPacket * packet;
+  {
+    RPtrArray * rtargets = have_recv ? r_ptr_array_new () : NULL;
+    RPtrArray * rbufs = have_recv ? r_ptr_array_new () : NULL;
+    RPtrArray * targets = have_send ? r_ptr_array_new () : NULL;
+    RPtrArray * sbufs = have_send ? r_ptr_array_new () : NULL;
 
-    for (packet = r_rtcp_buffer_get_first_packet (&rtcp); packet != NULL;
-        packet = r_rtcp_buffer_get_next_packet (&rtcp, packet)) {
-      switch (r_rtcp_packet_get_type (packet)) {
-        case R_RTCP_PT_SR:
-        case R_RTCP_PT_RR: {
-          RRTCPReportBlock rb;
-          ruint8 j, n = r_rtcp_packet_get_count (packet);
-          for (j = 0; j < n; j++) {
-            if (r_rtcp_packet_sr_get_report_block (packet, j, &rb))
-              r_rtc_rtp_listener_collect_sender (l, rb.ssrc, targets);
-          }
-          break;
-        }
-        case R_RTCP_PT_RTPFB:
-        case R_RTCP_PT_PSFB:
-          r_rtc_rtp_listener_collect_sender (l,
-              r_rtcp_packet_fb_get_media_ssrc (packet), targets);
-          break;
-        case R_RTCP_PT_XR: {
-          /* Each XR block reports on one or more source SSRCs (e.g. DLRR
-           * carries a sub-block per SSRC); route to each owning sender. */
-          RRTCPXRBlock * block;
-          for (block = r_rtcp_packet_xr_get_first_block (packet); block != NULL;
-              block = r_rtcp_packet_xr_get_next_block (packet, block)) {
-            ruint k, m = r_rtcp_packet_xr_block_get_ssrc_count (packet, block);
-            for (k = 0; k < m; k++)
-              r_rtc_rtp_listener_collect_sender (l,
-                  r_rtcp_packet_xr_block_get_ssrc (packet, block, k), targets);
-          }
-          break;
-        }
-        default:
-          break;
-      }
+    /* A Sender Report names the remote source it describes in its sender SSRC,
+     * which the owning receiver already registered in recv_ssrcmap, so route
+     * each SR to that receiver instead of broadcasting it. SDES, BYE and the
+     * rest still fan out to every receiver. Snapshot the receivers so a
+     * dispatched callback that mutates l->recv cannot misalign the buffers. */
+    for (i = 0, c = r_ptr_array_size (l->recv); i < c; i++) {
+      RRtcRtpReceiver * r = r_ptr_array_get (l->recv, i);
+      r_ptr_array_add (rtargets, r, NULL);
+      r_ptr_array_add (rbufs,
+          r_rtc_rtp_listener_build_receiver_rtcp (l, r, &rtcp), NULL);
     }
 
-    for (i = 0, c = r_ptr_array_size (targets); i < c; i++) {
-      RRtcRtpSender * s = r_ptr_array_get (targets, i);
-      r_ptr_array_add (bufs,
-          r_rtc_rtp_listener_build_sender_rtcp (l, s, &rtcp), NULL);
+    /* Feedback about our outbound streams (SR/RR report blocks, RTPFB/PSFB,
+     * XR) targets a sending SSRC. Resolve each target via send_ssrcmap and
+     * deliver to the owning sender only its own report blocks and feedback,
+     * reassembled into a fresh compound, rather than broadcasting the shared
+     * compound and making each sender sift out its own. */
+    if (have_send) {
+      RRTCPPacket * packet;
+
+      for (packet = r_rtcp_buffer_get_first_packet (&rtcp); packet != NULL;
+          packet = r_rtcp_buffer_get_next_packet (&rtcp, packet)) {
+        switch (r_rtcp_packet_get_type (packet)) {
+          case R_RTCP_PT_SR:
+          case R_RTCP_PT_RR: {
+            RRTCPReportBlock rb;
+            ruint8 j, n = r_rtcp_packet_get_count (packet);
+            for (j = 0; j < n; j++) {
+              if (r_rtcp_packet_sr_get_report_block (packet, j, &rb))
+                r_rtc_rtp_listener_collect_sender (l, rb.ssrc, targets);
+            }
+            break;
+          }
+          case R_RTCP_PT_RTPFB:
+          case R_RTCP_PT_PSFB:
+            r_rtc_rtp_listener_collect_sender (l,
+                r_rtcp_packet_fb_get_media_ssrc (packet), targets);
+            break;
+          case R_RTCP_PT_XR: {
+            /* Each XR block reports on one or more source SSRCs (e.g. DLRR
+             * carries a sub-block per SSRC); route to each owning sender. */
+            RRTCPXRBlock * block;
+            for (block = r_rtcp_packet_xr_get_first_block (packet);
+                block != NULL;
+                block = r_rtcp_packet_xr_get_next_block (packet, block)) {
+              ruint k, m = r_rtcp_packet_xr_block_get_ssrc_count (packet, block);
+              for (k = 0; k < m; k++)
+                r_rtc_rtp_listener_collect_sender (l,
+                    r_rtcp_packet_xr_block_get_ssrc (packet, block, k), targets);
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      }
+
+      for (i = 0, c = r_ptr_array_size (targets); i < c; i++) {
+        RRtcRtpSender * s = r_ptr_array_get (targets, i);
+        r_ptr_array_add (sbufs,
+            r_rtc_rtp_listener_build_sender_rtcp (l, s, &rtcp), NULL);
+      }
     }
 
     r_rtcp_buffer_unmap (&rtcp, buf);
 
-    for (i = 0, c = r_ptr_array_size (targets); i < c; i++) {
+    for (i = 0, c = have_recv ? r_ptr_array_size (rtargets) : 0; i < c; i++) {
+      RRtcRtpReceiver * r = r_ptr_array_get (rtargets, i);
+      RBuffer * rbuf = r_ptr_array_get (rbufs, i);
+      if (rbuf != NULL) {
+        r->cbs.rtcp (r->data, rbuf, r);
+        r_buffer_unref (rbuf);
+      }
+    }
+    for (i = 0, c = have_send ? r_ptr_array_size (targets) : 0; i < c; i++) {
       RRtcRtpSender * s = r_ptr_array_get (targets, i);
-      RBuffer * sbuf = r_ptr_array_get (bufs, i);
+      RBuffer * sbuf = r_ptr_array_get (sbufs, i);
       if (sbuf != NULL) {
         s->cbs.rtcp (s->data, sbuf, s);
         r_buffer_unref (sbuf);
       }
     }
-    r_ptr_array_unref (targets);
-    r_ptr_array_unref (bufs);
+
+    if (rtargets != NULL) r_ptr_array_unref (rtargets);
+    if (rbufs != NULL) r_ptr_array_unref (rbufs);
+    if (targets != NULL) r_ptr_array_unref (targets);
+    if (sbufs != NULL) r_ptr_array_unref (sbufs);
   }
 
   return R_RTC_OK;

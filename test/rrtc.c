@@ -1128,6 +1128,66 @@ RTEST_F (rrtc, sender_receives_only_own_report_blocks, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST_F (rrtc, receiver_receives_own_sender_report, RTEST_FAST)
+{
+  /* A Sender Report names the remote source it describes in its sender SSRC.
+   * The listener routes the SR to the receiver that registered that source in
+   * recv_ssrcmap -- and only that receiver -- instead of broadcasting it: an
+   * SR for a source no receiver owns is dropped, and an SR for the receiver's
+   * source arrives as a lone SR carrying that sender SSRC. */
+  static const ruint8 sr_owned[] = {
+    /* V=2 P=0 RC=0; PT=200 (SR); length=6 (28 bytes) */
+    0x80, 0xc8, 0x00, 0x06,
+    0xf0, 0x0d, 0xf0, 0x0d,  /* sender SSRC == alice's receiver source */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* NTP timestamp */
+    0x00, 0x00, 0x00, 0x00,  /* RTP timestamp */
+    0x00, 0x00, 0x00, 0x00,  /* sender's packet count */
+    0x00, 0x00, 0x00, 0x00   /* sender's octet count */
+  };
+  static const ruint8 sr_other[] = {
+    0x80, 0xc8, 0x00, 0x06,
+    0x99, 0x99, 0x99, 0x99,  /* sender SSRC alice's receiver does not own */
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00
+  };
+  RBuffer * buf, * pop;
+  RRtcRtpParameters * p;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_encoding_simple (p, 0xf00df00d,
+        R_RTP_PT_PCMU), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->alice.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
+  /* An SR for a source alice's receiver does not own must not reach it. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (sr_other, sizeof (sr_other))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->bob.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->alice.rtcp), ==, 0);
+  r_buffer_unref (buf);
+
+  /* An SR naming alice's receiver source is delivered to that receiver. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (sr_owned, sizeof (sr_owned))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->bob.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->alice.rtcp), ==, 1);
+  r_assert_cmpptr ((pop = r_queue_pop (&fixture->alice.rtcp)), !=, NULL);
+
+  r_assert (r_rtcp_buffer_map (&rtcp, pop, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_SR);
+  r_assert_cmphex (r_rtcp_packet_get_ssrc (pkt), ==, 0xf00df00d);
+  r_assert_cmpptr (r_rtcp_buffer_get_next_packet (&rtcp, pkt), ==, NULL);
+  r_assert (r_rtcp_buffer_unmap (&rtcp, pop));
+  r_buffer_unref (pop);
+  r_buffer_unref (buf);
+
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->alice.recv), ==, R_RTC_OK);
+}
+RTEST_END;
+
 RTEST_F (rrtc, send_recv, RTEST_FAST)
 {
   RBuffer * buf, * pop;
