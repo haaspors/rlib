@@ -110,23 +110,27 @@ r_rtcp_buffer_get_packet_count (const RRTCPBuffer * rtcp)
 RRTCPPacket *
 r_rtcp_buffer_get_next_packet (RRTCPBuffer * rtcp, const RRTCPPacket * p)
 {
-  RRTCPPacket * ret;
+  const ruint8 * data = rtcp->info.data;
+  const ruint8 * end = data + rtcp->info.size;
+  const ruint8 * ret;
 
   if (p != NULL) {
-    rsize offset = r_rtcp_packet_get_length (p);
-
-    if (RPOINTER_TO_SIZE (p) >= RPOINTER_TO_SIZE (rtcp->info.data) &&
-        RPOINTER_TO_SIZE (p) + offset < RPOINTER_TO_SIZE (rtcp->info.data) + rtcp->info.size) {
-      offset += RPOINTER_TO_SIZE (p) - RPOINTER_TO_SIZE (rtcp->info.data);
-      ret = (RRTCPPacket *)(rtcp->info.data + offset);
-    } else {
-      ret = NULL;
-    }
+    if (R_UNLIKELY ((const ruint8 *)p < data))
+      return NULL;
+    ret = (const ruint8 *)p + r_rtcp_packet_get_length (p);
   } else {
-    ret = (RRTCPPacket *)rtcp->info.data;
+    ret = data;
   }
 
-  return ret;
+  /* Only hand back a packet whose header and full declared length fit within
+   * the mapped region.  A packet's length field is attacker-controlled, so an
+   * oversized non-final packet (or trailing junk shorter than a header) must
+   * end iteration here rather than be returned -- accessors derive the packet
+   * end from that length and would otherwise read past the mapping. */
+  if (ret >= data && ret < end && r_rtcp_is_valid_hdr (ret, (rsize)(end - ret)))
+    return (RRTCPPacket *)ret;
+
+  return NULL;
 }
 
 rboolean
