@@ -617,6 +617,310 @@ RTEST (rsrtp, mki_unknown_rejected, RTEST_FAST)
 }
 RTEST_END;
 
+/* EKT (RFC 8870): a 128-bit AES Key Wrap key-encryption key. */
+static const ruint8 ektkek128[16] = {
+  0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+  0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
+};
+#define EKT_SPI 0x1234
+static const ruint8 ektkek128b[16] = {
+  0x0f, 0x1e, 0x2d, 0x3c, 0x4b, 0x5a, 0x69, 0x78,
+  0x87, 0x96, 0xa5, 0xb4, 0xc3, 0xd2, 0xe1, 0xf0
+};
+#define EKT_SPI2 0x5678
+
+/* Full EKT field size for AES-128-CM: AESKW-pad(1 + 16 + 8) + 7 trailer. */
+#define EKT_FULL_LEN (((1 + 16 + 8 + 7) & ~7u) + 8 + 7)
+
+RTEST (rsrtp, ekt_roundtrip, RTEST_FAST)
+{
+  RSRTPCtx * enc, * dec;
+  RBuffer * buf, * res, * out;
+  RSRTPError err;
+  rsize plain = sizeof (pkt_srtp_aes_128_cm_opus);
+  ruint8 tail;
+
+  /* Sender: keyed for its SSRC and set to emit Full EKT fields under EKT_SPI.
+   * Receiver: only the matching EKTKey; it learns the master key in-band. The
+   * EKT master salt is the salt half of the 30-byte master key blob. */
+  r_assert_cmpptr ((enc = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc (enc, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (enc, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_ekt_send_key (enc, EKT_SPI), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (dec, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtp_opus, sizeof (pkt_rtp_opus))), !=, NULL);
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enc, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+
+  /* The SRTP packet is unchanged; a Full EKT field (type 0x02) trails it. */
+  r_assert_cmpuint (r_buffer_get_size (res), ==, plain + EKT_FULL_LEN);
+  r_assert_cmpbufmem (res, 0, plain, ==, pkt_srtp_aes_128_cm_opus, plain);
+  r_assert_cmpuint (r_buffer_extract (res, r_buffer_get_size (res) - 1, &tail, 1), ==, 1);
+  r_assert_cmphex (tail, ==, 0x02);
+
+  /* The receiver ingests the wrapped key and decrypts with it. */
+  r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_assert_cmpbufmem (out, 0, -1, ==, pkt_rtp_opus, sizeof (pkt_rtp_opus));
+
+  r_buffer_unref (out);
+  r_buffer_unref (res);
+  r_buffer_unref (buf);
+  r_srtp_ctx_unref (enc);
+  r_srtp_ctx_unref (dec);
+}
+RTEST_END;
+
+RTEST (rsrtp, ekt_burst_then_short, RTEST_FAST)
+{
+  RSRTPCtx * enc, * dec;
+  RBuffer * buf, * res, * out;
+  RSRTPError err;
+  ruint8 raw[sizeof (pkt_rtp_opus)], tail;
+  rsize plain = sizeof (pkt_srtp_aes_128_cm_opus);
+  ruint i;
+
+  r_assert_cmpptr ((enc = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc (enc, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (enc, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_ekt_send_key (enc, EKT_SPI), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (dec, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+
+  r_memcpy (raw, pkt_rtp_opus, sizeof (raw));
+
+  /* The first three packets carry a Full field (0x02), the rest a Short (0x00);
+   * every one decrypts, and the duplicate-epoch Full fields are not replays. */
+  for (i = 0; i < 5; i++) {
+    raw[2] = (ruint8)(0x41 + i);       /* bump the sequence each packet */
+    r_assert_cmpptr ((buf = r_buffer_new_dup (raw, sizeof (raw))), !=, NULL);
+    r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enc, buf, &err)), !=, NULL);
+    r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+    r_assert_cmpuint (r_buffer_extract (res, r_buffer_get_size (res) - 1, &tail, 1), ==, 1);
+    if (i < 3) {
+      r_assert_cmphex (tail, ==, 0x02);
+      r_assert_cmpuint (r_buffer_get_size (res), ==, plain + EKT_FULL_LEN);
+    } else {
+      r_assert_cmphex (tail, ==, 0x00);
+      r_assert_cmpuint (r_buffer_get_size (res), ==, plain + 1);
+    }
+    r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+    r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+    r_assert_cmpbufmem (out, 0, -1, ==, raw, sizeof (raw));
+    r_buffer_unref (out);
+    r_buffer_unref (res);
+    r_buffer_unref (buf);
+  }
+
+  r_srtp_ctx_unref (enc);
+  r_srtp_ctx_unref (dec);
+}
+RTEST_END;
+
+RTEST (rsrtp, ekt_bad_args, RTEST_FAST)
+{
+  RSRTPCtx * ctx;
+
+  r_assert_cmpptr ((ctx = r_srtp_ctx_new ()), !=, NULL);
+
+  /* NULL key, wrong salt size for the suite, and an unknown suite are refused. */
+  r_assert_cmpint (r_srtp_add_ekt_key (ctx, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        NULL, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_INVAL);
+  r_assert_cmpint (r_srtp_add_ekt_key (ctx, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 12), ==, R_SRTP_ERROR_INVAL);
+
+  /* Selecting a send key before any is configured fails. */
+  r_assert_cmpint (r_srtp_set_ekt_send_key (ctx, EKT_SPI), ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
+
+  /* A valid add, then a duplicate SPI and an unknown send SPI. */
+  r_assert_cmpint (r_srtp_add_ekt_key (ctx, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (ctx, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_CRYPTO_CTX_EXISTS);
+  r_assert_cmpint (r_srtp_set_ekt_send_key (ctx, 0x9999), ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
+  r_assert_cmpint (r_srtp_set_ekt_send_key (ctx, EKT_SPI), ==, R_SRTP_ERROR_OK);
+
+  r_srtp_ctx_unref (ctx);
+}
+RTEST_END;
+
+static void
+ekt_setup (RSRTPCtx * enc, RSRTPCtx * dec)
+{
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc (enc, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (enc, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_ekt_send_key (enc, EKT_SPI), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (dec, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+}
+
+RTEST (rsrtp, ekt_periodic, RTEST_FAST)
+{
+  RSRTPCtx * enc, * dec;
+  RBuffer * buf, * res, * out;
+  RSRTPError err;
+  ruint8 raw[sizeof (pkt_rtp_opus)], tail;
+  ruint i, fulls = 0;
+
+  r_assert_cmpptr ((enc = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  ekt_setup (enc, dec);
+  /* Smallest interval: the monotonic clock advances between packets, so a Full
+   * field is re-sent beyond the initial burst. */
+  r_assert_cmpint (r_srtp_set_ekt_full_interval (enc, 1), ==, R_SRTP_ERROR_OK);
+
+  r_memcpy (raw, pkt_rtp_opus, sizeof (raw));
+  for (i = 0; i < 8; i++) {
+    raw[2] = (ruint8)(0x41 + i);
+    r_assert_cmpptr ((buf = r_buffer_new_dup (raw, sizeof (raw))), !=, NULL);
+    r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enc, buf, &err)), !=, NULL);
+    r_assert_cmpuint (r_buffer_extract (res, r_buffer_get_size (res) - 1, &tail, 1), ==, 1);
+    if (tail == 0x02)
+      fulls++;
+    r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+    r_assert_cmpbufmem (out, 0, -1, ==, raw, sizeof (raw));
+    r_buffer_unref (out);
+    r_buffer_unref (res);
+    r_buffer_unref (buf);
+  }
+  /* The burst is three; periodic re-sends push the total higher. */
+  r_assert_cmpuint (fulls, >, 3);
+
+  r_srtp_ctx_unref (enc);
+  r_srtp_ctx_unref (dec);
+}
+RTEST_END;
+
+RTEST (rsrtp, ekt_rekey, RTEST_FAST)
+{
+  RSRTPCtx * enc, * dec;
+  RBuffer * buf, * res, * out;
+  RSRTPError err;
+  ruint8 raw[sizeof (pkt_rtp_opus)], rekey[30];
+  ruint i;
+
+  r_assert_cmpptr ((enc = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  ekt_setup (enc, dec);
+
+  r_memcpy (raw, pkt_rtp_opus, sizeof (raw));
+
+  /* First generation: the receiver learns masterkey via the burst. */
+  for (i = 0; i < 4; i++) {
+    raw[2] = (ruint8)(0x41 + i);
+    r_assert_cmpptr ((buf = r_buffer_new_dup (raw, sizeof (raw))), !=, NULL);
+    r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enc, buf, &err)), !=, NULL);
+    r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+    r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+    r_assert_cmpbufmem (out, 0, -1, ==, raw, sizeof (raw));
+    r_buffer_unref (out);
+    r_buffer_unref (res);
+    r_buffer_unref (buf);
+  }
+
+  /* Roll the sender's key. EKT transports only the master key; the salt is
+   * fixed per EKTKey, so the new key reuses the configured salt half. EKT bumps
+   * the epoch and re-announces, and the receiver decrypts the following packets
+   * only if it ingests the new key -- which the higher epoch lets it do. */
+  r_memcpy (rekey, masterkey2, 16);           /* new master key */
+  r_memcpy (rekey + 16, masterkey + 16, 14);  /* same master salt as the EKTKey */
+  r_assert_cmpint (r_srtp_update_crypto_context_for_ssrc (enc, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, rekey), ==, R_SRTP_ERROR_OK);
+  for (i = 4; i < 7; i++) {
+    raw[2] = (ruint8)(0x41 + i);
+    r_assert_cmpptr ((buf = r_buffer_new_dup (raw, sizeof (raw))), !=, NULL);
+    r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enc, buf, &err)), !=, NULL);
+    r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+    r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+    r_assert_cmpbufmem (out, 0, -1, ==, raw, sizeof (raw));
+    r_buffer_unref (out);
+    r_buffer_unref (res);
+    r_buffer_unref (buf);
+  }
+
+  r_srtp_ctx_unref (enc);
+  r_srtp_ctx_unref (dec);
+}
+RTEST_END;
+
+RTEST (rsrtp, ekt_multi_spi_no_downgrade, RTEST_FAST)
+{
+  RSRTPCtx * enca, * encb, * dec;
+  RBuffer * buf, * res, * replay, * out;
+  RSRTPError err;
+  ruint8 rawa[sizeof (pkt_rtp_opus)], rawb[sizeof (pkt_rtp_opus)];
+  ruint8 keyb[30], cap[256];
+  rsize caplen;
+
+  /* Two senders on the same SSRC under different SPIs; the receiver knows both.
+   * keyb reuses masterkey2's own salt (paired with SPI2's EKTKey). */
+  r_memcpy (keyb, masterkey2, 30);
+
+  r_assert_cmpptr ((enca = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((encb = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc (enca, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (enca, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_ekt_send_key (enca, EKT_SPI), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc (encb, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, keyb), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (encb, EKT_SPI2, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128b, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, keyb + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_ekt_send_key (encb, EKT_SPI2), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (dec, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (dec, EKT_SPI2, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128b, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, keyb + 16, 14), ==, R_SRTP_ERROR_OK);
+
+  /* Sender A (SPI1) keys the receiver; capture its Full-field packet. */
+  r_memcpy (rawa, pkt_rtp_opus, sizeof (rawa));
+  rawa[2] = 0x41; rawa[3] = 0x10;
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rawa, sizeof (rawa))), !=, NULL);
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enca, buf, &err)), !=, NULL);
+  caplen = r_buffer_get_size (res);
+  r_assert_cmpuint (r_buffer_extract (res, 0, cap, caplen), ==, caplen);
+  r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+  r_assert_cmpbufmem (out, 0, -1, ==, rawa, sizeof (rawa));
+  r_buffer_unref (out);
+  r_buffer_unref (res);
+  r_buffer_unref (buf);
+
+  /* Sender B (SPI2) rekeys the receiver to keyb. */
+  r_memcpy (rawb, pkt_rtp_opus, sizeof (rawb));
+  rawb[2] = 0x42; rawb[3] = 0x20;
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rawb, sizeof (rawb))), !=, NULL);
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtp (encb, buf, &err)), !=, NULL);
+  r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+  r_assert_cmpbufmem (out, 0, -1, ==, rawb, sizeof (rawb));
+  r_buffer_unref (out);
+  r_buffer_unref (res);
+  r_buffer_unref (buf);
+
+  /* Replay A's captured Full field. Per-(SPI,SSRC) epoch tracking rejects the
+   * stale epoch, so the receiver does NOT downgrade back to key A: the replayed
+   * packet no longer decrypts. */
+  r_assert_cmpptr ((replay = r_buffer_new_dup (cap, caplen)), !=, NULL);
+  r_assert_cmpptr (r_srtp_decrypt_rtp (dec, replay, &err), ==, NULL);
+  r_buffer_unref (replay);
+
+  r_srtp_ctx_unref (enca);
+  r_srtp_ctx_unref (encb);
+  r_srtp_ctx_unref (dec);
+}
+RTEST_END;
+
 RTEST (rsrtcp, decrypt_aes_128_cm, RTEST_FAST)
 {
   RSRTPCtx * ctx;
@@ -731,3 +1035,44 @@ RTEST (rsrtcp, mki_roundtrip, RTEST_FAST)
 }
 RTEST_END;
 
+
+RTEST (rsrtcp, ekt_roundtrip, RTEST_FAST)
+{
+  RSRTPCtx * enc, * dec;
+  RBuffer * buf, * res, * out;
+  RSRTPError err;
+  rsize plain = sizeof (pkt_srtcp_aes_128_cm);
+  ruint8 tail;
+
+  r_assert_cmpptr ((enc = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc (enc, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (enc, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_ekt_send_key (enc, EKT_SPI), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_ekt_key (dec, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes))), !=, NULL);
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtcp (enc, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+
+  /* The SRTCP packet is unchanged; a Full EKT field (type 0x02) trails it. */
+  r_assert_cmpuint (r_buffer_get_size (res), ==, plain + EKT_FULL_LEN);
+  r_assert_cmpbufmem (res, 0, plain, ==, pkt_srtcp_aes_128_cm, plain);
+  r_assert_cmpuint (r_buffer_extract (res, r_buffer_get_size (res) - 1, &tail, 1), ==, 1);
+  r_assert_cmphex (tail, ==, 0x02);
+
+  /* The receiver ingests the wrapped key and decrypts the SRTCP with it. */
+  r_assert_cmpptr ((out = r_srtp_decrypt_rtcp (dec, res, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_assert_cmpbufmem (out, 0, -1, ==, pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes));
+
+  r_buffer_unref (out);
+  r_buffer_unref (res);
+  r_buffer_unref (buf);
+  r_srtp_ctx_unref (enc);
+  r_srtp_ctx_unref (dec);
+}
+RTEST_END;
