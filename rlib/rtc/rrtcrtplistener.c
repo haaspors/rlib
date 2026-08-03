@@ -330,6 +330,19 @@ r_rtc_rtp_listener_handle_rtcp (RRtcRtpListener * l,
           r_rtc_rtp_listener_collect_sender (l,
               r_rtcp_packet_fb_get_media_ssrc (packet), targets);
           break;
+        case R_RTCP_PT_XR: {
+          /* Each XR block reports on one or more source SSRCs (e.g. DLRR
+           * carries a sub-block per SSRC); route to each owning sender. */
+          RRTCPXRBlock * block;
+          for (block = r_rtcp_packet_xr_get_first_block (packet); block != NULL;
+              block = r_rtcp_packet_xr_get_next_block (packet, block)) {
+            ruint k, m = r_rtcp_packet_xr_block_get_ssrc_count (packet, block);
+            for (k = 0; k < m; k++)
+              r_rtc_rtp_listener_collect_sender (l,
+                  r_rtcp_packet_xr_block_get_ssrc (packet, block, k), targets);
+          }
+          break;
+        }
         default:
           break;
       }
