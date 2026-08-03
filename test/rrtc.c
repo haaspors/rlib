@@ -1020,6 +1020,59 @@ RTEST_F (rrtc, sender_receives_xr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST_F (rrtc, sender_receives_bare_xr, RTEST_FAST)
+{
+  /* Reduced-size RTCP (RFC 5506): an XR not led by SR/RR still demuxes as RTCP
+   * (RFC 5761 -- its first byte's payload type is in the RTCP range) and routes
+   * to the sender its DLRR names.  Unlike a feedback packet, a bare XR's first
+   * byte has no CSRC count set, so only the payload-type check distinguishes it
+   * from RTP. */
+  static const ruint8 xr_deadbeef[] = {
+    /* V=2 P=0; PT=207 (XR); length=5 (24 bytes) */
+    0x80, 0xcf, 0x00, 0x05,
+    0xb0, 0xb0, 0xb0, 0xb0,  /* reporter SSRC (bob) */
+    0x05, 0x00, 0x00, 0x03,  /* DLRR block, one sub-block */
+    0xde, 0xad, 0xbe, 0xef,  /* sub-block SSRC == alice's sender */
+    0x00, 0x00, 0x00, 0x00,  /* last RR */
+    0x00, 0x00, 0x00, 0x00   /* delay since last RR */
+  };
+  static const ruint8 xr_other[] = {
+    0x80, 0xcf, 0x00, 0x05,
+    0xb0, 0xb0, 0xb0, 0xb0,
+    0x05, 0x00, 0x00, 0x03,
+    0x11, 0x11, 0x11, 0x11,  /* DLRR sub-block for an SSRC alice does not send */
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00
+  };
+  RBuffer * buf, * pop;
+  RRtcRtpParameters * p;
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_encoding_simple (p, 0xdeadbeef,
+        R_RTP_PT_PCMU), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, p, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->bob.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
+  /* A bare XR for a different SSRC must not reach alice's sender. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (xr_other, sizeof (xr_other))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->bob.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->alice.send_rtcp), ==, 0);
+  r_buffer_unref (buf);
+
+  /* A bare XR naming alice's sending SSRC is delivered to her sender. */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (xr_deadbeef, sizeof (xr_deadbeef))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->bob.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->alice.send_rtcp), ==, 1);
+  r_assert_cmpptr ((pop = r_queue_pop (&fixture->alice.send_rtcp)), !=, NULL);
+  r_buffer_unref (pop);
+  r_buffer_unref (buf);
+
+  r_assert_cmpint (r_rtc_rtp_sender_stop (fixture->alice.send), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->bob.recv), ==, R_RTC_OK);
+}
+RTEST_END;
+
 RTEST_F (rrtc, send_recv, RTEST_FAST)
 {
   RBuffer * buf, * pop;

@@ -43,8 +43,12 @@ typedef struct {
   ruint32 csrclist[];    /* optional CSRC list, 32 bits each */
 } RRTPHdr;
 
+/* When RTP and RTCP are multiplexed on one transport (RFC 5761), a packet is
+ * demuxed by payload type: RTCP owns the packet types 192-223, i.e. the 7-bit
+ * value 64-95, so those never name a valid RTP payload and must be routed as
+ * RTCP instead. */
 #define r_rtp_hdr_is_valid(hdr) \
-  (hdr->v == R_RTP_VERSION && (hdr->pt < 72 || hdr->pt > 76))
+  (hdr->v == R_RTP_VERSION && (hdr->pt < 64 || hdr->pt > 95))
 
 rboolean
 r_rtp_is_valid_hdr (rconstpointer buf, rsize size)
