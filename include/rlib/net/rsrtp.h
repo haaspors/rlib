@@ -328,6 +328,26 @@ R_API RSRTPError r_srtp_set_ekt_send_key (RSRTPCtx * ctx, ruint16 spi);
  */
 R_API RSRTPError r_srtp_set_ekt_full_interval (RSRTPCtx * ctx, RClockTime interval);
 
+/**
+ * @brief Bound the lifetime of the EKTKey with SPI @p spi (RFC 8870 4.5).
+ *
+ * An EKTKey must not be used indefinitely: once it has been wrapping keys for
+ * @p ttl (measured from its first use) — or reaches the AES Key Wrap usage cap —
+ * the sender stops emitting Full fields under it (they degrade to Short), so it
+ * is never used beyond its limits. The application is expected to have rolled to
+ * a fresh EKTKey (a new SPI, selected with @ref r_srtp_set_ekt_send_key) before
+ * then. @p ttl is a monotonic-clock duration (see @ref r_time_get_ts_monotonic);
+ * @c 0, the default, imposes no time limit.
+ *
+ * @param ctx  The SRTP context (EKT must be configured).
+ * @param spi  SPI of a configured EKTKey (see @ref r_srtp_add_ekt_key).
+ * @param ttl  Lifetime from first use, or @c 0 for no time limit.
+ * @return @ref R_SRTP_ERROR_OK, @ref R_SRTP_ERROR_INVAL or
+ *   @ref R_SRTP_ERROR_NO_CRYPTO_CTX (EKT not configured, or no such SPI).
+ */
+R_API RSRTPError r_srtp_set_ekt_key_ttl (RSRTPCtx * ctx, ruint16 spi,
+    RClockTime ttl);
+
 /** @brief Encrypt an RTP packet into a new SRTP buffer. */
 R_API RBuffer * r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * err) R_ATTR_WARN_UNUSED_RESULT;
 /** @brief Decrypt and verify an SRTP packet into a new RTP buffer. */

@@ -41,6 +41,8 @@
 #define R_SRTP_EKT_TYPE_FULL      0x02
 #define R_SRTP_EKT_FULL_TRAILER   7       /* SPI + Epoch + Length + MessageType */
 #define R_SRTP_EKT_FULL_BURST     3       /* Full fields sent for a new/rekeyed key */
+/* Max wraps under one EKTKey: the AES Key Wrap cap T = 2^48 (RFC 8870 4.4.1). */
+#define R_SRTP_EKT_MAX_USES       RUINT64_CONSTANT (0x1000000000000)
 #define R_SRTP_EKT_MAX_MASTERKEY  32      /* bounds the EKTPlaintext scratch */
 
 #define R_SRTP_ERRRET(errval, lbl)            \
@@ -104,6 +106,12 @@ struct _RSRTPEktKey {
   const RSRTPCipherSuiteInfo * csinfo;    /* suite for keys carried under this SPI */
   ruint8 salt[R_SRTP_MAX_SALT_SIZE];
   rsize saltsize;
+  /* Usage limits (RFC 8870 4.5 / 5.2.2): once the key has wrapped for ttl or
+   * hit the cipher's wrap cap, the sender stops emitting Full fields under it. */
+  RClockTime ttl;                         /* lifetime once first used; 0 = unlimited */
+  RClockTime first_used;                  /* monotonic time of the first wrap */
+  rboolean used;                          /* whether first_used has been stamped */
+  ruint64 uses;                           /* Full fields wrapped under this key */
 };
 
 /* Receiver epoch state, kept outside the stream so it survives the stream
@@ -891,6 +899,20 @@ r_srtp_set_ekt_full_interval (RSRTPCtx * ctx, RClockTime interval)
 }
 
 RSRTPError
+r_srtp_set_ekt_key_ttl (RSRTPCtx * ctx, ruint16 spi, RClockTime ttl)
+{
+  RSRTPEktKey * k;
+
+  if (R_UNLIKELY (ctx == NULL)) return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY (ctx->ekt == NULL)) return R_SRTP_ERROR_NO_CRYPTO_CTX;
+  if (R_UNLIKELY ((k = r_srtp_ekt_find_key (ctx->ekt, spi)) == NULL))
+    return R_SRTP_ERROR_NO_CRYPTO_CTX;
+
+  k->ttl = ttl;
+  return R_SRTP_ERROR_OK;
+}
+
+RSRTPError
 r_srtp_set_encrypted_header_extension (RSRTPCtx * ctx, ruint8 id,
     rboolean encrypted)
 {
@@ -1091,12 +1113,32 @@ r_srtp_ekt_full_size (const RSRTPEktKey * k)
   return R_AES_KEY_WRAP_PAD_SIZE (1 + keysize + 8) + R_SRTP_EKT_FULL_TRAILER;
 }
 
+/* TRUE while @p k may still wrap a key, counting the wrap. RFC 8870 4.5 / 5.2.2:
+ * a sender must stop using an EKTKey past its TTL or the cipher's wrap cap. */
+static rboolean
+r_srtp_ekt_key_usable (const RSRTPEktKey * k)
+{
+  if (R_UNLIKELY (k->uses >= R_SRTP_EKT_MAX_USES))
+    return FALSE;
+  if (k->ttl > 0 && k->used &&
+      r_time_get_ts_monotonic () - k->first_used >= k->ttl)
+    return FALSE;
+  return TRUE;
+}
+
 /* Decide whether an outbound packet carries a Full EKT field, and advance the
  * sender policy state (RFC 8870 4.6): a burst of Full fields when the send key
- * first appears or rolls (bumping the epoch), then periodically thereafter. */
+ * first appears or rolls (bumping the epoch), then periodically thereafter.
+ * An expired/over-used EKTKey stops emitting Full fields (degrades to Short) so
+ * it never wraps a key beyond its limits; the app is expected to have rolled to
+ * a fresh EKTKey by then. This only decides -- the wrap is counted when the
+ * Full field is actually emitted (r_srtp_ekt_tx_sent_full), so a protect that
+ * fails after sizing neither burns usage nor starts the TTL clock. */
 static rboolean
 r_srtp_ekt_tx_prepare (const RSRTPEkt * ekt, RSRTPStream * stream)
 {
+  rboolean full;
+
   if (stream->ekt_tx_key != stream->cctx->sendkey) {
     if (stream->ekt_tx_key != NULL)
       stream->ekt_tx_epoch++;               /* the app rolled the send key */
@@ -1104,22 +1146,29 @@ r_srtp_ekt_tx_prepare (const RSRTPEkt * ekt, RSRTPStream * stream)
     stream->ekt_tx_burst = R_SRTP_EKT_FULL_BURST;
   }
 
-  if (stream->ekt_tx_burst > 0)
-    return TRUE;
-  if (ekt->full_interval > 0 &&
-      r_time_get_ts_monotonic () - stream->ekt_tx_last_full >= ekt->full_interval)
-    return TRUE;
-  return FALSE;
+  full = stream->ekt_tx_burst > 0 ||
+      (ekt->full_interval > 0 &&
+       r_time_get_ts_monotonic () - stream->ekt_tx_last_full >= ekt->full_interval);
+
+  return full && r_srtp_ekt_key_usable (ekt->sendkey);
 }
 
-/* Record that a Full field was emitted, retiring one burst slot and restarting
- * the periodic timer. */
+/* Record an emitted Full field: retire a burst slot, restart the periodic
+ * timer, and count the wrap under the send EKTKey (stamping its first use). */
 static void
-r_srtp_ekt_tx_sent_full (RSRTPStream * stream)
+r_srtp_ekt_tx_sent_full (RSRTPEkt * ekt, RSRTPStream * stream)
 {
+  RSRTPEktKey * k = ekt->sendkey;
+
   if (stream->ekt_tx_burst > 0)
     stream->ekt_tx_burst--;
   stream->ekt_tx_last_full = r_time_get_ts_monotonic ();
+
+  if (!k->used) {
+    k->used = TRUE;
+    k->first_used = stream->ekt_tx_last_full;
+  }
+  k->uses++;
 }
 
 /* Build a FullEKTField into @p out: AES-KW(EKTPlaintext) followed by
@@ -1242,7 +1291,9 @@ r_srtp_ekt_ingest (RSRTPCtx * ctx, ruint32 ssrc, const ruint8 * data,
   /* Already keyed at this epoch or newer for this SPI (the startup burst
    * repeats an epoch; a replay repeats or lowers it): keep the packet but skip
    * re-installing. Tracking is per (SPI, SSRC) so alternating SPIs cannot
-   * sidestep the check (RFC 8870 4.3.2). */
+   * sidestep the check (RFC 8870 4.3.2). The 16-bit epoch is treated as
+   * strictly increasing; a wrap past 0xffff (2^16 rekeys of one SPI, not
+   * reachable in practice) would stall re-keying rather than accept a replay. */
   rxhead = r_hash_table_lookup (ctx->ekt->rx, RUINT_TO_POINTER (ssrc));
   for (rxnode = rxhead; rxnode != NULL; rxnode = rxnode->next) {
     if (rxnode->spi == spi)
@@ -1444,7 +1495,7 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
                 err = R_SRTP_ERROR_INTERNAL;
                 goto beach_map;
               }
-              r_srtp_ekt_tx_sent_full (stream);
+              r_srtp_ekt_tx_sent_full (ctx->ekt, stream);
             } else if (ektlen == 1) {
               info.data[srtplen] = R_SRTP_EKT_TYPE_SHORT;
             }
@@ -1798,7 +1849,7 @@ r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
               err = R_SRTP_ERROR_INTERNAL;
               goto beach_map;
             }
-            r_srtp_ekt_tx_sent_full (stream);
+            r_srtp_ekt_tx_sent_full (ctx->ekt, stream);
           } else if (ektlen == 1) {
             info.data[srtcplen] = R_SRTP_EKT_TYPE_SHORT;
           }
