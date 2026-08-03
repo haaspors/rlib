@@ -666,8 +666,14 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
                 stream->rtp.saltsize, stream->ssrc, idx);
 
             R_LOG_TRACE ("Encrypting %u bytes", (ruint)rtp.pay.size);
-            r_crypto_cipher_encrypt (stream->rtp.cipher, info.data + extlead,
-                rtp.pay.size, rtp.pay.data, iv, ivsize);
+            /* Fail closed: never emit an unencrypted payload if the cipher
+             * rejects the request (e.g. an AEAD suite used on this path). */
+            if (R_UNLIKELY (r_crypto_cipher_encrypt (stream->rtp.cipher,
+                    info.data + extlead, rtp.pay.size, rtp.pay.data, iv, ivsize)
+                    != R_CRYPTO_CIPHER_OK)) {
+              err = R_SRTP_ERROR_INTERNAL;
+              goto beach_map;
+            }
 
             if (stream->rtpmkisize > 0) {
               /* FIXME: insert mki */
@@ -824,8 +830,12 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
                 stream->rtp.saltsize, stream->ssrc, idx);
 
             R_LOG_TRACE ("Decrypting %u bytes", (ruint)payloadsize);
-            r_crypto_cipher_decrypt (stream->rtp.cipher, info.data + extlead,
-                payloadsize, rtp.pay.data, iv, ivsize);
+            if (R_UNLIKELY (r_crypto_cipher_decrypt (stream->rtp.cipher,
+                    info.data + extlead, payloadsize, rtp.pay.data, iv, ivsize)
+                    != R_CRYPTO_CIPHER_OK)) {
+              err = R_SRTP_ERROR_INTERNAL;
+              goto beach_map;
+            }
             r_buffer_unmap (payload, &info);
 
             if (R_UNLIKELY ((ret = r_buffer_replace_byte_range (packet,
@@ -918,9 +928,12 @@ r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
               stream->rtcp.saltsize, stream->ssrc, idx);
 
           R_LOG_TRACE ("Encrypting %u bytes", (ruint)(rtcp.info.size - 2 * sizeof (ruint32)));
-          r_crypto_cipher_encrypt (stream->rtcp.cipher, ptr,
-              rtcp.info.size - 2 * sizeof (ruint32), rtcp.info.data + 2 * sizeof (ruint32),
-              iv, ivsize);
+          if (R_UNLIKELY (r_crypto_cipher_encrypt (stream->rtcp.cipher, ptr,
+                  rtcp.info.size - 2 * sizeof (ruint32),
+                  rtcp.info.data + 2 * sizeof (ruint32), iv, ivsize) != R_CRYPTO_CIPHER_OK)) {
+            err = R_SRTP_ERROR_INTERNAL;
+            goto beach_map;
+          }
           ptr += rtcp.info.size - 2 * sizeof (ruint32);
 
           if (stream->rtcp.cipher->info->type > R_CRYPTO_CIPHER_ALGO_NULL)
@@ -1071,9 +1084,12 @@ r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
             r_memcpy (info.data, rtcp.info.data, 2 * sizeof (ruint32));
 
             R_LOG_TRACE ("Decrypting %u bytes", (ruint)info.size);
-            r_crypto_cipher_decrypt (stream->rtcp.cipher,
-                info.data + 2 * sizeof (ruint32), info.size - 2 * sizeof (ruint32),
-                rtcp.info.data + 2 * sizeof (ruint32), iv, ivsize);
+            if (R_UNLIKELY (r_crypto_cipher_decrypt (stream->rtcp.cipher,
+                    info.data + 2 * sizeof (ruint32), info.size - 2 * sizeof (ruint32),
+                    rtcp.info.data + 2 * sizeof (ruint32), iv, ivsize) != R_CRYPTO_CIPHER_OK)) {
+              err = R_SRTP_ERROR_INTERNAL;
+              goto beach_map;
+            }
             r_buffer_unmap (ret, &info);
           } else {
             err = R_SRTP_ERROR_INTERNAL;
