@@ -400,6 +400,223 @@ RTEST (rsrtp, hdr_ext_twobyte_roundtrip, RTEST_FAST)
 }
 RTEST_END;
 
+/* MKI (RFC 3711 3.1) tags each master key so a context can roll keys. */
+static const ruint8 mki4_one[] = { 0x00, 0x00, 0x00, 0x01 };
+static const ruint8 mkiA[] = { 0xaa, 0xaa };
+static const ruint8 mkiB[] = { 0xbb, 0xbb };
+
+/* Two staged keys sharing an ssrc: MKI A -> masterkey, MKI B -> masterkey2,
+ * each keyed identically in both directions so enc/dec contexts mirror. */
+static void
+mki_add_two (RSRTPCtx * ctx)
+{
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (ctx, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, sizeof (mkiA),
+        masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_master_key (ctx, ssrc,
+        masterkey2, masterkey2, mkiB), ==, R_SRTP_ERROR_OK);
+}
+
+RTEST (rsrtp, mki_invalid_args, RTEST_FAST)
+{
+  RSRTPCtx * ctx;
+
+  r_assert_cmpptr ((ctx = r_srtp_ctx_new ()), !=, NULL);
+
+  /* Bad ctx / size / NULL MKI on the constructor. */
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (NULL, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, 2, masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_INVAL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (ctx, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, 0, masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_INVAL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (ctx, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, R_SRTP_MAX_MKI_SIZE + 1,
+        masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_INVAL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (ctx, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, 2, masterkey, masterkey, NULL), ==, R_SRTP_ERROR_INVAL);
+
+  /* Staging a key on a missing context, or on one that has no MKI. */
+  r_assert_cmpint (r_srtp_add_master_key (ctx, 0xdeadbeef,
+        masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc (ctx, 0x1234,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_master_key (ctx, 0x1234,
+        masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
+
+  /* A real MKI context: duplicate MKI and unknown send selection are refused. */
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (ctx, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, 2, masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_master_key (ctx, ssrc,
+        masterkey2, masterkey2, mkiA), ==, R_SRTP_ERROR_CRYPTO_CTX_EXISTS);
+  r_assert_cmpint (r_srtp_set_send_master_key (ctx, ssrc, mkiB), ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
+  r_assert_cmpint (r_srtp_add_master_key (ctx, ssrc,
+        masterkey2, masterkey2, mkiB), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_send_master_key (ctx, ssrc, mkiB), ==, R_SRTP_ERROR_OK);
+
+  r_srtp_ctx_unref (ctx);
+}
+RTEST_END;
+
+RTEST (rsrtp, mki_rtp_wire, RTEST_FAST)
+{
+  RSRTPCtx * ctx;
+  RBuffer * buf, * res;
+  RSRTPError err;
+  rsize plain = sizeof (pkt_srtp_aes_128_cm_opus);
+  rsize tag = 10;                  /* HMAC-SHA1-80 */
+
+  r_assert_cmpptr ((ctx = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (ctx, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, sizeof (mki4_one),
+        masterkey, masterkey, mki4_one), ==, R_SRTP_ERROR_OK);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtp_opus, sizeof (pkt_rtp_opus))), !=, NULL);
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtp (ctx, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+
+  /* The MKI is inserted between the ciphertext and the auth tag, and the tag
+   * does not cover it (RFC 3711 3.1). So header, ext, ciphertext and tag are
+   * byte-for-byte the non-MKI vector, only pushed apart by the MKI. */
+  r_assert_cmpuint (r_buffer_get_size (res), ==, plain + sizeof (mki4_one));
+  r_assert_cmpbufmem (res, 0, plain - tag, ==, pkt_srtp_aes_128_cm_opus, plain - tag);
+  r_assert_cmpbufmem (res, plain - tag, sizeof (mki4_one), ==, mki4_one, sizeof (mki4_one));
+  r_assert_cmpbufmem (res, plain - tag + sizeof (mki4_one), tag, ==,
+      pkt_srtp_aes_128_cm_opus + plain - tag, tag);
+
+  r_buffer_unref (res);
+  r_buffer_unref (buf);
+  r_srtp_ctx_unref (ctx);
+}
+RTEST_END;
+
+RTEST (rsrtp, mki_rollover, RTEST_FAST)
+{
+  RSRTPCtx * enc, * dec;
+  RBuffer * buf, * res, * out;
+  RSRTPError err;
+  ruint8 raw[sizeof (pkt_rtp_opus)];
+  rsize sz = sizeof (pkt_rtp_opus);
+  rsize tag = 10, mkipos;
+
+  r_assert_cmpptr ((enc = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  mki_add_two (enc);
+  mki_add_two (dec);
+
+  /* First generation: the sender defaults to the first key (MKI A). */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtp_opus, sz)), !=, NULL);
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enc, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  mkipos = r_buffer_get_size (res) - tag - sizeof (mkiA);
+  r_assert_cmpbufmem (res, mkipos, sizeof (mkiA), ==, mkiA, sizeof (mkiA));
+  r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_assert_cmpbufmem (out, 0, -1, ==, pkt_rtp_opus, sz);
+  r_buffer_unref (out);
+  r_buffer_unref (res);
+  r_buffer_unref (buf);
+
+  /* Roll the sender to MKI B; the receiver follows by reading the MKI, and the
+   * same context (replay window, ROC) carries over the key change. */
+  r_assert_cmpint (r_srtp_set_send_master_key (enc, ssrc, mkiB), ==, R_SRTP_ERROR_OK);
+  r_memcpy (raw, pkt_rtp_opus, sz);
+  raw[3] = 0xce;                   /* bump the sequence so it is not a replay */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (raw, sz)), !=, NULL);
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enc, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  mkipos = r_buffer_get_size (res) - tag - sizeof (mkiB);
+  r_assert_cmpbufmem (res, mkipos, sizeof (mkiB), ==, mkiB, sizeof (mkiB));
+  r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_assert_cmpbufmem (out, 0, -1, ==, raw, sz);
+  r_buffer_unref (out);
+  r_buffer_unref (res);
+  r_buffer_unref (buf);
+
+  r_srtp_ctx_unref (enc);
+  r_srtp_ctx_unref (dec);
+}
+RTEST_END;
+
+RTEST (rsrtp, mki_rollover_key_index_independent, RTEST_FAST)
+{
+  RSRTPCtx * a, * c;
+  RBuffer * buf, * ra, * rc;
+  RSRTPError err;
+  ruint8 raw[sizeof (pkt_rtp_opus)];
+  rsize sz = sizeof (pkt_rtp_opus);
+  ruint8 pa[256], pc[256];
+  rsize na, nc;
+
+  /* A rolls to MKI B before sending anything, so B is derived at stream
+   * index 0. */
+  r_assert_cmpptr ((a = r_srtp_ctx_new ()), !=, NULL);
+  mki_add_two (a);
+  r_assert_cmpint (r_srtp_set_send_master_key (a, ssrc, mkiB), ==, R_SRTP_ERROR_OK);
+  r_memcpy (raw, pkt_rtp_opus, sz);
+  raw[2] = 0x41; raw[3] = 0xff;    /* seq 0x41ff */
+  r_assert_cmpptr ((buf = r_buffer_new_dup (raw, sz)), !=, NULL);
+  r_assert_cmpptr ((ra = r_srtp_encrypt_rtp (a, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_buffer_unref (buf);
+
+  /* C sends once with MKI A (advancing its index), then rolls to B and sends
+   * the same seq. The B key is thus re-derived at a nonzero index. Session-key
+   * derivation must not depend on the packet index (RFC 3711 4.3.1, KDR 0), so
+   * the same plaintext / SSRC / index / master key must encrypt identically. */
+  r_assert_cmpptr ((c = r_srtp_ctx_new ()), !=, NULL);
+  mki_add_two (c);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtp_opus, sz)), !=, NULL);   /* seq 0x41cd, MKI A */
+  r_assert_cmpptr ((rc = r_srtp_encrypt_rtp (c, buf, &err)), !=, NULL);
+  r_buffer_unref (rc);
+  r_buffer_unref (buf);
+  r_assert_cmpint (r_srtp_set_send_master_key (c, ssrc, mkiB), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpptr ((buf = r_buffer_new_dup (raw, sz)), !=, NULL);            /* seq 0x41ff, MKI B */
+  r_assert_cmpptr ((rc = r_srtp_encrypt_rtp (c, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_buffer_unref (buf);
+
+  na = r_buffer_extract (ra, 0, pa, sizeof (pa));
+  nc = r_buffer_extract (rc, 0, pc, sizeof (pc));
+  r_assert_cmpuint (na, ==, nc);
+  r_assert_cmpmem (pa, ==, pc, na);
+
+  r_buffer_unref (ra);
+  r_buffer_unref (rc);
+  r_srtp_ctx_unref (a);
+  r_srtp_ctx_unref (c);
+}
+RTEST_END;
+
+RTEST (rsrtp, mki_unknown_rejected, RTEST_FAST)
+{
+  RSRTPCtx * enc, * dec;
+  RBuffer * buf, * res;
+  RSRTPError err;
+
+  /* enc knows A and B and sends with B; dec only knows A. */
+  r_assert_cmpptr ((enc = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  mki_add_two (enc);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (dec, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, sizeof (mkiA),
+        masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_send_master_key (enc, ssrc, mkiB), ==, R_SRTP_ERROR_OK);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtp_opus, sizeof (pkt_rtp_opus))), !=, NULL);
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enc, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+
+  /* dec has no master key for MKI B: rejected before any auth/decrypt. */
+  r_assert_cmpptr (r_srtp_decrypt_rtp (dec, res, &err), ==, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
+
+  r_buffer_unref (res);
+  r_buffer_unref (buf);
+  r_srtp_ctx_unref (enc);
+  r_srtp_ctx_unref (dec);
+}
+RTEST_END;
+
 RTEST (rsrtcp, decrypt_aes_128_cm, RTEST_FAST)
 {
   RSRTPCtx * ctx;
@@ -477,6 +694,40 @@ RTEST (rsrtcp, encrypt_aes_128_cm, RTEST_FAST)
 
   r_buffer_unref (buf);
   r_srtp_ctx_unref (ctx);
+}
+RTEST_END;
+
+RTEST (rsrtcp, mki_roundtrip, RTEST_FAST)
+{
+  RSRTPCtx * enc, * dec;
+  RBuffer * buf, * res, * out;
+  RSRTPError err;
+
+  r_assert_cmpptr ((enc = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (enc, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, sizeof (mkiA),
+        masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_add_crypto_context_for_ssrc_with_mki (dec, ssrc,
+        R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, sizeof (mkiA),
+        masterkey, masterkey, mkiA), ==, R_SRTP_ERROR_OK);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes))), !=, NULL);
+  r_assert_cmpptr ((res = r_srtp_encrypt_rtcp (enc, buf, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  /* The MKI sits just before the 10-byte auth tag (RFC 3711 3.4). */
+  r_assert_cmpbufmem (res, r_buffer_get_size (res) - 10 - sizeof (mkiA),
+      sizeof (mkiA), ==, mkiA, sizeof (mkiA));
+
+  r_assert_cmpptr ((out = r_srtp_decrypt_rtcp (dec, res, &err)), !=, NULL);
+  r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+  r_assert_cmpbufmem (out, 0, -1, ==, pkt_rtcp_sr_sdes, sizeof (pkt_rtcp_sr_sdes));
+
+  r_buffer_unref (out);
+  r_buffer_unref (res);
+  r_buffer_unref (buf);
+  r_srtp_ctx_unref (enc);
+  r_srtp_ctx_unref (dec);
 }
 RTEST_END;
 
