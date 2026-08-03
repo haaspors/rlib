@@ -946,6 +946,63 @@ RTEST (rsrtp, ekt_multi_spi_no_downgrade, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rsrtp, ekt_ttl_expires, RTEST_FAST)
+{
+  RSRTPCtx * enc, * dec;
+  RBuffer * buf, * res, * out;
+  RSRTPError err;
+  ruint8 raw[sizeof (pkt_rtp_opus)], tail;
+  ruint i, fulls = 0;
+
+  r_assert_cmpptr ((enc = r_srtp_ctx_new ()), !=, NULL);
+  r_assert_cmpptr ((dec = r_srtp_ctx_new ()), !=, NULL);
+  ekt_setup (enc, dec);
+  /* Smallest TTL: once the first wrap stamps the clock, every later packet is
+   * past the lifetime, so the startup burst is cut short -- Full fields stop
+   * and degrade to Short. Without the TTL the burst would carry three. */
+  r_assert_cmpint (r_srtp_set_ekt_key_ttl (enc, EKT_SPI, 1), ==, R_SRTP_ERROR_OK);
+
+  r_memcpy (raw, pkt_rtp_opus, sizeof (raw));
+  for (i = 0; i < 5; i++) {
+    raw[2] = (ruint8)(0x41 + i);
+    r_assert_cmpptr ((buf = r_buffer_new_dup (raw, sizeof (raw))), !=, NULL);
+    r_assert_cmpptr ((res = r_srtp_encrypt_rtp (enc, buf, &err)), !=, NULL);
+    r_assert_cmpuint (r_buffer_extract (res, r_buffer_get_size (res) - 1, &tail, 1), ==, 1);
+    if (tail == 0x02)
+      fulls++;
+    /* Every packet still decrypts: the receiver keyed off the first Full. */
+    r_assert_cmpptr ((out = r_srtp_decrypt_rtp (dec, res, &err)), !=, NULL);
+    r_assert_cmpint (err, ==, R_SRTP_ERROR_OK);
+    r_assert_cmpbufmem (out, 0, -1, ==, raw, sizeof (raw));
+    r_buffer_unref (out);
+    r_buffer_unref (res);
+    r_buffer_unref (buf);
+  }
+  r_assert_cmpuint (fulls, >=, 1);
+  r_assert_cmpuint (fulls, <, 3);        /* fewer than the full startup burst */
+
+  r_srtp_ctx_unref (enc);
+  r_srtp_ctx_unref (dec);
+}
+RTEST_END;
+
+RTEST (rsrtp, ekt_ttl_bad_args, RTEST_FAST)
+{
+  RSRTPCtx * ctx;
+
+  r_assert_cmpptr ((ctx = r_srtp_ctx_new ()), !=, NULL);
+  /* No EKT configured yet, then an unknown SPI. */
+  r_assert_cmpint (r_srtp_set_ekt_key_ttl (ctx, EKT_SPI, 1000), ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
+  r_assert_cmpint (r_srtp_add_ekt_key (ctx, EKT_SPI, R_SRTP_EKT_CIPHER_AESKW_128,
+        ektkek128, R_SRTP_CS_AES_128_CM_HMAC_SHA1_80, masterkey + 16, 14), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_ekt_key_ttl (ctx, 0x9999, 1000), ==, R_SRTP_ERROR_NO_CRYPTO_CTX);
+  r_assert_cmpint (r_srtp_set_ekt_key_ttl (ctx, EKT_SPI, 1000), ==, R_SRTP_ERROR_OK);
+  r_assert_cmpint (r_srtp_set_ekt_key_ttl (NULL, EKT_SPI, 1000), ==, R_SRTP_ERROR_INVAL);
+
+  r_srtp_ctx_unref (ctx);
+}
+RTEST_END;
+
 RTEST (rsrtcp, decrypt_aes_128_cm, RTEST_FAST)
 {
   RSRTPCtx * ctx;
