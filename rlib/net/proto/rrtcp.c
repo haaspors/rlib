@@ -704,3 +704,109 @@ r_rtcp_buffer_add_fb (RBuffer * buf, RRTCPPacketType pt, ruint8 fmt,
   r_free (body);
   return res;
 }
+
+#define R_RTCP_XR_BLOCK_HDR_SIZE  sizeof (ruint32)
+#define R_RTCP_XR_DLRR_SUB_SIZE   (3 * sizeof (ruint32))
+
+RRTCPXRBlock *
+r_rtcp_packet_xr_get_next_block (RRTCPPacket * packet, const RRTCPXRBlock * block)
+{
+  const ruint8 * end = r_rtcp_packet_end (packet);
+  const ruint8 * ptr;
+
+  if (r_rtcp_packet_get_type (packet) != R_RTCP_PT_XR)
+    return NULL;
+
+  if (block == NULL) {
+    /* Blocks follow the 4-octet header and the reporter SSRC. */
+    ptr = packet->data + sizeof (ruint32);
+  } else {
+    const ruint8 * b = (const ruint8 *)block;
+    ruint16 words;
+
+    if (b + R_RTCP_XR_BLOCK_HDR_SIZE > end)
+      return NULL;
+    words = RUINT16_FROM_BE (*(const ruint16 *)&b[2]);
+    ptr = b + R_RTCP_XR_BLOCK_HDR_SIZE + (rsize)words * sizeof (ruint32);
+  }
+
+  if (ptr + R_RTCP_XR_BLOCK_HDR_SIZE <= end)
+    return (RRTCPXRBlock *)ptr;
+
+  return NULL;
+}
+
+RRTCPXRBlockType
+r_rtcp_packet_xr_block_get_type (const RRTCPXRBlock * block)
+{
+  return (RRTCPXRBlockType)((const ruint8 *)block)[0];
+}
+
+ruint16
+r_rtcp_packet_xr_block_get_length (const RRTCPXRBlock * block)
+{
+  const ruint8 * b = (const ruint8 *)block;
+  return (ruint16)(RUINT16_FROM_BE (*(const ruint16 *)&b[2]) * sizeof (ruint32));
+}
+
+ruint
+r_rtcp_packet_xr_block_get_ssrc_count (const RRTCPPacket * packet,
+    const RRTCPXRBlock * block)
+{
+  rsize contentlen = r_rtcp_packet_xr_block_get_length (block);
+
+  (void) packet;
+
+  switch (r_rtcp_packet_xr_block_get_type (block)) {
+    case R_RTCP_XR_BT_LOSS_RLE:
+    case R_RTCP_XR_BT_DUP_RLE:
+    case R_RTCP_XR_BT_RCPT_TIMES:
+    case R_RTCP_XR_BT_STATS:
+    case R_RTCP_XR_BT_VOIP:
+      /* One SSRC of source at the start of the block content. */
+      return contentlen >= sizeof (ruint32) ? 1 : 0;
+    case R_RTCP_XR_BT_DLRR:
+      /* A sequence of (SSRC, last RR, delay) sub-blocks. */
+      return (ruint)(contentlen / R_RTCP_XR_DLRR_SUB_SIZE);
+    default:
+      /* Receiver reference time (RRT) and unknown types name no source. */
+      return 0;
+  }
+}
+
+ruint32
+r_rtcp_packet_xr_block_get_ssrc (const RRTCPPacket * packet,
+    const RRTCPXRBlock * block, ruint idx)
+{
+  const ruint8 * end = r_rtcp_packet_end (packet);
+  const ruint8 * content = (const ruint8 *)block + R_RTCP_XR_BLOCK_HDR_SIZE;
+  const ruint8 * blockend = content + r_rtcp_packet_xr_block_get_length (block);
+  const ruint8 * ptr;
+
+  /* Never read past the block's own content even if the block length runs
+   * beyond the packet. */
+  if (blockend > end)
+    blockend = end;
+
+  switch (r_rtcp_packet_xr_block_get_type (block)) {
+    case R_RTCP_XR_BT_LOSS_RLE:
+    case R_RTCP_XR_BT_DUP_RLE:
+    case R_RTCP_XR_BT_RCPT_TIMES:
+    case R_RTCP_XR_BT_STATS:
+    case R_RTCP_XR_BT_VOIP:
+      if (idx != 0)
+        return 0;
+      ptr = content;
+      break;
+    case R_RTCP_XR_BT_DLRR:
+      ptr = content + (rsize)idx * R_RTCP_XR_DLRR_SUB_SIZE;
+      break;
+    default:
+      return 0;
+  }
+
+  if (ptr + sizeof (ruint32) <= blockend)
+    return RUINT32_FROM_BE (*(const ruint32 *)ptr);
+
+  return 0;
+}

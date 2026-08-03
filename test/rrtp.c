@@ -168,6 +168,56 @@ RTEST (rrtcp, app_wire, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcp, xr_dlrr_wire, RTEST_FAST)
+{
+  /* Extended Report (RFC 3611) with a DLRR block (two sub-blocks, so two
+   * source SSRCs) followed by a Receiver Reference Time block (no source). */
+  static const ruint8 pkt[] = {
+    0x80, 0xcf, 0x00, 0x0b,                          /* V2, PT=XR (207), len=11 */
+    0xaa, 0xaa, 0x00, 0x01,                          /* reporter SSRC */
+    0x05, 0x00, 0x00, 0x06,                          /* DLRR, block length 6 words */
+    0xbb, 0xbb, 0x00, 0x02,                          /* sub-block 1 SSRC */
+    0x00, 0x00, 0x00, 0x00,                          /*   last RR */
+    0x00, 0x00, 0x00, 0x00,                          /*   delay since last RR */
+    0xbb, 0xbb, 0x00, 0x03,                          /* sub-block 2 SSRC */
+    0x00, 0x00, 0x00, 0x00,                          /*   last RR */
+    0x00, 0x00, 0x00, 0x00,                          /*   delay since last RR */
+    0x04, 0x00, 0x00, 0x02,                          /* RRT, block length 2 words */
+    0x00, 0x00, 0x00, 0x00,                          /*   NTP timestamp (high) */
+    0x00, 0x00, 0x00, 0x00                           /*   NTP timestamp (low) */
+  };
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt_p;
+  RRTCPXRBlock * block;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (pkt, sizeof (pkt))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 1);
+  r_assert_cmpptr ((pkt_p = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt_p), ==, R_RTCP_PT_XR);
+  r_assert_cmphex (r_rtcp_packet_get_ssrc (pkt_p), ==, 0xaaaa0001);
+
+  r_assert_cmpptr ((block = r_rtcp_packet_xr_get_first_block (pkt_p)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_xr_block_get_type (block), ==, R_RTCP_XR_BT_DLRR);
+  r_assert_cmpuint (r_rtcp_packet_xr_block_get_length (block), ==, 24);
+  r_assert_cmpuint (r_rtcp_packet_xr_block_get_ssrc_count (pkt_p, block), ==, 2);
+  r_assert_cmphex (r_rtcp_packet_xr_block_get_ssrc (pkt_p, block, 0), ==, 0xbbbb0002);
+  r_assert_cmphex (r_rtcp_packet_xr_block_get_ssrc (pkt_p, block, 1), ==, 0xbbbb0003);
+  r_assert_cmphex (r_rtcp_packet_xr_block_get_ssrc (pkt_p, block, 2), ==, 0);
+
+  r_assert_cmpptr ((block = r_rtcp_packet_xr_get_next_block (pkt_p, block)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_xr_block_get_type (block), ==, R_RTCP_XR_BT_RRT);
+  r_assert_cmpuint (r_rtcp_packet_xr_block_get_ssrc_count (pkt_p, block), ==, 0);
+  r_assert_cmphex (r_rtcp_packet_xr_block_get_ssrc (pkt_p, block, 0), ==, 0);
+
+  r_assert_cmpptr (r_rtcp_packet_xr_get_next_block (pkt_p, block), ==, NULL);
+
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtcp, sdes_two_items_wire, RTEST_FAST)
 {
   /* SDES chunk with two items (CNAME + TOOL). */
