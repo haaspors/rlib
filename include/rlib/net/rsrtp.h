@@ -28,6 +28,7 @@
  */
 
 #include <rlib/rtypes.h>
+#include <rlib/rtime.h>
 
 #include <rlib/crypto/rsrtpciphersuite.h>
 #include <rlib/net/proto/rrtp.h>
@@ -100,6 +101,24 @@ R_API RSRTPCtx * r_srtp_ctx_new (void) R_ATTR_MALLOC;
 /** @brief Install a cipher suite + key for a specific @p ssrc. */
 R_API RSRTPError r_srtp_add_crypto_context_for_ssrc (RSRTPCtx * ctx,
     ruint32 ssrc, RSRTPCipherSuite cs, const ruint8 * key);
+/**
+ * @brief Replace the master key of the per-SSRC crypto context for @p ssrc,
+ * adding it if none exists.
+ *
+ * Rolls the key for an SSRC in place: the SRTP packet index continues (the
+ * sequence does not restart) and, if EKT is announcing this SSRC, the new key
+ * is advertised in a fresh Full-field burst at the next epoch
+ * (@ref r_srtp_add_ekt_key). Use it to rotate an EKT sender's own key.
+ *
+ * @param ctx   The SRTP context.
+ * @param ssrc  The synchronization source to rekey.
+ * @param cs    The cipher suite.
+ * @param key   The new master key + salt blob.
+ * @return @ref R_SRTP_ERROR_OK, @ref R_SRTP_ERROR_INVAL or @ref R_SRTP_ERROR_OOM.
+ */
+R_API RSRTPError r_srtp_update_crypto_context_for_ssrc (RSRTPCtx * ctx,
+    ruint32 ssrc, RSRTPCipherSuite cs, const ruint8 * key);
+
 /** @brief Install a cipher suite + key for an SSRC @p filter (e.g. @ref R_SRTP_FILTER_ANY). */
 R_API RSRTPError r_srtp_add_crypto_context_with_filter (RSRTPCtx * ctx,
     ruint32 filter, RSRTPCipherSuite cs, const ruint8 * key);
@@ -231,6 +250,76 @@ R_API RSRTPError r_srtp_set_send_master_key (RSRTPCtx * ctx, ruint32 id,
  */
 R_API RSRTPError r_srtp_set_encrypted_header_extension (RSRTPCtx * ctx,
     ruint8 id, rboolean encrypted);
+
+/** @brief EKT cipher used to wrap the SRTP master key (RFC 8870 4.4). */
+typedef enum {
+  R_SRTP_EKT_CIPHER_AESKW_128,      /**< AES-128 Key Wrap (mandatory to implement). */
+  R_SRTP_EKT_CIPHER_AESKW_256,      /**< AES-256 Key Wrap. */
+} RSRTPEktCipher;
+
+/**
+ * @brief Install an EKTKey for Encrypted Key Transport (RFC 8870).
+ *
+ * EKT carries a sender's SRTP master key in-band, in an EKT field appended
+ * after the SRTP/SRTCP auth tag, so a peer (typically a conference focus) can
+ * learn and rotate keys without separate signalling. Configuring at least one
+ * EKTKey turns EKT on for @p ctx: protected packets gain an EKT field and, on
+ * unprotect, a Full EKT field's wrapped key is ingested to key the sending
+ * SSRC. Enable this before processing traffic.
+ *
+ * The @p spi selects this EKTKey in EKT fields. @p cipher and @p key are the
+ * AES Key Wrap cipher and key-encryption key that wrap/unwrap the master key.
+ * @p cs is the SRTP cipher suite the transported keys are used with, and
+ * @p salt is the master salt paired with those keys (its length must match the
+ * suite's salt size); both come from signalling alongside the EKTKey.
+ *
+ * @param ctx       The SRTP context.
+ * @param spi       Security Parameter Index identifying this EKTKey (0..65535).
+ * @param cipher    The EKT (AES Key Wrap) cipher.
+ * @param key       The key-encryption key (16 bytes for AESKW-128, 32 for -256).
+ * @param cs        SRTP cipher suite for keys carried under this EKTKey.
+ * @param salt      SRTP master salt for those keys.
+ * @param saltsize  Length of @p salt; must equal the suite's master-salt size.
+ * @return @ref R_SRTP_ERROR_OK, @ref R_SRTP_ERROR_INVAL,
+ *   @ref R_SRTP_ERROR_CRYPTO_CTX_EXISTS (that SPI is already configured) or
+ *   @ref R_SRTP_ERROR_OOM.
+ */
+R_API RSRTPError r_srtp_add_ekt_key (RSRTPCtx * ctx, ruint16 spi,
+    RSRTPEktCipher cipher, const ruint8 * key,
+    RSRTPCipherSuite cs, const ruint8 * salt, rsize saltsize);
+
+/**
+ * @brief Select the EKTKey, by @p spi, used to build outbound Full EKT fields.
+ *
+ * Sending an SSRC's packets then appends an EKT field carrying that SSRC's
+ * SRTP master key (wrapped under this EKTKey) and rollover counter: a Full
+ * field in a short startup burst and periodically, a Short field otherwise.
+ * Without a send key, protected packets still carry a Short field so the
+ * stream remains EKT-framed. The master key wrapped is the one already
+ * installed for the sending SSRC (see @ref r_srtp_add_crypto_context_for_ssrc).
+ *
+ * @param ctx  The SRTP context.
+ * @param spi  SPI of a configured EKTKey (see @ref r_srtp_add_ekt_key).
+ * @return @ref R_SRTP_ERROR_OK, @ref R_SRTP_ERROR_INVAL or
+ *   @ref R_SRTP_ERROR_NO_CRYPTO_CTX (no EKTKey with that SPI).
+ */
+R_API RSRTPError r_srtp_set_ekt_send_key (RSRTPCtx * ctx, ruint16 spi);
+
+/**
+ * @brief Set how often a Full EKT field is re-sent for a keyed sending SSRC.
+ *
+ * Beyond the startup burst, sending a Full field periodically lets a receiver
+ * that joins mid-stream (e.g. a new participant behind a conference focus)
+ * learn the master key without waiting for a rekey (RFC 8870 4.6). @p interval
+ * is a monotonic-clock duration (see @ref r_time_get_ts_monotonic); @c 0
+ * disables periodic re-sends, leaving only the burst and rekey announcements.
+ *
+ * @param ctx       The SRTP context (EKT must be configured).
+ * @param interval  Minimum time between Full fields, or @c 0 for burst-only.
+ * @return @ref R_SRTP_ERROR_OK, @ref R_SRTP_ERROR_INVAL or
+ *   @ref R_SRTP_ERROR_NO_CRYPTO_CTX (EKT not configured).
+ */
+R_API RSRTPError r_srtp_set_ekt_full_interval (RSRTPCtx * ctx, RClockTime interval);
 
 /** @brief Encrypt an RTP packet into a new SRTP buffer. */
 R_API RBuffer * r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * err) R_ATTR_WARN_UNUSED_RESULT;
