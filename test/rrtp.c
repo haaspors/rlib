@@ -52,6 +52,37 @@ RTEST (rrtp, is_valid_hdr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtp, is_valid_hdr_mux_range, RTEST_FAST)
+{
+  /* RFC 5761: a 7-bit payload type in 64-95 belongs to RTCP (packet types
+   * 192-223) and must not validate as RTP, so multiplexed feedback (RTPFB 205,
+   * PSFB 206, XR 207) demuxes as RTCP rather than being taken for RTP. */
+  ruint8 hdr[R_RTP_HDR_SIZE] = { 0x80, };  /* V=2, no padding/extension/CSRC */
+
+  hdr[1] = 0;     /* PCMU */
+  r_assert (r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+  hdr[1] = 63;    /* just below the RTCP range */
+  r_assert (r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+  hdr[1] = 96;    /* dynamic */
+  r_assert (r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+  hdr[1] = 0xe0;  /* marker bit + PT 96 */
+  r_assert (r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+  hdr[1] = 127;   /* top dynamic */
+  r_assert (r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+
+  hdr[1] = 64;    /* RTCP mux range start */
+  r_assert (!r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+  hdr[1] = 95;    /* RTCP mux range end */
+  r_assert (!r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+  hdr[1] = 0xcd;  /* RTPFB (205): marker bit + PT 77 */
+  r_assert (!r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+  hdr[1] = 0xce;  /* PSFB (206): marker bit + PT 78 */
+  r_assert (!r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+  hdr[1] = 0xcf;  /* XR (207): marker bit + PT 79 */
+  r_assert (!r_rtp_is_valid_hdr (hdr, sizeof (hdr)));
+}
+RTEST_END;
+
 RTEST (rrtcp, feedback_pli_nack_wire, RTEST_FAST)
 {
   /* PSFB/PLI (no FCI) followed by RTPFB/Generic-NACK (one FCI entry). */
