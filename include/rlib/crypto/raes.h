@@ -158,6 +158,82 @@ R_API rboolean r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
     ruint8 plaintxt[R_AES_BLOCK_BYTES], const ruint8 ciphertxt[R_AES_BLOCK_BYTES]);
 /** @} */
 
+
+/**
+ * @name AES Key Wrap
+ *
+ * Deterministic wrapping of key material under a key-encryption key (an
+ * AES-ECB @c cipher). Two variants:
+ *  - @c r_cipher_aes_key_wrap / @c _unwrap - AES Key Wrap (RFC 3394 /
+ *    NIST SP 800-38F), for plaintext that is a whole number of 64-bit blocks
+ *    (a multiple of 8 octets, at least 16).
+ *  - @c r_cipher_aes_key_wrap_pad / @c _unwrap_pad - AES Key Wrap with Padding
+ *    (RFC 5649), for an arbitrary plaintext length of at least 1 octet.
+ *
+ * Both carry a 64-bit integrity check, so unwrap verifies as it decrypts and
+ * fails closed on a wrong key or tampered ciphertext. Buffers must not overlap.
+ * @{
+ */
+/** @brief Wrapped output size, in octets, for @p n plaintext octets (RFC 3394). */
+#define R_AES_KEY_WRAP_SIZE(n)      ((n) + 8)
+/** @brief Wrapped output size, in octets, for @p n plaintext octets (RFC 5649). */
+#define R_AES_KEY_WRAP_PAD_SIZE(n)  ((((n) + 7) & ~(rsize) 7) + 8)
+
+/**
+ * @brief AES Key Wrap (RFC 3394) of @p insize octets of @p in under @p cipher.
+ *
+ * @param cipher  AES-ECB cipher keyed with the key-encryption key.
+ * @param out     Receives @c R_AES_KEY_WRAP_SIZE(insize) octets; must not overlap @p in.
+ * @param in      Plaintext key material.
+ * @param insize  Plaintext length; a multiple of 8 and at least 16.
+ * @return @c TRUE on success, @c FALSE on a bad argument or length.
+ */
+R_API rboolean r_cipher_aes_key_wrap (const RCryptoCipher * cipher,
+    ruint8 * out, const ruint8 * in, rsize insize);
+/**
+ * @brief AES Key Unwrap (RFC 3394), the inverse of @ref r_cipher_aes_key_wrap.
+ *
+ * @param cipher  AES-ECB cipher keyed with the key-encryption key.
+ * @param out     Receives @c insize @c - @c 8 octets; must not overlap @p in.
+ * @param in      Wrapped input.
+ * @param insize  Wrapped length; a multiple of 8 and at least 24.
+ * @return @c TRUE if the integrity check passes; @c FALSE on a bad argument or
+ *   length, or if the check fails.
+ */
+R_API rboolean r_cipher_aes_key_unwrap (const RCryptoCipher * cipher,
+    ruint8 * out, const ruint8 * in, rsize insize);
+
+/**
+ * @brief AES Key Wrap with Padding (RFC 5649) of @p insize octets of @p in.
+ *
+ * @param cipher  AES-ECB cipher keyed with the key-encryption key.
+ * @param out     Receives @c R_AES_KEY_WRAP_PAD_SIZE(insize) octets; must not overlap @p in.
+ * @param in      Plaintext key material.
+ * @param insize  Plaintext length; at least 1 and at most @c 0xffffffff.
+ * @return @c TRUE on success, @c FALSE on a bad argument or length.
+ */
+R_API rboolean r_cipher_aes_key_wrap_pad (const RCryptoCipher * cipher,
+    ruint8 * out, const ruint8 * in, rsize insize);
+/**
+ * @brief AES Key Unwrap with Padding (RFC 5649), the inverse of
+ * @ref r_cipher_aes_key_wrap_pad.
+ *
+ * The recovered plaintext length is not known until the integrity-protected
+ * length indicator is decrypted, so @p out must have room for @c insize @c - @c 8
+ * octets; the actual length is returned via @p outsize.
+ *
+ * @param cipher   AES-ECB cipher keyed with the key-encryption key.
+ * @param out      Receives up to @c insize @c - @c 8 octets; must not overlap @p in.
+ * @param outsize  Receives the recovered plaintext length.
+ * @param in       Wrapped input.
+ * @param insize   Wrapped length; a multiple of 8 and at least 16.
+ * @return @c TRUE if the integrity and padding checks pass; @c FALSE on a bad
+ *   argument or length, or if a check fails.
+ */
+R_API rboolean r_cipher_aes_key_unwrap_pad (const RCryptoCipher * cipher,
+    ruint8 * out, rsize * outsize, const ruint8 * in, rsize insize);
+/** @} */
+
 /**
  * @name Mode operations
  *
