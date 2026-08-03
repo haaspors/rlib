@@ -685,3 +685,121 @@ RTEST (raes, free_wipes_cipher_state, RTEST_FAST)
 }
 RTEST_END;
 
+
+/* RFC 3394 4.1: wrap 128 bits of key data with a 128-bit KEK. */
+RTEST (raes, key_wrap_rfc3394, RTEST_FAST)
+{
+  static const rchar kek[] = "000102030405060708090A0B0C0D0E0F";
+  static const rchar keydata[] = "00112233445566778899AABBCCDDEEFF";
+  static const rchar wrapped[] = "1FA68B0A8112B447AEF34BD8FB5A7B829D3E862371D2CFE5";
+  RCryptoCipher * cipher;
+  ruint8 pt[16], expect[24], out[24], back[16];
+
+  r_assert_cmpuint (r_str_hex_to_binary (keydata, pt, sizeof (pt)), ==, sizeof (pt));
+  r_assert_cmpuint (r_str_hex_to_binary (wrapped, expect, sizeof (expect)), ==, sizeof (expect));
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_ECB, kek)), !=, NULL);
+
+  r_assert (r_cipher_aes_key_wrap (cipher, out, pt, sizeof (pt)));
+  r_assert_cmpmem (out, ==, expect, sizeof (expect));
+
+  r_assert (r_cipher_aes_key_unwrap (cipher, back, expect, sizeof (expect)));
+  r_assert_cmpmem (back, ==, pt, sizeof (pt));
+
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
+/* RFC 5649 6: AES Key Wrap with Padding, 192-bit KEK. The 7-octet example
+ * exercises the single-block (padded to one 64-bit block) path. */
+RTEST (raes, key_wrap_pad_rfc5649, RTEST_FAST)
+{
+  static const rchar kek[] = "5840df6e29b02af1ab493b705bf16ea1ae8338f4dcc176a8";
+  static const rchar pt1[] = "c37b7e6492584340bed12207808941155068f738";       /* 20 octets */
+  static const rchar ct1[] = "138bdeaa9b8fa7fc61f97742e72248ee5ae6ae5360d1ae6a5f54f373fa543b6a";
+  static const rchar pt2[] = "466f7250617369";                                 /* 7 octets */
+  static const rchar ct2[] = "afbeb0f07dfbf5419200f2ccb50bb24f";
+  RCryptoCipher * cipher;
+  ruint8 p[20], expect[32], out[32], back[32];
+  rsize backsize;
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_ECB, kek)), !=, NULL);
+
+  /* 20 octets -> 32 wrapped. */
+  r_assert_cmpuint (r_str_hex_to_binary (pt1, p, 20), ==, 20);
+  r_assert_cmpuint (r_str_hex_to_binary (ct1, expect, 32), ==, 32);
+  r_assert (r_cipher_aes_key_wrap_pad (cipher, out, p, 20));
+  r_assert_cmpmem (out, ==, expect, 32);
+  r_assert (r_cipher_aes_key_unwrap_pad (cipher, back, &backsize, expect, 32));
+  r_assert_cmpuint (backsize, ==, 20);
+  r_assert_cmpmem (back, ==, p, 20);
+
+  /* 7 octets -> 16 wrapped (single AES block). */
+  r_assert_cmpuint (r_str_hex_to_binary (pt2, p, 7), ==, 7);
+  r_assert_cmpuint (r_str_hex_to_binary (ct2, expect, 16), ==, 16);
+  r_assert (r_cipher_aes_key_wrap_pad (cipher, out, p, 7));
+  r_assert_cmpmem (out, ==, expect, 16);
+  r_assert (r_cipher_aes_key_unwrap_pad (cipher, back, &backsize, expect, 16));
+  r_assert_cmpuint (backsize, ==, 7);
+  r_assert_cmpmem (back, ==, p, 7);
+
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
+/* Round-trip every padded length 1..64 with a 256-bit KEK, and confirm the
+ * recovered length is exact. */
+RTEST (raes, key_wrap_pad_roundtrip, RTEST_FAST)
+{
+  static const rchar kek[] =
+    "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F";
+  RCryptoCipher * cipher;
+  ruint8 pt[64], out[72], back[72];
+  rsize n, backsize, i;
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_ECB, kek)), !=, NULL);
+  for (i = 0; i < sizeof (pt); i++)
+    pt[i] = (ruint8)(i * 7 + 1);
+
+  for (n = 1; n <= sizeof (pt); n++) {
+    r_assert (r_cipher_aes_key_wrap_pad (cipher, out, pt, n));
+    r_assert (r_cipher_aes_key_unwrap_pad (cipher, back, &backsize, out,
+          R_AES_KEY_WRAP_PAD_SIZE (n)));
+    r_assert_cmpuint (backsize, ==, n);
+    r_assert_cmpmem (back, ==, pt, n);
+  }
+
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;
+
+/* Bad arguments and integrity failures must be rejected, not silently accepted. */
+RTEST (raes, key_wrap_failures, RTEST_FAST)
+{
+  static const rchar kek[] = "000102030405060708090A0B0C0D0E0F";
+  RCryptoCipher * cipher;
+  ruint8 pt[16] = { 0 }, out[24], back[16];
+  rsize backsize;
+
+  r_assert_cmpptr ((cipher = r_cipher_aes_new_from_hex (R_CRYPTO_CIPHER_MODE_ECB, kek)), !=, NULL);
+
+  /* RFC 3394 requires a multiple of 8, at least 16 (wrap) / 24 (unwrap). */
+  r_assert (!r_cipher_aes_key_wrap (cipher, out, pt, 8));
+  r_assert (!r_cipher_aes_key_wrap (cipher, out, pt, 20));
+  r_assert (!r_cipher_aes_key_wrap (NULL, out, pt, 16));
+  r_assert (!r_cipher_aes_key_unwrap (cipher, back, out, 16));
+  /* RFC 5649 rejects an empty plaintext and an unwrap shorter than a block. */
+  r_assert (!r_cipher_aes_key_wrap_pad (cipher, out, pt, 0));
+  r_assert (!r_cipher_aes_key_unwrap_pad (cipher, back, &backsize, out, 8));
+
+  /* A tampered wrapped blob fails the integrity check. */
+  r_assert (r_cipher_aes_key_wrap (cipher, out, pt, sizeof (pt)));
+  out[3] ^= 0x80;
+  r_assert (!r_cipher_aes_key_unwrap (cipher, back, out, 24));
+  out[3] ^= 0x80;
+  r_assert (r_cipher_aes_key_wrap_pad (cipher, out, pt, sizeof (pt)));
+  out[0] ^= 0x01;
+  r_assert (!r_cipher_aes_key_unwrap_pad (cipher, back, &backsize, out, 24));
+
+  r_crypto_cipher_unref (cipher);
+}
+RTEST_END;

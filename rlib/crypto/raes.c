@@ -1695,6 +1695,178 @@ r_cipher_aes_ecb_decrypt_block (const RCryptoCipher * cipher,
   return aes->decrypt_block (aes, plaintxt, ciphertxt);
 }
 
+/* RFC 3394 default integrity check value. */
+static const ruint8 r_aes_kw_iv[8] = {
+  0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6
+};
+
+/* XOR the 64-bit round counter @p t into @p a, big-endian (RFC 3394 2.2.1). */
+static inline void
+r_aes_kw_xor_t (ruint8 a[8], ruint64 t)
+{
+  a[7] ^= (ruint8)(t      ); a[6] ^= (ruint8)(t >>  8);
+  a[5] ^= (ruint8)(t >> 16); a[4] ^= (ruint8)(t >> 24);
+  a[3] ^= (ruint8)(t >> 32); a[2] ^= (ruint8)(t >> 40);
+  a[1] ^= (ruint8)(t >> 48); a[0] ^= (ruint8)(t >> 56);
+}
+
+/* RFC 3394 2.2.1 wrapping loop over the @p n 64-bit blocks at @p r (in place),
+ * carrying the integrity register @p a. */
+static void
+r_aes_kw_wrap_core (const RCryptoCipher * cipher, ruint8 a[8], ruint8 * r, rsize n)
+{
+  ruint8 b[R_AES_BLOCK_BYTES];
+  rsize i, j;
+
+  for (j = 0; j < 6; j++) {
+    for (i = 0; i < n; i++) {
+      r_memcpy (b, a, 8);
+      r_memcpy (b + 8, r + i * 8, 8);
+      r_cipher_aes_ecb_encrypt_block (cipher, b, b);
+      r_memcpy (a, b, 8);
+      r_aes_kw_xor_t (a, (ruint64) n * j + (i + 1));
+      r_memcpy (r + i * 8, b + 8, 8);
+    }
+  }
+
+  r_memclear (b, sizeof (b));
+}
+
+/* Inverse of r_aes_kw_wrap_core; leaves the recovered integrity register in @p a. */
+static void
+r_aes_kw_unwrap_core (const RCryptoCipher * cipher, ruint8 a[8], ruint8 * r, rsize n)
+{
+  ruint8 b[R_AES_BLOCK_BYTES];
+  rsize i, j;
+
+  for (j = 6; j-- > 0; ) {
+    for (i = n; i-- > 0; ) {
+      r_memcpy (b, a, 8);
+      r_aes_kw_xor_t (b, (ruint64) n * j + (i + 1));
+      r_memcpy (b + 8, r + i * 8, 8);
+      r_cipher_aes_ecb_decrypt_block (cipher, b, b);
+      r_memcpy (a, b, 8);
+      r_memcpy (r + i * 8, b + 8, 8);
+    }
+  }
+
+  r_memclear (b, sizeof (b));
+}
+
+rboolean
+r_cipher_aes_key_wrap (const RCryptoCipher * cipher, ruint8 * out,
+    const ruint8 * in, rsize insize)
+{
+  ruint8 a[8];
+
+  if (R_UNLIKELY (cipher == NULL || out == NULL || in == NULL)) return FALSE;
+  if (R_UNLIKELY (insize < 16 || (insize & 7) != 0)) return FALSE;
+
+  r_memcpy (a, r_aes_kw_iv, 8);
+  r_memmove (out + 8, in, insize);
+  r_aes_kw_wrap_core (cipher, a, out + 8, insize / 8);
+  r_memcpy (out, a, 8);
+  return TRUE;
+}
+
+rboolean
+r_cipher_aes_key_unwrap (const RCryptoCipher * cipher, ruint8 * out,
+    const ruint8 * in, rsize insize)
+{
+  ruint8 a[8];
+
+  if (R_UNLIKELY (cipher == NULL || out == NULL || in == NULL)) return FALSE;
+  if (R_UNLIKELY (insize < 24 || (insize & 7) != 0)) return FALSE;
+
+  r_memcpy (a, in, 8);
+  r_memmove (out, in + 8, insize - 8);
+  r_aes_kw_unwrap_core (cipher, a, out, (insize - 8) / 8);
+  return r_memcmp_ct (a, r_aes_kw_iv, 8) == 0;
+}
+
+/* Build the RFC 5649 4.1 Alternative Initial Value: 0xA65959A6 || MLI. */
+static inline void
+r_aes_kw_pad_aiv (ruint8 aiv[8], rsize mli)
+{
+  aiv[0] = 0xa6; aiv[1] = 0x59; aiv[2] = 0x59; aiv[3] = 0xa6;
+  aiv[4] = (ruint8)(mli >> 24); aiv[5] = (ruint8)(mli >> 16);
+  aiv[6] = (ruint8)(mli >>  8); aiv[7] = (ruint8)(mli      );
+}
+
+rboolean
+r_cipher_aes_key_wrap_pad (const RCryptoCipher * cipher, ruint8 * out,
+    const ruint8 * in, rsize insize)
+{
+  ruint8 aiv[8];
+  rsize padded;
+
+  if (R_UNLIKELY (cipher == NULL || out == NULL || in == NULL)) return FALSE;
+  if (R_UNLIKELY (insize < 1 || insize > RUINT32_MAX)) return FALSE;
+
+  r_aes_kw_pad_aiv (aiv, insize);
+  padded = (insize + 7) & ~(rsize) 7;
+
+  if (padded == 8) {
+    /* One 64-bit block after padding: a single AES-ECB block of AIV || P. */
+    ruint8 block[R_AES_BLOCK_BYTES];
+    r_memcpy (block, aiv, 8);
+    r_memcpy (block + 8, in, insize);
+    r_memclear (block + 8 + insize, 8 - insize);
+    r_cipher_aes_ecb_encrypt_block (cipher, out, block);
+    r_memclear (block, sizeof (block));
+  } else {
+    r_memcpy (out, aiv, 8);
+    r_memcpy (out + 8, in, insize);
+    r_memclear (out + 8 + insize, padded - insize);
+    r_aes_kw_wrap_core (cipher, out, out + 8, padded / 8);
+  }
+
+  return TRUE;
+}
+
+rboolean
+r_cipher_aes_key_unwrap_pad (const RCryptoCipher * cipher, ruint8 * out,
+    rsize * outsize, const ruint8 * in, rsize insize)
+{
+  ruint8 aiv[8];
+  rsize n8, mli, i;
+  rboolean ok;
+
+  if (R_UNLIKELY (cipher == NULL || out == NULL || outsize == NULL || in == NULL))
+    return FALSE;
+  if (R_UNLIKELY (insize < 16 || (insize & 7) != 0)) return FALSE;
+
+  n8 = insize - 8;              /* length of the padded plaintext */
+
+  if (insize == 16) {
+    ruint8 block[R_AES_BLOCK_BYTES];
+    r_cipher_aes_ecb_decrypt_block (cipher, block, in);
+    r_memcpy (aiv, block, 8);
+    r_memcpy (out, block + 8, 8);
+    r_memclear (block, sizeof (block));
+  } else {
+    r_memcpy (aiv, in, 8);
+    r_memmove (out, in + 8, n8);
+    r_aes_kw_unwrap_core (cipher, aiv, out, n8 / 8);
+  }
+
+  /* Verify the AIV header, then that MLI leaves 0..7 zero pad octets, then
+   * that those pad octets are zero. Accumulate so a forgery cannot be probed
+   * bit by bit through early returns. */
+  mli = ((rsize) aiv[4] << 24) | ((rsize) aiv[5] << 16) |
+        ((rsize) aiv[6] << 8) | (rsize) aiv[7];
+  ok = (aiv[0] == 0xa6) & (aiv[1] == 0x59) & (aiv[2] == 0x59) & (aiv[3] == 0xa6);
+  ok &= (mli <= n8) & (mli + 8 > n8) & (mli > 0);
+  for (i = mli; i < n8; i++)
+    ok &= (out[i] == 0);
+
+  if (R_UNLIKELY (!ok))
+    return FALSE;
+
+  *outsize = mli;
+  return TRUE;
+}
+
 RCryptoCipherResult
 r_cipher_aes_ecb_encrypt (const RCryptoCipher * cipher,
     ruint8 * dst, rsize size, rconstpointer data, ruint8 * iv, rsize ivsize)
