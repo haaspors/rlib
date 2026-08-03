@@ -393,6 +393,17 @@ R_API rboolean r_rtcp_buffer_add_app (RBuffer * buf, ruint8 subtype, ruint32 ssr
  * @return @c TRUE on success.
  */
 R_API rboolean r_rtcp_buffer_add_fb (RBuffer * buf, RRTCPPacketType pt, ruint8 fmt, ruint32 sender, ruint32 media, const ruint8 * fci, ruint16 fcisize);
+/**
+ * @brief Append a verbatim copy of an already-parsed RTCP @p packet.
+ * @param buf     Compound RTCP buffer to append to.
+ * @param packet  Packet (from @ref r_rtcp_buffer_get_next_packet) to copy.
+ * @return @c TRUE on success.
+ *
+ * Copies the packet's full declared length, so it must reference a packet
+ * obtained from a mapped @ref RRTCPBuffer. Useful for reassembling a compound
+ * from a subset of another compound's packets.
+ */
+R_API rboolean r_rtcp_buffer_add_packet (RBuffer * buf, const RRTCPPacket * packet);
 
 /** @brief Map @p buf into @p rtcp for packet iteration. */
 R_API rboolean r_rtcp_buffer_map (RRTCPBuffer * rtcp, RBuffer * buf, RMemMapFlags flags);

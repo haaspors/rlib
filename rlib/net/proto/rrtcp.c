@@ -709,6 +709,29 @@ r_rtcp_buffer_add_fb (RBuffer * buf, RRTCPPacketType pt, ruint8 fmt,
   return res;
 }
 
+rboolean
+r_rtcp_buffer_add_packet (RBuffer * buf, const RRTCPPacket * packet)
+{
+  ruint8 * pkt;
+  rsize len;
+  RMem * mem;
+  rboolean res;
+
+  if (R_UNLIKELY (buf == NULL || packet == NULL))
+    return FALSE;
+
+  len = r_rtcp_packet_get_length (packet);
+  if (R_UNLIKELY ((pkt = r_malloc (len)) == NULL))
+    return FALSE;
+  r_memcpy (pkt, packet, len);
+
+  if (R_UNLIKELY ((mem = r_mem_new_take (R_MEM_FLAG_NONE, pkt, len, len, 0)) == NULL))
+    return FALSE;   /* r_mem_new_take owns pkt, even on failure */
+  res = r_buffer_mem_append (buf, mem);
+  r_mem_unref (mem);
+  return res;
+}
+
 #define R_RTCP_XR_BLOCK_HDR_SIZE  sizeof (ruint32)
 #define R_RTCP_XR_DLRR_SUB_SIZE   (3 * sizeof (ruint32))
 
