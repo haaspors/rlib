@@ -222,6 +222,8 @@ r_srtp_state_clear (RSRTPState * state)
     r_crypto_cipher_unref (state->cipher);
   r_hmac_free (state->mac);
   r_free (state->window);
+  /* The session salt is key-derived material; don't leave it in freed heap. */
+  r_memclear (state->salt, sizeof (state->salt));
 }
 
 static void
