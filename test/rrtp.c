@@ -168,6 +168,71 @@ RTEST (rrtcp, app_wire, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST (rrtcp, iter_rejects_oversized_packet, RTEST_FAST)
+{
+  /* A non-first packet whose length field runs past the mapped buffer must end
+   * iteration, not be handed back -- accessors derive the packet end from that
+   * length and would otherwise read out of bounds. */
+  static const ruint8 compound[] = {
+    0x80, 0xc9, 0x00, 0x01,  /* RR, RC=0, len=1 (8 bytes) */
+    0xb0, 0xb0, 0xb0, 0xb0,  /* reporter SSRC */
+    0x80, 0xcf, 0xff, 0xff,  /* XR claiming len=0xffff (256 KiB) ... */
+    0x00, 0x00, 0x00, 0x00   /* ... but only 4 bytes present */
+  };
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (compound, sizeof (compound))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 1);
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_RR);
+  r_assert_cmpptr (r_rtcp_buffer_get_next_packet (&rtcp, pkt), ==, NULL);
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtcp, iter_rejects_trailing_junk, RTEST_FAST)
+{
+  /* Trailing bytes too short to be an RTCP header must not be returned as a
+   * packet. */
+  static const ruint8 compound[] = {
+    0x80, 0xc9, 0x00, 0x01,  /* RR, RC=0, len=1 (8 bytes) */
+    0xb0, 0xb0, 0xb0, 0xb0,  /* reporter SSRC */
+    0x00, 0x00, 0x00          /* 3 stray bytes */
+  };
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (compound, sizeof (compound))), !=, NULL);
+  r_assert (r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_assert_cmpuint (r_rtcp_buffer_get_packet_count (&rtcp), ==, 1);
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpptr (r_rtcp_buffer_get_next_packet (&rtcp, pkt), ==, NULL);
+  r_assert (r_rtcp_buffer_unmap (&rtcp, buf));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
+RTEST (rrtcp, map_rejects_oversized_first, RTEST_FAST)
+{
+  /* The first packet's length running past the buffer fails the mapping. */
+  static const ruint8 compound[] = {
+    0x80, 0xc9, 0xff, 0xff,  /* RR claiming len=0xffff, only 8 bytes present */
+    0xb0, 0xb0, 0xb0, 0xb0
+  };
+  RBuffer * buf;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (compound, sizeof (compound))), !=, NULL);
+  r_assert (!r_rtcp_buffer_map (&rtcp, buf, R_MEM_MAP_READ));
+  r_buffer_unref (buf);
+}
+RTEST_END;
+
 RTEST (rrtcp, xr_dlrr_wire, RTEST_FAST)
 {
   /* Extended Report (RFC 3611) with a DLRR block (two sub-blocks, so two
