@@ -39,6 +39,9 @@
 /** @brief Wildcard SSRC filter matching any stream (see @ref r_srtp_add_crypto_context_with_filter). */
 #define R_SRTP_FILTER_ANY         RUINT32_MAX
 
+/** @brief Largest supported Master Key Identifier, in bytes (see @ref r_srtp_add_crypto_context_for_ssrc_with_mki). */
+#define R_SRTP_MAX_MKI_SIZE       16
+
 /**
  * @defgroup r_srtp SRTP / SRTCP
  * @ingroup r_net
@@ -54,6 +57,13 @@
  * DTLS-SRTP handshake (see @ref r_tls_server). Individual RTP header
  * extension IDs can be marked for encryption with
  * @ref r_srtp_set_encrypted_header_extension (RFC 6904).
+ *
+ * For key rollover, a crypto context can carry more than one master key, each
+ * tagged with a Master Key Identifier (MKI) that is written into every
+ * protected packet and read back to pick the decrypting key (RFC 3711 3.1,
+ * 8.1). Create such a context with the @c _with_mki constructors, stage extra
+ * keys with @ref r_srtp_add_master_key, and switch the sending key with
+ * @ref r_srtp_set_send_master_key.
  *
  * @{
  */
@@ -105,6 +115,95 @@ R_API RSRTPError r_srtp_add_crypto_context_with_filter (RSRTPCtx * ctx,
 R_API RSRTPError r_srtp_add_crypto_context_with_filter_dual (RSRTPCtx * ctx,
     ruint32 filter, RSRTPCipherSuite cs,
     const ruint8 * recvkey, const ruint8 * sendkey);
+
+/**
+ * @brief Install an MKI-enabled crypto context for a specific @p ssrc, keyed
+ * with its first master key (RFC 3711 8.1).
+ *
+ * Like @ref r_srtp_add_crypto_context_for_ssrc but reserves @p mkisize bytes
+ * for a Master Key Identifier in every protected packet and tags this master
+ * key with @p mki. @p recvkey decrypts inbound packets, @p sendkey encrypts
+ * outbound (as in @ref r_srtp_add_crypto_context_with_filter_dual). Stage
+ * additional keys for rollover with @ref r_srtp_add_master_key and select the
+ * outbound one with @ref r_srtp_set_send_master_key; this first key is the
+ * initial send key. @p mkisize is fixed for the lifetime of the context and
+ * must be 1..@ref R_SRTP_MAX_MKI_SIZE.
+ *
+ * @param ctx      The SRTP context.
+ * @param ssrc     The synchronization source this context keys.
+ * @param cs       The cipher suite.
+ * @param mkisize  MKI length in bytes (1..@ref R_SRTP_MAX_MKI_SIZE).
+ * @param recvkey  Master key + salt used to decrypt inbound packets.
+ * @param sendkey  Master key + salt used to encrypt outbound packets.
+ * @param mki      The @p mkisize-byte identifier for this master key.
+ * @return @ref R_SRTP_ERROR_OK, @ref R_SRTP_ERROR_INVAL,
+ *   @ref R_SRTP_ERROR_CRYPTO_CTX_EXISTS or @ref R_SRTP_ERROR_OOM.
+ */
+R_API RSRTPError r_srtp_add_crypto_context_for_ssrc_with_mki (RSRTPCtx * ctx,
+    ruint32 ssrc, RSRTPCipherSuite cs, ruint8 mkisize,
+    const ruint8 * recvkey, const ruint8 * sendkey, const ruint8 * mki);
+
+/**
+ * @brief Install an MKI-enabled crypto context for an SSRC @p filter, keyed
+ * with its first master key (RFC 3711 8.1).
+ *
+ * The @p filter counterpart of @ref r_srtp_add_crypto_context_for_ssrc_with_mki;
+ * see it for the MKI and dual-key semantics.
+ *
+ * @param ctx      The SRTP context.
+ * @param filter   The SSRC filter (e.g. @ref R_SRTP_FILTER_ANY); must be non-zero.
+ * @param cs       The cipher suite.
+ * @param mkisize  MKI length in bytes (1..@ref R_SRTP_MAX_MKI_SIZE).
+ * @param recvkey  Master key + salt used to decrypt inbound packets.
+ * @param sendkey  Master key + salt used to encrypt outbound packets.
+ * @param mki      The @p mkisize-byte identifier for this master key.
+ * @return @ref R_SRTP_ERROR_OK, @ref R_SRTP_ERROR_INVAL or @ref R_SRTP_ERROR_OOM.
+ */
+R_API RSRTPError r_srtp_add_crypto_context_with_filter_with_mki (RSRTPCtx * ctx,
+    ruint32 filter, RSRTPCipherSuite cs, ruint8 mkisize,
+    const ruint8 * recvkey, const ruint8 * sendkey, const ruint8 * mki);
+
+/**
+ * @brief Stage an additional master key on an MKI-enabled crypto context
+ * (RFC 3711 8.1).
+ *
+ * Adds a master key, tagged with @p mki, to the context created for @p id — the
+ * @c ssrc of a per-SSRC context or the @c filter value of a filter context. Its
+ * MKI length must equal the context's @c mkisize. The key can then be received
+ * immediately (the peer selects it by MKI); to start sending with it, call
+ * @ref r_srtp_set_send_master_key. Adding a key does not change the send key.
+ *
+ * @param ctx      The SRTP context.
+ * @param id       The @c ssrc or @c filter the context was created with.
+ * @param recvkey  Master key + salt used to decrypt inbound packets.
+ * @param sendkey  Master key + salt used to encrypt outbound packets.
+ * @param mki      The identifier for this master key, @c mkisize bytes.
+ * @return @ref R_SRTP_ERROR_OK, @ref R_SRTP_ERROR_INVAL,
+ *   @ref R_SRTP_ERROR_NO_CRYPTO_CTX (no such context or it has no MKI),
+ *   @ref R_SRTP_ERROR_CRYPTO_CTX_EXISTS (that MKI is already in use) or
+ *   @ref R_SRTP_ERROR_OOM.
+ */
+R_API RSRTPError r_srtp_add_master_key (RSRTPCtx * ctx, ruint32 id,
+    const ruint8 * recvkey, const ruint8 * sendkey, const ruint8 * mki);
+
+/**
+ * @brief Select which master key, by @p mki, the sender uses for outbound
+ * packets (RFC 3711 8.1).
+ *
+ * Switches the active send key of the context created for @p id to the staged
+ * master key tagged with @p mki. Inbound selection is unaffected: any staged
+ * key can still decrypt. Use this to complete a rollover once both peers know
+ * the new key.
+ *
+ * @param ctx  The SRTP context.
+ * @param id   The @c ssrc or @c filter the context was created with.
+ * @param mki  The identifier of the master key to send with, @c mkisize bytes.
+ * @return @ref R_SRTP_ERROR_OK, @ref R_SRTP_ERROR_INVAL or
+ *   @ref R_SRTP_ERROR_NO_CRYPTO_CTX (no such context, the context has no MKI,
+ *   or no key with that MKI).
+ */
+R_API RSRTPError r_srtp_set_send_master_key (RSRTPCtx * ctx, ruint32 id,
+    const ruint8 * mki);
 
 /**
  * @brief Mark an RTP header-extension @p id as encrypted, or clear it (RFC 6904).

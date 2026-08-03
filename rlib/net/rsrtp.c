@@ -56,11 +56,22 @@ typedef enum {
   R_SRTP_DIRECTION_OUTBOUND,
 } RSRTPDirection;
 
+/* A master key within a crypto context: an MKI tag (RFC 3711 3.1) followed by
+ * the [recv || send] key+salt blobs (see r_srtp_crypto_ctx_new). A context can
+ * hold several, one per MKI, so keys can roll without tearing it down. */
+typedef struct _RSRTPMasterKey RSRTPMasterKey;
+struct _RSRTPMasterKey {
+  RSRTPMasterKey * next;
+  ruint8 data[0];                   /* [mkisize][blob recv][blob send] */
+};
+
 typedef struct {
   const RSRTPCipherSuiteInfo * csinfo;
   ruint32 ssrc;
   ruint32 filter;
-  ruint8 key[0];
+  ruint8 mkisize;                   /* MKI length in bytes; 0 when unused */
+  RSRTPMasterKey * keys;            /* head of the master-key list */
+  RSRTPMasterKey * sendkey;         /* active key for outbound packets */
 } RSRTPCryptoCtx;
 
 typedef struct {
@@ -77,6 +88,12 @@ typedef struct {
   const RSRTPCryptoCtx * cctx;
   RSRTPDirection dir;
   ruint8 rtpmkisize;
+
+  /* Master key the session state below was derived from, NULL until first
+   * keyed. On an MKI context this tracks the selected key so a rollover
+   * re-derives only when the key actually changes. */
+  const RSRTPMasterKey * mkey;
+  rboolean wanthdrext;              /* derive the RFC 6904 keystream when keying */
 
   RSRTPState rtp;
   RSRTPState rtcp;
@@ -123,7 +140,13 @@ r_srtp_kdprf_generate (ruint8 * buf, rsize bufsize,
   r_memcpy (iv, salt, saltsize);
   iv[saltsize - 7] ^= (ruint8)lbl;
 
+  /* r = index DIV kdr selects the session-key generation. kdr == 0 (the
+   * default, RFC 3711 4.3.1) means a single derivation with r always 0, so the
+   * packet index must not enter the KDF -- otherwise re-deriving on a master
+   * key rollover would yield a different key depending on how far the stream
+   * index had advanced, and the two peers (at different indices) would disagree. */
   if (kdr > 0) index %= kdr;
+  else         index = 0;
   if (index != 0) {
     iv[saltsize - 6] ^= ((index >> 40) & 0xff);
     iv[saltsize - 5] ^= ((index >> 32) & 0xff);
@@ -237,36 +260,131 @@ r_srtp_stream_free (RSRTPStream * stream)
   r_free (stream);
 }
 
-/* Select the recv or send key+salt blob for @p dir (see r_srtp_crypto_ctx_new). */
+/* The MKI tag of a master key. */
 static inline const ruint8 *
-r_srtp_crypto_ctx_key (const RSRTPCryptoCtx * cctx, RSRTPDirection dir)
+r_srtp_master_key_mki (const RSRTPMasterKey * mk)
 {
-  rsize blob = (cctx->csinfo->cipher->keybits + cctx->csinfo->saltbits) / 8;
-  return dir == R_SRTP_DIRECTION_OUTBOUND ? cctx->key + blob : cctx->key;
+  return mk->data;
 }
 
+/* The recv or send key+salt blob of @p mk for @p dir (see r_srtp_crypto_ctx_new). */
+static inline const ruint8 *
+r_srtp_master_key_blob (const RSRTPCryptoCtx * cctx, const RSRTPMasterKey * mk,
+    RSRTPDirection dir)
+{
+  rsize blob = (cctx->csinfo->cipher->keybits + cctx->csinfo->saltbits) / 8;
+  const ruint8 * key = mk->data + cctx->mkisize;
+  return dir == R_SRTP_DIRECTION_OUTBOUND ? key + blob : key;
+}
+
+static RSRTPMasterKey *
+r_srtp_master_key_new (const RSRTPCipherSuiteInfo * info, ruint8 mkisize,
+    const ruint8 * recvkey, const ruint8 * sendkey, const ruint8 * mki)
+{
+  RSRTPMasterKey * mk;
+  rsize blob = (info->cipher->keybits + info->saltbits) / 8;
+
+  if ((mk = r_malloc (sizeof (RSRTPMasterKey) + mkisize + 2 * blob)) != NULL) {
+    mk->next = NULL;
+    if (mkisize > 0)
+      r_memcpy (mk->data, mki, mkisize);
+    r_memcpy (mk->data + mkisize, recvkey, blob);
+    r_memcpy (mk->data + mkisize + blob, sendkey, blob);
+  }
+
+  return mk;
+}
+
+/* The master key tagged with @p mki, or NULL. The MKI is not secret and not
+ * authenticated, so a plain compare is fine; a mismatch just fails auth. */
+static const RSRTPMasterKey *
+r_srtp_find_master_key (const RSRTPCryptoCtx * cctx, const ruint8 * mki)
+{
+  const RSRTPMasterKey * mk;
+
+  for (mk = cctx->keys; mk != NULL; mk = mk->next) {
+    if (r_memcmp (r_srtp_master_key_mki (mk), mki, cctx->mkisize) == 0)
+      return mk;
+  }
+
+  return NULL;
+}
+
+/* (Re-)derive the RTP/RTCP (and, when wanted, RFC 6904) session state of
+ * @p stream from master key @p mk for its current direction. r_srtp_state_init
+ * keeps the replay window and packet index, so a rollover to a new master key
+ * continues the same crypto context (RFC 3711 8.1) rather than resetting it. */
+static RCryptoCipherResult
+r_srtp_stream_key (RSRTPStream * stream, const RSRTPMasterKey * mk)
+{
+  const RSRTPCryptoCtx * cctx = stream->cctx;
+  RCryptoCipher * kdcipher;
+  const ruint8 * key = r_srtp_master_key_blob (cctx, mk, stream->dir);
+  rsize keysize = cctx->csinfo->cipher->keybits / 8;
+  rsize saltsize = cctx->csinfo->saltbits / 8;
+  RCryptoCipherResult res;
+
+  if (R_UNLIKELY ((kdcipher = r_crypto_cipher_new (cctx->csinfo->kdprf,
+            key)) == NULL)) {
+    R_LOG_WARNING ("Unable to create key derivation PRF cipher");
+    return R_CRYPTO_CIPHER_OOM;
+  }
+
+  if ((res = r_srtp_state_init (&stream->rtp, R_SRTP_KDPRF_LABEL_RTP_ENCRYPTION,
+          kdcipher, 0, cctx->csinfo, key + keysize, saltsize)) == R_CRYPTO_CIPHER_OK &&
+      (res = r_srtp_state_init (&stream->rtcp, R_SRTP_KDPRF_LABEL_RTCP_ENCRYPTION,
+          kdcipher, 0, cctx->csinfo, key + keysize, saltsize)) == R_CRYPTO_CIPHER_OK &&
+      stream->wanthdrext) {
+    if (stream->hdrcipher != NULL) {
+      r_crypto_cipher_unref (stream->hdrcipher);
+      stream->hdrcipher = NULL;
+    }
+    res = r_srtp_stream_init_hdrext (stream, kdcipher, cctx->csinfo,
+        key + keysize, saltsize);
+  }
+
+  if (R_LIKELY (res == R_CRYPTO_CIPHER_OK))
+    stream->mkey = mk;
+
+  r_crypto_cipher_unref (kdcipher);
+  return res;
+}
+
+/* Ensure @p stream's session state is derived from master key @p mk, keying it
+ * on first use and re-keying only when the selected key actually changes. */
+static RSRTPError
+r_srtp_stream_ensure_key (RSRTPStream * stream, const RSRTPMasterKey * mk)
+{
+  if (R_LIKELY (stream->mkey == mk))
+    return R_SRTP_ERROR_OK;
+
+  switch (r_srtp_stream_key (stream, mk)) {
+    case R_CRYPTO_CIPHER_OK:
+      return R_SRTP_ERROR_OK;
+    case R_CRYPTO_CIPHER_OOM:
+      return R_SRTP_ERROR_OOM;
+    default:
+      R_LOG_WARNING ("stream: 0x%.8x - crypto init failed", stream->ssrc);
+      return R_SRTP_ERROR_INTERNAL;
+  }
+}
+
+/* The session keys are derived lazily (r_srtp_stream_ensure_key), once the
+ * settled direction and — on an MKI context — the selected master key are
+ * known, so all this needs is the replay windows. */
 static RSRTPStream *
 r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx, RSRTPDirection dir,
     rboolean hdrext)
 {
   RSRTPStream * ret;
-  RCryptoCipher * kdcipher;
-  const ruint8 * key = r_srtp_crypto_ctx_key (cctx, dir);
-
-  if (R_UNLIKELY ((kdcipher = r_crypto_cipher_new (cctx->csinfo->kdprf,
-            key)) == NULL)) {
-    R_LOG_WARNING ("Unable to create key derivation PRF cipher");
-    return NULL;
-  }
 
   if ((ret = r_mem_new0 (RSRTPStream)) != NULL) {
-    RCryptoCipherResult res;
-    rsize keysize = cctx->csinfo->cipher->keybits / 8;
-    rsize saltsize = cctx->csinfo->saltbits / 8;
-
     ret->ssrc = ssrc;
     ret->cctx = cctx;
     ret->dir = dir;
+    ret->rtpmkisize = cctx->mkisize;
+    ret->wanthdrext = hdrext;
+    ret->mkey = NULL;
     if (R_UNLIKELY (!r_bitset_init_heap (ret->rtp.window, R_SRTP_WINDOW_SIZE) ||
           !r_bitset_init_heap (ret->rtcp.window, R_SRTP_WINDOW_SIZE))) {
       /* Without the replay window, r_srtp_stream_replay_check would later
@@ -274,36 +392,36 @@ r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx, RSRTPDirection dir
       R_LOG_WARNING ("stream: 0x%.8x - replay window alloc failed", ssrc);
       r_srtp_stream_free (ret);
       ret = NULL;
-    } else if (R_UNLIKELY ((res = r_srtp_state_init (&ret->rtp,
-              R_SRTP_KDPRF_LABEL_RTP_ENCRYPTION, kdcipher, 0, cctx->csinfo,
-              key + keysize, saltsize)) != R_CRYPTO_CIPHER_OK)) {
-      R_LOG_WARNING ("stream: 0x%.8x - RTP crypto init failed %d", ssrc, res);
-      r_srtp_stream_free (ret);
-      ret = NULL;
-    } else if (R_UNLIKELY ((res = r_srtp_state_init (&ret->rtcp,
-              R_SRTP_KDPRF_LABEL_RTCP_ENCRYPTION, kdcipher, 0, cctx->csinfo,
-              key + keysize, saltsize)) != R_CRYPTO_CIPHER_OK)) {
-      R_LOG_WARNING ("stream: 0x%.8x - RTCP crypto init failed %d", ssrc, res);
-      r_srtp_stream_free (ret);
-      ret = NULL;
-    } else if (R_UNLIKELY (hdrext && (res = r_srtp_stream_init_hdrext (ret,
-              kdcipher, cctx->csinfo, key + keysize, saltsize)) != R_CRYPTO_CIPHER_OK)) {
-      R_LOG_WARNING ("stream: 0x%.8x - hdr-ext crypto init failed %d", ssrc, res);
-      r_srtp_stream_free (ret);
-      ret = NULL;
     } else {
       R_LOG_DEBUG ("stream: 0x%.8x - %p", ssrc, ret);
     }
   }
 
-  r_crypto_cipher_unref (kdcipher);
   return ret;
+}
+
+static void
+r_srtp_crypto_ctx_free (RSRTPCryptoCtx * cctx)
+{
+  rsize blob = (cctx->csinfo->cipher->keybits + cctx->csinfo->saltbits) / 8;
+  RSRTPMasterKey * mk = cctx->keys;
+
+  while (mk != NULL) {
+    RSRTPMasterKey * next = mk->next;
+    /* Master keys are the most sensitive material here; don't leave them
+     * behind in freed heap. */
+    r_memclear (mk, sizeof (RSRTPMasterKey) + cctx->mkisize + 2 * blob);
+    r_free (mk);
+    mk = next;
+  }
+
+  r_free (cctx);
 }
 
 static void
 r_srtp_ctx_free (RSRTPCtx * ctx)
 {
-  r_list_destroy_full (ctx->crypto_filter, r_free);
+  r_list_destroy_full (ctx->crypto_filter, (RDestroyNotify) r_srtp_crypto_ctx_free);
   r_hash_table_unref (ctx->crypto_ssrc);
   r_hash_table_unref (ctx->streams);
   r_free (ctx->hdrext_ids);
@@ -319,7 +437,8 @@ r_srtp_ctx_new (void)
     r_ref_init (ret, r_srtp_ctx_free);
 
     ret->crypto_filter = NULL;
-    ret->crypto_ssrc = r_hash_table_new_full (NULL, NULL, NULL, r_free);
+    ret->crypto_ssrc = r_hash_table_new_full (NULL, NULL, NULL,
+        (RDestroyNotify) r_srtp_crypto_ctx_free);
     ret->streams = r_hash_table_new_full (NULL, NULL,
         NULL, (RDestroyNotify) r_srtp_stream_free);
     ret->hdrext_ids = NULL;
@@ -329,25 +448,54 @@ r_srtp_ctx_new (void)
   return ret;
 }
 
-/* A crypto context carries two key+salt blobs, [recv || send], so a single
- * DTLS-SRTP filter can key both directions (RFC 5764 4.2). A single-key
- * context duplicates the one key into both slots. */
+/* A crypto context holds a list of master keys, each two key+salt blobs
+ * [recv || send] so a single DTLS-SRTP filter can key both directions
+ * (RFC 5764 4.2); a single-key context duplicates the one key into both slots.
+ * With MKI (mkisize > 0) more than one key can be staged for rollover, each
+ * tagged with its @p mki (RFC 3711 8.1); without it there is exactly one key
+ * and @p mki is ignored. The first key is the initial send key. */
 static RSRTPCryptoCtx *
 r_srtp_crypto_ctx_new (const RSRTPCipherSuiteInfo * info, ruint32 ssrc,
-    ruint32 filter, const ruint8 * recvkey, const ruint8 * sendkey)
+    ruint32 filter, ruint8 mkisize,
+    const ruint8 * recvkey, const ruint8 * sendkey, const ruint8 * mki)
 {
   RSRTPCryptoCtx * cctx;
-  rsize blob = (info->cipher->keybits + info->saltbits) / 8;
 
-  if ((cctx = r_malloc (sizeof (RSRTPCryptoCtx) + 2 * blob)) != NULL) {
+  if ((cctx = r_mem_new (RSRTPCryptoCtx)) != NULL) {
     cctx->csinfo = info;
     cctx->ssrc = ssrc;
     cctx->filter = filter;
-    r_memcpy (cctx->key, recvkey, blob);
-    r_memcpy (cctx->key + blob, sendkey, blob);
+    cctx->mkisize = mkisize;
+    if ((cctx->keys = r_srtp_master_key_new (info, mkisize,
+            recvkey, sendkey, mki)) == NULL) {
+      r_free (cctx);
+      return NULL;
+    }
+    cctx->sendkey = cctx->keys;
   }
 
   return cctx;
+}
+
+/* Find the context created for @p id: an ssrc (per-SSRC context) or an exact
+ * filter value. Used by the MKI key-management entry points. */
+static RSRTPCryptoCtx *
+r_srtp_find_crypto_ctx (RSRTPCtx * ctx, ruint32 id)
+{
+  RSRTPCryptoCtx * cctx;
+  RList * it;
+
+  if ((cctx = r_hash_table_lookup (ctx->crypto_ssrc,
+          RUINT_TO_POINTER (id))) != NULL)
+    return cctx;
+
+  for (it = ctx->crypto_filter; it != NULL; it = it->next) {
+    cctx = it->data;
+    if (cctx->filter == id)
+      return cctx;
+  }
+
+  return NULL;
 }
 
 RSRTPError
@@ -365,7 +513,7 @@ r_srtp_add_crypto_context_for_ssrc (RSRTPCtx * ctx,
           RUINT_TO_POINTER (ssrc)) == R_HASH_TABLE_OK))
     return R_SRTP_ERROR_CRYPTO_CTX_EXISTS;
 
-  if ((cctx = r_srtp_crypto_ctx_new (info, ssrc, 0, key, key)) != NULL) {
+  if ((cctx = r_srtp_crypto_ctx_new (info, ssrc, 0, 0, key, key, NULL)) != NULL) {
     r_hash_table_insert (ctx->crypto_ssrc, RUINT_TO_POINTER (ssrc), cctx);
     R_LOG_TRACE ("ctx: %p ssrc: 0x%.8x crypto: %s", ctx, ssrc, info->str);
     return R_SRTP_ERROR_OK;
@@ -395,13 +543,118 @@ r_srtp_add_crypto_context_with_filter_dual (RSRTPCtx * ctx,
   if (R_UNLIKELY ((info = r_srtp_cipher_suite_get_info (cs)) == NULL))
     return R_SRTP_ERROR_INVAL;
 
-  if ((cctx = r_srtp_crypto_ctx_new (info, 0, filter, recvkey, sendkey)) != NULL) {
+  if ((cctx = r_srtp_crypto_ctx_new (info, 0, filter, 0,
+          recvkey, sendkey, NULL)) != NULL) {
     ctx->crypto_filter = r_list_prepend (ctx->crypto_filter, cctx);
     R_LOG_TRACE ("ctx: %p filter: 0x%.8x crypto: %s", ctx, filter, info->str);
     return R_SRTP_ERROR_OK;
   }
 
   return R_SRTP_ERROR_OOM;
+}
+
+RSRTPError
+r_srtp_add_crypto_context_for_ssrc_with_mki (RSRTPCtx * ctx,
+    ruint32 ssrc, RSRTPCipherSuite cs, ruint8 mkisize,
+    const ruint8 * recvkey, const ruint8 * sendkey, const ruint8 * mki)
+{
+  const RSRTPCipherSuiteInfo * info;
+  RSRTPCryptoCtx * cctx;
+
+  if (R_UNLIKELY (ctx == NULL)) return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY (recvkey == NULL || sendkey == NULL || mki == NULL))
+    return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY (mkisize == 0 || mkisize > R_SRTP_MAX_MKI_SIZE))
+    return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY ((info = r_srtp_cipher_suite_get_info (cs)) == NULL))
+    return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY (r_hash_table_contains (ctx->crypto_ssrc,
+          RUINT_TO_POINTER (ssrc)) == R_HASH_TABLE_OK))
+    return R_SRTP_ERROR_CRYPTO_CTX_EXISTS;
+
+  if ((cctx = r_srtp_crypto_ctx_new (info, ssrc, 0, mkisize,
+          recvkey, sendkey, mki)) != NULL) {
+    r_hash_table_insert (ctx->crypto_ssrc, RUINT_TO_POINTER (ssrc), cctx);
+    R_LOG_TRACE ("ctx: %p ssrc: 0x%.8x crypto: %s mki: %u bytes",
+        ctx, ssrc, info->str, mkisize);
+    return R_SRTP_ERROR_OK;
+  }
+
+  return R_SRTP_ERROR_OOM;
+}
+
+RSRTPError
+r_srtp_add_crypto_context_with_filter_with_mki (RSRTPCtx * ctx,
+    ruint32 filter, RSRTPCipherSuite cs, ruint8 mkisize,
+    const ruint8 * recvkey, const ruint8 * sendkey, const ruint8 * mki)
+{
+  const RSRTPCipherSuiteInfo * info;
+  RSRTPCryptoCtx * cctx;
+
+  if (R_UNLIKELY (ctx == NULL)) return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY (filter == 0)) return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY (recvkey == NULL || sendkey == NULL || mki == NULL))
+    return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY (mkisize == 0 || mkisize > R_SRTP_MAX_MKI_SIZE))
+    return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY ((info = r_srtp_cipher_suite_get_info (cs)) == NULL))
+    return R_SRTP_ERROR_INVAL;
+
+  if ((cctx = r_srtp_crypto_ctx_new (info, 0, filter, mkisize,
+          recvkey, sendkey, mki)) != NULL) {
+    ctx->crypto_filter = r_list_prepend (ctx->crypto_filter, cctx);
+    R_LOG_TRACE ("ctx: %p filter: 0x%.8x crypto: %s mki: %u bytes",
+        ctx, filter, info->str, mkisize);
+    return R_SRTP_ERROR_OK;
+  }
+
+  return R_SRTP_ERROR_OOM;
+}
+
+RSRTPError
+r_srtp_add_master_key (RSRTPCtx * ctx, ruint32 id,
+    const ruint8 * recvkey, const ruint8 * sendkey, const ruint8 * mki)
+{
+  RSRTPCryptoCtx * cctx;
+  RSRTPMasterKey * mk;
+
+  if (R_UNLIKELY (ctx == NULL)) return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY (recvkey == NULL || sendkey == NULL || mki == NULL))
+    return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY ((cctx = r_srtp_find_crypto_ctx (ctx, id)) == NULL))
+    return R_SRTP_ERROR_NO_CRYPTO_CTX;
+  if (R_UNLIKELY (cctx->mkisize == 0))
+    return R_SRTP_ERROR_NO_CRYPTO_CTX;
+  if (R_UNLIKELY (r_srtp_find_master_key (cctx, mki) != NULL))
+    return R_SRTP_ERROR_CRYPTO_CTX_EXISTS;
+
+  if ((mk = r_srtp_master_key_new (cctx->csinfo, cctx->mkisize,
+          recvkey, sendkey, mki)) == NULL)
+    return R_SRTP_ERROR_OOM;
+
+  mk->next = cctx->keys;
+  cctx->keys = mk;
+  R_LOG_TRACE ("ctx: %p id: 0x%.8x added master key", ctx, id);
+  return R_SRTP_ERROR_OK;
+}
+
+RSRTPError
+r_srtp_set_send_master_key (RSRTPCtx * ctx, ruint32 id, const ruint8 * mki)
+{
+  RSRTPCryptoCtx * cctx;
+  const RSRTPMasterKey * mk;
+
+  if (R_UNLIKELY (ctx == NULL || mki == NULL)) return R_SRTP_ERROR_INVAL;
+  if (R_UNLIKELY ((cctx = r_srtp_find_crypto_ctx (ctx, id)) == NULL))
+    return R_SRTP_ERROR_NO_CRYPTO_CTX;
+  if (R_UNLIKELY (cctx->mkisize == 0))
+    return R_SRTP_ERROR_NO_CRYPTO_CTX;
+  if (R_UNLIKELY ((mk = r_srtp_find_master_key (cctx, mki)) == NULL))
+    return R_SRTP_ERROR_NO_CRYPTO_CTX;
+
+  cctx->sendkey = (RSRTPMasterKey *) mk;
+  R_LOG_TRACE ("ctx: %p id: 0x%.8x selected send master key", ctx, id);
+  return R_SRTP_ERROR_OK;
 }
 
 RSRTPError
@@ -622,6 +875,11 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
         }
       }
 
+      /* Key (or roll to) the active send key before touching the ciphers. */
+      if ((err = r_srtp_stream_ensure_key (stream,
+              stream->cctx->sendkey)) != R_SRTP_ERROR_OK)
+        goto beach_map;
+
       idx = r_rtp_buffer_estimate_seq_idx (&rtp, stream->rtp.index);
       if ((err = r_srtp_stream_replay_check (&stream->rtp, idx, stream->ssrc)) == R_SRTP_ERROR_OK) {
         rsize tagsize = stream->cctx->csinfo->srtp_tagbits / 8;
@@ -675,9 +933,12 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
               goto beach_map;
             }
 
-            if (stream->rtpmkisize > 0) {
-              /* FIXME: insert mki */
-            }
+            /* MKI (RFC 3711 3.1): between the encrypted payload and the auth
+             * tag, identifying the send key. Not covered by the auth tag. */
+            if (stream->rtpmkisize > 0)
+              r_memcpy (info.data + extlead + rtp.pay.size,
+                  r_srtp_master_key_mki (stream->cctx->sendkey),
+                  stream->rtpmkisize);
 
             /* add auth tag */
             if (stream->rtp.mac != NULL && tagsize > 0) {
@@ -764,11 +1025,8 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
       if ((err = r_srtp_stream_replay_check (&stream->rtp, idx, stream->ssrc)) == R_SRTP_ERROR_OK) {
         rsize tagsize = stream->cctx->csinfo->srtp_tagbits / 8;
         ruint16 profile = 0;
-        /* RFC 6904: an encrypted extension is decrypted into the front of the
-         * output buffer (extlead bytes) only after the auth tag verifies. */
-        rboolean do_hdrext = stream->hdrcipher != NULL && rtp.ext.data != NULL &&
-            r_srtp_hdrext_profile_supported (rtp.ext.data, &profile);
-        rsize extlead = do_hdrext ? rtp.ext.size : 0;
+        rboolean do_hdrext;
+        rsize extlead;
         rsize payloadsize;
         RBuffer * payload;
 
@@ -777,6 +1035,31 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
           goto beach_map;
         }
         payloadsize = rtp.pay.size - tagsize - stream->rtpmkisize;
+
+        /* Select the master key: by the packet's MKI when the context uses
+         * one, else the sole key. A wrong pick just fails auth below, so
+         * reading the MKI ahead of verification is not an oracle. */
+        if (stream->rtpmkisize > 0) {
+          const ruint8 * mki = rtp.pay.data + payloadsize;
+          const RSRTPMasterKey * mk = r_srtp_find_master_key (stream->cctx, mki);
+          if (R_UNLIKELY (mk == NULL)) {
+            R_LOG_INFO ("stream: 0x%.8x - no master key matches packet MKI",
+                stream->ssrc);
+            err = R_SRTP_ERROR_NO_CRYPTO_CTX;
+            goto beach_map;
+          }
+          if ((err = r_srtp_stream_ensure_key (stream, mk)) != R_SRTP_ERROR_OK)
+            goto beach_map;
+        } else if ((err = r_srtp_stream_ensure_key (stream,
+                stream->cctx->keys)) != R_SRTP_ERROR_OK) {
+          goto beach_map;
+        }
+
+        /* RFC 6904: an encrypted extension is decrypted into the front of the
+         * output buffer (extlead bytes) only after the auth tag verifies. */
+        do_hdrext = stream->hdrcipher != NULL && rtp.ext.data != NULL &&
+            r_srtp_hdrext_profile_supported (rtp.ext.data, &profile);
+        extlead = do_hdrext ? rtp.ext.size : 0;
 
         if (stream->cctx->csinfo->authprefixlen > 0) {
           /* FIXME: Handle keystream prefix */
@@ -898,6 +1181,11 @@ r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
         }
       }
 
+      /* Key (or roll to) the active send key before touching the ciphers. */
+      if ((err = r_srtp_stream_ensure_key (stream,
+              stream->cctx->sendkey)) != R_SRTP_ERROR_OK)
+        goto beach_map;
+
       if ((idx = (ruint32)++stream->rtcp.index) >= R_SRTCP_E_BIT) {
         R_LOG_INFO ("ssrc (0x%.8x) SRTCP index space exhausted", stream->ssrc);
         err = R_SRTP_ERROR_INTERNAL;
@@ -942,8 +1230,12 @@ r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
             *(ruint32 *)ptr = RUINT32_TO_BE ((ruint32)idx);
           ptr += sizeof (ruint32);
 
+          /* MKI (RFC 3711 3.4): after the SRTCP index, before the auth tag,
+           * identifying the send key. Not covered by the auth tag. */
           if (stream->rtpmkisize > 0) {
-            /* FIXME: insert mki */
+            r_memcpy (ptr, r_srtp_master_key_mki (stream->cctx->sendkey),
+                stream->rtpmkisize);
+            ptr += stream->rtpmkisize;
           }
 
           /* add auth tag */
@@ -1008,6 +1300,7 @@ r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
       const ruint8 * authtag;
       const ruint8 * srtpidx;
       ruint32 idx;
+      rboolean ebit;
 
       if (R_UNLIKELY (rtcp.info.size < tagsize + stream->rtpmkisize + sizeof (ruint32))) {
         err = R_SRTP_ERROR_INVAL;
@@ -1027,25 +1320,49 @@ r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
       }
 
       idx = RUINT32_TO_BE (*(const ruint32 *)srtpidx);
-      if (idx & R_SRTCP_E_BIT) {
-        if (stream->rtcp.cipher->info->type <= R_CRYPTO_CIPHER_ALGO_NULL) {
-          R_LOG_INFO ("ssrc (0x%.8x) idx (0x%.8x) SRTCP e-bit mismatch",
-              stream->ssrc, idx);
-          err = R_SRTP_ERROR_E_BIT_MISMATCH;
-          goto beach_map;
-        }
-        idx &= ~R_SRTCP_E_BIT;
-      } else {
-        if (stream->rtcp.cipher->info->type > R_CRYPTO_CIPHER_ALGO_NULL) {
-          R_LOG_INFO ("ssrc (0x%.8x) idx (0x%.8x) SRTCP e-bit mismatch",
-              stream->ssrc, idx);
-          err = R_SRTP_ERROR_E_BIT_MISMATCH;
-          goto beach_map;
-        }
-      }
+      ebit = (idx & R_SRTCP_E_BIT) != 0;
+      idx &= ~R_SRTCP_E_BIT;
 
+      /* Drop replays before deriving any keys: on an MKI context this keeps an
+       * attacker from forcing repeated key derivation by replaying packets that
+       * alternate between configured MKIs (the RTP path filters first too). */
       if ((err = r_srtp_stream_replay_check (&stream->rtcp, idx, stream->ssrc)) == R_SRTP_ERROR_OK) {
         rsize newsize = srtpidx - rtcp.info.data;
+
+        /* Select the master key by the packet's MKI, which sits between the
+         * SRTCP index and the auth tag (RFC 3711 3.4). A wrong pick just fails
+         * auth below, so this is not a decryption oracle. */
+        if (stream->rtpmkisize > 0) {
+          const RSRTPMasterKey * mk = r_srtp_find_master_key (stream->cctx,
+              srtpidx + sizeof (ruint32));
+          if (R_UNLIKELY (mk == NULL)) {
+            R_LOG_INFO ("stream: 0x%.8x - no master key matches packet MKI",
+                stream->ssrc);
+            err = R_SRTP_ERROR_NO_CRYPTO_CTX;
+            goto beach_map;
+          }
+          if ((err = r_srtp_stream_ensure_key (stream, mk)) != R_SRTP_ERROR_OK)
+            goto beach_map;
+        } else if ((err = r_srtp_stream_ensure_key (stream,
+                stream->cctx->keys)) != R_SRTP_ERROR_OK) {
+          goto beach_map;
+        }
+
+        /* The SRTCP E-bit must agree with the negotiated cipher; checked here
+         * as it needs the now-derived session state. */
+        if (ebit) {
+          if (stream->rtcp.cipher->info->type <= R_CRYPTO_CIPHER_ALGO_NULL) {
+            R_LOG_INFO ("ssrc (0x%.8x) idx (0x%.8x) SRTCP e-bit mismatch",
+                stream->ssrc, idx);
+            err = R_SRTP_ERROR_E_BIT_MISMATCH;
+            goto beach_map;
+          }
+        } else if (stream->rtcp.cipher->info->type > R_CRYPTO_CIPHER_ALGO_NULL) {
+          R_LOG_INFO ("ssrc (0x%.8x) idx (0x%.8x) SRTCP e-bit mismatch",
+              stream->ssrc, idx);
+          err = R_SRTP_ERROR_E_BIT_MISMATCH;
+          goto beach_map;
+        }
 
         if (stream->cctx->csinfo->authprefixlen > 0) {
           /* FIXME: Handle keystream prefix */
