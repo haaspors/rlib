@@ -81,8 +81,13 @@ typedef struct {
   RSRTPState rtp;
   RSRTPState rtcp;
 
+  /* RFC 6904 header-extension keystream: derived only when the session
+   * encrypts one or more header extensions, NULL otherwise. */
+  RCryptoCipher * hdrcipher;
+  ruint8 hdrsalt[R_SRTP_MAX_SALT_SIZE];
+  rsize hdrsaltsize;
+
   /* FIXME: EKT? */
-  /* FIXME: extended header crypto */
 } RSRTPStream;
 
 struct RSRTPCtx {
@@ -92,6 +97,10 @@ struct RSRTPCtx {
   RHashTable * crypto_ssrc;
 
   RHashTable * streams;
+
+  /* RFC 6904: bit set per RTP header-extension ID that is encrypted, indexed
+   * by the ID (1..255). NULL until the first ID is registered. */
+  RBitset * hdrext_ids;
 };
 
 #define R_LOG_CAT_DEFAULT &srtpcat
@@ -178,6 +187,34 @@ r_srtp_state_init (RSRTPState * state, ruint lbloffset,
   return ret;
 }
 
+/* Derive the RFC 6904 header-extension encryption key (label 0x06) and salt
+ * (label 0x07) into @p stream. Unlike a full session state there is no auth
+ * key: the header extension is covered by the packet's SRTP auth tag. */
+static RCryptoCipherResult
+r_srtp_stream_init_hdrext (RSRTPStream * stream, const RCryptoCipher * kdprf,
+    const RSRTPCipherSuiteInfo * csinfo, const ruint8 * salt, rsize saltsize)
+{
+  RCryptoCipherResult ret;
+  ruint8 scratch[64];
+
+  if (R_LIKELY ((stream->hdrsaltsize = saltsize) > 0)) {
+    if ((ret = r_srtp_kdprf_generate (stream->hdrsalt, saltsize, kdprf,
+            R_SRTP_KDPRF_LABEL_RTP_HEADER_SALT, stream->rtp.index, 0,
+            salt, saltsize)) != R_CRYPTO_CIPHER_OK)
+      return ret;
+  }
+
+  if ((ret = r_srtp_kdprf_generate (scratch, csinfo->cipher->keybits / 8, kdprf,
+          R_SRTP_KDPRF_LABEL_RTP_HEADER_ENCRYPTION, stream->rtp.index, 0,
+          salt, saltsize)) == R_CRYPTO_CIPHER_OK) {
+    if ((stream->hdrcipher = r_crypto_cipher_new (csinfo->cipher, scratch)) == NULL)
+      ret = R_CRYPTO_CIPHER_OOM;
+  }
+
+  r_memclear (scratch, sizeof (scratch));
+  return ret;
+}
+
 static void
 r_srtp_state_clear (RSRTPState * state)
 {
@@ -190,6 +227,9 @@ r_srtp_state_clear (RSRTPState * state)
 static void
 r_srtp_stream_free (RSRTPStream * stream)
 {
+  if (stream->hdrcipher != NULL)
+    r_crypto_cipher_unref (stream->hdrcipher);
+  r_memclear (stream->hdrsalt, sizeof (stream->hdrsalt));
   r_srtp_state_clear (&stream->rtcp);
   r_srtp_state_clear (&stream->rtp);
   r_free (stream);
@@ -204,7 +244,8 @@ r_srtp_crypto_ctx_key (const RSRTPCryptoCtx * cctx, RSRTPDirection dir)
 }
 
 static RSRTPStream *
-r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx, RSRTPDirection dir)
+r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx, RSRTPDirection dir,
+    rboolean hdrext)
 {
   RSRTPStream * ret;
   RCryptoCipher * kdcipher;
@@ -243,6 +284,11 @@ r_srtp_stream_new (ruint32 ssrc, const RSRTPCryptoCtx * cctx, RSRTPDirection dir
       R_LOG_WARNING ("stream: 0x%.8x - RTCP crypto init failed %d", ssrc, res);
       r_srtp_stream_free (ret);
       ret = NULL;
+    } else if (R_UNLIKELY (hdrext && (res = r_srtp_stream_init_hdrext (ret,
+              kdcipher, cctx->csinfo, key + keysize, saltsize)) != R_CRYPTO_CIPHER_OK)) {
+      R_LOG_WARNING ("stream: 0x%.8x - hdr-ext crypto init failed %d", ssrc, res);
+      r_srtp_stream_free (ret);
+      ret = NULL;
     } else {
       R_LOG_DEBUG ("stream: 0x%.8x - %p", ssrc, ret);
     }
@@ -258,6 +304,7 @@ r_srtp_ctx_free (RSRTPCtx * ctx)
   r_list_destroy_full (ctx->crypto_filter, r_free);
   r_hash_table_unref (ctx->crypto_ssrc);
   r_hash_table_unref (ctx->streams);
+  r_free (ctx->hdrext_ids);
   r_free (ctx);
 }
 
@@ -273,6 +320,7 @@ r_srtp_ctx_new (void)
     ret->crypto_ssrc = r_hash_table_new_full (NULL, NULL, NULL, r_free);
     ret->streams = r_hash_table_new_full (NULL, NULL,
         NULL, (RDestroyNotify) r_srtp_stream_free);
+    ret->hdrext_ids = NULL;
   }
 
   R_LOG_DEBUG ("ctx %p", ret);
@@ -354,6 +402,28 @@ r_srtp_add_crypto_context_with_filter_dual (RSRTPCtx * ctx,
   return R_SRTP_ERROR_OOM;
 }
 
+RSRTPError
+r_srtp_set_encrypted_header_extension (RSRTPCtx * ctx, ruint8 id,
+    rboolean encrypted)
+{
+  if (R_UNLIKELY (ctx == NULL)) return R_SRTP_ERROR_INVAL;
+  /* 0 is padding, never an element ID (RFC 8285); reject it so a stray 0
+   * can never mark the padding run as encrypted. */
+  if (R_UNLIKELY (id == 0)) return R_SRTP_ERROR_INVAL;
+
+  if (ctx->hdrext_ids == NULL) {
+    if (!encrypted)
+      return R_SRTP_ERROR_OK;
+    /* One bit per one/two-byte header ID (RFC 8285: 1..14 / 1..255). */
+    if (R_UNLIKELY (!r_bitset_init_heap (ctx->hdrext_ids, 256)))
+      return R_SRTP_ERROR_OOM;
+  }
+
+  r_bitset_set_bit (ctx->hdrext_ids, id, encrypted);
+  R_LOG_TRACE ("ctx: %p hdr-ext id: %u encrypted: %d", ctx, id, encrypted);
+  return R_SRTP_ERROR_OK;
+}
+
 static const RSRTPCryptoCtx *
 r_srtp_lookup_crypto_ctx (RSRTPCtx * ctx, ruint32 ssrc)
 {
@@ -384,7 +454,8 @@ r_srtp_get_stream (RSRTPCtx * ctx, ruint32 ssrc, RSRTPDirection dir)
     return ret;
 
   if ((cctx = r_srtp_lookup_crypto_ctx (ctx, ssrc)) != NULL) {
-    if ((ret = r_srtp_stream_new (ssrc, cctx, dir)) != NULL)
+    if ((ret = r_srtp_stream_new (ssrc, cctx, dir,
+            ctx->hdrext_ids != NULL)) != NULL)
       r_hash_table_insert (ctx->streams, RUINT_TO_POINTER (ssrc), ret);
   }
 
@@ -428,11 +499,10 @@ r_srtp_stream_rtp_replay_add (RSRTPState * s, ruint64 idx)
 }
 
 static inline void
-r_srtp_state_create_iv (ruint8 * iv, rsize ivsize, const RSRTPState * state,
-    ruint32 ssrc, ruint64 idx)
+r_srtp_state_create_iv (ruint8 * iv, rsize ivsize, const ruint8 * salt,
+    rsize saltsize, ruint32 ssrc, ruint64 idx)
 {
-  r_memcpy (iv + ivsize - (sizeof (ruint16) + state->saltsize),
-      state->salt, state->saltsize);
+  r_memcpy (iv + ivsize - (sizeof (ruint16) + saltsize), salt, saltsize);
   iv[ivsize - (sizeof (ruint16) + 10)] ^= ((ssrc >> 24) & 0xff);
   iv[ivsize - (sizeof (ruint16) +  9)] ^= ((ssrc >> 16) & 0xff);
   iv[ivsize - (sizeof (ruint16) +  8)] ^= ((ssrc >>  8) & 0xff);
@@ -443,6 +513,84 @@ r_srtp_state_create_iv (ruint8 * iv, rsize ivsize, const RSRTPState * state,
   iv[ivsize - (sizeof (ruint16) +  3)] ^= ((idx >> 16) & 0xff);
   iv[ivsize - (sizeof (ruint16) +  2)] ^= ((idx >>  8) & 0xff);
   iv[ivsize - (sizeof (ruint16) +  1)] ^= ((idx      ) & 0xff);
+}
+
+static inline rboolean
+r_srtp_hdrext_id_encrypted (const RSRTPCtx * ctx, ruint8 id)
+{
+  return ctx->hdrext_ids != NULL && r_bitset_is_bit_set (ctx->hdrext_ids, id);
+}
+
+/* TRUE if @p ext (the 4-byte extension header) uses an RFC 8285 profile that
+ * RFC 6904 can encrypt: 0xBEDE (one-byte) or 0x100x (two-byte). */
+static inline rboolean
+r_srtp_hdrext_profile_supported (const ruint8 * ext, ruint16 * profile)
+{
+  ruint16 p = RUINT16_FROM_BE (*(const ruint16 *)ext);
+  *profile = p;
+  return p == 0xbede || (p & 0xfff0) == 0x1000;
+}
+
+/* RFC 6904: XOR the header-extension keystream over the bodies of the
+ * elements whose IDs are configured for encryption, in place over @p ext (the
+ * whole extension including its 4-byte header). Element headers, padding, the
+ * 4-byte header and the bodies of non-encrypted elements are left untouched.
+ * CTR keystream is symmetric, so the same routine encrypts and decrypts. */
+static rboolean
+r_srtp_crypt_hdrext (const RSRTPCtx * ctx, RSRTPStream * stream,
+    ruint16 profile, ruint8 * ext, rsize extsize, ruint32 ssrc, ruint64 idx)
+{
+  rboolean twobyte = (profile & 0xfff0) == 0x1000;
+  ruint8 * data, * ks, * iv;
+  rsize datalen, ivsize, i;
+
+  if (extsize <= sizeof (ruint32))
+    return TRUE;                              /* header only, no elements */
+  data = ext + sizeof (ruint32);
+  datalen = extsize - sizeof (ruint32);
+
+  if (R_UNLIKELY ((ks = r_malloc (datalen)) == NULL))
+    return FALSE;
+  r_memclear (ks, datalen);
+  ivsize = stream->hdrcipher->info->ivsize;
+  iv = r_alloca0 (ivsize);
+  r_srtp_state_create_iv (iv, ivsize, stream->hdrsalt, stream->hdrsaltsize,
+      ssrc, idx);
+  r_crypto_cipher_encrypt (stream->hdrcipher, ks, datalen, ks, iv, ivsize);
+
+  for (i = 0; i < datalen; ) {
+    ruint8 eid;
+    rsize hdrlen, bodylen;
+
+    if (data[i] == 0x00) {                    /* inter-element padding */
+      i++;
+      continue;
+    }
+
+    if (twobyte) {
+      if (i + 2 > datalen) break;
+      eid = data[i];
+      bodylen = data[i + 1];
+      hdrlen = 2;
+    } else {
+      eid = data[i] >> 4;
+      if (eid == 15) break;                   /* RFC 8285: stop parsing */
+      bodylen = (data[i] & 0x0f) + 1;
+      hdrlen = 1;
+    }
+    if (i + hdrlen + bodylen > datalen) break; /* truncated element */
+
+    if (r_srtp_hdrext_id_encrypted (ctx, eid)) {
+      rsize j;
+      for (j = i + hdrlen; j < i + hdrlen + bodylen; j++)
+        data[j] ^= ks[j];
+    }
+    i += hdrlen + bodylen;
+  }
+
+  r_memclear (ks, datalen);
+  r_free (ks);
+  return TRUE;
 }
 
 RBuffer *
@@ -475,7 +623,14 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
       idx = r_rtp_buffer_estimate_seq_idx (&rtp, stream->rtp.index);
       if ((err = r_srtp_stream_replay_check (&stream->rtp, idx, stream->ssrc)) == R_SRTP_ERROR_OK) {
         rsize tagsize = stream->cctx->csinfo->srtp_tagbits / 8;
-        rsize payloadsize = rtp.pay.size + tagsize + stream->rtpmkisize;
+        ruint16 profile = 0;
+        /* RFC 6904: when an encrypted extension is present it is carried at
+         * the front of the new buffer so its ciphertext feeds the auth tag;
+         * extlead is its size, 0 when there is nothing to encrypt. */
+        rboolean do_hdrext = stream->hdrcipher != NULL && rtp.ext.data != NULL &&
+            r_srtp_hdrext_profile_supported (rtp.ext.data, &profile);
+        rsize extlead = do_hdrext ? rtp.ext.size : 0;
+        rsize payloadsize = extlead + rtp.pay.size + tagsize + stream->rtpmkisize;
         RBuffer * payload;
 
         r_srtp_stream_rtp_replay_add (&stream->rtp, idx);
@@ -494,11 +649,23 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
             rsize ivsize = stream->rtp.cipher->info->ivsize;
             ruint8 * iv = r_alloca0 (ivsize);
 
-            r_srtp_state_create_iv (iv, ivsize, &stream->rtp, stream->ssrc, idx);
+            if (do_hdrext) {
+              r_memcpy (info.data, rtp.ext.data, rtp.ext.size);
+              if (R_UNLIKELY (!r_srtp_crypt_hdrext (ctx, stream, profile,
+                      info.data, rtp.ext.size, stream->ssrc, idx))) {
+                r_buffer_unmap (payload, &info);
+                r_buffer_unref (payload);
+                err = R_SRTP_ERROR_OOM;
+                goto beach_map;
+              }
+            }
+
+            r_srtp_state_create_iv (iv, ivsize, stream->rtp.salt,
+                stream->rtp.saltsize, stream->ssrc, idx);
 
             R_LOG_TRACE ("Encrypting %u bytes", (ruint)rtp.pay.size);
-            r_crypto_cipher_encrypt (stream->rtp.cipher, info.data, rtp.pay.size,
-                rtp.pay.data, iv, ivsize);
+            r_crypto_cipher_encrypt (stream->rtp.cipher, info.data + extlead,
+                rtp.pay.size, rtp.pay.data, iv, ivsize);
 
             if (stream->rtpmkisize > 0) {
               /* FIXME: insert mki */
@@ -510,9 +677,11 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
 
               r_hmac_reset (stream->rtp.mac);
               if (r_hmac_update (stream->rtp.mac, rtp.hdr.data, rtp.hdr.size) &&
-                  (rtp.ext.data == NULL ||
-                   r_hmac_update (stream->rtp.mac, rtp.ext.data, rtp.ext.size)) &&
-                  r_hmac_update (stream->rtp.mac, info.data, rtp.pay.size) &&
+                  (do_hdrext ?
+                   r_hmac_update (stream->rtp.mac, info.data, extlead) :
+                   (rtp.ext.data == NULL ||
+                    r_hmac_update (stream->rtp.mac, rtp.ext.data, rtp.ext.size))) &&
+                  r_hmac_update (stream->rtp.mac, info.data + extlead, rtp.pay.size) &&
                   r_hmac_update (stream->rtp.mac, &roc, sizeof (ruint32))) {
                 ruint8 calctag[32];
                 rsize calcsize;
@@ -529,7 +698,7 @@ r_srtp_encrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
             r_buffer_unmap (payload, &info);
 
             if (R_UNLIKELY ((ret = r_buffer_replace_byte_range (packet,
-                rtp.hdr.size + rtp.ext.size, -1, payload)) == NULL)) {
+                rtp.hdr.size + rtp.ext.size - extlead, -1, payload)) == NULL)) {
               err = R_SRTP_ERROR_INTERNAL;
             }
           } else {
@@ -586,6 +755,12 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
       idx = r_rtp_buffer_estimate_seq_idx (&rtp, stream->rtp.index);
       if ((err = r_srtp_stream_replay_check (&stream->rtp, idx, stream->ssrc)) == R_SRTP_ERROR_OK) {
         rsize tagsize = stream->cctx->csinfo->srtp_tagbits / 8;
+        ruint16 profile = 0;
+        /* RFC 6904: an encrypted extension is decrypted into the front of the
+         * output buffer (extlead bytes) only after the auth tag verifies. */
+        rboolean do_hdrext = stream->hdrcipher != NULL && rtp.ext.data != NULL &&
+            r_srtp_hdrext_profile_supported (rtp.ext.data, &profile);
+        rsize extlead = do_hdrext ? rtp.ext.size : 0;
         rsize payloadsize;
         RBuffer * payload;
 
@@ -625,22 +800,34 @@ r_srtp_decrypt_rtp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
           }
         }
 
-        if ((payload = r_buffer_new_alloc (NULL, payloadsize, NULL)) != NULL) {
+        if ((payload = r_buffer_new_alloc (NULL, extlead + payloadsize, NULL)) != NULL) {
           RMemMapInfo info = R_MEM_MAP_INFO_INIT;
 
           if (r_buffer_map (payload, &info, R_MEM_MAP_WRITE)) {
             rsize ivsize = stream->rtp.cipher->info->ivsize;
             ruint8 * iv = r_alloca0 (ivsize);
 
-            r_srtp_state_create_iv (iv, ivsize, &stream->rtp, stream->ssrc, idx);
+            if (do_hdrext) {
+              r_memcpy (info.data, rtp.ext.data, rtp.ext.size);
+              if (R_UNLIKELY (!r_srtp_crypt_hdrext (ctx, stream, profile,
+                      info.data, rtp.ext.size, stream->ssrc, idx))) {
+                r_buffer_unmap (payload, &info);
+                r_buffer_unref (payload);
+                err = R_SRTP_ERROR_OOM;
+                goto beach_map;
+              }
+            }
 
-            R_LOG_TRACE ("Decrypting %u bytes", (ruint)info.size);
-            r_crypto_cipher_decrypt (stream->rtp.cipher, info.data, info.size,
-                rtp.pay.data, iv, ivsize);
+            r_srtp_state_create_iv (iv, ivsize, stream->rtp.salt,
+                stream->rtp.saltsize, stream->ssrc, idx);
+
+            R_LOG_TRACE ("Decrypting %u bytes", (ruint)payloadsize);
+            r_crypto_cipher_decrypt (stream->rtp.cipher, info.data + extlead,
+                payloadsize, rtp.pay.data, iv, ivsize);
             r_buffer_unmap (payload, &info);
 
             if (R_UNLIKELY ((ret = r_buffer_replace_byte_range (packet,
-                rtp.hdr.size + rtp.ext.size, -1, payload)) == NULL)) {
+                rtp.hdr.size + rtp.ext.size - extlead, -1, payload)) == NULL)) {
               err = R_SRTP_ERROR_INTERNAL;
             }
           } else {
@@ -725,7 +912,8 @@ r_srtp_encrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
           r_memcpy (ptr, rtcp.info.data, 2 * sizeof (ruint32));
           ptr += 2 * sizeof (ruint32);
 
-          r_srtp_state_create_iv (iv, ivsize, &stream->rtcp, stream->ssrc, idx);
+          r_srtp_state_create_iv (iv, ivsize, stream->rtcp.salt,
+              stream->rtcp.saltsize, stream->ssrc, idx);
 
           R_LOG_TRACE ("Encrypting %u bytes", (ruint)(rtcp.info.size - 2 * sizeof (ruint32)));
           r_crypto_cipher_encrypt (stream->rtcp.cipher, ptr,
@@ -874,7 +1062,8 @@ r_srtp_decrypt_rtcp (RSRTPCtx * ctx, RBuffer * packet, RSRTPError * errout)
             rsize ivsize = stream->rtcp.cipher->info->ivsize;
             ruint8 * iv = r_alloca0 (ivsize);
 
-            r_srtp_state_create_iv (iv, ivsize, &stream->rtcp, stream->ssrc, idx);
+            r_srtp_state_create_iv (iv, ivsize, stream->rtcp.salt,
+                stream->rtcp.saltsize, stream->ssrc, idx);
 
             /* Copy header and ssrc */
             r_memcpy (info.data, rtcp.info.data, 2 * sizeof (ruint32));
