@@ -1073,6 +1073,61 @@ RTEST_F (rrtc, sender_receives_bare_xr, RTEST_FAST)
 }
 RTEST_END;
 
+RTEST_F (rrtc, sender_receives_only_own_report_blocks, RTEST_FAST)
+{
+  /* The sender is handed a fresh RR containing only the report blocks that
+   * name one of its SSRCs, not the whole compound: a two-block RR (one for
+   * alice's SSRC, one for an SSRC she does not send) yields a single-block RR
+   * carrying just alice's block, with the report sender's SSRC preserved. */
+  static const ruint8 rr_two[] = {
+    /* V=2 P=0 RC=2; PT=201 (RR); length=13 (56 bytes) */
+    0x82, 0xc9, 0x00, 0x0d,
+    0xb0, 0xb0, 0xb0, 0xb0,  /* reporter SSRC (bob) */
+    /* report block 1: alice's sending SSRC */
+    0xde, 0xad, 0xbe, 0xef,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    /* report block 2: an SSRC alice does not send */
+    0x11, 0x11, 0x11, 0x11,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  };
+  RBuffer * buf, * pop;
+  RRtcRtpParameters * p;
+  RRTCPBuffer rtcp = R_RTCP_BUFFER_INIT;
+  RRTCPPacket * pkt;
+  RRTCPReportBlock rb;
+
+  r_assert_cmpptr ((p = r_rtc_rtp_parameters_new (R_STR_WITH_SIZE_ARGS ("audio"))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_parameters_add_encoding_simple (p, 0xdeadbeef,
+        R_RTP_PT_PCMU), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_sender_start (fixture->alice.send, p, fixture->loop), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_start (fixture->bob.recv, p, fixture->loop), ==, R_RTC_OK);
+  r_rtc_rtp_parameters_unref (p);
+
+  r_assert_cmpptr ((buf = r_buffer_new_dup (rr_two, sizeof (rr_two))), !=, NULL);
+  r_assert_cmpint (r_rtc_rtp_sender_send (fixture->bob.send, buf), ==, R_RTC_OK);
+  r_assert_cmpuint (r_queue_size (&fixture->alice.send_rtcp), ==, 1);
+  r_assert_cmpptr ((pop = r_queue_pop (&fixture->alice.send_rtcp)), !=, NULL);
+  r_buffer_unref (buf);
+
+  /* alice receives one RR carrying only her block. */
+  r_assert (r_rtcp_buffer_map (&rtcp, pop, R_MEM_MAP_READ));
+  r_assert_cmpptr ((pkt = r_rtcp_buffer_get_next_packet (&rtcp, NULL)), !=, NULL);
+  r_assert_cmpuint (r_rtcp_packet_get_type (pkt), ==, R_RTCP_PT_RR);
+  r_assert_cmphex (r_rtcp_packet_rr_get_ssrc (pkt), ==, 0xb0b0b0b0);
+  r_assert_cmpuint (r_rtcp_packet_rr_get_rb_count (pkt), ==, 1);
+  r_assert (r_rtcp_packet_rr_get_report_block (pkt, 0, &rb));
+  r_assert_cmphex (rb.ssrc, ==, 0xdeadbeef);
+  r_assert_cmpptr (r_rtcp_buffer_get_next_packet (&rtcp, pkt), ==, NULL);
+  r_assert (r_rtcp_buffer_unmap (&rtcp, pop));
+  r_buffer_unref (pop);
+
+  r_assert_cmpint (r_rtc_rtp_sender_stop (fixture->alice.send), ==, R_RTC_OK);
+  r_assert_cmpint (r_rtc_rtp_receiver_stop (fixture->bob.recv), ==, R_RTC_OK);
+}
+RTEST_END;
+
 RTEST_F (rrtc, send_recv, RTEST_FAST)
 {
   RBuffer * buf, * pop;
