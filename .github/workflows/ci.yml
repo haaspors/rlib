@@ -308,7 +308,7 @@ jobs:
       - name: Set up the Android SDK
         # Puts sdkmanager on PATH and accepts licenses (the runner does not expose
         # it by default).
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/*google*.list
