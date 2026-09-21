@@ -117,11 +117,14 @@ jobs:
         buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
     steps:
       - uses: actions/checkout@v6
-      - uses: ilammy/msvc-dev-cmd@v1
       - name: Install meson + ninja
         run: pip install meson ninja
+      # meson activates the MSVC environment itself (vcvars64 / vcvarsarm64
+      # picked from the host arch) and re-activates it for compile and test,
+      # so no separate developer-prompt action is needed. Same for the other
+      # two MSVC jobs below.
       - name: Configure
-        run: meson setup build --buildtype=${{ matrix.buildtype }}
+        run: meson setup build --buildtype=${{ matrix.buildtype }} --vsenv
       - name: Build
         run: meson compile -C build
       - name: Test
@@ -147,13 +150,10 @@ jobs:
         buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
     steps:
       - uses: actions/checkout@v6
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: arm64
       - name: Install meson + ninja
         run: pip install meson ninja
       - name: Configure
-        run: meson setup build --buildtype=${{ matrix.buildtype }}
+        run: meson setup build --buildtype=${{ matrix.buildtype }} --vsenv
       - name: Build
         run: meson compile -C build
       - name: Test
@@ -178,11 +178,10 @@ jobs:
         buildtype: ${{ fromJSON(github.event_name == 'pull_request' && '["debugoptimized"]' || '["debugoptimized","release"]') }}
     steps:
       - uses: actions/checkout@v6
-      - uses: ilammy/msvc-dev-cmd@v1
       - name: Install meson + ninja
         run: pip install meson ninja
       - name: Configure
-        run: meson setup build --buildtype=${{ matrix.buildtype }} -Drpoll=enabled
+        run: meson setup build --buildtype=${{ matrix.buildtype }} -Drpoll=enabled --vsenv
       - name: Build
         run: meson compile -C build
       - name: Test
