@@ -38,6 +38,7 @@
 #define R_SYSFS_CPU_FMT               "/sys/devices/system/cpu/cpu%u"
 
 #define R_SYSFS_CPU_TOPO_PKG_ID       "/topology/physical_package_id"
+#define R_SYSFS_CPU_TOPO_CORE_ID      "/topology/core_id"
 #define R_SYSFS_CPU_TOPO_THR_SIB_LST  "/topology/thread_siblings_list"
 
 #define R_SYSFS_NODE                  "/sys/devices/system/node"
@@ -524,6 +525,10 @@ r_sys_nodeset_for_cpuset (RBitset * nodeset, const RBitset * cpuset)
 struct RSysTopology {
   RRef ref;
 
+#if defined (R_OS_WIN32)
+  PSYSTEM_LOGICAL_PROCESSOR_INFORMATION lpi;
+  ruint     lpicount;
+#endif
 #if defined (HAVE_SYSCTLBYNAME)
   rsize     cachelvl;
   ruint64 * cachecfg;
@@ -548,13 +553,25 @@ struct RSysCpu {
   rsize idx;
 
   RSysNode * node;
+
+  rsize core;
+  rsize package;
+  RBitset * siblings;
 };
+
+typedef struct {
+  RSysTopology * topo;
+  RSysNode * node;
+} RSysCpuDiscoverCtx;
 
 static void
 r_sys_topology_free (RSysTopology * topo)
 {
   if (R_LIKELY (topo != NULL)) {
     rsize i;
+#if defined (R_OS_WIN32)
+    r_free (topo->lpi);
+#endif
 #if defined (HAVE_SYSCTLBYNAME)
     r_free (topo->cachecfg);
 #endif
@@ -583,21 +600,105 @@ static void
 r_sys_cpu_free (RSysCpu * cpu)
 {
   if (R_LIKELY (cpu != NULL)) {
+    r_free (cpu->siblings);
     r_free (cpu);
   }
 }
 
+#if defined (R_OS_LINUX)
+/* An absent attribute and sysfs's own -1 both land on RUINT_MAX. */
+static rsize
+r_sys_cpu_linux_read_id (const rchar * path)
+{
+  ruint v = r_file_read_uint (path, RUINT_MAX);
+  return v != RUINT_MAX ? (rsize)v : R_SYS_ID_UNKNOWN;
+}
+#endif
+
+#if defined (R_OS_WIN32)
+/* GetLogicalProcessorInformation groups CPUs into cores and packages
+ * without naming either, so the group's ordinal becomes the id. */
+static void
+r_sys_cpu_win32_discover (RSysCpu * cpu, const RSysTopology * topo)
+{
+  ULONG_PTR mask;
+  ruint i, cores = 0, packages = 0;
+
+  if (topo->lpi == NULL || cpu->idx >= sizeof (ULONG_PTR) * 8)
+    return;
+  mask = ((ULONG_PTR)1) << cpu->idx;
+
+  for (i = 0; i < topo->lpicount; i++) {
+    if (topo->lpi[i].Relationship == RelationProcessorCore) {
+      if ((topo->lpi[i].ProcessorMask & mask) != 0) {
+        cpu->core = cores;
+        r_bitset_set_u64_at (cpu->siblings,
+            (ruint64)topo->lpi[i].ProcessorMask, 0);
+      }
+      cores++;
+    } else if (topo->lpi[i].Relationship == RelationProcessorPackage) {
+      if ((topo->lpi[i].ProcessorMask & mask) != 0)
+        cpu->package = packages;
+      packages++;
+    }
+  }
+}
+#endif
+
 static RSysCpu *
-r_sys_cpu_discover (rsize idx, RSysNode * node)
+r_sys_cpu_discover (rsize idx, RSysNode * node, RSysTopology * topo)
 {
   RSysCpu * ret;
+
+  (void) topo;
 
   if ((ret = r_mem_new0 (RSysCpu)) != NULL) {
     r_ref_init (ret, r_sys_cpu_free);
     ret->idx = idx;
     ret->node = node;
+    ret->core = R_SYS_ID_UNKNOWN;
+    ret->package = R_SYS_ID_UNKNOWN;
+    ret->siblings = r_sys_cpuset_new ();
 
-    /* TODO! */
+#if defined (R_OS_WIN32)
+    r_sys_cpu_win32_discover (ret, topo);
+#elif defined (R_OS_LINUX)
+    {
+      rchar tmp[256];
+
+      r_snprintf (tmp, sizeof (tmp), R_SYSFS_CPU_FMT R_SYSFS_CPU_TOPO_CORE_ID,
+          (ruint)idx);
+      ret->core = r_sys_cpu_linux_read_id (tmp);
+      r_snprintf (tmp, sizeof (tmp), R_SYSFS_CPU_FMT R_SYSFS_CPU_TOPO_PKG_ID,
+          (ruint)idx);
+      ret->package = r_sys_cpu_linux_read_id (tmp);
+      r_snprintf (tmp, sizeof (tmp),
+          R_SYSFS_CPU_FMT R_SYSFS_CPU_TOPO_THR_SIB_LST, (ruint)idx);
+      r_bitset_set_from_human_readable_file (ret->siblings, tmp, NULL);
+    }
+#elif defined (HAVE_SYSCTLBYNAME)
+    {
+      /* Darwin names no per-CPU ids, but enumerates logical CPUs
+       * core-major, so the aggregate ratios recover them. */
+      ruint logical = r_sys_cpu_logical_count ();
+      ruint threads = r_sys_cpu_physical_count ();
+      ruint pkgs = r_sys_cpu_packages ();
+
+      threads = (threads > 0) ? logical / threads : 0;
+      pkgs = (pkgs > 0) ? logical / pkgs : 0;
+
+      if (threads > 0) {
+        ret->core = idx / threads;
+        r_bitset_set_n_bits_at (ret->siblings, threads,
+            ret->core * threads, TRUE);
+      }
+      if (pkgs > 0)
+        ret->package = idx / pkgs;
+    }
+#endif
+
+    if (r_bitset_popcount (ret->siblings) == 0)
+      r_bitset_set_bit (ret->siblings, idx, TRUE);
   }
 
   return ret;
@@ -606,8 +707,9 @@ r_sys_cpu_discover (rsize idx, RSysNode * node)
 static void
 r_sys_topology_prepend_cpu (rsize bit, rpointer data)
 {
-  RSysNode * node = data;
-  node->cpus[node->cpucount++] = r_sys_cpu_discover (bit, node);
+  RSysCpuDiscoverCtx * ctx = data;
+  ctx->node->cpus[ctx->node->cpucount++] =
+    r_sys_cpu_discover (bit, ctx->node, ctx->topo);
 }
 
 #if defined (R_OS_LINUX)
@@ -646,15 +748,17 @@ r_sys_node_discover (rsize idx, RSysTopology * topo)
 {
   RSysNode * ret;
 
-  (void) topo;
-
   if ((ret = r_mem_new0 (RSysNode)) != NULL) {
+    RSysCpuDiscoverCtx ctx;
+
     r_ref_init (ret, r_sys_node_free);
     ret->idx = idx;
     ret->cpuset = r_sys_cpuset_new ();
     r_sys_cpuset_for_node (ret->cpuset, (ruint)idx);
     ret->cpus = r_mem_new_n (RSysCpu *, r_bitset_popcount (ret->cpuset));
-    r_bitset_foreach (ret->cpuset, TRUE, r_sys_topology_prepend_cpu, ret);
+    ctx.topo = topo;
+    ctx.node = ret;
+    r_bitset_foreach (ret->cpuset, TRUE, r_sys_topology_prepend_cpu, &ctx);
 
 #if defined (R_OS_WIN32)
     {
@@ -691,6 +795,7 @@ r_sys_topology_discover (void)
     R_STMT_START {
 #if defined (R_OS_WIN32)
       ULONG hnn = 0;
+      ret->lpi = r_sys_cpu_win32_get_logical_proc_info (&ret->lpicount);
       if (GetNumaHighestNodeNumber (&hnn))
         r_bitset_set_n_bits_at (ret->nodeset, hnn + 1, 0, TRUE);
 #elif defined (HAVE_SYSCTLBYNAME)
@@ -755,5 +860,40 @@ r_sys_topology_node_available_memory (const RSysNode * node)
 {
   if (R_UNLIKELY (node == NULL)) return 0;
   return node->availablemem;
+}
+
+rsize
+r_sys_topology_cpu_id (const RSysCpu * cpu)
+{
+  if (R_UNLIKELY (cpu == NULL)) return R_SYS_ID_UNKNOWN;
+  return cpu->idx;
+}
+
+rsize
+r_sys_topology_cpu_node_id (const RSysCpu * cpu)
+{
+  if (R_UNLIKELY (cpu == NULL || cpu->node == NULL)) return R_SYS_ID_UNKNOWN;
+  return cpu->node->idx;
+}
+
+rsize
+r_sys_topology_cpu_core_id (const RSysCpu * cpu)
+{
+  if (R_UNLIKELY (cpu == NULL)) return R_SYS_ID_UNKNOWN;
+  return cpu->core;
+}
+
+rsize
+r_sys_topology_cpu_package_id (const RSysCpu * cpu)
+{
+  if (R_UNLIKELY (cpu == NULL)) return R_SYS_ID_UNKNOWN;
+  return cpu->package;
+}
+
+rboolean
+r_sys_topology_cpu_siblings (const RSysCpu * cpu, RBitset * cpuset)
+{
+  if (R_UNLIKELY (cpu == NULL)) return FALSE;
+  return r_bitset_copy (cpuset, cpu->siblings);
 }
 

@@ -147,6 +147,68 @@ RTEST (rsys, topology, RTEST_FAST | RTEST_SYSTEM)
   r_sys_topology_unref (topo);
 }
 RTEST_END;
+RTEST (rsys, topology_cpu, RTEST_FAST | RTEST_SYSTEM)
+{
+  RSysTopology * topo;
+  RSysNode * node;
+  RSysCpu * cpu;
+  rsize i, j, nodecount, cpucount, cores = 0, cpus = 0;
+  rsize namedcore = 0, namedpkg = 0;
+  RBitset * cpuset, * siblings, * online;
+
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max ()));
+  r_assert (r_bitset_init_stack (siblings, r_sys_cpuset_max ()));
+  r_assert (r_bitset_init_stack (online, r_sys_cpuset_max ()));
+  r_assert (r_sys_cpuset_online (online));
+
+  r_assert_cmpuint (r_sys_topology_cpu_id (NULL), ==, R_SYS_ID_UNKNOWN);
+  r_assert_cmpuint (r_sys_topology_cpu_node_id (NULL), ==, R_SYS_ID_UNKNOWN);
+  r_assert_cmpuint (r_sys_topology_cpu_core_id (NULL), ==, R_SYS_ID_UNKNOWN);
+  r_assert_cmpuint (r_sys_topology_cpu_package_id (NULL), ==, R_SYS_ID_UNKNOWN);
+  r_assert (!r_sys_topology_cpu_siblings (NULL, siblings));
+
+  r_assert_cmpptr ((topo = r_sys_topology_discover ()), !=, NULL);
+  for (i = 0, nodecount = r_sys_topology_node_count (topo); i < nodecount; i++) {
+    r_assert_cmpptr ((node = r_sys_topology_node (topo, i)), !=, NULL);
+    r_bitset_clear (cpuset);
+    r_assert (r_sys_topology_node_cpuset (node, cpuset));
+    cpucount = r_sys_topology_node_cpu_count (node);
+
+    for (j = 0; j < cpucount; j++) {
+      rsize id;
+
+      r_assert_cmpptr ((cpu = r_sys_topology_node_cpu (node, j)), !=, NULL);
+      r_assert (r_bitset_is_bit_set (cpuset, (id = r_sys_topology_cpu_id (cpu))));
+      r_assert_cmpuint (r_sys_topology_cpu_node_id (cpu), ==, i);
+
+      r_bitset_clear (siblings);
+      r_assert (r_sys_topology_cpu_siblings (cpu, siblings));
+      r_assert (r_bitset_is_bit_set (siblings, id));
+      /* Siblings are online CPUs and nothing but. */
+      r_assert (r_bitset_and (siblings, siblings, online));
+      r_assert (r_bitset_is_bit_set (siblings, id));
+      /* Count the lowest-numbered thread of each SMT group: the SMT
+       * groups partition the logical CPUs, one group per core. */
+      if (r_bitset_ctz (siblings) == id)
+        cores++;
+
+      /* sysfs reports an id it does not know as -1, so a platform may
+       * legitimately name neither - but naming only some of the CPUs
+       * means the read went wrong. */
+      if (r_sys_topology_cpu_core_id (cpu) != R_SYS_ID_UNKNOWN) namedcore++;
+      if (r_sys_topology_cpu_package_id (cpu) != R_SYS_ID_UNKNOWN) namedpkg++;
+      cpus++;
+
+      r_sys_cpu_unref (cpu);
+    }
+
+    r_sys_node_unref (node);
+  }
+  r_sys_topology_unref (topo);
+
+  r_assert_cmpuint (cores, ==, r_sys_cpu_physical_count ());
+}
+RTEST_END;
 #endif /* !R_OS_ANDROID */
 
 RTEST (rsys, topology_node_capabilities, RTEST_FAST | RTEST_SYSTEM)
