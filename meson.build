@@ -252,6 +252,22 @@ if host_machine.system() == 'windows'
     cc.find_library('dbghelp'),
     cc.find_library('crypt32'),
   ]
+  # powrprof carries CallNtPowerInformation, the only documented source
+  # of per-CPU clock frequencies on Windows. Optional: the topology
+  # reports 0 kHz rather than failing to build if a toolchain lacks it.
+  libpowrprof = cc.find_library('powrprof', required : false)
+  if libpowrprof.found() and cc.compiles('''
+      #include <windows.h>
+      #include <powrprof.h>
+      int main (void) {
+        PROCESSOR_POWER_INFORMATION ppi;
+        CallNtPowerInformation (ProcessorInformation, NULL, 0, &ppi,
+            sizeof (ppi));
+        return (int) ppi.MaxMhz;
+      }''', name : 'CallNtPowerInformation + PROCESSOR_POWER_INFORMATION')
+    conf.set('HAVE_CALLNTPOWERINFORMATION', 1)
+    libwin += [ libpowrprof ]
+  endif
 else
   libwin = []
 endif

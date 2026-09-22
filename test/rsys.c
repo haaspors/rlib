@@ -166,6 +166,8 @@ RTEST (rsys, topology_cpu, RTEST_FAST | RTEST_SYSTEM)
   r_assert_cmpuint (r_sys_topology_cpu_core_id (NULL), ==, R_SYS_ID_UNKNOWN);
   r_assert_cmpuint (r_sys_topology_cpu_package_id (NULL), ==, R_SYS_ID_UNKNOWN);
   r_assert (!r_sys_topology_cpu_siblings (NULL, siblings));
+  r_assert_cmpuint (r_sys_topology_cpu_max_frequency (NULL), ==, 0);
+  r_assert_cmpuint (r_sys_topology_cpu_min_frequency (NULL), ==, 0);
 
   r_assert_cmpptr ((topo = r_sys_topology_discover ()), !=, NULL);
   for (i = 0, nodecount = r_sys_topology_node_count (topo); i < nodecount; i++) {
@@ -191,6 +193,13 @@ RTEST (rsys, topology_cpu, RTEST_FAST | RTEST_SYSTEM)
        * groups partition the logical CPUs, one group per core. */
       if (r_bitset_ctz (siblings) == id)
         cores++;
+
+      /* cpufreq is absent on plenty of kernels and CPUs, so only the
+       * ordering is universal. */
+      if (r_sys_topology_cpu_max_frequency (cpu) > 0) {
+        r_assert_cmpuint (r_sys_topology_cpu_min_frequency (cpu), <=,
+            r_sys_topology_cpu_max_frequency (cpu));
+      }
 
       /* sysfs reports an id it does not know as -1, so a platform may
        * legitimately name neither - but naming only some of the CPUs
