@@ -8,6 +8,7 @@ examples = [
   'rlog',
   'ronce',
   'rprint',
+  'rsysinfo',
   'rtest',
   'rmachodump',
   'rmodulesection',
