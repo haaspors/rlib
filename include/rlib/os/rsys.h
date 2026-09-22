@@ -231,6 +231,23 @@ R_API rsize r_sys_topology_cpu_package_id (const RSysCpu * cpu);
 R_API rboolean r_sys_topology_cpu_siblings (const RSysCpu * cpu, RBitset * cpuset);
 
 /**
+ * @brief Highest clock frequency @p cpu can be driven at, in kHz.
+ *
+ * The hardware ceiling, not the current or the governor-capped rate,
+ * and 0 when the platform does not report one (which includes Apple
+ * Silicon, and any Linux without cpufreq).
+ */
+R_API ruint64 r_sys_topology_cpu_max_frequency (const RSysCpu * cpu);
+/**
+ * @brief Lowest clock frequency @p cpu can be driven at, in kHz, or 0
+ * when unknown.
+ *
+ * Windows reports only the ceiling, so this is 0 there even when
+ * @ref r_sys_topology_cpu_max_frequency is not.
+ */
+R_API ruint64 r_sys_topology_cpu_min_frequency (const RSysCpu * cpu);
+
+/**
  * @brief Number of cache levels reported for @p cpu.
  *
  * 0 on a platform that exposes no cache topology. Split L1s count as

@@ -58,6 +58,7 @@
 #mesondefine HAVE_SYMLINK
 #mesondefine HAVE_MKDIR
 #mesondefine HAVE_SYSCTLBYNAME
+#mesondefine HAVE_CALLNTPOWERINFORMATION
 #mesondefine HAVE_KQUEUE
 #mesondefine HAVE_EPOLL_CTL
 #mesondefine HAVE_EVENTFD

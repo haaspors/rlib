@@ -29,6 +29,9 @@
 #if defined (HAVE_WINDOWS_H)
 #include <windows.h>
 #endif
+#if defined (HAVE_CALLNTPOWERINFORMATION)
+#include <powrprof.h>
+#endif
 #ifdef HAVE_SYS_SYSCTL_H
 #include <sys/sysctl.h>
 #endif
@@ -41,6 +44,8 @@
 #define R_SYSFS_CPU_TOPO_CORE_ID      "/topology/core_id"
 #define R_SYSFS_CPU_TOPO_THR_SIB_LST  "/topology/thread_siblings_list"
 #define R_SYSFS_CPU_CACHE_FMT         "/sys/devices/system/cpu/cpu%u/cache/index%u"
+#define R_SYSFS_CPU_FREQ_MAX          "/cpufreq/cpuinfo_max_freq"
+#define R_SYSFS_CPU_FREQ_MIN          "/cpufreq/cpuinfo_min_freq"
 
 #define R_SYSFS_NODE                  "/sys/devices/system/node"
 #define R_SYSFS_NODE_FMT              "/sys/devices/system/node/node%u"
@@ -64,6 +69,33 @@ r_sys_cpu_win32_get_logical_proc_info (ruint * count)
   if ((ret = r_malloc (retlen)) != NULL) {
     if (GetLogicalProcessorInformation (ret, &retlen)) {
       *count = retlen / sizeof (SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+    } else {
+      r_free (ret);
+      ret = NULL;
+    }
+  }
+
+  return ret;
+}
+#endif
+
+#if defined (HAVE_CALLNTPOWERINFORMATION)
+/* One entry per logical CPU of the calling thread's processor group,
+ * in CPU order. */
+static PROCESSOR_POWER_INFORMATION *
+r_sys_cpu_win32_get_power_info (ruint * count)
+{
+  PROCESSOR_POWER_INFORMATION * ret;
+  ruint cpus = r_sys_cpu_logical_count ();
+  ULONG len;
+
+  if (cpus == 0)
+    return NULL;
+
+  len = (ULONG)(cpus * sizeof (PROCESSOR_POWER_INFORMATION));
+  if ((ret = r_malloc (len)) != NULL) {
+    if (CallNtPowerInformation (ProcessorInformation, NULL, 0, ret, len) == 0) {
+      *count = cpus;
     } else {
       r_free (ret);
       ret = NULL;
@@ -530,6 +562,10 @@ struct RSysTopology {
   PSYSTEM_LOGICAL_PROCESSOR_INFORMATION lpi;
   ruint     lpicount;
 #endif
+#if defined (HAVE_CALLNTPOWERINFORMATION)
+  PROCESSOR_POWER_INFORMATION * ppi;
+  ruint     ppicount;
+#endif
 #if defined (HAVE_SYSCTLBYNAME)
   rsize     cachelvl;
   ruint64 * cachecfg;
@@ -562,6 +598,9 @@ struct RSysCpu {
   rsize package;
   RBitset * siblings;
 
+  ruint64 freqmax;
+  ruint64 freqmin;
+
   rsize cachecount;
   RSysCpuCache * caches;
   RBitset ** cachecpuset;
@@ -579,6 +618,9 @@ r_sys_topology_free (RSysTopology * topo)
     rsize i;
 #if defined (R_OS_WIN32)
     r_free (topo->lpi);
+#endif
+#if defined (HAVE_CALLNTPOWERINFORMATION)
+    r_free (topo->ppi);
 #endif
 #if defined (HAVE_SYSCTLBYNAME)
     r_free (topo->cachecfg);
@@ -936,6 +978,10 @@ r_sys_cpu_discover (rsize idx, RSysNode * node, RSysTopology * topo)
 
 #if defined (R_OS_WIN32)
     r_sys_cpu_win32_discover (ret, topo);
+#if defined (HAVE_CALLNTPOWERINFORMATION)
+    if (topo->ppi != NULL && idx < topo->ppicount)
+      ret->freqmax = ((ruint64)topo->ppi[idx].MaxMhz) * 1000;
+#endif
 #elif defined (R_OS_LINUX)
     {
       rchar tmp[256];
@@ -949,6 +995,14 @@ r_sys_cpu_discover (rsize idx, RSysNode * node, RSysTopology * topo)
       r_snprintf (tmp, sizeof (tmp),
           R_SYSFS_CPU_FMT R_SYSFS_CPU_TOPO_THR_SIB_LST, (ruint)idx);
       r_bitset_set_from_human_readable_file (ret->siblings, tmp, NULL);
+
+      /* cpufreq reports kHz already. */
+      r_snprintf (tmp, sizeof (tmp), R_SYSFS_CPU_FMT R_SYSFS_CPU_FREQ_MAX,
+          (ruint)idx);
+      ret->freqmax = r_file_read_uint (tmp, 0);
+      r_snprintf (tmp, sizeof (tmp), R_SYSFS_CPU_FMT R_SYSFS_CPU_FREQ_MIN,
+          (ruint)idx);
+      ret->freqmin = r_file_read_uint (tmp, 0);
     }
 #elif defined (HAVE_SYSCTLBYNAME)
     {
@@ -968,6 +1022,10 @@ r_sys_cpu_discover (rsize idx, RSysNode * node, RSysTopology * topo)
       }
       if (pkgs > 0)
         ret->package = idx / pkgs;
+
+      /* hw.cpufrequency_* is in Hz. */
+      ret->freqmax = r_sys_sysctl_u64 ("hw.cpufrequency_max") / 1000;
+      ret->freqmin = r_sys_sysctl_u64 ("hw.cpufrequency_min") / 1000;
     }
 #endif
 
@@ -1082,6 +1140,9 @@ r_sys_topology_discover (void)
 #if defined (R_OS_WIN32)
       ULONG hnn = 0;
       ret->lpi = r_sys_cpu_win32_get_logical_proc_info (&ret->lpicount);
+#if defined (HAVE_CALLNTPOWERINFORMATION)
+      ret->ppi = r_sys_cpu_win32_get_power_info (&ret->ppicount);
+#endif
       if (GetNumaHighestNodeNumber (&hnn))
         r_bitset_set_n_bits_at (ret->nodeset, hnn + 1, 0, TRUE);
 #elif defined (HAVE_SYSCTLBYNAME)
@@ -1189,6 +1250,20 @@ r_sys_topology_cpu_siblings (const RSysCpu * cpu, RBitset * cpuset)
 {
   if (R_UNLIKELY (cpu == NULL)) return FALSE;
   return r_bitset_copy (cpuset, cpu->siblings);
+}
+
+ruint64
+r_sys_topology_cpu_max_frequency (const RSysCpu * cpu)
+{
+  if (R_UNLIKELY (cpu == NULL)) return 0;
+  return cpu->freqmax;
+}
+
+ruint64
+r_sys_topology_cpu_min_frequency (const RSysCpu * cpu)
+{
+  if (R_UNLIKELY (cpu == NULL)) return 0;
+  return cpu->freqmin;
 }
 
 rsize
