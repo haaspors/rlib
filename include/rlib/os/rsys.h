@@ -145,9 +145,40 @@ R_API rsize r_sys_topology_node_cpu_count (const RSysNode * node);
 R_API RSysCpu * r_sys_topology_node_cpu (RSysNode * node, rsize idx);
 /**
  * @brief Bytes of available (free) memory local to @p node, or 0 when
- * the platform does not expose it (e.g. non-NUMA macOS).
+ * the platform does not expose it.
  */
 R_API rsize r_sys_topology_node_available_memory (const RSysNode * node);
+/**
+ * @brief Bytes of memory local to @p node, or 0 when the platform does
+ * not expose it.
+ *
+ * On a single-node machine this is the machine's total physical
+ * memory, which win32 and Darwin do report even though neither has a
+ * per-node query.
+ */
+R_API rsize r_sys_topology_node_total_memory (const RSysNode * node);
+/**
+ * @brief NUMA index of @p node, or @ref R_SYS_ID_UNKNOWN.
+ *
+ * Node indices are not dense: a machine whose node 1 has been taken
+ * offline hands out nodes 0 and 2, so this is what identifies a node,
+ * not its position in @ref r_sys_topology_node.
+ */
+R_API rsize r_sys_topology_node_id (const RSysNode * node);
+/**
+ * @brief Relative cost of reaching @p nodeid's memory from @p node.
+ *
+ * Normalised the way the firmware tables are: 10 means local, 20 means
+ * roughly twice as far, and so on. A node's distance to itself is
+ * always 10; 0 means the platform does not expose the matrix (win32
+ * and Darwin never do).
+ *
+ * @param node   Node the access starts from.
+ * @param nodeid Index of the node being reached, as returned by
+ *               @ref r_sys_topology_node_id - not an array position.
+ * @return Relative distance, or 0 when unknown.
+ */
+R_API rsize r_sys_topology_node_distance (const RSysNode * node, rsize nodeid);
 
 /** @brief Take a reference on a topology (alias for @ref r_ref_ref). */
 #define r_sys_topology_ref    r_ref_ref

@@ -583,6 +583,10 @@ struct RSysNode {
 
   rsize idx;
   rsize availablemem;
+  rsize totalmem;
+
+  rsize * distance;
+  rsize distancecount;
 
   RBitset * cpuset;
   rsize cpucount;
@@ -643,6 +647,7 @@ r_sys_node_free (RSysNode * node)
       r_sys_cpu_unref (node->cpus[i]);
     r_free (node->cpus);
     r_free (node->cpuset);
+    r_free (node->distance);
     r_free (node);
   }
 }
@@ -1057,11 +1062,9 @@ r_sys_topology_prepend_cpu (rsize bit, rpointer data)
 }
 
 #if defined (R_OS_LINUX)
-/* Per-node available memory from /sys/devices/system/node/nodeN/meminfo,
- * whose "Node N MemFree:" line is reported in kB (this is what libnuma's
- * numa_node_size() ultimately reads). Returns 0 if unavailable. */
+/* The per-node meminfo lines read "Node N <key> <n> kB". */
 static rsize
-r_sys_node_available_memory (rsize idx)
+r_sys_node_meminfo (rsize idx, const rchar * key)
 {
   rchar path[256];
   RFile * f;
@@ -1070,11 +1073,13 @@ r_sys_node_available_memory (rsize idx)
   r_snprintf (path, sizeof (path), R_SYSFS_NODE_FMT "/meminfo", (ruint)idx);
   if ((f = r_file_open (path, "r")) != NULL) {
     rchar buf[256];
+    rsize keylen = r_strlen (key);
+
     while (r_file_read_line (f, buf, sizeof (buf)) == R_FILE_ERROR_OK) {
       rchar * p;
-      if ((p = r_strstr (buf, "MemFree:")) != NULL) {
+      if ((p = r_strstr (buf, key)) != NULL) {
         RStrParse res;
-        ruint64 kb = r_str_to_uint64 (p + 8, NULL, 10, &res);
+        ruint64 kb = r_str_to_uint64 (p + keylen, NULL, 10, &res);
         if (res == R_STR_PARSE_OK)
           ret = (rsize) (kb * 1024);
         break;
@@ -1084,6 +1089,45 @@ r_sys_node_available_memory (rsize idx)
   }
 
   return ret;
+}
+
+static void
+r_sys_node_linux_distance (RSysNode * node)
+{
+  rchar path[256], buf[1024];
+  /* No entry is shorter than a digit plus a separator. */
+  rsize dist[sizeof (buf) / 2];
+  const rchar * p;
+  rsize count = 0;
+
+  r_snprintf (path, sizeof (path), R_SYSFS_NODE_FMT "/distance",
+      (ruint)node->idx);
+  if (!r_sys_read_first_line (path, buf, sizeof (buf)))
+    return;
+
+  /* A filled buffer with no newline was cut mid-number. */
+  if (r_strlen (buf) == sizeof (buf) - 1 && r_strrchr (buf, '\n') == NULL) {
+    rchar * cut = r_strrchr (buf, ' ');
+
+    if (cut == NULL)
+      return;
+    *cut = '\0';
+  }
+
+  for (p = buf; count < R_N_ELEMENTS (dist); count++) {
+    RStrParse res;
+    const rchar * end;
+    ruint64 v = r_str_to_uint64 (p, &end, 10, &res);
+
+    if (res != R_STR_PARSE_OK)
+      break;
+    dist[count] = (rsize)v;
+    p = end;
+  }
+
+  if (count > 0 &&
+      (node->distance = r_memdup (dist, sizeof (rsize) * count)) != NULL)
+    node->distancecount = count;
 }
 #endif
 
@@ -1107,13 +1151,25 @@ r_sys_node_discover (rsize idx, RSysTopology * topo)
 #if defined (R_OS_WIN32)
     {
       ULONGLONG availmem = 0;
+      MEMORYSTATUSEX ms = { 0, };
+
       GetNumaAvailableMemoryNode ((ruchar)idx, &availmem);
       ret->availablemem = (rsize)availmem;
+
+      /* No per-node total to ask for, but on one node it is the
+       * machine's. */
+      ms.dwLength = sizeof (ms);
+      if (r_sys_node_count () == 1 && GlobalMemoryStatusEx (&ms))
+        ret->totalmem = (rsize)ms.ullTotalPhys;
     }
 #elif defined (R_OS_LINUX)
-    ret->availablemem = r_sys_node_available_memory (idx);
+    ret->availablemem = r_sys_node_meminfo (idx, "MemFree:");
+    ret->totalmem = r_sys_node_meminfo (idx, "MemTotal:");
+    r_sys_node_linux_distance (ret);
 #elif defined (HAVE_SYSCTLBYNAME)
-    /* macOS is not a NUMA platform; availablemem is left 0. */
+    /* Darwin has no per-node memory; only the flat case is answerable. */
+    if (r_sys_node_count () == 1)
+      ret->totalmem = (rsize)r_sys_sysctl_u64 ("hw.memsize");
 #endif
   }
 
@@ -1215,6 +1271,32 @@ r_sys_topology_node_available_memory (const RSysNode * node)
 {
   if (R_UNLIKELY (node == NULL)) return 0;
   return node->availablemem;
+}
+
+rsize
+r_sys_topology_node_total_memory (const RSysNode * node)
+{
+  if (R_UNLIKELY (node == NULL)) return 0;
+  return node->totalmem;
+}
+
+rsize
+r_sys_topology_node_id (const RSysNode * node)
+{
+  if (R_UNLIKELY (node == NULL)) return R_SYS_ID_UNKNOWN;
+  return node->idx;
+}
+
+rsize
+r_sys_topology_node_distance (const RSysNode * node, rsize nodeid)
+{
+  if (R_UNLIKELY (node == NULL)) return 0;
+
+  if (nodeid < node->distancecount)
+    return node->distance[nodeid];
+
+  /* The firmware tables normalise the diagonal to 10. */
+  return nodeid == node->idx ? 10 : 0;
 }
 
 rsize
