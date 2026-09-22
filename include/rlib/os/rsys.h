@@ -172,6 +172,30 @@ R_API rsize r_sys_topology_node_available_memory (const RSysNode * node);
  */
 #define R_SYS_ID_UNKNOWN  RSIZE_MAX
 
+/** @brief What an @ref RSysCpuCache level holds. */
+typedef enum {
+  R_SYS_CPU_CACHE_UNIFIED = 0,    /**< Instructions and data. */
+  R_SYS_CPU_CACHE_DATA,           /**< Data only. */
+  R_SYS_CPU_CACHE_INSTRUCTION,    /**< Instructions only. */
+  R_SYS_CPU_CACHE_TRACE           /**< Decoded-instruction trace cache. */
+} RSysCpuCacheType;
+
+/**
+ * @brief One level of a CPU's cache hierarchy.
+ *
+ * Every field but @c level and @c type is 0 when the platform does not
+ * report it - Darwin, for instance, gives sizes and the line size but
+ * neither associativity nor set count.
+ */
+typedef struct {
+  ruint level;                    /**< 1-based cache level (1 = L1). */
+  RSysCpuCacheType type;          /**< What the level caches. */
+  rsize size;                     /**< Total capacity in bytes. */
+  rsize linesize;                 /**< Coherency line size in bytes. */
+  rsize ways;                     /**< Ways per set (associativity). */
+  rsize sets;                     /**< Number of sets. */
+} RSysCpuCache;
+
 /** @name CPU attributes
  *
  * Per-CPU detail for an @ref RSysCpu handed out by
@@ -205,6 +229,41 @@ R_API rsize r_sys_topology_cpu_package_id (const RSysCpu * cpu);
  * @return @c TRUE on success.
  */
 R_API rboolean r_sys_topology_cpu_siblings (const RSysCpu * cpu, RBitset * cpuset);
+
+/**
+ * @brief Number of cache levels reported for @p cpu.
+ *
+ * 0 on a platform that exposes no cache topology. Split L1s count as
+ * two levels, one @ref R_SYS_CPU_CACHE_DATA and one
+ * @ref R_SYS_CPU_CACHE_INSTRUCTION.
+ */
+R_API rsize r_sys_topology_cpu_cache_count (const RSysCpu * cpu);
+/**
+ * @brief Copy the @p idx-th cache level of @p cpu into @p cache.
+ *
+ * Levels are ordered by increasing @c level, so index 0 is the
+ * closest cache to the core.
+ *
+ * @param cpu   CPU to query.
+ * @param idx   Cache index, below @ref r_sys_topology_cpu_cache_count.
+ * @param cache Destination (must be non-NULL).
+ * @return @c TRUE on success, @c FALSE if @p idx is out of range.
+ */
+R_API rboolean r_sys_topology_cpu_cache (const RSysCpu * cpu, rsize idx,
+    RSysCpuCache * cache);
+/**
+ * @brief Fill @p cpuset with the CPUs sharing @p cpu's @p idx-th cache.
+ *
+ * Includes @p cpu itself. A private cache yields a single bit; an L3
+ * shared across a package yields every CPU in it.
+ *
+ * @param cpu    CPU to query.
+ * @param idx    Cache index, below @ref r_sys_topology_cpu_cache_count.
+ * @param cpuset Destination, sized by @ref r_sys_cpuset_max.
+ * @return @c TRUE on success, @c FALSE if @p idx is out of range.
+ */
+R_API rboolean r_sys_topology_cpu_cache_cpuset (const RSysCpu * cpu, rsize idx,
+    RBitset * cpuset);
 /** @} */
 
 R_END_DECLS

@@ -40,6 +40,7 @@
 #define R_SYSFS_CPU_TOPO_PKG_ID       "/topology/physical_package_id"
 #define R_SYSFS_CPU_TOPO_CORE_ID      "/topology/core_id"
 #define R_SYSFS_CPU_TOPO_THR_SIB_LST  "/topology/thread_siblings_list"
+#define R_SYSFS_CPU_CACHE_FMT         "/sys/devices/system/cpu/cpu%u/cache/index%u"
 
 #define R_SYSFS_NODE                  "/sys/devices/system/node"
 #define R_SYSFS_NODE_FMT              "/sys/devices/system/node/node%u"
@@ -532,6 +533,9 @@ struct RSysTopology {
 #if defined (HAVE_SYSCTLBYNAME)
   rsize     cachelvl;
   ruint64 * cachecfg;
+  rsize     cachesizelvl;
+  ruint64 * cachesize;
+  ruint64   cachelinesize;
 #endif
 
   RBitset * nodeset;
@@ -557,6 +561,10 @@ struct RSysCpu {
   rsize core;
   rsize package;
   RBitset * siblings;
+
+  rsize cachecount;
+  RSysCpuCache * caches;
+  RBitset ** cachecpuset;
 };
 
 typedef struct {
@@ -574,6 +582,7 @@ r_sys_topology_free (RSysTopology * topo)
 #endif
 #if defined (HAVE_SYSCTLBYNAME)
     r_free (topo->cachecfg);
+    r_free (topo->cachesize);
 #endif
     for (i = 0; i < topo->nodecount; i++)
       r_sys_node_unref (topo->nodes[i]);
@@ -600,6 +609,11 @@ static void
 r_sys_cpu_free (RSysCpu * cpu)
 {
   if (R_LIKELY (cpu != NULL)) {
+    rsize i;
+    for (i = 0; i < cpu->cachecount; i++)
+      r_free (cpu->cachecpuset[i]);
+    r_free (cpu->cachecpuset);
+    r_free (cpu->caches);
     r_free (cpu->siblings);
     r_free (cpu);
   }
@@ -641,6 +655,266 @@ r_sys_cpu_win32_discover (RSysCpu * cpu, const RSysTopology * topo)
         cpu->package = packages;
       packages++;
     }
+  }
+}
+#endif
+
+/* L1i/L1d plus L2..L4 is the deepest any of the sources reports. */
+#define R_SYS_CPU_CACHE_MAX  16
+
+typedef struct {
+  rsize count;
+  RSysCpuCache cache[R_SYS_CPU_CACHE_MAX];
+  RBitset * cpuset[R_SYS_CPU_CACHE_MAX];
+} RSysCpuCaches;
+
+/* Only sysfs already enumerates core-outwards. */
+static void
+r_sys_cpu_caches_sort (RSysCpuCaches * c)
+{
+  rsize i, j;
+
+  for (i = 1; i < c->count; i++) {
+    RSysCpuCache cache = c->cache[i];
+    RBitset * cpuset = c->cpuset[i];
+
+    for (j = i; j > 0 && c->cache[j - 1].level > cache.level; j--) {
+      c->cache[j] = c->cache[j - 1];
+      c->cpuset[j] = c->cpuset[j - 1];
+    }
+    c->cache[j] = cache;
+    c->cpuset[j] = cpuset;
+  }
+}
+
+static void
+r_sys_cpu_caches_commit (RSysCpu * cpu, RSysCpuCaches * c)
+{
+  if (c->count == 0)
+    return;
+
+  r_sys_cpu_caches_sort (c);
+  cpu->caches = r_memdup (c->cache, sizeof (RSysCpuCache) * c->count);
+  cpu->cachecpuset = r_memdup (c->cpuset, sizeof (RBitset *) * c->count);
+
+  if (R_LIKELY (cpu->caches != NULL && cpu->cachecpuset != NULL)) {
+    cpu->cachecount = c->count;
+  } else {
+    rsize i;
+    for (i = 0; i < c->count; i++)
+      r_free (c->cpuset[i]);
+    r_free (cpu->caches);
+    r_free (cpu->cachecpuset);
+    cpu->caches = NULL;
+    cpu->cachecpuset = NULL;
+  }
+}
+
+#if defined (R_OS_LINUX)
+static rboolean
+r_sys_read_first_line (const rchar * path, rchar * buf, rsize size)
+{
+  RFile * f;
+  rboolean ret = FALSE;
+
+  if ((f = r_file_open (path, "r")) != NULL) {
+    ret = r_file_read_line (f, buf, size) == R_FILE_ERROR_OK;
+    r_file_unref (f);
+  }
+
+  return ret;
+}
+
+/* sysfs reports cache capacity with a unit suffix ("48K", "24576K"). */
+static rsize
+r_sys_cpu_linux_read_bytes (const rchar * path)
+{
+  rchar buf[64];
+  rsize ret = 0;
+
+  if (r_sys_read_first_line (path, buf, sizeof (buf))) {
+    const rchar * end;
+    RStrParse res;
+    ruint64 v = r_str_to_uint64 (buf, &end, 10, &res);
+
+    if (res == R_STR_PARSE_OK) {
+      switch (*end) {
+        case 'K': case 'k': v *= 1024; break;
+        case 'M': case 'm': v *= 1024 * 1024; break;
+        case 'G': case 'g': v *= 1024 * 1024 * 1024; break;
+        default: break;
+      }
+      ret = (rsize)v;
+    }
+  }
+
+  return ret;
+}
+
+static void
+r_sys_cpu_linux_discover_caches (rsize idx, RSysCpuCaches * c)
+{
+  rchar dir[256], path[288], type[32];
+  ruint i;
+
+  for (i = 0; c->count < R_SYS_CPU_CACHE_MAX; i++) {
+    RSysCpuCache * cache = &c->cache[c->count];
+    ruint level;
+
+    r_snprintf (dir, sizeof (dir), R_SYSFS_CPU_CACHE_FMT, (ruint)idx, i);
+    r_snprintf (path, sizeof (path), "%s/level", dir);
+    if ((level = r_file_read_uint (path, 0)) == 0)
+      break;
+
+    r_memclear (cache, sizeof (*cache));
+    cache->level = level;
+    r_snprintf (path, sizeof (path), "%s/type", dir);
+    if (r_sys_read_first_line (path, type, sizeof (type))) {
+      if (r_str_has_prefix (type, "Data"))
+        cache->type = R_SYS_CPU_CACHE_DATA;
+      else if (r_str_has_prefix (type, "Instruction"))
+        cache->type = R_SYS_CPU_CACHE_INSTRUCTION;
+    }
+    r_snprintf (path, sizeof (path), "%s/size", dir);
+    cache->size = r_sys_cpu_linux_read_bytes (path);
+    r_snprintf (path, sizeof (path), "%s/coherency_line_size", dir);
+    cache->linesize = r_file_read_uint (path, 0);
+    r_snprintf (path, sizeof (path), "%s/ways_of_associativity", dir);
+    cache->ways = r_file_read_uint (path, 0);
+    r_snprintf (path, sizeof (path), "%s/number_of_sets", dir);
+    cache->sets = r_file_read_uint (path, 0);
+
+    if ((c->cpuset[c->count] = r_sys_cpuset_new ()) != NULL) {
+      r_snprintf (path, sizeof (path), "%s/shared_cpu_list", dir);
+      r_bitset_set_from_human_readable_file (c->cpuset[c->count], path, NULL);
+      if (r_bitset_popcount (c->cpuset[c->count]) == 0)
+        r_bitset_set_bit (c->cpuset[c->count], idx, TRUE);
+    }
+    c->count++;
+  }
+}
+#endif
+
+#if defined (R_OS_WIN32)
+static RSysCpuCacheType
+r_sys_cpu_win32_cache_type (PROCESSOR_CACHE_TYPE type)
+{
+  switch (type) {
+    case CacheInstruction:  return R_SYS_CPU_CACHE_INSTRUCTION;
+    case CacheData:         return R_SYS_CPU_CACHE_DATA;
+    case CacheTrace:        return R_SYS_CPU_CACHE_TRACE;
+    default:                return R_SYS_CPU_CACHE_UNIFIED;
+  }
+}
+
+static void
+r_sys_cpu_win32_discover_caches (rsize idx, const RSysTopology * topo,
+    RSysCpuCaches * c)
+{
+  ULONG_PTR mask;
+  ruint i;
+
+  if (topo->lpi == NULL || idx >= sizeof (ULONG_PTR) * 8)
+    return;
+  mask = ((ULONG_PTR)1) << idx;
+
+  for (i = 0; i < topo->lpicount && c->count < R_SYS_CPU_CACHE_MAX; i++) {
+    const CACHE_DESCRIPTOR * cd = &topo->lpi[i].Cache;
+    RSysCpuCache * cache = &c->cache[c->count];
+
+    if (topo->lpi[i].Relationship != RelationCache ||
+        (topo->lpi[i].ProcessorMask & mask) == 0)
+      continue;
+
+    r_memclear (cache, sizeof (*cache));
+    cache->level = cd->Level;
+    cache->type = r_sys_cpu_win32_cache_type (cd->Type);
+    cache->size = cd->Size;
+    cache->linesize = cd->LineSize;
+    /* CACHE_FULLY_ASSOCIATIVE is a marker, not a ways count. */
+    if (cd->Associativity != CACHE_FULLY_ASSOCIATIVE)
+      cache->ways = cd->Associativity;
+    if (cache->linesize > 0 && cache->ways > 0)
+      cache->sets = cache->size / (cache->linesize * cache->ways);
+
+    if ((c->cpuset[c->count] = r_sys_cpuset_new ()) != NULL)
+      r_bitset_set_u64_at (c->cpuset[c->count],
+          (ruint64)topo->lpi[i].ProcessorMask, 0);
+    c->count++;
+  }
+}
+#endif
+
+#if defined (HAVE_SYSCTLBYNAME)
+/* The hw.* cache keys are uint32 on some Darwin releases, uint64 on
+ * others; reading the wrong width leaves half the value uninitialised. */
+static ruint64
+r_sys_sysctl_u64 (const rchar * name)
+{
+  ruint64 v64 = 0;
+  ruint32 v32 = 0;
+  size_t size = sizeof (v64);
+
+  if (sysctlbyname (name, &v64, &size, NULL, 0) == 0 && size == sizeof (v64))
+    return v64;
+
+  size = sizeof (v32);
+  if (sysctlbyname (name, &v32, &size, NULL, 0) == 0 && size == sizeof (v32))
+    return v32;
+
+  return 0;
+}
+
+static void
+r_sys_cpu_darwin_add_cache (rsize idx, const RSysTopology * topo,
+    RSysCpuCaches * c, ruint level, RSysCpuCacheType type, rsize size)
+{
+  RSysCpuCache * cache = &c->cache[c->count];
+  rsize share = 1;
+
+  if (size == 0 || c->count >= R_SYS_CPU_CACHE_MAX)
+    return;
+
+  /* hw.cacheconfig[n] is the number of logical CPUs sharing level n,
+   * and Darwin enumerates them consecutively. */
+  if (level < topo->cachelvl && topo->cachecfg[level] > 0)
+    share = (rsize)topo->cachecfg[level];
+
+  r_memclear (cache, sizeof (*cache));
+  cache->level = level;
+  cache->type = type;
+  cache->size = size;
+  cache->linesize = (rsize)topo->cachelinesize;
+
+  if ((c->cpuset[c->count] = r_sys_cpuset_new ()) != NULL)
+    r_bitset_set_n_bits_at (c->cpuset[c->count], share,
+        (idx / share) * share, TRUE);
+  c->count++;
+}
+
+static void
+r_sys_cpu_darwin_discover_caches (rsize idx, const RSysTopology * topo,
+    RSysCpuCaches * c)
+{
+  ruint64 l1d = r_sys_sysctl_u64 ("hw.l1dcachesize");
+  ruint64 l1i = r_sys_sysctl_u64 ("hw.l1icachesize");
+  rsize level;
+
+  /* hw.cachesize[0] is the memory size and [1..] the cache levels,
+   * whose L1 entry is the data cache alone. */
+  if (l1d > 0 || l1i > 0) {
+    r_sys_cpu_darwin_add_cache (idx, topo, c, 1, R_SYS_CPU_CACHE_DATA,
+        (rsize)l1d);
+    r_sys_cpu_darwin_add_cache (idx, topo, c, 1, R_SYS_CPU_CACHE_INSTRUCTION,
+        (rsize)l1i);
+    level = 2;
+  } else {
+    level = 1;
+  }
+
+  for (; level < topo->cachesizelvl; level++) {
+    r_sys_cpu_darwin_add_cache (idx, topo, c, (ruint)level,
+        R_SYS_CPU_CACHE_UNIFIED, (rsize)topo->cachesize[level]);
   }
 }
 #endif
@@ -699,6 +973,18 @@ r_sys_cpu_discover (rsize idx, RSysNode * node, RSysTopology * topo)
 
     if (r_bitset_popcount (ret->siblings) == 0)
       r_bitset_set_bit (ret->siblings, idx, TRUE);
+
+    R_STMT_START {
+      RSysCpuCaches caches = { 0, };
+#if defined (R_OS_WIN32)
+      r_sys_cpu_win32_discover_caches (idx, topo, &caches);
+#elif defined (R_OS_LINUX)
+      r_sys_cpu_linux_discover_caches (idx, &caches);
+#elif defined (HAVE_SYSCTLBYNAME)
+      r_sys_cpu_darwin_discover_caches (idx, topo, &caches);
+#endif
+      r_sys_cpu_caches_commit (ret, &caches);
+    } R_STMT_END;
   }
 
   return ret;
@@ -806,6 +1092,14 @@ r_sys_topology_discover (void)
         if (sysctlbyname("hw.cacheconfig", ret->cachecfg, &size, NULL, 0) == 0)
           r_bitset_set_n_bits_at (ret->nodeset, r_sys_cpu_logical_count () / ret->cachecfg[0], 0, TRUE);
       }
+      size = 0;
+      if (sysctlbyname("hw.cachesize", NULL, &size, NULL, 0) == 0) {
+        ret->cachesize = r_malloc (size);
+        ret->cachesizelvl = size / sizeof (ruint64);
+        if (sysctlbyname("hw.cachesize", ret->cachesize, &size, NULL, 0) != 0)
+          ret->cachesizelvl = 0;
+      }
+      ret->cachelinesize = r_sys_sysctl_u64 ("hw.cachelinesize");
 #elif defined (R_OS_LINUX)
       r_bitset_set_from_human_readable_file (ret->nodeset, R_SYSFS_NODE "/online", NULL);
 #endif
@@ -895,5 +1189,33 @@ r_sys_topology_cpu_siblings (const RSysCpu * cpu, RBitset * cpuset)
 {
   if (R_UNLIKELY (cpu == NULL)) return FALSE;
   return r_bitset_copy (cpuset, cpu->siblings);
+}
+
+rsize
+r_sys_topology_cpu_cache_count (const RSysCpu * cpu)
+{
+  if (R_UNLIKELY (cpu == NULL)) return 0;
+  return cpu->cachecount;
+}
+
+rboolean
+r_sys_topology_cpu_cache (const RSysCpu * cpu, rsize idx, RSysCpuCache * cache)
+{
+  if (R_UNLIKELY (cpu == NULL || cache == NULL)) return FALSE;
+  if (R_UNLIKELY (idx >= cpu->cachecount)) return FALSE;
+
+  *cache = cpu->caches[idx];
+  return TRUE;
+}
+
+rboolean
+r_sys_topology_cpu_cache_cpuset (const RSysCpu * cpu, rsize idx,
+    RBitset * cpuset)
+{
+  if (R_UNLIKELY (cpu == NULL)) return FALSE;
+  if (R_UNLIKELY (idx >= cpu->cachecount)) return FALSE;
+  if (R_UNLIKELY (cpu->cachecpuset[idx] == NULL)) return FALSE;
+
+  return r_bitset_copy (cpuset, cpu->cachecpuset[idx]);
 }
 

@@ -207,6 +207,67 @@ RTEST (rsys, topology_cpu, RTEST_FAST | RTEST_SYSTEM)
   r_sys_topology_unref (topo);
 
   r_assert_cmpuint (cores, ==, r_sys_cpu_physical_count ());
+  r_assert (namedcore == 0 || namedcore == cpus);
+  r_assert (namedpkg == 0 || namedpkg == cpus);
+}
+RTEST_END;
+
+RTEST (rsys, topology_cpu_cache, RTEST_FAST | RTEST_SYSTEM)
+{
+  RSysTopology * topo;
+  RSysNode * node;
+  RSysCpu * cpu;
+  RSysCpuCache cache;
+  rsize i, j, k, nodecount, cpucount, cachecount;
+  RBitset * cpuset, * online;
+
+  r_assert (r_bitset_init_stack (cpuset, r_sys_cpuset_max ()));
+  r_assert (r_bitset_init_stack (online, r_sys_cpuset_max ()));
+  r_assert (r_sys_cpuset_online (online));
+
+  r_assert_cmpuint (r_sys_topology_cpu_cache_count (NULL), ==, 0);
+  r_assert (!r_sys_topology_cpu_cache (NULL, 0, &cache));
+  r_assert (!r_sys_topology_cpu_cache_cpuset (NULL, 0, cpuset));
+
+  r_assert_cmpptr ((topo = r_sys_topology_discover ()), !=, NULL);
+  for (i = 0, nodecount = r_sys_topology_node_count (topo); i < nodecount; i++) {
+    r_assert_cmpptr ((node = r_sys_topology_node (topo, i)), !=, NULL);
+    cpucount = r_sys_topology_node_cpu_count (node);
+
+    for (j = 0; j < cpucount; j++) {
+      ruint level = 0;
+
+      r_assert_cmpptr ((cpu = r_sys_topology_node_cpu (node, j)), !=, NULL);
+      cachecount = r_sys_topology_cpu_cache_count (cpu);
+      r_assert (!r_sys_topology_cpu_cache (cpu, cachecount, &cache));
+      r_assert (!r_sys_topology_cpu_cache_cpuset (cpu, cachecount, cpuset));
+      r_assert (!r_sys_topology_cpu_cache (cpu, 0, NULL));
+#if defined (R_OS_LINUX) || defined (R_OS_WIN32) || defined (R_OS_DARWIN)
+      r_assert_cmpuint (cachecount, >, 0);
+#endif
+
+      for (k = 0; k < cachecount; k++) {
+        r_assert (r_sys_topology_cpu_cache (cpu, k, &cache));
+        r_assert_cmpuint (cache.level, >=, 1);
+        /* Ordered from the core outwards. */
+        r_assert_cmpuint (cache.level, >=, level);
+        level = cache.level;
+        r_assert_cmpuint (cache.size, >, 0);
+
+        r_bitset_clear (cpuset);
+        r_assert (r_sys_topology_cpu_cache_cpuset (cpu, k, cpuset));
+        r_assert (r_bitset_is_bit_set (cpuset, r_sys_topology_cpu_id (cpu)));
+        /* Nothing offline shares a cache with an online CPU. */
+        r_assert (r_bitset_and (cpuset, cpuset, online));
+        r_assert (r_bitset_is_bit_set (cpuset, r_sys_topology_cpu_id (cpu)));
+      }
+
+      r_sys_cpu_unref (cpu);
+    }
+
+    r_sys_node_unref (node);
+  }
+  r_sys_topology_unref (topo);
 }
 RTEST_END;
 #endif /* !R_OS_ANDROID */
