@@ -147,6 +147,45 @@ RTEST (rsys, topology, RTEST_FAST | RTEST_SYSTEM)
   r_sys_topology_unref (topo);
 }
 RTEST_END;
+RTEST (rsys, topology_node, RTEST_FAST | RTEST_SYSTEM)
+{
+  RSysTopology * topo;
+  RSysNode * node;
+  rsize i, nodecount;
+  RBitset * nodeset;
+
+  r_assert (r_bitset_init_stack (nodeset, r_sys_nodeset_max ()));
+  r_assert (r_sys_nodeset_online (nodeset));
+
+  r_assert_cmpuint (r_sys_topology_node_id (NULL), ==, R_SYS_ID_UNKNOWN);
+  r_assert_cmpuint (r_sys_topology_node_total_memory (NULL), ==, 0);
+  r_assert_cmpuint (r_sys_topology_node_distance (NULL, 0), ==, 0);
+
+  r_assert_cmpptr ((topo = r_sys_topology_discover ()), !=, NULL);
+  for (i = 0, nodecount = r_sys_topology_node_count (topo); i < nodecount; i++) {
+    rsize id, total;
+
+    r_assert_cmpptr ((node = r_sys_topology_node (topo, i)), !=, NULL);
+    r_assert (r_bitset_is_bit_set (nodeset, (id = r_sys_topology_node_id (node))));
+
+    /* Firmware normalises the diagonal of the distance matrix to 10,
+     * and so does the fallback for platforms without one. */
+    r_assert_cmpuint (r_sys_topology_node_distance (node, id), ==, 10);
+
+    total = r_sys_topology_node_total_memory (node);
+    if (total > 0) {
+      r_assert_cmpuint (total, >=, r_sys_topology_node_available_memory (node));
+    }
+#if defined (R_OS_LINUX)
+    r_assert_cmpuint (total, >, 0);
+#endif
+
+    r_sys_node_unref (node);
+  }
+  r_sys_topology_unref (topo);
+}
+RTEST_END;
+
 RTEST (rsys, topology_cpu, RTEST_FAST | RTEST_SYSTEM)
 {
   RSysTopology * topo;
