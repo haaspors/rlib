@@ -163,6 +163,50 @@ R_API rsize r_sys_topology_node_available_memory (const RSysNode * node);
 #define r_sys_cpu_unref       r_ref_unref
 /** @} */
 
+/**
+ * @brief Returned by the topology id accessors when the platform does
+ * not name that part of the topology.
+ *
+ * Zero is a valid core, package and node id, so "unknown" needs a
+ * sentinel of its own.
+ */
+#define R_SYS_ID_UNKNOWN  RSIZE_MAX
+
+/** @name CPU attributes
+ *
+ * Per-CPU detail for an @ref RSysCpu handed out by
+ * @ref r_sys_topology_node_cpu. Core and package ids only mean
+ * anything compared against each other ("same core?"); a platform
+ * that does not name them gets enumeration ordinals instead, so
+ * neither is safe to use as an array index.
+ *  @{ */
+/** @brief Logical CPU index, i.e. the bit this CPU occupies in a cpuset. */
+R_API rsize r_sys_topology_cpu_id (const RSysCpu * cpu);
+/** @brief Index of the NUMA node @p cpu belongs to. */
+R_API rsize r_sys_topology_cpu_node_id (const RSysCpu * cpu);
+/**
+ * @brief Physical core id of @p cpu, or @ref R_SYS_ID_UNKNOWN.
+ *
+ * Only unique within a package: two CPUs are on the same physical core
+ * iff their core @b and package ids match.
+ */
+R_API rsize r_sys_topology_cpu_core_id (const RSysCpu * cpu);
+/** @brief Physical package (socket) id of @p cpu, or
+ *  @ref R_SYS_ID_UNKNOWN. */
+R_API rsize r_sys_topology_cpu_package_id (const RSysCpu * cpu);
+/**
+ * @brief Fill @p cpuset with the SMT thread siblings of @p cpu.
+ *
+ * The set includes @p cpu itself, so a machine without SMT (or a
+ * platform that does not report siblings) yields a single bit.
+ *
+ * @param cpu    CPU to query.
+ * @param cpuset Destination, sized by @ref r_sys_cpuset_max.
+ * @return @c TRUE on success.
+ */
+R_API rboolean r_sys_topology_cpu_siblings (const RSysCpu * cpu, RBitset * cpuset);
+/** @} */
+
 R_END_DECLS
 
 /** @} */
