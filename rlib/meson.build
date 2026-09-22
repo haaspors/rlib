@@ -19,6 +19,7 @@ rlib_sources = [
   'rmemallocator.c',
   'rmem.c',
   'rmemfile.c',
+  'rmemnuma.c',
   'rmemscan.c',
   'os/rmodule.c',
   'crypto/rmsgdigest.c',

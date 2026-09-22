@@ -46,6 +46,7 @@
 #include <rlib/rmem.h>
 #include <rlib/rmemallocator.h>
 #include <rlib/rmemfile.h>
+#include <rlib/rmemnuma.h>
 #include <rlib/os/rmodule.h>
 #include <rlib/crypto/rmsgdigest.h>
 #include <rlib/rpoll.h>

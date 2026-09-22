@@ -28,6 +28,7 @@
 #mesondefine HAVE_SYS_SOCKET_H
 #mesondefine HAVE_SYS_MMAN_H
 #mesondefine HAVE_SYS_IOCTL_H
+#mesondefine HAVE_SYS_SYSCALL_H
 #mesondefine HAVE_SYS_SYSCTL_H
 #mesondefine HAVE_SYS_EPOLL_H
 #mesondefine HAVE_SYS_EVENT_H
@@ -46,6 +47,7 @@
 #mesondefine HAVE_FCNTL
 #mesondefine HAVE_IOCTL
 #mesondefine HAVE_MMAP
+#mesondefine HAVE_SYSCONF
 #mesondefine HAVE_POLL
 #mesondefine HAVE_PPOLL
 #mesondefine HAVE_PIPE
@@ -59,6 +61,8 @@
 #mesondefine HAVE_MKDIR
 #mesondefine HAVE_SYSCTLBYNAME
 #mesondefine HAVE_CALLNTPOWERINFORMATION
+#mesondefine HAVE_QUERYWORKINGSETEX
+#mesondefine HAVE_LINUX_MEMPOLICY_H
 #mesondefine HAVE_KQUEUE
 #mesondefine HAVE_EPOLL_CTL
 #mesondefine HAVE_EVENTFD
