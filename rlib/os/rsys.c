@@ -409,8 +409,9 @@ r_sys_cpuset_for_node (RBitset * cpuset, ruint node)
     }
   }
 #else
-  /* TODO: r_sys_cpuset_for_node */
-  (void) node;
+  /* Present the machine as the single node it is. */
+  if (node == 0)
+    ret = r_sys_cpuset_online (cpuset);
 #endif
 
   return ret;
@@ -439,6 +440,9 @@ r_sys_node_count (void)
     r_bitset_set_from_human_readable_file (online, R_SYSFS_NODE "/online", NULL);
     ret = r_bitset_popcount (online);
   }
+#else
+  /* Flat single node, matching r_sys_cpuset_for_node's fallback. */
+  ret = (r_sys_cpu_logical_count () > 0) ? 1 : 0;
 #endif
 
   return ret;
