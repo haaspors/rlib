@@ -17,8 +17,8 @@
  */
 /**
  * @defgroup r_mem Memory
- * @brief Heap / stack allocators, byte-buffer operations, and
- * pattern-based memory scanning.
+ * @brief Heap / stack allocators, NUMA-placed page allocation,
+ * byte-buffer operations, and pattern-based memory scanning.
  * @{
  */
 

@@ -268,6 +268,21 @@ if host_machine.system() == 'windows'
     conf.set('HAVE_CALLNTPOWERINFORMATION', 1)
     libwin += [ libpowrprof ]
   endif
+  # psapi carries QueryWorkingSetEx, which reports the NUMA node a page
+  # actually landed on. Optional in the same way.
+  libpsapi = cc.find_library('psapi', required : false)
+  if libpsapi.found() and cc.compiles('''
+      #include <windows.h>
+      #include <psapi.h>
+      int main (void) {
+        PSAPI_WORKING_SET_EX_INFORMATION wsi;
+        QueryWorkingSetEx (GetCurrentProcess (), &wsi, sizeof (wsi));
+        return wsi.VirtualAttributes.Valid ?
+            (int) wsi.VirtualAttributes.Node : 0;
+      }''', name : 'QueryWorkingSetEx + PSAPI_WORKING_SET_EX_BLOCK.Node')
+    conf.set('HAVE_QUERYWORKINGSETEX', 1)
+    libwin += [ libpsapi ]
+  endif
 else
   libwin = []
 endif
@@ -318,6 +333,7 @@ check_headers = [
   'sys/socket.h',
   'sys/ioctl.h',
   'sys/select.h',
+  'sys/syscall.h',
   'sys/sysctl.h',
   'sys/stat.h',
   'sys/time.h',
@@ -331,6 +347,9 @@ if host_machine.system() == 'linux' or host_machine.system() == 'android'
     'sys/eventfd.h',
     'sys/prctl.h',
     'sys/sysinfo.h',
+    # NUMA mempolicy constants (MPOL_BIND et al). A uapi header, so
+    # this pulls in no dependency - the syscalls are issued directly.
+    'linux/mempolicy.h',
   ]
 elif host_machine.system() == 'darwin'
   check_headers += [
@@ -374,6 +393,7 @@ check_funcs = [
   [ 'symlink', 'unistd.h' ],
   [ 'pipe', 'unistd.h' ],
   [ 'pipe2', 'unistd.h' ],
+  [ 'sysconf', 'unistd.h' ],
   # sys/stat
   [ 'mkdir', 'sys/stat.h' ],
   [ 'stat', 'sys/stat.h' ],
