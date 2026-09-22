@@ -35,7 +35,6 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#include <errno.h>
 #ifdef HAVE_SYS_SYSCTL_H
 #include <sys/sysctl.h>
 #endif
@@ -99,18 +98,28 @@ r_proc_get_exe_path (void)
 #elif defined(R_OS_SOLARIS)
   ret = r_strdup (getexename ());
 #else
+  /* readlink truncates instead of failing and reports only what it
+   * wrote, so only an answer shorter than the buffer is provably
+   * whole. */
+  rchar * buf = NULL, * tmp;
   rsize size;
-  for (size = 64; (ret = r_realloc (ret, size + 1)) != NULL; size *= 2) {
+
+  for (size = 256; (tmp = r_realloc (buf, size + 1)) != NULL; size *= 2) {
     rssize linksize;
-    if ((linksize = readlink ("/proc/self/exe", ret, size)) >= 0) {
-      ret[linksize] = 0;
+
+    buf = tmp;
+    if ((linksize = readlink ("/proc/self/exe", buf, size)) < 0)
       break;
-    } else if (errno != ENAMETOOLONG) {
-      r_free (ret);
-      ret = NULL;
+
+    if ((rsize)linksize < size) {
+      buf[linksize] = 0;
+      ret = buf;
+      buf = NULL;
       break;
     }
   }
+
+  r_free (buf);
 #endif
   return ret;
 }
