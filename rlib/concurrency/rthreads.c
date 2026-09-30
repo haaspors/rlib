@@ -816,17 +816,16 @@ r_thread_kill (RThread * thread, int sig)
 {
 #ifdef RLIB_HAVE_THREADS
 #if defined (R_OS_WIN32)
-  /* FIXME: Implement something that will look like a signal to the thread */
   (void)thread;
   (void)sig;
-  return EINVAL;
+  return ENOSYS;
 #elif defined (HAVE_PTHREAD_H)
   return pthread_kill (thread->thread, sig);
 #endif
 #else
   (void)thread;
   (void)sig;
-  return EINVAL;
+  return ENOSYS;
 #endif
 }
 
