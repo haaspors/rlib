@@ -301,8 +301,14 @@ static inline void r_thread_join_unref (rpointer thread)
   r_thread_unref (thread);
 }
 /**
- * @brief Send signal @p sig to @p thread (POSIX-style; thin wrapper
- * over @c pthread_kill on Unix).
+ * @brief Send signal @p sig to @p thread (thin wrapper over
+ * @c pthread_kill).
+ *
+ * POSIX only. Windows has no per-thread signal delivery, so there
+ * (and in builds without thread support) this always fails.
+ *
+ * @return 0 on success, otherwise an errno value; @c ENOSYS when
+ *         unsupported on this platform.
  */
 R_API int       r_thread_kill       (RThread * thread, int sig);
 /** @brief Return the human-readable name @p thread was given at creation. */
