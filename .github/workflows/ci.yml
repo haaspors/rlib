@@ -168,7 +168,7 @@ jobs:
   windows-rpoll:
     name: Windows rpoll / MSVC / ${{ matrix.buildtype }}
     # IOCP is the default Windows backend (covered by the Windows / MSVC job);
-    # this one forces the WSAEventSelect/poll readiness backend (-Drpoll) so the
+    # this one forces the poll/select readiness backend (-Drpoll) so the
     # opt-out path keeps building and passing (minus the recv-error tests, which
     # a readiness backend cannot satisfy and which gate themselves off).
     runs-on: windows-latest
