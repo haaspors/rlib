@@ -35,7 +35,7 @@ meson test -C _build_linux --print-errorlogs
   `-H` also runs `HEAVY_RTEST_*`, `-i` runs `SKIP_RTEST_*`, `-B` runs
   `BROKEN_RTEST_*`, `-v` is verbose.
 - Feature toggles are in `meson_options.txt`. `-Drpoll=enabled` switches
-  Windows from the IOCP backend to the WSAEventSelect/poll backend.
+  Windows from the IOCP backend to the poll/select readiness backend.
 
 ### What CI covers
 

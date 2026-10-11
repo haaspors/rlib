@@ -612,8 +612,8 @@ RTEST (rrtcicetransport, gather_srflx_candidates, RTEST_FAST | RTEST_SYSTEM)
 RTEST_END;
 
 /* The multi-round-trip framed TCP handshake needs a backend that observes
- * loopback socket readiness promptly; the Windows WSAEventSelect readiness
- * (rpoll) backend does not, so gate this off there as revtcp does. */
+ * loopback socket readiness promptly; the Windows rpoll readiness backend
+ * does not, so gate this off there as revtcp does. */
 #if !(defined (R_OS_WIN32) && defined (R_EV_USE_RPOLL))
 static RRtcIceCandidate *
 test_ice_tcp_candidate (const rchar * foundation, RSocketAddress * addr,
