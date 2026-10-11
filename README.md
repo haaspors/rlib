@@ -1,7 +1,8 @@
 rlib
 ====
 
-[![CI](https://github.com/haaspors/rlib/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/haaspors/rlib/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-LGPL-blue.svg)](https://github.com/haaspors/rlib/blob/master/LICENSE)
+[![CI](https://github.com/haaspors/rlib/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/haaspors/rlib/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-LGPL-blue.svg)](https://github.com/haaspors/rlib/blob/master/LICENSE)
 
 rlib is a c library which contains abstractions for OS, platform and CPU architecture.
 It's a convenience library for useful things. :-)
@@ -75,33 +76,24 @@ Features
 * ELF, Mach-O, and PE / COFF parsers
 
 ### Tooling
-* Test framework — asserts, fixtures, loop / stress / fuzzy / bench tiers, timeout detection, fork isolation
+* Test framework — asserts, fixtures, loop / stress / fuzzy / bench tiers,
+  timeout detection, fork isolation
 * Command-line argument parser with grouped options and sub-commands
 * Logging framework with colour-aware terminals
 
-Getting the code
---------
-Currently you'll find the code @ [github](https://github.com/haaspors/rlib) (https://github.com/haaspors/rlib)
-
 Dependencies
 --------
-* A C compiler — gcc, clang or MSVC. Other C99-capable compilers should work but aren't routinely tested.
-* [meson](https://mesonbuild.com) and a backend — typically [ninja](https://ninja-build.org).
+* A C99 compiler: gcc, clang and MSVC are tested.
+* [meson](https://mesonbuild.com) and a backend, typically [ninja](https://ninja-build.org).
 
 Building
 --------
-rlib uses [meson](https://mesonbuild.com). Configure, build, test and install:
-
 ```sh
 meson setup build
 meson compile -C build
 meson test -C build
 meson install -C build
 ```
-
-`build` is the conventional name for the build directory — any name works, and you can keep several side-by-side build directories with different options.
-
-### Build types
 
 Pass `--buildtype=<type>` to `meson setup`:
 
@@ -112,23 +104,10 @@ Pass `--buildtype=<type>` to `meson setup`:
 | `release`         | `-O3`          | no debug   |
 | `plain`           | (none)         | you supply `CFLAGS` |
 
-```sh
-meson setup build-release --buildtype=release
-meson compile -C build-release
-```
-
-### Build options
-
-rlib exposes feature toggles in [`meson_options.txt`](meson_options.txt) (threads, modules, signals, files, sockets). Set them at configure time with `-D<option>=<value>`, or change them later with `meson configure`:
+Feature toggles are in [`meson_options.txt`](meson_options.txt),
+set with `-D<option>=<value>`:
 
 ```sh
 meson setup build -Denable_sockets=false
-meson configure build -Denable_threads=false   # reconfigure existing build dir
 ```
-
-`meson configure build` with no arguments lists every option and its current value.
-
-### IDE project files
-
-Meson can generate Visual Studio or Xcode project files via `--backend=vs` / `--backend=xcode`. See the [meson docs](https://mesonbuild.com/Running-Meson.html#backend-options) for the full set.
 
