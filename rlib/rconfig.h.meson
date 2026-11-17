@@ -97,6 +97,9 @@ typedef unsigned @RSIZE_TYPE@   rsize;
 #define RSIZE_FMT               @RSIZE_FMT@
 #define RSSIZE_FMT              @RSSIZE_FMT@
 
+/* C11 Annex K defines RSIZE_MAX as SIZE_MAX >> 1, and macOS enables it by
+ * default; rtypes.h includes <stdint.h> first so this definition wins. */
+#undef RSIZE_MAX
 #define RSIZE_MAX               @RLIB_SIZE_TYPE@_MAX
 #define RSSIZE_MIN              @RLIB_SSIZE_TYPE@_MIN
 #define RSSIZE_MAX              @RLIB_SSIZE_TYPE@_MAX

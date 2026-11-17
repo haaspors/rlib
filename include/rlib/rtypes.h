@@ -22,12 +22,14 @@
 #error "#include <rlib.h> only please."
 #endif
 
+/* Before rconfig.h, which replaces any RSIZE_MAX these define. */
+#include <limits.h>
+#include <float.h>
+#include <stdint.h>
+
 #include <rlib/rconfig.h>
 #include <rlib/types/rmacros.h>
 /* *** Some headers are included at the bottom of this file! *** */
-
-#include <limits.h>
-#include <float.h>
 
 /**
  * @defgroup r_types Foundational types
