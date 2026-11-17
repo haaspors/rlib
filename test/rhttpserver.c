@@ -209,7 +209,7 @@ RTEST_END;
 typedef struct {
   RSocketAddress * addr;
   int responses;
-  rboolean done;
+  raboolean done;
 } RTestPersistClient;
 
 static rpointer
@@ -237,7 +237,7 @@ r_test_persist_client (rpointer data)
     r_socket_close (s);
     r_socket_unref (s);
   }
-  c->done = TRUE;
+  r_atomic_bool_store (&c->done, TRUE);
   return NULL;
 }
 
@@ -271,7 +271,7 @@ RTEST (rhttpserver, keepalive_default_http11, RTEST_FAST | RTEST_SYSTEM)
       !=, NULL);
 
   /* Drive the server until the raw client has finished both exchanges. */
-  while (!c.done)
+  while (!r_atomic_bool_load (&c.done))
     r_ev_loop_run (loop, R_EV_LOOP_RUN_NOWAIT);
 
   r_thread_join (thread);
