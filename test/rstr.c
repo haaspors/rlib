@@ -1518,3 +1518,76 @@ RTEST (rstr, str_sizeof_macro, RTEST_FAST)
   r_assert_cmpint ((int) 10 - (int) R_STR_SIZEOF ("xxx"), ==, 7);
 }
 RTEST_END;
+
+static void r_test_vprintf_fmt (const rchar * expect, const rchar * fmt, ...) R_ATTR_PRINTF (2, 3);
+
+static void
+r_test_vprintf_fmt (const rchar * expect, const rchar * fmt, ...)
+{
+  rchar buf[64];
+  rchar * str;
+  va_list ap;
+
+  va_start (ap, fmt);
+  r_assert_cmpint (r_vsprintf (buf, fmt, ap), ==, (int) r_strlen (expect));
+  va_end (ap);
+  r_assert_cmpstr (buf, ==, expect);
+
+  va_start (ap, fmt);
+  r_assert_cmpint (r_vsnprintf (buf, sizeof (buf), fmt, ap), ==, (int) r_strlen (expect));
+  va_end (ap);
+  r_assert_cmpstr (buf, ==, expect);
+
+  va_start (ap, fmt);
+  r_assert_cmpptr ((str = r_strvprintf (fmt, ap)), !=, NULL);
+  va_end (ap);
+  r_assert_cmpstr (str, ==, expect);
+  r_free (str);
+}
+
+/* The literal format at each call site is what -Wformat checks, so a
+ * toolchain that rejects one of the R*_FMT conversions fails to build. */
+#define R_TEST_PRINTF_FMT(expect, fmt, val) R_STMT_START {                    \
+  rchar buf[64];                                                              \
+  rchar * str;                                                                \
+  r_assert_cmpint (r_sprintf (buf, "%" fmt, val), ==, (int) r_strlen (expect));\
+  r_assert_cmpstr (buf, ==, expect);                                          \
+  r_assert_cmpint (r_snprintf (buf, sizeof (buf), "%" fmt, val),              \
+      ==, (int) r_strlen (expect));                                           \
+  r_assert_cmpstr (buf, ==, expect);                                          \
+  r_assert_cmpptr ((str = r_strprintf ("%" fmt, val)), !=, NULL);             \
+  r_assert_cmpstr (str, ==, expect);                                          \
+  r_free (str);                                                               \
+  r_test_vprintf_fmt (expect, "%" fmt, val);                                  \
+} R_STMT_END
+
+RTEST (rstr, printf_fmt_macros, RTEST_FAST)
+{
+  R_TEST_PRINTF_FMT ("-128", RINT8_FMT, RINT8_MIN);
+  R_TEST_PRINTF_FMT ("127", RINT8_FMT, RINT8_MAX);
+  R_TEST_PRINTF_FMT ("255", RUINT8_FMT, RUINT8_MAX);
+  R_TEST_PRINTF_FMT ("-32768", RINT16_FMT, RINT16_MIN);
+  R_TEST_PRINTF_FMT ("32767", RINT16_FMT, RINT16_MAX);
+  R_TEST_PRINTF_FMT ("65535", RUINT16_FMT, RUINT16_MAX);
+  R_TEST_PRINTF_FMT ("-2147483648", RINT32_FMT, RINT32_MIN);
+  R_TEST_PRINTF_FMT ("2147483647", RINT32_FMT, RINT32_MAX);
+  R_TEST_PRINTF_FMT ("4294967295", RUINT32_FMT, RUINT32_MAX);
+  R_TEST_PRINTF_FMT ("-9223372036854775808", RINT64_FMT, RINT64_MIN);
+  R_TEST_PRINTF_FMT ("9223372036854775807", RINT64_FMT, RINT64_MAX);
+  R_TEST_PRINTF_FMT ("18446744073709551615", RUINT64_FMT, RUINT64_MAX);
+  R_TEST_PRINTF_FMT ("-9223372036854775808", RINTMAX_FMT, RINTMAX_MIN);
+  R_TEST_PRINTF_FMT ("18446744073709551615", RUINTMAX_FMT, RUINTMAX_MAX);
+  R_TEST_PRINTF_FMT ("9223372036854775807", ROFFSET_FMT, ROFFSET_MAX);
+
+  R_TEST_PRINTF_FMT ("-42", RSSIZE_FMT, (rssize) -42);
+  R_TEST_PRINTF_FMT ("-42", RINTPTR_FMT, (rintptr) -42);
+  R_TEST_PRINTF_FMT ("42", RUINTPTR_FMT, (ruintptr) 42);
+  if (sizeof (rsize) == 8) {
+    R_TEST_PRINTF_FMT ("18446744073709551615", RSIZE_FMT, RSIZE_MAX);
+    R_TEST_PRINTF_FMT ("-9223372036854775808", RSSIZE_FMT, RSSIZE_MIN);
+  } else {
+    R_TEST_PRINTF_FMT ("4294967295", RSIZE_FMT, RSIZE_MAX);
+    R_TEST_PRINTF_FMT ("-2147483648", RSSIZE_FMT, RSSIZE_MIN);
+  }
+}
+RTEST_END;

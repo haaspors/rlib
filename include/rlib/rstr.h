@@ -433,9 +433,19 @@ R_API rchar ** r_strsplit (const rchar * str, const rchar * delim, rsize max);
  *         or a negative value on failure.
  */
 R_API int     r_asprintf (rchar ** str, const rchar * fmt, ...) R_ATTR_PRINTF (2, 3);
-/** @brief @c snprintf passthrough. */
-#define r_snprintf      snprintf
-#ifdef _MSC_VER
+#if defined (R_CC_MINGW)
+/* gcc checks the builtin sprintf family against the msvcrt rules, which
+ * reject the hh modifier RINT8_FMT / RUINT8_FMT use, even when the call
+ * resolves to the C99 __mingw_* implementation. Call that directly. */
+/** @brief @c snprintf with C99 conversions (mingw-w64 @c __mingw_snprintf). */
+#define r_snprintf      __mingw_snprintf
+/** @brief @c sprintf with C99 conversions (mingw-w64 @c __mingw_sprintf). */
+#define r_sprintf       __mingw_sprintf
+/** @brief @c vsprintf with C99 conversions (mingw-w64 @c __mingw_vsprintf). */
+#define r_vsprintf      __mingw_vsprintf
+/** @brief @c vsnprintf with C99 conversions (mingw-w64 @c __mingw_vsnprintf). */
+#define r_vsnprintf     __mingw_vsnprintf
+#elif defined (_MSC_VER)
 /* MSVC deprecates plain sprintf / vsprintf (C4996). Route through
  * the secure *_s variants using SIZE_MAX as the buffer size, which
  * skips the runtime bounds check and preserves the unbounded
@@ -456,10 +466,16 @@ static inline int r_sprintf (rchar * buf, const rchar * fmt, ...)
 /** @brief @c vsprintf-compatible wrapper; see r_sprintf. */
 #define r_vsprintf(buf, fmt, ap)  vsprintf_s ((buf), (size_t)-1, (fmt), (ap))
 #else
-/** @brief @c sprintf passthrough on non-MSVC platforms. */
+/** @brief @c sprintf passthrough. */
 #define r_sprintf       sprintf
-/** @brief @c vsprintf passthrough on non-MSVC platforms. */
+/** @brief @c vsprintf passthrough. */
 #define r_vsprintf      vsprintf
+#endif
+#if !defined (R_CC_MINGW)
+/** @brief @c snprintf passthrough. */
+#define r_snprintf      snprintf
+/** @brief @c vsnprintf passthrough. */
+#define r_vsnprintf     vsnprintf
 #endif
 /**
  * @brief Format into a freshly @c r_malloc'd buffer and return it.
@@ -470,8 +486,6 @@ R_API rchar * r_strprintf (const rchar * fmt, ...) R_ATTR_PRINTF (1, 2);
 R_API rchar * r_strvprintf (const rchar * fmt, va_list args) R_ATTR_PRINTF (1, 0);
 /** @brief va_list flavour of r_asprintf. */
 R_API int     r_vasprintf (rchar ** str, const rchar * fmt, va_list args) R_ATTR_PRINTF (2, 0);
-/** @brief @c vsnprintf passthrough. */
-#define r_vsnprintf     vsnprintf
 
 /** @} */
 
