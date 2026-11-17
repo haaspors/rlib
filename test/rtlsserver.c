@@ -3511,7 +3511,7 @@ r_test_tls_server_ecdhe_ske (RTEST_FIXTURE_STRUCT (rtlsserver) * fixture,
   RBuffer * flight;
   ruint8 ch[256];
   ruint8 clirandom[R_TLS_HELLO_RANDOM_BYTES];
-  ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES];
+  ruint8 servrandom[R_TLS_HELLO_RANDOM_BYTES] = { 0 };
   ruint8 tbs[2 * R_TLS_HELLO_RANDOM_BYTES + 4 + 65];
   ruint8 hash[64];
   rsize chlen, tbslen = 0, hashsize;
